@@ -77,6 +77,11 @@ var bell_serial: int = 0
 ## Set once if the shell exits on its own. null until then.
 var shell_exit_code = null
 
+## Epoch milliseconds of the last keystroke or paste a HUMAN sent through a
+## view of this session; 0 when none yet. Agent writes (MCP, relay) do not
+## stamp it: it exists so a notification can yield to a person mid-sentence.
+var last_input_ms: int = 0
+
 
 func _init(p_name: String = "Terminal") -> void:
 	session_name = p_name
@@ -134,6 +139,10 @@ func start(cols: int, rows: int, start_dir: String = "") -> bool:
 	_cols = maxi(1, cols)
 	_rows = maxi(1, rows)
 	launch_cwd = start_dir
+	# The child learns its own address (MINERVA_TERMINAL_ID / _NAME) so a
+	# program in the terminal can name this tab to the host.
+	if terminal.has_method("set_identity"):
+		terminal.set_identity(terminal_id, session_name)
 	if not start_dir.is_empty() and terminal.has_method("set_start_directory"):
 		terminal.set_start_directory(start_dir)
 		start_directory_applied = true
@@ -170,6 +179,56 @@ func is_alive() -> bool:
 func write_input(text: String) -> void:
 	if terminal_available:
 		terminal.write_input(text)
+
+
+## Views call this for every key or paste a person sends, before writing it.
+func note_human_input() -> void:
+	last_input_ms = int(Time.get_unix_time_from_system() * 1000.0)
+
+
+## Whether this platform can say who holds the PTY at all. Where it cannot
+## (ConPTY), the host falls back to other identity; where it can, an empty
+## answer means "unreadable right now", never "nobody".
+func foreground_supported() -> bool:
+	return terminal_available and terminal.has_method("get_foreground_process") \
+		and OS.get_name() != "Windows"
+
+
+## The process group holding the PTY: {pid, name, argv}, or {} when the
+## query failed (not running, tcgetpgrp or /proc unreadable).
+func get_foreground_process() -> Dictionary:
+	if terminal_available and terminal.has_method("get_foreground_process"):
+		return terminal.get_foreground_process()
+	return {}
+
+
+## Which agent harness the foreground process is: "claude", "codex", or ""
+## for anything else (the shell itself included). A harness is either the
+## process itself (a native claude or codex binary) or the script an
+## interpreter was started on: node on Claude Code's npm package, or any
+## interpreter on a script named after the harness (`codex.js` in the npm
+## package, or a shim called codex). Only the interpreter's first argument
+## counts, so `less codex` is a pager, not a harness.
+const HARNESS_INTERPRETERS := ["node", "bun", "deno", "python", "python3"]
+
+static func harness_of(process: Dictionary) -> String:
+	var name: String = str(process.get("name", "")).to_lower()
+	if name == "claude" or name == "codex":
+		return name
+	if not (name in HARNESS_INTERPRETERS or name.begins_with("python3.")):
+		return ""
+	var argv: Array = Array(process.get("argv", []))
+	if argv.size() < 2:
+		return ""
+	var script: String = str(argv[1]).to_lower()
+	var base: String = script.get_file().get_basename()
+	if base == "claude" or base == "codex":
+		return base
+	return "claude" if script.contains("claude-code") else ""
+
+
+func harness_name() -> String:
+	return harness_of(get_foreground_process())
 
 
 func get_scroll_info() -> Dictionary:

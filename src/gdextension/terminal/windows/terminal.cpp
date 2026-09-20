@@ -1,6 +1,9 @@
 #include "terminal.h"
 #include <regex>
 #include <cstring>
+#include <string>
+#include <vector>
+#include <algorithm>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -20,6 +23,8 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
     ClassDB::bind_method(D_METHOD("set_start_directory", "path"), &Terminal::set_start_directory);
     ClassDB::bind_method(D_METHOD("get_start_directory"), &Terminal::get_start_directory);
+    ClassDB::bind_method(D_METHOD("set_identity", "id", "name"), &Terminal::set_identity);
+    ClassDB::bind_method(D_METHOD("get_foreground_process"), &Terminal::get_foreground_process);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
     ADD_SIGNAL(MethodInfo("on_shell_prompt_start"));
@@ -588,6 +593,17 @@ String Terminal::get_start_directory() const
     return _start_directory;
 }
 
+void Terminal::set_identity(const String &id, const String &name)
+{
+    _identity_id = id;
+    _identity_name = name;
+}
+
+Dictionary Terminal::get_foreground_process() const
+{
+    return Dictionary();
+}
+
 bool Terminal::start(int width, int height)
 {
     if (_running)
@@ -659,9 +675,48 @@ bool Terminal::start(int width, int height)
         }
     }
 
+    // The child gets a PRIVATE environment block: ours, minus any earlier
+    // identity entries, plus this tab's. The process environment itself is
+    // never touched, so nothing else spawned from Minerva inherits a tab's
+    // identity.
+    std::wstring env_block;
+    if (!_identity_id.is_empty())
+    {
+        // Environment names are case-insensitive on Windows, and the block is
+        // kept sorted the way the system builds it.
+        auto is_identity = [](const std::wstring &entry) {
+            return _wcsnicmp(entry.c_str(), L"MINERVA_TERMINAL_ID=", 20) == 0
+                || _wcsnicmp(entry.c_str(), L"MINERVA_TERMINAL_NAME=", 22) == 0;
+        };
+        std::vector<std::wstring> entries;
+        LPWCH inherited = GetEnvironmentStringsW();
+        for (LPWCH p = inherited; p && *p;)
+        {
+            std::wstring entry(p);
+            p += entry.size() + 1;
+            if (!is_identity(entry))
+                entries.push_back(entry);
+        }
+        if (inherited)
+            FreeEnvironmentStringsW(inherited);
+        entries.push_back(std::wstring(L"MINERVA_TERMINAL_ID=") + (const wchar_t*)_identity_id.utf16().get_data());
+        entries.push_back(std::wstring(L"MINERVA_TERMINAL_NAME=") + (const wchar_t*)_identity_name.utf16().get_data());
+        std::sort(entries.begin(), entries.end(), [](const std::wstring &a, const std::wstring &b) {
+            return _wcsicmp(a.c_str(), b.c_str()) < 0;
+        });
+        for (const std::wstring &entry : entries)
+        {
+            env_block += entry;
+            env_block.push_back(L'\0');
+        }
+        env_block.push_back(L'\0');
+    }
+    LPVOID env_ptr = env_block.empty() ? NULL : (LPVOID)env_block.data();
+    DWORD creation_flags = EXTENDED_STARTUPINFO_PRESENT | (env_ptr ? CREATE_UNICODE_ENVIRONMENT : 0);
+
     // Create cmd process
     WCHAR cmd[] = L"cmd.exe";
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT, NULL, spawn_dir, &si.StartupInfo, &_process_info))
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, creation_flags, env_ptr, spawn_dir, &si.StartupInfo, &_process_info))
     {
         ClosePseudoConsole(_console);
         HeapFree(GetProcessHeap(), 0, si.lpAttributeList);

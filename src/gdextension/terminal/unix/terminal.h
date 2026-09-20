@@ -4,6 +4,7 @@
 #include <common/terminal_interface.h>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_string_array.hpp>
 #include <minerva_vt.h>
 #include <thread>
 #include <atomic>
@@ -53,6 +54,12 @@ private:
     // cwd (legacy behavior). Set BEFORE start().
     String _start_directory;
 
+    // Identity the PTY child is told about itself, exported as
+    // MINERVA_TERMINAL_ID / MINERVA_TERMINAL_NAME so a program running in the
+    // terminal can name its own tab to the host. Set BEFORE start().
+    String _identity_id;
+    String _identity_name;
+
     // libghostty-vt terminal state
     MinervaTerminal _vt_terminal = nullptr;
 
@@ -97,6 +104,11 @@ public:
     void stop() override;
     void set_start_directory(const String &path);
     String get_start_directory() const;
+    void set_identity(const String &id, const String &name);
+    // The process group that owns the PTY right now, {pid, name, argv}:
+    // the shell at a prompt, otherwise whatever it launched (a harness).
+    // Empty when the PTY is not running or the group cannot be read.
+    Dictionary get_foreground_process() const;
     bool write_input(const String &input) override;
     void write_to_screen(const String &data);
     bool is_running() const override { return _running; }

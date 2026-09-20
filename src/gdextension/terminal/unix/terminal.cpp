@@ -16,6 +16,13 @@
 #include <cstring>
 #include <sys/stat.h>
 #include <cstdio>
+#include <string>
+#include <vector>
+#include <fstream>
+#if defined(__APPLE__)
+#include <libproc.h>
+#include <sys/sysctl.h>
+#endif
 
 // Platform-specific PTY headers
 #if defined(__APPLE__)
@@ -23,6 +30,8 @@
 #elif defined(__linux__)
     #include <pty.h>
 #endif
+
+extern char **environ;
 
 using namespace godot;
 
@@ -40,6 +49,8 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
     ClassDB::bind_method(D_METHOD("set_start_directory", "path"), &Terminal::set_start_directory);
     ClassDB::bind_method(D_METHOD("get_start_directory"), &Terminal::get_start_directory);
+    ClassDB::bind_method(D_METHOD("set_identity", "id", "name"), &Terminal::set_identity);
+    ClassDB::bind_method(D_METHOD("get_foreground_process"), &Terminal::get_foreground_process);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
     ADD_SIGNAL(MethodInfo("on_shell_prompt_start"));
@@ -616,6 +627,76 @@ String Terminal::get_start_directory() const
     return _start_directory;
 }
 
+void Terminal::set_identity(const String &id, const String &name)
+{
+    _identity_id = id;
+    _identity_name = name;
+}
+
+Dictionary Terminal::get_foreground_process() const
+{
+    Dictionary result;
+    if (!_running || _master_fd < 0) {
+        return result;
+    }
+    pid_t group = tcgetpgrp(_master_fd);
+    if (group <= 0) {
+        return result;
+    }
+    std::string name;
+    PackedStringArray argv;
+#if defined(__APPLE__)
+    char buf[2 * MAXCOMLEN + 1] = {0};
+    if (proc_name(group, buf, sizeof(buf)) > 0) {
+        name = buf;
+    }
+    // KERN_PROCARGS2 lays out: int argc, the exec path, NUL padding, then
+    // argc NUL-terminated argv strings.
+    int mib[3] = { CTL_KERN, KERN_PROCARGS2, (int)group };
+    size_t size = 0;
+    if (sysctl(mib, 3, nullptr, &size, nullptr, 0) == 0 && size > sizeof(int)) {
+        std::vector<char> raw(size);
+        if (sysctl(mib, 3, raw.data(), &size, nullptr, 0) == 0) {
+            int argc = 0;
+            memcpy(&argc, raw.data(), sizeof(int));
+            size_t pos = sizeof(int);
+            while (pos < size && raw[pos] != '\0') pos++;   // exec path
+            while (pos < size && raw[pos] == '\0') pos++;   // padding
+            for (int i = 0; i < argc && pos < size; i++) {
+                size_t nul = pos;
+                while (nul < size && raw[nul] != '\0') nul++;
+                argv.push_back(String::utf8(std::string(raw.data() + pos, nul - pos).c_str()));
+                pos = nul + 1;
+            }
+        }
+    }
+#else
+    std::string base = "/proc/" + std::to_string(group) + "/";
+    std::ifstream comm(base + "comm");
+    std::getline(comm, name);
+    // argv strings are NUL-separated; each one is its own entry so a path
+    // with spaces survives.
+    std::ifstream args(base + "cmdline", std::ios::binary);
+    std::string raw((std::istreambuf_iterator<char>(args)), std::istreambuf_iterator<char>());
+    size_t pos = 0;
+    while (pos < raw.size()) {
+        size_t nul = raw.find('\0', pos);
+        if (nul == std::string::npos) nul = raw.size();
+        argv.push_back(String::utf8(raw.substr(pos, nul - pos).c_str()));
+        pos = nul + 1;
+    }
+#endif
+    // A group whose name could not be read is reported as unreadable ({}),
+    // not as a nameless process the caller might mistake for a shell.
+    if (name.empty()) {
+        return result;
+    }
+    result["pid"] = (int)group;
+    result["name"] = String::utf8(name.c_str());
+    result["argv"] = argv;
+    return result;
+}
+
 bool Terminal::start(int width, int height)
 {
     if (_running)
@@ -624,10 +705,84 @@ bool Terminal::start(int width, int height)
     _width = width;
     _height = height;
 
-    // Materialize the start directory BEFORE forking — Godot String methods
+    // The shell, its arguments and its whole environment are built BEFORE
+    // forking: Godot Strings, std::string and the environment table all
     // allocate, and allocation between fork and exec is unsafe in a
-    // multithreaded process.
+    // multithreaded process. The child only chdir()s and exec()s.
     CharString start_dir_utf8 = _start_directory.utf8();
+
+    std::string shell = getenv("SHELL") ? getenv("SHELL") : "";
+    if (shell.empty()) {
+        #if defined(__APPLE__)
+            shell = "/bin/zsh";
+        #else
+            shell = "/bin/bash";
+        #endif
+    }
+    // execve takes a path, not a name to search for; $SHELL is a path in
+    // practice, and a bare name is looked up where login shells live.
+    if (shell.find('/') == std::string::npos) {
+        shell = "/bin/" + shell;
+    }
+
+    // Inherit our environment minus the entries this terminal sets itself.
+    static const char* OWNED[] = {
+        "TERM=", "BASH_ENV=", "ENV=", "MINERVA_TERMINAL_ID=", "MINERVA_TERMINAL_NAME=",
+        "ZDOTDIR=", "PROMPT_COMMAND=", "PS0=",
+    };
+    std::vector<std::string> env_strings;
+    for (char** e = environ; e && *e; ++e) {
+        bool owned = false;
+        for (const char* key : OWNED) {
+            if (strncmp(*e, key, strlen(key)) == 0) { owned = true; break; }
+        }
+        if (!owned) env_strings.emplace_back(*e);
+    }
+    env_strings.emplace_back("TERM=xterm-256color");
+    // No user rc file runs in a Minerva terminal; zsh gets only the private
+    // marker rc below.
+    env_strings.emplace_back("BASH_ENV=");
+    env_strings.emplace_back("ENV=");
+    // The child's own address, so a program in the terminal can name this
+    // tab to the host.
+    if (!_identity_id.is_empty()) {
+        env_strings.emplace_back("MINERVA_TERMINAL_ID=" + std::string(_identity_id.utf8().get_data()));
+        env_strings.emplace_back("MINERVA_TERMINAL_NAME=" + std::string(_identity_name.utf8().get_data()));
+    }
+
+    // Prompt markers the host's block detection reads:
+    // \e[888z = prompt start (precmd), \e[999z = prompt end (preexec).
+    std::vector<std::string> argv_strings = { shell };
+    if (shell.find("zsh") != std::string::npos) {
+        // zsh has no PROMPT_COMMAND: a minimal rc in a private ZDOTDIR sets
+        // the hooks; --no-globalrcs skips /etc/zshrc but loads ZDOTDIR/.zshrc.
+        const char* zdotdir = "/tmp/minerva-zsh";
+        mkdir(zdotdir, 0700);
+        FILE* rc = fopen("/tmp/minerva-zsh/.zshrc", "w");
+        if (rc) {
+            fprintf(rc,
+                "precmd() { printf '\\e[888z'; }\n"
+                "preexec() { printf '\\e[999z'; }\n"
+            );
+            fclose(rc);
+        }
+        env_strings.emplace_back(std::string("ZDOTDIR=") + zdotdir);
+        argv_strings.emplace_back("--no-globalrcs");
+    } else if (shell.find("fish") != std::string::npos) {
+        argv_strings.emplace_back("--no-config");
+    } else {
+        // bash: PROMPT_COMMAND for prompt start, PS0 for command start.
+        env_strings.emplace_back("PROMPT_COMMAND=printf '\\e[888z'");
+        env_strings.emplace_back("PS0=\\[\\e[999z\\]");
+        argv_strings.emplace_back("--norc");
+        argv_strings.emplace_back("--noprofile");
+    }
+    std::vector<char*> argv_ptrs;
+    for (std::string& s : argv_strings) argv_ptrs.push_back(s.data());
+    argv_ptrs.push_back(nullptr);
+    std::vector<char*> env_ptrs;
+    for (std::string& s : env_strings) env_ptrs.push_back(s.data());
+    env_ptrs.push_back(nullptr);
 
     // Create PTY
     struct winsize ws = {
@@ -648,55 +803,15 @@ bool Terminal::start(int width, int height)
     }
 
     if (_child_pid == 0) {
-        // Child process
-        // Spawn in the configured start directory (empty → inherit). A failed
-        // chdir is non-fatal: the shell starts in the inherited cwd instead.
+        // Child process: nothing here may allocate or log. A failed chdir is
+        // non-fatal — the shell starts in the inherited cwd and its prompt
+        // reveals it.
         if (start_dir_utf8.length() > 0) {
             if (chdir(start_dir_utf8.get_data()) != 0) {
-                // Can't safely log from the fork child; the shell prompt will
-                // reveal the fallback cwd.
             }
         }
-        putenv((char*)"TERM=xterm-256color");
-        putenv((char*)"BASH_ENV=");
-        putenv((char*)"ENV=");
-
-        const char* shell = getenv("SHELL");
-        if (!shell) {
-            #if defined(__APPLE__)
-                shell = "/bin/zsh";
-            #else
-                shell = "/bin/bash";
-            #endif
-        }
-
-        // Inject Minerva prompt markers into the shell.
-        // \e[888z = prompt start (precmd), \e[999z = prompt end (preexec)
-        // Write a minimal rc file to a temp dir and point ZDOTDIR there.
-        if (strstr(shell, "zsh") != nullptr) {
-            // Create temp ZDOTDIR with a .zshrc that sets up prompt hooks
-            const char* zdotdir = "/tmp/minerva-zsh";
-            mkdir(zdotdir, 0700);
-            FILE* rc = fopen("/tmp/minerva-zsh/.zshrc", "w");
-            if (rc) {
-                fprintf(rc,
-                    "precmd() { printf '\\e[888z'; }\n"
-                    "preexec() { printf '\\e[999z'; }\n"
-                );
-                fclose(rc);
-            }
-            setenv("ZDOTDIR", zdotdir, 1);
-            // --no-globalrcs skips /etc/zshrc but loads ZDOTDIR/.zshrc
-            execlp(shell, shell, "--no-globalrcs", nullptr);
-        } else if (strstr(shell, "fish") != nullptr) {
-            execlp(shell, shell, "--no-config", nullptr);
-        } else {
-            // bash: use PROMPT_COMMAND for prompt start, PS0 for command start
-            setenv("PROMPT_COMMAND", "printf '\\e[888z'", 1);
-            setenv("PS0", "\\[\\e[999z\\]", 1);
-            execlp(shell, shell, "--norc", "--noprofile", nullptr);
-        }
-        // If we get here, execlp failed
+        execve(shell.c_str(), argv_ptrs.data(), env_ptrs.data());
+        // Only reached when execve failed.
         _exit(1);
     }
 

@@ -804,6 +804,8 @@ func _shortcut_input(event: InputEvent) -> void:
 		if event.ctrl_pressed and event.keycode == KEY_C:
 			DisplayServer.clipboard_set(text_layer.get_selected_text())
 		if event.ctrl_pressed and event.keycode == KEY_V:
+			if _session:
+				_session.note_human_input()
 			terminal.write_input(DisplayServer.clipboard_get())
 
 
@@ -845,6 +847,10 @@ func _gui_input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventKey and event.pressed:
+		# Every key a person presses here reaches the PTY one way or another,
+		# so stamp the session once, up front.
+		if _session:
+			_session.note_human_input()
 		# Minerva-specific clipboard/signal shortcuts (not terminal pass-through)
 		if event.ctrl_pressed and event.keycode == KEY_C:
 			terminal.write_input(char(3))

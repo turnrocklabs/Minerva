@@ -268,7 +268,16 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				"cols": session.get_cols(),
 				"rows": session.get_rows(),
 				"created_at_ms": session.created_at_ms,
+				"last_input_ms": session.last_input_ms,
 			}
+			# Who is in the foreground: the harness name when it is one, and
+			# the process itself for callers that want to know what else runs.
+			var foreground: Dictionary = session.get_foreground_process()
+			if not foreground.is_empty():
+				entry["foreground_process"] = str(foreground.get("name", ""))
+			var harness: String = session.harness_of(foreground)
+			if not harness.is_empty():
+				entry["harness"] = harness
 			# cwd is absent, never guessed: a session started without one runs
 			# in Minerva's own working directory, which the host cannot report
 			# as the child's launch directory.

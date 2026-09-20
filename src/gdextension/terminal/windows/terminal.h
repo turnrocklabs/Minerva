@@ -61,6 +61,11 @@ namespace godot
         // process cwd (legacy behavior). Set BEFORE start().
         String _start_directory;
 
+        // Identity the child is told about itself (MINERVA_TERMINAL_ID /
+        // MINERVA_TERMINAL_NAME in its environment). Set BEFORE start().
+        String _identity_id;
+        String _identity_name;
+
         // libghostty-vt terminal state (shared with the unix backend via the
         // minerva-vt shim). ConPTY supplies the PTY; ghostty-vt supplies the
         // cell grid / cursor / key encoding the renderer drives.
@@ -108,6 +113,9 @@ namespace godot
         void stop() override;
         void set_start_directory(const String &path);
         String get_start_directory() const;
+        void set_identity(const String &id, const String &name);
+        // ConPTY exposes no foreground process group; always empty here.
+        Dictionary get_foreground_process() const;
         bool write_input(const String &input) override;
         void write_to_screen(const String &data);
         bool is_running() const override { return _running; }
