@@ -24,9 +24,12 @@ extends SceneTree
 ##   - a bare "codex" with two codex tabs is refused, naming both ids;
 ##   - while the mock shows its permission dialog the notification is held
 ##     with nothing written, and lands once the dialog is answered;
-##   - a human keystroke in the target holds it with reason human_typing.
+##   - a human keystroke in the target holds it with reason human_typing;
+##   - a keystroke injected WHILE a notification is being delivered lands after
+##     that line's Enter, as its own separate input.
 
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
 const LAUNCH_DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const MOCK_PATH := "res://test/fixtures/passthrough_e2e/mock_codex.py"
 
@@ -253,7 +256,10 @@ func _run() -> void:
 	check("E7c: and typed nothing", b.get_plain_text().find("guard-probe") == -1)
 	# The expected harness is checked by the host at the write itself: a send
 	# that expects claude in a codex tab is held through the real plugin.
+	# Both typing stamps are cleared: the notify loop reads the wall-clock one,
+	# the arbiter's admission the monotonic one.
 	b.last_input_ms = 0
+	b.last_input_ticks_ms = 0
 	var wrong: Dictionary = LaunchDialog._classify_watch_result(
 		await tools._call_relay_tool("minerva_agent_relay_send",
 			{"terminal_id": tid_b, "text": "wrong-harness", "arm": false, "profile": "codex",
@@ -261,6 +267,59 @@ func _run() -> void:
 	check("E8: a write expecting the wrong harness is held at the write boundary",
 		not wrong.get("ok", true) and str(wrong.get("error", "")).contains("not claude"), str(wrong))
 	check("E8: and typed nothing", b.get_plain_text().find("wrong-harness") == -1)
+
+	# ── E9: a keystroke DURING a delivery lands after that line's Enter ───
+	# The synchronisation is the arbiter's own phase signal, never a sleep:
+	# body_written means the envelope is on the PTY and the Enter has not gone
+	# out yet, which is the only window where a keystroke could be submitted
+	# with the line. The keystroke goes in through write_human_input, the same
+	# entry a terminal view uses for a key.
+	var race_idle: bool = await _wait_until(func() -> bool: return _idle(b))
+	check("E9: target idle before the interleave leg", race_idle)
+	b.last_input_ms = 0
+	b.last_input_ticks_ms = 0
+	var arbiter = b.get_input_arbiter()
+	check("E9: the target session exposes its input arbiter", arbiter != null)
+	if arbiter == null:
+		await _teardown(pm, sessions, [a, b])
+		return
+	# A Dictionary, so the lambda and this scope share the one state.
+	var race := {"txn_id": 0, "injected": false, "receipt": {}}
+	var on_phase := func(txn_id: int, phase: String) -> void:
+		if phase != TerminalInputArbiter.PHASE_BODY_WRITTEN or bool(race["injected"]):
+			return
+		race["txn_id"] = txn_id
+		race["injected"] = true
+		race["receipt"] = b.write_human_input("x\r")
+	arbiter.transaction_phase.connect(on_phase)
+	var race_line := "arbiter leg: a keystroke arrives mid-delivery"
+	var raced: Dictionary = await tools.handle("minerva_terminal_notify",
+		{"to": tid_b, "from": "codex@notify-a", "reply_to": tid_a,
+			"text": race_line, "wait_ms": 8000})
+	check("E9: the notification is written through the relay", raced.get("success", false)
+		and str(raced.get("status", "")) == "written", str(raced))
+	check("E9: the keystroke was queued by the arbiter mid-transaction",
+		bool(race["injected"]) and bool((race["receipt"] as Dictionary).get("queued", false)),
+		str(race))
+	var race_expected := "[MINERVA NOTIFY from codex@notify-a (reply to: %s)] %s" % [tid_a, race_line]
+	# Oracle 1: the mock reverses its prompt, so its answer is the envelope
+	# reversed EXACTLY — an "x" anywhere inside the submitted line would show.
+	var intact: bool = await _wait_until(func() -> bool:
+		return _scrollback(b).find("MOCK-ANSWER: " + _reverse(race_expected)) != -1)
+	check("E9: the mock answered the envelope exactly, so no keystroke was inside the line",
+		intact, _scrollback(b).right(400))
+	# Oracle 2: the keystroke is then answered as the NEXT prompt of its own
+	# (the reversal of "x" is "x"), which is only reachable after the Enter.
+	var separate: bool = await _wait_until(func() -> bool: return _has_row_ending(b, "MOCK-ANSWER: x"))
+	check("E9: the keystroke was answered afterwards as its own separate prompt",
+		separate, _rows_containing(b, "MOCK-ANSWER"))
+	arbiter.transaction_phase.disconnect(on_phase)
+	# Oracle 3: the record outlives the transaction and says how it ended.
+	var record: Dictionary = arbiter.get_transaction(int(race["txn_id"]))
+	check("E9: the transaction committed and released exactly the one keystroke",
+		str(record.get("phase", "")) == TerminalInputArbiter.PHASE_FINISHED
+			and str(record.get("outcome", "")) == TerminalInputArbiter.OUTCOME_COMMITTED
+			and int(record.get("released", -1)) == 1, str(record))
 
 	await _teardown(pm, sessions, [a, b])
 
@@ -278,6 +337,27 @@ func _scrollback(session) -> String:
 	for row in range(int(session.get_scroll_info().get("total_rows", 0))):
 		rows.append(session.extract_row_text_screen(row))
 	return "".join(rows)
+
+
+## Whether any row the terminal still holds is exactly this text. Used where a
+## substring of a longer answer line would be ambiguous.
+## A row that ENDS with the text: the mock writes its answer at the cursor,
+## which may sit after the previous idle screen's prompt marker, so an exact
+## row match would miss it; the long envelope answer never ends this way.
+func _has_row_ending(session, text: String) -> bool:
+	for row in range(int(session.get_scroll_info().get("total_rows", 0))):
+		if session.extract_row_text_screen(row).strip_edges().ends_with(text):
+			return true
+	return false
+
+
+func _rows_containing(session, text: String) -> String:
+	var out: PackedStringArray = PackedStringArray()
+	for row in range(int(session.get_scroll_info().get("total_rows", 0))):
+		var line: String = session.extract_row_text_screen(row)
+		if line.find(text) != -1:
+			out.append(line.strip_edges())
+	return " | ".join(out)
 
 
 func _reverse(text: String) -> String:
