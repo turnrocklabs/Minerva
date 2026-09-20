@@ -1977,3 +1977,146 @@ fn a_modal_answering_the_write_gets_no_extra_enter() {
     assert_eq!(payload["submit"]["state"], "held", "{payload}");
     assert_eq!(payload["submit"]["evidence"], "held:menu", "{payload}");
 }
+
+// ── 18. A profile hint gates an unwatched terminal without watching it ─────
+
+/// A notification to a harness nobody is watching: the sender names the
+/// harness, so the screen can be judged, but nothing should start a watch
+/// (a watch registers a passthrough provider the human never asked for).
+///
+/// Oracle: with profile=claude and arm=false on an unwatched terminal whose
+/// screen is the permission dialog, no byte is written while the dialog is up;
+/// the message lands once it clears; watch_status still knows no session.
+/// Without the hint the same send had no detection at all and wrote straight
+/// into the dialog.
+#[test]
+fn a_profile_hint_holds_an_unwatched_terminal_and_starts_no_watch() {
+    let mut host = FakeHost::start();
+    let cleared = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&cleared);
+    host.screen = Box::new(move |_| {
+        if flag.load(Ordering::SeqCst) {
+            (CLAUDE_IDLE.to_string(), 120)
+        } else {
+            (HOLD_CLAUDE_PERMISSION.to_string(), 120)
+        }
+    });
+    host.wait = Box::new(|_| quiet());
+    let terminal = "t-hint-unwatched";
+
+    let send = host.call_tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "ping", "arm": false, "profile": "claude"}),
+    );
+    host.pump_while(&[send], |v| v.reads < 3);
+    assert!(
+        host.view().writes.is_empty(),
+        "the hinted gate wrote into the dialog: {:?}",
+        host.view().writes
+    );
+
+    cleared.store(true, Ordering::SeqCst);
+    let payload = common::unwrap_tool(&host.await_reply(send));
+    assert_eq!(payload["ok"], true, "send failed: {payload}");
+    assert_eq!(payload["auto_started_watch"], false, "{payload}");
+    assert_eq!(
+        host.view().writes,
+        vec!["ping".to_string(), "\r".to_string()],
+        "the message lands exactly once, after the dialog cleared"
+    );
+    let status = host.tool(
+        "minerva_agent_relay_watch_status",
+        json!({"terminal_id": terminal}),
+    );
+    assert!(
+        status["status"].is_null(),
+        "no watch may exist after a hinted, unarmed send: {status}"
+    );
+
+    // A second send on the same still-unwatched terminal is gated the same
+    // way: the hint is per call, nothing was remembered.
+    cleared.store(false, Ordering::SeqCst);
+    let again = host.call_tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "pong", "arm": false, "profile": "claude"}),
+    );
+    host.pump_while(&[again], |v| v.reads < 6);
+    assert_eq!(host.view().writes.len(), 2, "the second send wrote into the dialog: {:?}", host.view().writes);
+    cleared.store(true, Ordering::SeqCst);
+    let payload = common::unwrap_tool(&host.await_reply(again));
+    assert_eq!(payload["ok"], true, "{payload}");
+
+    // A zero gate budget is one look: held means refused at once, with the
+    // reason, and nothing written.
+    cleared.store(false, Ordering::SeqCst);
+    let before = host.view().writes.len();
+    let refused = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "now", "arm": false, "profile": "claude", "gate_budget_ms": 0}),
+    );
+    assert!(
+        refused["error"].as_str().unwrap_or("").contains("nothing was written"),
+        "{refused}"
+    );
+    assert_eq!(refused["held"], true, "a refusal is marked as a hold: {refused}");
+    assert_eq!(host.view().writes.len(), before, "{:?}", host.view().writes);
+
+    // An unknown profile is refused before anything is read or written.
+    let bad = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "x", "arm": false, "profile": "nope"}),
+    );
+    assert!(
+        bad["error"].as_str().unwrap_or("").contains("unknown profile"),
+        "{bad}"
+    );
+}
+
+// ── 19. A notification through the chat path carries the typing guard ─────
+
+/// A notification queued in a passthrough chat is written by the chat's own
+/// generate long after anyone checked the terminal, so the host's write-time
+/// guard has to ride on that write — and only on that write: a human's own
+/// chat message is the same person on both sides.
+///
+/// Oracle: the body write of a NOTIFY-prefixed prompt carries
+/// unless_typed_within_ms; the body write of a plain prompt does not; no
+/// Enter write carries it (a refused Enter would leave a typed body
+/// unsubmitted and a retry would type it twice).
+#[test]
+fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
+    let mut host = FakeHost::start();
+    let terminal = "t-chat-guard";
+    host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
+    host.turn = Box::new(|_| "\u{276f} p\n\u{25cf} a\n".to_string());
+    host.wait = Box::new(|v| {
+        if v.writes.len() >= 2 {
+            settled("\u{276f} p\n\u{25cf} a\n\n\u{276f}\u{a0}\n? for shortcuts\n", 130)
+        } else {
+            quiet()
+        }
+    });
+    host.watch_start(terminal, "claude");
+
+    let notify = host.tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "c", "terminal_id": terminal,
+               "text": "[MINERVA NOTIFY from codex@t (reply to: 1)] see docket 1 comment 2"}),
+    );
+    assert!(notify.get("error").is_none(), "{notify}");
+    let args = host.view().write_args;
+    assert_eq!(args.len(), 2, "body then Enter: {args:?}");
+    assert_eq!(args[0]["unless_typed_within_ms"], json!(5000), "body is guarded: {args:?}");
+    assert_eq!(args[0]["expect_harness"], json!("claude"), "body names the watched harness: {args:?}");
+    assert!(args[1].get("unless_typed_within_ms").is_none(), "Enter is not: {args:?}");
+    assert!(args[1].get("expect_harness").is_none(), "{args:?}");
+
+    let plain = host.tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "c", "terminal_id": terminal, "text": "a human's own prompt"}),
+    );
+    assert!(plain.get("error").is_none(), "{plain}");
+    let args = host.view().write_args;
+    assert_eq!(args.len(), 4, "{args:?}");
+    assert!(args[2].get("unless_typed_within_ms").is_none(), "a plain prompt is unguarded: {args:?}");
+}

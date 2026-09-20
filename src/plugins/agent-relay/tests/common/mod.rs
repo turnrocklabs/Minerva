@@ -31,6 +31,8 @@ pub fn next_id() -> u64 {
 pub struct HostView {
     /// Every text the plugin wrote to a terminal, in order.
     pub writes: Vec<String>,
+    /// The full arguments of every host.terminal.write, in order.
+    pub write_args: Vec<Value>,
     /// Plain screen reads (no row range) — the send gate's reads.
     pub reads: usize,
     /// Windowed reads (start_row present) — read_turn's reads.
@@ -212,6 +214,7 @@ impl FakeHost {
             "host.terminal.write" => {
                 let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 self.view.writes.push(text.to_string());
+                self.view.write_args.push(args.clone());
                 json!({"bytes_sent": text.len()})
             }
             "host.terminal.read" => {

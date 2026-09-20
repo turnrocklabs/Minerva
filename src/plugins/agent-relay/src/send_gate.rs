@@ -293,6 +293,10 @@ pub fn release_detached(terminal_id: &str) {
 // Hold
 // ---------------------------------------------------------------------------
 
+/// The phrase every gate refusal ends with: the one thing a caller can rely
+/// on to tell "held, retry later" from a failed write.
+pub const HOLD_MARK: &str = "nothing was written";
+
 /// Block until the terminal's screen is one a prompt may be written into.
 ///
 /// Returns the last screen read as (content, total_scrollback_rows) so the

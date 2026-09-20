@@ -133,7 +133,12 @@ fn tool_ok(payload: Value) -> Value {
 }
 
 fn tool_err(message: &str) -> Value {
-    let text = serde_json::to_string(&json!({"error": message}))
+    tool_err_value(json!({"error": message}))
+}
+
+/// An error reply carrying more than a message (e.g. a hold marker).
+fn tool_err_value(payload: Value) -> Value {
+    let text = serde_json::to_string(&payload)
         .unwrap_or_else(|_| r#"{"error":"serialisation failed"}"#.into());
     json!({ "isError": true, "content": [{"type": "text", "text": text}] })
 }
@@ -222,6 +227,19 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
     let do_arm = args.get("arm").and_then(|v| v.as_bool()).unwrap_or(true);
+    let profile = args.get("profile").and_then(|v| v.as_str()).filter(|p| !p.is_empty());
+    // The host refuses the body write when a person typed in the terminal
+    // this recently; checked by the host at the moment of the write.
+    let human_guard_ms = args.get("human_guard_ms").and_then(|v| v.as_u64()).filter(|g| *g > 0);
+    // The harness that must be the foreground at the moment of the body
+    // write; the host refuses otherwise.
+    let expect_harness = args.get("expect_harness").and_then(|v| v.as_str()).filter(|h| !h.is_empty());
+    // How long a held screen is waited out. A caller that must answer within
+    // its own client's timeout passes something short; 0 means one look.
+    let gate_budget_ms = args
+        .get("gate_budget_ms")
+        .and_then(|v| v.as_u64())
+        .map_or(SEND_GATE_BUDGET_MS, |b| b.min(SEND_GATE_BUDGET_MS));
 
     if terminal_id.is_empty() {
         return ok_response(id, tool_err("terminal_id is required"));
@@ -229,8 +247,20 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     if text.is_empty() {
         return ok_response(id, tool_err("text is required"));
     }
+    if let Some(p) = profile {
+        if profiles::profile_get(p).is_none() {
+            return ok_response(id, tool_err(&format!(
+                "unknown profile '{p}'; use profiles_list to see options"
+            )));
+        }
+    }
 
-    match send_core(terminal_id, text, do_arm, router) {
+    match send_core(terminal_id, text, do_arm, profile, gate_budget_ms, human_guard_ms, expect_harness, router) {
+        // A gate refusal is a HOLD the caller may retry, and is marked as one
+        // so callers need not read the reason's prose.
+        Err(e) if e.contains(send_gate::HOLD_MARK) => {
+            ok_response(id, tool_err_value(json!({"error": e, "held": true})))
+        }
         Err(e) => ok_response(id, tool_err(&e)),
         Ok(result) => ok_response(id, tool_ok(result)),
     }
@@ -298,10 +328,19 @@ struct SendOutcome {
 /// The send pipeline shared by handle_send and relay_ask_core:
 /// gate (hold + one outstanding prompt) → pre-write snapshot → mode-specific
 /// write(s) → auto-start watch → arm → confirm the submit.
+///
+/// `profile_hint` names the harness in the terminal when the caller knows it
+/// and the terminal is not watched: the screen is then classified with that
+/// profile for the hold and the submit confirmation, and an auto-started
+/// watch uses it instead of the default.
 fn send_core(
     terminal_id: &str,
     text: &str,
     do_arm: bool,
+    profile_hint: Option<&str>,
+    gate_budget_ms: u64,
+    human_guard_ms: Option<u64>,
+    expect_harness: Option<&str>,
     router: &Arc<Router>,
 ) -> Result<Value, String> {
     let outcome = send_core_with_mode(
@@ -310,7 +349,10 @@ fn send_core(
         do_arm,
         SendMode::Submit,
         GateHold::Wait,
-        SEND_GATE_BUDGET_MS,
+        gate_budget_ms,
+        profile_hint,
+        human_guard_ms,
+        expect_harness,
         router,
     )?;
     // Nobody is waiting for this turn here: the slot is handed to the watch
@@ -364,8 +406,21 @@ fn send_core_with_mode(
     mode: SendMode,
     hold: GateHold,
     gate_budget_ms: u64,
+    profile_hint: Option<&str>,
+    human_guard_ms: Option<u64>,
+    expect_harness: Option<&str>,
     router: &Arc<Router>,
 ) -> Result<SendOutcome, String> {
+    // What the screen is classified with: the watch's profile when the
+    // terminal has one, else the caller's hint. A hint never overrides a
+    // watch — the watch is the one that read the harness's screens so far.
+    let detection = || {
+        watched_detection(terminal_id).or_else(|| {
+            profile_hint
+                .and_then(profiles::profile_get)
+                .and_then(|p| CompiledDetection::from_profile(&p).ok())
+        })
+    };
     // Normalise the message body (Submit only): drop trailing real CR/LF and
     // any trailing LITERAL "\r"/"\n" escape text (clients sometimes deliver
     // the two-char sequence instead of the control char). Enter is sent
@@ -425,9 +480,10 @@ fn send_core_with_mode(
     };
     let (gate_detection, taken) = loop {
         // Hold on the detection as it stands BEFORE the wait, when there is
-        // one. An unwatched terminal has nothing to classify screens with, so
-        // this phase is skipped and the slot alone gates the write.
-        if let Some(ref cd) = watched_detection(terminal_id) {
+        // one. An unwatched terminal with no profile hint has nothing to
+        // classify screens with, so this phase is skipped and the slot alone
+        // gates the write.
+        if let Some(ref cd) = detection() {
             if hold == GateHold::Wait {
                 // An expired budget is an error, never a write: an Enter on a
                 // menu selects whatever the caret is on.
@@ -460,9 +516,9 @@ fn send_core_with_mode(
             if !pending || live.as_deref() != Some(expected.as_str()) {
                 return Err(STALE_BYPASS.to_string());
             }
-            break (watched_detection(terminal_id), taken);
+            break (detection(), taken);
         }
-        let Some(cd) = watched_detection(terminal_id) else {
+        let Some(cd) = detection() else {
             // Still unwatched with the slot in hand: no screen judgement is
             // possible, and the write goes out serialised but unclassified.
             break (None, taken);
@@ -569,12 +625,22 @@ fn send_core_with_mode(
             _ => Ok(json!({"ok": true})),
         }
     } else {
+        // Only the BODY carries the write-time guards (human typing, expected
+        // harness): once it has landed, the Enter must follow, or the composer
+        // holds a line nobody submits and a retry would type it twice.
+        let mut body_write = json!({
+            "terminal_id": terminal_id,
+            "text": body,
+            "raw": true,
+        });
+        if let Some(guard) = human_guard_ms {
+            body_write["unless_typed_within_ms"] = json!(guard);
+        }
+        if let Some(expected) = expect_harness {
+            body_write["expect_harness"] = json!(expected);
+        }
         router
-            .call_capability("host.terminal.write", json!({
-                "terminal_id": terminal_id,
-                "text": body,
-                "raw": true,
-            }))
+            .call_capability("host.terminal.write", body_write)
             .and_then(|first| {
                 if mode != SendMode::Submit {
                     return Ok(first);
@@ -592,6 +658,10 @@ fn send_core_with_mode(
         if let Some(taken) = slot.take() {
             taken.end();
         }
+        // The host's typing refusal is a hold like the gate's, reported as one.
+        if e.contains(send_gate::HOLD_MARK) {
+            return Err(e);
+        }
         return Err(format!("terminal write failed: {e}"));
     }
     // The slot now covers the turn that ends after this write.
@@ -603,12 +673,12 @@ fn send_core_with_mode(
     let mut auto_started = false;
 
     if do_arm {
-        // If no watch session exists, auto-start one with the default
-        // profile ("claude") and notify_mode=armed.
+        // If no watch session exists, auto-start one with the hinted profile
+        // (default "claude") and notify_mode=armed.
         if watcher::watch_status(terminal_id).is_none() {
             match watcher::watch_start(
                 terminal_id.to_string(),
-                None, // default profile
+                profile_hint.map(str::to_string),
                 watcher::NotifyMode::Armed,
                 router.clone(),
             ) {
@@ -1202,7 +1272,27 @@ fn relay_ask_core(
     // Send + arm (auto-starts the watch when none exists). The gate inside may
     // wait out a modal screen or another relay turn before it writes, on this
     // caller's timeout budget.
-    let outcome = send_core_with_mode(terminal_id, text, true, mode, hold, timeout_ms, router)?;
+    //
+    // A notification that reached this terminal through its passthrough chat
+    // was queued there and may be dispatched long after it was checked; the
+    // host's write-time typing guard is applied to it here, as the direct
+    // path applies it to its own sends. A human's own chat message is not
+    // guarded: it is the same person on both sides.
+    // The same guarded write also requires the watched harness to still be
+    // the foreground: a notification queued behind a chat turn can be
+    // dispatched after the harness exited.
+    let is_notify = text.starts_with(NOTIFY_ENVELOPE_PREFIX);
+    let human_guard = if is_notify { Some(NOTIFY_HUMAN_GUARD_MS) } else { None };
+    let expected_profile: Option<String> = if is_notify {
+        watcher::watch_status(terminal_id)
+            .and_then(|s| s.get("profile_id").and_then(|p| p.as_str()).map(str::to_string))
+    } else {
+        None
+    };
+    let outcome = send_core_with_mode(
+        terminal_id, text, true, mode, hold, timeout_ms, None, human_guard,
+        expected_profile.as_deref(), router,
+    )?;
 
     // Block until the armed turn ends (busy-gate guarantees the next counted
     // detection is OUR turn, not the pre-existing idle screen). The baseline is
@@ -1302,6 +1392,9 @@ const PASSTHROUGH_TIMEOUT_MS: u64 = 590_000;
 /// line with this prefix is therefore always a FRESH prompt: held until the
 /// card clears, with the card left filed for the answer still to come.
 const NOTIFY_ENVELOPE_PREFIX: &str = "[MINERVA NOTIFY from ";
+/// How recent a human keystroke in the target holds a notification's write.
+/// Shared by convention with MCPTerminalTools.NOTIFY_HUMAN_TYPING_MS.
+const NOTIFY_HUMAN_GUARD_MS: u64 = 5000;
 
 /// Per-chat passthrough state. SEAM GAP (filed): the host's PluginProvider
 /// sends only {chat_id, text} to the generate tool — no entry/terminal
@@ -2099,13 +2192,17 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_send",
-                "description": "Send text to a watched terminal via host.terminal.write and arm a one-shot wake (default arm=true). BLOCKS while the screen shows a dialog/menu and while another relay prompt is still in flight; confirms the submit afterwards.",
+                "description": "Send text to a terminal via host.terminal.write and arm a one-shot wake (default arm=true). BLOCKS while the screen shows a dialog/menu and while another relay prompt is still in flight; confirms the submit afterwards. An unwatched terminal is classified with `profile` when given (and the auto-started watch uses it); with arm=false no watch is started.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "terminal_id": {"type": "string"},
                         "text": {"type": "string", "description": "Text to send. Use \\r for Enter."},
-                        "arm": {"type": "boolean", "description": "When true (default), arm the watch session for one-shot notification."}
+                        "arm": {"type": "boolean", "description": "When true (default), arm the watch session for one-shot notification."},
+                        "profile": {"type": "string", "description": "Harness profile id (claude, codex) to classify the screen with when the terminal is not watched."},
+                        "gate_budget_ms": {"type": "integer", "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look)."},
+                        "human_guard_ms": {"type": "integer", "description": "Refuse (held) when a person typed in the terminal within this many ms of the write."},
+                        "expect_harness": {"type": "string", "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the write."}
                     },
                     "required": ["terminal_id", "text"]
                 }

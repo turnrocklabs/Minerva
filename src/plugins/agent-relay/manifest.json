@@ -78,7 +78,7 @@
     },
     {
       "name": "minerva_agent_relay_send",
-      "description": "Send text to a watched terminal and arm a one-shot wake. Behaviour: (1) HOLDS the write while the screen owns the keyboard (permission dialog, question chooser, trust prompt, update offer or any caret-selected menu) and while another relay prompt is still in flight on this terminal — it waits, then writes, and refuses with an error rather than writing blind; (2) appends \\r if text doesn't already end with \\r (Enter/Return normalisation); (3) writes via host.terminal.write with raw=true; (4) if arm=true (default) and no watch session exists for this terminal, auto-starts one with the claude profile + notify_mode=armed, then snapshots the pre-write screen as the turn-start boundary for read_turn, and calls arm(); (5) confirms the submit from the screen and reports it in `submit`. Human keystrokes and core minerva_terminal_write never arm — only this tool does.",
+      "description": "Send text to a watched terminal and arm a one-shot wake. Behaviour: (1) HOLDS the write while the screen owns the keyboard (permission dialog, question chooser, trust prompt, update offer or any caret-selected menu) and while another relay prompt is still in flight on this terminal — it waits, then writes, and refuses with an error rather than writing blind; (2) appends \\r if text doesn't already end with \\r (Enter/Return normalisation); (3) writes via host.terminal.write with raw=true; (4) if arm=true (default) and no watch session exists for this terminal, auto-starts one with the hinted profile (default claude) + notify_mode=armed, then snapshots the pre-write screen as the turn-start boundary for read_turn, and calls arm(); (5) confirms the submit from the screen and reports it in `submit`. Human keystrokes and core minerva_terminal_write never arm — only this tool does.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -93,6 +93,22 @@
           "arm": {
             "type": "boolean",
             "description": "When true (default), arm the watch session for one-shot turn detection. Auto-starts a watch with the claude profile if no session exists."
+          },
+          "profile": {
+            "type": "string",
+            "description": "Harness profile id (claude, codex) to classify the screen with when the terminal is not watched; also the profile an auto-started watch uses."
+          },
+          "gate_budget_ms": {
+            "type": "integer",
+            "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look). A refusal carries held:true."
+          },
+          "human_guard_ms": {
+            "type": "integer",
+            "description": "Refuse (held) when a person typed in the terminal within this many ms of the body write."
+          },
+          "expect_harness": {
+            "type": "string",
+            "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the body write."
           }
         },
         "required": [
