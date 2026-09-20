@@ -4,6 +4,7 @@ extends TabContainer
 const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 const VoiceGatewayClientScript = preload("res://Scripts/Services/Voice/VoiceGatewayClient.gd")
 const PassthroughLaunchDialogScript = preload("res://Scripts/UI/Controls/PassthroughLaunchDialog.gd")
+const ShellEnvironment = preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
 # Preload (not the class_name global) so a --script harness that loads ChatPane.gd
 # before the global class cache is built still compiles (W5).
 const PassthroughTurnStatusScript = preload("res://Scripts/Models/PassthroughTurnStatus.gd")
@@ -1211,8 +1212,21 @@ func _append_passthrough_exit_message(history: ChatHistory, terminal_id: String,
 		return
 	_passthrough_exit_seen[dedupe_key] = true
 	if history.VBox != null and is_instance_valid(history.VBox):
-		history.VBox.add_program_message(
-			"terminal agent exited (code %d) — use the passthrough chat button to relaunch" % exit_code)
+		var message := "terminal agent exited (code %d) — use the passthrough chat button to relaunch" % exit_code
+		# The shell's own last words ("bash: line 1: codex: command not found")
+		# are the diagnosis; without them the exit code alone explains nothing.
+		var tail := _passthrough_exit_tail(terminal_id)
+		if not tail.is_empty():
+			message += "\n" + tail
+		history.VBox.add_program_message(message)
+
+
+## Last non-empty lines still on a dead passthrough terminal's screen.
+func _passthrough_exit_tail(terminal_id: String) -> String:
+	var registry = SingletonObject.get_terminal_session_registry()
+	if registry == null or not registry.has_session(terminal_id):
+		return ""
+	return ShellEnvironment.last_output_lines(registry.get_session(terminal_id).get_plain_text())
 
 
 ## Top-bar "new passthrough chat" button handler (chat-passthrough W3): opens

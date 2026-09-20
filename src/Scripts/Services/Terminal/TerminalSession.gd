@@ -23,6 +23,8 @@ signal bell_rung(count: int)
 
 ## The PTY child (shell) exited on its own — not a stop()/close.
 ## Re-emitted from the underlying Terminal node's `process_exited`.
+const ShellEnvironment := preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
+
 signal shell_exited(exit_code: int)
 
 ## libghostty-vt cell-grid changed — views redraw on this.
@@ -125,6 +127,10 @@ func start(cols: int, rows: int, start_dir: String = "") -> bool:
 		return false
 	if started:
 		return true
+	# Every PTY child inherits Minerva's process environment, and the shell is
+	# rc-less by design, so this is the one chokepoint where the user's real
+	# login PATH can still be installed. Idempotent: only the first call probes.
+	ShellEnvironment.apply_login_path()
 	_cols = maxi(1, cols)
 	_rows = maxi(1, rows)
 	launch_cwd = start_dir

@@ -13,7 +13,13 @@ extends SceneTree
 ##      with PassthroughMode / BoundTerminalId / PassthroughCommand / Cwd.
 ##   4. Watch-fail + entry-timeout paths: inline error, session CLOSED (no
 ##      orphan), no chat created, dialog stays open.
-##   5. shell_exited → program message lands exactly once in the bound chat.
+##   5. shell_exited → program message lands exactly once in the bound chat,
+##      carrying the terminal's last lines.
+##   7. ShellEnvironment: delimited PATH capture survives rc noise, garbage is
+##      rejected, PATH lookup + output tail behave.
+##   8. A startup command whose first word is not on PATH is refused before any
+##      session or watch exists; a harness that dies on startup reports the
+##      shell's last lines instead of the provider riddle.
 ##   6. ServiceHistory round-trip includes PassthroughCommand/PassthroughCwd;
 ##      old saves default empty.
 ##
@@ -21,6 +27,7 @@ extends SceneTree
 ## (the `so` autoload-node harness pattern from test_passthrough_mode.gd).
 
 const DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
+const SHELL_ENV_PATH := "res://Scripts/Services/Terminal/ShellEnvironment.gd"
 const PROVIDER_REGISTRY_PATH := "res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
@@ -98,9 +105,12 @@ func _run() -> void:
 
 	_test_infer_profile()
 	_test_quoting()
+	_test_shell_environment()
+	await _test_path_guard(so)
 	await _test_validation(so)
 	await _test_happy_path(so)
 	await _test_watch_fail_paths(so)
+	await _test_launch_exit_note(so)
 	await _test_shell_exit_message(so)
 	_test_service_history_roundtrip()
 
@@ -124,9 +134,14 @@ func _test_quoting() -> void:
 	check("shell_quote wraps in single quotes", D.shell_quote("abc") == "'abc'")
 	check("shell_quote escapes embedded single quotes",
 		D.shell_quote("a'b") == "'a'\\''b'", D.shell_quote("a'b"))
-	check("build_launch_line posix uses exec bash -lc + \\r",
-		D.build_launch_line("claude --x", false) == "exec bash -lc 'claude --x'\r",
+	# No login-shell wrapper: PATH is fixed on Minerva's own process, so the
+	# command must reach the PTY bare (the user's ~/.profile chain is not a
+	# dependency of the launch any more).
+	check("build_launch_line posix runs the command bare under exec",
+		D.build_launch_line("claude --x", false) == "exec claude --x\r",
 		D.build_launch_line("claude --x", false))
+	check("build_launch_line posix has no bash wrapper",
+		not D.build_launch_line("claude --x", false).contains("bash"))
 	check("build_launch_line windows runs the bare command (cmd has no exec/bash)",
 		D.build_launch_line("claude --x", true) == "claude --x\r",
 		D.build_launch_line("claude --x", true))
@@ -139,6 +154,134 @@ func _test_quoting() -> void:
 	check("is_windows_shell matches host OS",
 		D.is_windows_shell() == (OS.get_name() == "Windows"))
 	check("entry key format", D.entry_key_for_terminal("123") == "plugin:agent_relay:terminal-123")
+
+
+# --- Acceptance 7 -----------------------------------------------------------
+func _test_shell_environment() -> void:
+	print("\n-- ShellEnvironment: PATH capture, lookup, output tail --")
+	var SE = load(SHELL_ENV_PATH)
+	var noisy: String = "Welcome to the box\n%s/usr/bin:/home/me/.nvm/bin%s\nnvm --> v24\n" \
+		% [SE.PATH_MARK_BEGIN, SE.PATH_MARK_END]
+	check("delimited capture survives rc noise on both sides",
+		SE.parse_path_capture(noisy) == "/usr/bin:/home/me/.nvm/bin",
+		SE.parse_path_capture(noisy))
+	check("capture without markers is rejected", SE.parse_path_capture("/usr/bin:/bin\n") == "")
+	check("empty captured value is rejected",
+		SE.parse_path_capture(SE.PATH_MARK_BEGIN + SE.PATH_MARK_END) == "")
+	check("value with no path separator is rejected",
+		SE.parse_path_capture(SE.PATH_MARK_BEGIN + "garbage" + SE.PATH_MARK_END) == "")
+	check("multi-line value is rejected",
+		SE.parse_path_capture(SE.PATH_MARK_BEGIN + "/a\n/b" + SE.PATH_MARK_END) == "")
+	check("effective_path is never empty", not SE.effective_path().is_empty())
+
+	check("command_word takes the program word", SE.command_word("  codex --yolo ") == "codex")
+	check("command_word ignores env-assignment lines", SE.command_word("FOO=1 codex") == "")
+	check("command_word of an empty line is empty", SE.command_word("   ") == "")
+
+	# PATH lookup against a real file, so the check is not a mock.
+	var dir: String = OS.get_user_data_dir()
+	var probe_name := "w3_path_probe.bin"
+	var probe_path: String = dir.path_join(probe_name)
+	var f := FileAccess.open(probe_path, FileAccess.WRITE)
+	if f != null:
+		f.store_string("x")
+		f.close()
+	check("resolve_on_path finds a word on the given PATH",
+		SE.resolve_on_path(probe_name, "/w3/nope:" + dir) == probe_path,
+		SE.resolve_on_path(probe_name, "/w3/nope:" + dir))
+	check("resolve_on_path misses when the word is absent",
+		SE.resolve_on_path("w3_not_there.bin", dir) == "")
+	check("resolve_on_path treats a path-ish word as a path",
+		SE.resolve_on_path(probe_path, "/w3/nope") == probe_path)
+	DirAccess.remove_absolute(probe_path)
+
+	check("path_summary shows the head and counts the rest",
+		SE.path_summary("/a:/b:/c:/d:/e", 2) == "/a, /b, …(3 more)", SE.path_summary("/a:/b:/c:/d:/e", 2))
+	check("last_output_lines keeps the last non-empty lines in order",
+		SE.last_output_lines("boot\n\nbash: codex: command not found\n\n", 2)
+			== "boot\nbash: codex: command not found",
+		SE.last_output_lines("boot\n\nbash: codex: command not found\n\n", 2))
+	check("last_output_lines on blank text is empty", SE.last_output_lines("\n\n  \n") == "")
+
+
+# --- Acceptance 8a ----------------------------------------------------------
+func _test_path_guard(so) -> void:
+	print("\n-- startup command must resolve on PATH before anything is created --")
+	var D = load(DIALOG_PATH)
+	var registry = so.get_terminal_session_registry()
+	var dialog = _new_dialog()
+	var watch_calls := [0]
+	dialog.watch_starter = func(_args: Dictionary) -> Dictionary:
+		watch_calls[0] += 1
+		return {"ok": true}
+	dialog.popup_launch()
+	var sessions_before: int = registry.session_count()
+	dialog._name_edit.text = "PATH Guard"
+	dialog._command_edit.text = "w3-definitely-not-installed --yolo"
+	await dialog._on_start_pressed()
+
+	if D.is_windows_shell():
+		# cmd resolves its own shims — the guard is deliberately inert there.
+		check("windows: PATH guard is inert", D.path_check_error("w3-definitely-not-installed") == "")
+	else:
+		check("unresolvable command → error names the word and PATH",
+			dialog.current_error().contains("w3-definitely-not-installed")
+				and dialog.current_error().contains("not on PATH"),
+			dialog.current_error())
+		check("unresolvable command → no session created",
+			registry.session_count() == sessions_before, str(registry.session_count()))
+		check("unresolvable command → watch never called", watch_calls[0] == 0)
+		check("unresolvable command → dialog stays open", dialog.visible)
+		check("a resolvable command passes the guard", D.path_check_error("sh -c true") == "",
+			D.path_check_error("sh -c true"))
+		check("a bare shell (no command) passes the guard", D.path_check_error("") == "")
+
+	dialog.queue_free()
+	await process_frame
+
+
+# --- Acceptance 8b ----------------------------------------------------------
+func _test_launch_exit_note(so) -> void:
+	print("\n-- a harness that dies on startup reports the shell's last lines --")
+	if load(DIALOG_PATH).is_windows_shell():
+		print("(skipped: POSIX shell dialect only)")
+		return
+	var registry = so.get_terminal_session_registry()
+	var cpr = load(PROVIDER_REGISTRY_PATH).new()
+	so.plugin_chat_provider_registry = cpr
+	var pane = _new_stub_pane()
+	var dialog = _new_dialog()
+	# Generous entry timeout on purpose: a dead shell must cut the wait short
+	# instead of burning it down.
+	dialog.entry_wait_timeout_sec = 6.0
+	dialog.chat_starter = pane.launch_passthrough_chat
+	dialog.watch_starter = func(_args: Dictionary) -> Dictionary:
+		return {"ok": true}  # watch "succeeds"; the entry never appears
+	dialog.popup_launch()
+	var sessions_before: int = registry.session_count()
+
+	dialog._name_edit.text = "Dying Harness"
+	dialog._command_edit.text = "sh -c 'echo w3-dead-marker; exit 7'"
+	var started_at := Time.get_ticks_msec()
+	await dialog._on_start_pressed()
+	var elapsed := Time.get_ticks_msec() - started_at
+
+	check("dead harness → error quotes the terminal's last lines",
+		dialog.current_error().contains("w3-dead-marker"), dialog.current_error())
+	check("dead harness → error names the exit code, not the provider entry",
+		dialog.current_error().contains("code 7")
+			and not dialog.current_error().contains("chat provider"),
+		dialog.current_error())
+	check("dead harness → the entry wait is cut short", elapsed < 5000, str(elapsed))
+	check("dead harness → no chat created", pane.presented.is_empty())
+	check("dead harness → session closed (no orphan)",
+		registry.session_count() == sessions_before, str(registry.session_count()))
+	check("dead harness → dialog stays open", dialog.visible)
+
+	dialog.queue_free()
+	pane.free()
+	so.plugin_chat_provider_registry = null
+	await process_frame
 
 
 # --- Acceptance 2 -----------------------------------------------------------
@@ -231,9 +374,10 @@ func _test_happy_path(so) -> void:
 		return {"ok": true}
 
 	dialog.popup_launch()
-	# `echo claude-...` keeps profile inference on "claude" without actually
-	# launching a real agent CLI in the test environment.
-	var command := "echo claude-marker-w3"
+	# A long-lived stand-in for an agent CLI: it keeps profile inference on
+	# "claude", prints a marker, and stays alive so the launch is not racing
+	# its own startup-failure detection.
+	var command := "sh -c 'echo claude-marker-w3 && sleep 30'"
 	# A directory that exists on every platform ("/tmp" doesn't on Windows).
 	var test_cwd: String = OS.get_user_data_dir()
 	dialog._name_edit.text = "PT Launch Test"
@@ -320,7 +464,7 @@ func _test_watch_fail_paths(so) -> void:
 	var sessions_before: int = registry.session_count()
 
 	dialog._name_edit.text = "Fail Test"
-	dialog._command_edit.text = "echo claude-fail"
+	dialog._command_edit.text = "sleep 30"  # long-lived: not a startup failure
 	await dialog._on_start_pressed()
 	check("watch fail → inline error names the watch/plugin",
 		dialog.current_error().to_lower().contains("agent-relay"), dialog.current_error())
@@ -380,6 +524,7 @@ func _test_shell_exit_message(so) -> void:
 	pane._wire_passthrough_exit(history)
 	pane._wire_passthrough_exit(history)
 
+	session.write_input("echo w3-tail-marker\r")
 	session.write_input("exit 3\r")
 	var exited: bool = await _wait_until(func() -> bool: return session.shell_exit_code != null)
 	check("shell exited", exited)
@@ -394,6 +539,8 @@ func _test_shell_exit_message(so) -> void:
 		check("message names the exit code + relaunch affordance",
 			exit_labels[0].contains("(code 3)") and exit_labels[0].contains("⇅"),
 			exit_labels[0])
+		check("message carries the terminal's last lines",
+			exit_labels[0].contains("w3-tail-marker"), exit_labels[0])
 
 	# Binding AFTER the exit (already-dead session) surfaces immediately, once.
 	var history2 = CH.new(null, "hist-w3-exit2")

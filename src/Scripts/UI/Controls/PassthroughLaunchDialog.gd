@@ -21,6 +21,9 @@ extends Window
 ##   chat_starter: Callable(entry_key, display_name, terminal_id, command, cwd)
 ##       ChatPane wires this to launch_passthrough_chat. Tests inject a stub.
 
+## Login-PATH resolution + PATH lookup for the startup command.
+const ShellEnvironment := preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
+
 ## v1 COUPLING (deliberate, documented): core knows the agent-relay plugin's
 ## tool name + entry-id scheme here. B7's TerminalProvider registers entry_id
 ## "terminal-<tid>" → key "plugin:agent_relay:terminal-<tid>" when watch_start
@@ -112,16 +115,17 @@ static func shell_quote(s: String) -> String:
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: `exec bash -lc` is the v1 answer to the nvm-PATH gotcha: a bare
-## forkpty shell lacks the user's login PATH (codex died on it); bash -lc
-## sources the login profile, and exec replaces the wrapper shell so the agent
-## owns the PTY + its exit code.
-## Windows: the PTY runs cmd.exe — no exec, no bash, no single quotes. cmd
-## resolves .cmd/.exe shims through PATH itself, so the command runs bare.
+## POSIX: the command runs bare under `exec`, so the agent replaces the PTY
+## shell and owns its exit code. No login-shell wrapper: PATH is fixed once at
+## the process level (ShellEnvironment.apply_login_path), which works even when
+## the user's ~/.profile chain skips its own PATH setup in a non-interactive
+## shell.
+## Windows: the PTY runs cmd.exe — no exec, no quoting. cmd resolves .cmd/.exe
+## shims through PATH itself, so the command runs bare.
 static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
 		return "%s\r" % command
-	return "exec bash -lc %s\r" % shell_quote(command)
+	return "exec %s\r" % command
 
 
 ## The cd line written before the launch line when a working dir is set.
@@ -348,6 +352,34 @@ func _get_session_registry():
 	return null
 
 
+## Why the startup command cannot run, or "" when it can. The PTY shell is
+## rc-less, so a command that is not on the process PATH dies instantly and the
+## user only ever sees the missing chat provider — checking here turns that
+## into a message naming the word and the PATH that was searched.
+## Windows is exempt: cmd resolves .cmd/.bat/.exe shims itself.
+static func path_check_error(command: String) -> String:
+	if is_windows_shell():
+		return ""
+	var word := ShellEnvironment.command_word(command)
+	if word.is_empty():
+		return ""
+	var path_value := ShellEnvironment.effective_path()
+	if not ShellEnvironment.resolve_on_path(word, path_value).is_empty():
+		return ""
+	return "'%s' is not on PATH (%s)" % [word, ShellEnvironment.path_summary(path_value)]
+
+
+## What a just-launched harness printed before dying, or "" while it lives.
+## This is the real diagnosis the user needs ("bash: line 1: codex: command
+## not found"); without it the only symptom is a missing chat provider.
+static func exit_note(session) -> String:
+	if session == null or session.shell_exit_code == null:
+		return ""
+	var tail := ShellEnvironment.last_output_lines(session.get_plain_text())
+	var note := "Startup command exited (code %d)" % int(session.shell_exit_code)
+	return note + (": " + tail if not tail.is_empty() else ".")
+
+
 func _on_start_pressed() -> void:
 	if _launching:
 		return
@@ -366,6 +398,12 @@ func _on_start_pressed() -> void:
 			and not DirAccess.dir_exists_absolute(cwd):
 		_set_error("Working directory does not exist: %s" % cwd)
 		return
+
+	if not bind_existing and not command.is_empty():
+		var path_error := path_check_error(command)
+		if not path_error.is_empty():
+			_set_error(path_error)
+			return
 
 	var registry = _get_session_registry()
 	if registry == null:
@@ -387,6 +425,7 @@ func _do_launch(session_name: String, bind_existing: bool, command: String,
 		cwd: String, registry) -> void:
 	var terminal_id: String = ""
 	var created_session := false
+	var session = null
 
 	if bind_existing:
 		var sel: int = _existing_dropdown.selected
@@ -405,7 +444,7 @@ func _do_launch(session_name: String, bind_existing: bool, command: String,
 		# The cwd is applied to the PTY spawn itself (CreateProcessW
 		# lpCurrentDirectory / forkpty-child chdir) when the extension supports
 		# it — quoting-proof and shell-agnostic.
-		var session = registry.create_session(session_name, 80, 24, cwd)
+		session = registry.create_session(session_name, 80, 24, cwd)
 		if session == null or not session.terminal_available or not session.started:
 			if session != null:
 				registry.close_session(session.terminal_id)
@@ -423,21 +462,29 @@ func _do_launch(session_name: String, bind_existing: bool, command: String,
 			session.write_input(build_launch_line(command, windows))
 
 	# --- watch seam ---
+	# A harness that died on startup must never be bound, and the shell's own
+	# last words ("bash: line 1: codex: command not found") are the diagnosis —
+	# so they win over the generic watch/provider errors below. The note is
+	# read BEFORE the session is closed; closing frees the screen.
 	var watch_result: Dictionary = await _call_watch_starter(terminal_id)
 	if not watch_result.get("ok", false):
+		var watch_died := exit_note(session)
 		if created_session:
 			registry.close_session(terminal_id)  # no orphans
-		_set_error("Agent watch failed — is the agent-relay plugin running? (%s)"
+		_set_error(watch_died if not watch_died.is_empty()
+			else "Agent watch failed — is the agent-relay plugin running? (%s)"
 				% str(watch_result.get("error", "unknown error")))
 		return
 
 	# --- await the provider entry the watch registers ---
 	var entry_key := entry_key_for_terminal(terminal_id)
-	var appeared: bool = await _await_provider_entry(entry_key, entry_wait_timeout_sec)
-	if not appeared:
+	var appeared: bool = await _await_provider_entry(entry_key, entry_wait_timeout_sec, session)
+	var died := exit_note(session)
+	if not appeared or not died.is_empty():
 		if created_session:
 			registry.close_session(terminal_id)  # no orphans
-		_set_error("Watch started but no chat provider appeared for terminal %s — is the agent-relay plugin running?"
+		_set_error(died if not died.is_empty()
+			else "Watch started but no chat provider appeared for terminal %s — is the agent-relay plugin running?"
 				% terminal_id)
 		return
 
@@ -515,7 +562,7 @@ static func _classify_watch_result(raw: Dictionary) -> Dictionary:
 ## Poll the W1 registry until the entry appears or the timeout lapses.
 ## (chat_providers_changed has no payload, so a frame-poll is the simplest
 ## race-free await — at most ~600 cheap has_entry checks for the 10s default.)
-func _await_provider_entry(entry_key: String, timeout_sec: float) -> bool:
+func _await_provider_entry(entry_key: String, timeout_sec: float, session = null) -> bool:
 	var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
 	if cpr == null or not cpr.has_method("has_entry"):
 		return false
@@ -527,4 +574,7 @@ func _await_provider_entry(entry_key: String, timeout_sec: float) -> bool:
 		await loop.process_frame
 		if cpr.has_entry(entry_key):
 			return true
+		# A dead shell will never grow an entry — stop waiting out the timeout.
+		if session != null and session.shell_exit_code != null:
+			return false
 	return false
