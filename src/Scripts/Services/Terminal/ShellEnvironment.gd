@@ -424,7 +424,7 @@ static func is_assignment_token(token: Dictionary) -> bool:
 ## non-redirect operator, or the program word is quoted or `$`-expanded), so
 ## callers skip the check instead of reporting a false miss.
 static func command_word(command: String) -> String:
-	var token := _program_token(command)
+	var token := program_token(command)
 	if token.is_empty() or bool(token["quoted"]) or bool(token["expands"]):
 		return ""
 	return String(token["text"])
@@ -436,7 +436,7 @@ static func command_word(command: String) -> String:
 ## EXPANDED word ("$AGENT") stays unanswerable, because its value is the
 ## shell's to decide. Returns "" when there is no program word at all.
 static func program_word(command: String) -> String:
-	var token := _program_token(command)
+	var token := program_token(command)
 	if token.is_empty() or bool(token["expands"]):
 		return ""
 	return String(token["text"])
@@ -446,7 +446,7 @@ static func program_word(command: String) -> String:
 ## environment assignments, IO numbers and redirects are stepped over; a line
 ## that cannot be tokenised or that opens with a non-redirect operator has no
 ## program word.
-static func _program_token(command: String) -> Dictionary:
+static func program_token(command: String) -> Dictionary:
 	var parsed := tokenize(command)
 	if not bool(parsed.get("ok", false)):
 		return {}

@@ -141,10 +141,10 @@ func _test_quoting() -> void:
 	# command must reach the PTY bare (the user's ~/.profile chain is not a
 	# dependency of the launch any more).
 	check("build_launch_line posix runs a simple command under exec",
-		D.build_launch_line("claude --x", false) == "exec claude --x\r",
+		D.build_launch_line("claude --x", false) == "exec bash -c 'claude --x'\r",
 		D.build_launch_line("claude --x", false))
-	check("build_launch_line posix has no bash wrapper",
-		not D.build_launch_line("claude --x", false).contains("bash"))
+	check("build_launch_line posix has no LOGIN shell wrapper",
+		not D.build_launch_line("claude --x", false).contains("-lc"))
 	# `exec` takes a PROGRAM: an assignment prefix or a pipeline must reach the
 	# shell as typed, or exec looks for a program called "FOO=1" / hands the
 	# shell back only one component of the line.
@@ -163,7 +163,7 @@ func _test_quoting() -> void:
 	check("is_simple_command: a quoted assignment NAME is a plain word",
 		D.is_simple_command("'FOO=1' codex"))
 	check("build_launch_line posix writes a quoted-value assignment bare",
-		D.build_launch_line("FOO='1' codex", false) == "FOO='1' codex\r",
+		D.build_launch_line("FOO='1' codex", false) == "exec bash -c 'FOO='\\''1'\\'' codex'\r",
 		D.build_launch_line("FOO='1' codex", false))
 	check("is_simple_command: pipeline is not simple",
 		not D.is_simple_command("codex | tee log"))
@@ -192,18 +192,18 @@ func _test_quoting() -> void:
 	check("is_simple_command: an expanded argument is still simple",
 		D.is_simple_command("codex --cd \"$HOME/project\""))
 	check("build_launch_line: an expanded argument still launches under exec",
-		D.build_launch_line("codex --cd \"$HOME/project\"", false) == "exec codex --cd \"$HOME/project\"\r",
+		D.build_launch_line("codex --cd \"$HOME/project\"", false) == "exec bash -c 'codex --cd \"$HOME/project\"'\r",
 		D.build_launch_line("codex --cd \"$HOME/project\"", false))
 	check("is_simple_command: an unterminated quote is not simple",
 		not D.is_simple_command("sh -c 'oops"))
 	check("build_launch_line execs a command whose operators are all quoted",
-		D.build_launch_line("sh -c 'echo hi; exit 7'", false) == "exec sh -c 'echo hi; exit 7'\r",
+		D.build_launch_line("sh -c 'echo hi; exit 7'", false) == "exec bash -c 'sh -c '\\''echo hi; exit 7'\\'''\r",
 		D.build_launch_line("sh -c 'echo hi; exit 7'", false))
 	check("build_launch_line posix writes an env-assignment line bare",
-		D.build_launch_line("FOO=1 codex", false) == "FOO=1 codex\r",
+		D.build_launch_line("FOO=1 codex", false) == "exec bash -c 'FOO=1 codex'\r",
 		D.build_launch_line("FOO=1 codex", false))
 	check("build_launch_line posix writes a pipeline bare",
-		D.build_launch_line("codex | tee log", false) == "codex | tee log\r",
+		D.build_launch_line("codex | tee log", false) == "exec bash -c 'codex | tee log'\r",
 		D.build_launch_line("codex | tee log", false))
 	check("build_launch_line windows runs the bare command (cmd has no exec/bash)",
 		D.build_launch_line("claude --x", true) == "claude --x\r",
@@ -557,10 +557,10 @@ func _test_path_guard(so) -> void:
 		check("a quoted real name passes the guard",
 			D.path_check_error("'sh' -c true") == "", D.path_check_error("'sh' -c true"))
 		check("a ~ path still launches under exec",
-			D.build_launch_line("~/w3-nowhere/codex --x", false) == "exec ~/w3-nowhere/codex --x\r",
+			D.build_launch_line("~/w3-nowhere/codex --x", false) == "exec bash -c '~/w3-nowhere/codex --x'\r",
 			D.build_launch_line("~/w3-nowhere/codex --x", false))
 		check("a list still launches bare",
-			D.build_launch_line("cd /tmp && codex", false) == "cd /tmp && codex\r",
+			D.build_launch_line("cd /tmp && codex", false) == "exec bash -c 'cd /tmp && codex'\r",
 			D.build_launch_line("cd /tmp && codex", false))
 		check("a builtin that takes a command is not looked up as a file",
 			D.path_check_error("exec w3-definitely-not-installed --yolo") == ""
@@ -569,20 +569,20 @@ func _test_path_guard(so) -> void:
 		check("an expanded program word skips the guard",
 			D.path_check_error("$AGENT --x") == "", D.path_check_error("$AGENT --x"))
 		check("a line that names its own shell word is not double-wrapped",
-			D.build_launch_line("exec codex --yolo", false) == "exec codex --yolo\r"
-			and D.build_launch_line("command codex", false) == "command codex\r",
+			D.build_launch_line("exec codex --yolo", false) == "exec bash -c 'exec codex --yolo'\r"
+			and D.build_launch_line("command codex", false) == "exec bash -c 'command codex'\r",
 			D.build_launch_line("exec codex --yolo", false))
 		check("a quoted shell word is still the shell's own word",
-			D.build_launch_line("'exec' codex", false) == "'exec' codex\r",
+			D.build_launch_line("'exec' codex", false) == "exec bash -c ''\\''exec'\\'' codex'\r",
 			D.build_launch_line("'exec' codex", false))
 		check("a substitution holding a quoted ) still launches under exec",
 			D.is_simple_command("codex --arg $(printf ')')")
 			and D.build_launch_line("codex --arg $(printf ')')", false)
-				== "exec codex --arg $(printf ')')\r",
+				== "exec bash -c 'codex --arg $(printf '\\'')'\\'')'\r",
 			D.build_launch_line("codex --arg $(printf ')')", false))
 		check("a command substitution is part of its word, so the line still execs",
 			D.is_simple_command("codex --cd $(pwd)")
-			and D.build_launch_line("codex --cd $(pwd)", false) == "exec codex --cd $(pwd)\r"
+			and D.build_launch_line("codex --cd $(pwd)", false) == "exec bash -c 'codex --cd $(pwd)'\r"
 			and D.is_simple_command("codex --cd `pwd`")
 			and not D.is_simple_command("codex --cd $(pwd"),
 			D.build_launch_line("codex --cd $(pwd)", false))
@@ -774,7 +774,7 @@ func _test_happy_path(so) -> void:
 	var expected_launch: String = D.build_launch_line(command, windows).trim_suffix("\r")
 	if not windows:
 		check("the launch line execs the quoted-operator command",
-			expected_launch.begins_with("exec sh -c "), expected_launch)
+			expected_launch.begins_with("exec bash -c 'sh -c "), expected_launch)
 	var expected_cd: String = D.build_cd_line(test_cwd, windows).trim_suffix("\r")
 	var native_cwd: bool = session != null and session.start_directory_applied
 	var saw_writes: bool = await _wait_until(func() -> bool:
@@ -889,7 +889,7 @@ func _test_shell_exit_message(so) -> void:
 	pane._wire_passthrough_exit(history)
 	pane._wire_passthrough_exit(history)
 
-	session.write_input("echo w3-tail-marker\r")
+	session.write_input("echo w3-tail-$((40+2))\r")
 	session.write_input("exit 3\r")
 	var exited: bool = await _wait_until(func() -> bool: return session.shell_exit_code != null)
 	check("shell exited", exited)
@@ -905,7 +905,7 @@ func _test_shell_exit_message(so) -> void:
 			exit_labels[0].contains("(code 3)") and exit_labels[0].contains("⇅"),
 			exit_labels[0])
 		check("message carries the terminal's last lines",
-			exit_labels[0].contains("w3-tail-marker"), exit_labels[0])
+			exit_labels[0].contains("w3-tail-42"), exit_labels[0])
 
 	# Binding AFTER the exit (already-dead session) surfaces immediately, once.
 	var history2 = CH.new(null, "hist-w3-exit2")

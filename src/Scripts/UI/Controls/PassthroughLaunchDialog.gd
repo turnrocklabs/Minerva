@@ -143,31 +143,22 @@ static func is_simple_command(command: String) -> bool:
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: a simple command runs under `exec`, so the agent REPLACES the PTY
-## shell and owns its exit code — which is the signal the launch dialog and the
-## bound chat read when a harness dies. Expansions in the words are fine: the
-## shell expands them and then execs the result. Anything the shell has to
-## parse for itself (assignments, pipelines, redirects, lists) is written
-## exactly as typed: `exec` would mis-read it, and the price is that the shell
-## stays alive around the agent, so the agent does NOT own the PTY's exit code
-## there.
-## No login-shell wrapper either way: PATH is fixed once at the process level
-## (ShellEnvironment.apply_login_path), which works even when the user's
-## ~/.profile chain skips its own PATH setup in a non-interactive shell.
+## POSIX: `exec bash -c '<command>'` for every line. The PTY shell is replaced
+## by a non-interactive bash that runs the command as typed (assignments,
+## pipelines, lists and expansions included) and exits with it, so the PTY's
+## exit code always reports the harness's end. For a lone simple command bash
+## execs the program directly, so no shell lingers around the agent. A
+## program that cannot be run ends that bash with 127 and its own diagnostic,
+## which is what the launch dialog and the bound chat read back. No login
+## flag: PATH is fixed once at the process level (ShellEnvironment
+## .apply_login_path), which works even when the user's ~/.profile chain skips
+## its own PATH setup in a non-interactive shell.
 ## Windows: the PTY runs cmd.exe — no exec, no quoting. cmd resolves .cmd/.exe
 ## shims through PATH itself, so the command runs bare.
 static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
 		return "%s\r" % command
-	if not is_simple_command(command):
-		return "%s\r" % command
-	# A line that already names its own shell word (exec, command, ...) is
-	# written as typed: `exec exec codex` would look for a program called exec.
-	# Quoting does not change which word that is — `'exec' codex` still runs
-	# the shell's exec — so the exemption reads the UNQUOTED program word.
-	if SHELL_COMMAND_WORDS.has(ShellEnvironment.program_word(command)):
-		return "%s\r" % command
-	return "exec %s\r" % command
+	return "exec bash -c %s\r" % shell_quote(command)
 
 
 ## The cd line written before the launch line when a working dir is set.
@@ -426,10 +417,15 @@ const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval"
 static func path_check_error(command: String, cwd: String = "") -> String:
 	if is_windows_shell() or not is_simple_command(command):
 		return ""
+	var token := ShellEnvironment.program_token(command)
 	var word := ShellEnvironment.program_word(command)
 	if word.is_empty() or SHELL_COMMAND_WORDS.has(word):
 		return ""
 	if word.contains("/") or word.begins_with("~"):
+		# A quoted tilde stays literal to the shell, and `~user` is an
+		# expansion this check does not model: both are the shell's to judge.
+		if word.begins_with("~") and (bool(token["quoted"]) or not word.begins_with("~/") and word != "~"):
+			return ""
 		if ShellEnvironment.resolve_path_word(word, cwd).is_empty():
 			return "'%s' is not an executable file" % word
 		return ""
