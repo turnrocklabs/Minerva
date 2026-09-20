@@ -124,9 +124,9 @@ static func shell_quote(s: String) -> String:
 ## `sh -c 'echo hi; exit 7'` belongs to sh's argument, and treating it as ours
 ## costs the launch its exec — the wrapper shell survives the harness and
 ## neither the dialog nor the bound chat ever sees the exit code.
-## A quoted first word (`'my agent'`) IS exec'able and counts as simple, even
-## though command_word refuses it for the PATH preflight: exec resolves it
-## itself, and if it does not exist the PTY dies with a diagnosable 127.
+## A quoted first word (`'my agent'`) IS exec'able and counts as simple: the
+## quoting only hides the word's characters from the shell's parser, not the
+## program name from the lookup, so the preflight judges it like a bare one.
 ## Expansions (`$VAR`, `$(cmd)`, backticks) stay simple: the shell expands the
 ## words and then execs the result, exactly as it would without us.
 static func is_simple_command(command: String) -> bool:
@@ -163,7 +163,9 @@ static func build_launch_line(command: String, windows: bool) -> String:
 		return "%s\r" % command
 	# A line that already names its own shell word (exec, command, ...) is
 	# written as typed: `exec exec codex` would look for a program called exec.
-	if SHELL_COMMAND_WORDS.has(ShellEnvironment.command_word(command)):
+	# Quoting does not change which word that is — `'exec' codex` still runs
+	# the shell's exec — so the exemption reads the UNQUOTED program word.
+	if SHELL_COMMAND_WORDS.has(ShellEnvironment.program_word(command)):
 		return "%s\r" % command
 	return "exec %s\r" % command
 
@@ -398,28 +400,38 @@ func _get_session_registry():
 ## into a message naming the word and the PATH that was searched.
 ## Windows is exempt: cmd resolves .cmd/.bat/.exe shims itself.
 ##
-## The check only answers for the one shape Minerva's PATH decides: a SIMPLE
-## command (is_simple_command — no operator, no leading assignment) whose
-## program word is a bare name. Everything else is the shell's own lookup and
-## is left to it, because guessing it wrong refuses a launch that would have
-## worked: `PATH=/opt/agent/bin codex` searches a PATH we do not hold,
-## `cd /work && codex` opens with a builtin that is no file at all, and
-## `~/bin/codex` is a path the shell expands after we would have read it
-## literally. The shell reports those misses itself, on the terminal.
+## The check answers for a SIMPLE command (is_simple_command — no operator, no
+## leading assignment), and it judges its program word whatever shape that word
+## has: a bare name walks the PATH, a word holding "/" or opening with "~" is a
+## file and is tested where it points. Both must be caught here, because the
+## PTY shell is INTERACTIVE — a failed `exec` returns to the prompt instead of
+## exiting, so a bad path never produces a shell exit code and exit_note can
+## never diagnose it; the session and the watch are simply born broken.
 ##
-## `cwd` is the directory the terminal will start in: a relative PATH entry is
-## answered there, not in Minerva's directory. Empty cwd = the terminal
-## inherits Minerva's, so the lookup does too.
+## Only two shapes are left to the shell, because judging them here would
+## refuse launches that work: an EXPANDED word ("$AGENT", "$(which codex)"),
+## whose value we do not hold, and a shell word that takes a command as its
+## argument (`exec codex`), which is no file at all. A line the shell parses
+## for itself — an assignment prefix, a list, a pipeline — is not simple and
+## never reaches the check; the shell reports those misses on the terminal.
+##
+## `cwd` is the directory the terminal will start in: a relative path and a
+## relative PATH entry are answered there, not in Minerva's directory. Empty
+## cwd = the terminal inherits Minerva's, so the lookup does too.
 ## Shell words that take a command as their argument; the shell resolves
-## them itself, so a lookup on PATH would wrongly reject them.
-const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval", "time", "source"]
+## them itself, so a lookup on PATH would wrongly reject them. "." is the
+## POSIX spelling of source.
+const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval", "time", "source", "."]
 
 static func path_check_error(command: String, cwd: String = "") -> String:
 	if is_windows_shell() or not is_simple_command(command):
 		return ""
-	var word := ShellEnvironment.command_word(command)
-	if word.is_empty() or word.contains("/") or word.begins_with("~") \
-			or word.begins_with(".") or SHELL_COMMAND_WORDS.has(word):
+	var word := ShellEnvironment.program_word(command)
+	if word.is_empty() or SHELL_COMMAND_WORDS.has(word):
+		return ""
+	if word.contains("/") or word.begins_with("~"):
+		if ShellEnvironment.resolve_path_word(word, cwd).is_empty():
+			return "'%s' is not an executable file" % word
 		return ""
 	var path_value := ShellEnvironment.effective_path()
 	if not ShellEnvironment.resolve_on_path(word, path_value, cwd).is_empty():

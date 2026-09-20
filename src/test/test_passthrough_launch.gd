@@ -275,6 +275,38 @@ func _test_shell_environment() -> void:
 	check("command_word declines an unterminated quote",
 		SE.command_word("sh -c 'oops") == "", SE.command_word("sh -c 'oops"))
 
+	# program_word is the same walk, but it ANSWERS for a quoted word: the
+	# quoting hid the characters from the parser, not the program from the
+	# lookup. Only an expansion stays unanswerable.
+	check("program_word unquotes the program word",
+		SE.program_word("'my agent' --x") == "my agent", SE.program_word("'my agent' --x"))
+	check("program_word unquotes a partly quoted word",
+		SE.program_word("\"cod\"ex --x") == "codex", SE.program_word("\"cod\"ex --x"))
+	check("program_word steps over assignments like command_word",
+		SE.program_word("FOO=1 'codex' --x") == "codex", SE.program_word("FOO=1 'codex' --x"))
+	check("program_word declines an expanded program word",
+		SE.program_word("$AGENT --x") == "", SE.program_word("$AGENT --x"))
+	check("program_word declines a line opening with an operator",
+		SE.program_word("| codex") == "", SE.program_word("| codex"))
+	check("program_word declines an unterminated quote",
+		SE.program_word("sh -c 'oops") == "", SE.program_word("sh -c 'oops"))
+	check("expand_tilde expands a leading ~/ and leaves ~user alone",
+		SE.expand_tilde("~/bin/x") == OS.get_environment("HOME").path_join("bin/x")
+		and SE.expand_tilde("~root/bin/x") == "~root/bin/x",
+		SE.expand_tilde("~/bin/x"))
+
+	# A quoted or escaped parenthesis inside a substitution is not the closing
+	# one; counting it as such truncated the word and left the line untokenisable.
+	check("a substitution holding a quoted ) is consumed whole",
+		SE.command_word("codex --arg $(printf ')')") == "codex",
+		SE.command_word("codex --arg $(printf ')')"))
+	check("a substitution holding a double-quoted ) is consumed whole",
+		SE.command_word("codex --arg $(printf \")\")") == "codex",
+		SE.command_word("codex --arg $(printf \")\")"))
+	check("a substitution holding an escaped ) is consumed whole",
+		SE.command_word("codex --arg $(printf \\))") == "codex",
+		SE.command_word("codex --arg $(printf \\))"))
+
 	# PATH lookup against real files, so the check is not a mock.
 	var dir: String = OS.get_user_data_dir()
 	var probe_name := "w3_path_probe.bin"
@@ -503,9 +535,27 @@ func _test_path_guard(so) -> void:
 		check("a builtin in a list is not looked up as a file",
 			D.path_check_error("cd /tmp && w3-definitely-not-installed") == "",
 			D.path_check_error("cd /tmp && w3-definitely-not-installed"))
-		check("a ~ path is left to the shell that expands it",
-			D.path_check_error("~/w3-nowhere/codex --x") == "",
+		# Explicit paths and quoted names are checked too. The PTY shell is
+		# interactive, so a failed `exec` drops back to the prompt instead of
+		# exiting: nothing downstream can ever diagnose these.
+		check("a missing absolute path → error naming the path",
+			D.path_check_error("/w3-nowhere/codex --yolo").contains("/w3-nowhere/codex"),
+			D.path_check_error("/w3-nowhere/codex --yolo"))
+		check("a real executable path passes the guard",
+			D.path_check_error("/bin/sh -c true") == "",
+			D.path_check_error("/bin/sh -c true"))
+		check("a missing relative path → error naming the path",
+			D.path_check_error("./w3-nowhere-codex").contains("./w3-nowhere-codex"),
+			D.path_check_error("./w3-nowhere-codex"))
+		check("a missing ~ path is expanded and refused",
+			D.path_check_error("~/w3-nowhere/codex --x").contains("~/w3-nowhere/codex"),
 			D.path_check_error("~/w3-nowhere/codex --x"))
+		check("a quoted missing name → error naming the word",
+			D.path_check_error("'w3-definitely-not-installed' --yolo").contains(
+				"w3-definitely-not-installed"),
+			D.path_check_error("'w3-definitely-not-installed' --yolo"))
+		check("a quoted real name passes the guard",
+			D.path_check_error("'sh' -c true") == "", D.path_check_error("'sh' -c true"))
 		check("a ~ path still launches under exec",
 			D.build_launch_line("~/w3-nowhere/codex --x", false) == "exec ~/w3-nowhere/codex --x\r",
 			D.build_launch_line("~/w3-nowhere/codex --x", false))
@@ -522,6 +572,14 @@ func _test_path_guard(so) -> void:
 			D.build_launch_line("exec codex --yolo", false) == "exec codex --yolo\r"
 			and D.build_launch_line("command codex", false) == "command codex\r",
 			D.build_launch_line("exec codex --yolo", false))
+		check("a quoted shell word is still the shell's own word",
+			D.build_launch_line("'exec' codex", false) == "'exec' codex\r",
+			D.build_launch_line("'exec' codex", false))
+		check("a substitution holding a quoted ) still launches under exec",
+			D.is_simple_command("codex --arg $(printf ')')")
+			and D.build_launch_line("codex --arg $(printf ')')", false)
+				== "exec codex --arg $(printf ')')\r",
+			D.build_launch_line("codex --arg $(printf ')')", false))
 		check("a command substitution is part of its word, so the line still execs",
 			D.is_simple_command("codex --cd $(pwd)")
 			and D.build_launch_line("codex --cd $(pwd)", false) == "exec codex --cd $(pwd)\r"
@@ -556,8 +614,8 @@ func _test_launch_exit_note(so) -> void:
 	dialog._name_edit.text = "Dying Harness"
 	# A SIMPLE command (one word), so the launch line is the `exec` form and the
 	# dying harness IS the PTY shell — its exit code is the terminal's. The
-	# script is executable on purpose: an absolute path skips the PATH guard,
-	# so a plain file would die as "permission denied" instead of code 7.
+	# script is executable on purpose: the PATH guard tests the file an
+	# absolute path names, and would refuse a plain one before anything ran.
 	var dying: String = _write_script(
 		OS.get_user_data_dir().path_join("w3_dying_harness.sh"),
 		"#!/bin/sh\necho w3-dead-marker\nexit 7\n")

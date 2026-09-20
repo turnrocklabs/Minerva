@@ -302,17 +302,8 @@ static func tokenize(command: String) -> Dictionary:
 		elif c == "$" and i + 1 < line.length() and line[i + 1] == "(":
 			# A command substitution belongs to the word: its parentheses are
 			# not list operators. Nested `$( )` is consumed to the matching close.
-			var depth := 0
-			var j := i
-			while j < line.length():
-				if line[j] == "(":
-					depth += 1
-				elif line[j] == ")":
-					depth -= 1
-					if depth == 0:
-						break
-				j += 1
-			if j >= line.length():
+			var j := _scan_substitution(line, i + 1)
+			if j < 0:
 				return {"ok": false, "tokens": []}
 			cur["text"] = String(cur["text"]) + line.substr(i, j - i + 1)
 			cur["expands"] = true
@@ -334,6 +325,51 @@ static func tokenize(command: String) -> Dictionary:
 			i += 1
 	_flush_word(tokens, cur)
 	return {"ok": true, "tokens": tokens}
+
+
+## Index of the `)` that closes the command substitution whose `(` sits at
+## `open_index`, or -1 when the line ends first. Quotes and backslash escapes
+## hide parentheses from the depth count exactly as they do from the shell, so
+## `$(printf ')')` is consumed whole instead of ending on its quoted `)`.
+static func _scan_substitution(line: String, open_index: int) -> int:
+	var depth := 0
+	var i := open_index
+	while i < line.length():
+		var c := line[i]
+		if c == "\\":
+			i += 2
+		elif c == "'":
+			var close := line.find("'", i + 1)
+			if close < 0:
+				return -1
+			i = close + 1
+		elif c == "\"":
+			i = _skip_double_quoted(line, i + 1)
+			if i < 0:
+				return -1
+		else:
+			if c == "(":
+				depth += 1
+			elif c == ")":
+				depth -= 1
+				if depth == 0:
+					return i
+			i += 1
+	return -1
+
+
+## Index just past the `"` that closes the double-quoted run starting at
+## `start`, or -1 when it is unterminated. A backslash escapes the next char.
+static func _skip_double_quoted(line: String, start: int) -> int:
+	var i := start
+	while i < line.length():
+		if line[i] == "\\":
+			i += 2
+			continue
+		if line[i] == "\"":
+			return i + 1
+		i += 1
+	return -1
 
 
 ## Record a quoted stretch on the word being built. It counts against the NAME
@@ -388,9 +424,32 @@ static func is_assignment_token(token: Dictionary) -> bool:
 ## non-redirect operator, or the program word is quoted or `$`-expanded), so
 ## callers skip the check instead of reporting a false miss.
 static func command_word(command: String) -> String:
+	var token := _program_token(command)
+	if token.is_empty() or bool(token["quoted"]) or bool(token["expands"]):
+		return ""
+	return String(token["text"])
+
+
+## The program word with one level of quoting removed — `'codex'` answers
+## "codex", where command_word declines it. This is the word the shell will
+## actually look for, so it is what a launch preflight must judge; only an
+## EXPANDED word ("$AGENT") stays unanswerable, because its value is the
+## shell's to decide. Returns "" when there is no program word at all.
+static func program_word(command: String) -> String:
+	var token := _program_token(command)
+	if token.is_empty() or bool(token["expands"]):
+		return ""
+	return String(token["text"])
+
+
+## The token carrying the program name, or {} when the line has none. Leading
+## environment assignments, IO numbers and redirects are stepped over; a line
+## that cannot be tokenised or that opens with a non-redirect operator has no
+## program word.
+static func _program_token(command: String) -> Dictionary:
 	var parsed := tokenize(command)
 	if not bool(parsed.get("ok", false)):
-		return ""
+		return {}
 	var tokens: Array = parsed.get("tokens", [])
 	var i := 0
 	while i < tokens.size():
@@ -402,7 +461,7 @@ static func command_word(command: String) -> String:
 					and not bool(tokens[i + 1]["op"]):
 				i += 2
 				continue
-			return ""
+			return {}
 		if is_assignment_token(token):
 			i += 1
 			continue
@@ -411,10 +470,8 @@ static func command_word(command: String) -> String:
 				and bool(tokens[i + 1]["op"]) and String(tokens[i + 1]["text"]) in _REDIRECT_OPS:
 			i += 1
 			continue
-		if bool(token["quoted"]) or bool(token["expands"]):
-			return ""
-		return String(token["text"])
-	return ""
+		return token
+	return {}
 
 
 ## Path of `word` on `path_value` as the shell would find it, or "" when it
@@ -442,6 +499,25 @@ static func resolve_on_path(word: String, path_value: String, cwd: String = "") 
 		if not hit.is_empty():
 			return hit
 	return ""
+
+
+## Path of a word the shell will treat as a FILE — it holds a separator or
+## opens with `~` — or "" when nothing executable is there. The tilde is
+## expanded here because the shell expands it before the lookup, so reading the
+## word literally would miss the file that is actually going to run.
+static func resolve_path_word(word: String, cwd: String = "") -> String:
+	return _executable_at(_absolutize(expand_tilde(word), cwd))
+
+
+## A leading `~` or `~/` replaced with $HOME, as the shell expands it. Other
+## forms (`~user`) name a passwd entry we do not read, and are left alone.
+static func expand_tilde(word: String) -> String:
+	if word != "~" and not word.begins_with("~/"):
+		return word
+	var home := OS.get_environment("HOME")
+	if home.is_empty():
+		return word
+	return home if word == "~" else home.path_join(word.substr(2))
 
 
 ## `path` made absolute against `cwd` when both are relative/present, else as
