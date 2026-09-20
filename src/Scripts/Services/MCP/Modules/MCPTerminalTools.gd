@@ -42,6 +42,10 @@ const AGENT_RELAY_WATCH_STATUS_TOOL := "minerva_agent_relay_watch_status"
 const AGENT_RELAY_SEND_TOOL := "minerva_agent_relay_send"
 const AGENT_RELAY_PLUGIN_ID := "agent_relay"
 
+## Preloaded (not class_name) for the harness-check constants a write receipt
+## reports, so this module still parses in isolated --script harnesses.
+const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
+
 ## Injectable seam: Callable(PackedStringArray) -> Dictionary of
 ## terminal_id -> watch profile id. Empty Callable uses the agent-relay plugin
 ## (see _watch_profiles). Tests inject a stub so profile addressing is
@@ -72,13 +76,14 @@ func register_tools() -> void:
 		{"type": "object", "properties": {}}, "terminal")
 
 	server._register_tool("minerva_terminal_write",
-		"Send text/keystrokes to a terminal PTY. Non-blocking. IMPORTANT: Use \\r for Enter (not \\n). Common escapes: \\r=Enter, \\t=Tab, \\x03=Ctrl+C. Example: 'ls -la\\r' to run a command.",
+		"Send text/keystrokes to a terminal PTY. Non-blocking. IMPORTANT: Use \\r for Enter (not \\n). Common escapes: \\r=Enter, \\t=Tab, \\x03=Ctrl+C. Example: 'ls -la\\r' to run a command. To send a line to a program that needs the text settled before it is submitted, pass then_enter_after_ms instead of a trailing \\r: the text and the Enter then go out as one transaction that nothing else can get between.",
 		{"type": "object", "properties": {
 			"text": {"type": "string", "description": "Text to send. Use \\r at end to submit commands (Enter key). Example: 'echo hello\\r'"},
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
 			"raw": {"type": "boolean", "description": "Send text byte-for-byte without unescaping \\r/\\n/\\t etc. Use when the text already contains real control characters (default false)."},
 			"unless_typed_within_ms": {"type": "integer", "description": "Refuse (held) when a person typed in this terminal within this many milliseconds. 0 = no guard."},
-			"expect_harness": {"type": "string", "description": "Refuse (held) unless this harness (claude/codex) is the terminal's foreground process at the moment of the write."},
+			"expect_harness": {"type": "string", "description": "Refuse (held) unless this harness (claude/codex) is the terminal's foreground process at the moment of the write. The receipt's harness_check says whether the check ran ('checked'), was skipped because this platform cannot read the foreground ('skipped'), or was not asked for ('not_requested')."},
+			"then_enter_after_ms": {"type": "integer", "description": "Send Enter this many ms after the text, as ONE guarded transaction: the terminal is held between the two, so a keystroke can never be submitted along with your line. Use instead of a trailing \\r. The receipt carries txn_id and harness_check."},
 		}, "required": ["text"]}, "terminal")
 
 	server._register_tool("minerva_terminal_read",
@@ -312,33 +317,69 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 		return {"success": false, "error": "No terminal found"}
 	if not session.terminal_available:
 		return {"success": false, "error": "Terminal not initialized"}
-	# A write-time guard for agent text: refused, and marked as a hold, when a
-	# person typed here within the given window. Checked at the moment of the
-	# write because any earlier check can be overtaken by a keystroke.
-	var guard_ms: int = MCPToolUtils.coerce_int(arguments.get("unless_typed_within_ms", 0))
-	if guard_ms > 0 and "last_input_ms" in session and int(session.last_input_ms) > 0:
-		var typed_ago: int = int(Time.get_unix_time_from_system() * 1000.0) - int(session.last_input_ms)
-		if typed_ago < guard_ms:
-			return {"success": false, "held": true,
-				"error": "a person typed in this terminal %d ms ago; nothing was written" % typed_ago}
-	# Agent text meant for a harness is written only while that harness is
-	# the foreground: a queued or waited delivery can arrive after it exited,
-	# and the shell that replaced it would run the line as a command.
-	var expected: String = str(arguments.get("expect_harness", ""))
-	if not expected.is_empty() and session.foreground_supported():
-		var live: Dictionary = session.get_foreground_process()
-		var actual: String = session.harness_of(live)
-		if actual != expected:
-			return {"success": false, "held": true,
-				"error": "the foreground of this terminal is %s, not %s; nothing was written" % [
-					str(live.get("name", "unreadable")) if actual.is_empty() else actual, expected]}
 	# Process escape sequences so \r, \n, \t, \x03 etc. become real control
 	# chars — unless the caller already sends real bytes (raw=true, used by
 	# host.terminal.write where c_unescape would mangle literal backslashes).
 	if not arguments.get("raw", false):
 		text = text.c_unescape()
-	session.write_input(text)
-	return {"success": true, "bytes_sent": text.length()}
+	# Asking for the Enter makes this ONE transaction instead of a raw write:
+	# the guards move into the arbiter's admission, and nothing a person types
+	# can land between the body and the Enter that submits it.
+	if arguments.has("then_enter_after_ms"):
+		return _terminal_write_transaction(session, text, arguments)
+	# Both write-time guards — the typing window and the expected harness — are
+	# the arbiter's, so a raw write and a transaction refuse on identical
+	# evidence read from one clock. They are checked at the moment of the write
+	# because any earlier check can be overtaken by a keystroke.
+	var arbiter = session.get_input_arbiter() if session.has_method("get_input_arbiter") else null
+	if arbiter == null:
+		return {"success": false, "held": true,
+			"error": "this terminal has no input arbiter; nothing was written"}
+	# check_raw_write, not check_guards: a guarded write is also refused while a
+	# transaction holds the terminal, because queueing it would deliver agent
+	# text after the pause with its guards no longer proven.
+	var guards: Dictionary = arbiter.check_raw_write(_guard_options(arguments))
+	if not bool(guards.get("success", false)):
+		return guards
+	var harness_check: String = str(guards.get("harness_check",
+		TerminalInputArbiter.HARNESS_NOT_REQUESTED))
+	# The arbiter's own receipt says whether the bytes went to the PTY now or
+	# are waiting behind a transaction — and, past the queue bound, which
+	# transaction this write aborted. Merged in, so a queued write is never
+	# reported as a plain send.
+	var receipt: Dictionary = session.write_input(text)
+	var result: Dictionary = {"success": true, "bytes_sent": text.length(),
+		"harness_check": harness_check}
+	for key in ["queued", "queue_depth", "transaction", "released", "aborted_transaction"]:
+		if receipt.has(key):
+			result[key] = receipt[key]
+	return result
+
+
+## The guard options both halves of terminal_write hand the arbiter, built from
+## the same arguments so neither can guard differently from the other.
+func _guard_options(arguments: Dictionary) -> Dictionary:
+	var options: Dictionary = {}
+	var guard_ms: int = MCPToolUtils.coerce_int(arguments.get("unless_typed_within_ms", 0))
+	if guard_ms > 0:
+		options["unless_typed_within_ms"] = guard_ms
+	var expected: String = str(arguments.get("expect_harness", ""))
+	if not expected.is_empty():
+		options["expect_harness"] = expected
+	return options
+
+
+## The transaction half of terminal_write: body, pause, Enter, admitted once by
+## the session's arbiter, which owns the PTY until the Enter has gone out.
+## Returns the arbiter's admission or its refusal unchanged — both already
+## carry the {success, held, error} shape callers parse.
+func _terminal_write_transaction(session, body: String, arguments: Dictionary) -> Dictionary:
+	if not session.has_method("begin_write_transaction"):
+		return {"success": false, "held": true,
+			"error": "this terminal has no input arbiter; nothing was written"}
+	var options: Dictionary = _guard_options(arguments)
+	options["pause_ms"] = maxi(0, MCPToolUtils.coerce_int(arguments.get("then_enter_after_ms", 0)))
+	return session.begin_write_transaction(body, options)
 
 
 func _terminal_read(arguments: Dictionary) -> Dictionary:

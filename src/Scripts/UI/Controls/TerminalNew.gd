@@ -282,6 +282,14 @@ func get_session():
 	return _session
 
 
+## Every byte a PERSON produces in this view goes here. The session stamps the
+## typing clocks and its arbiter decides whether the text goes straight out or
+## waits behind an in-flight write transaction. No view writes the PTY directly.
+func write_human_input(text: String) -> void:
+	if _session:
+		_session.write_human_input(text)
+
+
 var _scrollbar_updating: bool = false
 
 ## Cumulative bell count since terminal start. Monotonic, so waiters can
@@ -609,8 +617,8 @@ func execute_command(command: String) -> Dictionary:
 	if not terminal or not _terminal_available:
 		return {"success": false, "error": "Terminal not available"}
 
-	# Write command to PTY
-	terminal.write_input(command + "\n")
+	# Write command to PTY through the session (its arbiter owns every byte)
+	_session.write_input(command + "\n")
 
 	# Wait for block finalization (next prompt = command completed)
 	var result_block: TerminalBlock = await block_finalized
@@ -804,9 +812,7 @@ func _shortcut_input(event: InputEvent) -> void:
 		if event.ctrl_pressed and event.keycode == KEY_C:
 			DisplayServer.clipboard_set(text_layer.get_selected_text())
 		if event.ctrl_pressed and event.keycode == KEY_V:
-			if _session:
-				_session.note_human_input()
-			terminal.write_input(DisplayServer.clipboard_get())
+			write_human_input(DisplayServer.clipboard_get())
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -847,17 +853,18 @@ func _gui_input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventKey and event.pressed:
-		# Every key a person presses here reaches the PTY one way or another,
-		# so stamp the session once, up front.
+		# Keys that produce no bytes (a bare modifier, an unmapped key) never
+		# reach write_human_input, so stamp the session up front as well: a
+		# person at the keyboard is a person at the keyboard.
 		if _session:
 			_session.note_human_input()
 		# Minerva-specific clipboard/signal shortcuts (not terminal pass-through)
 		if event.ctrl_pressed and event.keycode == KEY_C:
-			terminal.write_input(char(3))
+			write_human_input(char(3))
 			get_viewport().set_input_as_handled()
 			return
 		if event.ctrl_pressed and event.keycode == KEY_V:
-			terminal.write_input(DisplayServer.clipboard_get())
+			write_human_input(DisplayServer.clipboard_get())
 			get_viewport().set_input_as_handled()
 			return
 
@@ -889,10 +896,10 @@ func _gui_input(event: InputEvent) -> void:
 		var encoded: PackedByteArray = terminal.encode_key(gk, action, mods, utf8_text)
 
 		if encoded.size() > 0:
-			terminal.write_input(encoded.get_string_from_utf8())
+			write_human_input(encoded.get_string_from_utf8())
 		elif event.unicode > 0:
 			# Fallback: send raw character if encoder produced nothing
-			terminal.write_input(char(event.unicode))
+			write_human_input(char(event.unicode))
 
 		get_viewport().set_input_as_handled()
 
@@ -1185,7 +1192,7 @@ class TextLayer extends Control:
 			_context_menu.initial_position = Window.WINDOW_INITIAL_POSITION_ABSOLUTE
 			add_child(_context_menu)
 			_create_context_menu_item("Copy", KEY_CTRL, 0, func(): DisplayServer.clipboard_set(get_selected_text()); reset_selection())
-			_create_context_menu_item("Paste", KEY_V, 1, func(): terminal.terminal.write_input(DisplayServer.clipboard_get()))
+			_create_context_menu_item("Paste", KEY_V, 1, func(): terminal.write_human_input(DisplayServer.clipboard_get()))
 			_create_context_menu_item("Zoom In", KEY_PLUS, 2, func(): terminal.font_size += 1; terminal._update_font_metrics(); queue_redraw())
 			_create_context_menu_item("Zoom Out", KEY_MINUS, 3, func(): terminal.font_size -= 1; terminal._update_font_metrics(); queue_redraw())
 		_context_menu.popup()
