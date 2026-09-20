@@ -314,9 +314,10 @@ func _test_shell_environment() -> void:
 	_write_file(probe_path, "x")
 	# A readable-but-not-executable file is NOT a command: accepting it buys a
 	# terminal, a watch and then "permission denied".
-	check("resolve_on_path refuses a non-executable file",
-		SE.resolve_on_path(probe_name, "/w3/nope:" + dir) == "",
-		SE.resolve_on_path(probe_name, "/w3/nope:" + dir))
+	if OS.get_name() != "Windows":  # cmd has no execute bit; the lookup accepts any file there
+		check("resolve_on_path refuses a non-executable file",
+			SE.resolve_on_path(probe_name, "/w3/nope:" + dir) == "",
+			SE.resolve_on_path(probe_name, "/w3/nope:" + dir))
 	FileAccess.set_unix_permissions(probe_path, 0x1ED)  # 0755
 	check("resolve_on_path finds an executable word on the given PATH",
 		SE.resolve_on_path(probe_name, "/w3/nope:" + dir) == probe_path,
@@ -568,6 +569,11 @@ func _test_path_guard(so) -> void:
 			D.path_check_error("exec w3-definitely-not-installed --yolo"))
 		check("an expanded program word skips the guard",
 			D.path_check_error("$AGENT --x") == "", D.path_check_error("$AGENT --x"))
+		check("a globbed program path is the shell's to expand",
+			D.path_check_error("/w3-nowhere/codex-*/bin/codex --yolo") == ""
+			and D.path_check_error("/w3-nowhere/codex-{a,b}/codex") == ""
+			and load(SHELL_ENV_PATH).program_word("/opt/codex-*/bin/codex") == "",
+			D.path_check_error("/w3-nowhere/codex-*/bin/codex --yolo"))
 		check("a line that names its own shell word is not double-wrapped",
 			D.build_launch_line("exec codex --yolo", false) == "exec bash -c 'exec codex --yolo'\r"
 			and D.build_launch_line("command codex", false) == "exec bash -c 'command codex'\r",

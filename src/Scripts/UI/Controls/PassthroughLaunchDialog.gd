@@ -385,33 +385,25 @@ func _get_session_registry():
 	return null
 
 
-## Why the startup command cannot run, or "" when it can. The PTY shell is
-## rc-less, so a command that is not on the process PATH dies instantly and the
-## user only ever sees the missing chat provider — checking here turns that
-## into a message naming the word and the PATH that was searched.
+## Why the startup command cannot run, or "" when it can. The launch itself
+## already fails safely (bash -c ends with 127 and its diagnostic reaches the
+## chat); this check exists so the user sees the reason in the dialog, naming
+## the word and the PATH that was searched, before a terminal, a watch and a
+## chat are created around a program that is not there.
 ## Windows is exempt: cmd resolves .cmd/.bat/.exe shims itself.
 ##
 ## The check answers for a SIMPLE command (is_simple_command — no operator, no
-## leading assignment), and it judges its program word whatever shape that word
-## has: a bare name walks the PATH, a word holding "/" or opening with "~" is a
-## file and is tested where it points. Both must be caught here, because the
-## PTY shell is INTERACTIVE — a failed `exec` returns to the prompt instead of
-## exiting, so a bad path never produces a shell exit code and exit_note can
-## never diagnose it; the session and the watch are simply born broken.
+## leading assignment) and judges its program word whatever shape that word
+## has: a bare name walks the PATH, a word holding "/" or opening with "~/" is
+## a file and is tested where it points.
 ##
-## Only two shapes are left to the shell, because judging them here would
-## refuse launches that work: an EXPANDED word ("$AGENT", "$(which codex)"),
-## whose value we do not hold, and a shell word that takes a command as its
-## argument (`exec codex`), which is no file at all. A line the shell parses
-## for itself — an assignment prefix, a list, a pipeline — is not simple and
-## never reaches the check; the shell reports those misses on the terminal.
-##
-## `cwd` is the directory the terminal will start in: a relative path and a
-## relative PATH entry are answered there, not in Minerva's directory. Empty
-## cwd = the terminal inherits Minerva's, so the lookup does too.
+## Shapes the shell resolves for itself are left to it, because judging them
+## here would refuse launches that work: an EXPANDED word ("$AGENT",
+## "$(which codex)", a glob or brace), whose value we do not hold; a quoted
+## tilde (literal to the shell) and "~user"; and a shell word that takes a
+## command as its argument (exec, command, ...).
 ## Shell words that take a command as their argument; the shell resolves
-## them itself, so a lookup on PATH would wrongly reject them. "." is the
-## POSIX spelling of source.
+## them itself, so a lookup on PATH would wrongly reject them.
 const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval", "time", "source", "."]
 
 static func path_check_error(command: String, cwd: String = "") -> String:

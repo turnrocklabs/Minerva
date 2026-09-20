@@ -318,7 +318,9 @@ static func tokenize(command: String) -> Dictionary:
 			cur["started"] = true
 			i = close + 1
 		else:
-			if c == "$":
+			# Variables, globs and braces are the shell's to expand; a word
+			# holding one has no literal name a lookup could judge.
+			if c == "$" or c == "*" or c == "?" or c == "[" or c == "{":
 				cur["expands"] = true
 			cur["text"] = String(cur["text"]) + c
 			cur["started"] = true
