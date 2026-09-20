@@ -592,6 +592,18 @@ func _test_unbound_terminal() -> void:
 	check("D7c: an unmarked relay error is an error, not a hold, and is not retried",
 		not broken.get("success", true) and str(broken.get("status", "")) == "error"
 			and module.relay_calls.size() == looks_at_error + 1, str(broken))
+	# The relay's refusal names the guard that refused it. The hold reason is
+	# read from those keys, so a message with no recognisable prose still
+	# classifies — the composer hold no longer depends on its phrase.
+	module.relay_reply = {"error": "refused", "held": true,
+		"outcome": "refused_composer_not_empty"}
+	var composer_held: Dictionary = await _notify(module,
+		{"to": "505", "from": "claude", "text": "again"})
+	check("D7d: a structured refusal names the hold reason without any prose",
+		not composer_held.get("success", true)
+			and str(composer_held.get("status", "")) == "held"
+			and str(composer_held.get("hold_reason", "")) == "composer_not_empty",
+		str(composer_held))
 	module.relay_reply = {"ok": true, "submit": {"state": "submitted", "evidence": "echo"}}
 
 	# A person typing in the target outranks any agent, on BOTH paths.

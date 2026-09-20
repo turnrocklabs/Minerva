@@ -3477,10 +3477,19 @@ func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dic
 
 	if result.get("success", false):
 		return PluginErrors.success(result)
+	# Failure envelope shape: the tool's OWN keys survive under `detail` —
+	# everything it returned except success/error. A terminal-tool refusal
+	# therefore reaches the plugin with held, outcome, harness_check and
+	# composer_check (and whatever is added later) intact, so a caller reads
+	# the refusal instead of matching error_message prose.
+	var detail: Dictionary = result.duplicate()
+	detail.erase("success")
+	detail.erase("error")
 	return {
 		"success": false,
 		"error_code": "terminal_tool_error",
 		"error_message": result.get("error", "Unknown error from %s" % capability),
+		"detail": detail,
 		"plugin_id": plugin_id,
 		"capability": capability,
 	}

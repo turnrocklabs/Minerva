@@ -2261,3 +2261,89 @@ fn only_a_submit_write_asks_the_host_to_send_the_enter() {
     answered.store(true, Ordering::SeqCst);
     host.await_reply(answer);
 }
+
+// ── A write refusal is classified by the host's keys, not its prose ─────────
+
+/// Oracle: the host refuses a guarded write with its own structured envelope —
+/// held:true and the outcome that names the guard — whether those keys arrive
+/// flat or nested in the broker's `detail`. The send must report a HOLD
+/// carrying that outcome even when the message says nothing recognisable, and
+/// must still report a hold when an older host sends the HOLD_MARK phrase
+/// alone. A refusal with neither is a write failure, not a hold.
+#[test]
+fn a_write_refusal_is_a_hold_by_its_keys_and_by_the_phrase() {
+    let terminal = "t-structured-refusal";
+    let mut host = FakeHost::start();
+    host.screen = Box::new(|_| (CLAUDE_IDLE.to_string(), 100));
+
+    // 1. Structured refusal, no phrase anywhere in the prose.
+    host.refuse_write = Box::new(|_| {
+        Some(json!({
+            "success": false,
+            "held": true,
+            "outcome": "refused_human_typing",
+            "error": "x",
+        }))
+    });
+    let structured = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "hello", "arm": false, "gate_budget_ms": 0}),
+    );
+    assert_eq!(structured["held"], true, "held must come from the key: {structured}");
+    assert_eq!(structured["outcome"], "refused_human_typing", "{structured}");
+    assert_eq!(structured["hold_reason"], "human_typing", "{structured}");
+    assert!(
+        !structured["error"].as_str().unwrap_or("").contains("nothing was written"),
+        "this refusal carries no phrase, so only the keys can have classified it: {structured}"
+    );
+
+    // 2. The shape the BROKER actually sends: the tool's keys live one level
+    //    down, in `detail`, under a generic error_code/error_message envelope.
+    //    Nothing readable is in the prose, so only `detail` can classify it.
+    host.refuse_write = Box::new(|_| {
+        Some(json!({
+            "success": false,
+            "error_code": "terminal_tool_error",
+            "error_message": "x",
+            "detail": {"held": true, "outcome": "refused_composer_not_empty"},
+        }))
+    });
+    let nested = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "hello", "arm": false, "gate_budget_ms": 0}),
+    );
+    assert_eq!(nested["held"], true, "the broker's nested detail marks the hold: {nested}");
+    assert_eq!(nested["outcome"], "refused_composer_not_empty", "{nested}");
+    assert_eq!(nested["hold_reason"], "composer_not_empty", "{nested}");
+
+    // 3. Phrase-only refusal: the fallback an older host still gets.
+    host.refuse_write = Box::new(|_| {
+        Some(json!({
+            "success": false,
+            "error": "a person typed in this terminal 20 ms ago; nothing was written",
+        }))
+    });
+    let phrase_only = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "hello", "arm": false, "gate_budget_ms": 0}),
+    );
+    assert_eq!(phrase_only["held"], true, "the phrase still marks a hold: {phrase_only}");
+    assert!(phrase_only["outcome"].is_null(), "no key, no outcome: {phrase_only}");
+
+    // 4. Neither: an ordinary failed write, which a caller must NOT retry.
+    host.refuse_write = Box::new(|_| {
+        Some(json!({"success": false, "error": "the PTY is gone"}))
+    });
+    let broken = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "hello", "arm": false, "gate_budget_ms": 0}),
+    );
+    assert!(
+        broken["held"].is_null(),
+        "an unmarked failure is not a hold: {broken}"
+    );
+    assert!(
+        broken["error"].as_str().unwrap_or("").contains("terminal write failed"),
+        "{broken}"
+    );
+}

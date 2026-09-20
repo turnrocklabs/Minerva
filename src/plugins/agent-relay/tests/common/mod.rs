@@ -46,6 +46,7 @@ type ScreenFn = Box<dyn Fn(&HostView) -> (String, u64) + Send>;
 type FailFn = Box<dyn Fn(&HostView) -> bool + Send>;
 type TurnFn = Box<dyn Fn(&HostView) -> String + Send>;
 type WaitFn = Box<dyn Fn(&HostView) -> Value + Send>;
+type RefuseWriteFn = Box<dyn Fn(&HostView) -> Option<Value> + Send>;
 
 pub struct FakeHost {
     child: Child,
@@ -69,6 +70,11 @@ pub struct FakeHost {
     /// whatever it does next, now that the submit's pause belongs to the host
     /// rather than to the plugin.
     pub hold_writes: FailFn,
+    /// When this answers Some, a host.terminal.write is RECORDED and then
+    /// REFUSED with that failure envelope — the object the host puts in
+    /// `result`, e.g. {"success": false, "held": true, "outcome": "...",
+    /// "error": "..."}. This is how the host's write-time guards refuse.
+    pub refuse_write: RefuseWriteFn,
     /// Writes whose reply is being withheld: (request id, arguments).
     held_writes: Vec<(Value, Value)>,
 }
@@ -108,6 +114,7 @@ impl FakeHost {
                 })
             }),
             hold_writes: Box::new(|_| false),
+            refuse_write: Box::new(|_| None),
             held_writes: Vec::new(),
         };
         host.handshake();
@@ -226,6 +233,12 @@ impl FakeHost {
                 let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 self.view.writes.push(text.to_string());
                 self.view.write_args.push(args.clone());
+                if let Some(envelope) = (self.refuse_write)(&self.view) {
+                    let reply = json!({"jsonrpc": "2.0", "id": id, "result": envelope});
+                    let line = reply.to_string();
+                    self.raw_line(&line);
+                    return;
+                }
                 if (self.hold_writes)(&self.view) {
                     self.held_writes.push((id, args.clone()));
                     return;

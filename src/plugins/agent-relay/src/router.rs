@@ -35,6 +35,7 @@
 // as string — this avoids the float/int ambiguity entirely.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -121,6 +122,44 @@ pub struct ToolRequest {
 // Router
 // ---------------------------------------------------------------------------
 
+/// A capability call that failed, with whatever structure the host sent.
+///
+/// `message` is the prose every caller has always read. `detail` is the
+/// refusal's structured object — the broker's failure `detail` (held,
+/// outcome, harness_check, composer_check, and anything added later), or the
+/// failure envelope itself when the host sent no `detail`. It is Null when
+/// the failure never reached a host tool at all (a JSON-RPC error, a closed
+/// channel).
+#[derive(Debug, Clone)]
+pub struct CapError {
+    pub message: String,
+    pub detail: Value,
+}
+
+impl CapError {
+    /// A failure with prose only: nothing structured to read.
+    fn prose(message: String) -> Self {
+        Self { message, detail: Value::Null }
+    }
+
+    /// True when the host marked this refusal a HOLD: nothing was written and
+    /// the caller may retry.
+    pub fn held(&self) -> bool {
+        self.detail.get("held").and_then(|v| v.as_bool()).unwrap_or(false)
+    }
+
+    /// The host's own name for the refusal, e.g. "refused_human_typing".
+    pub fn outcome(&self) -> Option<&str> {
+        self.detail.get("outcome").and_then(|v| v.as_str())
+    }
+}
+
+impl fmt::Display for CapError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 pub struct Router {
     pub stdout: Arc<StdoutWriter>,
     // NOTE: tool_rx is NOT stored here because Receiver<T> is not Sync,
@@ -166,7 +205,21 @@ impl Router {
     ///
     /// Thread-safe: can be called from ANY thread concurrently (each call gets
     /// its own unique id and its own oneshot channel).
+    ///
+    /// The error is the refusal's PROSE. A caller that needs the host's
+    /// structured refusal (held, outcome, …) calls call_capability_detailed.
     pub fn call_capability(&self, capability: &str, args: Value) -> Result<Value, String> {
+        self.call_capability_detailed(capability, args)
+            .map_err(|e| e.message)
+    }
+
+    /// call_capability, keeping whatever structure the host sent with a
+    /// refusal. See CapError.
+    pub fn call_capability_detailed(
+        &self,
+        capability: &str,
+        args: Value,
+    ) -> Result<Value, CapError> {
         let id_str = {
             let mut n = self.next_cap_id.lock().unwrap();
             *n += 1;
@@ -199,7 +252,7 @@ impl Router {
             Ok(reply) => {
                 // Check for error field (capability error from host).
                 if let Some(err) = reply.get("error") {
-                    return Err(format!("capability error: {err}"));
+                    return Err(CapError::prose(format!("capability error: {err}")));
                 }
                 let result = reply.get("result").cloned().unwrap_or(Value::Null);
                 // The CapabilityBroker wraps every reply in a
@@ -211,18 +264,32 @@ impl Router {
                     Some(true) => {
                         Ok(result.get("result").cloned().unwrap_or(result))
                     }
-                    Some(false) => Err(format!(
-                        "capability denied: {}",
-                        result
-                            .get("error_message")
-                            .or_else(|| result.get("error_code"))
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| result.to_string())
-                    )),
+                    Some(false) => {
+                        let message = format!(
+                            "capability denied: {}",
+                            result
+                                .get("error_message")
+                                .or_else(|| result.get("error_code"))
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| result.to_string())
+                        );
+                        // The broker copies the tool's own structured keys
+                        // into `detail`. A host that sends none leaves the
+                        // envelope itself, which is where a flat refusal
+                        // (test stub, older host) carries them.
+                        let detail = result
+                            .get("detail")
+                            .filter(|d| d.is_object())
+                            .cloned()
+                            .unwrap_or(result);
+                        Err(CapError { message, detail })
+                    }
                     None => Ok(result),
                 }
             }
-            Err(_) => Err(format!("capability channel closed waiting for {capability}")),
+            Err(_) => Err(CapError::prose(format!(
+                "capability channel closed waiting for {capability}"
+            ))),
         }
     }
 

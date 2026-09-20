@@ -52,7 +52,7 @@ use serde_json::{json, Value};
 
 use detector::CompiledDetection;
 use filter_rules::{FilterRule, FilterRuleSet, RuleAction};
-use router::Router;
+use router::{CapError, Router};
 use send_gate::TurnSlot;
 use watcher::NotifyMode;
 
@@ -271,13 +271,65 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     }
 
     match send_core(terminal_id, text, do_arm, profile, gate_budget_ms, human_guard_ms, expect_harness, router) {
-        // A gate refusal is a HOLD the caller may retry, and is marked as one
-        // so callers need not read the reason's prose.
-        Err(e) if e.contains(send_gate::HOLD_MARK) => {
-            ok_response(id, tool_err_value(json!({"error": e, "held": true})))
-        }
-        Err(e) => ok_response(id, tool_err(&e)),
+        Err(e) => ok_response(id, tool_err_value(send_error_payload(&e))),
         Ok(result) => ok_response(id, tool_ok(result)),
+    }
+}
+
+/// The error payload a failed send becomes, for every tool that sends.
+///
+/// A gate refusal is a HOLD the caller may retry, and is marked as one so
+/// callers need not read the reason's prose. The host marks its own write
+/// refusals structurally (held + outcome) and those keys decide it; HOLD_MARK
+/// matching is the fallback for the gate's own refusals and for a host too old
+/// to send them. Anything else is prose only.
+fn send_error_payload(e: &SendError) -> Value {
+    let mut payload = json!({"error": e.message});
+    if e.held || e.message.contains(send_gate::HOLD_MARK) {
+        payload["held"] = json!(true);
+        if let Some(ref outcome) = e.outcome {
+            payload["hold_reason"] = json!(hold_reason_of(outcome));
+            payload["outcome"] = json!(outcome);
+        }
+    }
+    payload
+}
+
+/// The hold reason a send receipt carries, derived from the host's outcome
+/// name: the terminal arbiter names every refusal "refused_<reason>". The ONE
+/// place this prefix is stripped on the Rust side (the host strips its own).
+fn hold_reason_of(outcome: &str) -> &str {
+    outcome.strip_prefix("refused_").unwrap_or(outcome)
+}
+
+/// Why a send did not happen.
+///
+/// `message` is the prose every caller has always read. `held` and `outcome`
+/// carry the host's own structured refusal when it sent one, so a hold is
+/// recognised — and named — without matching prose.
+#[derive(Debug, Clone)]
+struct SendError {
+    message: String,
+    held: bool,
+    outcome: Option<String>,
+}
+
+impl SendError {
+    /// A failure with prose only: not a hold, no outcome name.
+    fn prose(message: String) -> Self {
+        Self { message, held: false, outcome: None }
+    }
+}
+
+impl From<String> for SendError {
+    fn from(message: String) -> Self {
+        Self::prose(message)
+    }
+}
+
+impl std::fmt::Display for SendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
     }
 }
 
@@ -374,7 +426,7 @@ fn send_core(
     human_guard_ms: Option<u64>,
     expect_harness: Option<&str>,
     router: &Arc<Router>,
-) -> Result<Value, String> {
+) -> Result<Value, SendError> {
     let outcome = send_core_with_mode(
         terminal_id,
         text,
@@ -442,7 +494,7 @@ fn send_core_with_mode(
     human_guard_ms: Option<u64>,
     expect_harness: Option<&str>,
     router: &Arc<Router>,
-) -> Result<SendOutcome, String> {
+) -> Result<SendOutcome, SendError> {
     // What the screen is classified with: the watch's profile when the
     // terminal has one, else the caller's hint. A hint never overrides a
     // watch — the watch is the one that read the harness's screens so far.
@@ -546,7 +598,7 @@ fn send_core_with_mode(
                 live_question_region(terminal_id, router).map(|r| region_identity(&r));
             let pending = with_passthrough(|s| s.pending_question.contains(terminal_id));
             if !pending || live.as_deref() != Some(expected.as_str()) {
-                return Err(STALE_BYPASS.to_string());
+                return Err(STALE_BYPASS.to_string().into());
             }
             break (detection(), taken);
         }
@@ -627,9 +679,9 @@ fn send_core_with_mode(
     let write_result = if mode == SendMode::ChooserNav {
         // Each arrow as its OWN keypress with a pause (defeats paste-coalescing),
         // then Enter. An empty body (cursor already on the target) → just Enter.
-        let mut last: Result<Value, String> = Ok(json!({"ok": true}));
+        let mut last: Result<Value, CapError> = Ok(json!({"ok": true}));
         for unit in body.split('\u{1b}').filter(|u| !u.is_empty()) {
-            last = router.call_capability("host.terminal.write", json!({
+            last = router.call_capability_detailed("host.terminal.write", json!({
                 "terminal_id": terminal_id,
                 "text": format!("\u{1b}{unit}"),
                 "raw": true,
@@ -641,7 +693,7 @@ fn send_core_with_mode(
         }
         last.and_then(|_| {
             std::thread::sleep(std::time::Duration::from_millis(70));
-            router.call_capability("host.terminal.write", json!({
+            router.call_capability_detailed("host.terminal.write", json!({
                 "terminal_id": terminal_id,
                 "text": "\r",
                 "raw": true,
@@ -649,7 +701,7 @@ fn send_core_with_mode(
         })
     } else if body.is_empty() {
         match mode {
-            SendMode::Submit => router.call_capability("host.terminal.write", json!({
+            SendMode::Submit => router.call_capability_detailed("host.terminal.write", json!({
                 "terminal_id": terminal_id,
                 "text": "\r",
                 "raw": true,
@@ -684,18 +736,21 @@ fn send_core_with_mode(
         if mode == SendMode::Submit {
             write["then_enter_after_ms"] = json!(SUBMIT_ENTER_PAUSE_MS);
         }
-        router.call_capability("host.terminal.write", write)
+        router.call_capability_detailed("host.terminal.write", write)
     };
 
     if let Err(e) = write_result {
         if let Some(taken) = slot.take() {
             taken.end();
         }
-        // The host's typing refusal is a hold like the gate's, reported as one.
-        if e.contains(send_gate::HOLD_MARK) {
-            return Err(e);
+        // The host's guard refusal is a hold like the gate's, reported as one.
+        // It says so structurally (held, plus the outcome that names it); the
+        // HOLD_MARK phrase is the fallback for a host that sends only prose.
+        if e.held() || e.message.contains(send_gate::HOLD_MARK) {
+            let outcome = e.outcome().map(str::to_string);
+            return Err(SendError { message: e.message, held: true, outcome });
         }
-        return Err(format!("terminal write failed: {e}"));
+        return Err(SendError::prose(format!("terminal write failed: {}", e.message)));
     }
     // The slot now covers the turn that ends after this write.
     if let Some(ref taken) = slot {
@@ -1276,7 +1331,9 @@ fn handle_relay_ask(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
         terminal_id, text, SendMode::Submit, GateHold::Wait, timeout_ms,
         do_distill, do_redact, model, router,
     ) {
-        Err(e) => ok_response(id, tool_err(&e)),
+        // A refusal reaches the caller with the same structured keys a send
+        // refusal carries: relay_ask is a send, and a hold is retryable.
+        Err(e) => ok_response(id, tool_err_value(send_error_payload(&e))),
         Ok(result) => ok_response(id, tool_ok(result)),
     }
 }
@@ -1301,7 +1358,7 @@ fn relay_ask_core(
     do_redact: bool,
     model: Option<&str>,
     router: &Arc<Router>,
-) -> Result<Value, String> {
+) -> Result<Value, SendError> {
     // Send + arm (auto-starts the watch when none exists). The gate inside may
     // wait out a modal screen or another relay turn before it writes, on this
     // caller's timeout budget.
@@ -1388,7 +1445,7 @@ fn relay_ask_core(
     }
 
     match read {
-        Err(e) => Err(format!("turn completed (cause={cause}) but read failed: {e}")),
+        Err(e) => Err(SendError::prose(format!("turn completed (cause={cause}) but read failed: {e}"))),
         Ok(read) => Ok(json!({
             "ok": true,
             "terminal_id": terminal_id,
@@ -1817,7 +1874,7 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
     // the very card it answers for the whole budget. So the pending state is
     // dropped only when what is filed is still the region THIS caller
     // validated, i.e. nobody has re-filed since.
-    if matches!(outcome, Err(ref e) if e == STALE_BYPASS) {
+    if matches!(outcome, Err(ref e) if e.message == STALE_BYPASS) {
         clear_pending_question_if(&terminal_id, filed_region.as_deref());
         // The bypass also goes stale when the WATCH went away under the answer
         // (watch_stop, the idle reap): the card could no longer be confirmed,
@@ -1838,7 +1895,19 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
     }
 
     let result = match outcome {
-        Err(e) => json!({"kind": "error", "text": e}),
+        // The chat path reports the failure the same way the send tools do:
+        // held and its outcome ride along, so the host classifies a hold by
+        // its keys rather than by the prose it happens to carry.
+        Err(e) => {
+            let payload = send_error_payload(&e);
+            let mut err = json!({"kind": "error", "text": e.message});
+            for key in ["held", "hold_reason", "outcome"] {
+                if let Some(v) = payload.get(key) {
+                    err[key] = v.clone();
+                }
+            }
+            err
+        }
         Ok(v) => {
             let cause = v.get("cause").and_then(|c| c.as_str()).unwrap_or("");
             if v.get("timed_out").and_then(|t| t.as_bool()).unwrap_or(false) {

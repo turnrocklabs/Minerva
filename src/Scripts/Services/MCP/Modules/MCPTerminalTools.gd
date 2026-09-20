@@ -841,12 +841,7 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 				failed["status"] = "error"
 				failed["target"] = receipt_target
 				return failed
-			# The relay hands the host's refusal back as prose, so the composer
-			# hold is told from a screen hold by the phrase the arbiter always
-			# writes into it.
-			hold = _held(receipt_target,
-				"composer_not_empty" if reason.contains(TerminalInputArbiter.COMPOSER_HOLD_PHRASE) else "screen",
-				reason)
+			hold = _held(receipt_target, _relay_hold_reason(raw, reason), reason)
 		# The budget is checked before sleeping and again on waking, so no
 		# look is taken once the caller's wait has lapsed.
 		var remaining_ms: int = deadline - Time.get_ticks_msec()
@@ -878,15 +873,41 @@ func _held(receipt_target: Dictionary, hold_reason: String, why: String) -> Dict
 
 ## The relay marks a gate refusal with held:true inside its error payload.
 func _relay_reply_is_hold(raw) -> bool:
+	return bool(_relay_error_payload(raw).get("held", false))
+
+
+## The relay's error payload: the reply itself when the refusal keys are
+## already at the top level, else the JSON inside its MCP content block.
+func _relay_error_payload(raw) -> Dictionary:
 	if not (raw is Dictionary):
-		return false
-	if bool(raw.get("held", false)):
-		return true
+		return {}
+	for key in ["held", "outcome", "hold_reason"]:
+		if raw.has(key):
+			return raw
 	var content = raw.get("content", null)
 	if content is Array and content.size() > 0 and content[0] is Dictionary:
 		var parsed = JSON.parse_string(str(content[0].get("text", "{}")))
-		return parsed is Dictionary and bool(parsed.get("held", false))
-	return false
+		if parsed is Dictionary:
+			return parsed
+	return raw
+
+
+## Why the relay held this delivery. The refusal's own structured keys decide
+## it — hold_reason as sent, else the host outcome it carries, which the
+## terminal arbiter names "refused_<reason>". Prose is the fallback for a relay
+## build that sends only a message: the composer hold is then told from a
+## screen hold by the phrase the arbiter writes into it.
+func _relay_hold_reason(raw, reason: String) -> String:
+	var payload: Dictionary = _relay_error_payload(raw)
+	var stated: String = str(payload.get("hold_reason", ""))
+	if not stated.is_empty():
+		return stated
+	var outcome: String = str(payload.get("outcome", ""))
+	if not outcome.is_empty():
+		return outcome.trim_prefix("refused_")
+	if reason.contains(TerminalInputArbiter.COMPOSER_HOLD_PHRASE):
+		return "composer_not_empty"
+	return "screen"
 
 
 ## Milliseconds since a person last typed in this terminal, or -1 when never.

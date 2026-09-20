@@ -10,6 +10,8 @@ extends SceneTree
 ##    3. granted + unknown arg → schema_validation_failed
 ##    4. no terminal present: list → success count 0; read → terminal_tool_error
 ##    5. override seam passthrough + consumed
+##    5b. a write refused by the typing guard crosses the broker with its
+##       structured keys (held, outcome) intact under `detail`
 ##    6. REAL TerminalNew (forkpty works headless): list sees it; write+wait
 ##       round-trip a command; raw=false unescapes while the broker default
 ##       (raw=true) does not mangle; printf '\a' → bell_serial + bell_rung;
@@ -152,6 +154,25 @@ func _run_tests() -> void:
 	check("raw=false unescape round-trip",
 		str(waited2.get("result", {}).get("content", "")).find("marker_io_beta") != -1,
 		"content=%s" % str(waited2.get("result", {}).get("content", "")))
+
+	# 7b. A refused write crosses the broker with its structured keys: the
+	# typing guard refuses, and held + outcome survive the failure envelope.
+	var registry = so.get_terminal_session_registry()
+	var live_session = registry.get_session(term_id) if registry != null else null
+	if live_session == null:
+		check("live session resolvable for the guard test", false, "id=%s" % term_id)
+	else:
+		live_session.last_input_ticks_ms = Time.get_ticks_msec()
+		var guarded: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.terminal.write",
+			{"terminal_id": term_id, "text": "must_not_run\r", "unless_typed_within_ms": 5000})
+		check_eq("guarded write (person typing) → terminal_tool_error",
+			guarded.get("error_code", ""), "terminal_tool_error")
+		var detail: Dictionary = guarded.get("detail", {})
+		check("refusal reaches the plugin with held:true",
+			bool(detail.get("held", false)), "got: %s" % str(guarded))
+		check_eq("and with the arbiter's own outcome",
+			str(detail.get("outcome", "")), "refused_human_typing")
+		live_session.last_input_ticks_ms = 0
 
 	# 8. A1 live: standalone BEL → bell_serial + wait.bell_rung
 	var bell_before: int = term.bell_serial

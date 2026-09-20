@@ -100,7 +100,7 @@
           },
           "gate_budget_ms": {
             "type": "integer",
-            "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look). A refusal carries held:true."
+            "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look). A refusal carries held:true, plus outcome and hold_reason when the host named the guard that refused it."
           },
           "human_guard_ms": {
             "type": "integer",
