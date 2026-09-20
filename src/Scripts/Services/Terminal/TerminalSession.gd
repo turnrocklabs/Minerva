@@ -24,6 +24,7 @@ signal bell_rung(count: int)
 ## The PTY child (shell) exited on its own — not a stop()/close.
 ## Re-emitted from the underlying Terminal node's `process_exited`.
 const ShellEnvironment := preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
+const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
 
 signal shell_exited(exit_code: int)
 
@@ -82,6 +83,13 @@ var shell_exit_code = null
 ## stamp it: it exists so a notification can yield to a person mid-sentence.
 var last_input_ms: int = 0
 
+## The same keystroke stamped with the monotonic clock, for guards that must
+## not be fooled by a wall-clock step. 0 when no human input yet.
+var last_input_ticks_ms: int = 0
+
+# The one gate every byte to the PTY passes. Built in _ready().
+var _arbiter: TerminalInputArbiter = null
+
 
 func _init(p_name: String = "Terminal") -> void:
 	session_name = p_name
@@ -91,6 +99,8 @@ func _init(p_name: String = "Terminal") -> void:
 
 func _ready() -> void:
 	_create_terminal_node()
+	_arbiter = TerminalInputArbiter.new()
+	_arbiter.setup(self)
 
 
 ## Builds the Terminal extension node, wires its signals, and adds it as a child
@@ -175,15 +185,54 @@ func is_alive() -> bool:
 
 # ── PTY primitives ─────────────────────────────────────────────────────
 
-## Write raw bytes/text to the PTY. Non-blocking.
-func write_input(text: String) -> void:
+## Write raw bytes/text to the PTY through the arbiter. Non-blocking: the text
+## goes straight out unless a write transaction holds the PTY, in which case it
+## is queued and released, unchanged and in order, when that transaction ends.
+## Returns the arbiter receipt, which says which of those two happened; callers
+## that only want the bytes sent may ignore it.
+func write_input(text: String) -> Dictionary:
+	if _arbiter != null:
+		return _arbiter.submit(text, false)
+	write_pty(text)
+	return {"success": true, "queued": false, "bytes_sent": text.length()}
+
+
+## The same entry for input a PERSON produced: stamps the typing clocks (which
+## the transaction guards read) and then goes through the arbiter. Returns the
+## arbiter receipt, which says whether the text was queued.
+func write_human_input(text: String) -> Dictionary:
+	note_human_input()
+	if _arbiter == null:
+		write_pty(text)
+		return {"success": true, "queued": false, "bytes_sent": text.length()}
+	return _arbiter.submit(text, true)
+
+
+## Bypasses the arbiter and writes to the PTY. Only the arbiter calls this;
+## everything else goes through write_input / write_human_input.
+func write_pty(text: String) -> void:
 	if terminal_available:
 		terminal.write_input(text)
+
+
+## Admit a guarded body + pause + Enter as one transaction (see
+## TerminalInputArbiter.begin_transaction for the options and the result).
+func begin_write_transaction(body: String, options: Dictionary = {}) -> Dictionary:
+	if _arbiter == null:
+		return {"success": false, "held": true,
+			"error": "this terminal has no input arbiter; nothing was written"}
+	return _arbiter.begin_transaction(body, options)
+
+
+## The session's arbiter, for callers that need its signals or records.
+func get_input_arbiter() -> TerminalInputArbiter:
+	return _arbiter
 
 
 ## Views call this for every key or paste a person sends, before writing it.
 func note_human_input() -> void:
 	last_input_ms = int(Time.get_unix_time_from_system() * 1000.0)
+	last_input_ticks_ms = Time.get_ticks_msec()
 
 
 ## Whether this platform can say who holds the PTY at all. Where it cannot
