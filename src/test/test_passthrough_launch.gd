@@ -518,6 +518,16 @@ func _test_path_guard(so) -> void:
 			D.path_check_error("exec w3-definitely-not-installed --yolo"))
 		check("an expanded program word skips the guard",
 			D.path_check_error("$AGENT --x") == "", D.path_check_error("$AGENT --x"))
+		check("a line that names its own shell word is not double-wrapped",
+			D.build_launch_line("exec codex --yolo", false) == "exec codex --yolo\r"
+			and D.build_launch_line("command codex", false) == "command codex\r",
+			D.build_launch_line("exec codex --yolo", false))
+		check("a command substitution is part of its word, so the line still execs",
+			D.is_simple_command("codex --cd $(pwd)")
+			and D.build_launch_line("codex --cd $(pwd)", false) == "exec codex --cd $(pwd)\r"
+			and D.is_simple_command("codex --cd `pwd`")
+			and not D.is_simple_command("codex --cd $(pwd"),
+			D.build_launch_line("codex --cd $(pwd)", false))
 
 	dialog.queue_free()
 	await process_frame

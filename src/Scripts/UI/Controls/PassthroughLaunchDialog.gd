@@ -127,8 +127,8 @@ static func shell_quote(s: String) -> String:
 ## A quoted first word (`'my agent'`) IS exec'able and counts as simple, even
 ## though command_word refuses it for the PATH preflight: exec resolves it
 ## itself, and if it does not exist the PTY dies with a diagnosable 127.
-## An unquoted `$` or backtick makes the line the shell's to expand, so it is
-## written bare rather than guessed at.
+## Expansions (`$VAR`, `$(cmd)`, backticks) stay simple: the shell expands the
+## words and then execs the result, exactly as it would without us.
 static func is_simple_command(command: String) -> bool:
 	var parsed: Dictionary = ShellEnvironment.tokenize(command)
 	if not bool(parsed.get("ok", false)):
@@ -160,6 +160,10 @@ static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
 		return "%s\r" % command
 	if not is_simple_command(command):
+		return "%s\r" % command
+	# A line that already names its own shell word (exec, command, ...) is
+	# written as typed: `exec exec codex` would look for a program called exec.
+	if SHELL_COMMAND_WORDS.has(ShellEnvironment.command_word(command)):
 		return "%s\r" % command
 	return "exec %s\r" % command
 

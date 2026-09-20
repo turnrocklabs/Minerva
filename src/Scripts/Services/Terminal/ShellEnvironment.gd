@@ -299,8 +299,35 @@ static func tokenize(command: String) -> Dictionary:
 				op += c  # || && ;; << >>
 			tokens.append({"text": op, "op": true, "quoted": false, "expands": false})
 			i += op.length()
+		elif c == "$" and i + 1 < line.length() and line[i + 1] == "(":
+			# A command substitution belongs to the word: its parentheses are
+			# not list operators. Nested `$( )` is consumed to the matching close.
+			var depth := 0
+			var j := i
+			while j < line.length():
+				if line[j] == "(":
+					depth += 1
+				elif line[j] == ")":
+					depth -= 1
+					if depth == 0:
+						break
+				j += 1
+			if j >= line.length():
+				return {"ok": false, "tokens": []}
+			cur["text"] = String(cur["text"]) + line.substr(i, j - i + 1)
+			cur["expands"] = true
+			cur["started"] = true
+			i = j + 1
+		elif c == "`":
+			var close := line.find("`", i + 1)
+			if close < 0:
+				return {"ok": false, "tokens": []}
+			cur["text"] = String(cur["text"]) + line.substr(i, close - i + 1)
+			cur["expands"] = true
+			cur["started"] = true
+			i = close + 1
 		else:
-			if c == "$" or c == "`":
+			if c == "$":
 				cur["expands"] = true
 			cur["text"] = String(cur["text"]) + c
 			cur["started"] = true
