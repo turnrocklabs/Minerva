@@ -31,7 +31,7 @@ extends SceneTree
 const DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const SHELL_ENV_PATH := "res://Scripts/Services/Terminal/ShellEnvironment.gd"
 ## Every POSIX launch line opens with the pinned launch shell.
-var EXEC_PREFIX: String = "exec env BASH_ENV= ENV= '" + load(SHELL_ENV_PATH).launch_shell() + "' --norc --noprofile -c "
+var EXEC_PREFIX: String = "exec '" + load(SHELL_ENV_PATH).launch_env() + "' BASH_ENV= ENV= '" + load(SHELL_ENV_PATH).launch_shell() + "' --norc --noprofile -c "
 const PROVIDER_REGISTRY_PATH := "res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
@@ -166,7 +166,7 @@ func _test_quoting() -> void:
 	OS.set_environment("PATH", spaced_dir + ":" + saved_path)
 	check("a bash whose directory has a space is pinned and quoted in the launch line",
 		SEp.launch_shell() == spaced_shell
-		and D.build_launch_line("claude --x", false) == "exec env BASH_ENV= ENV= '%s' --norc --noprofile -c 'claude --x'\r" % spaced_shell,
+		and D.build_launch_line("claude --x", false) == "exec '%s' BASH_ENV= ENV= '%s' --norc --noprofile -c 'claude --x'\r" % [SEp.launch_env(), spaced_shell],
 		D.build_launch_line("claude --x", false))
 	SEp._launch_shell_resolved = false
 	OS.set_environment("PATH", "/w3-nowhere")
@@ -180,6 +180,10 @@ func _test_quoting() -> void:
 	SEp._launch_shell_resolved = saved_resolved
 	DirAccess.remove_absolute(spaced_shell)
 	DirAccess.remove_absolute(spaced_dir)
+	check("env is pinned by absolute path like the shell",
+		load(SHELL_ENV_PATH).launch_env().begins_with("/")
+		and FileAccess.file_exists(load(SHELL_ENV_PATH).launch_env()),
+		load(SHELL_ENV_PATH).launch_env())
 	check("the launch shell is an absolute executable, not a PATH lookup",
 		load(SHELL_ENV_PATH).launch_shell().begins_with("/")
 		and FileAccess.file_exists(load(SHELL_ENV_PATH).launch_shell()),
@@ -678,7 +682,9 @@ func _test_launch_exit_note(so) -> void:
 		OS.get_user_data_dir().path_join("w3_dying_harness.sh"),
 		"#!/bin/sh\necho w3-dead-marker\nexit 7\n")
 	# A BASH_ENV hook that would run on any non-interactive bash must not run
-	# for the launch: its marker file has to stay absent.
+	# for the launch: its marker file has to stay absent. This pins the
+	# behaviour end to end; the PTY child blanks the hook too, so the launch
+	# line's own clearing is proven by the build_launch_line checks above.
 	var hook_marker: String = OS.get_user_data_dir().path_join("w3_bash_env_ran")
 	DirAccess.remove_absolute(hook_marker)
 	var hook: String = _write_script(OS.get_user_data_dir().path_join("w3_bash_env.sh"),

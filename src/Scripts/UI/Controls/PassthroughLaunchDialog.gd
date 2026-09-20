@@ -143,7 +143,7 @@ static func is_simple_command(command: String) -> bool:
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: `exec env BASH_ENV= ENV= '<bash>' --norc --noprofile -c '<command>'`
+## POSIX: `exec '<env>' BASH_ENV= ENV= '<bash>' --norc --noprofile -c '<command>'`
 ## for every line,
 ## with bash pinned by absolute path (ShellEnvironment.launch_shell). The PTY
 ## shell is replaced by a non-interactive, rc-less bash that runs the command
@@ -165,7 +165,11 @@ static func build_launch_line(command: String, windows: bool) -> String:
 		return "%s\r" % command
 	# env clears the two hooks a non-interactive bash would still honour, so
 	# the line is rc-less on its own terms even if the PTY shell passed them on.
-	return "exec env BASH_ENV= ENV= %s --norc --noprofile -c %s\r" % [shell_quote(bash), shell_quote(command)]
+	# It is pinned by absolute path like bash; without one the hooks are left
+	# to the PTY child, which blanks them itself.
+	var env := ShellEnvironment.launch_env()
+	var hooks := "%s BASH_ENV= ENV= " % shell_quote(env) if not env.is_empty() else ""
+	return "exec %s%s --norc --noprofile -c %s\r" % [hooks, shell_quote(bash), shell_quote(command)]
 
 
 ## The cd line written before the launch line when a working dir is set.

@@ -55,6 +55,7 @@ static func apply_login_path() -> bool:
 	# The launch shell is pinned by absolute path before PATH changes hands:
 	# `exec <shell> -c` must not depend on the login PATH listing it.
 	launch_shell()
+	launch_env()
 	var probed := probe_login_path()
 	if probed.is_empty() or probed == OS.get_environment("PATH"):
 		return false
@@ -87,6 +88,28 @@ static func launch_shell() -> String:
 			return _launch_shell
 	_launch_shell = ""
 	return _launch_shell
+
+
+## The absolute path of `env`, pinned like bash so a login PATH that omits
+## the system tools cannot break the launch line; "" when none exists.
+static var _launch_env: String = ""
+static var _launch_env_resolved: bool = false
+const _ENV_FALLBACKS: Array[String] = ["/usr/bin/env", "/bin/env"]
+
+static func launch_env() -> String:
+	if _launch_env_resolved:
+		return _launch_env
+	_launch_env_resolved = true
+	var found := resolve_on_path("env", OS.get_environment("PATH"), "")
+	if found.begins_with("/") and _executable_at(found):
+		_launch_env = found
+		return _launch_env
+	for candidate in _ENV_FALLBACKS:
+		if _executable_at(candidate):
+			_launch_env = candidate
+			return _launch_env
+	_launch_env = ""
+	return _launch_env
 
 
 ## The PATH new terminals will see: the login PATH when the probe succeeded,
