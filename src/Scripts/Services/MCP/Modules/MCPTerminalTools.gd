@@ -12,10 +12,11 @@ extends MCPToolModule
 ## this file parses in isolated --script harnesses.
 ##
 ## minerva_terminal_notify delivers ONE line from one harness to another. It
-## owns no delivery code: it resolves the target terminal, finds the
-## passthrough chat bound to it, and submits an enveloped user message through
-## the same path the send button uses — so the line inherits the per-chat
-## outgoing queue and then the relay's own hold, lock and confirmation.
+## owns no delivery code: it resolves the target terminal and then either
+## submits an enveloped user message to the passthrough chat bound to it (the
+## same path the send button uses, so the line inherits the per-chat outgoing
+## queue) or, when no chat is bound, asks the agent-relay plugin to type it —
+## either way the relay's own hold, lock and confirmation apply.
 
 
 ## The envelope every notification is delivered inside. Shared by convention
@@ -28,17 +29,27 @@ const NOTIFY_ENVELOPE_PREFIX := "[MINERVA NOTIFY from "
 const NOTIFY_MAX_TEXT_LENGTH := 400
 const NOTIFY_MAX_FROM_LENGTH := 64
 const NOTIFY_MAX_WAIT_MS := 20000
+## A keystroke this recent means a person is mid-sentence in the target: the
+## notification would submit their half-typed line along with itself.
+const NOTIFY_HUMAN_TYPING_MS := 5000
+## Pause between looks while a direct delivery waits out a hold.
+const NOTIFY_RETRY_INTERVAL_S := 0.25
 
 ## Entry id the agent-relay provider registers per watched terminal — the ONLY
 ## binding between a passthrough chat and its terminal.
 const PASSTHROUGH_ENTRY_PREFIX := "terminal-"
 const AGENT_RELAY_WATCH_STATUS_TOOL := "minerva_agent_relay_watch_status"
+const AGENT_RELAY_SEND_TOOL := "minerva_agent_relay_send"
+const AGENT_RELAY_PLUGIN_ID := "agent_relay"
 
 ## Injectable seam: Callable(PackedStringArray) -> Dictionary of
 ## terminal_id -> watch profile id. Empty Callable uses the agent-relay plugin
 ## (see _watch_profiles). Tests inject a stub so profile addressing is
 ## exercisable without the plugin running.
 var watch_profile_source: Callable = Callable()
+## Injectable seam: Callable(Dictionary args) -> the relay send tool's raw
+## reply. Empty Callable dispatches to the plugin (see _relay_send).
+var relay_send_source: Callable = Callable()
 
 
 func get_tool_names() -> Array[String]:
@@ -66,6 +77,8 @@ func register_tools() -> void:
 			"text": {"type": "string", "description": "Text to send. Use \\r at end to submit commands (Enter key). Example: 'echo hello\\r'"},
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
 			"raw": {"type": "boolean", "description": "Send text byte-for-byte without unescaping \\r/\\n/\\t etc. Use when the text already contains real control characters (default false)."},
+			"unless_typed_within_ms": {"type": "integer", "description": "Refuse (held) when a person typed in this terminal within this many milliseconds. 0 = no guard."},
+			"expect_harness": {"type": "string", "description": "Refuse (held) unless this harness (claude/codex) is the terminal's foreground process at the moment of the write."},
 		}, "required": ["text"]}, "terminal")
 
 	server._register_tool("minerva_terminal_read",
@@ -110,12 +123,13 @@ func register_tools() -> void:
 		}, "required": ["terminal_id"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify",
-		"Deliver ONE line to the agent running in another Minerva terminal. The line is posted as a user message in that terminal's passthrough chat, so the human sees it and the normal relay rules (hold, lock, submit confirmation) apply. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or the terminal has no passthrough chat bound to it.",
+		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way the relay's rules apply: nothing is written while a dialog or menu owns the keyboard, and never while a person is typing there. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
 		{"type": "object", "properties": {
-			"to": {"type": "string", "description": "Target terminal: its tab name, its watch profile ('claude' / 'codex') when exactly one such terminal is watched, or its terminal id."},
+			"to": {"type": "string", "description": "Target terminal: its terminal id, its tab name, 'harness@tab name', or a bare harness ('claude' / 'codex') when exactly one terminal runs it."},
 			"text": {"type": "string", "description": "The notification, ONE line, at most %d characters. No newlines." % NOTIFY_MAX_TEXT_LENGTH},
-			"from": {"type": "string", "description": "Who this is from, self-declared. Recipients are told to trust the envelope Minerva builds, not the name inside it."},
-			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for a QUEUED line to be dispatched. The receipt returns either way, with status 'queued', 'dispatched', 'dropped' (the line was cancelled before it ran) or 'unknown' (it left the queue but its outcome is no longer on record)." % NOTIFY_MAX_WAIT_MS},
+			"from": {"type": "string", "description": "Who this is from, self-declared: your harness name, plus '@' and your tab name when you are inside Minerva ($MINERVA_TERMINAL_NAME). Recipients are told to trust the envelope Minerva builds, not the name inside it."},
+			"reply_to": {"type": "string", "description": "Your own terminal id ($MINERVA_TERMINAL_ID) when you are inside Minerva. It is written into the envelope so the recipient can answer you, not a look-alike instance. Omit from a host terminal."},
+			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for the line to land: on the chat path, for a QUEUED line to be dispatched; on the direct path, for a held screen to clear. The receipt returns either way with status 'written', 'held' (with hold_reason), 'queued', 'dispatched', 'dropped' or 'unknown'." % NOTIFY_MAX_WAIT_MS},
 		}, "required": ["to", "text", "from"]}, "terminal")
 
 
@@ -270,14 +284,16 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				"created_at_ms": session.created_at_ms,
 				"last_input_ms": session.last_input_ms,
 			}
-			# Who is in the foreground: the harness name when it is one, and
-			# the process itself for callers that want to know what else runs.
-			var foreground: Dictionary = session.get_foreground_process()
-			if not foreground.is_empty():
+			# Who is in the foreground: the process name (empty when the query
+			# failed just now), and the harness when it is one. The key is
+			# present whenever the platform can answer, so its absence means
+			# "cannot know", not "nobody".
+			if session.foreground_supported():
+				var foreground: Dictionary = session.get_foreground_process()
 				entry["foreground_process"] = str(foreground.get("name", ""))
-			var harness: String = session.harness_of(foreground)
-			if not harness.is_empty():
-				entry["harness"] = harness
+				var harness: String = session.harness_of(foreground)
+				if not harness.is_empty():
+					entry["harness"] = harness
 			# cwd is absent, never guessed: a session started without one runs
 			# in Minerva's own working directory, which the host cannot report
 			# as the child's launch directory.
@@ -296,6 +312,26 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 		return {"success": false, "error": "No terminal found"}
 	if not session.terminal_available:
 		return {"success": false, "error": "Terminal not initialized"}
+	# A write-time guard for agent text: refused, and marked as a hold, when a
+	# person typed here within the given window. Checked at the moment of the
+	# write because any earlier check can be overtaken by a keystroke.
+	var guard_ms: int = MCPToolUtils.coerce_int(arguments.get("unless_typed_within_ms", 0))
+	if guard_ms > 0 and "last_input_ms" in session and int(session.last_input_ms) > 0:
+		var typed_ago: int = int(Time.get_unix_time_from_system() * 1000.0) - int(session.last_input_ms)
+		if typed_ago < guard_ms:
+			return {"success": false, "held": true,
+				"error": "a person typed in this terminal %d ms ago; nothing was written" % typed_ago}
+	# Agent text meant for a harness is written only while that harness is
+	# the foreground: a queued or waited delivery can arrive after it exited,
+	# and the shell that replaced it would run the line as a command.
+	var expected: String = str(arguments.get("expect_harness", ""))
+	if not expected.is_empty() and session.foreground_supported():
+		var live: Dictionary = session.get_foreground_process()
+		var actual: String = session.harness_of(live)
+		if actual != expected:
+			return {"success": false, "held": true,
+				"error": "the foreground of this terminal is %s, not %s; nothing was written" % [
+					str(live.get("name", "unreadable")) if actual.is_empty() else actual, expected]}
 	# Process escape sequences so \r, \n, \t, \x03 etc. become real control
 	# chars — unless the caller already sends real bytes (raw=true, used by
 	# host.terminal.write where c_unescape would mangle literal backslashes).
@@ -539,31 +575,68 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 
 # ── minerva_terminal_notify ────────────────────────────────────────────
 
-## One line from one harness to another. The host resolves the target, finds
-## the passthrough chat bound to it, and submits the envelope as a user turn;
-## everything after that (queue, relay hold, lock, submit confirmation) is
-## existing machinery.
+## One line from one harness to another. The host resolves the target, holds
+## while a person is typing there, then hands the envelope to whichever
+## delivery path the target has: its passthrough chat (queue + bubble) or the
+## relay's gated send straight into the harness.
 func _terminal_notify(arguments: Dictionary) -> Dictionary:
 	var to: String = str(arguments.get("to", "")).strip_edges()
 	var text: String = str(arguments.get("text", "")).strip_edges()
 	var from: String = str(arguments.get("from", "")).strip_edges()
+	var reply_to: String = str(arguments.get("reply_to", "")).strip_edges()
 
 	if to.is_empty():
-		return MCPToolUtils.error("to is required: a terminal tab name, a watch profile (claude/codex), or a terminal id")
+		return MCPToolUtils.error("to is required: a terminal id, a tab name, harness@tab name, or a harness (claude/codex)")
 	if from.is_empty():
 		return MCPToolUtils.error("from is required: the name this notification is delivered under")
 	var invalid: String = _validate_notify_line(text, from)
 	if not invalid.is_empty():
 		return MCPToolUtils.error(invalid)
 
-	var target: Dictionary = await _resolve_notify_target(to)
+	var listing: Array = _terminal_list({}).get("terminals", [])
+	var target: Dictionary = await _resolve_notify_target(to, listing)
 	if not target.get("success", false):
 		return target
+	# A reply address must be a terminal that exists: a typo here would send
+	# every answer to nobody.
+	if not reply_to.is_empty() and _listing_entry(listing, reply_to).is_empty():
+		return MCPToolUtils.error("reply_to '%s' is not a terminal here; pass your own $MINERVA_TERMINAL_ID" % reply_to)
 
-	var history = target["history"]
 	# The envelope, not the name inside it, is what recipients are told to
-	# trust: only the host writes this prefix.
-	var envelope: String = "%s%s] %s" % [NOTIFY_ENVELOPE_PREFIX, from, text]
+	# trust: only the host writes this prefix. The reply address rides inside
+	# it so the recipient answers this instance and not a look-alike.
+	var reply_suffix: String = "" if reply_to.is_empty() else " (reply to: %s)" % reply_to
+	var envelope: String = "%s%s%s] %s" % [NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text]
+
+	var wait_ms: int = clampi(
+		MCPToolUtils.coerce_int(arguments.get("wait_ms", 0)), 0, NOTIFY_MAX_WAIT_MS)
+	var receipt_target: Dictionary = {
+		"terminal_id": str(target["terminal_id"]),
+		"name": str(target["name"]),
+	}
+
+	var history = _find_passthrough_chat(str(target["terminal_id"]))
+	if history == null:
+		# The direct path paces its own holds within wait_ms.
+		return await _notify_direct(target, receipt_target, envelope, wait_ms)
+
+	# The chat path queues, so its holds are decided once, now. A person
+	# mid-sentence in the target outranks any agent: the write would submit
+	# their half-typed line with the envelope stapled to it.
+	var typed_ago: int = _ms_since_human_input(target, str(target["terminal_id"]))
+	if typed_ago >= 0 and typed_ago < NOTIFY_HUMAN_TYPING_MS:
+		return _held(receipt_target, "human_typing",
+			"a person typed in '%s' %d ms ago; nothing was written" % [str(target["name"]), typed_ago])
+	# The chat's relay types into the foreground process: without a harness
+	# there the line would run as a shell command. A foreground the platform
+	# can report but could not read just now is a hold, not a shell.
+	if str(target.get("harness", "")).is_empty():
+		if target.has("foreground_process") and str(target["foreground_process"]).is_empty():
+			return _held(receipt_target, "foreground_unknown",
+				"the foreground process of '%s' could not be read; nothing was written" % str(target["name"]))
+		return _no_harness(target)
+
+	receipt_target["chat_id"] = str(history.HistoryId)
 	# A notification is never urgent enough to take a turn the chat's agent is
 	# blocked on: while a question card is unanswered this queues (deferred)
 	# rather than starting a generate, so the human's answer goes first.
@@ -576,22 +649,175 @@ func _terminal_notify(arguments: Dictionary) -> Dictionary:
 	# may have been cancelled rather than run.
 	var entry_id: int = MCPToolUtils.coerce_int(submitted.get("entry_id", 0))
 	var position: int = MCPToolUtils.outgoing_queue_position(entry_id)
-	var wait_ms: int = clampi(
-		MCPToolUtils.coerce_int(arguments.get("wait_ms", 0)), 0, NOTIFY_MAX_WAIT_MS)
 	if position > 0 and wait_ms > 0:
 		position = await _await_notify_dispatch(entry_id, wait_ms)
 
 	return {
 		"success": true,
-		"target": {
-			"terminal_id": str(target["terminal_id"]),
-			"name": str(target["name"]),
-			"chat_id": str(history.HistoryId),
-		},
+		"target": receipt_target,
 		"status": _notify_status(entry_id, position),
 		"queue_position": position,
 		"entry_id": entry_id,
 	}
+
+
+## Delivery to a terminal with no passthrough chat: the relay types the
+## envelope, classifying the screen with the harness it can see in the
+## foreground, and starts no watch (a watch would register a passthrough
+## provider nobody asked for). A bare shell is refused outright — the line
+## would run as a command.
+##
+## The relay is asked for ONE look at a time and the human-typing rule is
+## re-read from the live session before each look: a relay left to wait out
+## a dialog would write the instant a person's keystroke cleared it, which is
+## exactly when that person is at the keyboard.
+func _notify_direct(target: Dictionary, receipt_target: Dictionary,
+		envelope: String, wait_ms: int) -> Dictionary:
+	var harness: String = str(target.get("harness", ""))
+	var tid: String = str(target["terminal_id"])
+	var session = _resolve_session(tid)
+	var deadline: int = Time.get_ticks_msec() + wait_ms
+	var tree: SceneTree = SingletonObject.get_tree()
+	while true:
+		# Every hold is decided per look, so a wait can outlast a person's
+		# last keystroke or a momentarily unreadable foreground. The
+		# foreground can change while a delivery waits (the harness exits,
+		# the shell is back): the live process decides each look, and a
+		# terminal whose foreground can no longer be read is not written to.
+		var typed_ago: int = _ms_since_human_input(target, tid)
+		var hold: Dictionary = {}
+		if session == null and target.has("foreground_process") \
+				and str(target["foreground_process"]).is_empty():
+			# No live session to re-read (a listing-only caller): the snapshot
+			# stands.
+			hold = _held(receipt_target, "foreground_unknown",
+				"the foreground process of '%s' could not be read; nothing was written" % str(target["name"]))
+		elif harness.is_empty() and session == null:
+			return _no_harness(target)
+		elif session != null and target.has("foreground_process"):
+			if not session.is_alive():
+				var gone: Dictionary = MCPToolUtils.error("Terminal '%s' (id %s) exited; nothing was written" % [
+					str(target["name"]), tid])
+				gone["status"] = "error"
+				gone["target"] = receipt_target
+				return gone
+			var foreground: Dictionary = session.get_foreground_process()
+			if foreground.is_empty() or str(foreground.get("name", "")).is_empty():
+				hold = _held(receipt_target, "foreground_unknown",
+					"the foreground process of '%s' could not be read; nothing was written" % str(target["name"]))
+			else:
+				harness = session.harness_of(foreground)
+				if harness.is_empty():
+					target["foreground_process"] = str(foreground.get("name", ""))
+					return _no_harness(target)
+		if hold.is_empty() and typed_ago >= 0 and typed_ago < NOTIFY_HUMAN_TYPING_MS:
+			hold = _held(receipt_target, "human_typing",
+				"a person typed in '%s' %d ms ago; nothing was written" % [str(target["name"]), typed_ago])
+		elif hold.is_empty():
+			var raw = await _relay_send({
+				"terminal_id": tid, "text": envelope, "arm": false,
+				"profile": harness, "gate_budget_ms": 0,
+				"human_guard_ms": NOTIFY_HUMAN_TYPING_MS,
+				"expect_harness": harness,
+			})
+			var classified: Dictionary = PassthroughLaunchDialog._classify_watch_result(
+				raw if raw is Dictionary else {"error": "relay send returned nothing"})
+			if classified.get("ok", false):
+				var submit = (classified.get("result", {}) as Dictionary).get("submit", null)
+				return {
+					"success": true, "target": receipt_target, "status": "written",
+					"harness": harness,
+					"submit": str(submit.get("state", "")) if submit is Dictionary else "",
+				}
+			var reason: String = str(classified.get("error", ""))
+			if not _relay_reply_is_hold(raw):
+				var failed: Dictionary = MCPToolUtils.error(reason)
+				failed["status"] = "error"
+				failed["target"] = receipt_target
+				return failed
+			hold = _held(receipt_target, "screen", reason)
+		# The budget is checked before sleeping and again on waking, so no
+		# look is taken once the caller's wait has lapsed.
+		var remaining_ms: int = deadline - Time.get_ticks_msec()
+		if tree == null or remaining_ms <= 0:
+			return hold
+		await tree.create_timer(minf(NOTIFY_RETRY_INTERVAL_S, remaining_ms / 1000.0)).timeout
+		if Time.get_ticks_msec() >= deadline:
+			return hold
+	# Unreachable: the loop only leaves through the returns above, but the
+	# parser wants every path to yield a value.
+	return {}
+
+
+## The refusal for a terminal whose foreground is not an agent harness.
+func _no_harness(target: Dictionary) -> Dictionary:
+	return MCPToolUtils.error("Terminal '%s' (id %s) has no agent harness in the foreground (%s); a notification typed into a shell would run as a command" % [
+		str(target["name"]), str(target["terminal_id"]),
+		str(target.get("foreground_process", "unknown process"))])
+
+
+## A hold receipt: not delivered, retry later, and why.
+func _held(receipt_target: Dictionary, hold_reason: String, why: String) -> Dictionary:
+	var held: Dictionary = MCPToolUtils.error("%s. Send again in a moment." % why)
+	held["status"] = "held"
+	held["hold_reason"] = hold_reason
+	held["target"] = receipt_target
+	return held
+
+
+## The relay marks a gate refusal with held:true inside its error payload.
+func _relay_reply_is_hold(raw) -> bool:
+	if not (raw is Dictionary):
+		return false
+	if bool(raw.get("held", false)):
+		return true
+	var content = raw.get("content", null)
+	if content is Array and content.size() > 0 and content[0] is Dictionary:
+		var parsed = JSON.parse_string(str(content[0].get("text", "{}")))
+		return parsed is Dictionary and bool(parsed.get("held", false))
+	return false
+
+
+## Milliseconds since a person last typed in this terminal, or -1 when never.
+## Read from the live session when there is one — the listing is a snapshot
+## and a keystroke can land while a delivery waits — else from the listing.
+func _ms_since_human_input(target: Dictionary, terminal_id: String = "") -> int:
+	var last: int = MCPToolUtils.coerce_int(target.get("last_input_ms", 0))
+	if not terminal_id.is_empty():
+		var session = _resolve_session(terminal_id)
+		if session != null and "last_input_ms" in session:
+			last = int(session.last_input_ms)
+	if last <= 0:
+		return -1
+	return maxi(0, int(Time.get_unix_time_from_system() * 1000.0) - last)
+
+
+func _listing_entry(listing: Array, terminal_id: String) -> Dictionary:
+	for entry: Dictionary in listing:
+		if str(entry.get("id", "")) == terminal_id:
+			return entry
+	return {}
+
+
+func _relay_send(args: Dictionary):
+	if relay_send_source.is_valid():
+		return await relay_send_source.call(args)
+	return await _call_relay_tool(AGENT_RELAY_SEND_TOOL, args)
+
+
+## One relay tool call from inside the host: through PluginToolRegistry when
+## it has synced the plugin's manifest tools, else straight down the plugin's
+## connection (the registry learns manifest tools on a state change that a
+## just-started plugin may not have had yet). Errors come back as {"error"}.
+func _call_relay_tool(tool_name: String, args: Dictionary):
+	var registry = SingletonObject.plugin_tool_registry if "plugin_tool_registry" in SingletonObject else null
+	if registry != null and registry.has_method("is_plugin_tool") and registry.is_plugin_tool(tool_name):
+		return await registry.handle_tool_call(tool_name, args)
+	var manager = SingletonObject.plugin_manager if "plugin_manager" in SingletonObject else null
+	var conn = manager.get_connection(AGENT_RELAY_PLUGIN_ID) if manager != null and manager.has_method("get_connection") else null
+	if conn == null:
+		return {"error": "the agent-relay plugin is not running, so nothing can type into that terminal"}
+	return await conn.call_tool(tool_name, args)
 
 
 ## Empty string when the line is deliverable, else why it is not.
@@ -607,6 +833,8 @@ func _validate_notify_line(text: String, from: String) -> String:
 			text.length(), NOTIFY_MAX_TEXT_LENGTH]
 	if from.contains("\n") or from.contains("\r") or from.contains("]"):
 		return "from must be a single line and must not contain ']' — it goes inside the notify envelope"
+	if from.contains("(reply to:"):
+		return "from must not contain '(reply to:' — the reply address is written by the host from reply_to, never self-declared"
 	if _first_control_char(from) >= 0:
 		return "from contains a control character (0x%02X) — the envelope is typed into a terminal, where control bytes are keystrokes, not text" % _first_control_char(from)
 	if from.length() > NOTIFY_MAX_FROM_LENGTH:
@@ -627,35 +855,47 @@ func _first_control_char(line: String) -> int:
 	return -1
 
 
-## Resolve `to` to EXACTLY ONE terminal and its bound passthrough chat.
-## Matching is the union of three axes — terminal id, tab name
-## (case-insensitive) and watch profile — deduplicated by terminal id. No match
-## or more than one is an error that lists the candidates: an ambiguous
-## notification must never be guessed at.
-## Returns {success, terminal_id, name, history} or an error Dictionary.
-func _resolve_notify_target(to: String) -> Dictionary:
-	var listing: Dictionary = _terminal_list({})
-	var terminals: Array = listing.get("terminals", [])
-	if terminals.is_empty():
+## Which terminal `to` names — EXACTLY one, by terminal id, tab name
+## (case-insensitive), harness@tab name or bare harness; no match or more
+## than one is an error listing the candidates, never a guess. The match
+## carries the listing facts delivery needs (harness, foreground process,
+## last human keystroke). The harness is what the PTY shows in the
+## foreground; only a terminal whose foreground cannot be read at all
+## (ConPTY) falls back to its watch profile.
+func _resolve_notify_target(to: String, listing: Array) -> Dictionary:
+	if listing.is_empty():
 		return MCPToolUtils.error("No terminals exist, so '%s' cannot be delivered to" % to)
 
+	# The watch profile is asked for only where the foreground is unreadable;
+	# it is one plugin round-trip per terminal.
 	var ids: PackedStringArray = PackedStringArray()
-	for entry: Dictionary in terminals:
-		ids.append(str(entry.get("id", "")))
-	var profiles: Dictionary = await _watch_profiles(ids)
+	for entry: Dictionary in listing:
+		if not entry.has("foreground_process"):
+			ids.append(str(entry.get("id", "")))
+	var profiles: Dictionary = await _watch_profiles(ids) if not ids.is_empty() else {}
 
 	var needle: String = to.to_lower()
 	var matches: Array[Dictionary] = []
 	var described: PackedStringArray = PackedStringArray()
-	for entry: Dictionary in terminals:
+	for entry: Dictionary in listing:
 		var tid: String = str(entry.get("id", ""))
 		var tname: String = str(entry.get("name", ""))
-		var profile: String = str(profiles.get(tid, ""))
+		# The watch profile stands in only when the foreground could not be
+		# read at all: a readable shell prompt is a shell, whatever was watched
+		# there before.
+		var harness: String = str(entry.get("harness", ""))
+		if harness.is_empty() and not entry.has("foreground_process"):
+			harness = str(profiles.get(tid, ""))
 		described.append("%s (id %s%s)" % [
-			tname, tid, (", profile %s" % profile) if not profile.is_empty() else ""])
-		if tid == to or tname.to_lower() == needle \
-				or (not profile.is_empty() and profile.to_lower() == needle):
-			matches.append({"terminal_id": tid, "name": tname})
+			tname, tid, (", %s" % harness) if not harness.is_empty() else ""])
+		var by_harness: bool = not harness.is_empty() and (
+			harness.to_lower() == needle
+			or needle == "%s@%s" % [harness.to_lower(), tname.to_lower()])
+		if tid == to or tname.to_lower() == needle or by_harness:
+			var hit: Dictionary = entry.duplicate()
+			hit["terminal_id"] = tid
+			hit["harness"] = harness
+			matches.append(hit)
 
 	if matches.is_empty():
 		return MCPToolUtils.error("No terminal matches '%s'. Terminals: %s" % [
@@ -667,17 +907,9 @@ func _resolve_notify_target(to: String) -> Dictionary:
 		return MCPToolUtils.error("'%s' matches %d terminals: %s. Name one by its terminal id." % [
 			to, matches.size(), ", ".join(ambiguous)])
 
-	var terminal_id: String = str(matches[0]["terminal_id"])
-	var history = _find_passthrough_chat(terminal_id)
-	if history == null:
-		return MCPToolUtils.error("Terminal '%s' (id %s) has no passthrough chat bound to it. A notification the human cannot see in a chat is not delivered — bind a passthrough chat to that terminal first." % [
-			str(matches[0]["name"]), terminal_id])
-	return {
-		"success": true,
-		"terminal_id": terminal_id,
-		"name": str(matches[0]["name"]),
-		"history": history,
-	}
+	var target: Dictionary = matches[0]
+	target["success"] = true
+	return target
 
 
 ## The chat whose provider is bound to this terminal. The binding IS the
@@ -693,19 +925,16 @@ func _find_passthrough_chat(terminal_id: String):
 
 ## terminal_id -> watch profile id, as the agent-relay plugin knows it.
 ## Default implementation dispatches the plugin's watch_status tool through
-## PluginToolRegistry — the same internal path MCP dispatch uses. An unwatched
-## terminal (or an unreachable plugin) simply has no profile, which makes it
-## unaddressable BY profile and addressable by name or id as before.
+## PluginToolRegistry — the same internal path MCP dispatch uses. This is the
+## fallback harness identity for a terminal whose foreground process the
+## listing cannot name; an unwatched one simply has no profile.
 func _watch_profiles(terminal_ids: PackedStringArray) -> Dictionary:
 	if watch_profile_source.is_valid():
 		var injected = await watch_profile_source.call(terminal_ids)
 		return injected if injected is Dictionary else {}
-	var registry = SingletonObject.plugin_tool_registry if "plugin_tool_registry" in SingletonObject else null
-	if registry == null or not registry.has_method("handle_tool_call"):
-		return {}
 	var profiles: Dictionary = {}
 	for terminal_id in terminal_ids:
-		var raw = await registry.handle_tool_call(
+		var raw = await _call_relay_tool(
 			AGENT_RELAY_WATCH_STATUS_TOOL, {"terminal_id": terminal_id})
 		if not (raw is Dictionary):
 			continue

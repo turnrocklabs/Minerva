@@ -18,6 +18,9 @@ extends SceneTree
 ##     subclass so the test does not need live PTYs (no forkpty headless).
 ##   - the watch profile map: injected through the module's watch_profile_source
 ##     seam, so profile addressing is exercisable without the agent-relay plugin.
+##   - the relay's send tool: injected through relay_send_source, recording the
+##     arguments the direct path hands the plugin and answering with a scripted
+##     reply, so the unbound-terminal path is exercisable without a PTY.
 ##   - the turn body: ChatPane's full UI turn path cannot boot headless, so the
 ##     harness pane replaces ONLY the body of execute_regular_chat with the same
 ##     gate/turn/release shape the real one has, driving a blocking fake
@@ -147,6 +150,9 @@ const HARNESS_MODULE_SRC := """
 extends "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 
 var terminals: Array = []
+var relay_calls: Array = []
+var relay_call_times: Array = []
+var relay_reply: Dictionary = {"ok": true, "submit": {"state": "submitted", "evidence": "echo"}}
 
 func _terminal_list(_arguments: Dictionary) -> Dictionary:
 	return {"success": true, "terminals": terminals, "count": terminals.size()}
@@ -246,6 +252,10 @@ func _make_module(terminals: Array, profiles: Dictionary) -> Object:
 	module.terminals = terminals
 	module.watch_profile_source = func(_ids: PackedStringArray) -> Dictionary:
 		return profiles
+	module.relay_send_source = func(args: Dictionary) -> Dictionary:
+		module.relay_calls.append(args)
+		module.relay_call_times.append(Time.get_ticks_msec())
+		return module.relay_reply
 	return module
 
 
@@ -265,6 +275,7 @@ func _run() -> void:
 	await _test_resolution()
 	await _test_no_match_and_ambiguity()
 	await _test_unbound_terminal()
+	await _test_reply_address()
 	await _test_queued_delivery_is_the_next_turn()
 	await _test_wait_ms()
 	await _test_receipt_follows_the_entry()
@@ -276,8 +287,9 @@ func _run() -> void:
 	_host_render.restore()
 
 
-## The standing two-terminal world: one claude, one codex, each with a bound
-## passthrough chat, plus an unwatched terminal with no chat.
+## The standing world: one claude and one codex terminal, each with a bound
+## passthrough chat; a codex terminal with NO chat (the direct path); and a
+## bare shell with nothing in the foreground.
 func _world() -> Dictionary:
 	var claude_chat = _make_bound_chat("Claude Session", "101")
 	var codex_chat = _make_bound_chat("Codex Session", "202")
@@ -287,9 +299,10 @@ func _world() -> Dictionary:
 	provider.tree = self
 	pane.provider = provider
 	var terminals: Array = [
-		{"id": "101", "name": "Claude Session"},
-		{"id": "202", "name": "Codex Session"},
-		{"id": "303", "name": "Scratch"},
+		{"id": "101", "name": "Claude Session", "harness": "claude"},
+		{"id": "202", "name": "Codex Session", "harness": "codex"},
+		{"id": "303", "name": "Scratch", "foreground_process": "bash"},
+		{"id": "505", "name": "Codex Bare", "harness": "codex", "foreground_process": "codex"},
 	]
 	var module = _make_module(terminals, {"101": "claude", "202": "codex"})
 	return {
@@ -367,7 +380,8 @@ func _test_validation() -> void:
 func _test_resolution() -> void:
 	for addressing: Array in [["Claude Session", "tab name"],
 			["claude session", "tab name, case-insensitive"],
-			["claude", "watch profile"],
+			["claude", "harness"],
+			["claude@Claude Session", "harness@tab name"],
 			["101", "terminal id"]]:
 		var w: = _world()
 		var module: Object = w["module"]
@@ -453,20 +467,159 @@ func _test_no_match_and_ambiguity() -> void:
 #endregion
 
 
-#region D — a terminal with no passthrough chat
+#region D — a terminal with no passthrough chat goes through the relay
 
 func _test_unbound_terminal() -> void:
 	var w: = _world()
 	var module: Object = w["module"]
+	var now: int = int(Time.get_unix_time_from_system() * 1000.0)
 
-	var unbound: Dictionary = await _notify(module,
+	var shell: Dictionary = await _notify(module,
 		{"to": "Scratch", "from": "codex", "text": "hello"})
-	check("D1: a terminal with no passthrough chat is an error",
-		not unbound.get("success", true), str(unbound))
-	check("D2: the error says why — the human must be able to see it",
-		str(unbound.get("error", "")).contains("passthrough chat"),
-		str(unbound.get("error", "")))
-	check("D3: nothing was delivered anywhere", w["provider"].calls.is_empty())
+	check("D1: a bare shell is refused — the line would run as a command",
+		not shell.get("success", true) and str(shell.get("error", "")).contains("harness"),
+		str(shell))
+	check("D2: nothing was delivered anywhere",
+		w["provider"].calls.is_empty() and module.relay_calls.is_empty())
+	# A readable shell prompt stays a shell even where a watch once ran.
+	var stale_watch = _make_module(module.terminals, {"303": "claude"})
+	var watched_shell: Dictionary = await _notify(stale_watch,
+		{"to": "Scratch", "from": "codex", "text": "hello"})
+	check("D2b: a stale watch profile does not turn a readable shell into a harness",
+		not watched_shell.get("success", true) and stale_watch.relay_calls.is_empty(),
+		str(watched_shell))
+	# A foreground the platform reports but could not read just now is a hold,
+	# never "no harness" and never a write.
+	var unreadable: Array = module.terminals.duplicate(true)
+	unreadable[3].erase("harness")
+	unreadable[3]["foreground_process"] = ""
+	var blind = _make_module(unreadable, {})
+	var unknown: Dictionary = await _notify(blind,
+		{"to": "Codex Bare", "from": "claude", "text": "hello"})
+	check("D2d: an unreadable foreground holds with reason foreground_unknown",
+		not unknown.get("success", true) and str(unknown.get("hold_reason", "")) == "foreground_unknown"
+			and blind.relay_calls.is_empty(), str(unknown))
+	# A bound chat does not exempt a shell: the chat's relay would type into it.
+	var chat_shell: Array = module.terminals.duplicate(true)
+	chat_shell[0].erase("harness")
+	chat_shell[0]["foreground_process"] = "bash"
+	var bound_shell = _make_module(chat_shell, {})
+	var chat_refused: Dictionary = await _notify(bound_shell,
+		{"to": "Claude Session", "from": "codex", "text": "hello"})
+	check("D2c: a chat-bound terminal whose harness has exited is refused on the chat path too",
+		not chat_refused.get("success", true) and str(chat_refused.get("error", "")).contains("harness")
+			and w["provider"].calls.is_empty(), str(chat_refused))
+
+	var direct: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude", "text": "review posted", "wait_ms": 1500})
+	check("D3: an unbound codex terminal is written through the relay",
+		direct.get("success", false) and str(direct.get("status", "")) == "written"
+			and str(direct.get("submit", "")) == "submitted", str(direct))
+	check("D4: the relay is told the harness, no arming, ONE look, and the write-time typing guard",
+		module.relay_calls.size() == 1
+			and str(module.relay_calls[0].get("terminal_id", "")) == "505"
+			and str(module.relay_calls[0].get("profile", "")) == "codex"
+			and module.relay_calls[0].get("arm", true) == false
+			and int(module.relay_calls[0].get("gate_budget_ms", -1)) == 0
+			and int(module.relay_calls[0].get("human_guard_ms", -1)) == 5000
+			and str(module.relay_calls[0].get("expect_harness", "")) == "codex",
+		str(module.relay_calls))
+	check("D5: the relay types the host-built envelope",
+		module.relay_calls.size() == 1
+			and str(module.relay_calls[0].get("text", ""))
+				== "[MINERVA NOTIFY from claude] review posted", str(module.relay_calls))
+	check("D6: no chat was involved", w["provider"].calls.is_empty()
+		and not direct.get("target", {}).has("chat_id"), str(direct))
+
+	# The relay refusing to write is a HOLD the sender can retry, not a failure;
+	# with a wait the host keeps looking, one look at a time, until the budget
+	# lapses.
+	module.relay_reply = {"error": "terminal 505 is showing a permission dialog that wants a keystroke; nothing was written", "held": true}
+	var looks_before: int = module.relay_calls.size()
+	var started: int = Time.get_ticks_msec()
+	var held: Dictionary = await _notify(module,
+		{"to": "505", "from": "claude", "text": "again", "wait_ms": 600})
+	check("D7: a screen that owns the keyboard holds the notification",
+		not held.get("success", true) and str(held.get("status", "")) == "held"
+			and str(held.get("hold_reason", "")) == "screen", str(held))
+	var looks: int = module.relay_calls.size() - looks_before
+	check("D7b: the host keeps looking within the wait, one-shot each time, and never after it",
+		looks >= 2 and looks <= 3
+			and int(module.relay_calls[-1].get("gate_budget_ms", -1)) == 0
+			and int(module.relay_call_times[-1]) <= started + 600,
+		"%d looks, last at +%d ms" % [looks, int(module.relay_call_times[-1]) - started])
+	module.relay_reply = {"error": "terminal write failed: boom"}
+	var looks_at_error: int = module.relay_calls.size()
+	var broken: Dictionary = await _notify(module,
+		{"to": "505", "from": "claude", "text": "again", "wait_ms": 600})
+	check("D7c: an unmarked relay error is an error, not a hold, and is not retried",
+		not broken.get("success", true) and str(broken.get("status", "")) == "error"
+			and module.relay_calls.size() == looks_at_error + 1, str(broken))
+	module.relay_reply = {"ok": true, "submit": {"state": "submitted", "evidence": "echo"}}
+
+	# A person typing in the target outranks any agent, on BOTH paths.
+	module.terminals[3]["last_input_ms"] = now - 1000
+	module.terminals[0]["last_input_ms"] = now - 1000
+	var calls_before: int = module.relay_calls.size()
+	var typing_direct: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude", "text": "hello"})
+	var typing_chat: Dictionary = await _notify(module,
+		{"to": "Claude Session", "from": "codex", "text": "hello"})
+	check("D8: a keystroke 1 s ago holds the direct path with reason human_typing",
+		not typing_direct.get("success", true)
+			and str(typing_direct.get("hold_reason", "")) == "human_typing"
+			and module.relay_calls.size() == calls_before, str(typing_direct))
+	check("D9: and holds the chat path the same way",
+		not typing_chat.get("success", true)
+			and str(typing_chat.get("hold_reason", "")) == "human_typing"
+			and w["provider"].calls.is_empty(), str(typing_chat))
+	module.terminals[3]["last_input_ms"] = now - 30000
+	var later: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude", "text": "hello"})
+	check("D10: a keystroke 30 s ago is nobody typing", later.get("success", false)
+		and module.relay_calls.size() == calls_before + 1, str(later))
+	# A wait outlasts the typing window: the keystroke was 4.5 s ago, the
+	# guard is 5 s, the caller waits 2 s — one delivery, after the guard clears.
+	module.terminals[3]["last_input_ms"] = int(Time.get_unix_time_from_system() * 1000.0) - 4500
+	var before_wait: int = module.relay_calls.size()
+	var t0: int = Time.get_ticks_msec()
+	var waited: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude", "text": "hello", "wait_ms": 2000})
+	check("D11: a direct wait outlasts a recent keystroke and delivers exactly once",
+		waited.get("success", false) and module.relay_calls.size() == before_wait + 1
+			and Time.get_ticks_msec() - t0 >= 400, "%s after %d ms" % [str(waited), Time.get_ticks_msec() - t0])
+
+	_teardown(w["pane"], w["chats"])
+
+#endregion
+
+
+#region I — the reply address rides inside the envelope
+
+func _test_reply_address() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+
+	var bad: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude@Claude Session", "text": "look at 1234",
+			"reply_to": "999"})
+	check("I1: a reply_to that is no terminal is refused",
+		not bad.get("success", true) and str(bad.get("error", "")).contains("reply_to"), str(bad))
+	check("I2: and nothing was written", module.relay_calls.is_empty())
+
+	var forged: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude (reply to: 999)", "text": "look at 1234"})
+	check("I2b: a reply address smuggled into from is refused",
+		not forged.get("success", true) and module.relay_calls.is_empty(), str(forged))
+
+	var good: Dictionary = await _notify(module,
+		{"to": "Codex Bare", "from": "claude@Claude Session", "text": "look at 1234",
+			"reply_to": "101"})
+	check("I3: the envelope carries the sender's name and reply address",
+		good.get("success", false) and module.relay_calls.size() == 1
+			and str(module.relay_calls[0].get("text", ""))
+				== "[MINERVA NOTIFY from claude@Claude Session (reply to: 101)] look at 1234",
+		str(module.relay_calls))
 
 	_teardown(w["pane"], w["chats"])
 
@@ -736,7 +889,7 @@ func _test_wiring_is_present() -> void:
 	check("G4: notify owns no delivery code of its own",
 		body.find("write_input") == -1 and body.find("session.") == -1, body)
 	check("G5: the envelope is built by the host, from the shared prefix",
-		body.find("NOTIFY_ENVELOPE_PREFIX, from, text") != -1
+		body.find("NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text") != -1
 			and source.find('const NOTIFY_ENVELOPE_PREFIX := "[MINERVA NOTIFY from "') != -1)
 
 	# The chat tool must keep using the same submit path, or the two MCP send
