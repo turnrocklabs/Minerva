@@ -41,7 +41,6 @@ private:
     int _master_fd;     // Master file descriptor
     int _slave_fd;      // Slave file descriptor
     pid_t _child_pid;   // Child process ID
-    struct termios _old_term;  // Original terminal settings
 
     std::atomic<bool> _command_running{false};
     std::atomic<bool> _running{false};

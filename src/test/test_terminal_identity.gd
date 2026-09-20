@@ -107,8 +107,8 @@ func _run() -> void:
 		Array(session.get_foreground_process().get("argv", [])) == ["sleep", "3"],
 		str(session.get_foreground_process()))
 
-	# The command ends on its own: Ctrl-C is not a signal in these PTYs (the
-	# line discipline runs with ISIG off), so it would not end the wait.
+	# The command is left to end on its own here; interrupting it is the
+	# signal suite's oracle (test_terminal_signals.gd).
 	var back: bool = await _wait_until(func() -> bool:
 		return str(session.get_foreground_process().get("name", "")) != "sleep")
 	check("when it exits the shell is back in front", back, str(session.get_foreground_process()))
@@ -370,8 +370,8 @@ func _test_harness_of(session) -> void:
 ## An interpreter-shaped regression fixture on a real PTY: node run on a
 ## script named `codex`, the shape of an npm-installed harness, classified
 ## from the executable and argv rather than the thread name. The script exits
-## on any stdin line, because these PTYs run with ISIG off and cannot be
-## interrupted with Ctrl-C.
+## on any stdin line, which is what this fixture needs: the classification is
+## the oracle here, not how the program is ended.
 const NODE_HARNESS_SRC := """
 process.stdin.on('data', () => process.exit(0));
 setTimeout(() => process.exit(0), 30000);

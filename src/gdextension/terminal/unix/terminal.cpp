@@ -851,25 +851,18 @@ bool Terminal::start(int width, int height)
         UtilityFunctions::push_error("[Terminal C++] Failed to create minerva-vt terminal");
     }
 
-    struct termios term_settings;
-    tcgetattr(_master_fd, &term_settings);
-    
-    // Save original settings
-    _old_term = term_settings;
-    
-    // Raw input mode — let ghostty-vt handle all input sequences
-    term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
-    term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    term_settings.c_cflag &= ~(CSIZE | PARENB);
-    term_settings.c_cflag |= CS8 | ECHO;
-    // Keep OPOST enabled — ghostty-vt needs ONLCR (\n → \r\n) from the PTY driver
-    
-    // Set minimal character and timing
-    term_settings.c_cc[VMIN] = 1;
-    term_settings.c_cc[VTIME] = 0;
-    
-    tcsetattr(_master_fd, TCSANOW, &term_settings);
-    // Set non-blocking mode for master
+    // The PTY keeps the kernel's default line discipline. The parent does not
+    // touch the modes: the child owns them — a shell and every TUI set the
+    // modes they need on the slave — and a parent-side rewrite races the
+    // child's exec, so the same code would sometimes land before and
+    // sometimes after the shell's own tcsetattr. Leaving the default in place
+    // means ISIG is on until an application turns it off, so the 0x03 the
+    // view writes for Ctrl-C reaches the line discipline as a signal, and a
+    // program in raw mode still receives it as a plain byte. The same holds
+    // for the other default-on keys the application owns once it takes raw
+    // mode: Ctrl-Z suspends and Ctrl-S/Ctrl-Q flow-control until it does.
+
+    // Non-blocking master: the output thread polls it.
     int flags = fcntl(_master_fd, F_GETFL);
     fcntl(_master_fd, F_SETFL, flags | O_NONBLOCK);
     // Start output thread
@@ -938,8 +931,6 @@ void Terminal::stop()
     }
 
     if (_master_fd >= 0) {
-        // Restore original terminal settings
-        tcsetattr(_master_fd, TCSANOW, &_old_term);
         close(_master_fd);
         _master_fd = -1;
     }
