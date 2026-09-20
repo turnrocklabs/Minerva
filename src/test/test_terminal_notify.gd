@@ -274,6 +274,7 @@ func _run() -> void:
 	await _test_validation()
 	await _test_resolution()
 	await _test_no_match_and_ambiguity()
+	await _test_renamed_tab_addressing()
 	await _test_unbound_terminal()
 	await _test_reply_address()
 	await _test_queued_delivery_is_the_next_turn()
@@ -463,6 +464,42 @@ func _test_no_match_and_ambiguity() -> void:
 	for _i in range(4):
 		await process_frame
 	_teardown(pane, chats)
+
+#endregion
+
+
+#region C2 — a renamed tab answers to the name its child still sees
+
+## MINERVA_TERMINAL_NAME is fixed when the shell is spawned, so a harness that
+## quotes its own name addresses a renamed tab by a name the tab bar no longer
+## shows (the listing reports it as launch_name). Both names resolve, alone and
+## after a harness@. Two tabs sharing one launch_name is an ambiguity, refused
+## the same way a shared harness is. Delivery itself is section B's business —
+## this drives the resolver, which is the part a rename can break.
+func _test_renamed_tab_addressing() -> void:
+	var renamed: Array = [
+		{"id": "101", "name": "ops", "launch_name": "Terminal", "harness": "codex"},
+		{"id": "202", "name": "notes", "harness": "claude"},
+	]
+	var module = _make_module(renamed, {})
+	for address: String in ["Terminal", "ops", "codex@Terminal", "codex@ops"]:
+		var target: Dictionary = await module._resolve_notify_target(address, renamed)
+		check("C8: '%s' reaches the renamed tab" % address,
+			target.get("success", false)
+				and str(target.get("terminal_id", "")) == "101", str(target))
+
+	var shared: Array = [
+		{"id": "101", "name": "ops", "launch_name": "Terminal", "harness": "codex"},
+		{"id": "404", "name": "logs", "launch_name": "Terminal", "harness": "codex"},
+	]
+	var module2 = _make_module(shared, {})
+	var ambiguous: Dictionary = await module2._resolve_notify_target("Terminal", shared)
+	check("C9: a launch_name shared by two tabs is refused, not guessed",
+		not ambiguous.get("success", true), str(ambiguous))
+	check("C10: the refusal names both terminal ids",
+		str(ambiguous.get("error", "")).contains("101")
+			and str(ambiguous.get("error", "")).contains("404"),
+		str(ambiguous.get("error", "")))
 
 #endregion
 

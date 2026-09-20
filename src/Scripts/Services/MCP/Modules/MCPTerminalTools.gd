@@ -72,7 +72,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_terminal_list",
-		"List all terminal sessions with their IDs, names, and dimensions. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME. Includes background sessions: visible=false means no UI tab (use minerva_terminal_promote to show it). alive=false means the shell has exited (scrollback still readable).",
+		"List all terminal sessions with their IDs, names, and dimensions. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable).",
 		{"type": "object", "properties": {}}, "terminal")
 
 	server._register_tool("minerva_terminal_write",
@@ -220,7 +220,8 @@ func _find_active_view() -> TerminalNew:
 
 
 ## The TerminalNew view currently attached to this session, or null if the
-## session is background. "Visible" in terminal_list == this returns non-null.
+## session is background. This is terminal_list's has_view; `visible` needs the
+## pane and the tab selection on top of it (see _view_visibility).
 func _find_view_for_session(session) -> TerminalNew:
 	if session == null:
 		return null
@@ -249,7 +250,9 @@ func _find_tab_group() -> TerminalTabGroup:
 
 ## The tab group + tab index hosting this view: {group, tab}. group is null when
 ## the view is not under a TerminalTabGroup; tab is -1 when not in its TabBar.
-func _locate_view_tab(view: TerminalNew) -> Dictionary:
+## Takes a Node, not a TerminalNew: only the parent chain and the tab metadata
+## are read, so this works for any view a tab group hosts.
+func _locate_view_tab(view: Node) -> Dictionary:
 	var parent = view.get_parent()
 	while parent:
 		if parent is TerminalTabGroup:
@@ -259,6 +262,48 @@ func _locate_view_tab(view: TerminalNew) -> Dictionary:
 			return {"group": parent, "tab": -1}
 		parent = parent.get_parent()
 	return {"group": null, "tab": -1}
+
+
+## What a person can actually see of this session, as three separate facts plus
+## their conjunction:
+##   has_view   — a view is attached (a tab exists for it at all)
+##   pane_shown — the pane hosting that tab group is shown on screen
+##   selected   — that tab is the current tab of its group
+##   visible    — all three: someone is looking at this terminal right now
+## A caller that wants "is there a tab" reads has_view; one that wants "is a
+## person watching" reads visible.
+func _session_visibility(session) -> Dictionary:
+	return _view_visibility(_find_view_for_session(session))
+
+
+## The same facts read off a view; null (a background session, or one whose
+## view was detached by demote) is all-false.
+## pane_shown comes from the tab GROUP's is_visible_in_tree because hiding the
+## terminal pane hides the group with it, while selecting another tab only
+## hides the view — reading the view alone could not tell the two apart.
+func _view_visibility(view: Node) -> Dictionary:
+	var facts: Dictionary = {
+		"has_view": view != null,
+		"pane_shown": false,
+		"selected": false,
+		"visible": false,
+	}
+	if view == null:
+		return facts
+	var located: Dictionary = _locate_view_tab(view)
+	var group = located.get("group")
+	var tab: int = int(located.get("tab", -1))
+	if group != null:
+		facts["pane_shown"] = group.is_visible_in_tree()
+		facts["selected"] = tab >= 0 and group._tab_bar.current_tab == tab
+	else:
+		# Direct embed (test harness or a one-off host): the view's own
+		# visibility is the whole story and there is no tab bar it could be
+		# unselected in.
+		facts["pane_shown"] = view.is_visible_in_tree()
+		facts["selected"] = true
+	facts["visible"] = bool(facts["pane_shown"]) and bool(facts["selected"])
+	return facts
 
 
 ## Open the terminal pane so the user sees it (promote = "show me this
@@ -279,10 +324,18 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 		for session in registry.list_sessions():
 			if not session.terminal_available:
 				continue
+			# visible answers "can a person see this right now", which needs all
+			# three facts; each is reported too, so a caller can tell a
+			# background session from a tab hidden behind another tab or a
+			# closed pane.
+			var seen: Dictionary = _session_visibility(session)
 			var entry: Dictionary = {
 				"id": session.terminal_id,
 				"name": session.session_name,
-				"visible": _find_view_for_session(session) != null,
+				"visible": seen["visible"],
+				"has_view": seen["has_view"],
+				"pane_shown": seen["pane_shown"],
+				"selected": seen["selected"],
 				"alive": session.is_alive(),
 				"cols": session.get_cols(),
 				"rows": session.get_rows(),
@@ -460,14 +513,14 @@ func _terminal_create(arguments: Dictionary) -> Dictionary:
 		return {"success": false, "error": "No terminal tab group found. Is the terminal panel open? (Pass background: true to create a headless terminal instead.)"}
 
 	var new_term: TerminalNew = tab_group.add_terminal()
-	if not tab_name.is_empty() and tab_group._tab_bar:
-		var idx: int = tab_group.tab_count() - 1
-		tab_group._tab_bar.set_tab_title(idx, tab_name)
+	var display_name: String = tab_name if not tab_name.is_empty() else str(new_term.name)
+	# One place applies a title: the tab group's apply_title writes both the
+	# tab bar and the session name, so a tab named here and a tab renamed by
+	# double-click cannot drift apart. It leaves an open rename editor alone.
+	tab_group.apply_title(tab_group.tab_count() - 1, display_name)
 
 	var session = new_term.get_session()
-	var display_name: String = tab_name if not tab_name.is_empty() else str(new_term.name)
 	if session:
-		session.session_name = display_name
 		return {"success": true, "id": session.terminal_id, "name": display_name, "visible": true}
 	# Extension unavailable — keep the legacy (view-instance-id) reply.
 	return {"success": true, "id": str(new_term.get_instance_id()), "name": display_name, "visible": true}
@@ -527,8 +580,9 @@ func _terminal_promote(arguments: Dictionary) -> Dictionary:
 	# group auto-creates a fresh terminal on becoming visible, which would race
 	# us into a spurious extra shell.
 	tab_group.add_terminal(session)
-	if tab_group._tab_bar:
-		tab_group._tab_bar.set_tab_title(tab_group.tab_count() - 1, session.session_name)
+	# Same one title path as create: the name is already the session's, so this
+	# only makes the tab bar agree with it.
+	tab_group.apply_title(tab_group.tab_count() - 1, str(session.session_name))
 	_show_terminal_pane()
 	return {"success": true, "id": session.terminal_id, "visible": true}
 
@@ -933,12 +987,25 @@ func _resolve_notify_target(to: String, listing: Array) -> Dictionary:
 		var harness: String = str(entry.get("harness", ""))
 		if harness.is_empty() and not entry.has("foreground_process"):
 			harness = str(profiles.get(tid, ""))
-		described.append("%s (id %s%s)" % [
-			tname, tid, (", %s" % harness) if not harness.is_empty() else ""])
-		var by_harness: bool = not harness.is_empty() and (
-			harness.to_lower() == needle
-			or needle == "%s@%s" % [harness.to_lower(), tname.to_lower()])
-		if tid == to or tname.to_lower() == needle or by_harness:
+		# A renamed tab answers to BOTH names: the tab bar shows the new one,
+		# but the running child still reads the spawn-time name out of its own
+		# MINERVA_TERMINAL_NAME, and that is the name it quotes when it asks to
+		# be addressed. No rename can update the child's environment.
+		var lname: String = str(entry.get("launch_name", ""))
+		var addresses: PackedStringArray = PackedStringArray([tname.to_lower()])
+		if not lname.is_empty() and not addresses.has(lname.to_lower()):
+			addresses.append(lname.to_lower())
+		described.append("%s (id %s%s%s)" % [
+			tname, tid,
+			(", was %s" % lname) if not lname.is_empty() and lname != tname else "",
+			(", %s" % harness) if not harness.is_empty() else ""])
+		var by_name: bool = addresses.has(needle)
+		var by_harness: bool = false
+		if not harness.is_empty():
+			by_harness = harness.to_lower() == needle
+			for address: String in addresses:
+				by_harness = by_harness or needle == "%s@%s" % [harness.to_lower(), address]
+		if tid == to or by_name or by_harness:
 			var hit: Dictionary = entry.duplicate()
 			hit["terminal_id"] = tid
 			hit["harness"] = harness

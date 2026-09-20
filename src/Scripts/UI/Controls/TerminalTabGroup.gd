@@ -148,7 +148,9 @@ func close_terminal(tab: int) -> void:
 	if tab < 0 or tab >= _tab_bar.tab_count:
 		return
 
-	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
+	# Untyped: the metadata is whatever view was registered, and every use
+	# below asks by method rather than by class.
+	var terminal = _tab_bar.get_tab_metadata(tab)
 	_tab_bar.remove_tab(tab)
 	if terminal:
 		# Tab close = session close (preserve today's behaviour).
@@ -175,7 +177,7 @@ func detach_terminal(tab: int) -> void:
 	if tab < 0 or tab >= _tab_bar.tab_count:
 		return
 
-	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
+	var terminal = _tab_bar.get_tab_metadata(tab)
 	_tab_bar.remove_tab(tab)
 	if terminal:
 		if terminal.has_method("detach_session"):
@@ -284,11 +286,22 @@ func begin_rename(tab: int) -> LineEdit:
 	var rect: Rect2 = _tab_bar.get_tab_rect(tab)
 	edit.position = rect.position
 	edit.size = Vector2(maxf(rect.size.x, 80.0), rect.size.y)
-	edit.text_submitted.connect(func(new_title: String) -> void: commit_rename(tab, new_title))
-	edit.focus_exited.connect(_cancel_rename)
+	# The editor outlives the index it was opened over — a tab closing under it
+	# renumbers everything after it — so the commit is bound to the VIEW and
+	# resolves its index again at commit time.
+	var view = _tab_bar.get_tab_metadata(tab)
+	# Every callback names the editor it belongs to. begin_rename closes the
+	# previous editor but cannot free it on the spot, so the old editor is still
+	# focused when the new one grabs focus — and the focus_exited that fires
+	# then would otherwise close its own replacement.
+	edit.text_submitted.connect(func(new_title: String) -> void:
+		if edit == _rename_edit:
+			_commit_rename_for(view, new_title)
+	)
+	edit.focus_exited.connect(_cancel_rename_for.bind(edit))
 	edit.gui_input.connect(func(e: InputEvent) -> void:
 		if e.is_action_pressed("ui_cancel"):
-			_cancel_rename()
+			_cancel_rename_for(edit)
 	)
 
 	_rename_edit = edit
@@ -297,13 +310,36 @@ func begin_rename(tab: int) -> LineEdit:
 	return edit
 
 
+## Commits the inline editor onto the tab it was opened over, wherever that
+## tab has moved to since. A view that has been closed takes its rename with
+## it rather than renaming whichever tab now holds its old index.
+func _commit_rename_for(view, new_title: String) -> void:
+	_close_rename_edit()
+	if view == null or not is_instance_valid(view):
+		return
+	var tab: int = _tab_index_of(view)
+	if tab >= 0:
+		apply_title(tab, new_title)
+
+
+## The tab holding *view*, or -1 when it has none.
+func _tab_index_of(view) -> int:
+	for tab in range(_tab_bar.tab_count):
+		if _tab_bar.get_tab_metadata(tab) == view:
+			return tab
+	return -1
+
+
+## The ONE place a tab title is applied — the inline rename editor and
+## MCPTerminalTools' create/promote all come through here. It leaves any open
+## rename editor alone: an MCP create or promote can land while a person is
+## typing in one, and closing it would drop their edit.
 ## Applies *new_title* to the tab AND to the session behind it: the session name
 ## is what minerva_terminal_list reports and what the notify resolver addresses,
 ## so a rename that stopped at the TabBar would leave the tab unaddressable
 ## under its visible name. The PTY keeps the name it was spawned with
 ## (TerminalSession.launch_name) — env cannot be changed under a running child.
-func commit_rename(tab: int, new_title: String) -> void:
-	_close_rename_edit()
+func apply_title(tab: int, new_title: String) -> void:
 	var title: String = new_title.strip_edges()
 	if title.is_empty() or tab < 0 or tab >= _tab_bar.tab_count:
 		return
@@ -321,13 +357,26 @@ func _cancel_rename() -> void:
 	_close_rename_edit()
 
 
-## Drops the editor without touching any title. Clearing the reference first
-## keeps the focus_exited that follows queue_free() from re-entering.
+## Cancels only if *edit* is still THE open editor. A superseded editor goes on
+## emitting focus_exited until it is freed, and that belongs to nobody.
+func _cancel_rename_for(edit: LineEdit) -> void:
+	if edit != _rename_edit:
+		return
+	_close_rename_edit()
+
+
+## Drops the editor without touching any title. The focus_exited connection
+## goes first, so the focus the node loses on its way out reaches no handler,
+## and the reference is cleared before the free.
 func _close_rename_edit() -> void:
 	var edit := _rename_edit
 	_rename_edit = null
-	if edit != null and is_instance_valid(edit):
-		edit.queue_free()
+	if edit == null or not is_instance_valid(edit):
+		return
+	var cancel := _cancel_rename_for.bind(edit)
+	if edit.focus_exited.is_connected(cancel):
+		edit.focus_exited.disconnect(cancel)
+	edit.queue_free()
 
 
 func _on_tab_bar_tab_changed(tab: int) -> void:
@@ -341,7 +390,7 @@ func _on_tab_bar_tab_changed(tab: int) -> void:
 	if not _tab_bar.get_tab_metadata(tab):
 		await _tab_metadata_written
 
-	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
+	var terminal = _tab_bar.get_tab_metadata(tab)
 	if terminal:
 		terminal.visible = true
 		focus_requested.emit()

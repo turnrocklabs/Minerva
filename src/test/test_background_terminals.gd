@@ -175,7 +175,18 @@ func _run() -> void:
 	await process_frame
 
 	entry = await _list_entry(tools, bg_id)
-	check("AC2: visible == true after promote", entry.get("visible", false) == true)
+	# visible means a person can see it: the tab exists (has_view) but this
+	# group is hidden, so the listing says not visible until it is shown.
+	check("AC2: has_view == true after promote, visible false while the group is hidden",
+		entry.get("has_view", false) == true and entry.get("visible", true) == false
+			and entry.get("pane_shown", true) == false, str(entry))
+	group.visible = true
+	await process_frame
+	entry = await _list_entry(tools, bg_id)
+	check("AC2: visible == true once the group is shown and the tab is selected",
+		entry.get("visible", false) == true and entry.get("selected", false) == true, str(entry))
+	group.visible = false
+	await process_frame
 	check("AC2: tab group has 1 tab after promote", group.tab_count() == 1)
 
 	# The promoted view renders the session's existing scrollback (bg42).

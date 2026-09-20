@@ -9,11 +9,17 @@ extends SceneTree
 ## itself does) so we can verify tab_count(), is_empty(), and the became_empty
 ## signal without the native extension.
 
-## Stand-in for a TerminalNew view: the rename path only needs get_session().
+## Stand-in for a TerminalNew view: the rename path only needs get_session(),
+## and detach_terminal() (the demote path) only needs detach_session().
 class FakeTerminalView extends Control:
 	var session = null
 	func get_session():
 		return session
+	func detach_session() -> void:
+		session = null
+
+
+const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 
 
 var _pass_count: int = 0
@@ -30,6 +36,9 @@ func _init() -> void:
 	test_is_empty_lifecycle()
 	test_became_empty_signal()
 	await test_double_click_renames_tab_and_session()
+	await test_a_second_rename_editor_survives_the_first()
+	await test_rename_when_a_tab_closes_under_it()
+	await test_visibility_facts()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -68,6 +77,21 @@ func inject_fake_tab(group: TerminalTabGroup) -> Control:
 	group._tab_metadata_written.emit()
 	group._tab_bar.current_tab = group._tab_bar.tab_count - 1
 	return fake
+
+
+## Adds a tab backed by a FakeTerminalView with its own session, the way
+## add_terminal() does (newest tab becomes the current one).
+func inject_fake_view(group: TerminalTabGroup, session_name: String) -> FakeTerminalView:
+	var view := FakeTerminalView.new()
+	view.name = "FakeTerminal"
+	view.visible = false
+	view.session = TerminalSession.new(session_name)
+	group._panel.add_child(view, true)
+	group._tab_bar.add_tab(session_name)
+	group._tab_bar.set_tab_metadata(group._tab_bar.tab_count - 1, view)
+	group._tab_metadata_written.emit()
+	group._tab_bar.current_tab = group._tab_bar.tab_count - 1
+	return view
 
 
 ## Simulates closing a tab by index without touching TerminalNew.
@@ -204,3 +228,172 @@ func test_double_click_renames_tab_and_session() -> void:
 
 	session.free()
 	group.queue_free()
+
+
+## Re-opening the rename over a still-focused editor must leave the SECOND
+## editor open. The first is only queued for deletion, so it is still focused
+## when the replacement grabs focus, and the focus_exited it emits then used to
+## close whichever editor was current — the new one.
+func test_a_second_rename_editor_survives_the_first() -> void:
+	print("test_a_second_rename_editor_survives_the_first:")
+	var group := make_group()
+	var view := FakeTerminalView.new()
+	view.name = "FakeTerminal"
+	view.visible = false
+	var session := TerminalSession.new("codex")
+	view.session = session
+	group._panel.add_child(view, true)
+	group._tab_bar.add_tab("codex")
+	group._tab_bar.set_tab_metadata(0, view)
+	group._tab_metadata_written.emit()
+	group.visible = true
+	await process_frame
+	await process_frame
+
+	var first: LineEdit = group.begin_rename(0)
+	check("the first rename editor opened", first != null)
+	# Same frame: nothing has been freed yet, so the first editor is still in
+	# the tree and still holds focus when the second one takes it.
+	var second: LineEdit = group.begin_rename(0)
+	check("the second rename editor opened", second != null)
+	check("the second editor is the one the group holds", group._rename_edit == second)
+	check("the second editor is alive", second != null and is_instance_valid(second))
+
+	if second != null and is_instance_valid(second):
+		second.text = "codex-c"
+		second.text_submitted.emit("codex-c")
+	check("the second editor's commit reaches the tab", group._tab_bar.get_tab_title(0) == "codex-c")
+	check("and the session", session.session_name == "codex-c")
+	check("no editor is left open", group._rename_edit == null)
+
+	session.free()
+	group.queue_free()
+
+
+## A tab can close while the inline editor is open. The editor is bound to the
+## VIEW it was opened over, not to the index it was opened at, so another tab
+## closing renumbers nothing that matters and the commit still finds its own
+## tab — while the edited tab closing takes its rename with it, leaving the
+## editor closed and no title touched.
+func test_rename_when_a_tab_closes_under_it() -> void:
+	print("test_rename_when_a_tab_closes_under_it:")
+
+	# Leg 1: the edited tab itself goes, and the bystander below it survives.
+	# An index-bound editor would have found that survivor at the freed index
+	# and renamed it; a view-bound one finds nothing to rename.
+	var group := make_group()
+	var edited := inject_fake_view(group, "ops")
+	var bystander := inject_fake_view(group, "codex")
+	var edited_session = edited.session
+	var bystander_session = bystander.session
+	group.visible = true
+	await process_frame
+	await process_frame
+
+	var edit: LineEdit = group.begin_rename(0)
+	check("the rename editor opened over the first of two tabs", edit != null)
+	# Only the EDITED tab goes; the bystander stays so a rename landing on the
+	# wrong survivor would show.
+	remove_fake_tab(group, 0)
+	# queue_free lands at the end of the frame; only then is the view invalid,
+	# which is what the commit checks before it renames anything.
+	await process_frame
+	await process_frame
+	if edit != null and is_instance_valid(edit):
+		edit.text_submitted.emit("renamed-nothing")
+	check("the edited tab is gone and the bystander remains", group.tab_count() == 1)
+	check("the commit left no editor open", group._rename_edit == null)
+	check("and renamed neither session — the bystander keeps its title and name",
+		edited_session.session_name == "ops" and bystander_session.session_name == "codex"
+			and group._tab_bar.get_tab_title(0) == "codex")
+	edited_session.free()
+	bystander_session.free()
+	group.queue_free()
+
+	# Leg 2: a tab BELOW the edited one goes, so the edited tab shifts down an
+	# index. The commit resolves the view's index again and lands on it.
+	var group2 := make_group()
+	var doomed := inject_fake_view(group2, "ops")
+	var kept := inject_fake_view(group2, "codex")
+	var doomed_session = doomed.session
+	var kept_session = kept.session
+	group2.visible = true
+	await process_frame
+	await process_frame
+
+	var edit2: LineEdit = group2.begin_rename(1)
+	check("the rename editor opened over the second tab", edit2 != null)
+	remove_fake_tab(group2, 0)
+	await process_frame
+	await process_frame
+	if edit2 != null and is_instance_valid(edit2):
+		edit2.text_submitted.emit("codex-d")
+	check("the surviving tab took the committed name",
+		group2._tab_bar.tab_count == 1 and group2._tab_bar.get_tab_title(0) == "codex-d")
+	check("and so did its session, not the closed one",
+		kept_session.session_name == "codex-d" and doomed_session.session_name == "ops")
+	doomed_session.free()
+	kept_session.free()
+	group2.queue_free()
+
+
+## minerva_terminal_list's `visible` claims a person can SEE the terminal, which
+## is three facts at once: a view is attached, the pane is shown, and that tab is
+## the selected one in its group. MCPTerminalTools reads all three off the tab
+## group, so this drives the real derivation with stand-in views — TerminalNew
+## needs the GDExtension backend, which a headless run has no backend for.
+func test_visibility_facts() -> void:
+	print("test_visibility_facts:")
+	var module = load(TERMINAL_TOOLS_PATH).new(null)
+
+	# A hidden Control standing in for the terminal pane: hiding it is exactly
+	# what MainUI.set_terminal_pane_visible(false) does to the group below it.
+	var pane := Control.new()
+	pane.name = "FakeTerminalPane"
+	pane.visible = false
+	get_root().add_child(pane)
+	var group := TerminalTabGroup.new()
+	pane.add_child(group)
+
+	var first := inject_fake_view(group, "ops")
+	await process_frame
+
+	var facts: Dictionary = module._view_visibility(first)
+	check("a view in a hidden pane is not visible", facts["visible"] == false)
+	check("...but it still has a view", facts["has_view"] == true)
+	check("...and the pane reads as hidden", facts["pane_shown"] == false)
+	check("...while its tab is still the selected one", facts["selected"] == true)
+
+	pane.visible = true
+	await process_frame
+	facts = module._view_visibility(first)
+	check("the selected tab of a shown pane is visible",
+		facts["visible"] == true and facts["pane_shown"] == true and facts["selected"] == true)
+
+	# A second tab takes the selection, as add_terminal() does.
+	var second := inject_fake_view(group, "codex")
+	await process_frame
+	facts = module._view_visibility(first)
+	check("a tab behind another tab is not visible", facts["visible"] == false)
+	check("...because it is not the selected tab", facts["selected"] == false)
+	check("...though its view is still attached", facts["has_view"] == true)
+	check("the tab that took the selection is the visible one",
+		module._view_visibility(second)["visible"] == true)
+
+	# Demote (MCPTerminalTools._terminal_demote) calls detach_terminal: the view
+	# gives up the session and is freed, so no view can be found for that
+	# session and every fact goes false.
+	var demoted_session = second.session
+	group.detach_terminal(1)
+	check("demote leaves the view holding no session", second.session == null)
+	check("demote leaves the session with no view of its own",
+		demoted_session != null and demoted_session.session_name == "codex")
+	facts = module._view_visibility(null)
+	check("a demoted session has no view", facts["has_view"] == false)
+	check("...and is not visible", facts["visible"] == false)
+
+	if first.session != null:
+		first.session.free()
+	if demoted_session != null:
+		demoted_session.free()
+	pane.queue_free()
