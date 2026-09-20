@@ -14,6 +14,9 @@ extends SceneTree
 ##     $MINERVA_TERMINAL_NAME equal to the tab name it was created with;
 ##   - while `sleep 3` runs, get_foreground_process names "sleep", and once
 ##     it exits the shell is back in front;
+##   - node run on a script named `codex` — the npm-harness shape, whose main
+##     thread node may rename to "MainThread" — is classified as codex from its
+##     executable and argv;
 ##   - terminal_list carries last_input_ms and the foreground process, and a
 ##     human keystroke stamp moves last_input_ms to now;
 ##   - a terminal_write with then_enter_after_ms puts the body on the screen
@@ -109,6 +112,8 @@ func _run() -> void:
 	var back: bool = await _wait_until(func() -> bool:
 		return str(session.get_foreground_process().get("name", "")) != "sleep")
 	check("when it exits the shell is back in front", back, str(session.get_foreground_process()))
+
+	await _test_npm_harness_foreground(session)
 
 	# ── the listing carries it, and a human stamp moves ──────────────────
 	var tools = load(TERMINAL_TOOLS_PATH).new()
@@ -325,12 +330,97 @@ func _test_harness_of(session) -> void:
 			"argv": ["node", "/home/u/.nvm/versions/node/v24/lib/node_modules/@openai/codex/bin/codex.js"]}) == "codex")
 	check("an interpreter running a script named codex, even under a path with a space, is codex",
 		session.harness_of({"name": "python3", "argv": ["/usr/bin/python3", "/home/u/my tools/codex"]}) == "codex")
+	# An npm-installed harness: node renames its main thread to "MainThread",
+	# so only the executable and argv name the program.
+	check("npm Codex behind a renamed main thread is codex",
+		session.harness_of({"name": "MainThread",
+			"exe": "/home/u/.nvm/versions/node/v24/bin/node",
+			"argv": ["node", "/home/u/.nvm/versions/node/v24/bin/codex", "--yolo"]}) == "codex")
+	# A launcher symlink whose target is named by version: the executable's
+	# basename says nothing, argv[0] says claude.
+	check("native Claude Code behind a versioned launcher is claude",
+		session.harness_of({"name": "claude",
+			"exe": "/home/u/.local/share/claude/versions/2.1.278",
+			"argv": ["claude", "--dangerously-skip-permissions"]}) == "claude")
+	check("with no argv the program comes from the executable",
+		session.harness_of({"name": "MainThread", "exe": "/usr/local/bin/codex", "argv": []}) == "codex")
+	# The binary decides: a process that only CLAIMS a harness name in argv[0]
+	# is what its executable says it is, and a native harness that rewrote its
+	# own title is still what its executable says it is.
+	check("exec -a codex sleep is sleep, not a harness",
+		session.harness_of({"name": "codex", "exe": "/usr/bin/sleep",
+			"argv": ["codex", "30"]}) == "")
+	check("a native codex launched through a symlink to its release filename is codex",
+		session.harness_of({"name": "codex", "exe": "/opt/codex/codex-x86_64-unknown-linux-gnu",
+			"argv": ["codex", "--yolo"]}) == "codex")
+	check("a binary merely starting with the name is nobody",
+		session.harness_of({"name": "codexpert", "exe": "/usr/bin/codexpert",
+			"argv": ["codexpert"]}) == "")
+	check("a native codex that retitled its argv is still codex",
+		session.harness_of({"name": "codex", "exe": "/opt/codex/bin/codex",
+			"argv": ["codex worker: idle"]}) == "codex")
 	check("a pager opened on a file named codex is nobody",
 		session.harness_of({"name": "less", "argv": ["less", "codex"]}) == "")
 	check("node running something else is nobody",
 		session.harness_of({"name": "node", "argv": ["node", "server.js"]}) == "")
 	check("the shell is nobody", session.harness_of({"name": "bash", "argv": ["/bin/bash", "--norc"]}) == "")
 	check("no process is nobody", session.harness_of({}) == "")
+
+
+## An interpreter-shaped regression fixture on a real PTY: node run on a
+## script named `codex`, the shape of an npm-installed harness, classified
+## from the executable and argv rather than the thread name. The script exits
+## on any stdin line, because these PTYs run with ISIG off and cannot be
+## interrupted with Ctrl-C.
+const NODE_HARNESS_SRC := """
+process.stdin.on('data', () => process.exit(0));
+setTimeout(() => process.exit(0), 30000);
+"""
+
+
+func _test_npm_harness_foreground(session) -> void:
+	var node_path: Array = []
+	if OS.execute("which", ["node"], node_path) != 0:
+		print("SKIP: node not on PATH — the npm-harness oracle is the table row")
+		return
+	var dir_path: String = "user://terminal_identity_oracle"
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var script_path: String = ProjectSettings.globalize_path(dir_path.path_join("codex"))
+	var f := FileAccess.open(script_path, FileAccess.WRITE)
+	if f == null:
+		check("the npm-harness script could be written", false, script_path)
+		return
+	f.store_string(NODE_HARNESS_SRC)
+	f.close()
+
+	session.write_input("node '%s'\r" % script_path)
+	# Readiness is observed from argv — a fact the classifier under test does
+	# not produce — so a wrong classification cannot also hide the fixture.
+	var running: bool = await _wait_until(func() -> bool:
+		var argv: Array = Array(session.get_foreground_process().get("argv", []))
+		return argv.size() == 2 and str(argv[1]) == script_path)
+	var process: Dictionary = session.get_foreground_process()
+	check("an npm-shaped harness is in the foreground", running, str(process))
+	# Whether this node renames its main thread is the runtime's business
+	# (newer ones report "MainThread" on Linux, older ones "node", macOS the
+	# process name); the classification below must not depend on it, and the
+	# renamed shape itself is pinned by the table row.
+	check("the executable names the interpreter",
+		str(process.get("exe_name", "")) == "node"
+			and str(process.get("exe", "")).ends_with("/node"), str(process))
+	check("argv carries the interpreter and the script",
+		Array(process.get("argv", [])) == ["node", script_path], str(process))
+	check("and the host calls it codex", session.harness_of(process) == "codex", str(process))
+	var listed: Dictionary = _entry_for(load(TERMINAL_TOOLS_PATH).new(), str(session.terminal_id))
+	check("the listing names the program, not the thread, and the harness",
+		str(listed.get("foreground_process", "")) == "node"
+			and str(listed.get("harness", "")) == "codex", str(listed))
+
+	session.write_input("\r")
+	var gone: bool = await _wait_until(func() -> bool:
+		return session.harness_name() == "")
+	check("when it ends the shell is back in front", gone,
+		str(session.get_foreground_process()))
 
 
 func _entry_for(tools, tid: String) -> Dictionary:

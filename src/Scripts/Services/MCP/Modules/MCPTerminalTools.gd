@@ -289,13 +289,15 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				"created_at_ms": session.created_at_ms,
 				"last_input_ms": session.last_input_ms,
 			}
-			# Who is in the foreground: the process name (empty when the query
+			# Who is in the foreground: the program (empty when the query
 			# failed just now), and the harness when it is one. The key is
 			# present whenever the platform can answer, so its absence means
-			# "cannot know", not "nobody".
+			# "cannot know", not "nobody". The program, not the thread name:
+			# an npm-installed harness renames its main thread (node's is
+			# "MainThread"), which names nothing a caller can act on.
 			if session.foreground_supported():
 				var foreground: Dictionary = session.get_foreground_process()
-				entry["foreground_process"] = str(foreground.get("name", ""))
+				entry["foreground_process"] = session.program_of(foreground)
 				var harness: String = session.harness_of(foreground)
 				if not harness.is_empty():
 					entry["harness"] = harness
@@ -749,7 +751,7 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 			else:
 				harness = session.harness_of(foreground)
 				if harness.is_empty():
-					target["foreground_process"] = str(foreground.get("name", ""))
+					target["foreground_process"] = session.program_of(foreground)
 					return _no_harness(target)
 		if hold.is_empty() and typed_ago >= 0 and typed_ago < NOTIFY_HUMAN_TYPING_MS:
 			hold = _held(receipt_target, "human_typing",

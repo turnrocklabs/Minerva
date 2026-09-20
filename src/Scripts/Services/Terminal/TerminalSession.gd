@@ -243,8 +243,10 @@ func foreground_supported() -> bool:
 		and OS.get_name() != "Windows"
 
 
-## The process group holding the PTY: {pid, name, argv}, or {} when the
-## query failed (not running, tcgetpgrp or /proc unreadable).
+## The process group holding the PTY: {pid, name, argv, exe, exe_name}, or {}
+## when the query failed (not running, tcgetpgrp or /proc unreadable). `name`
+## is the main thread's name, `exe`/`exe_name` the running binary's path and
+## basename (empty where the executable could not be read).
 func get_foreground_process() -> Dictionary:
 	if terminal_available and terminal.has_method("get_foreground_process"):
 		return terminal.get_foreground_process()
@@ -252,19 +254,76 @@ func get_foreground_process() -> Dictionary:
 
 
 ## Which agent harness the foreground process is: "claude", "codex", or ""
-## for anything else (the shell itself included). A harness is either the
-## process itself (a native claude or codex binary) or the script an
+## for anything else (the shell itself included). It keys on the PROGRAM (see
+## program_of). A harness is either the
+## program itself (a native claude or codex binary) or the script an
 ## interpreter was started on: node on Claude Code's npm package, or any
 ## interpreter on a script named after the harness (`codex.js` in the npm
-## package, or a shim called codex). Only the interpreter's first argument
-## counts, so `less codex` is a pager, not a harness.
+## package, or a script named codex run by an interpreter). Only the
+## interpreter's first argument counts, so `less codex` is a pager, not a
+## harness.
 const HARNESS_INTERPRETERS := ["node", "bun", "deno", "python", "python3"]
 
+## The program in the foreground, lower-cased. The running BINARY decides:
+## when the executable's basename names a program it is the answer, whatever
+## argv[0] claims (`exec -a codex sleep` is sleep). argv[0] stands in only
+## when the executable's name says nothing — empty, or a launcher symlink
+## whose target is named by version (Claude Code's exe resolves to
+## ".../versions/2.1.x") — such an install is therefore identified by
+## argv[0] alone, and a rewritten or empty argv leaves it unrecognised. The
+## thread name is the last resort: a runtime may rename its main thread
+## (node calls it "MainThread").
+static func program_of(process: Dictionary) -> String:
+	var exe_name: String = str(process.get("exe_name", ""))
+	if exe_name.is_empty():
+		exe_name = str(process.get("exe", "")).get_file()
+	exe_name = exe_name.to_lower()
+	var argv0: String = ""
+	var argv: Array = Array(process.get("argv", []))
+	if argv.size() > 0:
+		argv0 = str(argv[0]).get_file().to_lower()
+	if not exe_name.is_empty() and not _is_version_like(exe_name):
+		return exe_name
+	if not argv0.is_empty():
+		return argv0
+	if not exe_name.is_empty():
+		return exe_name
+	return str(process.get("name", "")).to_lower()
+
+
+## The harness a native binary's name denotes: "codex" or "claude" exactly,
+## or the release filename a launcher symlink may point at
+## ("codex-x86_64-unknown-linux-gnu", "claude-2.1.278"): the name followed by
+## a separator. Anything else ("codexpert") is nobody.
+static func _native_harness(program: String) -> String:
+	for harness in ["claude", "codex"]:
+		if program == harness:
+			return harness
+		if program.begins_with(harness) and program.length() > harness.length():
+			var next: String = program[harness.length()]
+			if next == "-" or next == "_" or next == ".":
+				return harness
+	return ""
+
+
+## "2.1.278": digits and dots only — a launcher target named by version,
+## which identifies no program.
+static func _is_version_like(basename: String) -> bool:
+	if basename.is_empty():
+		return false
+	for i in range(basename.length()):
+		var c: int = basename.unicode_at(i)
+		if not ((c >= 48 and c <= 57) or c == 46):
+			return false
+	return true
+
+
 static func harness_of(process: Dictionary) -> String:
-	var name: String = str(process.get("name", "")).to_lower()
-	if name == "claude" or name == "codex":
-		return name
-	if not (name in HARNESS_INTERPRETERS or name.begins_with("python3.")):
+	var program: String = program_of(process)
+	var native: String = _native_harness(program)
+	if not native.is_empty():
+		return native
+	if not (program in HARNESS_INTERPRETERS or program.begins_with("python3.")):
 		return ""
 	var argv: Array = Array(process.get("argv", []))
 	if argv.size() < 2:

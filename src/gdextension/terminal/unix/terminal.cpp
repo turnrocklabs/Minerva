@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <cstring>
 #include <sys/stat.h>
+#include <limits.h>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -644,11 +645,16 @@ Dictionary Terminal::get_foreground_process() const
         return result;
     }
     std::string name;
+    std::string exe;
     PackedStringArray argv;
 #if defined(__APPLE__)
     char buf[2 * MAXCOMLEN + 1] = {0};
     if (proc_name(group, buf, sizeof(buf)) > 0) {
         name = buf;
+    }
+    char path_buf[PROC_PIDPATHINFO_MAXSIZE] = {0};
+    if (proc_pidpath(group, path_buf, sizeof(path_buf)) > 0) {
+        exe = path_buf;
     }
     // KERN_PROCARGS2 lays out: int argc, the exec path, NUL padding, then
     // argc NUL-terminated argv strings.
@@ -674,6 +680,21 @@ Dictionary Terminal::get_foreground_process() const
     std::string base = "/proc/" + std::to_string(group) + "/";
     std::ifstream comm(base + "comm");
     std::getline(comm, name);
+    // comm is the MAIN THREAD's name, which a runtime may rename (node calls
+    // it "MainThread"); exe is the binary actually running, and the kernel
+    // appends " (deleted)" to it when that file was replaced or unlinked.
+    // A result that fills the buffer may be truncated, and a truncated path
+    // must not pass for the executable: it is left empty instead.
+    char link[PATH_MAX];
+    ssize_t link_len = readlink((base + "exe").c_str(), link, sizeof(link) - 1);
+    if (link_len > 0 && (size_t)link_len < sizeof(link) - 1) {
+        exe.assign(link, (size_t)link_len);
+        const std::string deleted = " (deleted)";
+        if (exe.size() > deleted.size()
+            && exe.compare(exe.size() - deleted.size(), deleted.size(), deleted) == 0) {
+            exe.erase(exe.size() - deleted.size());
+        }
+    }
     // argv strings are NUL-separated; each one is its own entry so a path
     // with spaces survives.
     std::ifstream args(base + "cmdline", std::ios::binary);
@@ -694,6 +715,12 @@ Dictionary Terminal::get_foreground_process() const
     result["pid"] = (int)group;
     result["name"] = String::utf8(name.c_str());
     result["argv"] = argv;
+    // Empty when the executable could not be read (a process of another user,
+    // a kernel thread); callers then fall back to argv and the name.
+    result["exe"] = String::utf8(exe.c_str());
+    size_t slash = exe.find_last_of('/');
+    result["exe_name"] = String::utf8(
+        (slash == std::string::npos ? exe : exe.substr(slash + 1)).c_str());
     return result;
 }
 
