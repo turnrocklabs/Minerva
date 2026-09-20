@@ -236,36 +236,40 @@ const _REDIRECT_OPS: Array[String] = ["<", ">", ">>", "<<"]
 ## escapes the next character, and an unquoted operator character breaks a word.
 ##
 ## Returns {"ok": bool, "tokens": Array[Dictionary]}. Each token carries
-##   text    – the operator, or the word with one level of quoting removed
-##   op      – true for an operator token
-##   quoted  – some part of the word came out of quotes or an escape
-##   expands – the word holds an unquoted `$` or backtick, so its final value
-##             is the shell's to decide and not ours
+##   text        – the operator, or the word with one level of quoting removed
+##   op          – true for an operator token
+##   quoted      – some part of the word came out of quotes or an escape
+##   name_quoted – the quoting reached the word's NAME half, i.e. the text in
+##                 front of its first `=`; see _mark_quoted
+##   expands     – the word holds an unquoted `$` or backtick, so its final
+##                 value is the shell's to decide and not ours
 ## ok is false for an unterminated quote or a trailing backslash: nothing can be
 ## concluded from half a line, and the shell reports those itself.
 static func tokenize(command: String) -> Dictionary:
 	var line := command.strip_edges()
 	var tokens: Array[Dictionary] = []
-	var cur := {"text": "", "started": false, "quoted": false, "expands": false}
+	var cur := {"text": "", "started": false, "quoted": false,
+		"name_quoted": false, "expands": false}
 	var i := 0
 	while i < line.length():
 		var c := line[i]
 		if c == "\\":
 			if i + 1 >= line.length():
 				return {"ok": false, "tokens": tokens}
+			_mark_quoted(cur)
 			cur["text"] = String(cur["text"]) + line[i + 1]
 			cur["started"] = true
-			cur["quoted"] = true
 			i += 2
 		elif c == "'":
 			var close := line.find("'", i + 1)
 			if close < 0:
 				return {"ok": false, "tokens": tokens}
+			_mark_quoted(cur)
 			cur["text"] = String(cur["text"]) + line.substr(i + 1, close - i - 1)
 			cur["started"] = true
-			cur["quoted"] = true
 			i = close + 1
 		elif c == "\"":
+			_mark_quoted(cur)
 			i += 1
 			var closed := false
 			while i < line.length():
@@ -285,7 +289,6 @@ static func tokenize(command: String) -> Dictionary:
 			if not closed:
 				return {"ok": false, "tokens": tokens}
 			cur["started"] = true
-			cur["quoted"] = true
 		elif c == " " or c == "\t":
 			_flush_word(tokens, cur)
 			i += 1
@@ -306,22 +309,37 @@ static func tokenize(command: String) -> Dictionary:
 	return {"ok": true, "tokens": tokens}
 
 
+## Record a quoted stretch on the word being built. It counts against the NAME
+## half only while the text so far holds no `=`: quoting in front of the `=`
+## (or over the `=` itself) is what stops a shell reading the word as an
+## assignment, while quoting the VALUE — `FOO='1'` — leaves it one.
+static func _mark_quoted(cur: Dictionary) -> void:
+	cur["quoted"] = true
+	if not String(cur["text"]).contains("="):
+		cur["name_quoted"] = true
+
+
 ## Append the word being built (if any) and reset the builder.
 static func _flush_word(tokens: Array[Dictionary], cur: Dictionary) -> void:
 	if not bool(cur["started"]):
 		return
 	tokens.append({"text": String(cur["text"]), "op": false,
-		"quoted": bool(cur["quoted"]), "expands": bool(cur["expands"])})
+		"quoted": bool(cur["quoted"]), "name_quoted": bool(cur["name_quoted"]),
+		"expands": bool(cur["expands"])})
 	cur["text"] = ""
 	cur["started"] = false
 	cur["quoted"] = false
+	cur["name_quoted"] = false
 	cur["expands"] = false
 
 
-## True when `token` is a leading `NAME=value` environment assignment. Quoting
-## any of the name defeats it, exactly as it does in a shell.
+## True when `token` is a leading `NAME=value` environment assignment: an
+## unquoted identifier, then `=`. Quoting the NAME defeats it, exactly as it
+## does in a shell; quoting the VALUE (`FOO='1'`) does not — that word is still
+## an assignment, and judging it a program name makes `exec` hunt for a file
+## called "FOO=1".
 static func is_assignment_token(token: Dictionary) -> bool:
-	if bool(token.get("op", false)) or bool(token.get("quoted", false)):
+	if bool(token.get("op", false)) or bool(token.get("name_quoted", false)):
 		return false
 	var text := String(token.get("text", ""))
 	var eq := text.find("=")

@@ -153,6 +153,18 @@ func _test_quoting() -> void:
 		D.is_simple_command("claude --msg \"a b\""))
 	check("is_simple_command: env assignment is not simple",
 		not D.is_simple_command("FOO=1 codex"))
+	# Quoting the VALUE leaves the word an assignment — the shell still sets
+	# FOO and runs codex, so exec must not be handed "FOO=1" as a program.
+	check("is_simple_command: a single-quoted assignment value is still an assignment",
+		not D.is_simple_command("FOO='1' codex"))
+	check("is_simple_command: a double-quoted assignment value is still an assignment",
+		not D.is_simple_command("FOO=\"a b\" codex"))
+	# Quoting the NAME is what defeats it: `'FOO=1'` is a plain program word.
+	check("is_simple_command: a quoted assignment NAME is a plain word",
+		D.is_simple_command("'FOO=1' codex"))
+	check("build_launch_line posix writes a quoted-value assignment bare",
+		D.build_launch_line("FOO='1' codex", false) == "FOO='1' codex\r",
+		D.build_launch_line("FOO='1' codex", false))
 	check("is_simple_command: pipeline is not simple",
 		not D.is_simple_command("codex | tee log"))
 	check("is_simple_command: redirect is not simple",
@@ -236,6 +248,13 @@ func _test_shell_environment() -> void:
 	check("command_word steps over leading env assignments",
 		SE.command_word("FOO=1 BAR=2 codex --x") == "codex",
 		SE.command_word("FOO=1 BAR=2 codex --x"))
+	check("command_word steps over an assignment whose value is quoted",
+		SE.command_word("FOO='1' codex --x") == "codex",
+		SE.command_word("FOO='1' codex --x"))
+	# A quoted NAME is not an assignment, so the word itself IS the program —
+	# and a quoted program word is one PATH may not answer for.
+	check("command_word declines a quoted assignment name",
+		SE.command_word("'FOO=1' codex") == "", SE.command_word("'FOO=1' codex"))
 	check("command_word keeps a quoted operator inside the argument",
 		SE.command_word("sh -c 'a; b'") == "sh", SE.command_word("sh -c 'a; b'"))
 	# Lines PATH cannot answer for: the shell decides the word, or there is no
@@ -470,6 +489,24 @@ func _test_path_guard(so) -> void:
 		check("a resolvable command passes the guard", D.path_check_error("sh -c true") == "",
 			D.path_check_error("sh -c true"))
 		check("a bare shell (no command) passes the guard", D.path_check_error("") == "")
+		# The guard only answers for a bare name on the PATH Minerva holds.
+		# Every other shape resolves somewhere we cannot see, so it is the
+		# shell's to report — refusing it here blocks a working launch.
+		check("an assignment-set PATH is not judged against ours",
+			D.path_check_error("PATH=/w3-nowhere w3-definitely-not-installed") == "",
+			D.path_check_error("PATH=/w3-nowhere w3-definitely-not-installed"))
+		check("a builtin in a list is not looked up as a file",
+			D.path_check_error("cd /tmp && w3-definitely-not-installed") == "",
+			D.path_check_error("cd /tmp && w3-definitely-not-installed"))
+		check("a ~ path is left to the shell that expands it",
+			D.path_check_error("~/w3-nowhere/codex --x") == "",
+			D.path_check_error("~/w3-nowhere/codex --x"))
+		check("a ~ path still launches under exec",
+			D.build_launch_line("~/w3-nowhere/codex --x", false) == "exec ~/w3-nowhere/codex --x\r",
+			D.build_launch_line("~/w3-nowhere/codex --x", false))
+		check("a list still launches bare",
+			D.build_launch_line("cd /tmp && codex", false) == "cd /tmp && codex\r",
+			D.build_launch_line("cd /tmp && codex", false))
 
 	dialog.queue_free()
 	await process_frame
@@ -498,7 +535,8 @@ func _test_launch_exit_note(so) -> void:
 	dialog._name_edit.text = "Dying Harness"
 	# A SIMPLE command (one word), so the launch line is the `exec` form and the
 	# dying harness IS the PTY shell — its exit code is the terminal's. The
-	# script is executable on purpose: the PATH guard refuses a plain file.
+	# script is executable on purpose: an absolute path skips the PATH guard,
+	# so a plain file would die as "permission denied" instead of code 7.
 	var dying: String = _write_script(
 		OS.get_user_data_dir().path_join("w3_dying_harness.sh"),
 		"#!/bin/sh\necho w3-dead-marker\nexit 7\n")

@@ -391,14 +391,25 @@ func _get_session_registry():
 ## user only ever sees the missing chat provider — checking here turns that
 ## into a message naming the word and the PATH that was searched.
 ## Windows is exempt: cmd resolves .cmd/.bat/.exe shims itself.
-## `cwd` is the directory the terminal will start in: "./run-agent" and a
-## relative PATH entry are answered there, not in Minerva's directory. Empty
-## cwd = the terminal inherits Minerva's, so the lookup does too.
+##
+## The check only answers for the one shape Minerva's PATH decides: a SIMPLE
+## command (is_simple_command — no operator, no leading assignment) whose
+## program word is a bare name. Everything else is the shell's own lookup and
+## is left to it, because guessing it wrong refuses a launch that would have
+## worked: `PATH=/opt/agent/bin codex` searches a PATH we do not hold,
+## `cd /work && codex` opens with a builtin that is no file at all, and
+## `~/bin/codex` is a path the shell expands after we would have read it
+## literally. The shell reports those misses itself, on the terminal.
+##
+## `cwd` is the directory the terminal will start in: a relative PATH entry is
+## answered there, not in Minerva's directory. Empty cwd = the terminal
+## inherits Minerva's, so the lookup does too.
 static func path_check_error(command: String, cwd: String = "") -> String:
-	if is_windows_shell():
+	if is_windows_shell() or not is_simple_command(command):
 		return ""
 	var word := ShellEnvironment.command_word(command)
-	if word.is_empty():
+	if word.is_empty() or word.contains("/") or word.begins_with("~") \
+			or word.begins_with("."):
 		return ""
 	var path_value := ShellEnvironment.effective_path()
 	if not ShellEnvironment.resolve_on_path(word, path_value, cwd).is_empty():
