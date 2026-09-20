@@ -187,8 +187,13 @@ func _test_quoting() -> void:
 	# the PATH preflight declines to judge it.
 	check("is_simple_command: a quoted first word is still exec'able",
 		D.is_simple_command("'my agent' --x"))
-	check("is_simple_command: an expansion is left to the shell",
-		not D.is_simple_command("$AGENT --x"))
+	check("is_simple_command: an expanded program word is still simple (the shell expands, then execs)",
+		D.is_simple_command("$AGENT --x"))
+	check("is_simple_command: an expanded argument is still simple",
+		D.is_simple_command("codex --cd \"$HOME/project\""))
+	check("build_launch_line: an expanded argument still launches under exec",
+		D.build_launch_line("codex --cd \"$HOME/project\"", false) == "exec codex --cd \"$HOME/project\"\r",
+		D.build_launch_line("codex --cd \"$HOME/project\"", false))
 	check("is_simple_command: an unterminated quote is not simple",
 		not D.is_simple_command("sh -c 'oops"))
 	check("build_launch_line execs a command whose operators are all quoted",
@@ -507,6 +512,12 @@ func _test_path_guard(so) -> void:
 		check("a list still launches bare",
 			D.build_launch_line("cd /tmp && codex", false) == "cd /tmp && codex\r",
 			D.build_launch_line("cd /tmp && codex", false))
+		check("a builtin that takes a command is not looked up as a file",
+			D.path_check_error("exec w3-definitely-not-installed --yolo") == ""
+			and D.path_check_error("command w3-definitely-not-installed --yolo") == "",
+			D.path_check_error("exec w3-definitely-not-installed --yolo"))
+		check("an expanded program word skips the guard",
+			D.path_check_error("$AGENT --x") == "", D.path_check_error("$AGENT --x"))
 
 	dialog.queue_free()
 	await process_frame

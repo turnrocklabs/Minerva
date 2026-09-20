@@ -137,7 +137,7 @@ static func is_simple_command(command: String) -> bool:
 	if tokens.is_empty():
 		return false
 	for token in tokens:
-		if bool(token["op"]) or bool(token["expands"]):
+		if bool(token["op"]):
 			return false
 	return not ShellEnvironment.is_assignment_token(tokens[0])
 
@@ -145,10 +145,12 @@ static func is_simple_command(command: String) -> bool:
 ## The exact PTY incantation for the startup command, per shell dialect.
 ## POSIX: a simple command runs under `exec`, so the agent REPLACES the PTY
 ## shell and owns its exit code — which is the signal the launch dialog and the
-## bound chat read when a harness dies. Anything the shell has to parse for
-## itself (assignments, pipelines, redirects, lists) is written exactly as
-## typed: `exec` would mis-read it, and the price is that the shell stays alive
-## around the agent, so the agent does NOT own the PTY's exit code there.
+## bound chat read when a harness dies. Expansions in the words are fine: the
+## shell expands them and then execs the result. Anything the shell has to
+## parse for itself (assignments, pipelines, redirects, lists) is written
+## exactly as typed: `exec` would mis-read it, and the price is that the shell
+## stays alive around the agent, so the agent does NOT own the PTY's exit code
+## there.
 ## No login-shell wrapper either way: PATH is fixed once at the process level
 ## (ShellEnvironment.apply_login_path), which works even when the user's
 ## ~/.profile chain skips its own PATH setup in a non-interactive shell.
@@ -404,12 +406,16 @@ func _get_session_registry():
 ## `cwd` is the directory the terminal will start in: a relative PATH entry is
 ## answered there, not in Minerva's directory. Empty cwd = the terminal
 ## inherits Minerva's, so the lookup does too.
+## Shell words that take a command as their argument; the shell resolves
+## them itself, so a lookup on PATH would wrongly reject them.
+const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval", "time", "source"]
+
 static func path_check_error(command: String, cwd: String = "") -> String:
 	if is_windows_shell() or not is_simple_command(command):
 		return ""
 	var word := ShellEnvironment.command_word(command)
 	if word.is_empty() or word.contains("/") or word.begins_with("~") \
-			or word.begins_with("."):
+			or word.begins_with(".") or SHELL_COMMAND_WORDS.has(word):
 		return ""
 	var path_value := ShellEnvironment.effective_path()
 	if not ShellEnvironment.resolve_on_path(word, path_value, cwd).is_empty():
