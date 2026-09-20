@@ -83,7 +83,8 @@ func register_tools() -> void:
 			"raw": {"type": "boolean", "description": "Send text byte-for-byte without unescaping \\r/\\n/\\t etc. Use when the text already contains real control characters (default false)."},
 			"unless_typed_within_ms": {"type": "integer", "description": "Refuse (held) when a person typed in this terminal within this many milliseconds. 0 = no guard."},
 			"expect_harness": {"type": "string", "description": "Refuse (held) unless this harness (claude/codex) is the terminal's foreground process at the moment of the write. The receipt's harness_check says whether the check ran ('checked'), was skipped because this platform cannot read the foreground ('skipped'), or was not asked for ('not_requested')."},
-			"then_enter_after_ms": {"type": "integer", "description": "Send Enter this many ms after the text, as ONE guarded transaction: the terminal is held between the two, so a keystroke can never be submitted along with your line. Use instead of a trailing \\r. The receipt carries txn_id and harness_check."},
+			"unless_composer_holds_text": {"type": "boolean", "description": "Refuse (held) when the harness's input box already holds a line a person typed and did not submit — writing would staple your text to theirs and submit both. The receipt's composer_check says whether the check ran ('checked'), was skipped because no composer could be located for whatever is in front ('skipped'), or was not asked for ('not_requested')."},
+			"then_enter_after_ms": {"type": "integer", "description": "Send Enter this many ms after the text, as ONE guarded transaction: the terminal is held between the two, so a keystroke can never be submitted along with your line. Use instead of a trailing \\r. The receipt carries txn_id, harness_check and composer_check."},
 		}, "required": ["text"]}, "terminal")
 
 	server._register_tool("minerva_terminal_read",
@@ -408,7 +409,9 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 	# reported as a plain send.
 	var receipt: Dictionary = session.write_input(text)
 	var result: Dictionary = {"success": true, "bytes_sent": text.length(),
-		"harness_check": harness_check}
+		"harness_check": harness_check,
+		"composer_check": str(guards.get("composer_check",
+			TerminalInputArbiter.COMPOSER_NOT_REQUESTED))}
 	for key in ["queued", "queue_depth", "transaction", "released", "aborted_transaction"]:
 		if receipt.has(key):
 			result[key] = receipt[key]
@@ -425,6 +428,8 @@ func _guard_options(arguments: Dictionary) -> Dictionary:
 	var expected: String = str(arguments.get("expect_harness", ""))
 	if not expected.is_empty():
 		options["expect_harness"] = expected
+	if bool(arguments.get("unless_composer_holds_text", false)):
+		options["refuse_if_composer_holds_text"] = true
 	return options
 
 
@@ -836,7 +841,12 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 				failed["status"] = "error"
 				failed["target"] = receipt_target
 				return failed
-			hold = _held(receipt_target, "screen", reason)
+			# The relay hands the host's refusal back as prose, so the composer
+			# hold is told from a screen hold by the phrase the arbiter always
+			# writes into it.
+			hold = _held(receipt_target,
+				"composer_not_empty" if reason.contains(TerminalInputArbiter.COMPOSER_HOLD_PHRASE) else "screen",
+				reason)
 		# The budget is checked before sleeping and again on waking, so no
 		# look is taken once the caller's wait has lapsed.
 		var remaining_ms: int = deadline - Time.get_ticks_msec()

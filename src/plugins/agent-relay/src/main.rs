@@ -669,6 +669,14 @@ fn send_core_with_mode(
         });
         if let Some(guard) = human_guard_ms {
             write["unless_typed_within_ms"] = json!(guard);
+            // The typing window protects keystrokes still arriving; this
+            // protects a line the person FINISHED and has not submitted. The
+            // host reads the harness's composer cells and refuses when it
+            // holds one, because the Enter below would submit that line with
+            // this text appended to it. Same callers, same writes: whatever
+            // asks for the typing guard is a message nobody typed, and no
+            // such message may land in someone's half-written prompt.
+            write["unless_composer_holds_text"] = json!(true);
         }
         if let Some(expected) = expect_harness {
             write["expect_harness"] = json!(expected);
@@ -2228,7 +2236,7 @@ fn tools_list_schema() -> Value {
                         "arm": {"type": "boolean", "description": "When true (default), arm the watch session for one-shot notification."},
                         "profile": {"type": "string", "description": "Harness profile id (claude, codex) to classify the screen with when the terminal is not watched."},
                         "gate_budget_ms": {"type": "integer", "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look)."},
-                        "human_guard_ms": {"type": "integer", "description": "Refuse (held) when a person typed in the terminal within this many ms of the write."},
+                        "human_guard_ms": {"type": "integer", "description": "Refuse (held) when a person typed in the terminal within this many ms of the write. Asking for it also refuses (held) when the harness's composer already holds a line a person typed and did not submit: the Enter would submit that line with this text appended to it."},
                         "expect_harness": {"type": "string", "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the write."}
                     },
                     "required": ["terminal_id", "text"]

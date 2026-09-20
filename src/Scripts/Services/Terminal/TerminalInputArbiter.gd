@@ -41,11 +41,38 @@ const OUTCOME_REFUSED_HARNESS := "refused_expect_harness"
 const OUTCOME_REFUSED_BUSY := "refused_transaction_in_flight"
 const OUTCOME_REFUSED_DEAD := "refused_session_not_writable"
 const OUTCOME_REFUSED_EMPTY := "refused_empty_body"
+const OUTCOME_REFUSED_COMPOSER := "refused_composer_not_empty"
 
 # How the expect_harness guard was resolved, as reported back to the caller.
 const HARNESS_NOT_REQUESTED := "not_requested"
 const HARNESS_CHECKED := "checked"
 const HARNESS_SKIPPED := "skipped"
+
+# How the composer guard was resolved, reported the same way.
+const COMPOSER_NOT_REQUESTED := "not_requested"
+const COMPOSER_CHECKED := "checked"
+const COMPOSER_SKIPPED := "skipped"
+
+## The phrase every composer refusal contains. A caller that only sees the
+## message — the relay hands the host's error back as prose — tells this hold
+## apart from a screen hold by this phrase.
+const COMPOSER_HOLD_PHRASE := "holds unsent text"
+
+## Where each harness draws its input box, as the glyphs that open the row at
+## column 0. Claude Code renders `❯` everywhere but Windows, where the same box
+## comes through ConPTY as ASCII `>`; codex renders `›` (U+203A). These are the
+## host-side twin of the relay's prompt_box_regex (agent-relay profiles.rs):
+## change one and change the other.
+const COMPOSER_MARKERS := {
+	"claude": ["❯", ">"],
+	"codex": ["›"],
+}
+
+## The Unicode box-drawing block (U+2500-U+257F). A row whose visible
+## characters all come from it carries no text — it is box chrome, or a rule a
+## person pasted — so the region READS PAST it. It never ends the region.
+const RULE_GLYPH_FIRST := 0x2500
+const RULE_GLYPH_LAST := 0x257F
 
 const DEFAULT_QUEUE_LIMIT := 64
 const DEFAULT_PAUSE_MS := 150
@@ -126,10 +153,13 @@ func get_transaction(txn_id: int) -> Dictionary:
 ##   expect_harness          — refuse unless that harness is in front; the
 ##                             check is SKIPPED, and said to be, where the
 ##                             platform cannot read the foreground at all
-## Both guards are checked once, here: an admitted transaction is not
+##   refuse_if_composer_holds_text — refuse if the harness's input box holds
+##                             a line a person typed but never submitted
+## Every guard is checked once, here: an admitted transaction is not
 ## re-guarded, and its body is written exactly once and never replayed.
-## Returns {success:true, txn_id, phase, harness_check, ...} on admission, or
-## a refusal shaped like the write guard: {success:false, held:true, error}.
+## Returns {success:true, txn_id, phase, harness_check, composer_check, ...} on
+## admission, or a refusal shaped like the write guard: {success:false,
+## held:true, error}.
 func begin_transaction(body: String, options: Dictionary = {}) -> Dictionary:
 	if body.is_empty():
 		return _refusal(OUTCOME_REFUSED_EMPTY, "a transaction body is required; nothing was written")
@@ -150,6 +180,7 @@ func begin_transaction(body: String, options: Dictionary = {}) -> Dictionary:
 	if not bool(guards.get("success", false)):
 		return guards
 	var harness_check: String = str(guards.get("harness_check", HARNESS_NOT_REQUESTED))
+	var composer_check: String = str(guards.get("composer_check", COMPOSER_NOT_REQUESTED))
 
 	var txn_id: int = _next_txn_id
 	_next_txn_id += 1
@@ -159,6 +190,7 @@ func begin_transaction(body: String, options: Dictionary = {}) -> Dictionary:
 		"phase": PHASE_ADMITTED,
 		"outcome": "",
 		"harness_check": harness_check,
+		"composer_check": composer_check,
 		"pause_ms": pause_ms,
 		"enter": str(options.get("enter", ENTER)),
 		"body_bytes": body.length(),
@@ -199,6 +231,7 @@ func begin_transaction(body: String, options: Dictionary = {}) -> Dictionary:
 func _admission_receipt(record: Dictionary) -> Dictionary:
 	var receipt: Dictionary = {"success": true, "txn_id": int(record["id"]),
 		"phase": str(record["phase"]), "harness_check": str(record["harness_check"]),
+		"composer_check": str(record["composer_check"]),
 		"pause_ms": int(record["pause_ms"]), "bytes_sent": int(record["bytes_sent"])}
 	if str(record["phase"]) == PHASE_FINISHED:
 		receipt["outcome"] = str(record["outcome"])
@@ -212,7 +245,7 @@ func _is_active(txn_id: int) -> bool:
 	return not _active.is_empty() and int(_active["id"]) == txn_id
 
 
-## The two admission guards, decided in one place so a raw write and a
+## The admission guards, decided in one place so a raw write and a
 ## transaction refuse on identical evidence and from one clock. Options:
 ##   unless_typed_within_ms  — refuse if a person typed here that recently,
 ##                             measured on the monotonic stamp so a wall-clock
@@ -220,10 +253,14 @@ func _is_active(txn_id: int) -> bool:
 ##   expect_harness          — refuse unless that harness is in front; the
 ##                             check is SKIPPED, and said to be, where the
 ##                             platform cannot read the foreground at all
-## Returns {success:true, harness_check} when the write may go ahead, or a
-## refusal {success:false, held:true, outcome, error} — carrying harness_check
-## only when the harness check is the thing that refused, because a write
-## stopped by the typing guard never reached it.
+##   refuse_if_composer_holds_text — refuse if the harness's input box holds
+##                             text a person typed and has not submitted (see
+##                             _composer_verdict); SKIPPED when no marker is
+##                             known for whatever is in front
+## Returns {success:true, harness_check, composer_check} when the write may go
+## ahead, or a refusal {success:false, held:true, outcome, error} — carrying
+## the checks that had already run when it refused, because a write stopped by
+## an earlier guard never reached the later ones.
 func check_guards(options: Dictionary) -> Dictionary:
 	var typed_window: int = int(options.get("unless_typed_within_ms", 0))
 	if typed_window > 0:
@@ -249,7 +286,155 @@ func check_guards(options: Dictionary) -> Dictionary:
 				refusal["harness_check"] = HARNESS_CHECKED
 				return refusal
 			harness_check = HARNESS_CHECKED
-	return {"success": true, "harness_check": harness_check}
+
+	var composer_check: String = COMPOSER_NOT_REQUESTED
+	if bool(options.get("refuse_if_composer_holds_text", false)):
+		var markers: Array = _composer_markers()
+		var verdict: Dictionary = {} if markers.is_empty() else _composer_verdict(markers)
+		if not bool(verdict.get("readable", false)):
+			composer_check = COMPOSER_SKIPPED
+		else:
+			composer_check = COMPOSER_CHECKED
+			if bool(verdict.get("holds", false)):
+				var held: Dictionary = _refusal(OUTCOME_REFUSED_COMPOSER,
+					"the composer of '%s' %s ('%s'); nothing was written" % [
+						_session_label(), COMPOSER_HOLD_PHRASE, str(verdict.get("row", ""))])
+				held["harness_check"] = harness_check
+				held["composer_check"] = COMPOSER_CHECKED
+				return held
+	return {"success": true, "harness_check": harness_check, "composer_check": composer_check}
+
+
+## The glyphs that open the composer row: the ones the harness in front draws.
+## An unreadable foreground, or one that is not a harness this table knows,
+## yields none — and the guard is then skipped rather than guessed at.
+func _composer_markers() -> Array:
+	if _session == null or not _session.has_method("foreground_supported") \
+			or not _session.foreground_supported():
+		return []
+	var harness: String = _session.harness_of(_session.get_foreground_process())
+	return Array(COMPOSER_MARKERS.get(harness, []))
+
+
+## Whether the harness's input box holds text a person typed and left
+## unsubmitted. The composer REGION is fixed, not inferred:
+##   TOP    — the nearest row AT OR ABOVE the cursor row (get_cursor()["y"],
+##            a viewport row) whose text starts at column 0 with a marker glyph
+##            followed by a space, or is that glyph alone. Both harnesses
+##            INDENT every continuation row, so a marker at column 0 is never a
+##            wrapped draft line and a marker typed inside a draft cannot be
+##            mistaken for the composer row.
+##   BOTTOM — the bottom of the viewport. Nothing ends the region early: not a
+##            border, not a blank row, not a pasted rule.
+## A row whose visible characters are all box-drawing glyphs is skipped rather
+## than stopped at: it carries no text either way.
+##
+## CONSEQUENCE, by design: whatever the harness draws BELOW the composer — its
+## footer, model line or status row — is inside the region, so it must be drawn
+## FAINT, as the real Claude Code and Codex draw it. A bright footer holds the
+## write. Refusing loudly beats guessing where the box ends, and the refusal
+## quotes the row it tripped on, so a wrong hold is readable off the receipt.
+##
+## Row text alone cannot decide: both harnesses draw an EMPTY box with a
+## placeholder inside it (codex's "Use /skills …", Claude Code's "Try …"), and
+## an extracted row cannot tell that from a typed line. The cell attribute can
+## — a placeholder is drawn FAINT (SGR 2) and nothing a person types is. So any
+## non-space cell in the region that is not faint, the marker glyph and the
+## space after it aside, is unsent text.
+##
+## No row shape is exempt. A chooser or permission screen opens its SELECTED
+## option with the same marker ("❯ 1. Yes, proceed") and paints it bright, so
+## it reads as occupied here. That is the right ACTION — nothing may be typed
+## into such a screen either — even though the refusal names the composer. The
+## alternative, a heuristic that exempts "chooser-looking" rows, misreads a
+## person's own numbered or aligned draft as a chooser and submits it.
+##
+## Returns {readable, holds} and, when it holds, {row} — the offending row's
+## text, trimmed, for the refusal to quote. readable is false where no marker
+## row sits at or above the cursor (an unknown harness screen, a harness
+## mid-repaint), where the cursor cannot be read, or where the cells and their
+## attributes cannot be had (no extension node, a build whose cell dictionary
+## carries no "faint"); the caller then SKIPS the guard.
+func _composer_verdict(markers: Array) -> Dictionary:
+	if _session == null or not _session.has_method("get_cell") \
+			or not _session.has_method("extract_row_text") \
+			or not _session.has_method("get_cursor"):
+		return {"readable": false, "holds": false}
+	var rows: int = int(_session.get_rows()) if _session.has_method("get_rows") else 0
+	var cursor: Dictionary = _session.get_cursor()
+	if rows <= 0 or not cursor.has("y"):
+		return {"readable": false, "holds": false}
+	var cursor_row: int = clampi(int(cursor["y"]), 0, rows - 1)
+	for row in range(cursor_row, -1, -1):
+		var marker: String = _marker_of(str(_session.extract_row_text(row)), markers)
+		if marker.is_empty():
+			continue
+		return _region_verdict(row, marker.length(), rows)
+	return {"readable": false, "holds": false}
+
+
+## The marker *text* opens the composer with, or "". Column 0 and then either a
+## space or the end of the row: an indented marker belongs to the draft.
+func _marker_of(text: String, markers: Array) -> String:
+	for candidate: String in markers:
+		if not text.begins_with(candidate):
+			continue
+		if text.length() == candidate.length() or text[candidate.length()] == " ":
+			return candidate
+	return ""
+
+
+## Every row of the region, marker row first, down to the foot of the viewport.
+## Rows made only of box-drawing glyphs are skipped; the rest are read for a
+## bright cell, the marker glyph and the space after it excepted.
+func _region_verdict(marker_row: int, marker_length: int, rows: int) -> Dictionary:
+	for row in range(marker_row, rows):
+		var text: String = str(_session.extract_row_text(row))
+		var stripped: String = text.strip_edges()
+		# A rule of box-drawing glyphs is chrome only when the harness drew it
+		# from column 0; the same glyphs on an INDENTED row are inside a draft
+		# (continuation rows are indented) and count as text like any other.
+		if stripped.is_empty() or (_is_rule_row(stripped) and not text.begins_with(" ")):
+			continue
+		var verdict: Dictionary = _row_verdict(row, marker_length + 1 if row == marker_row else 0, text)
+		if not bool(verdict["readable"]):
+			return verdict
+		if bool(verdict["holds"]):
+			verdict["row"] = stripped.left(60)
+			return verdict
+	return {"readable": true, "holds": false}
+
+
+## Whether any cell of *row* from *from_col* on is a non-space cell that is not
+## faint — the mark of text a person typed rather than of a placeholder.
+## One cell per extracted character, so the string index IS the column.
+func _row_verdict(row: int, from_col: int, text: String) -> Dictionary:
+	for col in range(from_col, text.length()):
+		var cell: Dictionary = _session.get_cell(col, row)
+		if not cell.has("faint"):
+			# This build's cells carry no attributes: the placeholder and a
+			# typed line are indistinguishable, so nothing is claimed.
+			return {"readable": false, "holds": false}
+		if int(cell.get("codepoint", 0)) > 32 and not bool(cell["faint"]):
+			return {"readable": true, "holds": true}
+	return {"readable": true, "holds": false}
+
+
+## A row carrying no text: every visible character is a box-drawing glyph, so
+## it is chrome or a pasted rule. Such a row is skipped, never stopped at.
+func _is_rule_row(stripped: String) -> bool:
+	for index in range(stripped.length()):
+		var code: int = stripped.unicode_at(index)
+		if code < RULE_GLYPH_FIRST or code > RULE_GLYPH_LAST:
+			return false
+	return true
+
+
+## The terminal's name, for a refusal a person reads.
+func _session_label() -> String:
+	if _session != null and "session_name" in _session:
+		return str(_session.session_name)
+	return "this terminal"
 
 
 ## The admission a RAW write takes: the same guards, plus the one thing a

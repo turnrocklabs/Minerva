@@ -11,9 +11,12 @@ relay's codex profile (minerva-plugins/agent-relay/src/profiles.rs) keys on:
                        | › 1. yes, proceed) — the dialog turn-end.
   * alt_screen false, bell_capable false, settle_ms 1500.
 
-The screens are loaded byte-for-byte from the captured codex fixtures sitting
-next to this file (codex_{idle_prompt,busy,done,permission}.txt). NEVER retype
-them — they are the calibration source of truth.
+The screens are loaded from the captured codex fixtures sitting next to this
+file (codex_{idle_prompt,busy,done,permission}.txt). NEVER retype them — they
+are the calibration source of truth. Their TEXT is emitted unchanged; the only
+thing added is the DIM attribute on the composer chrome - the placeholder and
+the status footer (_dim_chrome) - which capture dropped and the host's composer
+guard reads.
 
 REPL contract (one line of input per turn, read from stdin under a PTY):
   * on start                -> print the idle screen (turn-end baseline).
@@ -43,9 +46,38 @@ def _load(name: str) -> str:
         return fh.read()
 
 
-IDLE = _load("codex_idle_prompt.txt")
-BUSY = _load("codex_busy.txt")
-DONE = _load("codex_done.txt")
+# The composer's placeholder hint, which codex draws inside an EMPTY input box,
+# and the status footer it draws BELOW that box. Both are chrome, and the real
+# codex paints both dim.
+PLACEHOLDER = "\u203a Use /skills to list available skills"
+FOOTER = "  gpt-5.5 high \u00b7 ~/github/Minerva/src"
+DIM_LINES = (PLACEHOLDER, FOOTER)
+
+
+def _dim_chrome(screen: str) -> str:
+    """Re-apply the DIM attribute (SGR 2) codex draws its composer chrome with.
+
+    The fixtures are captured cell TEXT, so every attribute was lost at capture
+    time. The host's composer guard reads cell attributes: the composer region
+    runs from the marker row to the foot of the viewport, and any bright cell in
+    it is text a person typed and never submitted. That covers the placeholder
+    inside an empty box AND the status footer under it - painted bright, either
+    would make this mock's idle box read as occupied on every screen it shows.
+    The text itself is untouched: what the detector extracts is byte-identical
+    either way.
+    """
+    return "\n".join(
+        "\x1b[2m%s\x1b[0m" % line if line in DIM_LINES else line
+        for line in screen.split("\n")
+    )
+
+
+IDLE = _dim_chrome(_load("codex_idle_prompt.txt"))
+BUSY = _dim_chrome(_load("codex_busy.txt"))
+DONE = _dim_chrome(_load("codex_done.txt"))
+# Not dimmed: the permission screen's `\u203a 1. Yes, proceed` is a caret-selected
+# option, not an empty box's placeholder. Only a placeholder is drawn faint, so
+# leaving this bright is what makes the screen read as occupied rather than empty.
 PERMISSION = _load("codex_permission.txt")
 
 # Pad so the previous busy screen's "esc to interrupt" line is pushed out of the

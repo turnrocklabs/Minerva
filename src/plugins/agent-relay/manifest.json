@@ -104,7 +104,7 @@
           },
           "human_guard_ms": {
             "type": "integer",
-            "description": "Refuse (held) when a person typed in the terminal within this many ms of the write."
+            "description": "Refuse (held) when a person typed in the terminal within this many ms of the write. Asking for it also refuses (held) when the harness's composer already holds a line a person typed and did not submit: the Enter would submit that line with this text appended to it."
           },
           "expect_harness": {
             "type": "string",

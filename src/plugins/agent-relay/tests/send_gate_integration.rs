@@ -2108,11 +2108,13 @@ fn a_profile_hint_holds_an_unwatched_terminal_and_starts_no_watch() {
 /// chat message is the same person on both sides.
 ///
 /// Oracle: the ONE write a NOTIFY-prefixed prompt makes carries
-/// unless_typed_within_ms, expect_harness AND then_enter_after_ms — the
-/// guards are decided once, at the admission of the transaction that also
-/// sends the Enter, so no guard can refuse after the body has landed and
-/// leave a line nobody submits. A plain prompt's write carries the same
-/// Enter and no guards.
+/// unless_typed_within_ms, unless_composer_holds_text, expect_harness AND
+/// then_enter_after_ms — the guards are decided once, at the admission of the
+/// transaction that also sends the Enter, so no guard can refuse after the
+/// body has landed and leave a line nobody submits. The composer guard rides
+/// with the typing one because they cover the two halves of the same hazard:
+/// a keystroke still arriving, and a line already finished and not submitted.
+/// A plain prompt's write carries the same Enter and no guards.
 #[test]
 fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     let mut host = FakeHost::start();
@@ -2143,6 +2145,8 @@ fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     assert_eq!(args[0]["then_enter_after_ms"], json!(200),
         "the Enter rides on the same write, after the pause the body needs: {args:?}");
     assert_eq!(args[0]["unless_typed_within_ms"], json!(5000), "the write is guarded: {args:?}");
+    assert_eq!(args[0]["unless_composer_holds_text"], json!(true),
+        "an unsent line in the composer holds it too: {args:?}");
     assert_eq!(args[0]["expect_harness"], json!("claude"), "and names the watched harness: {args:?}");
 
     let plain = host.tool(
@@ -2153,6 +2157,8 @@ fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     let args = host.view().write_args;
     assert_eq!(args.len(), 2, "one write per prompt: {args:?}");
     assert!(args[1].get("unless_typed_within_ms").is_none(), "a plain prompt is unguarded: {args:?}");
+    assert!(args[1].get("unless_composer_holds_text").is_none(),
+        "a person's own chat message is not held by their own composer: {args:?}");
     assert!(args[1].get("expect_harness").is_none(), "{args:?}");
     assert_eq!(args[1]["then_enter_after_ms"], json!(200),
         "a plain prompt's Enter rides on its write too: {args:?}");

@@ -29,6 +29,18 @@ extends SceneTree
 ##   - while a transaction holds the terminal a GUARDED raw write is refused
 ##     (its guards would be stale by the time a queued write was released) and
 ##     an unguarded one is queued and lands after the transaction;
+##   - the composer guard reads CELL ATTRIBUTES, not row text: the same input
+##     box painted with a faint placeholder lets a guarded write through and
+##     painted bright refuses it as unsent human text, with nothing written;
+##     a box whose first line is empty is judged on the rows below it, blank
+##     rows included, the same way; no row shape is exempt, so a lone numbered
+##     line, a numbered two-item draft and a chooser's bright option block all
+##     read as occupied; the region runs from the marker row above the cursor to
+##     the foot of the viewport, so a pasted box-drawing rule is read past, an
+##     indented marker glyph is draft text, and a footer below the box holds the
+##     write unless the harness draws it faint — the refusal quoting the row it
+##     tripped on; with no harness in front there is no marker row to find and
+##     the receipt says the check was skipped;
 ##   - no script outside TerminalSession writes the extension node directly.
 
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
@@ -227,6 +239,8 @@ func _run() -> void:
 		session.get_plain_text().find("GUARDED-BUSY") == -1,
 		session.read_viewport_text().right(300))
 
+	await _test_composer_guard(session, tools)
+
 	registry.close_session(tid)
 
 	await _test_harness_check_skipped()
@@ -420,6 +434,328 @@ func _test_npm_harness_foreground(session) -> void:
 	var gone: bool = await _wait_until(func() -> bool:
 		return session.harness_name() == "")
 	check("when it ends the shell is back in front", gone,
+		str(session.get_foreground_process()))
+
+
+## A harness named `codex` that paints an input box on demand and nothing else,
+## so the screen the composer guard reads is exactly what the test asked for.
+## `dim` is an EMPTY box — the placeholder both harnesses draw inside one,
+## faint (SGR 2); `plain` is the same row bright, which is what a line a person
+## typed looks like. Node is the npm-harness shape, so the host classifies the
+## foreground as codex and derives the `›` marker itself.
+##
+## `numbered`, `draft` and `chooser` are the shapes a text-only heuristic trips
+## over: a lone numbered line, a two-item numbered draft, and a permission
+## screen's bright option block. All three are occupied as far as the guard is
+## concerned — a person's draft must not be submitted, and nothing may be typed
+## into a chooser either.
+##
+## `wrapped`, `wrapped_dim` and `spaced` are boxes whose first line is empty
+## and whose text is on a row below — what a multi-line prompt looks like.
+## `spaced` puts a blank row in between, which does not end the composer.
+##
+## `ruled` is a draft with a box-drawing rule pasted into it: the rule carries
+## no text and is read past, so the bright row under it still holds. `quoted`
+## puts the marker glyph itself inside the draft, indented — the region's top is
+## the real marker row above it, at column 0. `footer_dim` and `footer_bright`
+## are an empty box with a status row two rows below it: faint, as both real
+## harnesses draw it, the box is empty; bright, the guard holds and says which
+## row it read, which is the by-design price of not guessing where a box ends.
+##
+## Every block ends with a blank row, so one scenario's rows are never read as
+## part of another's.
+##
+## Input arrives in whatever chunks the PTY delivers, and one chunk can carry
+## several newline-delimited commands, so stdin is buffered and split rather
+## than read one command per data event.
+const COMPOSER_HARNESS_SRC := """
+const ROWS = {
+  dim: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n",
+  plain: "\\u203a the sentence I have not sent yet\\r\\n\\r\\n",
+  chooser: "\\u203a 1. Yes, proceed\\r\\n  2. No, tell me what to do instead\\r\\n\\r\\n",
+  numbered: "\\u203a 1. Review this change\\r\\n\\r\\n",
+  draft: "\\u203a 1. Review this change\\r\\n  2. Check the tests\\r\\n\\r\\n",
+  wrapped: "\\u203a\\r\\n  the second line of what I typed\\r\\n\\r\\n",
+  wrapped_dim: "\\u203a\\r\\n\\u001b[2m  Press Enter to send\\u001b[0m\\r\\n\\r\\n",
+  spaced: "\\u203a\\r\\n\\r\\n  after a blank row I kept typing\\r\\n\\r\\n",
+  ruled: "\\u203a\\r\\n" + "\\u2550".repeat(60) + "\\r\\n  text under a pasted rule\\r\\n\\r\\n",
+  quoted: "\\u203a\\r\\n  \\u203a quoted line I pasted\\r\\n\\r\\n",
+  ruleonly: "\\u203a\\r\\n  \\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\r\\n\\r\\n",
+  footer_dim: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n\\u001b[2m  gpt-5.5 faint-footer\\u001b[0m\\r\\n\\r\\n",
+  footer_bright: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  gpt-5.5 bright-footer\\r\\n\\r\\n",
+};
+// A real harness owns the terminal in raw mode with echo off; without this
+// the PTY echoes the test's typed command onto the row the marker lands on,
+// pushing the marker off column 0.
+if (process.stdin.isTTY) { process.stdin.setRawMode(true); }
+process.stdout.write("COMPOSER-READY\\r\\n");
+let pending = "";
+process.stdin.on('data', (d) => {
+  pending += d.toString();
+  let cut;
+  while ((cut = pending.search(/[\\r\\n]/)) !== -1) {
+    const key = pending.slice(0, cut).trim();
+    pending = pending.slice(cut + 1);
+    if (key === 'quit') { process.exit(0); }
+    if (ROWS[key]) { process.stdout.write(ROWS[key]); }
+    else if (key) { process.stdout.write("RECV:" + key + "\\r\\n"); }
+  }
+});
+setTimeout(() => process.exit(0), 120000);
+"""
+
+
+## The composer guard: an input box holding a line a person typed and did not
+## submit refuses the write, and the SAME row drawn faint does not. Row text is
+## identical in shape either way — only the cell attribute separates them, so
+## a guard that read text alone would fail one of these two legs. The region it
+## reads runs from the marker row nearest above the cursor to the foot of the
+## viewport, with nothing ending it early: a blank row inside a draft, a pasted
+## rule and a footer under the box are all inside it, and no row shape buys an
+## exemption.
+func _test_composer_guard(session, tools) -> void:
+	var tid: String = str(session.terminal_id)
+	# With a bare shell in front there is no harness whose box to look for, and
+	# the receipt has to SAY the check was skipped rather than pass it silently.
+	var no_harness: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "echo COMPOSER-SKIPPED\r", "raw": true, "unless_composer_holds_text": true})
+	check("with no harness in front the composer check is skipped, not passed",
+		no_harness.get("success", false)
+			and str(no_harness.get("composer_check", "")) == "skipped", str(no_harness))
+
+	if not session.foreground_supported():
+		print("SKIP: this platform cannot read the foreground — no harness to derive a marker from")
+		return
+	var node_path: Array = []
+	if OS.execute("which", ["node"], node_path) != 0:
+		print("SKIP: node not on PATH — the composer oracle needs a codex-named harness")
+		return
+	var dir_path: String = "user://terminal_identity_composer"
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var script_path: String = ProjectSettings.globalize_path(dir_path.path_join("codex"))
+	var f := FileAccess.open(script_path, FileAccess.WRITE)
+	if f == null:
+		check("the composer harness script could be written", false, script_path)
+		return
+	f.store_string(COMPOSER_HARNESS_SRC)
+	f.close()
+
+	session.write_input("node '%s'\r" % script_path)
+	var ready: bool = await _wait_until(func() -> bool:
+		return session.harness_name() == "codex" and session.get_plain_text().find("COMPOSER-READY") != -1)
+	check("a codex-named harness is in the foreground with its box ready", ready,
+		session.read_viewport_text().right(300))
+	if not ready:
+		return
+
+	# An EMPTY box: its placeholder is faint, and nothing a person types is.
+	session.write_input("dim\r")
+	var dim_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("/status") != -1)
+	check("the harness painted its empty box", dim_up, session.read_viewport_text().right(300))
+	var through: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-PASSED\r", "raw": true, "unless_composer_holds_text": true})
+	check("a faint placeholder is an EMPTY composer, and the guarded write goes through",
+		through.get("success", false)
+			and str(through.get("composer_check", "")) == "checked", str(through))
+	var landed: bool = await _wait_until(func() -> bool:
+		return session.get_plain_text().find("COMPOSER-PASSED") != -1)
+	check("and its bytes reached the PTY", landed, session.read_viewport_text().right(300))
+
+	# The same row bright: a finished line nobody submitted.
+	session.write_input("plain\r")
+	var plain_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("have not sent yet") != -1)
+	check("the harness painted a box holding an unsent line", plain_up,
+		session.read_viewport_text().right(300))
+	var held: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-REFUSED\r", "raw": true, "unless_composer_holds_text": true})
+	check("a raw write into an occupied composer is held, and names the guard",
+		not held.get("success", true) and bool(held.get("held", false))
+			and str(held.get("outcome", "")) == "refused_composer_not_empty"
+			and str(held.get("composer_check", "")) == "checked"
+			and str(held.get("error", "")).contains("holds unsent text"), str(held))
+	var txn: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-TXN", "raw": true, "then_enter_after_ms": 50,
+		"unless_composer_holds_text": true})
+	check("and so is a transaction, refused on the same evidence",
+		not txn.get("success", true) and bool(txn.get("held", false))
+			and str(txn.get("outcome", "")) == "refused_composer_not_empty"
+			and not txn.has("txn_id"), str(txn))
+	await create_timer(0.4).timeout
+	var screen: String = session.get_plain_text()
+	check("neither refusal put a byte on the screen",
+		screen.find("COMPOSER-REFUSED") == -1 and screen.find("COMPOSER-TXN") == -1,
+		session.read_viewport_text().right(300))
+
+	# A box whose FIRST line is empty still holds what a person typed on the
+	# row below it: reading the marker row alone would call this box empty.
+	session.write_input("wrapped\r")
+	var wrapped_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("the second line of what I typed") != -1)
+	check("the harness painted a box whose text starts on the next row", wrapped_up,
+		session.read_viewport_text().right(300))
+	var wrapped: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-WRAPPED\r", "raw": true, "unless_composer_holds_text": true})
+	check("bright text on a continuation row is unsent text too",
+		not wrapped.get("success", true) and bool(wrapped.get("held", false))
+			and str(wrapped.get("outcome", "")) == "refused_composer_not_empty", str(wrapped))
+
+	# The same shape with a FAINT continuation is a placeholder, not a line.
+	session.write_input("wrapped_dim\r")
+	var wrapped_dim_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("Press Enter to send") != -1)
+	check("the harness painted a faint continuation row", wrapped_dim_up,
+		session.read_viewport_text().right(300))
+	var wrapped_dim: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-FAINTLINE\r", "raw": true, "unless_composer_holds_text": true})
+	check("a faint continuation row is an EMPTY composer, and the write goes through",
+		wrapped_dim.get("success", false)
+			and str(wrapped_dim.get("composer_check", "")) == "checked", str(wrapped_dim))
+
+	# A blank row inside the box does not end it: the typing goes on below.
+	session.write_input("spaced\r")
+	var spaced_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("after a blank row I kept typing") != -1)
+	check("the harness painted a box with a blank row inside it", spaced_up,
+		session.read_viewport_text().right(300))
+	var spaced: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-SPACED\r", "raw": true, "unless_composer_holds_text": true})
+	check("text below a blank row is still unsent text",
+		not spaced.get("success", true) and bool(spaced.get("held", false))
+			and str(spaced.get("outcome", "")) == "refused_composer_not_empty"
+			and str(spaced.get("composer_check", "")) == "checked", str(spaced))
+
+	# A pasted box-drawing rule carries no text, so the region reads PAST it and
+	# the bright row under it still holds — and the refusal quotes that row.
+	session.write_input("ruled\r")
+	var ruled_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("text under a pasted rule") != -1)
+	check("the harness painted a draft split by a pasted box-drawing rule", ruled_up,
+		session.read_viewport_text().right(300))
+	var ruled: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-RULED\r", "raw": true, "unless_composer_holds_text": true})
+	check("a pasted rule does not end the region, and the refusal quotes the row it read",
+		not ruled.get("success", true) and bool(ruled.get("held", false))
+			and str(ruled.get("outcome", "")) == "refused_composer_not_empty"
+			and str(ruled.get("error", "")).contains("text under a pasted rule"), str(ruled))
+
+	# The marker glyph inside a draft is INDENTED; the region's top is the real
+	# marker row above it, at column 0, so the quoted line still reads as unsent.
+	session.write_input("quoted\r")
+	var quoted_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("quoted line I pasted") != -1)
+	check("the harness painted a draft holding the marker glyph itself", quoted_up,
+		session.read_viewport_text().right(300))
+	var quoted: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-QUOTED\r", "raw": true, "unless_composer_holds_text": true})
+	# A draft that is nothing but box-drawing glyphs on an indented row is
+	# still a draft: only a rule drawn from column 0 is chrome.
+	session.write_input("ruleonly\r")
+	var ruleonly_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("\u2550\u2550\u2550\u2550") != -1)
+	check("the harness painted an indented rule-only draft", ruleonly_up,
+		session.read_viewport_text().right(300))
+	var ruleonly: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-RULEONLY\r", "raw": true, "unless_composer_holds_text": true})
+	check("an indented rule-only draft is unsent text",
+		not ruleonly.get("success", true) and bool(ruleonly.get("held", false))
+			and str(ruleonly.get("outcome", "")) == "refused_composer_not_empty", str(ruleonly))
+	check("an indented marker glyph is draft text, not the composer row",
+		not quoted.get("success", true) and bool(quoted.get("held", false))
+			and str(quoted.get("outcome", "")) == "refused_composer_not_empty"
+			and str(quoted.get("error", "")).contains("quoted line I pasted"), str(quoted))
+
+	# The region runs to the foot of the viewport, so the harness's own footer is
+	# inside it. Drawn faint — as both real harnesses draw it — the box is empty.
+	session.write_input("footer_dim\r")
+	var footer_dim_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("faint-footer") != -1)
+	check("the harness painted an empty box over a faint footer", footer_dim_up,
+		session.read_viewport_text().right(300))
+	var footer_dim: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-FOOTERDIM\r", "raw": true, "unless_composer_holds_text": true})
+	check("a faint footer below the box leaves the composer empty",
+		footer_dim.get("success", false)
+			and str(footer_dim.get("composer_check", "")) == "checked", str(footer_dim))
+
+	# The same footer drawn BRIGHT holds the write. That is by design — refusing
+	# loudly beats guessing where the box ends — and the receipt names the row.
+	session.write_input("footer_bright\r")
+	var footer_bright_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("bright-footer") != -1)
+	check("the harness painted the same box over a bright footer", footer_bright_up,
+		session.read_viewport_text().right(300))
+	var footer_bright: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-FOOTERBRIGHT\r", "raw": true, "unless_composer_holds_text": true})
+	check("a bright footer holds the write and the refusal quotes it",
+		not footer_bright.get("success", true) and bool(footer_bright.get("held", false))
+			and str(footer_bright.get("outcome", "")) == "refused_composer_not_empty"
+			and str(footer_bright.get("error", "")).contains("bright-footer"), str(footer_bright))
+
+	# A numbered line is what a person types as often as what a chooser draws.
+	# The guard exempts no shape, so it is held like any other bright row.
+	session.write_input("numbered\r")
+	var numbered_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("1. Review this change") != -1)
+	check("the harness painted a lone numbered line in the box", numbered_up,
+		session.read_viewport_text().right(300))
+	var numbered: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-NUMBERED\r", "raw": true, "unless_composer_holds_text": true})
+	check("a lone numbered row is a person's own prompt, and is held",
+		not numbered.get("success", true) and bool(numbered.get("held", false))
+			and str(numbered.get("outcome", "")) == "refused_composer_not_empty"
+			and str(numbered.get("composer_check", "")) == "checked", str(numbered))
+
+	# Two numbered lines look exactly like a chooser's option block, and are a
+	# person's own list. Any heuristic that let the block through would submit
+	# this draft, so the block is not a shape the guard recognises.
+	session.write_input("draft\r")
+	var draft_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("2. Check the tests") != -1)
+	check("the harness painted a two-item numbered draft", draft_up,
+		session.read_viewport_text().right(300))
+	var draft: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-DRAFT\r", "raw": true, "unless_composer_holds_text": true})
+	check("a numbered two-item draft is held like any other unsent text",
+		not draft.get("success", true) and bool(draft.get("held", false))
+			and str(draft.get("outcome", "")) == "refused_composer_not_empty"
+			and str(draft.get("composer_check", "")) == "checked", str(draft))
+
+	# A chooser's selected option opens with the SAME marker and is bright, and
+	# reads as occupied here. The reason names the composer, but the action is
+	# the right one: nothing may be typed into a permission screen either.
+	session.write_input("chooser\r")
+	var chooser_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("2. No, tell me what to do instead") != -1)
+	check("the harness painted a selected option and its sibling", chooser_up,
+		session.read_viewport_text().right(300))
+	var chooser: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-CHOOSER\r", "raw": true, "unless_composer_holds_text": true})
+	check("a chooser's bright option block is checked, and held",
+		not chooser.get("success", true) and bool(chooser.get("held", false))
+			and str(chooser.get("outcome", "")) == "refused_composer_not_empty"
+			and str(chooser.get("composer_check", "")) == "checked", str(chooser))
+
+	await create_timer(0.4).timeout
+	# The whole scrollback, not the viewport: the earlier passes have scrolled
+	# off the top by now.
+	var after: String = ""
+	for row in range(int(session.get_scroll_info().get("total_rows", 0))):
+		after += session.extract_row_text_screen(row) + "\n"
+	check("every refusal was withheld from the screen and only the passes landed",
+		after.find("COMPOSER-WRAPPED") == -1 and after.find("COMPOSER-SPACED") == -1
+			and after.find("COMPOSER-NUMBERED") == -1 and after.find("COMPOSER-DRAFT") == -1
+			and after.find("COMPOSER-CHOOSER") == -1 and after.find("COMPOSER-RULED") == -1
+			and after.find("COMPOSER-QUOTED") == -1
+			and after.find("COMPOSER-FOOTERBRIGHT") == -1
+			and after.find("COMPOSER-FAINTLINE") != -1
+			and after.find("COMPOSER-FOOTERDIM") != -1,
+		session.read_viewport_text().right(300))
+
+	session.write_input("quit\r")
+	var gone: bool = await _wait_until(func() -> bool: return session.harness_name() == "")
+	check("the composer harness exited and the shell is back in front", gone,
 		str(session.get_foreground_process()))
 
 
