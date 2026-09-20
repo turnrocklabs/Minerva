@@ -31,7 +31,7 @@ extends SceneTree
 const DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const SHELL_ENV_PATH := "res://Scripts/Services/Terminal/ShellEnvironment.gd"
 ## Every POSIX launch line opens with the pinned launch shell.
-var EXEC_PREFIX: String = "exec " + load(SHELL_ENV_PATH).launch_shell() + " -c "
+var EXEC_PREFIX: String = "exec '" + load(SHELL_ENV_PATH).launch_shell() + "' -c "
 const PROVIDER_REGISTRY_PATH := "res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
@@ -147,6 +147,34 @@ func _test_quoting() -> void:
 		D.build_launch_line("claude --x", false))
 	check("build_launch_line posix has no LOGIN shell wrapper",
 		not D.build_launch_line("claude --x", false).contains("-lc"))
+	# The pin is exercised with a fake $SHELL: a path with a space must survive
+	# quoting, an invalid $SHELL must fall back to an absolute bash, and the
+	# cache must be reset between the two so each answer is measured.
+	var SEp = load(SHELL_ENV_PATH)
+	var saved_shell: String = OS.get_environment("SHELL")
+	var saved_pin: String = SEp._launch_shell
+	var spaced_dir: String = OS.get_temp_dir().path_join("w3 shells")
+	DirAccess.make_dir_recursive_absolute(spaced_dir)
+	var spaced_shell: String = spaced_dir.path_join("bash")
+	var f := FileAccess.open(spaced_shell, FileAccess.WRITE)
+	f.store_string("#!/bin/sh\nexec /bin/bash \"$@\"\n")
+	f.close()
+	FileAccess.set_unix_permissions(spaced_shell, 0x1ED)
+	SEp._launch_shell = ""
+	OS.set_environment("SHELL", spaced_shell)
+	check("a $SHELL path with a space is pinned and quoted in the launch line",
+		SEp.launch_shell() == spaced_shell
+		and D.build_launch_line("claude --x", false) == "exec '%s' -c 'claude --x'\r" % spaced_shell,
+		D.build_launch_line("claude --x", false))
+	SEp._launch_shell = ""
+	OS.set_environment("SHELL", "/w3-nowhere/not-a-shell")
+	check("an invalid $SHELL falls back to an absolute executable shell",
+		SEp.launch_shell().begins_with("/") and FileAccess.file_exists(SEp.launch_shell()),
+		SEp.launch_shell())
+	OS.set_environment("SHELL", saved_shell)
+	SEp._launch_shell = saved_pin
+	DirAccess.remove_absolute(spaced_shell)
+	DirAccess.remove_absolute(spaced_dir)
 	check("the launch shell is an absolute executable, not a PATH lookup",
 		load(SHELL_ENV_PATH).launch_shell().begins_with("/")
 		and FileAccess.file_exists(load(SHELL_ENV_PATH).launch_shell()),

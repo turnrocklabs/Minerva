@@ -159,7 +159,7 @@ static func is_simple_command(command: String) -> bool:
 static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
 		return "%s\r" % command
-	return "exec %s -c %s\r" % [ShellEnvironment.launch_shell(), shell_quote(command)]
+	return "exec %s -c %s\r" % [shell_quote(ShellEnvironment.launch_shell()), shell_quote(command)]
 
 
 ## The cd line written before the launch line when a working dir is set.
@@ -431,7 +431,7 @@ static func path_check_error(command: String, cwd: String = "") -> String:
 ## What a just-launched harness printed before dying, or "" while it lives.
 ## This is the real diagnosis the user needs ("bash: line 1: codex: command
 ## not found"); without it the only symptom is a missing chat provider.
-static func exit_note(session) -> String:
+static func exit_note(session: TerminalSession) -> String:
 	if session == null or session.shell_exit_code == null:
 		return ""
 	var tail := ShellEnvironment.last_output_lines(session.get_plain_text())
@@ -484,7 +484,7 @@ func _do_launch(session_name: String, bind_existing: bool, command: String,
 		cwd: String, registry) -> void:
 	var terminal_id: String = ""
 	var created_session := false
-	var session = null
+	var session: TerminalSession = null
 
 	if bind_existing:
 		var sel: int = _existing_dropdown.selected
@@ -621,7 +621,7 @@ static func _classify_watch_result(raw: Dictionary) -> Dictionary:
 ## Poll the W1 registry until the entry appears or the timeout lapses.
 ## (chat_providers_changed has no payload, so a frame-poll is the simplest
 ## race-free await — at most ~600 cheap has_entry checks for the 10s default.)
-func _await_provider_entry(entry_key: String, timeout_sec: float, session = null) -> bool:
+func _await_provider_entry(entry_key: String, timeout_sec: float, session: TerminalSession = null) -> bool:
 	var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
 	if cpr == null or not cpr.has_method("has_entry"):
 		return false

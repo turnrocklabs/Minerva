@@ -76,8 +76,13 @@ static func launch_shell() -> String:
 	if from_env.begins_with("/") and _executable_at(from_env):
 		_launch_shell = from_env
 	else:
+		# A relative or empty PATH entry can answer with a relative path; the
+		# launch line runs after a `cd`, so only an absolute path is kept.
 		var found := resolve_on_path("bash", OS.get_environment("PATH"), "")
-		_launch_shell = found if not found.is_empty() else "/bin/bash"
+		if not found.is_empty() and not found.begins_with("/"):
+			found = ProjectSettings.globalize_path(found) if found.begins_with("res://") \
+				else _absolutize(found, "")
+		_launch_shell = found if found.begins_with("/") and _executable_at(found) else "/bin/bash"
 	return _launch_shell
 
 
