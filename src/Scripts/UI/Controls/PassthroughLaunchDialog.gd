@@ -143,7 +143,8 @@ static func is_simple_command(command: String) -> bool:
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: `exec '<bash>' --norc --noprofile -c '<command>'` for every line,
+## POSIX: `exec env BASH_ENV= ENV= '<bash>' --norc --noprofile -c '<command>'`
+## for every line,
 ## with bash pinned by absolute path (ShellEnvironment.launch_shell). The PTY
 ## shell is replaced by a non-interactive, rc-less bash that runs the command
 ## as typed (assignments, pipelines, lists and expansions included) and exits
@@ -162,7 +163,9 @@ static func build_launch_line(command: String, windows: bool) -> String:
 	var bash := ShellEnvironment.launch_shell()
 	if bash.is_empty():
 		return "%s\r" % command
-	return "exec %s --norc --noprofile -c %s\r" % [shell_quote(bash), shell_quote(command)]
+	# env clears the two hooks a non-interactive bash would still honour, so
+	# the line is rc-less on its own terms even if the PTY shell passed them on.
+	return "exec env BASH_ENV= ENV= %s --norc --noprofile -c %s\r" % [shell_quote(bash), shell_quote(command)]
 
 
 ## The cd line written before the launch line when a working dir is set.
@@ -408,7 +411,7 @@ func _get_session_registry():
 ## command as its argument (exec, command, ...).
 ## Shell words that take a command as their argument; the shell resolves
 ## them itself, so a lookup on PATH would wrongly reject them.
-const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval", "time", "source", "."]
+const SHELL_COMMAND_WORDS: Array[String] = ["exec", "command", "builtin", "eval", "time", "source", ".", "!", "coproc"]
 
 static func path_check_error(command: String, cwd: String = "") -> String:
 	if is_windows_shell() or not is_simple_command(command):

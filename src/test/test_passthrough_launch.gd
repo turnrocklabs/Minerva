@@ -31,7 +31,7 @@ extends SceneTree
 const DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const SHELL_ENV_PATH := "res://Scripts/Services/Terminal/ShellEnvironment.gd"
 ## Every POSIX launch line opens with the pinned launch shell.
-var EXEC_PREFIX: String = "exec '" + load(SHELL_ENV_PATH).launch_shell() + "' --norc --noprofile -c "
+var EXEC_PREFIX: String = "exec env BASH_ENV= ENV= '" + load(SHELL_ENV_PATH).launch_shell() + "' --norc --noprofile -c "
 const PROVIDER_REGISTRY_PATH := "res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
@@ -166,7 +166,7 @@ func _test_quoting() -> void:
 	OS.set_environment("PATH", spaced_dir + ":" + saved_path)
 	check("a bash whose directory has a space is pinned and quoted in the launch line",
 		SEp.launch_shell() == spaced_shell
-		and D.build_launch_line("claude --x", false) == "exec '%s' --norc --noprofile -c 'claude --x'\r" % spaced_shell,
+		and D.build_launch_line("claude --x", false) == "exec env BASH_ENV= ENV= '%s' --norc --noprofile -c 'claude --x'\r" % spaced_shell,
 		D.build_launch_line("claude --x", false))
 	SEp._launch_shell_resolved = false
 	OS.set_environment("PATH", "/w3-nowhere")
@@ -611,6 +611,10 @@ func _test_path_guard(so) -> void:
 		check("a list still launches bare",
 			D.build_launch_line("cd /tmp && codex", false) == EXEC_PREFIX + "'cd /tmp && codex'\r",
 			D.build_launch_line("cd /tmp && codex", false))
+		check("a negated or coproc'd command is left to bash",
+			D.path_check_error("! w3-definitely-not-installed --yolo") == ""
+			and D.path_check_error("coproc w3-definitely-not-installed") == "",
+			D.path_check_error("! w3-definitely-not-installed --yolo"))
 		check("a builtin that takes a command is not looked up as a file",
 			D.path_check_error("exec w3-definitely-not-installed --yolo") == ""
 			and D.path_check_error("command w3-definitely-not-installed --yolo") == "",
@@ -673,10 +677,21 @@ func _test_launch_exit_note(so) -> void:
 	var dying: String = _write_script(
 		OS.get_user_data_dir().path_join("w3_dying_harness.sh"),
 		"#!/bin/sh\necho w3-dead-marker\nexit 7\n")
+	# A BASH_ENV hook that would run on any non-interactive bash must not run
+	# for the launch: its marker file has to stay absent.
+	var hook_marker: String = OS.get_user_data_dir().path_join("w3_bash_env_ran")
+	DirAccess.remove_absolute(hook_marker)
+	var hook: String = _write_script(OS.get_user_data_dir().path_join("w3_bash_env.sh"),
+		"touch '" + hook_marker + "'\n")
+	var saved_bash_env: String = OS.get_environment("BASH_ENV")
+	OS.set_environment("BASH_ENV", hook)
 	dialog._command_edit.text = dying
 	var started_at := Time.get_ticks_msec()
 	await dialog._on_start_pressed()
 	var elapsed := Time.get_ticks_msec() - started_at
+	OS.set_environment("BASH_ENV", saved_bash_env)
+	check("dead harness → an inherited BASH_ENV hook did not run in the launch",
+		not FileAccess.file_exists(hook_marker), hook_marker)
 
 	check("dead harness → error quotes the terminal's last lines",
 		dialog.current_error().contains("w3-dead-marker"), dialog.current_error())
