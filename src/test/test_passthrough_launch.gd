@@ -31,7 +31,7 @@ extends SceneTree
 const DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const SHELL_ENV_PATH := "res://Scripts/Services/Terminal/ShellEnvironment.gd"
 ## Every POSIX launch line opens with the pinned launch shell.
-var EXEC_PREFIX: String = "exec '" + load(SHELL_ENV_PATH).launch_shell() + "' -c "
+var EXEC_PREFIX: String = "exec '" + load(SHELL_ENV_PATH).launch_shell() + "' --norc --noprofile -c "
 const PROVIDER_REGISTRY_PATH := "res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
@@ -147,12 +147,14 @@ func _test_quoting() -> void:
 		D.build_launch_line("claude --x", false))
 	check("build_launch_line posix has no LOGIN shell wrapper",
 		not D.build_launch_line("claude --x", false).contains("-lc"))
-	# The pin is exercised with a fake $SHELL: a path with a space must survive
-	# quoting, an invalid $SHELL must fall back to an absolute bash, and the
-	# cache must be reset between the two so each answer is measured.
+	# The pin is exercised with a fake bash first on PATH: a directory with a
+	# space must survive quoting, a PATH without bash must fall back to an
+	# absolute executable, and the cache is reset between so each answer is
+	# measured rather than remembered.
 	var SEp = load(SHELL_ENV_PATH)
-	var saved_shell: String = OS.get_environment("SHELL")
+	var saved_path: String = OS.get_environment("PATH")
 	var saved_pin: String = SEp._launch_shell
+	var saved_resolved: bool = SEp._launch_shell_resolved
 	var spaced_dir: String = OS.get_temp_dir().path_join("w3 shells")
 	DirAccess.make_dir_recursive_absolute(spaced_dir)
 	var spaced_shell: String = spaced_dir.path_join("bash")
@@ -160,19 +162,22 @@ func _test_quoting() -> void:
 	f.store_string("#!/bin/sh\nexec /bin/bash \"$@\"\n")
 	f.close()
 	FileAccess.set_unix_permissions(spaced_shell, 0x1ED)
-	SEp._launch_shell = ""
-	OS.set_environment("SHELL", spaced_shell)
-	check("a $SHELL path with a space is pinned and quoted in the launch line",
+	SEp._launch_shell_resolved = false
+	OS.set_environment("PATH", spaced_dir + ":" + saved_path)
+	check("a bash whose directory has a space is pinned and quoted in the launch line",
 		SEp.launch_shell() == spaced_shell
-		and D.build_launch_line("claude --x", false) == "exec '%s' -c 'claude --x'\r" % spaced_shell,
+		and D.build_launch_line("claude --x", false) == "exec '%s' --norc --noprofile -c 'claude --x'\r" % spaced_shell,
 		D.build_launch_line("claude --x", false))
-	SEp._launch_shell = ""
-	OS.set_environment("SHELL", "/w3-nowhere/not-a-shell")
-	check("an invalid $SHELL falls back to an absolute executable shell",
-		SEp.launch_shell().begins_with("/") and FileAccess.file_exists(SEp.launch_shell()),
-		SEp.launch_shell())
-	OS.set_environment("SHELL", saved_shell)
+	SEp._launch_shell_resolved = false
+	OS.set_environment("PATH", "/w3-nowhere")
+	var fallback: String = SEp.launch_shell()
+	check("a PATH without bash falls back to an absolute executable bash",
+		fallback.begins_with("/") and FileAccess.file_exists(fallback)
+		and (FileAccess.get_unix_permissions(fallback) & 0x49) != 0,
+		fallback)
+	OS.set_environment("PATH", saved_path)
 	SEp._launch_shell = saved_pin
+	SEp._launch_shell_resolved = saved_resolved
 	DirAccess.remove_absolute(spaced_shell)
 	DirAccess.remove_absolute(spaced_dir)
 	check("the launch shell is an absolute executable, not a PATH lookup",
@@ -450,8 +455,12 @@ func _test_login_path_probe() -> void:
 	# the fixed marker text is public, so only the nonce can tell them apart.
 	var forged: String = "printf '%s%s%s\\n' '" + SE.PATH_MARK_BEGIN \
 		+ "' '/w3/forged/bin' '" + SE.PATH_MARK_END + "'\n"
+	# The ok shell also floods stderr past any pipe buffer before it answers,
+	# the way a chatty rc file does: a probe that never drains stderr blocks
+	# there and the real PATH is thrown away at the timeout.
+	var stderr_flood: String = "head -c 300000 /dev/zero | tr '\\0' x >&2\n"
 	var ok_shell: String = _write_script(dir.path_join("fake_shell_ok.sh"),
-		"#!/bin/sh\nprintf 'x\\n' >> '" + count_file + "'\n" + forged + run_real)
+		"#!/bin/sh\nprintf 'x\\n' >> '" + count_file + "'\n" + stderr_flood + forged + run_real)
 	# The hung shell also leaves a background child behind, the way an rc file
 	# that starts a daemon does, and records its pid for the group-kill oracle.
 	var child_pid_file: String = dir.path_join("hang_child.pid")
@@ -825,7 +834,9 @@ func _test_happy_path(so) -> void:
 	var saw_writes: bool = await _wait_until(func() -> bool:
 		if session == null:
 			return false
-		var txt: String = session.get_plain_text()
+		# The echoed line wraps at the PTY width, so the screen is compared
+		# with its row breaks removed.
+		var txt: String = session.get_plain_text().replace("\n", "")
 		if not txt.contains(expected_launch):
 			return false
 		return native_cwd or txt.contains(expected_cd))

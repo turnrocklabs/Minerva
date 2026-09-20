@@ -63,26 +63,29 @@ static func apply_login_path() -> bool:
 	return true
 
 
-## The absolute path of the shell that runs a launch line (`exec <shell> -c`).
-## Resolved once from $SHELL, else `bash` on the PATH in force at that moment,
-## else /bin/bash, so a login PATH that omits the shell's directory cannot
-## break the launch.
+## The absolute path of the bash that runs a launch line. It is always bash,
+## whatever $SHELL is: the line is run as `exec <bash> --norc --noprofile -c`,
+## so a POSIX command means the same thing for every user and no rc file runs
+## inside the PTY. Resolved once from the PATH in force at that moment (before
+## the login PATH replaces it), else the usual absolute locations; only an
+## absolute executable is kept, and "" means the machine has no bash at all.
 static var _launch_shell: String = ""
+static var _launch_shell_resolved: bool = false
+const _BASH_FALLBACKS: Array[String] = ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/opt/homebrew/bin/bash"]
 
 static func launch_shell() -> String:
-	if not _launch_shell.is_empty():
+	if _launch_shell_resolved:
 		return _launch_shell
-	var from_env := OS.get_environment("SHELL")
-	if from_env.begins_with("/") and _executable_at(from_env):
-		_launch_shell = from_env
-	else:
-		# A relative or empty PATH entry can answer with a relative path; the
-		# launch line runs after a `cd`, so only an absolute path is kept.
-		var found := resolve_on_path("bash", OS.get_environment("PATH"), "")
-		if not found.is_empty() and not found.begins_with("/"):
-			found = ProjectSettings.globalize_path(found) if found.begins_with("res://") \
-				else _absolutize(found, "")
-		_launch_shell = found if found.begins_with("/") and _executable_at(found) else "/bin/bash"
+	_launch_shell_resolved = true
+	var found := resolve_on_path("bash", OS.get_environment("PATH"), "")
+	if found.begins_with("/") and _executable_at(found):
+		_launch_shell = found
+		return _launch_shell
+	for candidate in _BASH_FALLBACKS:
+		if _executable_at(candidate):
+			_launch_shell = candidate
+			return _launch_shell
+	_launch_shell = ""
 	return _launch_shell
 
 
@@ -161,11 +164,16 @@ static func run_bounded(program: String, args: PackedStringArray, timeout_ms: in
 		return {"output": "", "timed_out": false}
 	var pid: int = int(proc.get("pid", -1))
 	var pipe: FileAccess = proc.get("stdio") as FileAccess
+	# stderr is drained and discarded on every poll: an rc file that writes
+	# more than the pipe holds would otherwise block before the markers appear.
+	var err_pipe: FileAccess = proc.get("stderr") as FileAccess
 	var captured := ""
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	while Time.get_ticks_msec() < deadline:
 		if pipe != null:
 			captured += pipe.get_as_text()
+		if err_pipe != null:
+			err_pipe.get_as_text()
 		if pid < 0 or not OS.is_process_running(pid):
 			break
 		OS.delay_msec(PROBE_POLL_MS)
@@ -175,6 +183,8 @@ static func run_bounded(program: String, args: PackedStringArray, timeout_ms: in
 	if pipe != null:
 		captured += pipe.get_as_text()
 		pipe.close()
+	if err_pipe != null:
+		err_pipe.close()
 	return {"output": captured, "timed_out": timed_out}
 
 

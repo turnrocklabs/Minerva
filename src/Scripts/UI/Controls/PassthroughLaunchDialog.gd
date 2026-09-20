@@ -143,23 +143,26 @@ static func is_simple_command(command: String) -> bool:
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: `exec <shell> -c '<command>'` for every line, with the shell pinned
-## by absolute path (ShellEnvironment.launch_shell). The PTY shell is replaced
-## by a non-interactive shell that runs the command as typed (assignments,
-## pipelines, lists and expansions included) and exits with it, so the PTY's
-## exit code always reports the harness's end. For a lone simple command bash
-## execs the program directly, so no shell lingers around the agent. A
-## program that cannot be run ends that bash with 127 and its own diagnostic,
-## which is what the launch dialog and the bound chat read back. No login
-## flag: PATH is fixed once at the process level (ShellEnvironment
-## .apply_login_path), which works even when the user's ~/.profile chain skips
-## its own PATH setup in a non-interactive shell.
+## POSIX: `exec '<bash>' --norc --noprofile -c '<command>'` for every line,
+## with bash pinned by absolute path (ShellEnvironment.launch_shell). The PTY
+## shell is replaced by a non-interactive, rc-less bash that runs the command
+## as typed (assignments, pipelines, lists and expansions included) and exits
+## with it, so the PTY's exit code always reports the harness's end and no
+## user rc file can wedge the launch. For a lone simple command bash execs the
+## program directly, so no shell lingers around the agent. A program that
+## cannot be run ends that bash with 127 and its own diagnostic, which is what
+## the launch dialog and the bound chat read back. No login flag: PATH is
+## fixed once at the process level (ShellEnvironment.apply_login_path). With
+## no bash on the machine the command is written bare into the PTY shell.
 ## Windows: the PTY runs cmd.exe — no exec, no quoting. cmd resolves .cmd/.exe
 ## shims through PATH itself, so the command runs bare.
 static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
 		return "%s\r" % command
-	return "exec %s -c %s\r" % [shell_quote(ShellEnvironment.launch_shell()), shell_quote(command)]
+	var bash := ShellEnvironment.launch_shell()
+	if bash.is_empty():
+		return "%s\r" % command
+	return "exec %s --norc --noprofile -c %s\r" % [shell_quote(bash), shell_quote(command)]
 
 
 ## The cd line written before the launch line when a working dir is set.
