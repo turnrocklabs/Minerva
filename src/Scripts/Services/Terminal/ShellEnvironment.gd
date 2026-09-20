@@ -17,9 +17,15 @@ extends RefCounted
 ##
 ## Everything here is static + side-effect free apart from apply_login_path().
 
-## Unique delimiters around the captured value. Login shells print motd, nvm
-## banners and direnv chatter on both sides of our own output, so the value is
-## carved out between markers rather than trusted as the whole capture.
+## Delimiters around the captured value. Login shells print motd, nvm banners
+## and direnv chatter on both sides of our own output, so the value is carved
+## out between markers rather than trusted as the whole capture.
+##
+## Each probe appends a fresh nonce to both marks: the fixed text alone is
+## guessable, and rc output that prints a marker pair of its own before the
+## real capture would otherwise be read as the answer — a wrong PATH installed
+## on Minerva's process, silently. Only the pair carrying this invocation's
+## nonce is accepted.
 const PATH_MARK_BEGIN := "__MINERVA_PATH_BEGIN__"
 const PATH_MARK_END := "__MINERVA_PATH_END__"
 
@@ -67,7 +73,9 @@ static func probe_login_path() -> String:
 	var shell := OS.get_environment("SHELL")
 	if shell.is_empty():
 		shell = "/bin/sh"
-	var script := 'printf "%%s%%s%%s" %s "$PATH" %s' % [PATH_MARK_BEGIN, PATH_MARK_END]
+	var nonce := new_nonce()
+	var script := 'printf "%%s%%s%%s" %s%s "$PATH" %s%s' \
+		% [PATH_MARK_BEGIN, nonce, PATH_MARK_END, nonce]
 	var args := PackedStringArray(["-ilc", script])
 	var run := run_bounded(shell, args, probe_timeout_ms)
 	# A shell that printed the markers and THEN wedged (an exit trap, a child
@@ -75,17 +83,30 @@ static func probe_login_path() -> String:
 	# half-written, and the rc chain never finished. Timed out = no answer.
 	if bool(run.get("timed_out", false)):
 		return ""
-	return parse_path_capture(String(run.get("output", "")))
+	return parse_path_capture(String(run.get("output", "")), nonce)
 
 
-## Carve the PATH out of a noisy capture. Rejects anything that cannot be a
-## PATH (no markers, empty, embedded newline, no absolute entry).
-static func parse_path_capture(output: String) -> String:
-	var begin := output.find(PATH_MARK_BEGIN)
+## A fresh per-probe marker suffix. Hex, so it is a bare word in the printf
+## the probe shell runs. Crypto is the source where it exists; randi covers a
+## build without the module.
+static func new_nonce() -> String:
+	var crypto := Crypto.new()
+	if crypto != null:
+		return crypto.generate_random_bytes(8).hex_encode()
+	return "%08x%08x" % [randi(), randi()]
+
+
+## Carve the PATH out of a noisy capture, accepting only the marker pair that
+## carries `nonce`. Rejects anything that cannot be a PATH (no markers, empty,
+## embedded newline, no absolute entry).
+static func parse_path_capture(output: String, nonce: String = "") -> String:
+	var begin_mark := PATH_MARK_BEGIN + nonce
+	var end_mark := PATH_MARK_END + nonce
+	var begin := output.find(begin_mark)
 	if begin < 0:
 		return ""
-	begin += PATH_MARK_BEGIN.length()
-	var end := output.find(PATH_MARK_END, begin)
+	begin += begin_mark.length()
+	var end := output.find(end_mark, begin)
 	if end < 0:
 		return ""
 	var value := output.substr(begin, end - begin)
@@ -107,8 +128,7 @@ static func parse_path_capture(output: String) -> String:
 ## The kill takes the child's whole process GROUP where one can be identified,
 ## because the rc files being probed spawn children of their own (direnv, a
 ## daemon from ~/.zshrc) that would otherwise outlive the probe and hold the
-## capture pipe open. OS.kill signals a single pid, so the group goes through
-## pkill; see foreign_process_group for the safety rule.
+## capture pipe open. See kill_process_group / foreign_process_group.
 static func run_bounded(program: String, args: PackedStringArray, timeout_ms: int) -> Dictionary:
 	var proc: Dictionary = OS.execute_with_pipe(program, args, false)
 	if proc.is_empty():
@@ -125,16 +145,49 @@ static func run_bounded(program: String, args: PackedStringArray, timeout_ms: in
 		OS.delay_msec(PROBE_POLL_MS)
 	var timed_out: bool = pid >= 0 and OS.is_process_running(pid)
 	if timed_out:
-		var pgid := foreign_process_group(pid)
-		if pgid > 0:
-			# NOT `kill -- -PGID`: OS.execute reaches a shell whose builtin kill
-			# rejects a negative pid ("Illegal number"). pkill -g takes it.
-			OS.execute("pkill", PackedStringArray(["-KILL", "-g", "%d" % pgid]))
-		OS.kill(pid)
+		kill_process_group(pid)
 	if pipe != null:
 		captured += pipe.get_as_text()
 		pipe.close()
 	return {"output": captured, "timed_out": timed_out}
+
+
+## SIGKILL the timed-out process and every other member of its group, leader
+## last so the group is still identifiable while the scan runs. Returns how
+## many pids were signalled.
+##
+## The members are read out of /proc in-process rather than handed to pkill:
+## a helper has to be found on the very PATH the probe exists to repair, and a
+## synchronous OS.execute of a missing-or-wedged helper would hang the caller
+## for longer than the whole timeout it is serving. Reading /proc costs one
+## small file per live process and cannot block on anything.
+static func kill_process_group(pid: int) -> int:
+	var signalled := 0
+	var pgid := foreign_process_group(pid)
+	if pgid > 0:
+		for member in pids_in_group(pgid):
+			if member == pid:
+				continue
+			OS.kill(member)
+			signalled += 1
+	OS.kill(pid)
+	return signalled + 1
+
+
+## Every live pid whose process group is `pgid`, from /proc. Empty on hosts
+## without /proc (non-Linux POSIX), where only the leader can be killed.
+static func pids_in_group(pgid: int) -> Array[int]:
+	var found: Array[int] = []
+	if pgid <= 0:
+		return found
+	for name in DirAccess.get_directories_at("/proc"):
+		var entry := String(name)
+		if not entry.is_valid_int():
+			continue
+		var member := int(entry)
+		if _proc_stat_pgrp(member) == pgid:
+			found.append(member)
+	return found
 
 
 ## The process group `pid` can be killed through, or 0 when there is none.
@@ -171,19 +224,152 @@ static func _proc_stat_pgrp(pid: int) -> int:
 	return int(fields[2])
 
 
-## The program word of a shell command line — what PATH lookup applies to.
-## Returns "" when the line starts with something PATH cannot answer for
-## (a variable assignment, a subshell, a redirect), so callers skip the check
-## instead of reporting a false miss.
-static func command_word(command: String) -> String:
+## Characters that start a shell operator when they are not inside quotes.
+const _OP_CHARS := "|;&()<>"
+
+## Redirect operators — the only ones that may precede the program word.
+const _REDIRECT_OPS: Array[String] = ["<", ">", ">>", "<<"]
+
+
+## Split a command line the way a shell reads it, so callers judge operators by
+## POSITION rather than by substring search: quotes hide operators, a backslash
+## escapes the next character, and an unquoted operator character breaks a word.
+##
+## Returns {"ok": bool, "tokens": Array[Dictionary]}. Each token carries
+##   text    – the operator, or the word with one level of quoting removed
+##   op      – true for an operator token
+##   quoted  – some part of the word came out of quotes or an escape
+##   expands – the word holds an unquoted `$` or backtick, so its final value
+##             is the shell's to decide and not ours
+## ok is false for an unterminated quote or a trailing backslash: nothing can be
+## concluded from half a line, and the shell reports those itself.
+static func tokenize(command: String) -> Dictionary:
 	var line := command.strip_edges()
-	if line.is_empty():
+	var tokens: Array[Dictionary] = []
+	var cur := {"text": "", "started": false, "quoted": false, "expands": false}
+	var i := 0
+	while i < line.length():
+		var c := line[i]
+		if c == "\\":
+			if i + 1 >= line.length():
+				return {"ok": false, "tokens": tokens}
+			cur["text"] = String(cur["text"]) + line[i + 1]
+			cur["started"] = true
+			cur["quoted"] = true
+			i += 2
+		elif c == "'":
+			var close := line.find("'", i + 1)
+			if close < 0:
+				return {"ok": false, "tokens": tokens}
+			cur["text"] = String(cur["text"]) + line.substr(i + 1, close - i - 1)
+			cur["started"] = true
+			cur["quoted"] = true
+			i = close + 1
+		elif c == "\"":
+			i += 1
+			var closed := false
+			while i < line.length():
+				var d := line[i]
+				if d == "\\" and i + 1 < line.length():
+					cur["text"] = String(cur["text"]) + line[i + 1]
+					i += 2
+					continue
+				if d == "\"":
+					closed = true
+					i += 1
+					break
+				if d == "$" or d == "`":
+					cur["expands"] = true
+				cur["text"] = String(cur["text"]) + d
+				i += 1
+			if not closed:
+				return {"ok": false, "tokens": tokens}
+			cur["started"] = true
+			cur["quoted"] = true
+		elif c == " " or c == "\t":
+			_flush_word(tokens, cur)
+			i += 1
+		elif _OP_CHARS.contains(c) or c == "\n" or c == "\r":
+			_flush_word(tokens, cur)
+			var op := c
+			if i + 1 < line.length() and line[i + 1] == c and "|&;<>".contains(c):
+				op += c  # || && ;; << >>
+			tokens.append({"text": op, "op": true, "quoted": false, "expands": false})
+			i += op.length()
+		else:
+			if c == "$" or c == "`":
+				cur["expands"] = true
+			cur["text"] = String(cur["text"]) + c
+			cur["started"] = true
+			i += 1
+	_flush_word(tokens, cur)
+	return {"ok": true, "tokens": tokens}
+
+
+## Append the word being built (if any) and reset the builder.
+static func _flush_word(tokens: Array[Dictionary], cur: Dictionary) -> void:
+	if not bool(cur["started"]):
+		return
+	tokens.append({"text": String(cur["text"]), "op": false,
+		"quoted": bool(cur["quoted"]), "expands": bool(cur["expands"])})
+	cur["text"] = ""
+	cur["started"] = false
+	cur["quoted"] = false
+	cur["expands"] = false
+
+
+## True when `token` is a leading `NAME=value` environment assignment. Quoting
+## any of the name defeats it, exactly as it does in a shell.
+static func is_assignment_token(token: Dictionary) -> bool:
+	if bool(token.get("op", false)) or bool(token.get("quoted", false)):
+		return false
+	var text := String(token.get("text", ""))
+	var eq := text.find("=")
+	if eq <= 0:
+		return false
+	for i in eq:
+		var c := text[i]
+		var alpha: bool = (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
+		var digit: bool = i > 0 and c >= "0" and c <= "9"
+		if not (alpha or digit):
+			return false
+	return true
+
+
+## The program word of a shell command line — what PATH lookup applies to.
+## Leading environment assignments, IO numbers and redirects are stepped over;
+## the answer is the first plain word after them. Returns "" when PATH cannot
+## answer for the line at all (it cannot be tokenised, it opens with a
+## non-redirect operator, or the program word is quoted or `$`-expanded), so
+## callers skip the check instead of reporting a false miss.
+static func command_word(command: String) -> String:
+	var parsed := tokenize(command)
+	if not bool(parsed.get("ok", false)):
 		return ""
-	var word := line.split(" ", false)[0].split("\t", false)[0]
-	if word.contains("=") or word.begins_with("(") or word.begins_with("\"") \
-			or word.begins_with("'") or word.begins_with("$"):
-		return ""
-	return word
+	var tokens: Array = parsed.get("tokens", [])
+	var i := 0
+	while i < tokens.size():
+		var token: Dictionary = tokens[i]
+		if bool(token["op"]):
+			# A redirect and its target sit in front of the program word; any
+			# other operator means the line does not start with a command.
+			if String(token["text"]) in _REDIRECT_OPS and i + 1 < tokens.size() \
+					and not bool(tokens[i + 1]["op"]):
+				i += 2
+				continue
+			return ""
+		if is_assignment_token(token):
+			i += 1
+			continue
+		# "2" in `2>log codex` is the redirect's IO number, not a program.
+		if String(token["text"]).is_valid_int() and i + 1 < tokens.size() \
+				and bool(tokens[i + 1]["op"]) and String(tokens[i + 1]["text"]) in _REDIRECT_OPS:
+			i += 1
+			continue
+		if bool(token["quoted"]) or bool(token["expands"]):
+			return ""
+		return String(token["text"])
+	return ""
 
 
 ## Path of `word` on `path_value` as the shell would find it, or "" when it

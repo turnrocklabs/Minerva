@@ -114,23 +114,32 @@ static func shell_quote(s: String) -> String:
 	return "'" + s.replace("'", "'\\''") + "'"
 
 
-## True when `command` is a single SIMPLE command — one program word, no shell
-## operator anywhere on the line. `exec` only accepts that shape: it takes a
-## program name, so an env-assignment prefix ("FOO=1 codex") makes it look for
-## a program called "FOO=1", and in a pipeline or a list it replaces only the
-## component it introduces, leaving the PTY shell alive behind it.
+## True when `command` is a single SIMPLE command — one program word and its
+## arguments, with no shell operator of its own. `exec` only accepts that
+## shape: it takes a program name, so an env-assignment prefix ("FOO=1 codex")
+## makes it look for a program called "FOO=1", and in a pipeline or a list it
+## replaces only the component it introduces, leaving the PTY shell alive.
+##
+## Operators are judged by POSITION, not by substring: the `;` in
+## `sh -c 'echo hi; exit 7'` belongs to sh's argument, and treating it as ours
+## costs the launch its exec — the wrapper shell survives the harness and
+## neither the dialog nor the bound chat ever sees the exit code.
+## A quoted first word (`'my agent'`) IS exec'able and counts as simple, even
+## though command_word refuses it for the PATH preflight: exec resolves it
+## itself, and if it does not exist the PTY dies with a diagnosable 127.
+## An unquoted `$` or backtick makes the line the shell's to expand, so it is
+## written bare rather than guessed at.
 static func is_simple_command(command: String) -> bool:
-	var line := command.strip_edges()
-	if line.is_empty():
+	var parsed: Dictionary = ShellEnvironment.tokenize(command)
+	if not bool(parsed.get("ok", false)):
 		return false
-	# command_word already refuses an assignment / subshell / quoted or
-	# variable first word; this adds the rest of the line.
-	if ShellEnvironment.command_word(line).is_empty():
+	var tokens: Array = parsed.get("tokens", [])
+	if tokens.is_empty():
 		return false
-	for op in ["|", ";", "&", "(", ")", "<", ">", "$", "`", "\n"]:
-		if line.contains(op):
+	for token in tokens:
+		if bool(token["op"]) or bool(token["expands"]):
 			return false
-	return true
+	return not ShellEnvironment.is_assignment_token(tokens[0])
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.

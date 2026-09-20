@@ -160,6 +160,28 @@ func _test_quoting() -> void:
 	check("is_simple_command: list is not simple",
 		not D.is_simple_command("cd /tmp && codex"))
 	check("is_simple_command: empty line is not simple", not D.is_simple_command("  "))
+	# Operators are the SHELL's only when they are unquoted: a `;` or `&&`
+	# inside an argument belongs to the program, and losing the exec over it
+	# leaves a wrapper shell alive in front of the harness.
+	check("is_simple_command: a quoted operator belongs to the argument",
+		D.is_simple_command("sh -c 'echo diagnostic; exit 7'"))
+	check("is_simple_command: a quoted && belongs to the argument",
+		D.is_simple_command("sh -c 'echo hi && sleep 30'"))
+	check("is_simple_command: a double-quoted operator belongs to the argument",
+		D.is_simple_command("sh -c \"echo hi | cat\""))
+	check("is_simple_command: an escaped operator belongs to the argument",
+		D.is_simple_command("echo a\\;b"))
+	# A quoted first word is exec'able (exec resolves it itself), even though
+	# the PATH preflight declines to judge it.
+	check("is_simple_command: a quoted first word is still exec'able",
+		D.is_simple_command("'my agent' --x"))
+	check("is_simple_command: an expansion is left to the shell",
+		not D.is_simple_command("$AGENT --x"))
+	check("is_simple_command: an unterminated quote is not simple",
+		not D.is_simple_command("sh -c 'oops"))
+	check("build_launch_line execs a command whose operators are all quoted",
+		D.build_launch_line("sh -c 'echo hi; exit 7'", false) == "exec sh -c 'echo hi; exit 7'\r",
+		D.build_launch_line("sh -c 'echo hi; exit 7'", false))
 	check("build_launch_line posix writes an env-assignment line bare",
 		D.build_launch_line("FOO=1 codex", false) == "FOO=1 codex\r",
 		D.build_launch_line("FOO=1 codex", false))
@@ -199,8 +221,35 @@ func _test_shell_environment() -> void:
 	check("effective_path is never empty", not SE.effective_path().is_empty())
 
 	check("command_word takes the program word", SE.command_word("  codex --yolo ") == "codex")
-	check("command_word ignores env-assignment lines", SE.command_word("FOO=1 codex") == "")
 	check("command_word of an empty line is empty", SE.command_word("   ") == "")
+	# The word PATH is asked about is the PROGRAM, so an operator that is not
+	# separated by a space, a leading assignment, an IO number or a redirect
+	# must not end up glued to it — "codex|tee" is not a file anyone installs.
+	check("command_word stops at an unspaced pipe",
+		SE.command_word("codex|tee log") == "codex", SE.command_word("codex|tee log"))
+	check("command_word stops at an unspaced redirect",
+		SE.command_word("codex>log") == "codex", SE.command_word("codex>log"))
+	check("command_word steps over a leading redirect",
+		SE.command_word(">log codex") == "codex", SE.command_word(">log codex"))
+	check("command_word steps over a leading IO-numbered redirect",
+		SE.command_word("2>log codex") == "codex", SE.command_word("2>log codex"))
+	check("command_word steps over leading env assignments",
+		SE.command_word("FOO=1 BAR=2 codex --x") == "codex",
+		SE.command_word("FOO=1 BAR=2 codex --x"))
+	check("command_word keeps a quoted operator inside the argument",
+		SE.command_word("sh -c 'a; b'") == "sh", SE.command_word("sh -c 'a; b'"))
+	# Lines PATH cannot answer for: the shell decides the word, or there is no
+	# word to decide. The preflight skips these rather than inventing a miss.
+	check("command_word declines a quoted program word",
+		SE.command_word("'my agent' --x") == "", SE.command_word("'my agent' --x"))
+	check("command_word declines an expanded program word",
+		SE.command_word("$AGENT --x") == "", SE.command_word("$AGENT --x"))
+	check("command_word declines a line opening with an operator",
+		SE.command_word("| codex") == "", SE.command_word("| codex"))
+	check("command_word declines a subshell",
+		SE.command_word("(codex)") == "", SE.command_word("(codex)"))
+	check("command_word declines an unterminated quote",
+		SE.command_word("sh -c 'oops") == "", SE.command_word("sh -c 'oops"))
 
 	# PATH lookup against real files, so the check is not a mock.
 	var dir: String = OS.get_user_data_dir()
@@ -297,19 +346,29 @@ func _test_login_path_probe() -> void:
 	var count_file: String = dir.path_join("probe_calls.txt")
 	DirAccess.remove_absolute(count_file)
 	var fake_path := "/w3/fake/bin:/usr/bin"
-	# The probe invokes "$SHELL -ilc <script>"; a fake shell simply ignores
-	# those arguments and prints its own answer between the markers.
-	var emit: String = "printf '%s%s%s\\n' '" + SE.PATH_MARK_BEGIN + "' '" \
-		+ fake_path + "' '" + SE.PATH_MARK_END + "'\n"
+	# The probe invokes "$SHELL -ilc <script>", so a fake shell can set the PATH
+	# it wants to be believed and then run the real capture script ("$2") —
+	# which is the only way to emit this invocation's nonce.
+	var run_real: String = "PATH='" + fake_path + "'\nexport PATH\neval \"$2\"\n"
+	# rc noise that forges a marker pair of its own BEFORE the real capture:
+	# the fixed marker text is public, so only the nonce can tell them apart.
+	var forged: String = "printf '%s%s%s\\n' '" + SE.PATH_MARK_BEGIN \
+		+ "' '/w3/forged/bin' '" + SE.PATH_MARK_END + "'\n"
 	var ok_shell: String = _write_script(dir.path_join("fake_shell_ok.sh"),
-		"#!/bin/sh\nprintf 'x\\n' >> '" + count_file + "'\n" + emit)
+		"#!/bin/sh\nprintf 'x\\n' >> '" + count_file + "'\n" + forged + run_real)
 	# The hung shell also leaves a background child behind, the way an rc file
 	# that starts a daemon does, and records its pid for the group-kill oracle.
 	var child_pid_file: String = dir.path_join("hang_child.pid")
 	DirAccess.remove_absolute(child_pid_file)
 	var hang_shell: String = _write_script(dir.path_join("fake_shell_hang.sh"),
-		"#!/bin/sh\n" + emit + "sleep 9 &\necho $! > '" + child_pid_file
+		"#!/bin/sh\n" + run_real + "sleep 9 &\necho $! > '" + child_pid_file
 		+ "'\nsleep 9\n")
+	# A `pkill` that never returns, first on the PATH the timeout cleanup runs
+	# under: a cleanup that shells out to a helper is only as bounded as the
+	# helper, and this one is not bounded at all.
+	var trap_bin: String = dir.path_join("trapbin")
+	DirAccess.make_dir_recursive_absolute(trap_bin)
+	_write_script(trap_bin.path_join("pkill"), "#!/bin/sh\nsleep 9\n")
 
 	var original_shell: String = OS.get_environment("SHELL")
 	var original_path: String = OS.get_environment("PATH")
@@ -322,6 +381,8 @@ func _test_login_path_probe() -> void:
 	var applied: bool = SE.apply_login_path()
 	check("the probed login PATH is installed on Minerva's process",
 		applied and OS.get_environment("PATH") == fake_path, OS.get_environment("PATH"))
+	check("a forged marker pair printed by rc noise loses to the real capture",
+		OS.get_environment("PATH") != "/w3/forged/bin", OS.get_environment("PATH"))
 	# (c) once per process, however many callers ask.
 	var again: bool = SE.apply_login_path()
 	check("a second apply_login_path does not probe again",
@@ -334,12 +395,17 @@ func _test_login_path_probe() -> void:
 	SE._login_path = ""
 	SE.probe_timeout_ms = 400
 	OS.set_environment("SHELL", hang_shell)
+	# The hung shell still needs the real /bin/sleep, so the trap dir is
+	# PREPENDED: whatever the cleanup looks up by name finds the trap first.
+	OS.set_environment("PATH", trap_bin + ":" + original_path)
 	var started := Time.get_ticks_msec()
 	var applied_hung: bool = SE.apply_login_path()
 	var elapsed := Time.get_ticks_msec() - started
+	var path_after_hang: String = OS.get_environment("PATH")
+	OS.set_environment("PATH", original_path)
 	check("a shell that hangs after printing leaves PATH alone",
-		not applied_hung and OS.get_environment("PATH") == original_path,
-		OS.get_environment("PATH"))
+		not applied_hung and path_after_hang == trap_bin + ":" + original_path,
+		path_after_hang)
 	check("the timed-out probe still returns inside its bound", elapsed < 3000, str(elapsed))
 	# The kill takes the probe's process group, so a child the rc files left
 	# running goes with it. /proc is how the group is identified; without it
@@ -366,6 +432,8 @@ func _test_login_path_probe() -> void:
 	SE._probe_done = true  # later tests must not re-probe the real shell
 	DirAccess.remove_absolute(ok_shell)
 	DirAccess.remove_absolute(hang_shell)
+	DirAccess.remove_absolute(trap_bin.path_join("pkill"))
+	DirAccess.remove_absolute(trap_bin)
 	DirAccess.remove_absolute(count_file)
 	DirAccess.remove_absolute(child_pid_file)
 	DirAccess.remove_absolute(dir)
@@ -551,8 +619,9 @@ func _test_happy_path(so) -> void:
 	# A long-lived stand-in for an agent CLI: it keeps profile inference on
 	# "claude", prints a marker, and stays alive so the launch is not racing
 	# its own startup-failure detection.
-	# "&&" makes this a shell LIST, not a simple command: it reaches the PTY as
-	# typed (no `exec`), which is the other half of the launch-line contract.
+	# The "&&" is inside sh's quoted argument, so this IS a simple command: it
+	# reaches the PTY under `exec` and the harness owns the PTY's exit code,
+	# which is what the launch failure paths read.
 	var command := "sh -c 'echo claude-marker-w3 && sleep 30'"
 	# A directory that exists on every platform ("/tmp" doesn't on Windows).
 	var test_cwd: String = OS.get_user_data_dir()
@@ -586,6 +655,9 @@ func _test_happy_path(so) -> void:
 	var D = load(DIALOG_PATH)
 	var windows: bool = D.is_windows_shell()
 	var expected_launch: String = D.build_launch_line(command, windows).trim_suffix("\r")
+	if not windows:
+		check("the launch line execs the quoted-operator command",
+			expected_launch.begins_with("exec sh -c "), expected_launch)
 	var expected_cd: String = D.build_cd_line(test_cwd, windows).trim_suffix("\r")
 	var native_cwd: bool = session != null and session.start_directory_applied
 	var saw_writes: bool = await _wait_until(func() -> bool:
