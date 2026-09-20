@@ -114,16 +114,41 @@ static func shell_quote(s: String) -> String:
 	return "'" + s.replace("'", "'\\''") + "'"
 
 
+## True when `command` is a single SIMPLE command — one program word, no shell
+## operator anywhere on the line. `exec` only accepts that shape: it takes a
+## program name, so an env-assignment prefix ("FOO=1 codex") makes it look for
+## a program called "FOO=1", and in a pipeline or a list it replaces only the
+## component it introduces, leaving the PTY shell alive behind it.
+static func is_simple_command(command: String) -> bool:
+	var line := command.strip_edges()
+	if line.is_empty():
+		return false
+	# command_word already refuses an assignment / subshell / quoted or
+	# variable first word; this adds the rest of the line.
+	if ShellEnvironment.command_word(line).is_empty():
+		return false
+	for op in ["|", ";", "&", "(", ")", "<", ">", "$", "`", "\n"]:
+		if line.contains(op):
+			return false
+	return true
+
+
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: the command runs bare under `exec`, so the agent replaces the PTY
-## shell and owns its exit code. No login-shell wrapper: PATH is fixed once at
-## the process level (ShellEnvironment.apply_login_path), which works even when
-## the user's ~/.profile chain skips its own PATH setup in a non-interactive
-## shell.
+## POSIX: a simple command runs under `exec`, so the agent REPLACES the PTY
+## shell and owns its exit code — which is the signal the launch dialog and the
+## bound chat read when a harness dies. Anything the shell has to parse for
+## itself (assignments, pipelines, redirects, lists) is written exactly as
+## typed: `exec` would mis-read it, and the price is that the shell stays alive
+## around the agent, so the agent does NOT own the PTY's exit code there.
+## No login-shell wrapper either way: PATH is fixed once at the process level
+## (ShellEnvironment.apply_login_path), which works even when the user's
+## ~/.profile chain skips its own PATH setup in a non-interactive shell.
 ## Windows: the PTY runs cmd.exe — no exec, no quoting. cmd resolves .cmd/.exe
 ## shims through PATH itself, so the command runs bare.
 static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
+		return "%s\r" % command
+	if not is_simple_command(command):
 		return "%s\r" % command
 	return "exec %s\r" % command
 
@@ -357,14 +382,17 @@ func _get_session_registry():
 ## user only ever sees the missing chat provider — checking here turns that
 ## into a message naming the word and the PATH that was searched.
 ## Windows is exempt: cmd resolves .cmd/.bat/.exe shims itself.
-static func path_check_error(command: String) -> String:
+## `cwd` is the directory the terminal will start in: "./run-agent" and a
+## relative PATH entry are answered there, not in Minerva's directory. Empty
+## cwd = the terminal inherits Minerva's, so the lookup does too.
+static func path_check_error(command: String, cwd: String = "") -> String:
 	if is_windows_shell():
 		return ""
 	var word := ShellEnvironment.command_word(command)
 	if word.is_empty():
 		return ""
 	var path_value := ShellEnvironment.effective_path()
-	if not ShellEnvironment.resolve_on_path(word, path_value).is_empty():
+	if not ShellEnvironment.resolve_on_path(word, path_value, cwd).is_empty():
 		return ""
 	return "'%s' is not on PATH (%s)" % [word, ShellEnvironment.path_summary(path_value)]
 
@@ -400,7 +428,7 @@ func _on_start_pressed() -> void:
 		return
 
 	if not bind_existing and not command.is_empty():
-		var path_error := path_check_error(command)
+		var path_error := path_check_error(command, cwd)
 		if not path_error.is_empty():
 			_set_error(path_error)
 			return

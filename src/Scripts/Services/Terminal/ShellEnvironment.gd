@@ -24,8 +24,9 @@ const PATH_MARK_BEGIN := "__MINERVA_PATH_BEGIN__"
 const PATH_MARK_END := "__MINERVA_PATH_END__"
 
 ## Upper bound on the probe. A login+interactive shell with nvm takes a few
-## hundred ms; anything past this is a hung rc file and is abandoned.
-const PROBE_TIMEOUT_MS := 4000
+## hundred ms; anything past this is a hung rc file and is abandoned. A static
+## var rather than a const so tests can shrink the wait.
+static var probe_timeout_ms: int = 4000
 
 ## Poll granularity while waiting for the probe to exit.
 const PROBE_POLL_MS := 20
@@ -68,7 +69,13 @@ static func probe_login_path() -> String:
 		shell = "/bin/sh"
 	var script := 'printf "%%s%%s%%s" %s "$PATH" %s' % [PATH_MARK_BEGIN, PATH_MARK_END]
 	var args := PackedStringArray(["-ilc", script])
-	return parse_path_capture(run_bounded(shell, args, PROBE_TIMEOUT_MS))
+	var run := run_bounded(shell, args, probe_timeout_ms)
+	# A shell that printed the markers and THEN wedged (an exit trap, a child
+	# holding the pipe) has proven nothing about its PATH: the value may be
+	# half-written, and the rc chain never finished. Timed out = no answer.
+	if bool(run.get("timed_out", false)):
+		return ""
+	return parse_path_capture(String(run.get("output", "")))
 
 
 ## Carve the PATH out of a noisy capture. Rejects anything that cannot be a
@@ -92,10 +99,20 @@ static func parse_path_capture(output: String) -> String:
 ## Run a program, capture its stdout, and kill it if it outstays the timeout.
 ## OS.execute() has no timeout, and a wedged rc file would hang the caller
 ## forever; the non-blocking pipe + pid poll gives a hard bound.
-static func run_bounded(program: String, args: PackedStringArray, timeout_ms: int) -> String:
+##
+## Returns {"output": String, "timed_out": bool}. The two are independent: a
+## process that printed and then hung still has output, and the caller must be
+## able to refuse it — which is why this is a result and not a bare String.
+##
+## The kill takes the child's whole process GROUP where one can be identified,
+## because the rc files being probed spawn children of their own (direnv, a
+## daemon from ~/.zshrc) that would otherwise outlive the probe and hold the
+## capture pipe open. OS.kill signals a single pid, so the group goes through
+## pkill; see foreign_process_group for the safety rule.
+static func run_bounded(program: String, args: PackedStringArray, timeout_ms: int) -> Dictionary:
 	var proc: Dictionary = OS.execute_with_pipe(program, args, false)
 	if proc.is_empty():
-		return ""
+		return {"output": "", "timed_out": false}
 	var pid: int = int(proc.get("pid", -1))
 	var pipe: FileAccess = proc.get("stdio") as FileAccess
 	var captured := ""
@@ -106,12 +123,52 @@ static func run_bounded(program: String, args: PackedStringArray, timeout_ms: in
 		if pid < 0 or not OS.is_process_running(pid):
 			break
 		OS.delay_msec(PROBE_POLL_MS)
-	if pid >= 0 and OS.is_process_running(pid):
+	var timed_out: bool = pid >= 0 and OS.is_process_running(pid)
+	if timed_out:
+		var pgid := foreign_process_group(pid)
+		if pgid > 0:
+			# NOT `kill -- -PGID`: OS.execute reaches a shell whose builtin kill
+			# rejects a negative pid ("Illegal number"). pkill -g takes it.
+			OS.execute("pkill", PackedStringArray(["-KILL", "-g", "%d" % pgid]))
 		OS.kill(pid)
 	if pipe != null:
 		captured += pipe.get_as_text()
 		pipe.close()
-	return captured
+	return {"output": captured, "timed_out": timed_out}
+
+
+## The process group `pid` can be killed through, or 0 when there is none.
+## Godot spawns a child into a session of its own, so the group is normally the
+## child's pid — but that is an engine detail, so it is read back from /proc
+## and refused whenever it is Minerva's own group: killing that group would
+## kill Minerva. 0 (no /proc, a shared group) means "kill only the pid".
+static func foreign_process_group(pid: int) -> int:
+	var own := _proc_stat_pgrp(OS.get_process_id())
+	var theirs := _proc_stat_pgrp(pid)
+	if own <= 0 or theirs <= 0 or theirs == own:
+		return 0
+	return theirs
+
+
+## /proc files report length 0, so FileAccess.get_file_as_string reads nothing
+## from them — they have to be opened and read line-wise.
+static func _read_proc(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var line := f.get_line()
+	f.close()
+	return line.strip_edges()
+
+
+static func _proc_stat_pgrp(pid: int) -> int:
+	var stat := _read_proc("/proc/%d/stat" % pid)
+	var tail := stat.substr(stat.rfind(")") + 1).strip_edges()
+	var fields := tail.split(" ", false)
+	# after comm: state, ppid, pgrp → index 2
+	if fields.size() < 3 or not String(fields[2]).is_valid_int():
+		return 0
+	return int(fields[2])
 
 
 ## The program word of a shell command line — what PATH lookup applies to.
@@ -129,19 +186,58 @@ static func command_word(command: String) -> String:
 	return word
 
 
-## Absolute path of `word` on `path_value`, or "" when it does not resolve.
-## A word that already contains a separator is taken as a path, like a shell
-## does. GDScript cannot read the executable bit, so existence is the test.
-static func resolve_on_path(word: String, path_value: String) -> String:
+## Path of `word` on `path_value` as the shell would find it, or "" when it
+## does not resolve. A word that already contains a separator is taken as a
+## path, like a shell does.
+##
+## `cwd` is the directory the COMMAND will run in (the launch dialog's working
+## directory), not Minerva's: "./codex" and a relative PATH entry mean
+## different files in the two, and judging them in Minerva's directory answers
+## the wrong question. An empty `cwd` leaves relative paths to resolve against
+## Minerva's own working directory, which is where a terminal without a start
+## directory lands anyway.
+static func resolve_on_path(word: String, path_value: String, cwd: String = "") -> String:
 	if word.is_empty():
 		return ""
 	if word.contains("/"):
-		return word if FileAccess.file_exists(word) else ""
-	for dir in path_value.split(":", false):
-		var candidate: String = String(dir).path_join(word)
-		if FileAccess.file_exists(candidate):
-			return candidate
+		return _executable_at(_absolutize(word, cwd))
+	# allow_empty: an empty PATH entry ("", as in "/usr/bin::/bin" or a
+	# trailing colon) means the current directory to every POSIX shell.
+	for entry in path_value.split(":", true):
+		var dir: String = String(entry)
+		if dir.is_empty():
+			dir = "."
+		var hit := _executable_at(_absolutize(dir, cwd).path_join(word))
+		if not hit.is_empty():
+			return hit
 	return ""
+
+
+## `path` made absolute against `cwd` when both are relative/present, else as
+## given (an empty cwd means "leave it to the process working directory").
+static func _absolutize(path: String, cwd: String) -> String:
+	if path.begins_with("/") or cwd.is_empty():
+		return path
+	return cwd.path_join(path).simplify_path()
+
+
+## `path` when it is a regular file with an execute bit, else "". Existence is
+## not enough: a readable-but-not-executable file passes file_exists and then
+## dies as "permission denied" AFTER a session and a watch were created. The
+## bit is checked for any of user/group/other rather than resolving the
+## effective uid — the same approximation `which` makes.
+## Windows has no unix bits (cmd decides via PATHEXT), so the check is inert
+## there and existence stands.
+static func _executable_at(path: String) -> String:
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return ""
+	if OS.get_name() == "Windows":
+		return path
+	var bits: int = FileAccess.get_unix_permissions(path)
+	if bits <= 0:
+		return ""
+	# 0x49 = 0111: the three execute bits.
+	return path if (bits & 0x49) != 0 else ""
 
 
 ## First `count` PATH entries, for an error message that shows the user which

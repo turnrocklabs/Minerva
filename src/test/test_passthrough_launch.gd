@@ -16,7 +16,9 @@ extends SceneTree
 ##   5. shell_exited → program message lands exactly once in the bound chat,
 ##      carrying the terminal's last lines.
 ##   7. ShellEnvironment: delimited PATH capture survives rc noise, garbage is
-##      rejected, PATH lookup + output tail behave.
+##      rejected, PATH lookup (executability, launch-cwd relative entries) +
+##      output tail behave; the probe itself installs a fake shell's PATH once
+##      and refuses a capture from a shell that hung after printing it.
 ##   8. A startup command whose first word is not on PATH is refused before any
 ##      session or watch exists; a harness that dies on startup reports the
 ##      shell's last lines instead of the provider riddle.
@@ -106,6 +108,7 @@ func _run() -> void:
 	_test_infer_profile()
 	_test_quoting()
 	_test_shell_environment()
+	_test_login_path_probe()
 	await _test_path_guard(so)
 	await _test_validation(so)
 	await _test_happy_path(so)
@@ -137,11 +140,32 @@ func _test_quoting() -> void:
 	# No login-shell wrapper: PATH is fixed on Minerva's own process, so the
 	# command must reach the PTY bare (the user's ~/.profile chain is not a
 	# dependency of the launch any more).
-	check("build_launch_line posix runs the command bare under exec",
+	check("build_launch_line posix runs a simple command under exec",
 		D.build_launch_line("claude --x", false) == "exec claude --x\r",
 		D.build_launch_line("claude --x", false))
 	check("build_launch_line posix has no bash wrapper",
 		not D.build_launch_line("claude --x", false).contains("bash"))
+	# `exec` takes a PROGRAM: an assignment prefix or a pipeline must reach the
+	# shell as typed, or exec looks for a program called "FOO=1" / hands the
+	# shell back only one component of the line.
+	check("is_simple_command: plain command", D.is_simple_command("codex --yolo"))
+	check("is_simple_command: quoted argument is still simple",
+		D.is_simple_command("claude --msg \"a b\""))
+	check("is_simple_command: env assignment is not simple",
+		not D.is_simple_command("FOO=1 codex"))
+	check("is_simple_command: pipeline is not simple",
+		not D.is_simple_command("codex | tee log"))
+	check("is_simple_command: redirect is not simple",
+		not D.is_simple_command("codex > log"))
+	check("is_simple_command: list is not simple",
+		not D.is_simple_command("cd /tmp && codex"))
+	check("is_simple_command: empty line is not simple", not D.is_simple_command("  "))
+	check("build_launch_line posix writes an env-assignment line bare",
+		D.build_launch_line("FOO=1 codex", false) == "FOO=1 codex\r",
+		D.build_launch_line("FOO=1 codex", false))
+	check("build_launch_line posix writes a pipeline bare",
+		D.build_launch_line("codex | tee log", false) == "codex | tee log\r",
+		D.build_launch_line("codex | tee log", false))
 	check("build_launch_line windows runs the bare command (cmd has no exec/bash)",
 		D.build_launch_line("claude --x", true) == "claude --x\r",
 		D.build_launch_line("claude --x", true))
@@ -178,15 +202,18 @@ func _test_shell_environment() -> void:
 	check("command_word ignores env-assignment lines", SE.command_word("FOO=1 codex") == "")
 	check("command_word of an empty line is empty", SE.command_word("   ") == "")
 
-	# PATH lookup against a real file, so the check is not a mock.
+	# PATH lookup against real files, so the check is not a mock.
 	var dir: String = OS.get_user_data_dir()
 	var probe_name := "w3_path_probe.bin"
 	var probe_path: String = dir.path_join(probe_name)
-	var f := FileAccess.open(probe_path, FileAccess.WRITE)
-	if f != null:
-		f.store_string("x")
-		f.close()
-	check("resolve_on_path finds a word on the given PATH",
+	_write_file(probe_path, "x")
+	# A readable-but-not-executable file is NOT a command: accepting it buys a
+	# terminal, a watch and then "permission denied".
+	check("resolve_on_path refuses a non-executable file",
+		SE.resolve_on_path(probe_name, "/w3/nope:" + dir) == "",
+		SE.resolve_on_path(probe_name, "/w3/nope:" + dir))
+	FileAccess.set_unix_permissions(probe_path, 0x1ED)  # 0755
+	check("resolve_on_path finds an executable word on the given PATH",
 		SE.resolve_on_path(probe_name, "/w3/nope:" + dir) == probe_path,
 		SE.resolve_on_path(probe_name, "/w3/nope:" + dir))
 	check("resolve_on_path misses when the word is absent",
@@ -195,6 +222,31 @@ func _test_shell_environment() -> void:
 		SE.resolve_on_path(probe_path, "/w3/nope") == probe_path)
 	DirAccess.remove_absolute(probe_path)
 
+	# The lookup happens in the directory the COMMAND will run in, not
+	# Minerva's: a relative word, a relative PATH entry and an EMPTY PATH entry
+	# (which every shell reads as ".") are all answered against the launch cwd.
+	var cwd: String = dir.path_join("w3_launch_cwd")
+	var bin_dir: String = cwd.path_join("bin")
+	DirAccess.make_dir_recursive_absolute(bin_dir)
+	var agent_path: String = bin_dir.path_join("w3_agent.bin")
+	_write_file(agent_path, "x")
+	FileAccess.set_unix_permissions(agent_path, 0x1ED)  # 0755
+	check("relative PATH entry resolves against the launch cwd",
+		SE.resolve_on_path("w3_agent.bin", "bin", cwd) == agent_path,
+		SE.resolve_on_path("w3_agent.bin", "bin", cwd))
+	check("relative word resolves against the launch cwd",
+		SE.resolve_on_path("./bin/w3_agent.bin", "", cwd) == agent_path,
+		SE.resolve_on_path("./bin/w3_agent.bin", "", cwd))
+	check("an empty PATH entry means the launch cwd",
+		SE.resolve_on_path("w3_agent.bin", "/w3/nope:", bin_dir) == agent_path,
+		SE.resolve_on_path("w3_agent.bin", "/w3/nope:", bin_dir))
+	check("without a launch cwd the relative entry is not Minerva's answer",
+		SE.resolve_on_path("w3_agent.bin", "bin") == "",
+		SE.resolve_on_path("w3_agent.bin", "bin"))
+	DirAccess.remove_absolute(agent_path)
+	DirAccess.remove_absolute(bin_dir)
+	DirAccess.remove_absolute(cwd)
+
 	check("path_summary shows the head and counts the rest",
 		SE.path_summary("/a:/b:/c:/d:/e", 2) == "/a, /b, …(3 more)", SE.path_summary("/a:/b:/c:/d:/e", 2))
 	check("last_output_lines keeps the last non-empty lines in order",
@@ -202,6 +254,121 @@ func _test_shell_environment() -> void:
 			== "boot\nbash: codex: command not found",
 		SE.last_output_lines("boot\n\nbash: codex: command not found\n\n", 2))
 	check("last_output_lines on blank text is empty", SE.last_output_lines("\n\n  \n") == "")
+
+
+## Write `text` to an absolute path (no exec bit).
+func _write_file(path: String, text: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(text)
+		f.close()
+
+
+## Write an executable /bin/sh script and return its path.
+func _write_script(path: String, body: String) -> String:
+	_write_file(path, body)
+	FileAccess.set_unix_permissions(path, 0x1ED)  # 0755
+	return path
+
+
+func _count_lines(path: String) -> int:
+	if not FileAccess.file_exists(path):
+		return 0
+	var n := 0
+	for line in FileAccess.get_file_as_string(path).split("\n"):
+		if not String(line).strip_edges().is_empty():
+			n += 1
+	return n
+
+
+# --- Acceptance 7b ----------------------------------------------------------
+## The central behaviour, driven end to end against a REAL shell process: the
+## probe is $SHELL, so pointing $SHELL at a script of our own makes the whole
+## apply_login_path path observable — what it accepts, what it refuses, and
+## how often it runs.
+func _test_login_path_probe() -> void:
+	print("\n-- login-PATH probe: applied once, refused on timeout --")
+	if OS.get_name() == "Windows":
+		print("(skipped: POSIX probe only)")
+		return
+	var SE = load(SHELL_ENV_PATH)
+	var dir: String = OS.get_user_data_dir().path_join("w3_shellenv")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var count_file: String = dir.path_join("probe_calls.txt")
+	DirAccess.remove_absolute(count_file)
+	var fake_path := "/w3/fake/bin:/usr/bin"
+	# The probe invokes "$SHELL -ilc <script>"; a fake shell simply ignores
+	# those arguments and prints its own answer between the markers.
+	var emit: String = "printf '%s%s%s\\n' '" + SE.PATH_MARK_BEGIN + "' '" \
+		+ fake_path + "' '" + SE.PATH_MARK_END + "'\n"
+	var ok_shell: String = _write_script(dir.path_join("fake_shell_ok.sh"),
+		"#!/bin/sh\nprintf 'x\\n' >> '" + count_file + "'\n" + emit)
+	# The hung shell also leaves a background child behind, the way an rc file
+	# that starts a daemon does, and records its pid for the group-kill oracle.
+	var child_pid_file: String = dir.path_join("hang_child.pid")
+	DirAccess.remove_absolute(child_pid_file)
+	var hang_shell: String = _write_script(dir.path_join("fake_shell_hang.sh"),
+		"#!/bin/sh\n" + emit + "sleep 9 &\necho $! > '" + child_pid_file
+		+ "'\nsleep 9\n")
+
+	var original_shell: String = OS.get_environment("SHELL")
+	var original_path: String = OS.get_environment("PATH")
+	var original_timeout: int = SE.probe_timeout_ms
+
+	# (a) recovery: the probed PATH lands on Minerva's own process.
+	SE._probe_done = false
+	SE._login_path = ""
+	OS.set_environment("SHELL", ok_shell)
+	var applied: bool = SE.apply_login_path()
+	check("the probed login PATH is installed on Minerva's process",
+		applied and OS.get_environment("PATH") == fake_path, OS.get_environment("PATH"))
+	# (c) once per process, however many callers ask.
+	var again: bool = SE.apply_login_path()
+	check("a second apply_login_path does not probe again",
+		not again and _count_lines(count_file) == 1, str(_count_lines(count_file)))
+	OS.set_environment("PATH", original_path)
+
+	# (b) a shell that prints the markers and THEN wedges proves nothing: the
+	# inherited PATH must survive it.
+	SE._probe_done = false
+	SE._login_path = ""
+	SE.probe_timeout_ms = 400
+	OS.set_environment("SHELL", hang_shell)
+	var started := Time.get_ticks_msec()
+	var applied_hung: bool = SE.apply_login_path()
+	var elapsed := Time.get_ticks_msec() - started
+	check("a shell that hangs after printing leaves PATH alone",
+		not applied_hung and OS.get_environment("PATH") == original_path,
+		OS.get_environment("PATH"))
+	check("the timed-out probe still returns inside its bound", elapsed < 3000, str(elapsed))
+	# The kill takes the probe's process group, so a child the rc files left
+	# running goes with it. /proc is how the group is identified; without it
+	# (non-Linux POSIX) only the shell itself is killed, by design.
+	if DirAccess.dir_exists_absolute("/proc"):
+		var child_pid: int = int(FileAccess.get_file_as_string(child_pid_file).strip_edges())
+		# /proc/<pid>, not OS.is_process_running: the grandchild is not Godot's
+		# own child, and waitpid on a stranger only raises ECHILD.
+		var gone := false
+		for _i in 25:
+			gone = not DirAccess.dir_exists_absolute("/proc/%d" % child_pid)
+			if gone:
+				break
+			OS.delay_msec(20)
+		check("the timed-out probe kills the child its rc files left running",
+			child_pid > 0 and gone, str(child_pid))
+	else:
+		print("(skipped: no /proc — the group kill cannot be identified here)")
+
+	SE.probe_timeout_ms = original_timeout
+	OS.set_environment("SHELL", original_shell)
+	OS.set_environment("PATH", original_path)
+	SE._login_path = ""
+	SE._probe_done = true  # later tests must not re-probe the real shell
+	DirAccess.remove_absolute(ok_shell)
+	DirAccess.remove_absolute(hang_shell)
+	DirAccess.remove_absolute(count_file)
+	DirAccess.remove_absolute(child_pid_file)
+	DirAccess.remove_absolute(dir)
 
 
 # --- Acceptance 8a ----------------------------------------------------------
@@ -261,7 +428,13 @@ func _test_launch_exit_note(so) -> void:
 	var sessions_before: int = registry.session_count()
 
 	dialog._name_edit.text = "Dying Harness"
-	dialog._command_edit.text = "sh -c 'echo w3-dead-marker; exit 7'"
+	# A SIMPLE command (one word), so the launch line is the `exec` form and the
+	# dying harness IS the PTY shell — its exit code is the terminal's. The
+	# script is executable on purpose: the PATH guard refuses a plain file.
+	var dying: String = _write_script(
+		OS.get_user_data_dir().path_join("w3_dying_harness.sh"),
+		"#!/bin/sh\necho w3-dead-marker\nexit 7\n")
+	dialog._command_edit.text = dying
 	var started_at := Time.get_ticks_msec()
 	await dialog._on_start_pressed()
 	var elapsed := Time.get_ticks_msec() - started_at
@@ -278,6 +451,7 @@ func _test_launch_exit_note(so) -> void:
 		registry.session_count() == sessions_before, str(registry.session_count()))
 	check("dead harness → dialog stays open", dialog.visible)
 
+	DirAccess.remove_absolute(dying)
 	dialog.queue_free()
 	pane.free()
 	so.plugin_chat_provider_registry = null
@@ -377,6 +551,8 @@ func _test_happy_path(so) -> void:
 	# A long-lived stand-in for an agent CLI: it keeps profile inference on
 	# "claude", prints a marker, and stays alive so the launch is not racing
 	# its own startup-failure detection.
+	# "&&" makes this a shell LIST, not a simple command: it reaches the PTY as
+	# typed (no `exec`), which is the other half of the launch-line contract.
 	var command := "sh -c 'echo claude-marker-w3 && sleep 30'"
 	# A directory that exists on every platform ("/tmp" doesn't on Windows).
 	var test_cwd: String = OS.get_user_data_dir()
