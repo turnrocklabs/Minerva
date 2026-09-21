@@ -29,18 +29,21 @@ extends SceneTree
 ##   - while a transaction holds the terminal a GUARDED raw write is refused
 ##     (its guards would be stale by the time a queued write was released) and
 ##     an unguarded one is queued and lands after the transaction;
-##   - the composer guard reads CELL ATTRIBUTES, not row text: the same input
-##     box painted with a faint placeholder lets a guarded write through and
-##     painted bright refuses it as unsent human text, with nothing written;
+##   - the composer guard reads CELL STYLES, not row text: the same input box
+##     painted with a faint placeholder lets a guarded write through and
+##     painted plain refuses it as unsent human text, with nothing written;
 ##     a box whose first line is empty is judged on the rows below it, blank
 ##     rows included, the same way; no row shape is exempt, so a lone numbered
-##     line, a numbered two-item draft and a chooser's bright option block all
+##     line, a numbered two-item draft and a chooser's plain option block all
 ##     read as occupied; the region runs from the marker row above the cursor to
 ##     the foot of the viewport, so a pasted box-drawing rule is read past, an
-##     indented marker glyph is draft text, and a footer below the box holds the
-##     write unless the harness draws it faint — the refusal quoting the row it
-##     tripped on; with no harness in front there is no marker row to find and
-##     the receipt says the check was skipped;
+##     indented marker glyph is draft text, and a footer below the box is empty
+##     when drawn in colour (as both real harnesses draw it) and holds the
+##     write when drawn plain — the refusal quoting the row it tripped on; a
+##     Claude-named harness is read with its own markers: the no-break space
+##     after `❯` still opens an empty box, and a shell-mode `!` or memo-mode
+##     `#` row is a draft; with no harness in front there is no marker row to
+##     find and the receipt says the check was skipped;
 ##   - no script outside TerminalSession writes the extension node directly.
 
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
@@ -437,16 +440,18 @@ func _test_npm_harness_foreground(session) -> void:
 		str(session.get_foreground_process()))
 
 
-## A harness named `codex` that paints an input box on demand and nothing else,
-## so the screen the composer guard reads is exactly what the test asked for.
+## A harness that paints an input box on demand and nothing else, so the
+## screen the composer guard reads is exactly what the test asked for. It is
+## run twice: under the name `codex` and under the name `claude` — node is the
+## npm-harness shape, so the host classifies the foreground from the script's
+## name and derives the marker itself.
 ## `dim` is an EMPTY box — the placeholder both harnesses draw inside one,
-## faint (SGR 2); `plain` is the same row bright, which is what a line a person
-## typed looks like. Node is the npm-harness shape, so the host classifies the
-## foreground as codex and derives the `›` marker itself.
+## faint (SGR 2); `plain` is the same row plain, which is what a line a person
+## typed looks like.
 ##
 ## `numbered`, `draft` and `chooser` are the shapes a text-only heuristic trips
 ## over: a lone numbered line, a two-item numbered draft, and a permission
-## screen's bright option block. All three are occupied as far as the guard is
+## screen's plain option block. All three are occupied as far as the guard is
 ## concerned — a person's draft must not be submitted, and nothing may be typed
 ## into a chooser either.
 ##
@@ -455,12 +460,19 @@ func _test_npm_harness_foreground(session) -> void:
 ## `spaced` puts a blank row in between, which does not end the composer.
 ##
 ## `ruled` is a draft with a box-drawing rule pasted into it: the rule carries
-## no text and is read past, so the bright row under it still holds. `quoted`
+## no text and is read past, so the plain row under it still holds. `quoted`
 ## puts the marker glyph itself inside the draft, indented — the region's top is
-## the real marker row above it, at column 0. `footer_dim` and `footer_bright`
-## are an empty box with a status row two rows below it: faint, as both real
-## harnesses draw it, the box is empty; bright, the guard holds and says which
-## row it read, which is the by-design price of not guessing where a box ends.
+## the real marker row above it, at column 0. `footer_dim`, `footer_colour`
+## and `footer_plain` are an empty box with a status row two rows below it:
+## faint or in colour (the real codex draws its model line in truecolor and its
+## slash popup in a bold palette colour — `footer_palette` — and the real
+## Claude Code its status rows in truecolor) the box is empty; plain, the
+## guard holds and says which row it read, which is the by-design price of not
+## guessing where a box ends.
+##
+## `claude_dim`, `bang` and `memo` are the Claude Code shapes: `❯` followed by
+## a NO-BREAK space and a faint placeholder is an empty box; a shell-mode row
+## opens with a coloured `!` and a plain command; a memo row opens with `#`.
 ##
 ## Every block ends with a blank row, so one scenario's rows are never read as
 ## part of another's.
@@ -482,7 +494,12 @@ const ROWS = {
   quoted: "\\u203a\\r\\n  \\u203a quoted line I pasted\\r\\n\\r\\n",
   ruleonly: "\\u203a\\r\\n  \\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\r\\n\\r\\n",
   footer_dim: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n\\u001b[2m  gpt-5.5 faint-footer\\u001b[0m\\r\\n\\r\\n",
-  footer_bright: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  gpt-5.5 bright-footer\\r\\n\\r\\n",
+  footer_colour: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  \\u001b[38;2;246;226;183mgpt-5.5 colour-footer\\u001b[0m\\r\\n\\r\\n",
+  footer_plain: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  gpt-5.5 plain-footer\\r\\n\\r\\n",
+  footer_palette: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  \\u001b[1m\\u001b[38;5;6m/status palette-footer\\u001b[0m\\r\\n\\r\\n",
+  claude_dim: "\\u276f\\u00a0\\u001b[2mTry \\"fix typecheck errors\\"\\u001b[22m\\r\\n\\r\\n",
+  bang: "\\u001b[38;2;253;93;177m!\\u00a0\\u001b[39mecho hi from shell mode\\r\\n\\r\\n",
+  memo: "# memo text I have not sent\\r\\n\\r\\n",
 };
 // A real harness owns the terminal in raw mode with echo off; without this
 // the PTY echoes the test's typed command onto the row the marker lands on,
@@ -530,22 +547,7 @@ func _test_composer_guard(session, tools) -> void:
 	if OS.execute("which", ["node"], node_path) != 0:
 		print("SKIP: node not on PATH — the composer oracle needs a codex-named harness")
 		return
-	var dir_path: String = "user://terminal_identity_composer"
-	DirAccess.make_dir_recursive_absolute(dir_path)
-	var script_path: String = ProjectSettings.globalize_path(dir_path.path_join("codex"))
-	var f := FileAccess.open(script_path, FileAccess.WRITE)
-	if f == null:
-		check("the composer harness script could be written", false, script_path)
-		return
-	f.store_string(COMPOSER_HARNESS_SRC)
-	f.close()
-
-	session.write_input("node '%s'\r" % script_path)
-	var ready: bool = await _wait_until(func() -> bool:
-		return session.harness_name() == "codex" and session.get_plain_text().find("COMPOSER-READY") != -1)
-	check("a codex-named harness is in the foreground with its box ready", ready,
-		session.read_viewport_text().right(300))
-	if not ready:
+	if not await _start_composer_harness(session, "codex"):
 		return
 
 	# An EMPTY box: its placeholder is faint, and nothing a person types is.
@@ -562,7 +564,7 @@ func _test_composer_guard(session, tools) -> void:
 		return session.get_plain_text().find("COMPOSER-PASSED") != -1)
 	check("and its bytes reached the PTY", landed, session.read_viewport_text().right(300))
 
-	# The same row bright: a finished line nobody submitted.
+	# The same row plain: a finished line nobody submitted.
 	session.write_input("plain\r")
 	var plain_up: bool = await _wait_until(func() -> bool:
 		return session.read_viewport_text().find("have not sent yet") != -1)
@@ -597,7 +599,7 @@ func _test_composer_guard(session, tools) -> void:
 		session.read_viewport_text().right(300))
 	var wrapped: Dictionary = tools._terminal_write({"terminal_id": tid,
 		"text": "COMPOSER-WRAPPED\r", "raw": true, "unless_composer_holds_text": true})
-	check("bright text on a continuation row is unsent text too",
+	check("plain text on a continuation row is unsent text too",
 		not wrapped.get("success", true) and bool(wrapped.get("held", false))
 			and str(wrapped.get("outcome", "")) == "refused_composer_not_empty", str(wrapped))
 
@@ -627,7 +629,7 @@ func _test_composer_guard(session, tools) -> void:
 			and str(spaced.get("composer_check", "")) == "checked", str(spaced))
 
 	# A pasted box-drawing rule carries no text, so the region reads PAST it and
-	# the bright row under it still holds — and the refusal quotes that row.
+	# the plain row under it still holds — and the refusal quotes that row.
 	session.write_input("ruled\r")
 	var ruled_up: bool = await _wait_until(func() -> bool:
 		return session.read_viewport_text().find("text under a pasted rule") != -1)
@@ -679,22 +681,48 @@ func _test_composer_guard(session, tools) -> void:
 		footer_dim.get("success", false)
 			and str(footer_dim.get("composer_check", "")) == "checked", str(footer_dim))
 
-	# The same footer drawn BRIGHT holds the write. That is by design — refusing
-	# loudly beats guessing where the box ends — and the receipt names the row.
-	session.write_input("footer_bright\r")
-	var footer_bright_up: bool = await _wait_until(func() -> bool:
-		return session.read_viewport_text().find("bright-footer") != -1)
-	check("the harness painted the same box over a bright footer", footer_bright_up,
+	# The same footer drawn in COLOUR — how the real codex paints its model line
+	# — is chrome too, and the box stays empty.
+	session.write_input("footer_colour\r")
+	var footer_colour_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("colour-footer") != -1)
+	check("the harness painted the same box over a coloured footer", footer_colour_up,
 		session.read_viewport_text().right(300))
-	var footer_bright: Dictionary = tools._terminal_write({"terminal_id": tid,
-		"text": "COMPOSER-FOOTERBRIGHT\r", "raw": true, "unless_composer_holds_text": true})
-	check("a bright footer holds the write and the refusal quotes it",
-		not footer_bright.get("success", true) and bool(footer_bright.get("held", false))
-			and str(footer_bright.get("outcome", "")) == "refused_composer_not_empty"
-			and str(footer_bright.get("error", "")).contains("bright-footer"), str(footer_bright))
+	var footer_colour: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-FOOTERCOLOUR\r", "raw": true, "unless_composer_holds_text": true})
+	check("a coloured footer below the box leaves the composer empty",
+		footer_colour.get("success", false)
+			and str(footer_colour.get("composer_check", "")) == "checked", str(footer_colour))
+
+	# A palette colour is a colour too: the popup rows codex draws under a
+	# typed slash command are bold palette cyan, and chrome all the same.
+	session.write_input("footer_palette\r")
+	var footer_palette_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("palette-footer") != -1)
+	check("the harness painted the same box over a palette-coloured row", footer_palette_up,
+		session.read_viewport_text().right(300))
+	var footer_palette: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-FOOTERPALETTE\r", "raw": true, "unless_composer_holds_text": true})
+	check("a palette-coloured row below the box leaves the composer empty",
+		footer_palette.get("success", false)
+			and str(footer_palette.get("composer_check", "")) == "checked", str(footer_palette))
+
+	# The same footer drawn PLAIN holds the write. That is by design — refusing
+	# loudly beats guessing where the box ends — and the receipt names the row.
+	session.write_input("footer_plain\r")
+	var footer_plain_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("plain-footer") != -1)
+	check("the harness painted the same box over a plain footer", footer_plain_up,
+		session.read_viewport_text().right(300))
+	var footer_plain: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-FOOTERPLAIN\r", "raw": true, "unless_composer_holds_text": true})
+	check("a plain footer holds the write and the refusal quotes it",
+		not footer_plain.get("success", true) and bool(footer_plain.get("held", false))
+			and str(footer_plain.get("outcome", "")) == "refused_composer_not_empty"
+			and str(footer_plain.get("error", "")).contains("plain-footer"), str(footer_plain))
 
 	# A numbered line is what a person types as often as what a chooser draws.
-	# The guard exempts no shape, so it is held like any other bright row.
+	# The guard exempts no shape, so it is held like any other plain row.
 	session.write_input("numbered\r")
 	var numbered_up: bool = await _wait_until(func() -> bool:
 		return session.read_viewport_text().find("1. Review this change") != -1)
@@ -722,7 +750,7 @@ func _test_composer_guard(session, tools) -> void:
 			and str(draft.get("outcome", "")) == "refused_composer_not_empty"
 			and str(draft.get("composer_check", "")) == "checked", str(draft))
 
-	# A chooser's selected option opens with the SAME marker and is bright, and
+	# A chooser's selected option opens with the SAME marker and is plain, and
 	# reads as occupied here. The reason names the composer, but the action is
 	# the right one: nothing may be typed into a permission screen either.
 	session.write_input("chooser\r")
@@ -732,7 +760,7 @@ func _test_composer_guard(session, tools) -> void:
 		session.read_viewport_text().right(300))
 	var chooser: Dictionary = tools._terminal_write({"terminal_id": tid,
 		"text": "COMPOSER-CHOOSER\r", "raw": true, "unless_composer_holds_text": true})
-	check("a chooser's bright option block is checked, and held",
+	check("a chooser's plain option block is checked, and held",
 		not chooser.get("success", true) and bool(chooser.get("held", false))
 			and str(chooser.get("outcome", "")) == "refused_composer_not_empty"
 			and str(chooser.get("composer_check", "")) == "checked", str(chooser))
@@ -748,15 +776,87 @@ func _test_composer_guard(session, tools) -> void:
 			and after.find("COMPOSER-NUMBERED") == -1 and after.find("COMPOSER-DRAFT") == -1
 			and after.find("COMPOSER-CHOOSER") == -1 and after.find("COMPOSER-RULED") == -1
 			and after.find("COMPOSER-QUOTED") == -1
-			and after.find("COMPOSER-FOOTERBRIGHT") == -1
+			and after.find("COMPOSER-FOOTERPLAIN") == -1
 			and after.find("COMPOSER-FAINTLINE") != -1
-			and after.find("COMPOSER-FOOTERDIM") != -1,
+			and after.find("COMPOSER-FOOTERDIM") != -1
+			and after.find("COMPOSER-FOOTERCOLOUR") != -1
+			and after.find("COMPOSER-FOOTERPALETTE") != -1,
 		session.read_viewport_text().right(300))
 
 	session.write_input("quit\r")
 	var gone: bool = await _wait_until(func() -> bool: return session.harness_name() == "")
 	check("the composer harness exited and the shell is back in front", gone,
 		str(session.get_foreground_process()))
+
+	# The same box under the Claude Code name, read with Claude Code's markers.
+	if not await _start_composer_harness(session, "claude"):
+		return
+	session.write_input("claude_dim\r")
+	var claude_dim_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("fix typecheck errors") != -1)
+	check("the claude-named harness painted its empty box", claude_dim_up,
+		session.read_viewport_text().right(300))
+	var claude_dim: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-CLAUDEDIM\r", "raw": true, "unless_composer_holds_text": true})
+	check("a no-break space after the marker still reads as an empty box",
+		claude_dim.get("success", false)
+			and str(claude_dim.get("composer_check", "")) == "checked", str(claude_dim))
+
+	session.write_input("bang\r")
+	var bang_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("echo hi from shell mode") != -1)
+	check("the harness painted a shell-mode draft", bang_up, session.read_viewport_text().right(300))
+	var bang: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-BANG\r", "raw": true, "unless_composer_holds_text": true})
+	check("a shell-mode row is a draft: the coloured prefix is the marker, the command holds",
+		not bang.get("success", true) and bool(bang.get("held", false))
+			and str(bang.get("outcome", "")) == "refused_composer_not_empty"
+			and str(bang.get("error", "")).contains("echo hi from shell mode"), str(bang))
+
+	session.write_input("memo\r")
+	var memo_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("memo text I have not sent") != -1)
+	check("the harness painted a memo-mode draft", memo_up, session.read_viewport_text().right(300))
+	var memo: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-MEMO\r", "raw": true, "unless_composer_holds_text": true})
+	check("a memo-mode row is a draft and holds",
+		not memo.get("success", true) and bool(memo.get("held", false))
+			and str(memo.get("outcome", "")) == "refused_composer_not_empty", str(memo))
+
+	await create_timer(0.4).timeout
+	var claude_after: String = ""
+	for row in range(int(session.get_scroll_info().get("total_rows", 0))):
+		claude_after += session.extract_row_text_screen(row) + "\n"
+	check("under the claude name too only the pass landed on the screen",
+		claude_after.find("COMPOSER-CLAUDEDIM") != -1 and claude_after.find("COMPOSER-BANG") == -1
+			and claude_after.find("COMPOSER-MEMO") == -1, session.read_viewport_text().right(300))
+
+	session.write_input("quit\r")
+	var claude_gone: bool = await _wait_until(func() -> bool: return session.harness_name() == "")
+	check("the claude-named harness exited and the shell is back in front", claude_gone,
+		str(session.get_foreground_process()))
+
+
+## Writes the composer harness under *harness_name* and runs it with node, so
+## the host classifies the foreground by that name. False when it could not
+## be written or did not come up, with the check already recorded.
+func _start_composer_harness(session, harness_name: String) -> bool:
+	var dir_path: String = "user://terminal_identity_composer"
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var script_path: String = ProjectSettings.globalize_path(dir_path.path_join(harness_name))
+	var f := FileAccess.open(script_path, FileAccess.WRITE)
+	if f == null:
+		check("the composer harness script could be written as " + harness_name, false, script_path)
+		return false
+	f.store_string(COMPOSER_HARNESS_SRC)
+	f.close()
+	session.write_input("node '%s'\r" % script_path)
+	var ready: bool = await _wait_until(func() -> bool:
+		return session.harness_name() == harness_name \
+			and session.get_plain_text().find("COMPOSER-READY") != -1)
+	check("a %s-named harness is in the foreground with its box ready" % harness_name, ready,
+		session.read_viewport_text().right(300))
+	return ready
 
 
 func _entry_for(tools, tid: String) -> Dictionary:

@@ -60,13 +60,17 @@ const COMPOSER_HOLD_PHRASE := "holds unsent text"
 
 ## Where each harness draws its input box, as the glyphs that open the row at
 ## column 0. Claude Code renders `❯` everywhere but Windows, where the same box
-## comes through ConPTY as ASCII `>`; codex renders `›` (U+203A). These are the
-## host-side twin of the relay's prompt_box_regex (agent-relay profiles.rs):
-## change one and change the other.
+## comes through ConPTY as ASCII `>`; in its shell mode (`!`) and memo mode
+## (`#`) the row opens with that prefix instead. Codex renders `›` (U+203A).
+## The chat glyphs are the host-side twin of the relay's prompt_box_regex
+## (agent-relay profiles.rs): change one and change the other.
 const COMPOSER_MARKERS := {
-	"claude": ["❯", ">"],
+	"claude": ["❯", ">", "!", "#"],
 	"codex": ["›"],
 }
+
+## The cell Claude Code draws after its marker: a no-break space, not U+0020.
+const NBSP := 0x00A0
 
 ## The Unicode box-drawing block (U+2500-U+257F). A row whose visible
 ## characters all come from it carries no text — it is box chrome, or a rule a
@@ -330,22 +334,30 @@ func _composer_markers() -> Array:
 ## than stopped at: it carries no text either way.
 ##
 ## CONSEQUENCE, by design: whatever the harness draws BELOW the composer — its
-## footer, model line or status row — is inside the region, so it must be drawn
-## FAINT, as the real Claude Code and Codex draw it. A bright footer holds the
-## write. Refusing loudly beats guessing where the box ends, and the refusal
-## quotes the row it tripped on, so a wrong hold is readable off the receipt.
+## footer, model line or status row — is inside the region, so it is read by
+## the same cell rule as the box. Refusing loudly beats guessing where the box
+## ends, and the refusal quotes the row it tripped on, so a wrong hold is
+## readable off the receipt.
 ##
 ## Row text alone cannot decide: both harnesses draw an EMPTY box with a
 ## placeholder inside it (codex's "Use /skills …", Claude Code's "Try …"), and
-## an extracted row cannot tell that from a typed line. The cell attribute can
-## — a placeholder is drawn FAINT (SGR 2) and nothing a person types is. So any
-## non-space cell in the region that is not faint, the marker glyph and the
-## space after it aside, is unsent text.
+## an extracted row cannot tell that from a typed line. The cell style can.
+## Measured on Claude Code 2.1 and Codex 0.155 (a PTY capture of each): a
+## placeholder is drawn FAINT (SGR 2); the footer, model line, status rows,
+## slash and @ popups are drawn in a COLOUR (an RGB or palette foreground);
+## and what a person types — a draft, its wrapped rows, a slash command, a
+## collapsed "[Pasted text …]" chip, the command after a shell-mode `!` — is
+## drawn PLAIN: the default foreground and not faint. So a plain, non-space
+## cell in the region, the marker glyph and the space after it aside, is
+## unsent text; faint and coloured cells are chrome.
 ##
 ## No row shape is exempt. A chooser or permission screen opens its SELECTED
-## option with the same marker ("❯ 1. Yes, proceed") and paints it bright, so
-## it reads as occupied here. That is the right ACTION — nothing may be typed
-## into such a screen either — even though the refusal names the composer. The
+## option with the same marker ("❯ 1. Yes, proceed"); drawn plain it reads as
+## occupied here, which is the right ACTION — nothing may be typed into such a
+## screen either — even though the refusal names the composer. Drawn in colour
+## it passes THIS guard: this is a composer guard, not a dialog guard. The
+## notify path runs the relay's send gate, which classifies dialogs from the
+## screen text; a guarded raw write has only the guards it asked for. The
 ## alternative, a heuristic that exempts "chooser-looking" rows, misreads a
 ## person's own numbered or aligned draft as a chooser and submits it.
 ##
@@ -374,19 +386,23 @@ func _composer_verdict(markers: Array) -> Dictionary:
 
 
 ## The marker *text* opens the composer with, or "". Column 0 and then either a
-## space or the end of the row: an indented marker belongs to the draft.
+## space (Claude Code's is a no-break space) or the end of the row: an indented
+## marker belongs to the draft.
 func _marker_of(text: String, markers: Array) -> String:
 	for candidate: String in markers:
 		if not text.begins_with(candidate):
 			continue
-		if text.length() == candidate.length() or text[candidate.length()] == " ":
+		if text.length() == candidate.length():
+			return candidate
+		var after: int = text.unicode_at(candidate.length())
+		if after == 0x20 or after == NBSP:
 			return candidate
 	return ""
 
 
 ## Every row of the region, marker row first, down to the foot of the viewport.
 ## Rows made only of box-drawing glyphs are skipped; the rest are read for a
-## bright cell, the marker glyph and the space after it excepted.
+## plain cell, the marker glyph and the space after it excepted.
 func _region_verdict(marker_row: int, marker_length: int, rows: int) -> Dictionary:
 	for row in range(marker_row, rows):
 		var text: String = str(_session.extract_row_text(row))
@@ -405,9 +421,10 @@ func _region_verdict(marker_row: int, marker_length: int, rows: int) -> Dictiona
 	return {"readable": true, "holds": false}
 
 
-## Whether any cell of *row* from *from_col* on is a non-space cell that is not
-## faint — the mark of text a person typed rather than of a placeholder.
-## One cell per extracted character, so the string index IS the column.
+## Whether any cell of *row* from *from_col* on is PLAIN text: a non-space
+## glyph drawn neither faint nor in a colour — the mark of text a person typed
+## rather than of a placeholder or a status row. One cell per extracted
+## character, so the string index IS the column.
 func _row_verdict(row: int, from_col: int, text: String) -> Dictionary:
 	for col in range(from_col, text.length()):
 		var cell: Dictionary = _session.get_cell(col, row)
@@ -415,8 +432,12 @@ func _row_verdict(row: int, from_col: int, text: String) -> Dictionary:
 			# This build's cells carry no attributes: the placeholder and a
 			# typed line are indistinguishable, so nothing is claimed.
 			return {"readable": false, "holds": false}
-		if int(cell.get("codepoint", 0)) > 32 and not bool(cell["faint"]):
-			return {"readable": true, "holds": true}
+		var code: int = int(cell.get("codepoint", 0))
+		if code <= 32 or code == NBSP or bool(cell["faint"]):
+			continue
+		if cell.has("fg") or cell.has("fg_palette"):
+			continue
+		return {"readable": true, "holds": true}
 	return {"readable": true, "holds": false}
 
 
