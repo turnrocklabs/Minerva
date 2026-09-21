@@ -51,7 +51,12 @@ func _init() -> void:
 	var registered_voice = db.get_by_id("voice")
 	check("database refuses replacement of host-owned voice", not db.update_definition(hostile) and db.get_by_id("voice") == registered_voice)
 	check("database refuses removal of host-owned voice", not db.remove("voice") and db.has_plugin("voice"))
-	check("database refuses lifecycle flags for host-owned voice", not db.set_autostart("voice", true) and not db.set_auto_reload("voice", true))
+	# Auto-start is a user decision every plugin may make, host-owned or not;
+	# auto-reload watches a source checkout, which a host-owned plugin has none of.
+	check("host-owned voice takes auto-start but refuses auto-reload",
+		db.set_autostart("voice", true) and db.get_by_id("voice").autostart
+			and not db.set_auto_reload("voice", true))
+	check("host-owned auto-start survives re-registration", db.register_internal() and db.get_by_id("voice").autostart)
 	var ordinary = Definition.new()
 	ordinary.id = "ordinary"
 	db._plugins[ordinary.id] = ordinary
@@ -65,10 +70,10 @@ func _init() -> void:
 	root.add_child(panel)
 	await process_frame
 	_select_plugin(panel, "voice")
-	check("built-in Voice hides Remove/Reload/Auto controls",
+	check("built-in Voice hides Remove/Reload/Auto-reload controls and shows the Auto-start slider",
 		not panel._remove_button.visible
 			and not panel._reload_button.visible
-			and not panel._autostart_check.visible
+			and panel._autostart_check.visible
 			and not panel._auto_reload_check.visible)
 	var plugin_tools = load(
 		"res://Scripts/Services/Plugins/PluginMCPTools.gd").new(manager, null, null, null)
