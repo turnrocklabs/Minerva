@@ -8,6 +8,8 @@ func run() -> void:
 	print("PACKAGED_MCP_HELPER_PHASE=entry")
 	var client := Client.new()
 	add_child(client)
+	client.startup_progress.connect(func(stage: String, elapsed_msec: int) -> void:
+		print("PACKAGED_MCP_HELPER_PHASE=%s:%dms" % [stage, elapsed_msec]))
 	var resolved_path: String = client._resolved_helper_path()
 	print("PACKAGED_MCP_HELPER_PATH=%s" % resolved_path)
 	var target: String = Client._runtime_target(OS.get_name(), Engine.get_architecture_name())
@@ -17,12 +19,15 @@ func run() -> void:
 		and normalized_path.contains("/mcp-runtime/%s/" % target)
 	var status: Error = await client.start()
 	print("PACKAGED_MCP_HELPER_PHASE=start:%s" % error_string(status))
+	print("PACKAGED_MCP_HELPER_STARTUP=%s" % JSON.stringify(client.startup_diagnostic()))
 	var compiled: Dictionary = {}
 	var validated: Dictionary = {}
 	if status == OK:
+		print("PACKAGED_MCP_HELPER_PHASE=compile:begin")
 		compiled = await client.compile('{"type":"object","required":["ready"]}')
 	print("PACKAGED_MCP_HELPER_PHASE=compile:%s" % str(compiled.get("ok", false)))
 	if compiled.get("ok", false):
+		print("PACKAGED_MCP_HELPER_PHASE=validate:begin")
 		validated = await client.validate_raw(compiled.handle, '{"ready":true}')
 		print("PACKAGED_MCP_HELPER_PHASE=validate:%s" % str(validated.get("valid", false)))
 		await client.release(compiled.handle)

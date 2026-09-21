@@ -99,12 +99,12 @@ func _run() -> void:
 	await process_frame
 
 	if not ClassDB.class_exists("Terminal"):
-		print("  SKIP: Terminal GDExtension not available — live PTY tests skipped")
+		check("Terminal GDExtension is available for lifecycle coverage", false)
 		return
 
 	var so = root.get_node_or_null("SingletonObject")
 	if so == null:
-		print("  SKIP: SingletonObject autoload not available under this invocation")
+		check("SingletonObject autoload is available for lifecycle coverage", false)
 		return
 
 	var tools = load(TOOLS_SCRIPT_PATH).new(null)
@@ -130,7 +130,7 @@ func _run() -> void:
 	var registry = so.get_terminal_session_registry()
 	check("AC1: session registered under registry", registry.has_session(bg_id))
 	if not registry.get_session(bg_id).terminal_available:
-		print("  SKIP: terminal extension instantiated but forkpty unavailable")
+		check("Terminal PTY starts for lifecycle coverage", false)
 		return
 
 	var out1: String = await _round_trip(tools, bg_id, "echo bg42\r", "bg42")
@@ -402,6 +402,32 @@ func _test_pane_adoption(registry, tools) -> void:
 	check("adoption: re-sync is idempotent (no duplicate tabs)",
 		_count_views_for(a_id) == 1, "views=%d" % _count_views_for(a_id))
 
+	# A split rebuild temporarily reparents the original group. A newly visible
+	# group must still see that its sessions already have authoritative views.
+	root.remove_child(group)
+	var sibling_group = load(TAB_GROUP_SCRIPT_PATH).new()
+	sibling_group.visible = false
+	root.add_child(sibling_group)
+	sibling_group._adopt_viewless_sessions()
+	check("adoption: split reparent does not duplicate an attached session",
+		registry.get_session(a_id).get_attached_view() == adopted_a
+		and _group_has_session(sibling_group, a_id) == false)
+	# Model a pre-fix ghost that still points at the real session but never won
+	# its ownership claim. Closing it must leave the claimant and PTY alive.
+	var ghost = load("res://Scenes/Terminal.tscn").instantiate()
+	ghost._auto_create_session = false
+	ghost._session = registry.get_session(a_id)
+	sibling_group._panel.add_child(ghost, true)
+	sibling_group._tab_bar.add_tab("ghost")
+	sibling_group._tab_bar.set_tab_metadata(0, ghost)
+	sibling_group.close_terminal(0)
+	check("adoption: closing a non-owner ghost leaves the claimed session alive",
+		registry.has_session(a_id)
+		and registry.get_session(a_id).get_attached_view() == adopted_a)
+	sibling_group.queue_free()
+	root.add_child(group)
+	await process_frame
+
 	# A session created WHILE the pane is open appears as a tab (deferred sync).
 	var c: Dictionary = await tools.handle("minerva_terminal_create",
 		{"background": true, "name": "adopt-c"})
@@ -502,6 +528,16 @@ func _count_views_for(session_id: String) -> int:
 			if s != null and is_instance_valid(s) and str(s.terminal_id) == session_id:
 				n += 1
 	return n
+
+
+func _group_has_session(group, session_id: String) -> bool:
+	for tab in range(group.tab_count()):
+		var view = group._tab_bar.get_tab_metadata(tab)
+		if view != null and view.has_method("get_session"):
+			var session = view.get_session()
+			if session != null and str(session.terminal_id) == session_id:
+				return true
+	return false
 
 
 func _clear_policy_for_test() -> void:

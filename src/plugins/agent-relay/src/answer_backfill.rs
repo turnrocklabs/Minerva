@@ -112,6 +112,12 @@ pub struct LogBinding {
     /// delivered a cross-checked answer; only such a delivery lets a later
     /// re-read under the same prompts trust the cursor for a short scrape.
     vouched_for: u64,
+    last_stage: Option<&'static str>,
+    last_verdict: Option<&'static str>,
+    last_candidates: usize,
+    last_undecided: usize,
+    last_source: &'static str,
+    last_reason: &'static str,
 }
 
 impl LogBinding {
@@ -191,6 +197,28 @@ impl LogBinding {
         }
         self.searches < MAX_SEARCHES
     }
+
+    pub(crate) fn diagnostic(&self) -> serde_json::Value {
+        serde_json::json!({
+            "source": self.last_source,
+            "reason": self.last_reason,
+            "stage": self.last_stage,
+            "verdict": self.last_verdict,
+            "candidates": self.last_candidates,
+            "undecided": self.last_undecided,
+            "searches": self.searches,
+            "bound": self.path.is_some(),
+        })
+    }
+
+    fn begin_attempt(&mut self) {
+        self.last_stage = None;
+        self.last_verdict = None;
+        self.last_candidates = 0;
+        self.last_undecided = 0;
+        self.last_source = SOURCE_SCREEN;
+        self.last_reason = "search_deferred";
+    }
 }
 
 /// Order-sensitive digest of the retained prompts, over body AND submit
@@ -215,9 +243,42 @@ fn prompt_fingerprint(prompts: &VecDeque<Prompt>) -> u64 {
 /// or None to keep the scraped text. Called with the prompt the relay
 /// submitted and the cleaned screen text, before redaction and truncation.
 pub fn for_terminal(terminal_id: &str, prompt: &str, scraped: &str) -> Option<String> {
-    let (profile_id, facts, mut binding) = watcher::backfill_inputs(terminal_id)?;
-    let roots = LogRoots::from_env()?;
+    let Some((profile_id, facts, mut binding)) = watcher::backfill_inputs(terminal_id) else {
+        log::debug!("backfill: terminal={terminal_id} source=screen reason=no_watch");
+        return None;
+    };
+    binding.begin_attempt();
+    let Some(roots) = LogRoots::from_env() else {
+        log::debug!("backfill: terminal={terminal_id} source=screen reason=no_log_roots");
+        binding.last_reason = "no_log_roots";
+        watcher::store_log_binding(terminal_id, binding);
+        return None;
+    };
+    log::debug!(
+        "backfill: terminal={terminal_id} attempt profile={profile_id} cwd={} start={} prompts={} cached={}",
+        facts.cwd.is_some(), facts.start_ms.is_some(), facts.prompts.len(), binding.path.is_some()
+    );
     let answer = backfill(&profile_id, &facts, &roots, &mut binding, prompt, scraped);
+    binding.last_source = if answer.is_some() { SOURCE_LOG } else { SOURCE_SCREEN };
+    binding.last_reason = if answer.is_some() {
+        "matched_turn"
+    } else {
+        match binding.last_verdict {
+            Some("bound") => "bound_no_matching_turn",
+            Some(reason) => reason,
+            None => "search_deferred",
+        }
+    };
+    log::debug!(
+        "backfill: terminal={terminal_id} source={} binding={} searches={}",
+        if answer.is_some() {
+            SOURCE_LOG
+        } else {
+            SOURCE_SCREEN
+        },
+        binding.path.is_some(),
+        binding.searches
+    );
     watcher::store_log_binding(terminal_id, binding);
     answer
 }
@@ -244,6 +305,9 @@ fn backfill(
     };
 
     let fresh = binding.rebind_on_new_prompt(profile_id, facts, roots);
+    if let Some(verdict) = fresh.as_ref() {
+        record_binding_verdict(binding, "new_prompt", verdict);
+    }
     // A turn the binder ran on reads a window no cursor vouched for under this
     // prompt, whichever file the verdict named — the cached one included. So
     // does a re-read under prompts the cached path has not yet answered with
@@ -265,7 +329,9 @@ fn backfill(
             }
             binding.searches += 1;
             binding.retry_at = Some(Instant::now() + SEARCH_RETRY);
-            session_log::bind(&facts.to_terminal_facts(profile_id), roots)
+            let verdict = session_log::bind(&facts.to_terminal_facts(profile_id), roots);
+            record_binding_verdict(binding, "retry", &verdict);
+            verdict
         }
     };
     let found = match verdict {
@@ -301,6 +367,25 @@ fn backfill(
         }
     }
     answer
+}
+
+fn record_binding_verdict(binding: &mut LogBinding, stage: &'static str, verdict: &Binding) {
+    binding.last_stage = Some(stage);
+    binding.last_candidates = 0;
+    binding.last_undecided = 0;
+    match verdict {
+        Binding::Bound(_) => binding.last_verdict = Some("bound"),
+        Binding::NoLog => binding.last_verdict = Some("no_log"),
+        Binding::Unsupported(_) => binding.last_verdict = Some("unsupported"),
+        Binding::Ambiguous {
+            candidates,
+            undecided,
+        } => {
+            binding.last_verdict = Some("ambiguous");
+            binding.last_candidates = candidates.len();
+            binding.last_undecided = undecided.len();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

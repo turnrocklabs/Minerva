@@ -9,7 +9,15 @@
 #include <errno.h>
 #include <poll.h>
 #include <sys/wait.h>
+#include <spawn.h>
 #include <cstring>
+#ifdef __APPLE__
+#include <crt_externs.h>
+#define MINERVA_ENVIRON (*_NSGetEnviron())
+#else
+extern char **environ;
+#define MINERVA_ENVIRON environ
+#endif
 
 using namespace godot;
 
@@ -54,64 +62,83 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
         return false;
 
     // Create pipes for stdin, stdout, and stderr (all separate)
-    int stdin_pipe[2];   // [0] = read end, [1] = write end
-    int stdout_pipe[2];
-    int stderr_pipe[2];
+    int stdin_pipe[2] = {-1, -1};   // [0] = read end, [1] = write end
+    int stdout_pipe[2] = {-1, -1};
+    int stderr_pipe[2] = {-1, -1};
 
-    if (pipe(stdin_pipe) == -1 || pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1) {
+    auto make_pipe = [](int pair[2]) {
+#ifdef __linux__
+        return pipe2(pair, O_CLOEXEC);
+#else
+        if (pipe(pair) != 0) return -1;
+        if (fcntl(pair[0], F_SETFD, FD_CLOEXEC) != 0
+                || fcntl(pair[1], F_SETFD, FD_CLOEXEC) != 0) {
+            int saved = errno;
+            close(pair[0]); close(pair[1]);
+            pair[0] = pair[1] = -1;
+            errno = saved;
+            return -1;
+        }
+        return 0;
+#endif
+    };
+    if (make_pipe(stdin_pipe) == -1 || make_pipe(stdout_pipe) == -1
+            || make_pipe(stderr_pipe) == -1) {
+        for (int fd : {stdin_pipe[0], stdin_pipe[1], stdout_pipe[0], stdout_pipe[1],
+                       stderr_pipe[0], stderr_pipe[1]}) if (fd >= 0) close(fd);
         UtilityFunctions::push_error("SubProcess: Failed to create pipes");
         return false;
     }
+    auto close_pipes = [&]() {
+        for (int fd : {stdin_pipe[0], stdin_pipe[1], stdout_pipe[0], stdout_pipe[1],
+                       stderr_pipe[0], stderr_pipe[1]}) if (fd >= 0) close(fd);
+    };
+    // File actions may install fd 0/1/2 before later closes. Move every owned
+    // endpoint above the stdio range so those actions cannot clobber each other.
+    for (int *pair : {stdin_pipe, stdout_pipe, stderr_pipe}) {
+        for (int i = 0; i < 2; ++i) {
+            if (pair[i] <= STDERR_FILENO) {
+                int moved = fcntl(pair[i], F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+                if (moved < 0) { close_pipes(); return false; }
+                close(pair[i]);
+                pair[i] = moved;
+            }
+        }
+    }
 
-    _child_pid = fork();
+    CharString cmd_utf8 = command.utf8();
+    std::vector<CharString> storage;
+    storage.reserve(static_cast<size_t>(args.size()) + 1);
+    storage.push_back(cmd_utf8);
+    for (int i = 0; i < args.size(); ++i) storage.push_back(args[i].utf8());
+    std::vector<char *> argv;
+    argv.reserve(storage.size() + 1);
+    for (CharString &value : storage) argv.push_back(const_cast<char *>(value.ptr()));
+    argv.push_back(nullptr);
 
-    if (_child_pid == -1) {
-        // Fork failed
-        close(stdin_pipe[0]);
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[0]);
-        close(stderr_pipe[1]);
-        UtilityFunctions::push_error("SubProcess: Fork failed");
+    posix_spawn_file_actions_t actions;
+    int spawn_error = posix_spawn_file_actions_init(&actions);
+    const bool actions_initialized = spawn_error == 0;
+    auto add = [&](int result) { if (spawn_error == 0 && result != 0) spawn_error = result; };
+    if (spawn_error == 0) {
+        add(posix_spawn_file_actions_adddup2(&actions, stdin_pipe[0], STDIN_FILENO));
+        add(posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO));
+        add(posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO));
+        for (int fd : {stdin_pipe[0], stdin_pipe[1], stdout_pipe[0], stdout_pipe[1],
+                       stderr_pipe[0], stderr_pipe[1]})
+            add(posix_spawn_file_actions_addclose(&actions, fd));
+    }
+    pid_t child = -1;
+    if (spawn_error == 0)
+        spawn_error = posix_spawnp(&child, cmd_utf8.ptr(), &actions, nullptr,
+                                   argv.data(), MINERVA_ENVIRON);
+    if (actions_initialized) posix_spawn_file_actions_destroy(&actions);
+    if (spawn_error != 0) {
+        close_pipes();
+        UtilityFunctions::push_error("SubProcess: posix_spawnp failed: " + String(strerror(spawn_error)));
         return false;
     }
-
-    if (_child_pid == 0) {
-        // Child process
-
-        // Redirect stdin
-        close(stdin_pipe[1]);  // Close write end
-        dup2(stdin_pipe[0], STDIN_FILENO);
-        close(stdin_pipe[0]);
-
-        // Redirect stdout (separate pipe — clean JSON-RPC transport)
-        close(stdout_pipe[0]);  // Close read end
-        dup2(stdout_pipe[1], STDOUT_FILENO);
-        close(stdout_pipe[1]);
-
-        // Redirect stderr to its own pipe (NOT merged into stdout)
-        close(stderr_pipe[0]);  // Close read end
-        dup2(stderr_pipe[1], STDERR_FILENO);
-        close(stderr_pipe[1]);
-
-        // Build argv
-        CharString cmd_utf8 = command.utf8();
-        std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(cmd_utf8.ptr()));
-
-        std::vector<CharString> arg_storage;
-        for (int i = 0; i < args.size(); i++) {
-            arg_storage.push_back(args[i].utf8());
-            argv.push_back(const_cast<char*>(arg_storage.back().ptr()));
-        }
-        argv.push_back(nullptr);
-
-        execvp(cmd_utf8.ptr(), argv.data());
-
-        // If execvp returns, it failed
-        _exit(127);
-    }
+    _child_pid = child;
 
     // Parent process
 
@@ -209,9 +236,9 @@ void SubProcess::_read_loop()
 
     // Check exit status
     if (_child_pid > 0) {
-        int status;
-        waitpid(_child_pid, &status, WNOHANG);
-        if (WIFEXITED(status)) {
+        int status = 0;
+        pid_t waited = waitpid(_child_pid, &status, WNOHANG);
+        if (waited == _child_pid && WIFEXITED(status)) {
             int exit_code = WEXITSTATUS(status);
             call_deferred("emit_signal", "process_exited", exit_code);
         }

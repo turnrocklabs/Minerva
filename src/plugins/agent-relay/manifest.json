@@ -195,11 +195,34 @@
           "terminal_id": {
             "type": "string",
             "description": "Optional explicit terminal override; normally resolved from entry_id, the chat binding, or the single active watch session."
+          },
+          "operation_token": {
+            "type": "string",
+            "description": "Opaque host token for interrupting only this generate call."
           }
         },
         "required": [
           "chat_id",
           "text"
+        ]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_passthrough_interrupt",
+      "description": "Latch an interrupt for one active passthrough operation. Host-internal; stale and duplicate tokens are no-ops.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string"
+          },
+          "operation_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat_id",
+          "operation_token"
         ]
       }
     },

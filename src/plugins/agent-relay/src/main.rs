@@ -182,6 +182,7 @@ fn handle_watch_stop(params: &Value, id: Value) -> RpcResponse {
     }
 
     let was_watching = watcher::watch_stop(terminal_id);
+    clear_passthrough_terminal_bindings(terminal_id);
     ok_response(id, tool_ok(json!({
         "ok": true,
         "terminal_id": terminal_id,
@@ -1329,7 +1330,7 @@ fn handle_relay_ask(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 
     match relay_ask_core(
         terminal_id, text, SendMode::Submit, GateHold::Wait, timeout_ms,
-        do_distill, do_redact, model, router,
+        do_distill, do_redact, model, None, router,
     ) {
         // A refusal reaches the caller with the same structured keys a send
         // refusal carries: relay_ask is a send, and a hold is retryable.
@@ -1357,6 +1358,7 @@ fn relay_ask_core(
     do_distill: bool,
     do_redact: bool,
     model: Option<&str>,
+    interrupt_token: Option<&str>,
     router: &Arc<Router>,
 ) -> Result<Value, SendError> {
     // Send + arm (auto-starts the watch when none exists). The gate inside may
@@ -1389,10 +1391,33 @@ fn relay_ask_core(
     // the serial read BEFORE the write, so a turn that ended while the send
     // path was confirming the submit still counts as ours. However long this
     // wait runs, the prompt slot stays ours: an attached slot has no age.
-    let (payload, timed_out) = watcher::wait_for_turn_from(
+    let mut interrupt_sent = false;
+    let mut interrupt_failed = false;
+    let (payload, timed_out) = watcher::wait_for_turn_from_poll(
         terminal_id,
         outcome.serial_before_write,
         timeout_ms,
+        || {
+            let Some(token) = interrupt_token else { return };
+            if interrupt_sent || interrupt_failed
+                || !with_passthrough(|s| s.interrupted.contains(token)) {
+                return;
+            }
+            let write = router.call_capability_detailed("host.terminal.write", json!({
+                "terminal_id": terminal_id,
+                "text": "\u{1b}",
+                "raw": true,
+                "expect_harness": watched_profile_id(terminal_id),
+            }));
+            match write {
+                Ok(reply) if reply.get("success").and_then(Value::as_bool) == Some(true) => {
+                    interrupt_sent = true;
+                }
+                Err(error) if error.held()
+                    && error.outcome() == Some("refused_transaction_in_flight") => {}
+                _ => interrupt_failed = true,
+            }
+        },
     );
 
     if timed_out {
@@ -1457,6 +1482,8 @@ fn relay_ask_core(
             "detection_method": detection_method,
             "distilled": read.get("distilled").cloned().unwrap_or(json!(false)),
             "truncated": read.get("truncated").cloned().unwrap_or(json!(false)),
+            "interrupted": interrupt_sent,
+            "interrupt_failed": interrupt_failed,
         })),
     }
 }
@@ -1531,6 +1558,8 @@ struct PassthroughState {
     // the watch is live so auto-revive restores the SAME calibration (codex /
     // opencode differ from the "claude" default).
     profiles: std::collections::HashMap<String, String>, // terminal_id → profile_id
+    operations: std::collections::HashMap<String, String>, // token → terminal_id
+    interrupted: std::collections::HashSet<String>, // operation tokens
 }
 
 static PASSTHROUGH: Mutex<Option<PassthroughState>> = Mutex::new(None);
@@ -1538,6 +1567,63 @@ static PASSTHROUGH: Mutex<Option<PassthroughState>> = Mutex::new(None);
 fn with_passthrough<R>(f: impl FnOnce(&mut PassthroughState) -> R) -> R {
     let mut guard = PASSTHROUGH.lock().unwrap();
     f(guard.get_or_insert_with(PassthroughState::default))
+}
+
+/// A chat that has resolved to this terminal owns its watch for this plugin
+/// process. Minerva currently has no plugin callback when a history is deleted;
+/// terminal close, explicit watch_stop, and plugin restart remain the cleanup
+/// boundaries. Watches never selected by a chat still use the idle reap.
+pub(crate) fn passthrough_terminal_is_bound(terminal_id: &str) -> bool {
+    with_passthrough(|s| s.bindings.values().any(|bound| bound == terminal_id))
+}
+
+fn clear_passthrough_terminal_bindings(terminal_id: &str) {
+    with_passthrough(|s| s.bindings.retain(|_, bound| bound != terminal_id));
+}
+
+fn register_passthrough_operation(params: &Value) -> bool {
+    let args = params.get("arguments").unwrap_or(params);
+    let Some(token) = args.get("operation_token").and_then(|v| v.as_str()).filter(|v| !v.is_empty()) else {
+        return true;
+    };
+    let terminal = args.get("terminal_id")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.is_empty())
+        .or_else(|| args.get("entry_id").and_then(|v| v.as_str())
+            .and_then(|v| v.strip_prefix("terminal-")))
+        .unwrap_or("");
+    if terminal.is_empty() { return false; }
+    with_passthrough(|s| {
+        if s.operations.contains_key(token) { return false; }
+        s.operations.insert(token.to_string(), terminal.to_string());
+        true
+    })
+}
+
+fn latch_passthrough_interrupt(params: &Value, id: Value) -> RpcResponse {
+    let args = params.get("arguments").unwrap_or(params);
+    let token = args.get("operation_token").and_then(|v| v.as_str()).unwrap_or("");
+    let accepted = with_passthrough(|s| {
+        if token.is_empty() || !s.operations.contains_key(token) || s.interrupted.contains(token) {
+            return false;
+        }
+        s.interrupted.insert(token.to_string());
+        true
+    });
+    ok_response(id, tool_ok(json!({"ok": true, "accepted": accepted})))
+}
+
+struct PassthroughOperationGuard(Option<String>);
+
+impl Drop for PassthroughOperationGuard {
+    fn drop(&mut self) {
+        if let Some(token) = self.0.as_deref() {
+            with_passthrough(|s| {
+                s.operations.remove(token);
+                s.interrupted.remove(token);
+            });
+        }
+    }
 }
 
 /// Drop every trace of a pending question for a terminal: the next text sent
@@ -1710,6 +1796,10 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .or(entry_tid);
+    let operation_token = args.get("operation_token")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.is_empty());
+    let _operation = PassthroughOperationGuard(operation_token.map(str::to_string));
 
     if text.is_empty() {
         return ok_response(id, tool_ok(json!({
@@ -1722,15 +1812,18 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         Ok(t) => t,
         Err(e) => return ok_response(id, tool_ok(json!({"kind": "error", "text": e}))),
     };
+    if operation_token.is_some_and(|token| {
+        with_passthrough(|s| s.operations.get(token).map(String::as_str) != Some(terminal_id.as_str()))
+    }) {
+        return ok_response(id, tool_ok(json!({
+            "kind": "error",
+            "text": "operation token does not belong to this terminal",
+        })));
+    }
 
-    // The watch session is the chat's binding. It can vanish under a live
-    // passthrough chat: the idle reap (watch_timeout_ms, 10 min) tears down an
-    // UNARMED watch, and a chat sits unarmed between turns — so leaving a chat
-    // idle long enough kills its watch (the reap also unregisters the provider
-    // entry). The terminal/PTY itself is a Minerva background session that
-    // outlives our watch thread, so on a missing watch we AUTO-REVIVE: cache
-    // the profile while live, re-establish the watch (which re-registers the
-    // entry) and continue — the user never sees the stale-entry error. We only
+    // A bound chat now owns its watch across idle periods. The watch can still
+    // be absent after a relay restart or a bind/cleanup race, while the PTY
+    // remains alive, so auto-revive remains the recovery boundary. We only
     // refuse when the terminal itself is gone (genuinely closed).
     match watcher::watch_status(&terminal_id) {
         Some(status) => {
@@ -1860,7 +1953,7 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         &terminal_id, send_text, mode, hold, PASSTHROUGH_TIMEOUT_MS,
         false, // distill OFF — passthrough is verbatim
         true,  // redact stays on: secrets never enter chat history
-        None, router,
+        None, operation_token, router,
     );
     // The card was cleared by someone else while this answer queued for the
     // slot, so nothing was written: the text is a fresh prompt now, sent as a
@@ -1890,7 +1983,7 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         }
         outcome = relay_ask_core(
             &terminal_id, text, SendMode::Submit, GateHold::Wait, PASSTHROUGH_TIMEOUT_MS,
-            false, true, None, router,
+            false, true, None, operation_token, router,
         );
     }
 
@@ -1923,9 +2016,21 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
             } else if cause == "input_requested" {
                 build_question_result(&terminal_id, router)
             } else if cause == "turn_completed" {
+                let mut answer = v.get("answer").and_then(|a| a.as_str()).unwrap_or("").to_string();
+                if v.get("interrupted").and_then(|x| x.as_bool()).unwrap_or(false) {
+                    if !answer.is_empty() {
+                        answer.push_str("\n\n");
+                    }
+                    answer.push_str("[Interrupted]");
+                } else if v.get("interrupt_failed").and_then(|x| x.as_bool()).unwrap_or(false) {
+                    if !answer.is_empty() {
+                        answer.push_str("\n\n");
+                    }
+                    answer.push_str("[Interrupt request failed]");
+                }
                 json!({
                     "kind": "answer",
-                    "text": v.get("answer").and_then(|a| a.as_str()).unwrap_or(""),
+                    "text": answer,
                     "answer_source": v.get("answer_source").cloned()
                         .unwrap_or(json!(answer_backfill::SOURCE_SCREEN)),
                 })
@@ -2348,9 +2453,22 @@ fn tools_list_schema() -> Value {
                         "chat_id": {"type": "string", "description": "Host chat/history id for this turn (binds the chat to a terminal)."},
                         "text": {"type": "string", "description": "Newest user message, or a single dialog-answer keystroke after a 'question' result."},
                         "entry_id": {"type": "string", "description": "Provider entry id ('terminal-<tid>') — sent by the host with every generate; identifies the watched terminal."},
-                        "terminal_id": {"type": "string", "description": "Optional explicit terminal override; normally resolved from entry_id, the chat binding, or the single active watch session."}
+                        "terminal_id": {"type": "string", "description": "Optional explicit terminal override; normally resolved from entry_id, the chat binding, or the single active watch session."},
+                        "operation_token": {"type": "string", "description": "Opaque host token for interrupting only this generate call."}
                     },
                     "required": ["chat_id", "text"]
+                }
+            },
+            {
+                "name": "minerva_agent_relay_passthrough_interrupt",
+                "description": "Latch an interrupt for one active passthrough operation. Host-internal; stale and duplicate tokens are no-ops.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "chat_id": {"type": "string"},
+                        "operation_token": {"type": "string"}
+                    },
+                    "required": ["chat_id", "operation_token"]
                 }
             },
             {
@@ -2532,7 +2650,16 @@ fn main() {
                     | "minerva_agent_relay_relay_ask"
                     | "minerva_agent_relay_send"
                     | "minerva_agent_relay_passthrough_generate")
-                {
+            {
+                    if tool_name == "minerva_agent_relay_passthrough_generate"
+                        && !register_passthrough_operation(&req.params) {
+                        let resp = ok_response(req.id, tool_ok(json!({
+                            "kind": "error",
+                            "text": "operation token is already active or has no terminal",
+                        })));
+                        router.stdout.write_line(&resp);
+                        continue;
+                    }
                     let router2 = Arc::clone(&router);
                     std::thread::spawn(move || {
                         let resp = match tool_name.as_str() {
@@ -2557,6 +2684,8 @@ fn main() {
                         handle_watch_stop(&req.params, req.id),
                     "minerva_agent_relay_watch_status" =>
                         handle_watch_status(&req.params, req.id),
+                    "minerva_agent_relay_passthrough_interrupt" =>
+                        latch_passthrough_interrupt(&req.params, req.id),
                     "minerva_agent_relay_read_clean" =>
                         handle_read_clean(&req.params, req.id, &router),
                     "minerva_agent_relay_read_turn" =>
@@ -2858,5 +2987,38 @@ mod tests {
                 && !s.pending_question_region.contains_key(terminal)),
             "and every trace of it is gone"
         );
+    }
+
+    #[test]
+    fn passthrough_operation_tokens_have_one_owner_and_stale_interrupts_are_noops() {
+        let token = "main-tests-operation-owner";
+        let first = json!({"arguments": {
+            "entry_id": "terminal-owner-a", "operation_token": token,
+        }});
+        let duplicate = json!({"arguments": {
+            "entry_id": "terminal-owner-b", "operation_token": token,
+        }});
+        assert!(register_passthrough_operation(&first));
+        assert!(!register_passthrough_operation(&duplicate));
+        assert_eq!(with_passthrough(|s| s.operations.get(token).cloned()),
+            Some("owner-a".to_string()));
+
+        let interrupt = json!({"arguments": {"operation_token": token}});
+        let first_reply = latch_passthrough_interrupt(&interrupt, json!(1));
+        let duplicate_reply = latch_passthrough_interrupt(&interrupt, json!(2));
+        let first_body: Value = serde_json::from_str(first_reply.result.unwrap()
+            ["content"][0]["text"].as_str().unwrap()).unwrap();
+        let duplicate_body: Value = serde_json::from_str(duplicate_reply.result.unwrap()
+            ["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(first_body["accepted"], true);
+        assert_eq!(duplicate_body["accepted"], false);
+
+        drop(PassthroughOperationGuard(Some(token.to_string())));
+        assert!(with_passthrough(|s| !s.operations.contains_key(token)
+            && !s.interrupted.contains(token)));
+        let stale_reply = latch_passthrough_interrupt(&interrupt, json!(3));
+        let stale_body: Value = serde_json::from_str(stale_reply.result.unwrap()
+            ["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(stale_body["accepted"], false);
     }
 }

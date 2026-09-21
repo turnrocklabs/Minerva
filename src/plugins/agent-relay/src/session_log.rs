@@ -32,15 +32,12 @@
 // Both formats are documented as unstable: a line that does not parse, or a
 // record whose shape is unknown, is skipped and never fatal.
 //
-// The search runs on the turn path, so every read it makes is bounded, and
-// bounded against a length captured once per candidate rather than against the
-// growing file: the pruning pass reads at most HEAD_SCAN_BYTES of a file's
-// head, the prompt check at most PROMPT_SCAN_BYTES of its tail. The current
-// prompt was submitted seconds ago, so a terminal's own log holds it inside
-// that tail window. A window whose edge fell inside one record longer than
-// TAIL_BOUNDARY_BYTES yields no record at all; that window was not read, so it
-// leaves its candidate undecided, and one undecided candidate keeps the whole
-// search ambiguous rather than making its neighbour unique.
+// The search runs on the turn path, so every read is bounded against a length
+// captured once per candidate rather than against a growing file. The fast
+// pass reads at most PROMPT_SCAN_BYTES from each tail. Candidates that remain
+// undecided share FULL_SCAN_BUDGET_BYTES for complete captured snapshots; an
+// unread, malformed, over-budget, or incomplete snapshot stays undecided and
+// keeps the search ambiguous rather than manufacturing a unique neighbour.
 //
 // A file larger than the tail window may hold the prompt ahead of it, so a
 // truncated window without the prompt is not proof: the file's modification
@@ -72,10 +69,14 @@ pub(crate) const HEAD_SCAN_BYTES: u64 = 256 * 1024;
 
 /// Bytes of a candidate transcript the prompt check may read, taken from the
 /// END of the file: the prompt the binder matches on was submitted seconds
-/// ago, so the tail is where it is. A larger transcript is judged on its last
-/// PROMPT_SCAN_BYTES alone. Bounds one candidate to a read of tens of
-/// milliseconds whatever the session's size.
+/// ago, so the tail is normally sufficient. An undecided larger transcript
+/// may receive a complete scan under the separate aggregate fallback budget.
 pub(crate) const PROMPT_SCAN_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Aggregate budget for complete snapshots of candidates the fast tail could
+/// not decide. This covers the measured 32 MiB active sibling while bounding
+/// the whole fallback, not each candidate independently.
+pub(crate) const FULL_SCAN_BUDGET_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Bytes at a tail window's opening searched for the newline that ends the
 /// record straddling it. The boundary lies one record in, so the search is
@@ -240,28 +241,47 @@ pub fn bind(facts: &TerminalFacts, roots: &LogRoots) -> Binding {
     }
 
     let mut matched: Vec<PathBuf> = Vec::new();
-    let mut undecided: Vec<PathBuf> = Vec::new();
+    let mut undecided: Vec<(PathBuf, u64)> = Vec::new();
     for path in surviving {
         let len = file_len(&path);
         match prompt_evidence(&path, harness, facts, len) {
             PromptEvidence::Holds => matched.push(path),
-            PromptEvidence::Undecided => undecided.push(path),
+            PromptEvidence::Undecided => undecided.push((path, len)),
             PromptEvidence::Lacks => {}
         }
     }
     if undecided.is_empty() {
         return resolve(matched);
     }
+
+    let mut remaining = FULL_SCAN_BUDGET_BYTES;
+    let mut unresolved = Vec::new();
+    for (path, len) in undecided {
+        if len > remaining {
+            unresolved.push(path);
+            continue;
+        }
+        remaining -= len;
+        match full_prompt_evidence(&path, harness, facts, len) {
+            PromptEvidence::Holds => matched.push(path),
+            PromptEvidence::Lacks => {}
+            PromptEvidence::Undecided => unresolved.push(path),
+        }
+    }
+    if unresolved.is_empty() {
+        return resolve(matched);
+    }
     let mut candidates = matched;
-    candidates.extend(undecided.iter().cloned());
+    candidates.extend(unresolved.iter().cloned());
     candidates.sort();
     Binding::Ambiguous {
         candidates,
-        undecided,
+        undecided: unresolved,
     }
 }
 
 fn resolve(mut survivors: Vec<PathBuf>) -> Binding {
+    survivors.sort();
     match survivors.len() {
         0 => Binding::NoLog,
         1 => Binding::Bound(survivors.remove(0)),
@@ -587,6 +607,56 @@ fn scan_prompt_window(
         }
     }
     scan
+}
+
+/// Scan exactly one fallback snapshot. Only a complete, valid JSONL snapshot
+/// may prove that a prompt is absent; every read/parse/record-boundary failure
+/// in this complete pass remains undecided.
+fn full_prompt_evidence(
+    path: &Path,
+    harness: Harness,
+    facts: &TerminalFacts,
+    len: u64,
+) -> PromptEvidence {
+    let Some(current) = facts.current_prompt.as_deref() else {
+        return PromptEvidence::Lacks;
+    };
+    let Ok(file) = fs::File::open(path) else {
+        return PromptEvidence::Undecided;
+    };
+    let mut reader = BufReader::new(file.take(len));
+    let mut consumed = 0_u64;
+    let mut line = Vec::new();
+    let mut texts = Vec::new();
+    while consumed < len {
+        line.clear();
+        let Ok(read) = reader.read_until(b'\n', &mut line) else {
+            return PromptEvidence::Undecided;
+        };
+        if read == 0 || line.last() != Some(&b'\n') {
+            return PromptEvidence::Undecided;
+        }
+        consumed = consumed.saturating_add(read as u64);
+        let Ok(record) = serde_json::from_slice::<Value>(&line) else {
+            return PromptEvidence::Undecided;
+        };
+        texts.clear();
+        collect_user_texts(harness, &record, &mut texts);
+        if texts.iter().any(|text| prompt_matches(current, text)) {
+            let stamped = record
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(parse_iso_ms);
+            if stamped.is_some_and(|ms| within_submit_window(facts.current_submitted_ms, ms)) {
+                return PromptEvidence::Holds;
+            }
+        }
+    }
+    if consumed == len {
+        PromptEvidence::Lacks
+    } else {
+        PromptEvidence::Undecided
+    }
 }
 
 fn collect_user_texts(harness: Harness, record: &Value, out: &mut Vec<String>) {

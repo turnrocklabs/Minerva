@@ -41,6 +41,19 @@ const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.g
 const PARALLEL_RUN_PATH := "res://Scripts/Models/ChatParallelRun.gd"
 const HUMAN_PROVIDER_PATH := "res://Scripts/Services/Providers/Human/HumanProvider.gd"
 
+const INTERRUPT_PROVIDER_SRC := """
+extends "res://Scripts/Services/Providers/PluginProvider.gd"
+var interrupts: int = 0
+var requested := false
+func supports_in_place_interrupt() -> bool:
+	return true
+func interrupt_active_request() -> bool:
+	if not requested:
+		requested = true
+		interrupts += 1
+	return true
+"""
+
 ## Blocking provider stand-in: generate_content does not return until the test
 ## releases that message, so "is a second generate running?" is directly
 ## observable as concurrency, not inferred from timing.
@@ -301,6 +314,7 @@ func _run() -> void:
 	_test_queue_semantics()
 	await _test_queue_then_promote_in_order()
 	await _test_cancel_discards_pending()
+	await _test_in_place_interrupt_discards_queue_but_keeps_turn()
 	await _test_worker_completion_injection_queues()
 	await _test_pending_bubble_remove()
 	_test_wiring_is_present()
@@ -442,6 +456,44 @@ func _test_cancel_discards_pending() -> void:
 	check("C4: its pending bubble is gone too", _pending_bubbles(chat).is_empty())
 
 	provider.release("A")
+	_teardown(pane, [chat])
+
+
+func _test_in_place_interrupt_discards_queue_but_keeps_turn() -> void:
+	var chat = _make_history("interrupt")
+	var provider = _make_script(INTERRUPT_PROVIDER_SRC).new()
+	chat.provider = provider
+	var pane = _make_pane([chat])
+	pane.current_tab = 0
+	var turn_token: int = pane._begin_chat_turn(chat)
+	pane._queue_if_busy(chat, "queued", ChatOutgoingQueue.Mode.REGULAR, {})
+	var item_script = load(CHAT_HISTORY_ITEM_PATH)
+	var loading_item = item_script.new()
+	loading_item.Role = item_script.ChatRole.MODEL
+	loading_item.Message = "partial"
+	loading_item.rendered_node = chat.VBox.add_history_item(loading_item)
+	loading_item.rendered_node.loading = true
+	var global_stops := [0]
+	var count_stop := func(_history_id: String) -> void: global_stops[0] += 1
+	_so.stop_all_requests.connect(count_stop)
+
+	pane._on_audio_stop_1_pressed()
+	pane._on_audio_stop_1_pressed()
+	check("C4: Stop sends the opt-in in-place interrupt", provider.interrupts == 1)
+	check("C5: interrupt is sent exactly once", provider.interrupts == 1)
+	check("C6: interrupt drops queued prompts",
+		pane._outgoing_queue.pending_count(chat.HistoryId) == 0)
+	check("C7: interrupt preserves the active request token",
+		chat.is_request_active and chat.request_turn_token == turn_token)
+	check("C8: interrupt does not mark history cancelled",
+		chat.HistoryId not in _so.cancelled_history_ids)
+	check("C9: interrupt does not broadcast global cancellation", global_stops[0] == 0)
+	check("C10: interrupt preserves the loading response",
+		is_instance_valid(loading_item.rendered_node) and loading_item.rendered_node.loading)
+	_so.stop_all_requests.disconnect(count_stop)
+
+	pane._cancel_chat_turn(chat)
+	provider.free()
 	_teardown(pane, [chat])
 
 #endregion

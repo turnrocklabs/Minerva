@@ -5,6 +5,7 @@ const JsonSerialization = preload("res://Scripts/Services/MCP/MCPJsonSerializati
 ## generation; a deadline, overflow, or process loss invalidates them together.
 
 signal helper_failed(reason: String)
+signal startup_progress(stage: String, elapsed_msec: int)
 
 const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 
@@ -33,6 +34,8 @@ class Pending extends RefCounted:
 
 var helper_path := ""
 var last_failure_reason := ""
+var startup_stage := "idle"
+var startup_started_msec := 0
 var _process = null
 var _process_factory: Callable
 var _generation := 0
@@ -58,6 +61,8 @@ func start() -> Error:
 		return int(existing.result.get("status", ERR_CANT_CONNECT)) as Error
 	if _process != null and _process.is_running():
 		return OK
+	startup_started_msec = Time.get_ticks_msec()
+	_set_startup_stage("preflight")
 	last_failure_reason = ""
 	var resolved_path := _resolved_helper_path()
 	# Injected test processes do not execute a file. Production startup must
@@ -74,6 +79,7 @@ func start() -> Error:
 		_finish_start(startup, ERR_UNAVAILABLE)
 		return ERR_UNAVAILABLE
 	_process = process
+	_set_startup_stage("native_start")
 	_generation += 1
 	var process_generation := _generation
 	if process is Node and process.get_parent() == null:
@@ -85,13 +91,16 @@ func start() -> Error:
 		_process = null
 		_finish_start(startup, ERR_CANT_CREATE)
 		return ERR_CANT_CREATE
+	_set_startup_stage("spawn_returned")
 	if process.has_signal("output_ready"):
 		process.output_ready.connect(_drain_output.bind(process, process_generation))
 	if process.has_signal("process_exited"):
 		process.process_exited.connect(_on_process_exited.bind(process, process_generation))
 	if process.has_signal("io_overflow"):
 		process.io_overflow.connect(_on_io_overflow.bind(process, process_generation))
+	_set_startup_stage("ping_wait")
 	var ping: Dictionary = await _request({"op": "ping"}, process, process_generation)
+	_set_startup_stage("ready" if ping.get("ok", false) else "ping_failed")
 	var status: Error = OK if ping.get("ok", false) else ERR_CANT_CONNECT
 	if status != OK and last_failure_reason.is_empty():
 		last_failure_reason = "MCP JSON Schema helper did not answer its startup check at '%s'. %s" % [
@@ -100,6 +109,18 @@ func start() -> Error:
 		_invalidate_process(process, process_generation, last_failure_reason)
 	_finish_start(startup, status)
 	return status
+
+
+func startup_diagnostic() -> Dictionary:
+	return {"stage": startup_stage,
+		"elapsed_msec": maxi(0, Time.get_ticks_msec() - startup_started_msec),
+		"process_running": _process != null and _process.is_running(),
+		"pending_requests": _pending.size(), "failure": last_failure_reason}
+
+
+func _set_startup_stage(stage: String) -> void:
+	startup_stage = stage
+	startup_progress.emit(stage, maxi(0, Time.get_ticks_msec() - startup_started_msec))
 
 
 func stop() -> void:

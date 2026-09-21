@@ -121,6 +121,9 @@ func add_terminal(session = null) -> TerminalNew:
 	if session != null:
 		terminal._auto_create_session = false
 		terminal.attach_session(session)
+		if terminal.get_session() != session:
+			terminal.free()
+			return null
 
 	_panel.add_child(terminal, true)
 
@@ -155,9 +158,12 @@ func close_terminal(tab: int) -> void:
 	if terminal:
 		# Tab close = session close (preserve today's behaviour).
 		var session = terminal.get_session() if terminal.has_method("get_session") else null
+		var owns_session := session != null
+		if owns_session and session.has_method("get_attached_view"):
+			owns_session = session.get_attached_view() == terminal
 		if terminal.has_method("detach_session"):
 			terminal.detach_session()
-		if session:
+		if owns_session:
 			var registry = _get_session_registry()
 			if registry:
 				registry.close_session(session.terminal_id)
@@ -248,6 +254,8 @@ func _adopt_viewless_sessions() -> void:
 
 ## True when ANY terminal view (in any tab group) is attached to `session`.
 func _view_exists_for(session) -> bool:
+	if session.has_method("get_attached_view") and session.get_attached_view() != null:
+		return true
 	var tree := get_tree()
 	if tree == null:
 		return false

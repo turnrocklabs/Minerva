@@ -35,6 +35,10 @@ signal vt_state_changed()
 signal prompt_start()
 signal prompt_end()
 
+## A full-screen erase invalidates view-owned command-block overlays. The bool
+## distinguishes clearing the viewport (2J) from clearing scrollback (3J).
+signal screen_cleared(include_scrollback: bool)
+
 ## Raw legacy output (used by the view's Windows CWD-regex prompt detection).
 signal output_received(text: String, type: int)
 
@@ -93,6 +97,10 @@ var last_input_ms: int = 0
 ## not be fooled by a wall-clock step. 0 when no human input yet.
 var last_input_ticks_ms: int = 0
 
+# A session may have at most one rendering view. Keeping this on the session
+# makes ownership survive transient scene-tree removal during split rebuilds.
+var _attached_view: WeakRef = null
+
 # The one gate every byte to the PTY passes. Built in _ready().
 var _arbiter: TerminalInputArbiter = null
 
@@ -131,6 +139,10 @@ func _create_terminal_node() -> void:
 	# Shell prompt markers → block detection (in the view)
 	terminal.on_shell_prompt_start.connect(_on_prompt_start)
 	terminal.on_shell_prompt_end.connect(_on_prompt_end)
+	if terminal.has_signal("seq_erase_entire_screen"):
+		terminal.seq_erase_entire_screen.connect(_on_screen_cleared.bind(false))
+	if terminal.has_signal("seq_erase_saved_lines"):
+		terminal.seq_erase_saved_lines.connect(_on_screen_cleared.bind(true))
 
 	# Bell + shell-exit (guarded: older extension builds lack these)
 	if terminal.has_signal("bell"):
@@ -176,6 +188,29 @@ func name_fields() -> Dictionary:
 	if not launch_name.is_empty() and launch_name != session_name:
 		fields["launch_name"] = launch_name
 	return fields
+
+
+func attach_view(view: Node) -> bool:
+	var current: Node = get_attached_view()
+	if current != null and current != view:
+		return false
+	_attached_view = weakref(view)
+	return true
+
+
+func detach_view(view: Node) -> void:
+	if get_attached_view() == view:
+		_attached_view = null
+
+
+func get_attached_view() -> Node:
+	if _attached_view == null:
+		return null
+	var view := _attached_view.get_ref() as Node
+	if view == null or not is_instance_valid(view):
+		_attached_view = null
+		return null
+	return view
 
 
 ## Resize the PTY grid. Views call this from their layout handler.
@@ -494,6 +529,10 @@ func _on_prompt_start() -> void:
 
 func _on_prompt_end() -> void:
 	prompt_end.emit()
+
+
+func _on_screen_cleared(include_scrollback: bool) -> void:
+	screen_cleared.emit(include_scrollback)
 
 
 ## Stops the PTY and frees the extension node. Called by the registry on close.

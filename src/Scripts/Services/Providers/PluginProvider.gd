@@ -39,6 +39,12 @@ var _cancelled_generation: int = -1
 ## call_tool resolution must be a no-op even though _call_generation has not yet
 ## advanced (cancel resolves a turn before any new send bumps the token).
 var _consumed_generation: int = 0
+var _active_operation_token: String = ""
+var _active_interrupt_enabled: bool = false
+var _active_cancel_tool: String = ""
+var _active_plugin_id: String = ""
+var _interrupt_requested: bool = false
+var interrupt_error: String = ""
 
 ## Fired by the async call_tool helper when a dispatch completes (success or
 ## transport error). generate_content awaits EITHER this or the cancel hook.
@@ -82,6 +88,7 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 	# has a stale token and will be discarded silently by its helper.
 	_call_generation += 1
 	var generation: int = _call_generation
+	_clear_active_operation(generation)
 	var bot := BotResponse.new()
 	bot.provider = self
 	# A running connection does not imply this particular entry still exists.
@@ -104,6 +111,12 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 		bot.error = "Plugin '%s' is not running; cannot generate a response." % plugin_id
 		SingletonObject.chat_completed.emit(bot)
 		return bot
+	var operation_token := "%s:%s:%s" % [str(get_instance_id()), str(Time.get_ticks_usec()), str(generation)]
+	_active_operation_token = operation_token
+	_active_interrupt_enabled = bool(entry_metadata.get("interrupt_in_place", false)) \
+		and not cancel_tool.is_empty()
+	_active_cancel_tool = cancel_tool
+	_active_plugin_id = plugin_id
 
 	# Build the dispatch args. chat_id = owner history id; text = newest user
 	# message; entry_id tells the plugin WHICH of its registered entries this
@@ -115,6 +128,8 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 		"text": _newest_user_text(prompt),
 		"entry_id": entry_id,
 	}
+	if supports_in_place_interrupt():
+		args["operation_token"] = operation_token
 	if history_mode == "full":
 		args["messages"] = prompt
 
@@ -141,12 +156,14 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 		# later; the generation token makes that resolution a silent no-op.
 		_cancelled_generation = -1
 		_consumed_generation = generation
+		_clear_active_operation(generation)
 		_clear_pending(generation)
 		bot.error = "Request cancelled."
 		SingletonObject.chat_completed.emit(bot)
 		return bot
 
 	_consumed_generation = generation
+	_clear_active_operation(generation)
 	var raw = _take_pending(generation)
 
 	var result: Dictionary = _unwrap_tool_result(raw)
@@ -291,6 +308,65 @@ func cancel_active_resquests() -> void:
 		return
 	# Fire-and-forget; we do not await the cancellation acknowledgement.
 	conn.call_tool(cancel_tool, {"chat_id": owner_history_id})
+
+
+## Opt-in passthrough interruption keeps the provider request alive while the
+## plugin interrupts only the operation token that generated it.
+func supports_in_place_interrupt() -> bool:
+	return _active_interrupt_enabled \
+		and _call_generation > _consumed_generation \
+		and not _active_operation_token.is_empty()
+
+
+func interrupt_active_request() -> bool:
+	if not supports_in_place_interrupt():
+		return false
+	if _interrupt_requested:
+		return true
+	_interrupt_requested = true
+	var generation := _call_generation
+	var operation_token := _active_operation_token
+	var pm = _get_plugin_manager()
+	if pm == null:
+		_set_interrupt_error(generation, "Plugin manager unavailable; terminal interrupt was not sent.")
+		return true
+	var conn = pm.get_connection(_active_plugin_id)
+	if conn == null:
+		_set_interrupt_error(generation, "Plugin connection unavailable; terminal interrupt was not sent.")
+		return true
+	_dispatch_interrupt(conn, _active_cancel_tool, operation_token, generation)
+	return true
+
+
+func _dispatch_interrupt(conn, tool_name: String, operation_token: String, generation: int) -> void:
+	var reply = await conn.call_tool(tool_name, {
+		"chat_id": owner_history_id,
+		"operation_token": operation_token,
+	})
+	if generation != _call_generation or operation_token != _active_operation_token:
+		return
+	if reply is Dictionary and (reply.has("error") or reply.get("isError", false)):
+		_set_interrupt_error(generation, "Terminal interrupt failed: %s" % str(reply.get("error", reply)))
+
+
+func _set_interrupt_error(generation: int, message: String) -> void:
+	if generation != _call_generation:
+		return
+	interrupt_error = message
+	_interrupt_requested = false
+	push_error(message)
+	SingletonObject.create_toast_notification(message, ToastNotification.Type.WARNING)
+
+
+func _clear_active_operation(generation: int) -> void:
+	if generation != _call_generation:
+		return
+	_active_operation_token = ""
+	_active_interrupt_enabled = false
+	_active_cancel_tool = ""
+	_active_plugin_id = ""
+	_interrupt_requested = false
+	interrupt_error = ""
 
 
 # ---------------------------------------------------------------------------

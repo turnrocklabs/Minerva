@@ -25,6 +25,16 @@ func _run() -> void:
 		python = "python3"
 	var process = ClassDB.instantiate("SubProcess")
 	root.add_child(process)
+	check("missing executable fails synchronously",
+		not process.start("minerva-subprocess-command-that-does-not-exist", PackedStringArray()))
+	check("failed spawn does not publish a running child", not process.is_running())
+	check("PATH lookup and argv survive native spawn", process.start(python,
+		PackedStringArray(["-c", "import sys; print(sys.argv[1])", "argument with spaces"])))
+	var argv_until := Time.get_ticks_msec() + 3000
+	while not process.has_output() and Time.get_ticks_msec() < argv_until:
+		await create_timer(0.01).timeout
+	check("spawned argv is byte-preserved", process.read_line() == "argument with spaces")
+	process.stop()
 	check("blocking-child fixture starts", process.start(python,
 		PackedStringArray(["-c", "import time; time.sleep(60)"])))
 	check("large write is admitted without blocking the Godot caller",

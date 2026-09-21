@@ -68,6 +68,7 @@ class StubConnection extends RefCounted:
 	var last_args: Dictionary = {}
 	var last_tool: String = ""
 	var cancel_calls: Array = []
+	var cancel_reply: Dictionary = {"content": [{"type": "text", "text": "{}"}]}
 	var die_after_call: bool = false  # simulate connection death mid-call
 
 	# When > 0, delay the generate reply by this many seconds (await a timer) to
@@ -81,7 +82,7 @@ class StubConnection extends RefCounted:
 		last_args = args.duplicate(true)
 		if tool_name.ends_with("_cancel") or tool_name.find("cancel") != -1:
 			cancel_calls.append(args)
-			return {"content": [{"type": "text", "text": "{}"}]}
+			return cancel_reply
 		generate_calls += 1
 		if reply_delay_sec > 0.0 and tree != null:
 			await tree.create_timer(reply_delay_sec).timeout
@@ -136,6 +137,7 @@ func _run() -> void:
 	await _test_provider_errors(so)
 	await _test_chooser_population(so)
 	await _test_cancel_mid_flight(so)
+	await _test_in_place_interrupt(so)
 	await _test_stale_reply_after_regenerate(so)
 	await _test_saved_selection_key_restore(so)
 	_test_service_history_roundtrip(so)
@@ -393,6 +395,73 @@ func _test_cancel_mid_flight(so) -> void:
 	check("cancel: late reply produced NO second emission",
 		emissions[0] == emissions_at_cancel, "before=%d after=%d" % [emissions_at_cancel, emissions[0]])
 	so.chat_completed.disconnect(sig)
+	prov.queue_free()
+
+
+func _test_in_place_interrupt(_so) -> void:
+	print("\n-- Cancellation: opt-in interrupt keeps generate alive --")
+	var entry = {"key": "plugin:chatprovider:interrupt", "plugin_id": PLUGIN_ID,
+		"entry_id": "interrupt", "display_name": "Interrupt Probe",
+		"generate_tool": "minerva_chatprovider_generate", "history_mode": "newest_only",
+		"timeout_sec": 600, "cancel_tool": "minerva_chatprovider_cancel",
+		"metadata": {"interrupt_in_place": true}}
+	var conn = StubConnection.new()
+	conn.tree = self
+	conn.reply_delay_sec = 0.2
+	conn.scripted_result = _answer_envelope("partial after interrupt")
+	var prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-interrupt"
+	var captured: Array = []
+	var done := [false]
+	var run := func() -> void:
+		captured.append(await prov.generate_content([{"text": "long turn"}]))
+		done[0] = true
+	run.call()
+	await process_frame
+	var generate_token: String = str(conn.last_args.get("operation_token", ""))
+	check("interrupt: generate carries a unique operation token", not generate_token.is_empty())
+	check("interrupt: provider advertises in-place interrupt while active",
+		prov.supports_in_place_interrupt())
+	check("interrupt: dispatch accepted", prov.interrupt_active_request())
+	check("interrupt: repeated Stop stays handled", prov.interrupt_active_request())
+	await process_frame
+	check("interrupt: cancel uses the same chat and operation token",
+		conn.cancel_calls.size() == 1
+		and str(conn.cancel_calls[0].get("chat_id", "")) == "hist-interrupt"
+		and str(conn.cancel_calls[0].get("operation_token", "")) == generate_token,
+		str(conn.cancel_calls))
+	check("interrupt: generate remains active after cancel acknowledgement", not done[0])
+	while not done[0]:
+		await process_frame
+	check("interrupt: normal reply completes the original request",
+		captured.size() == 1 and captured[0].error == ""
+		and captured[0].text == "partial after interrupt")
+	check("interrupt: capability clears when request completes",
+		not prov.supports_in_place_interrupt())
+	prov.queue_free()
+
+	# A failed acknowledgement remains local to this turn and permits retry;
+	# it never turns Stop into generic cancellation.
+	conn = StubConnection.new()
+	conn.tree = self
+	conn.reply_delay_sec = 0.2
+	conn.cancel_reply = {"error": "relay unavailable"}
+	conn.scripted_result = _answer_envelope("answer after failed interrupt")
+	prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-interrupt-failure"
+	done[0] = false
+	run = func() -> void:
+		await prov.generate_content([{"text": "long turn"}])
+		done[0] = true
+	run.call()
+	await process_frame
+	check("interrupt failure: Stop remains locally handled", prov.interrupt_active_request())
+	await process_frame
+	check("interrupt failure: acknowledgement is surfaced", not prov.interrupt_error.is_empty())
+	check("interrupt failure: same operation can retry", prov.interrupt_active_request()
+		and conn.cancel_calls.size() == 2)
+	while not done[0]:
+		await process_frame
 	prov.queue_free()
 
 

@@ -82,6 +82,7 @@ var _palette: Array[Color] = []
 var _blocks: Array[TerminalBlock] = []
 
 var _send_icon: Texture2D
+var _singleton_ref: WeakRef = null
 
 
 ## Creates new terminal instance
@@ -133,6 +134,7 @@ func _apply_terminal_config() -> void:
 		text_layer.queue_redraw()
 
 func _ready():
+	_singleton_ref = weakref(SingletonObject)
 	add_to_group("terminal_pane")
 	SingletonObject.injection_consumed.connect(_on_injection_consumed)
 
@@ -194,6 +196,11 @@ func _ready():
 	)
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		detach_session()
+
+
 ## True when the view has real (non-degenerate) layout geometry. Mid-build and
 ## headless-harness rects are zero/tiny; pushing those at the PTY reflows the
 ## live agent's screen for nothing (a 1×1 SIGWINCH collapses the grid).
@@ -226,6 +233,8 @@ func attach_session(session) -> void:
 		return
 	if _session == session:
 		return
+	if session.has_method("attach_view") and not session.attach_view(self):
+		return
 	if _session != null:
 		detach_session()
 	_session = session
@@ -247,6 +256,8 @@ func attach_session(session) -> void:
 		session.bell_rung.connect(_on_bell)
 	if not session.shell_exited.is_connected(_on_shell_exited):
 		session.shell_exited.connect(_on_shell_exited)
+	if session.has_signal("screen_cleared") and not session.screen_cleared.is_connected(_on_screen_cleared):
+		session.screen_cleared.connect(_on_screen_cleared)
 
 	# Render existing scrollback from this session.
 	if text_layer:
@@ -261,6 +272,7 @@ func attach_session(session) -> void:
 func detach_session() -> void:
 	if _session == null:
 		return
+	_retire_blocks()
 	var s = _session
 	if s.vt_state_changed.is_connected(_on_vt_state_changed):
 		s.vt_state_changed.disconnect(_on_vt_state_changed)
@@ -274,6 +286,10 @@ func detach_session() -> void:
 		s.bell_rung.disconnect(_on_bell)
 	if s.shell_exited.is_connected(_on_shell_exited):
 		s.shell_exited.disconnect(_on_shell_exited)
+	if s.has_signal("screen_cleared") and s.screen_cleared.is_connected(_on_screen_cleared):
+		s.screen_cleared.disconnect(_on_screen_cleared)
+	if s.has_method("detach_view"):
+		s.detach_view(self)
 	_session = null
 
 
@@ -478,6 +494,32 @@ func _on_prompt_end() -> void:
 	if not block.command.is_empty():
 		return
 	block.command = _extract_row_text_screen(block.screen_row).strip_edges()
+
+
+func _on_screen_cleared(_include_scrollback: bool) -> void:
+	_retire_blocks()
+
+
+func _retire_blocks() -> void:
+	if _redirect_popup and is_instance_valid(_redirect_popup):
+		_redirect_popup.hide()
+	_redirect_block_index = -1
+	var singleton = _singleton_ref.get_ref() if _singleton_ref != null else null
+	for block in _blocks:
+		if block.proxy:
+			if singleton != null:
+				singleton.detached_note_proxies.erase(block.proxy)
+			block.proxy = null
+		block.marked_ranges.clear()
+		if block.button and is_instance_valid(block.button):
+			block.button.queue_free()
+		if block.send_button and is_instance_valid(block.send_button):
+			block.send_button.queue_free()
+	_blocks.clear()
+	if text_layer and is_instance_valid(text_layer):
+		text_layer.queue_redraw()
+	if singleton != null and singleton.Chats and is_instance_valid(singleton.Chats):
+		singleton.Chats.update_token_estimation()
 
 func _extract_row_text(row: int) -> String:
 	## Read one row of text from the terminal cells (viewport-relative).

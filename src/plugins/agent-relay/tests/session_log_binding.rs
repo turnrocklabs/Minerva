@@ -951,13 +951,8 @@ fn one_record_longer_than_the_head_budget_is_never_read() {
     );
 }
 
-/// Back-dated records are lower bounds on write time, so the stamps in a tail
-/// window cannot say when the bytes ahead of it were written. Here our own log
-/// wrote the current prompt and then more back-dated filler than the window
-/// holds, which pushed that prompt out: our log was written after the submit,
-/// so nothing about it is established and it stays undecided, while a sibling
-/// that never received the current prompt is no candidate. The outcome is a
-/// refusal and the screen text — never the sibling's transcript.
+/// Back-dated filler can push the current prompt out of the fast tail. The
+/// complete fallback reads the captured snapshot and still finds that prompt.
 #[test]
 fn back_dated_filler_past_the_window_never_binds_a_sibling() {
     const CWD: &str = "/work/out-of-order-proj";
@@ -993,12 +988,8 @@ fn back_dated_filler_past_the_window_never_binds_a_sibling() {
     f.window_start_ms = window_start_ms;
     assert_eq!(
         bind(&f, &home.roots()),
-        Binding::Ambiguous {
-            candidates: vec![ours.clone()],
-            undecided: vec![ours],
-        },
-        "a log that outgrew its window since the current prompt hands nothing \
-         to a sibling that never held it"
+        Binding::Bound(ours),
+        "the complete snapshot finds the prompt ahead of back-dated filler"
     );
 }
 
@@ -1091,11 +1082,8 @@ fn a_record_longer_than_the_boundary_bound_yields_no_boundary() {
     );
 }
 
-/// A truncated window whose edge falls inside one record longer than the
-/// boundary bound yields no record, and an unread window is no evidence: the
-/// candidate stays undecided rather than ruled out for its contents, and one
-/// undecided candidate keeps the whole search ambiguous — it is reported there
-/// by name, so the caller can see the search was refused and not decided.
+/// A truncated fast window whose edge falls inside one long record is unread,
+/// but a complete valid snapshot under the fallback budget may still decide it.
 #[test]
 fn an_unread_truncated_window_leaves_the_search_ambiguous() {
     const CWD: &str = "/work/unread-window-proj";
@@ -1130,9 +1118,9 @@ fn an_unread_truncated_window_leaves_the_search_ambiguous() {
         bind(&terminal, &home.roots()),
         Binding::Ambiguous {
             candidates: vec![ours, unread.clone()],
-            undecided: vec![unread],
+            undecided: Vec::new(),
         },
-        "an unread window cannot make its neighbour a unique match"
+        "the complete snapshot confirms the hidden prompt"
     );
 
     // A prompt restored from a state file written before submit times existed:

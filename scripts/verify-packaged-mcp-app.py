@@ -12,7 +12,8 @@ import tempfile
 import time
 
 # Match the established tarball smoke allowance for a cold application start.
-# Helper operations retain their independent two-second native deadlines.
+# Once startup returns to the scene tree, helper requests retain their
+# independent two-second deadlines; this outer bound also covers native start.
 TIMEOUT_SECONDS = 60
 # The bridge probe creates two browsers cold. On the macOS Intel runner's
 # software renderer each takes about fourteen seconds to reach its page
@@ -125,6 +126,25 @@ def main() -> int:
                         timeout=BRIDGE_TIMEOUT_SECONDS if bridge_probe else TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:
                     timed_out = True
+                    # Snapshot the last flushed phase while the hung process is
+                    # still alive; teardown can itself block or change evidence.
+                    timeout_stdout = stdout_path.read_text(
+                        encoding="utf-8", errors="replace")
+                    timeout_stderr = stderr_path.read_text(
+                        encoding="utf-8", errors="replace")
+                    phases = re.findall(
+                        r"PACKAGED_(?:MCP_HELPER|BRIDGE)_PHASE=([^\r\n]+)", timeout_stdout)
+                    print("exported native probe timeout snapshot: "
+                          f"pid={process.pid}, last_phase={phases[-1] if phases else 'not-entered'}, "
+                          f"stdout_bytes={len(timeout_stdout.encode())}, "
+                          f"stderr_bytes={len(timeout_stderr.encode())}")
+                    try:
+                        snapshot = subprocess.run(
+                            ["ps", "-o", "pid=,ppid=,stat=,etime=,comm=", "-p", str(process.pid)],
+                            capture_output=True, text=True, timeout=2, check=False)
+                        print("exported native probe process snapshot: " + snapshot.stdout.strip())
+                    except (OSError, subprocess.TimeoutExpired) as error:
+                        print(f"exported native probe process snapshot unavailable: {error}")
             finally:
                 # Unix can retire the app's process group after leader exit.
                 # taskkill is best-effort once a Windows leader has exited; the

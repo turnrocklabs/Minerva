@@ -72,6 +72,10 @@ func close_session(session_id: String) -> void:
 	if session == null:
 		return
 	_sessions.erase(session_id)
+	if session.has_method("get_attached_view"):
+		var view = session.get_attached_view()
+		if view != null and view.has_method("detach_session"):
+			view.detach_session()
 	session.close()
 	session.queue_free()
 	session_closed.emit(session_id)

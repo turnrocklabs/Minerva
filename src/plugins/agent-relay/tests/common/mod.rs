@@ -336,8 +336,9 @@ fn write_receipt(args: &Value) -> Value {
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
     let bytes = text.len();
     match args.get("then_enter_after_ms").and_then(|v| v.as_u64()) {
-        None => json!({"bytes_sent": bytes}),
+        None => json!({"success": true, "bytes_sent": bytes}),
         Some(pause) => json!({
+            "success": true,
             "txn_id": 1,
             "phase": "body_written",
             "harness_check": "not_requested",

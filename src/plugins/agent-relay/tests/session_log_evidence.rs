@@ -1,11 +1,9 @@
 // session_log_evidence.rs — what a transcript larger than the prompt window
 // proves when that window does not hold the current prompt.
 //
-// The window is the last PROMPT_SCAN_BYTES of a file, so a prompt the harness
-// recorded can sit ahead of it. The file's last write is what separates the two
-// cases: a file written since the submit may have pushed the prompt out of the
-// window and is undecided, while one last written before the submit took no
-// record carrying that prompt at all and is ruled out whatever its size.
+// The fast window is the last PROMPT_SCAN_BYTES of a file. An active candidate
+// whose prompt may sit ahead of it is then read completely under the aggregate
+// fallback budget; only a complete valid snapshot can prove absence.
 //
 // The crate is a binary, so the module is pulled in by path, as the other test
 // files do.
@@ -92,7 +90,7 @@ fn past_the_window(timestamp: &str) -> String {
     })
     .to_string()
         + "\n";
-    let bytes = session_log::PROMPT_SCAN_BYTES as usize + 64 * 1024;
+    let bytes = 32 * 1024 * 1024;
     line.repeat(bytes / line.len() + 1)
 }
 
@@ -124,10 +122,8 @@ fn submitted_ms() -> i64 {
 // ---------------------------------------------------------------------------
 
 /// Both terminals received the prompt inside its window, and ours then wrote
-/// more than the window holds, which pushed that record out of it. Our log was
-/// written after the submit, so its window is no evidence against it: the
-/// search is refused with ours undecided, and the sibling — the one file whose
-/// window does hold the prompt — is never bound on its own.
+/// more than the fast window holds. The complete fallback finds the hidden
+/// prompt, so both candidates remain confirmed rather than one being selected.
 #[test]
 fn a_log_written_past_its_window_since_the_submit_stays_undecided() {
     let home = Home::new("outgrown");
@@ -143,18 +139,15 @@ fn a_log_written_past_its_window_since_the_submit_stays_undecided() {
         bind(&facts(), &home.roots()),
         Binding::Ambiguous {
             candidates: vec![ours.clone(), sibling],
-            undecided: vec![ours],
+            undecided: Vec::new(),
         },
-        "a window our own log outgrew since the submit decides nothing, and \
-         cannot make the sibling unique"
+        "a prompt hidden before the tail still prevents a sibling bind"
     );
 }
 
 /// The idle neighbouring tab: a transcript larger than the prompt window that
-/// never received the current prompt. Its last write precedes the submit, so no
-/// record carrying that prompt can be in it at all and it is ruled out on size
-/// alone being irrelevant. The same file written since the submit proves
-/// nothing, and the search is refused instead.
+/// never received the current prompt. A complete valid snapshot rules it out
+/// whether its last write is before or after the submit.
 #[test]
 fn an_idle_sibling_larger_than_the_window_is_ruled_out_by_its_last_write() {
     let home = Home::new("idle-sibling");
@@ -175,10 +168,77 @@ fn an_idle_sibling_larger_than_the_window_is_ruled_out_by_its_last_write() {
     set_mtime_ms(&sibling, submitted_ms() + 30_000);
     assert_eq!(
         bind(&facts(), &home.roots()),
+        Binding::Bound(ours),
+        "the complete active sibling snapshot proves the prompt absent"
+    );
+}
+
+#[test]
+fn malformed_and_over_budget_fallbacks_remain_undecided() {
+    let home = Home::new("fallback-guards");
+    let ours = home.claude_log("aaaa-ours", claude_user_line(TS, PROMPT).as_bytes());
+    let malformed = home.claude_log(
+        "bbbb-malformed",
+        format!(
+            "{}{{not-json}}\n{}",
+            claude_user_line(TS, "sibling prompt"),
+            past_the_window(TS)
+        )
+        .as_bytes(),
+    );
+    set_mtime_ms(&malformed, submitted_ms() + 30_000);
+    assert_eq!(
+        bind(&facts(), &home.roots()),
         Binding::Ambiguous {
-            candidates: vec![ours, sibling.clone()],
-            undecided: vec![sibling],
+            candidates: vec![ours.clone(), malformed.clone()],
+            undecided: vec![malformed],
         },
-        "written since the submit, the same file's window proves nothing"
+        "malformed full snapshots cannot prove prompt absence"
+    );
+
+    let dir = ours.parent().unwrap();
+    fs::remove_file(dir.join("bbbb-malformed.jsonl")).unwrap();
+    let over = dir.join("bbbb-over-budget.jsonl");
+    fs::write(&over, claude_user_line(TS, "sibling prompt")).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&over)
+        .unwrap()
+        .set_len(session_log::FULL_SCAN_BUDGET_BYTES + 1)
+        .unwrap();
+    assert_eq!(
+        bind(&facts(), &home.roots()),
+        Binding::Ambiguous {
+            candidates: vec![ours, over.clone()],
+            undecided: vec![over],
+        },
+        "the aggregate full-scan budget fails closed"
+    );
+}
+
+#[test]
+fn complete_fallback_budget_is_shared_across_candidates() {
+    let home = Home::new("aggregate-budget");
+    let ours = home.claude_log("aaaa-ours", claude_user_line(TS, PROMPT).as_bytes());
+    let dir = ours.parent().unwrap();
+    let first = dir.join("bbbb-first.jsonl");
+    fs::write(&first, claude_user_line(TS, "sibling prompt")).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&first)
+        .unwrap()
+        .set_len(40 * 1024 * 1024)
+        .unwrap();
+    let second = dir.join("cccc-second.jsonl");
+    fs::write(&second, past_the_window(TS)).unwrap();
+    let unresolved = vec![first, second];
+    assert_eq!(
+        bind(&facts(), &home.roots()),
+        Binding::Ambiguous {
+            candidates: vec![ours, unresolved[0].clone(), unresolved[1].clone()],
+            undecided: unresolved,
+        },
+        "the first 40 MiB attempt leaves too little budget to prove the valid \
+         32 MiB sibling lacks the prompt"
     );
 }

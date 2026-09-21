@@ -5690,6 +5690,12 @@ func _on_audio_stop_1_pressed() -> void:
 			_update_stop_button()
 			return
 
+		# Passthrough providers can interrupt their terminal operation while the
+		# same request keeps listening for its partial answer and completion.
+		if _try_interrupt_plugin_turn(history):
+			_update_stop_button()
+			return
+
 		# Track this history as cancelled so agentic loops can check
 		SingletonObject.cancelled_history_ids.append(history.HistoryId)
 
@@ -5735,6 +5741,17 @@ func _on_audio_stop_1_pressed() -> void:
 		_update_stop_button()
 	else:
 		_update_stop_button()
+
+
+func _try_interrupt_plugin_turn(history: ChatHistory) -> bool:
+	if history.provider == null \
+			or not history.provider.has_method("supports_in_place_interrupt") \
+			or not history.provider.supports_in_place_interrupt():
+		return false
+	if not history.provider.interrupt_active_request():
+		return false
+	_clear_outgoing_queue(history)
+	return true
 
 
 func clone_chat(tab_idx: int) -> void:

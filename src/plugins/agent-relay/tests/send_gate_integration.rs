@@ -2164,6 +2164,70 @@ fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
         "a plain prompt's Enter rides on its write too: {args:?}");
 }
 
+#[test]
+fn passthrough_interrupt_writes_one_guarded_escape_and_returns_partial_answer() {
+    let mut host = FakeHost::start();
+    let terminal = "t-interrupt-owned-turn";
+    let busy = "\u{276f} prompt\n\u{2736} Pondering… (3s · esc to interrupt)\n";
+    host.screen = Box::new(move |v| {
+        if v.writes.is_empty() || v.writes.iter().any(|text| text == "\u{1b}") {
+            (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64 * 20)
+        } else {
+            (busy.to_string(), 120)
+        }
+    });
+    host.wait = Box::new(|v| {
+        if v.writes.iter().any(|text| text == "\u{1b}") {
+            settled("\u{276f} prompt\n\u{25cf} partial answer\n\n\u{276f}\u{a0}\n? for shortcuts\n", 140)
+        } else if !v.writes.is_empty() {
+            settled("\u{276f} prompt\n\u{2736} Pondering… (3s · esc to interrupt)\n", 120)
+        } else {
+            quiet()
+        }
+    });
+    host.turn = Box::new(|_| "partial answer\n".to_string());
+    host.watch_start(terminal, "claude");
+
+    let token = "interrupt-token-one";
+    let generate = host.call_tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "chat-interrupt", "terminal_id": terminal,
+               "operation_token": token, "text": "long request"}),
+    );
+    host.pump_while(&[generate], |v| v.write_args.is_empty());
+    assert_eq!(host.view().write_args.len(), 1, "prompt must own the turn before Stop");
+
+    let first = host.tool(
+        "minerva_agent_relay_passthrough_interrupt",
+        json!({"chat_id": "chat-interrupt", "operation_token": token}),
+    );
+    let duplicate = host.tool(
+        "minerva_agent_relay_passthrough_interrupt",
+        json!({"chat_id": "chat-interrupt", "operation_token": token}),
+    );
+    assert_eq!(first["accepted"], true, "{first}");
+    assert_eq!(duplicate["accepted"], false, "{duplicate}");
+
+    let reply = common::unwrap_tool(&host.await_reply(generate));
+    assert_eq!(reply["kind"], "answer", "{reply}");
+    assert!(reply["text"].as_str().unwrap_or("").contains("partial answer"), "{reply}");
+    assert!(reply["text"].as_str().unwrap_or("").contains("[Interrupted]"), "{reply}");
+    let writes = host.view().write_args;
+    let escapes: Vec<&Value> = writes.iter()
+        .filter(|args| args["text"] == json!("\u{1b}"))
+        .collect();
+    assert_eq!(escapes.len(), 1, "duplicate Stop must not emit a second ESC: {writes:?}");
+    assert_eq!(escapes[0]["raw"], true, "{escapes:?}");
+    assert_eq!(escapes[0]["expect_harness"], "claude", "{escapes:?}");
+
+    let stale = host.tool(
+        "minerva_agent_relay_passthrough_interrupt",
+        json!({"chat_id": "chat-interrupt", "operation_token": token}),
+    );
+    assert_eq!(stale["accepted"], false, "{stale}");
+    assert_eq!(host.view().write_args.len(), writes.len(), "stale token wrote to a later turn");
+}
+
 // ── 20. Only a Submit asks the host to send the Enter ──────────────────────
 
 /// Oracle: a message submit needs its body to SETTLE before the CR (a TUI

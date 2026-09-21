@@ -11,11 +11,11 @@ extends SceneTree
 ##   4. Two attach/detach cycles → no lost output, no leaked nodes.
 ##
 ## The Terminal GDExtension (forkpty) works headless — same as
-## test_host_capability_terminal_io.gd. If the extension is unavailable the
-## live tests SKIP cleanly.
+## test_host_capability_terminal_io.gd. It is required for this CI regression.
 
 const REGISTRY_SCRIPT := "res://Scripts/Services/Terminal/TerminalSessionRegistry.gd"
 const TERMINAL_SCENE := "res://Scenes/Terminal.tscn"
+const NOTE_SCRIPT := "res://Scripts/UI/Controls/Note.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -58,7 +58,7 @@ func _run() -> void:
 	await process_frame
 
 	if not ClassDB.class_exists("Terminal"):
-		print("  SKIP: Terminal GDExtension not available — live PTY tests skipped")
+		check("Terminal GDExtension is available for lifecycle coverage", false)
 		return
 
 	var RegistryClass = load(REGISTRY_SCRIPT)
@@ -74,7 +74,7 @@ func _run() -> void:
 	check("get_session round-trips", registry.get_session(session.terminal_id) == session)
 
 	if not session.terminal_available:
-		print("  SKIP: terminal extension instantiated but forkpty unavailable")
+		check("Terminal PTY starts for lifecycle coverage", false)
 		registry.queue_free()
 		return
 
@@ -106,6 +106,41 @@ func _run() -> void:
 
 	check("AC2: view reports terminal_available", view._terminal_available)
 	check("AC2: view.terminal is session's node", view.terminal == session.terminal)
+	check("AC2: session records its attached view", session.get_attached_view() == view)
+	view._start_new_block(0, 0)
+	view._start_new_block(2, 2)
+	check("AC2: prompt markers created real block controls",
+		view._blocks.size() == 2 and view._check_buttons_container.get_child_count() == 4)
+	var so = root.get_node_or_null("SingletonObject")
+	var NoteScript = load(NOTE_SCRIPT)
+	var proxy = NoteScript.Proxy.new(func(): return null)
+	view._blocks[0].checked = true
+	view._blocks[0].proxy = proxy
+	so.detached_note_proxies.append(proxy)
+	check("AC2: checked block proxy entered detached injection state",
+		proxy in so.detached_note_proxies)
+	session.terminal.emit_signal("seq_erase_entire_screen")
+	await process_frame
+	check("AC2: native 2J retires block state, controls, and injection proxies",
+		view._blocks.is_empty() and view._check_buttons_container.get_child_count() == 0
+		and proxy not in so.detached_note_proxies)
+	view._start_new_block(0, 0)
+	session.terminal.emit_signal("seq_erase_saved_lines")
+	await process_frame
+	check("AC2: native 3J also retires block state and controls",
+		view._blocks.is_empty() and view._check_buttons_container.get_child_count() == 0)
+	# Split-layout rebuilds temporarily remove groups (and their views) from the
+	# tree. Ownership must remain visible while the view is detached from it.
+	root.remove_child(view)
+	var duplicate = load(TERMINAL_SCENE).instantiate()
+	duplicate._auto_create_session = false
+	root.add_child(duplicate)
+	await process_frame
+	duplicate.attach_session(session)
+	check("AC2: a second real view cannot adopt during layout reparenting",
+		duplicate.get_session() == null and session.get_attached_view() == view)
+	duplicate.queue_free()
+	root.add_child(view)
 	# The view extracts text from the SAME session scrollback.
 	var view_text := ""
 	var info: Dictionary = session.get_scroll_info()
@@ -118,12 +153,34 @@ func _run() -> void:
 	# ── AC3: detach + free the view → session survives, round-trip works ──
 	view.detach_session()
 	check("AC3: view detached (no session)", view.get_session() == null)
+	check("AC3: detach releases authoritative view ownership", session.get_attached_view() == null)
 	view.queue_free()
 	await process_frame
 	await process_frame
 
 	check("AC3: session still alive after view freed", session.is_alive())
 	check("AC3: session still in registry", registry.has_session(session.terminal_id))
+
+	# Freeing a view without an explicit detach must not permanently reserve the
+	# session; the weak claim expires with the view.
+	var abandoned = load(TERMINAL_SCENE).instantiate()
+	abandoned._auto_create_session = false
+	root.add_child(abandoned)
+	await process_frame
+	abandoned.attach_session(session)
+	abandoned._start_new_block(0, 0)
+	var abandoned_proxy = NoteScript.Proxy.new(func(): return null)
+	abandoned._blocks[0].checked = true
+	abandoned._blocks[0].proxy = abandoned_proxy
+	so.detached_note_proxies.append(abandoned_proxy)
+	check("AC3: abandoned view proxy entered detached injection state",
+		abandoned_proxy in so.detached_note_proxies)
+	abandoned.queue_free()
+	await process_frame
+	await process_frame
+	check("AC3: freeing a view releases its ownership claim and checked proxy",
+		session.get_attached_view() == null
+		and abandoned_proxy not in so.detached_note_proxies)
 
 	session.write_input("echo after_detach\r")
 	var out2: String = await _wait_for_marker(session, "after_detach")
@@ -164,8 +221,15 @@ func _run() -> void:
 		"viewport=%s" % out3)
 
 	# ── Cleanup + leak check ─────────────────────────────────────────────
+	var closing_view = load(TERMINAL_SCENE).instantiate()
+	closing_view._auto_create_session = false
+	root.add_child(closing_view)
+	await process_frame
+	closing_view.attach_session(session)
 	registry.close_session(session.terminal_id)
 	check("close_session drops from registry", not registry.has_session(session.terminal_id))
+	check("close_session detaches its live view", closing_view.get_session() == null)
+	closing_view.queue_free()
 	await process_frame
 	await process_frame
 	registry.queue_free()

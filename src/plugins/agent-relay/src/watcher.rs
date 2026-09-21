@@ -296,11 +296,21 @@ pub fn wait_for_turn_from(
     baseline: u64,
     timeout_ms: u64,
 ) -> (Option<serde_json::Value>, bool) {
+	wait_for_turn_from_poll(terminal_id, baseline, timeout_ms, || {})
+}
+
+pub fn wait_for_turn_from_poll(
+    terminal_id: &str,
+    baseline: u64,
+    timeout_ms: u64,
+    mut poll: impl FnMut(),
+) -> (Option<serde_json::Value>, bool) {
     let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
     loop {
         if detection_serial(terminal_id) > baseline {
             return (last_event_payload(terminal_id), false);
         }
+        poll();
         if Instant::now() >= deadline {
             return (None, true);
         }
@@ -609,6 +619,7 @@ pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
         "hold_reason": hold_reason,
         "send_waiters": send_waiters,
         "send_in_flight": send_in_flight,
+        "last_backfill": s.log_binding.diagnostic(),
     }))
 }
 
@@ -638,6 +649,8 @@ fn register_chat_provider(terminal_id: &str, profile_id: &str, router: &Arc<Rout
         "entry_id": chat_provider_entry_id(terminal_id),
         "display_name": format!("terminal {terminal_id} ({profile_id})"),
         "generate_tool": "minerva_agent_relay_passthrough_generate",
+        "cancel_tool": "minerva_agent_relay_passthrough_interrupt",
+        "metadata": {"interrupt_in_place": true},
         "history_mode": "newest_only",
         "timeout_sec": 600,
     });
@@ -736,7 +749,7 @@ fn watch_loop(
                 log::info!("watch_loop: stop flag set for {terminal_id}, exiting");
                 break;
             }
-            !s.armed && s.reap_anchor.elapsed() > watch_timeout
+            idle_reap_due(&terminal_id, &s, watch_timeout)
         };
 
         if reap_due {
@@ -942,6 +955,12 @@ fn watch_loop(
     log::info!("watch_loop: cleaned up {terminal_id} (owned={owns_cleanup})");
 }
 
+fn idle_reap_due(terminal_id: &str, session: &WatchSession, timeout: std::time::Duration) -> bool {
+    !session.armed
+        && !crate::passthrough_terminal_is_bound(terminal_id)
+        && session.reap_anchor.elapsed() > timeout
+}
+
 /// Conditionally emit a turn_completed event based on notify_mode and arm state.
 /// Also updates the session's last_* fields and turn-boundary rows.
 ///
@@ -1074,6 +1093,35 @@ fn epoch_to_datetime(epoch: u64) -> (u32, u32, u32, u32, u32, u32) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn idle_reap_keeps_chat_owned_watch_until_explicit_stop() {
+        let _g = setup();
+        let terminal = "t-chat-owned";
+        let timeout = std::time::Duration::from_millis(10);
+        let mut session = WatchSession::new(
+            terminal.to_string(),
+            "claude".to_string(),
+            NotifyMode::AllTurns,
+        );
+        session.reap_anchor = Instant::now() - std::time::Duration::from_millis(11);
+        let session = Arc::new(Mutex::new(session));
+        get_sessions()
+            .lock()
+            .unwrap()
+            .insert(terminal.to_string(), session.clone());
+        crate::with_passthrough(|s| {
+            s.bindings.insert("chat-owned".to_string(), terminal.to_string());
+        });
+
+        assert!(!idle_reap_due(terminal, &session.lock().unwrap(), timeout));
+        assert!(watch_stop(terminal), "explicit stop still stops a bound watch");
+        crate::clear_passthrough_terminal_bindings(terminal);
+        assert!(!crate::passthrough_terminal_is_bound(terminal));
+
+        session.lock().unwrap().stop = false;
+        assert!(idle_reap_due(terminal, &session.lock().unwrap(), timeout));
+    }
+
     // Returns the global profiles guard: init_profiles() resets a process-global
     // store that profiles/state tests mutate-and-assert on — callers must HOLD
     // the guard for the test body (`let _g = setup();`), not discard it.
@@ -1082,6 +1130,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         crate::profiles::init_profiles();
+        crate::init_filter_rules();
         init_sessions();
         g
     }
@@ -1349,4 +1398,3 @@ mod tests {
         assert_eq!(&ts[10..11], "T", "date-time separator: {ts}");
     }
 }
-
