@@ -12,8 +12,8 @@ extends RefCounted
 ##   2. Locate the typed panel dict from PluginDefinition.ui_panels (typed entries).
 ##   3. Validate panel kind == "godot_scene" and required fields present.
 ##   4. _resolve_plugin_relative_path: canonicalise + escape check.
-##   5. Preload each script with ResourceLoader (CACHE_MODE_IGNORE).
-##   6. Load .tscn with ResourceLoader (CACHE_MODE_IGNORE).
+##   5. Validate each declared script with ResourceLoader (CACHE_MODE_IGNORE_DEEP).
+##   6. Load .tscn with ResourceLoader (CACHE_MODE_IGNORE_DEEP).
 ##   7. _audit_packed_scene: walk internal resource table, reject unlisted scripts.
 ##   8. Instantiate; root must be a Control.
 ##   9. add_child + layout anchors.
@@ -28,6 +28,9 @@ extends RefCounted
 ## ipc_channels) is added by the manifest-parsing task.  Until that lands,
 ## instantiate_into returns a placeholder with reason "manifest_panel_defs_missing".
 ## Tests exercise this path explicitly.
+
+## Normalized absolute script path -> source digest first admitted this process.
+static var _loaded_script_digests: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +78,10 @@ static func instantiate_into(
 	if def == null:
 		return _mount_placeholder(vbox,
 			"[PluginScenePanelHost] Plugin '%s' not found in DB" % plugin_id)
+	if plugin_manager.has_method("get_restart_required_reason"):
+		var restart_reason: String = plugin_manager.get_restart_required_reason(plugin_id)
+		if not restart_reason.is_empty():
+			return _mount_placeholder(vbox, "[PluginScenePanelHost] %s" % restart_reason)
 
 	var data_dir: String = def.data_directory
 	if data_dir.is_empty():
@@ -121,8 +128,7 @@ static func instantiate_into(
 			entry_scene_rel)
 
 	# -----------------------------------------------------------------------
-	# Step 5: Preload each whitelisted script (CACHE_MODE_IGNORE).
-	# Validates that every declared script is loadable before we touch the .tscn.
+	# Step 5: Preflight every path and cached source before loading any script.
 	# -----------------------------------------------------------------------
 	var script_abs_paths: Array[String] = []
 	for rel in declared_scripts:
@@ -137,21 +143,35 @@ static func instantiate_into(
 		if not FileAccess.file_exists(abs_path):
 			return _mount_placeholder(vbox,
 				("[PluginScenePanelHost] Whitelisted script not found: '%s'") % abs_path)
-		var script_res = ResourceLoader.load(abs_path, "GDScript", ResourceLoader.CACHE_MODE_IGNORE)
+		if _cached_script_differs_from_disk(abs_path):
+			return _mount_placeholder(vbox,
+				(("[PluginScenePanelHost] Plugin code changed while Minerva was running: " +
+					"'%s'. Restart Minerva before opening this panel.") % abs_path))
+		if _script_generation_changed(abs_path):
+			return _mount_placeholder(vbox,
+				"[PluginScenePanelHost] Plugin code changed. Restart Minerva before opening this panel.")
+
+	# Record the complete generation before the first ResourceLoader call.
+	for abs_path in script_abs_paths:
+		_record_script_generation(abs_path)
+
+	for abs_path in script_abs_paths:
+		var script_res: Script = _load_valid_script(abs_path)
 		if script_res == null:
 			return _mount_placeholder(vbox,
-				("[PluginScenePanelHost] Failed to load whitelisted script: '%s'") % abs_path)
+				(("[PluginScenePanelHost] Whitelisted script failed to load or compile: '%s'. " +
+				"Restart Minerva if this plugin was updated while the app was running.") % abs_path))
 
 	# -----------------------------------------------------------------------
-	# Step 6: Load .tscn (CACHE_MODE_IGNORE — required for hot-reload safety
-	# and to prevent cached plugin-local scripts from leaking across reloads).
+	# Step 6: Load the scene after stale-source preflight. IGNORE_DEEP applies
+	# to ResourceLoader dependencies but does not clear GDScript's path cache.
 	# -----------------------------------------------------------------------
 	if not FileAccess.file_exists(entry_scene_abs):
 		return _mount_placeholder(vbox,
 			"[PluginScenePanelHost] entry_scene not found: '%s'" % entry_scene_abs)
 
 	var packed: PackedScene = ResourceLoader.load(
-		entry_scene_abs, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE)
+		entry_scene_abs, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE_DEEP)
 	if packed == null:
 		return _mount_placeholder(vbox,
 			"[PluginScenePanelHost] Failed to load PackedScene: '%s'" % entry_scene_abs)
@@ -182,6 +202,7 @@ static func instantiate_into(
 			[type_name, entry_scene_rel])
 
 	var root_ctrl: Control = root as Control
+	root_ctrl.set_meta("_minerva_plugin_panel_load_ok", true)
 
 	# -----------------------------------------------------------------------
 	# Step 9: Mount into vbox with full-rect sizing.
@@ -228,6 +249,55 @@ static func instantiate_into(
 			, CONNECT_ONE_SHOT)
 
 	return root_ctrl
+
+
+## Reject an on-disk generation that differs from Godot's process-wide
+## GDScript cache before asking ResourceLoader to resolve any dependencies.
+static func _cached_script_differs_from_disk(path: String) -> bool:
+	if not ResourceLoader.has_cached(path):
+		return false
+	var cached: Resource = ResourceLoader.get_cached_ref(path)
+	if not cached is GDScript:
+		return false
+	return (cached as GDScript).source_code != FileAccess.get_file_as_string(path)
+
+
+static func has_loaded_scripts_in_directory(directory: String) -> bool:
+	var prefix := _normalized_script_path(directory)
+	if not prefix.ends_with("/"):
+		prefix += "/"
+	for path in _loaded_script_digests:
+		if str(path).begins_with(prefix):
+			return true
+	return false
+
+
+static func _normalized_script_path(path: String) -> String:
+	return ProjectSettings.globalize_path(path).simplify_path()
+
+
+static func _script_generation_changed(path: String) -> bool:
+	var key := _normalized_script_path(path)
+	return _loaded_script_digests.has(key) \
+		and _loaded_script_digests[key] != FileAccess.get_file_as_string(path).sha256_text()
+
+
+static func _record_script_generation(path: String) -> void:
+	_loaded_script_digests[_normalized_script_path(path)] = \
+		FileAccess.get_file_as_string(path).sha256_text()
+
+
+## Load one declared script and reject the non-null GDScript objects Godot
+## returns after a compile failure. IGNORE_DEEP refreshes ResourceLoader
+## dependencies, but does not bypass GDScript's own path cache.
+## Kept public for focused loader regression tests.
+static func _load_valid_script(path: String) -> Script:
+	var resource: Resource = ResourceLoader.load(
+		path, "GDScript", ResourceLoader.CACHE_MODE_IGNORE_DEEP)
+	if resource == null or not resource is Script:
+		return null
+	var script := resource as Script
+	return script if script.can_instantiate() else null
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +643,12 @@ static func _audit_packed_scene(
 			var value: Variant = state.get_node_property_value(node_idx, prop_idx)
 			# Scripts show up as Script (GDScript, CSharpScript, etc.) resources.
 			if value is Script:
+				if not (value as Script).can_instantiate():
+					push_warning(
+						("[PluginScenePanelHost] _audit_packed_scene: script '%s' failed " +
+						"to compile — rejecting scene") % (value as Script).resource_path
+					)
+					return false
 				var script_path: String = (value as Script).resource_path
 				if script_path.is_empty():
 					# Anonymous/inline script (e.g. tool scripts in editor-only
@@ -631,6 +707,7 @@ static func _audit_packed_scene(
 ## one step.
 static func _build_placeholder(message: String, retry_callback = null) -> Control:
 	var root := VBoxContainer.new()
+	root.set_meta("_minerva_plugin_panel_load_ok", false)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.size_flags_vertical   = Control.SIZE_EXPAND_FILL

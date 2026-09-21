@@ -236,6 +236,12 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		return _err("reserved_id", {"id": raw_id})
 
 	var plugin_id: String = manifest["id"]
+	if installer != null and installer.has_method("can_replace_plugin_files"):
+		var replace_check: Dictionary = installer.can_replace_plugin_files(plugin_id)
+		if replace_check.has("error"):
+			_rm_file(staging_file)
+			_rm_dir_recursive(extract_dir)
+			return _err("restart_required", replace_check)
 
 	# --- 5. Move to canonical user://plugins/<id>/ ---
 	var final_dir := "%s/%s" % [PLUGINS_DIR, plugin_id]
@@ -283,7 +289,15 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 	var lane: String = LaneCls.LANE_MARKETPLACE
 
 	if installer.has_method("install_plugin"):
-		var pm_result: Dictionary = await installer.install_plugin(final_manifest, auto_confirm_skills, lane)
+		var pm_result: Dictionary
+		var manager_db = installer.get_db() if installer.has_method("get_db") else null
+		if manager_db != null and manager_db.has_plugin(plugin_id) \
+				and installer.has_method("update_plugin"):
+			pm_result = await installer.update_plugin(
+				final_manifest, auto_confirm_skills, lane)
+		else:
+			pm_result = await installer.install_plugin(
+				final_manifest, auto_confirm_skills, lane)
 		if pm_result.has("error"):
 			return _err("manager_install_failed", pm_result)
 		return {

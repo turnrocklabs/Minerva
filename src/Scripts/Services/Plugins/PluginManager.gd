@@ -67,6 +67,8 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
 signal plugin_file_changed(id: String)
+## Emitted when live GDScript instances make an in-process update unsafe.
+signal plugin_restart_required(id: String, reason: String)
 
 ## Setup-pipeline progress (DCR 019f69428fa0 round R3-UI, G4.1/G4.2). Re-emitted,
 ## with `id` correlated (SetupPipeline's own signals don't carry it), whenever
@@ -129,6 +131,12 @@ var _pending_changed_paths: Dictionary = {}
 ## Populated when a PLUGIN_SCENE editor is opened; cleaned on close / stop.
 ## NOTE: Only PluginManager.gd writes to this; callers use the public API below.
 var _live_scene_panels: Dictionary = {}
+
+## plugin_id -> user-facing reason. GDScript's internal cache is path based;
+## loading a second generation while old instances live can combine member
+## layouts from different generations. Keep the old panels intact and expose
+## an explicit restart requirement instead of mutating cached scripts in place.
+var _restart_required: Dictionary = {}
 
 ## Runtime registry of plugin-supplied chat-provider entries (chat-passthrough
 ## W1). Held here (not on SingletonObject) so its lifecycle is bound to the
@@ -482,7 +490,8 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 ## Returns:
 ##   {"ok": true, "id": "...", "reconcile": {...counts...}, ...}
 ##   {"error": "..."}
-func update_plugin(manifest_path: String, auto_confirm_updates: bool = false) -> Dictionary:
+func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
+		lane: String = PluginDefinition.LANE_MANIFEST) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
 	var def = PluginDef.from_manifest(manifest_path)
 	if def == null:
@@ -491,6 +500,10 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false) ->
 		return {"error": "Plugin '%s' is managed by Minerva" % def.id}
 	if not _db.has_plugin(def.id):
 		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
+	var previous_def = _db.get_by_id(def.id)
+	def.autostart = previous_def.autostart
+	def.auto_reload = previous_def.auto_reload
+	def.install_lane = lane
 
 	if not _db.update_definition(def):
 		return {"error": "Failed to update plugin definition for '%s'" % def.id}
@@ -1306,6 +1319,8 @@ func get_plugin_status(id: String) -> Dictionary:
 		"uptime_sec": uptime,
 		"crash_count": rt.get("crash_count", 0),
 		"running": def.state == S_RUNNING,
+		"restart_required": not get_restart_required_reason(id).is_empty(),
+		"restart_required_reason": get_restart_required_reason(id),
 	}
 
 
@@ -1526,9 +1541,9 @@ func _run_file_watch_checks() -> void:
 ## Called when the debounce timer fires for a plugin with auto_reload enabled.
 ## Implements the hot-reload decision tree (design §9.2):
 ##   .py/.js/.sh/.json → plugin stop + start (unchanged)
-##   .gd → in-place GDScript.reload() if live panels exist; fallback stop+start
-##   .tscn → in-place re-instantiate for each live panel using that scene
-##   multiple extensions changed → union; tscn always in-place
+##   .gd/.tscn affecting cached scene code → keep the loaded generation and
+##   require an application restart
+##   .py/.js/.sh/.json → restart the plugin process after recording that boundary
 func _on_reload_debounce_expired(id: String) -> void:
 	_reload_pending.erase(id)
 	# Host-owned plugins are replaced by a Minerva build, never hot-reloaded.
@@ -1561,137 +1576,98 @@ func _on_reload_debounce_expired(id: String) -> void:
 			"tscn":
 				tscn_paths.append(path)
 
-	# If any process-layer file changed, fall back immediately to stop+start.
+	var scene_restart_required := false
+	if not gd_paths.is_empty():
+		scene_restart_required = _hot_reload_gd(id, gd_paths)
+
 	if has_process_ext:
 		print("[PluginManager] Auto-reloading plugin '%s' (process file change)" % id)
 		await restart_plugin(id)
+
+	if scene_restart_required:
 		return
-
-	# Handle .gd changes.
-	if not gd_paths.is_empty():
-		# _hot_reload_gd is synchronous (no internal awaits) — don't `await` it.
-		var gd_ok := _hot_reload_gd(id, gd_paths)
-		if not gd_ok:
-			# Fallback: full stop+start.
-			print(("[PluginManager] hot_reload_gd_failed for '%s' — falling back to " +
-				"stop+start") % id)
-			await restart_plugin(id)
-			return
-
-	# Handle .tscn changes (always in-place, even if .gd was also changed).
 	for tscn_path in tscn_paths:
-		# _hot_reload_tscn is synchronous — don't `await` it.
 		_hot_reload_tscn(id, tscn_path)
 
 
-## Attempt in-place GDScript reload for all changed .gd paths belonging to plugin `id`.
-## Returns true if all reloads succeeded and _on_hot_reload() was dispatched.
-## Returns false if any reload failed (caller should fall back to stop+start).
+## Return true when a cached or live GDScript generation requires app restart.
 func _hot_reload_gd(id: String, gd_paths: Array[String]) -> bool:
-	# Check if there are any live scene panels for this plugin.
 	var live_panels: Array = _live_scene_panels.get(id, [])
-
-	if live_panels.is_empty():
-		# No live panels — stop+start is safe and simpler.
-		print(("[PluginManager] hot_reload_gd: plugin '%s' has no live panels, " +
-			"using stop+start") % id)
+	var has_cached_script := false
+	for path in gd_paths:
+		if ResourceLoader.has_cached(path):
+			has_cached_script = true
+			break
+	if live_panels.is_empty() and not has_cached_script:
 		return false
 
-	# Attempt GDScript.reload() for every changed .gd file.
-	# We iterate ResourceLoader's cache by scanning live panels' scripts.
-	# The safest approach: reload every GDScript loaded by the plugin.
-	var all_ok := true
-	for gd_path in gd_paths:
-		# ResourceLoader.has_cached() tells us if the resource is in cache.
-		if ResourceLoader.has_cached(gd_path):
-			var script = ResourceLoader.load(gd_path, "GDScript", ResourceLoader.CACHE_MODE_REUSE)
-			if script is GDScript:
-				var reload_err: int = (script as GDScript).reload(true)
-				if reload_err != OK:
-					push_warning(("[PluginManager] GDScript.reload() failed for '%s' " +
-						"(error %d)") % [gd_path, reload_err])
-					all_ok = false
-			# If it loaded but isn't GDScript (shouldn't happen for .gd), treat as failure.
-			elif script == null:
-				push_warning("[PluginManager] Could not load script for reload: '%s'" % gd_path)
-				all_ok = false
-		# If not cached, we can't reload it in-place — but it wasn't running either,
-		# so this is not a failure for the hot-reload path.
-
-	if not all_ok:
-		return false
-
-	# All reloads succeeded — notify each live panel.
-	for entry in live_panels:
-		var root: Control = entry.get("root", null)
-		if root != null and is_instance_valid(root):
-			if root.has_method("_on_hot_reload"):
-				root._on_hot_reload()
-
-	print("[PluginManager] hot_reload_gd_ok for plugin '%s'" % id)
+	var reason := (
+		"Plugin '%s' changed GDScript after scene code was loaded. " +
+		"Restart Minerva to load the update safely."
+	) % id
+	_restart_required[id] = reason
+	push_warning("[PluginManager] %s Changed files: %s" % [reason, ", ".join(gd_paths)])
+	_surface_restart_required(id, reason)
 	return true
 
 
-## Perform in-place .tscn re-instantiate for any live panel whose entry_scene
-## path matches `tscn_path`.
+func get_restart_required_reason(id: String) -> String:
+	return str(_restart_required.get(id, ""))
+
+
+## Defer a changed live scene to the next application start.
 func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 	var live_panels: Array = _live_scene_panels.get(id, [])
 	if live_panels.is_empty():
-		# No live instance — next open picks up the new version automatically
-		# (PluginScenePanelHost always uses CACHE_MODE_IGNORE).
 		return
+	# Replacing a live scene also replaces its broker registration and attached
+	# document buffer. Defer the whole scene generation to the next app start.
+	_mark_restart_required(id, tscn_path.get_file())
 
-	# Get the broker for unregistration.
-	var broker: PluginScenePanelBroker = _get_scene_panel_broker()
 
-	# Work on a copy because we may modify the array during iteration.
-	var panels_copy: Array = live_panels.duplicate()
-	for entry in panels_copy:
-		var entry_tscn: String = entry.get("tscn_path", "")
-		if entry_tscn != tscn_path:
+func _mark_restart_required(id: String, subject: String) -> void:
+	var reason := (
+		"Plugin '%s' changed '%s' while its scene code was loaded. " +
+		"Restart Minerva to load the update safely."
+	) % [id, subject]
+	_restart_required[id] = reason
+	push_warning("[PluginManager] %s" % reason)
+	_surface_restart_required(id, reason)
+
+
+func _surface_restart_required(id: String, reason: String) -> void:
+	plugin_restart_required.emit(id, reason)
+	if SingletonObject and SingletonObject.has_method("create_toast_notification"):
+		SingletonObject.call("create_toast_notification", reason, 1, false)
+
+
+## Marketplace calls this before replacing an installed directory.
+func can_replace_plugin_files(id: String) -> Dictionary:
+	var def = _db.get_by_id(id)
+	if def == null:
+		return {"ok": true}
+	if not _live_scene_panels.get(id, []).is_empty():
+		var live_reason := "Restart Minerva before updating plugin '%s'; its scene is open." % id
+		_restart_required[id] = live_reason
+		_surface_restart_required(id, live_reason)
+		return {"error": "restart_required", "message": live_reason}
+	if PluginScenePanelHost.has_loaded_scripts_in_directory(def.data_directory):
+		var loaded_reason := "Restart Minerva before updating plugin '%s'; its scene code was loaded." % id
+		_restart_required[id] = loaded_reason
+		_surface_restart_required(id, loaded_reason)
+		return {"error": "restart_required", "message": loaded_reason}
+	var prefix: String = str(def.data_directory).simplify_path() + "/"
+	for panel in def.ui_panels:
+		if not panel is Dictionary:
 			continue
-
-		var panel_name: String = entry.get("panel_name", "")
-		var panel_key: String = str(entry.get("panel_key", panel_name))
-		var vbox: Control = entry.get("vbox", null)
-		var old_root: Control = entry.get("root", null)
-		var editor = entry.get("editor", null)
-
-		# Step 1: Call _on_panel_unload() on the old root if it exists.
-		if old_root != null and is_instance_valid(old_root):
-			if old_root.has_method("_on_panel_unload"):
-				old_root._on_panel_unload()
-
-		# Step 2: Unregister old panel from broker.
-		if broker != null:
-			broker.unregister_panel(id, panel_key)
-
-		# Step 3: Free the old scene.
-		if old_root != null and is_instance_valid(old_root):
-			old_root.queue_free()
-
-		# Step 4: Re-run §3 scene loading flow in the same Editor wrapper.
-		# PluginScenePanelHost.instantiate_into mounts the new instance into vbox
-		# and fires _on_panel_loaded(ctx) itself.
-		if vbox != null and is_instance_valid(vbox):
-			var new_root: Control = PluginScenePanelHost.instantiate_into(
-				vbox, id, panel_name, editor, panel_key)
-			# Update registry entry with new root.
-			entry["root"] = new_root
-			# Rebind the owning Editor to the fresh surface: the platform
-			# annotation dock/overlay can live INSIDE the old (now freed) root
-			# when the panel owns dock placement (get_annotation_dock_parent),
-			# so the editor must remount them on the new instance.
-			if editor != null and is_instance_valid(editor) \
-					and editor.has_method("remount_plugin_surface"):
-				editor.remount_plugin_surface(new_root)
-			print(("[PluginManager] hot_reload_tscn_ok: re-instantiated panel '%s' " +
-				"for plugin '%s'") % [panel_name, id])
-		else:
-			push_warning(("[PluginManager] hot_reload_tscn: vbox for panel '%s' plugin '%s' " +
-				"is no longer valid — cannot re-instantiate") % [panel_name, id])
-			# Remove dead entry from registry.
-			_live_scene_panels[id].erase(entry)
+		for rel in (panel as Dictionary).get("scripts", []):
+			var path := (prefix + str(rel)).simplify_path()
+			if ResourceLoader.has_cached(path):
+				var reason := "Restart Minerva before updating plugin '%s'; its scene code is loaded." % id
+				_restart_required[id] = reason
+				_surface_restart_required(id, reason)
+				return {"error": "restart_required", "message": reason}
+	return {"ok": true}
 
 
 # ---------------------------------------------------------------------------

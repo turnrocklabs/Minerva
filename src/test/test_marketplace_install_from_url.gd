@@ -38,8 +38,10 @@ func _run() -> void:
 		return
 
 	await _test_happy_path()
+	await _test_manager_reinstall_routes_to_update_and_preserves_preferences()
 	await _test_404()
 	await _test_bad_sha()
+	await _test_cached_plugin_update_refused_before_overwrite()
 	await _test_reinstall_with_hidden_files()
 	await _test_reinstall_symlink_not_followed()
 	await _test_reserved_id_rejected()
@@ -193,6 +195,27 @@ func _setup() -> bool:
 # Tests
 # ---------------------------------------------------------------------------
 
+class RestartBoundaryInstaller extends RefCounted:
+	func can_replace_plugin_files(_id: String) -> Dictionary:
+		return {"error": "restart_required", "message": "Restart Minerva"}
+
+
+func _test_cached_plugin_update_refused_before_overwrite() -> void:
+	var url := "http://127.0.0.1:%d/test_good.tar.gz" % PORT
+	var plugin_dir := "user://plugins/test_marketplace_plugin"
+	var sentinel := "%s/existing.txt" % plugin_dir
+	_mkdir(ProjectSettings.globalize_path(plugin_dir))
+	_write_file(ProjectSettings.globalize_path(sentinel), "old generation")
+	var result = await _make_client().install_from_url(url, RestartBoundaryInstaller.new())
+	if result.get("error") == "restart_required" \
+			and FileAccess.get_file_as_string(sentinel) == "old generation":
+		print("PASS: cached update refused before installed files are overwritten")
+		_pass += 1
+	else:
+		print("FAIL: cached update guard result=%s" % JSON.stringify(result))
+		_fail += 1
+	_rm_dir_recursive(plugin_dir)
+
 func _test_happy_path() -> void:
 	var url := "http://127.0.0.1:%d/test_good.tar.gz" % PORT
 	var client = _make_client()
@@ -225,6 +248,56 @@ func _test_happy_path() -> void:
 	# Clean up so subsequent tests don't see the stale install.
 	db.remove("test_marketplace_plugin")
 	_rm_dir_recursive("user://plugins/test_marketplace_plugin")
+
+
+func _test_manager_reinstall_routes_to_update_and_preserves_preferences() -> void:
+	var url := "http://127.0.0.1:%d/test_good.tar.gz" % PORT
+	var client = _make_client()
+	var db = _make_db()
+	if db.has_plugin("test_marketplace_plugin"):
+		db.remove("test_marketplace_plugin")
+	var manager_script: Script = load("res://Scripts/Services/Plugins/PluginManager.gd")
+	if manager_script == null or not manager_script.can_instantiate():
+		print("FAIL: manager update route — PluginManager did not compile")
+		_fail += 1
+		return
+	var manager = manager_script.new()
+	manager._db = db
+	var singleton: Node = root.get_node_or_null("SingletonObject")
+	var registry: Variant = singleton.get("plugin_tool_registry") if singleton != null else null
+	var previous_registry_manager: Variant = null
+	if registry != null and "plugin_manager" in registry:
+		previous_registry_manager = registry.plugin_manager
+		registry.plugin_manager = manager
+
+	var first: Dictionary = await client.install_from_url(url, manager, true)
+	if first.get("ok") != true:
+		print("FAIL: manager update route — first install: %s" % JSON.stringify(first))
+		_fail += 1
+		if registry != null and "plugin_manager" in registry:
+			registry.plugin_manager = previous_registry_manager
+		manager.free()
+		return
+	db.set_autostart("test_marketplace_plugin", true)
+	db.set_auto_reload("test_marketplace_plugin", true)
+	var second: Dictionary = await client.install_from_url(url, manager, true)
+	var updated = db.get_by_id("test_marketplace_plugin")
+	var ok: bool = second.get("ok") == true \
+		and updated != null \
+		and updated.install_lane == "marketplace" \
+		and updated.autostart \
+		and updated.auto_reload
+	if ok:
+		print("PASS: manager reinstall routes to update and preserves user preferences")
+		_pass += 1
+	else:
+		print("FAIL: manager update route — result=%s" % JSON.stringify(second))
+		_fail += 1
+	db.remove("test_marketplace_plugin")
+	_rm_dir_recursive("user://plugins/test_marketplace_plugin")
+	if registry != null and "plugin_manager" in registry:
+		registry.plugin_manager = previous_registry_manager
+	manager.free()
 
 
 func _test_404() -> void:

@@ -40,16 +40,28 @@ extends SceneTree
 ##     - broker.register_panel called BEFORE _on_panel_loaded
 ##     - _on_panel_loaded receives ctx with expected keys
 
-const PluginScenePanelHost_ = preload("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
-const PluginScenePanelBroker_ = preload("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd")
-const PluginAuditLog_ = preload("res://Scripts/Services/Plugins/PluginAuditLog.gd")
-const PluginDefinition_ = preload("res://Scripts/Services/Plugins/PluginDefinition.gd")
+var PluginScenePanelHost_: Script
+var PluginScenePanelBroker_: Script
+var PluginAuditLog_: Script
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 
 
-func _init() -> void:
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	await process_frame
+	PluginScenePanelHost_ = load("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
+	PluginScenePanelBroker_ = load("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd")
+	PluginAuditLog_ = load("res://Scripts/Services/Plugins/PluginAuditLog.gd")
+	if PluginScenePanelHost_ == null or PluginScenePanelBroker_ == null \
+			or PluginAuditLog_ == null:
+		printerr("FAIL: plugin scene host test dependencies did not compile")
+		quit(1)
+		return
 	print("=== PluginScenePanelHost Unit Tests ===\n")
 
 	print("-- _resolve_plugin_relative_path --")
@@ -82,6 +94,9 @@ func _init() -> void:
 	test_get_panel_def_null_def_returns_empty()
 
 	print("\n-- instantiate_into guard paths (via helpers) --")
+	test_updated_inheritance_generation_fails_closed()
+	test_script_generation_paths_normalize_aliases()
+	test_host_rejects_updated_generation_and_preserves_old_panel()
 	test_instantiate_entry_scene_escape_returns_placeholder()
 	test_instantiate_script_escape_returns_placeholder()
 	test_instantiate_wrong_kind_detected()
@@ -148,6 +163,9 @@ class StubPluginManager extends RefCounted:
 
 	func get_db():
 		return _db
+
+	func get_restart_required_reason(_id: String) -> String:
+		return ""
 
 
 ## PluginAuditLog stub: we load the real base class at runtime via preload.
@@ -450,6 +468,102 @@ func test_get_panel_def_null_def_returns_empty() -> void:
 # ===========================================================================
 # instantiate_into guard paths (via helpers + direct calls)
 # ===========================================================================
+
+func test_declared_script_compile_failure_is_rejected() -> void:
+	print("test_declared_script_compile_failure_is_rejected:")
+	var path := "user://plugin_host_invalid_helper.gd"
+	_write_test_script(path, "extends RefCounted\nfunc broken(:\n")
+	check("non-scene declared helper compile failure is rejected",
+		PluginScenePanelHost_._load_valid_script(path) == null)
+
+
+func test_updated_inheritance_generation_fails_closed() -> void:
+	print("test_updated_inheritance_generation_fails_closed:")
+	var base_path := "user://plugin_host_reload_base.gd"
+	var child_path := "user://plugin_host_reload_child.gd"
+	_write_test_script(base_path,
+		"extends RefCounted\nvar original_value := 17\n")
+	_write_test_script(child_path,
+		"extends \"%s\"\nfunc read_value() -> int:\n\treturn original_value\n" % base_path)
+	var old_script: Script = PluginScenePanelHost_._load_valid_script(child_path)
+	var old_instance: Variant = old_script.new() if old_script != null else null
+	check("old inherited generation loads", old_instance != null and old_instance.read_value() == 17)
+	PluginScenePanelHost_._record_script_generation(base_path)
+	PluginScenePanelHost_._record_script_generation(child_path)
+
+	# Model an on-disk plugin update that changes the inherited member layout
+	# while an instance of the old generation remains live.
+	_write_test_script(base_path,
+		"extends RefCounted\nvar original_value := 17\nvar rim_test_count := 4\n")
+	_write_test_script(child_path,
+		("extends \"%s\"\nfunc read_value() -> int:\n\treturn original_value + rim_test_count\n") % base_path)
+	check("stale but otherwise valid cached generation is detected before loading",
+		PluginScenePanelHost_._script_generation_changed(child_path))
+	check("failed replacement leaves old instance intact", old_instance.read_value() == 17)
+
+
+func _write_test_script(path: String, source: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file != null:
+		file.store_string(source)
+
+
+func test_script_generation_paths_normalize_aliases() -> void:
+	var user_path := "user://plugin_host_alias.gd"
+	var absolute := ProjectSettings.globalize_path(user_path)
+	_write_test_script(user_path, "extends RefCounted\n")
+	check("user and absolute script paths share one generation key",
+		PluginScenePanelHost_._normalized_script_path(user_path) \
+		== PluginScenePanelHost_._normalized_script_path(absolute))
+	PluginScenePanelHost_._record_script_generation(user_path)
+	check("unchanged script may reopen through its absolute alias",
+		not PluginScenePanelHost_._script_generation_changed(absolute))
+
+
+func test_host_rejects_updated_generation_and_preserves_old_panel() -> void:
+	print("test_host_rejects_updated_generation_and_preserves_old_panel:")
+	var fixture_dir := "user://plugin_host_generation_fixture"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(fixture_dir))
+	var base_path := "%s/base.gd" % fixture_dir
+	var child_path := "%s/panel.gd" % fixture_dir
+	var scene_path := "%s/panel.tscn" % fixture_dir
+	_write_test_script(base_path, "extends Control\nvar base_value := 3\n")
+	_write_test_script(child_path,
+		"extends \"%s\"\nvar document_text := \"draft\"\n" % base_path)
+	_write_test_script(scene_path,
+		"[gd_scene load_steps=2 format=3]\n\n[ext_resource type=\"Script\" path=\"%s\" id=\"1\"]\n\n[node name=\"Panel\" type=\"Control\"]\nscript = ExtResource(\"1\")\n" % child_path)
+
+	var manager := StubPluginManager.new()
+	var def := _make_def_with_panel("fixture", fixture_dir, "main", "panel.tscn",
+		["panel.gd", "base.gd"], [])
+	manager._db._defs["fixture"] = def
+	var singleton = root.get_node_or_null("SingletonObject")
+	var previous_manager: Variant = singleton.plugin_manager
+	singleton.plugin_manager = manager
+	var first_host := Control.new()
+	root.add_child(first_host)
+	var first: Control = PluginScenePanelHost_.instantiate_into(
+		first_host, "fixture", "main", null, "fixture:first")
+	check("first generation mounts through real host", first.get_meta("_minerva_plugin_panel_load_ok", false))
+	first.set("document_text", "unsaved draft")
+
+	_write_test_script(base_path,
+		"extends Control\nvar base_value := 3\nvar rim_test_count := 0\n")
+	_write_test_script(child_path,
+		("extends \"%s\"\nvar document_text := \"draft\"\n" +
+		"func rim_count() -> int:\n\treturn rim_test_count\n") % base_path)
+	var second_host := Control.new()
+	root.add_child(second_host)
+	var second: Control = PluginScenePanelHost_.instantiate_into(
+		second_host, "fixture", "main", null, "fixture:second")
+	check("updated generation gets restart placeholder",
+		not second.get_meta("_minerva_plugin_panel_load_ok", true))
+	check("old panel and unsaved state remain intact",
+		is_instance_valid(first) and first.get("document_text") == "unsaved draft")
+
+	singleton.plugin_manager = previous_manager
+	first_host.queue_free()
+	second_host.queue_free()
 
 func test_instantiate_entry_scene_escape_returns_placeholder() -> void:
 	print("test_instantiate_entry_scene_escape_returns_placeholder:")
