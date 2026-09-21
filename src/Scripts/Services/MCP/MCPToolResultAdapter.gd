@@ -41,9 +41,16 @@ static func adapt(envelope) -> MCPToolCallOutcome:
 	if not numeric.get("ok", false):
 		outcome.wire_authoritative = false
 		var detail: Dictionary = numeric.get("error", {})
+		var code := str(detail.get("code", "numeric_validation_failed"))
+		var message := "Unsafe numeric representation in MCP text result"
+		if code != "unsupported_number":
+			message = "MCP text result validation failed"
+			var cause := str(detail.get("message", "")).strip_edges()
+			if not cause.is_empty():
+				message += ": " + cause
 		var rejected := {"success": false,
-			"error": "Unsafe numeric representation in MCP text result",
-			"error_code": str(detail.get("code", "numeric_validation_failed"))}
+			"error": message,
+			"error_code": code}
 		if detail.get("details") is Dictionary:
 			rejected["error_details"] = (detail["details"] as Dictionary).duplicate(true)
 		return _finish(outcome, rejected)

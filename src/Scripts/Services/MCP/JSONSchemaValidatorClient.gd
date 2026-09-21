@@ -219,9 +219,12 @@ func _request(fields: Dictionary, expected_process = null, expected_generation: 
 	_next_id += 1
 	var id := str(_next_id)
 	fields["id"] = id
+	var encoded := JsonSerialization.encode(fields)
+	if not encoded.get("ok", false):
+		return encoded
 	var pending := Pending.new()
 	_pending[id] = pending
-	if not process.write_data(JSON.stringify(fields) + "\n"):
+	if not process.write_data(str(encoded.raw) + "\n"):
 		_pending.erase(id)
 		return _failure("queue_full", "JSON Schema validator input queue is full")
 	if DEADLINE_SECONDS > 0.0 and not pending.done:

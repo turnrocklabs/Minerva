@@ -352,7 +352,9 @@ func _turn_two_dialog(_so, _pane, provider, session, _tid: String) -> void:
 	var bot = await provider.generate_content([{"text": "trigger-dialog"}])
 	check("turn 2 returned a BotResponse", bot != null)
 	check("turn 2 disposition == question", _disposition_for(bot) == "question",
-		"%s / err=%s" % [str(bot.text).left(120), str(bot.error)] if bot != null else "<null>")
+		"text=%s / err=%s / hcp=%s" % [
+			str(bot.text).left(120), str(bot.error), str(bot.hcp_data).left(512)
+		] if bot != null else "<null>")
 	var opts: Array = bot.hcp_data.get("passthrough_question_options", []) if bot != null else []
 	check("turn 2 options parsed (the codex permission triple)", opts.size() == 3,
 		str(opts))

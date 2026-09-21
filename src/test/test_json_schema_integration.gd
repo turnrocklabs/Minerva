@@ -6,6 +6,18 @@ const Client = preload("res://Scripts/Services/MCP/JSONSchemaValidatorClient.gd"
 const Schema = preload("res://Scripts/Services/MCP/MCPJSONSchema.gd")
 const Wire = preload("res://Scripts/Services/MCP/MCPWireValue.gd")
 const WireAdapter = preload("res://Scripts/Services/MCP/MCPWireAdapter.gd")
+const JsonSerialization = preload("res://Scripts/Services/MCP/MCPJsonSerialization.gd")
+const ToolResult = preload("res://Scripts/Services/MCP/MCPToolResult.gd")
+const ToolResultAdapter = preload("res://Scripts/Services/MCP/MCPToolResultAdapter.gd")
+
+const PASSTHROUGH_QUESTION_RAW := (
+	'{"kind":"question","text":"Would you like to run the following command?\\r\\n' \
+	+ '  › 1. Yes, proceed\\r\\n  2. Yes, and don’t ask again\\r\\n' \
+	+ '  3. No, and tell Codex what to do differently","options":[' \
+	+ '{"label":"Yes, proceed","keystroke":"y"},' \
+	+ '{"label":"Yes, and don’t ask again","keystroke":"p"},' \
+	+ '{"label":"No, and tell Codex what to do differently","keystroke":"\\u001b"}]}'
+)
 
 var passed := 0
 var failed := 0
@@ -13,12 +25,18 @@ var failed := 0
 func _initialize() -> void:
 	_run.call_deferred()
 
-func check(label: String, condition: bool) -> void:
+func check(label: String, condition: bool, detail: String = "") -> void:
 	if condition:
 		passed += 1
 	else:
 		failed += 1
-		printerr("FAIL: ", label)
+		printerr("FAIL: ", label, " — ", detail)
+
+func _contains_c0(value: String) -> bool:
+	for index in value.length():
+		if value.unicode_at(index) < 0x20:
+			return true
+	return false
 
 func _run() -> void:
 	var path := OS.get_environment("MINERVA_JSON_SCHEMA_HELPER")
@@ -46,6 +64,33 @@ func _run() -> void:
 	var cad_decode: Dictionary = await WireAdapter.validate_for_application(cad_wire)
 	var cad_verified: Dictionary = await client.compare_application_numbers(
 		cad_raw, cad_wire.parsed)
+	var question_parsed: Variant = JSON.parse_string(PASSTHROUGH_QUESTION_RAW)
+	var question_encoded: Dictionary = JsonSerialization.encode(question_parsed)
+	var every_control := ""
+	# Godot String cannot represent NUL; it substitutes U+FFFD. The separate
+	# raw-wire assertion below verifies that this conversion remains fail-closed.
+	for code in range(1, 0x20):
+		every_control += String.chr(code)
+	var controls_value := {
+		every_control: every_control,
+		"mixed": 'quoted "text", slash \\, numeric-looking 0.10000000000000001',
+		"literal_backslash_v": "\\v",
+	}
+	var controls_encoded: Dictionary = JsonSerialization.encode(controls_value)
+	var controls_round_trip: Variant = JSON.parse_string(str(controls_encoded.get("raw", "")))
+	var outer_control_request: Dictionary = await client._request({
+		"op": "unknown_control_probe", "probe": every_control,
+	})
+	var nul_raw := '{"nul":"\\u0000"}'
+	var nul_rejected: Dictionary = await client.prepare_application_numbers(
+		nul_raw, JSON.parse_string(nul_raw))
+	var question_numeric: Dictionary = await client.prepare_application_numbers(
+		PASSTHROUGH_QUESTION_RAW, question_parsed)
+	var question_envelope = ToolResult.from_mcp({
+		"content": [{"type": "text", "text": PASSTHROUGH_QUESTION_RAW}],
+		"resultType": "complete",
+	}, true)
+	var question_outcome = await ToolResultAdapter.adapt(question_envelope)
 	WireAdapter._validator = null
 	check("exact fractions survive the application adapter", exact.get("valid", false))
 	check("equivalent shortest and full-precision binary64 spellings interoperate",
@@ -57,6 +102,25 @@ func _run() -> void:
 			== "0.10000000000000001")
 	check("CAD worker decimals decode to their source binary64 value",
 		cad_decode.get("ok", false) and cad_verified.get("ok", false))
+	check("number-free passthrough question crosses the real numeric boundary unchanged",
+		question_encoded.get("ok", false)
+		and not str(question_encoded.get("raw", "")).contains("\u001b")
+		and JSON.parse_string(question_encoded.raw) == question_parsed
+		and question_numeric.get("ok", false)
+		and question_outcome.application.get("kind") == "question"
+		and question_outcome.application.get("options", []).size() == 3
+		and question_outcome.application.options[2].get("keystroke") == "\u001b",
+		"numeric=%s application=%s" % [question_numeric, question_outcome.application])
+	check("JSON serialization escapes native C0 controls in keys and values",
+		controls_encoded.get("ok", false)
+		and not _contains_c0(str(controls_encoded.get("raw", "")))
+		and controls_round_trip == controls_value
+		and outer_control_request.get("error", {}).get("code") == "unknown_operation",
+		str(controls_encoded))
+	check("wire NUL remains rejected when Godot cannot represent its decoded value",
+		nul_rejected.get("error", {}).get("code") == "unsupported_number"
+		and nul_rejected.get("error", {}).get("details", {}).get("reason") == "value_changed",
+		str(nul_rejected))
 	var old_handle = schema.handle
 	var old_process = client._process
 	var old_generation: int = client._generation
