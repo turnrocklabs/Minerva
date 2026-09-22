@@ -1829,6 +1829,9 @@ jobs:
         uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
+          # Tag the commit that was built: without this a new tag points at the
+          # branch tip when the release step runs, which can be later commits.
+          target_commitish: ${{ github.sha }}
           name: "Minerva Development Build ${{ steps.tag.outputs.tag }}"
           body: |
             ## Minerva Development Build
