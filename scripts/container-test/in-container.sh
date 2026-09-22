@@ -46,7 +46,9 @@ setup() {
 	for pass in 1 2; do
 		step "importing project (pass $pass, timeout ${IMPORT_TIMEOUT}s)"
 		timeout "$IMPORT_TIMEOUT" godot --headless --import --path . > "$LOGS/import-$pass.log" 2>&1
-		record "import-pass-$pass" $? || return 1
+		local rc=$?
+		step "  .godot/imported holds $(ls .godot/imported 2>/dev/null | wc -l) files"
+		record "import-pass-$pass" "$rc" || return 1
 	done
 	[[ -n "$(ls .godot/imported 2>/dev/null)" ]]
 	record import-produced-resources $?
