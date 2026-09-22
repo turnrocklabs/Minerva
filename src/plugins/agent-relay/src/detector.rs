@@ -104,6 +104,8 @@ pub struct CompiledDetection {
     pub prompt_box: Regex,
     pub permission_dialog: Option<Regex>,
     pub spinner_glyphs: Vec<String>,
+    /// A status row drawn only while a turn runs (Detection::running_row_regex).
+    running_row: Option<Regex>,
     #[allow(dead_code)]
     pub alt_screen: bool,
     pub bell_capable: bool,
@@ -149,6 +151,11 @@ impl CompiledDetection {
             prompt_box,
             permission_dialog,
             spinner_glyphs: p.detection.spinner_glyphs.clone(),
+            running_row: match p.detection.running_row_regex {
+                Some(ref pat) => Some(Regex::new(pat)
+                    .map_err(|e| format!("running_row_regex compile error: {e}"))?),
+                None => None,
+            },
             alt_screen: p.detection.alt_screen,
             bell_capable: p.detection.bell_capable,
             settle_ms: p.detection.settle_ms,
@@ -240,8 +247,7 @@ pub fn run(
     }
 
     // 5. Spinners absent AND prompt_box visible → turn_completed.
-    let has_spinner = has_active_spinner(last_lines, &cd.spinner_glyphs);
-    if !has_spinner {
+    if !turn_running(last_lines, cd) {
         let prompt_area = last_n_lines(screen, 10);
         for line in prompt_area.lines() {
             if cd.prompt_box.is_match(line) {
@@ -256,12 +262,22 @@ pub fn run(
     None
 }
 
-/// Return true when the screen shows an active busy indicator (spinner glyph
-/// within the last 40 lines). Used by the watcher's busy-gate: a settle_prompt
-/// turn_completed only counts after the session has observed a busy screen
-/// (or row growth) since arm()/watch_start — transition-based detection.
+/// Return true when the screen shows a turn in flight within the last 40
+/// lines: the busy hint (spinner_glyphs) or a running status row. Used by the
+/// watcher's busy-gate: a settle_prompt turn_completed only counts after the
+/// session has observed a busy screen (or row growth) since
+/// arm()/watch_start — transition-based detection.
 pub fn is_busy(screen: &str, cd: &CompiledDetection) -> bool {
-    has_active_spinner(last_n_lines(screen, 40), &cd.spinner_glyphs)
+    turn_running(last_n_lines(screen, 40), cd)
+}
+
+/// A turn is running when the busy hint is on screen OR a running status row
+/// is. The row matters where the hint can vanish mid-turn — Claude Code
+/// hides "esc to interrupt" while its composer holds text, and a settled
+/// screen with no hint was read as a finished turn (bug 01a0c7136b7d).
+fn turn_running(text: &str, cd: &CompiledDetection) -> bool {
+    has_active_spinner(text, &cd.spinner_glyphs)
+        || cd.running_row.as_ref().is_some_and(|re| text.lines().any(|l| re.is_match(l)))
 }
 
 // ---------------------------------------------------------------------------
@@ -533,7 +549,9 @@ pub fn confirm_submit(
     cd: &CompiledDetection,
     baseline: Option<&str>,
 ) -> SubmitState {
-    if is_busy(screen, cd) {
+    // The hint alone, not turn_running: a running row with text still in the
+    // composer is exactly a message NOT yet submitted (queue screen 02).
+    if has_active_spinner(last_n_lines(screen, 40), &cd.spinner_glyphs) {
         return SubmitState::Submitted("busy");
     }
 

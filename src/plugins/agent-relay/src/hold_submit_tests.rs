@@ -495,3 +495,70 @@ fn a_menu_carrying_the_sent_body_is_never_stuck_in_composer() {
         "a modal owns the keyboard: the write is unconfirmed and no Enter is owed"
     );
 }
+
+// ── A turn in flight with text in the composer is still in flight ──────────
+// Bug minerva:01a0c7136b7d (Alt+Up ends a passthrough turn). Claude Code drops
+// "esc to interrupt" from its footer while the composer holds text mid-turn
+// (queue screen 02: the spinner row still reads "✻ Cooking… (3s · ↓ 87
+// tokens)"). The watcher reads the screen with trailing blank rows trimmed
+// (MCPTerminalTools._terminal_read), so the capture is judged the same way.
+
+/// The screen as the watcher's host.terminal.read returns it.
+fn as_read(screen: &str) -> String {
+    let mut lines: Vec<&str> = screen.lines().collect();
+    while lines.last().is_some_and(|l| l.trim().is_empty()) {
+        lines.pop();
+    }
+    lines.join("\n")
+}
+
+#[test]
+fn composer_text_mid_turn_is_not_a_finished_turn() {
+    let screen = include_str!("../tests/fixtures/hold_submit/queue/claude_queue/screens/02_second_message_typed.txt");
+    let det = detector::run(&as_read(screen), false, false, &compiled("claude"));
+    assert!(
+        det.as_ref().map(|d| &d.cause) != Some(&WakeCause::TurnCompleted),
+        "a claude turn still running, with text in the composer, was judged finished: {det:?}"
+    );
+}
+
+// Every running claude capture reads as running, and every finished one as not:
+// the running row may widen "busy" only where the corpus says a turn is live.
+const CLAUDE_RUNNING: &[&str] = &[
+    include_str!("../tests/fixtures/hold_submit/queue/claude_queue/screens/01_turn1_in_flight.txt"),
+    include_str!("../tests/fixtures/hold_submit/queue/claude_queue/screens/02_second_message_typed.txt"),
+    include_str!("../tests/fixtures/hold_submit/queue/claude_queue/screens/05_dequeued_running.txt"),
+    include_str!("../tests/fixtures/hold_submit/submit/claude_chunk_submit_ok/screen.txt"),
+    include_str!("../tests/fixtures/hold_submit/submit/claude_typed_submit_ok/screen.txt"),
+];
+const CLAUDE_FINISHED: &[&str] = &[
+    include_str!("../tests/fixtures/real/claude_idle_prompt.txt"),
+    include_str!("../tests/fixtures/real/claude_prose_question_idle.txt"),
+    include_str!("../tests/fixtures/real/claude_v2_short_turn_idle.txt"),
+    include_str!("../tests/fixtures/real/claude_windows_idle.txt"),
+    include_str!("../tests/fixtures/hold_submit/queue/claude_queue/screens/06_second_answer.txt"),
+];
+
+#[test]
+fn running_rows_mark_live_claude_turns_and_only_live_ones() {
+    let cd = compiled("claude");
+    for (i, screen) in CLAUDE_RUNNING.iter().enumerate() {
+        assert!(detector::is_busy(&as_read(screen), &cd), "running claude screen {i} not busy");
+    }
+    for (i, screen) in CLAUDE_FINISHED.iter().enumerate() {
+        let screen = as_read(screen);
+        assert!(!detector::is_busy(&screen, &cd), "finished claude screen {i} read as busy");
+        let det = detector::run(&screen, false, false, &cd);
+        assert_eq!(det.map(|d| d.cause), Some(WakeCause::TurnCompleted),
+            "finished claude screen {i} no longer ends the turn");
+    }
+}
+
+#[test]
+fn composer_text_mid_turn_is_not_a_confirmed_submit() {
+    // The running row must not stand in for the interrupt hint in submit
+    // confirmation: on screen 02 the typed message is still in the composer.
+    let screen = include_str!("../tests/fixtures/hold_submit/queue/claude_queue/screens/02_second_message_typed.txt");
+    let state = detector::confirm_submit(&as_read(screen), "Reply with exactly the word QUEUED.", &compiled("claude"), None);
+    assert!(!matches!(state, SubmitState::Submitted(_)), "unsent composer text read as submitted: {state:?}");
+}

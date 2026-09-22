@@ -2283,6 +2283,7 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
                 prompt_box_regex: String::new(),
                 permission_dialog_regex: None,
                 spinner_glyphs: vec![],
+                running_row_regex: None,
                 alt_screen: false,
                 bell_capable: false,
                 settle_ms: 1_500,

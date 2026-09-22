@@ -28,6 +28,16 @@ pub struct Detection {
     /// blocks turn_completed detection (spinners still working = not done).
     pub spinner_glyphs: Vec<String>,
 
+    /// Regex for a status ROW that exists only while a turn runs, for CLIs
+    /// that hide their spinner_glyphs hint in some running states. Matched
+    /// per line in the same trailing window. Claude Code drops "esc to
+    /// interrupt" while its composer holds text mid-turn but keeps the running
+    /// row ("✻ Cooking… (3s · ↓ 87 tokens)"); a finished turn leaves a
+    /// past-tense row ("✻ Baked for 3s") this must not match. Turn-end
+    /// detection only: submit confirmation still trusts the hint alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running_row_regex: Option<String>,
+
     /// Whether this CLI uses an alternate screen buffer (smcup/rmcup).
     /// Alt-screen CLIs repaint the full viewport on each update; detection
     /// reads the viewport only (no scrollback delta).
@@ -172,6 +182,10 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 // ("✻ Baked for 3s"), so glyphs are NOT busy-markers. The only
                 // reliable in-progress marker is the literal interrupt hint.
                 spinner_glyphs: vec!["esc to interrupt".to_string()],
+                // ...except that the hint vanishes while the composer holds
+                // text mid-turn (queue screen 02; bug 01a0c7136b7d, Alt+Up).
+                // The running row survives: spinner glyph, a verb, an ellipsis.
+                running_row_regex: Some(r"^\s*[·✢✳✶✻✽]\s+\S+…(?:\s|$)".to_string()),
 
                 // Claude Code scrolls the PRIMARY screen (scrollback grows).
                 alt_screen: false,
@@ -223,6 +237,7 @@ pub fn builtin_profiles() -> Vec<Profile> {
 
                 // Codex scrolls the PRIMARY screen — scrollback grows during
                 // turns (observed 17→23→50 rows live).
+                running_row_regex: None,
                 alt_screen: false,
 
                 bell_capable: false,
@@ -254,6 +269,7 @@ pub fn builtin_profiles() -> Vec<Profile> {
                     "⠏".to_string(),
                 ],
 
+                running_row_regex: None,
                 alt_screen: true,
                 bell_capable: false,
                 settle_ms: 2_000,
