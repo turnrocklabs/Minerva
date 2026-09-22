@@ -322,7 +322,7 @@ func _process_inline_syntax(line: String) -> String:
 			_debug("... in-line code: "+unescaped_content)
 		else:
 			break
-	
+
 	# Images
 	var img_pattern := "\\!\\[(.*?)\\]\\((.*?)\\)"
 	while true:
@@ -354,7 +354,7 @@ func _process_inline_syntax(line: String) -> String:
 				break
 		if not found_proper_match:
 			break
-	
+
 	# Links
 	var link_pattern := "\\[(.*?)\\]\\((.*?)\\)"
 	while true:
@@ -386,7 +386,7 @@ func _process_inline_syntax(line: String) -> String:
 				break
 		if not found_proper_match:
 			break
-		
+
 	while true:
 		regex.compile("\\<(.*?)\\>")
 		var result = regex.search(_processed_line)
@@ -405,10 +405,10 @@ func _process_inline_syntax(line: String) -> String:
 			else:
 				_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[url]%s[/url]"%url)
 				_debug("... explicit link: "+result.get_string())
-			
+
 		else:
 			break
-	
+
 	# Bold text (an intraword "__", as in foo__bar__baz, is literal)
 	regex.compile("(\\*\\*|(?<![\\p{L}\\p{N}])__)(.+?)\\1(?!(?<=_)[\\p{L}\\p{N}])")
 	while true:
@@ -420,7 +420,7 @@ func _process_inline_syntax(line: String) -> String:
 		_processed_line = _processed_line.erase(_start,2).insert(_start,"[b]")
 		_processed_line = _processed_line.erase(_end-1,2).insert(_end-1,"[/b]")
 		_debug("... bold text: "+result.get_string(2))
-	
+
 	# Italic text (an intraword "_", as in snake_case, is literal; CommonMark)
 	while true:
 		regex.compile("(\\*|(?<![\\p{L}\\p{N}_])_)(.+?)\\1(?!(?<=_)[\\p{L}\\p{N}])")
@@ -446,9 +446,9 @@ func _process_inline_syntax(line: String) -> String:
 		else:
 			_processed_line = _processed_line.erase(_start,1).insert(_start,"[i]")
 			_processed_line = _processed_line.erase(_end+1,1).insert(_end+1,"[/i]")
-			
+
 		_debug("... italic text: "+result.get_string(2))
-	
+
 	# Strike-through text
 	regex.compile("(\\~\\~)(.+?)\\1")
 	while true:
