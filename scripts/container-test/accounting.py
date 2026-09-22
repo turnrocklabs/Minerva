@@ -9,8 +9,10 @@ passed check, no failed check, no SKIP and no SCRIPT ERROR.
     accounting.py <logs_dir> <tests_file> <results.json>
 
 <tests_file> lists one suite per line; <logs_dir>/<slug>.log and .rc hold its
-output and exit code (slug: see slug()). Exit status: 0 when every suite
-passed, 1 otherwise, 2 on bad input.
+output and exit code (slug: see slug()). <logs_dir>/stages.txt, when present,
+holds "<stage> <exit code>" lines for setup stages (import); any non-zero
+stage makes the run not green whatever the suites say. Exit status: 0 when
+every stage and suite passed, 1 otherwise, 2 on bad input.
 """
 import json
 import re
@@ -73,13 +75,24 @@ def main(argv: list[str]) -> int:
         rc = int(rc_path.read_text().strip()) if rc_path.exists() else None
         suites.append({"test": test, "log": log_path.name, **judge(log, rc)})
 
-    green = all(s["verdict"] == "pass" for s in suites)
+    stages_path = logs_dir / "stages.txt"
+    stages = [{"stage": name, "exit_code": int(rc)}
+              for name, rc in (line.split() for line in
+                               (stages_path.read_text().splitlines() if stages_path.exists() else [])
+                               if line.strip())]
+    failed_stages = [st["stage"] for st in stages if st["exit_code"] != 0]
+
+    green = not failed_stages and all(s["verdict"] == "pass" for s in suites)
     results = {"green": green,
+               "stages": stages,
+               "failed_stages": failed_stages,
                "passed_checks": sum(s["passed"] for s in suites),
                "failed_checks": sum(s["failed"] for s in suites),
                "suites": suites}
     results_path.write_text(json.dumps(results, indent=2) + "\n")
 
+    for st in stages:
+        print(f"  {'stage ok' if st['exit_code'] == 0 else 'STAGE FAILED':<14} exit {st['exit_code']:<3}          {st['stage']}")
     for s in suites:
         print(f"  {s['verdict']:<14} {s['passed']:>5} passed {s['failed']:>3} failed  {s['test']}")
     print(f"RESULT: {'GREEN' if green else 'NOT GREEN'} — "

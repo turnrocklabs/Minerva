@@ -44,9 +44,11 @@ class JudgeTest(unittest.TestCase):
 
 
 class RunTest(unittest.TestCase):
-    def run_accounting(self, suites):
+    def run_accounting(self, suites, stages=""):
         with tempfile.TemporaryDirectory() as tmp:
             logs = Path(tmp)
+            if stages:
+                (logs / "stages.txt").write_text(stages)
             (logs / "tests.txt").write_text("\n".join(name for name, _, _ in suites) + "\n")
             for name, log, rc in suites:
                 (logs / f"{slug(name)}.log").write_text(log)
@@ -68,6 +70,14 @@ class RunTest(unittest.TestCase):
         # A suite killed before it wrote an exit code is not run, not passed.
         rc, results = self.run_accounting([ok, ("test/test_c.gd", "PASS: partial", None)])
         self.assertEqual((rc, results["suites"][1]["verdict"]), (1, "not_run"))
+
+    def test_failed_setup_stage_is_never_green(self):
+        ok = ("test/test_a.gd", "=== Results: 2 passed, 0 failed ===", 0)
+        rc, results = self.run_accounting([ok], "snapshot-copy 0\nimport-pass-1 0\nimport-pass-2 0\n")
+        self.assertEqual((rc, results["green"]), (0, True))
+        # A timed-out import pass (124) fails the run even though a suite log says pass.
+        rc, results = self.run_accounting([ok], "snapshot-copy 0\nimport-pass-1 124\n")
+        self.assertEqual((rc, results["green"], results["failed_stages"]), (1, False, ["import-pass-1"]))
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@
 #   --cpus N        CPU limit (default 4)
 #   --memory SIZE   memory limit, no swap (default 8g)
 #   --timeout SEC   whole-job deadline (default 1800)
+#   --import-timeout SEC  per import pass (default 600); a failed or timed-out
+#                   import fails the job before any suite runs
 #   --out DIR       results directory (default: <cache>/runs/NAME)
 # SUITE is a path registered in scripts/run-functional-tests.sh or "app-smoke";
 # the default is a small representative set (DEFAULT_SUITES below).
@@ -27,10 +29,18 @@
 # is the only writable host mount. Caches live in
 # ${MINERVA_CT_CACHE:-~/.cache/minerva-container-tests}.
 #
+# Limits of what a run proves: the native binaries are whatever the host
+# checkout holds at launch (hashes in natives.txt / run.json), NOT built from
+# --rev, so a green run is not a clean revision-native build. app-smoke boots
+# the source tree, not a packaged export.
+#
 # Results: <out>/run.json (revision, native hashes, image, limits, docker's own
 # view of mounts/namespaces), <out>/results.json (per-suite strict verdicts, see
 # container-test/accounting.py), <out>/logs/. Exit status is the job's: 0 only
-# when every suite passed with at least one assertion and no skips.
+# when every suite passed with at least one assertion and no skips. Stopping a
+# job (stop NAME, the deadline, or SIGINT/SIGTERM to this driver) kills its
+# container and still writes exit_code, a not-green results.json and a
+# finished run.json. SIGKILL of the driver cannot be cleaned up after.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -107,7 +117,7 @@ ensure_image() {
 }
 
 cmd_run() {
-	local rev=HEAD name="" cpus=4 memory=8g timeout_s=1800 out=""
+	local rev=HEAD name="" cpus=4 memory=8g timeout_s=1800 import_timeout=600 out=""
 	while (( $# )); do
 		case "$1" in
 			--rev) rev="$2"; shift 2 ;;
@@ -115,6 +125,7 @@ cmd_run() {
 			--cpus) cpus="$2"; shift 2 ;;
 			--memory) memory="$2"; shift 2 ;;
 			--timeout) timeout_s="$2"; shift 2 ;;
+			--import-timeout) import_timeout="$2"; shift 2 ;;
 			--out) out="$2"; shift 2 ;;
 			--) shift; break ;;
 			-*) die "unknown option $1" ;;
@@ -162,22 +173,25 @@ cmd_run() {
 	local container="minerva-ct-$name"
 	docker create --name "$container" --label "$LABEL=$name" --rm --init \
 		--network none --ipc private --cap-drop ALL --security-opt no-new-privileges \
-		--user "$(id -u):$(id -g)" \
+		--user "$(id -u):$(id -g)" -e MINERVA_CT_IMPORT_TIMEOUT="$import_timeout" \
 		--cpus "$cpus" --memory "$memory" --memory-swap "$memory" --pids-limit 4096 --shm-size 1g \
 		"${mounts[@]}" "$IMAGE" "${suites[@]}" > /dev/null || die "docker create failed"
 
 	# Record docker's own account of the isolation before anything runs.
-	python3 - "$out/run.json" "$sha" "$name" "$IMAGE" "$cpus" "$memory" "$timeout_s" \
-		"$(docker image inspect -f '{{.Id}}' "$IMAGE")" "$(docker inspect "$container")" "${suites[@]}" <<'EOF'
+	python3 - "$out/run.json" "$sha" "$name" "$IMAGE" "$cpus" "$memory" "$timeout_s" "$import_timeout" \
+		"$(docker image inspect -f '{{.Id}}' "$IMAGE")" "$(docker inspect "$container")" "$out/natives.txt" \
+		"${suites[@]}" <<'EOF'
 import json, sys, time
-path, sha, name, image, cpus, memory, timeout_s, image_id, inspect, *suites = sys.argv[1:]
+path, sha, name, image, cpus, memory, timeout_s, import_timeout, image_id, inspect, natives, *suites = sys.argv[1:]
 c = json.loads(inspect)[0]
 hc = c["HostConfig"]
 json.dump({
     "job": name, "revision": sha, "image": image, "image_id": image_id,
     "suites": suites, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "natives": {"source": "host checkout at launch, not built from revision",
+                "entries": open(natives).read().splitlines()},
     "limits": {"cpus": cpus, "memory": memory, "timeout_s": int(timeout_s),
-               "pids_limit": hc.get("PidsLimit")},
+               "import_timeout_s": int(import_timeout), "pids_limit": hc.get("PidsLimit")},
     "isolation": {"network_mode": hc.get("NetworkMode"), "pid_mode": hc.get("PidMode") or "private",
                   "ipc_mode": hc.get("IpcMode"), "cap_drop": hc.get("CapDrop"),
                   "mounts": [{"source": m["Source"], "target": m["Destination"], "rw": m["RW"]}
@@ -185,34 +199,64 @@ json.dump({
 }, open(path, "w"), indent=2)
 EOF
 
-	# The EXIT trap kills the job if this driver is interrupted, so a job never
-	# outlives its driver; at the deadline, timeout stops the attached client
-	# and the trap kills the container.
-	trap 'docker kill '"$container"' > /dev/null 2>&1' EXIT
-	trap 'exit 130' INT TERM
+	JOB_OUT="$out" JOB_CONTAINER="$container"
+	trap 'finalize_job 130 SIGINT; exit 130' INT
+	trap 'finalize_job 143 SIGTERM; exit 143' TERM
+	trap 'finalize_job $?' EXIT
 
 	echo "job $name: revision $sha, results in $out" >&2
-	timeout "$timeout_s" docker start -a "$container"
+	# The client runs in the background so a signal to this driver interrupts
+	# the wait at once instead of after the job ends.
+	timeout "$timeout_s" docker start -a "$container" &
+	JOB_CLIENT=$!
+	wait "$JOB_CLIENT"
 	local rc=$?
 	if (( rc == 124 )); then
-		echo "container-test: deadline ${timeout_s}s reached, killed $container" >&2
-		docker kill "$container" > /dev/null 2>&1
+		echo "container-test: deadline ${timeout_s}s reached, killing $container" >&2
+		finalize_job "$rc" deadline
+	else
+		finalize_job "$rc"
 	fi
-	# A killed job never writes exit_code or results; record docker's status
-	# and judge what it left, so its unfinished suites read "not_run".
-	[[ -f "$out/exit_code" ]] || echo "$rc" > "$out/exit_code"
-	if [[ ! -f "$out/results.json" && -f "$out/tests.txt" ]]; then
-		python3 "$TOOLS_DIR/accounting.py" "$out/logs" "$out/tests.txt" "$out/results.json"
-	fi
-	python3 - "$out/run.json" "$rc" <<'EOF'
-import json, sys, time
-path, rc = sys.argv[1], int(sys.argv[2])
-run = json.load(open(path))
-run.update(finished_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), container_exit=rc)
-json.dump(run, open(path, "w"), indent=2)
-EOF
-	echo "job $name: exit $rc — $out/results.json" >&2
 	return "$rc"
+}
+
+JOB_OUT="" JOB_CONTAINER="" JOB_CLIENT="" JOB_FINALIZED=""
+
+# finalize_job RC [REASON]: the one exit path of a run, normal or not. Kills
+# the container if it still runs and waits for the client, so nothing writes
+# to the results after this; then records RC, judges what the job left (its
+# unfinished suites read "not_run") and stamps run.json. A REASON (signal or
+# deadline) marks the run interrupted and never green.
+finalize_job() {
+	local rc="$1" reason="${2:-}"
+	[[ -n "$JOB_CONTAINER" && -z "$JOB_FINALIZED" ]] || return 0
+	JOB_FINALIZED=1
+	docker kill "$JOB_CONTAINER" > /dev/null 2>&1
+	[[ -n "$JOB_CLIENT" ]] && wait "$JOB_CLIENT" 2> /dev/null
+	if [[ -n "$reason" || ! -f "$JOB_OUT/exit_code" ]]; then
+		echo "$rc" > "$JOB_OUT/exit_code"
+	fi
+	if [[ ! -f "$JOB_OUT/results.json" && -f "$JOB_OUT/tests.txt" ]]; then
+		python3 "$TOOLS_DIR/accounting.py" "$JOB_OUT/logs" "$JOB_OUT/tests.txt" "$JOB_OUT/results.json"
+	fi
+	python3 - "$JOB_OUT" "$rc" "$reason" <<'EOF'
+import json, sys, time
+from pathlib import Path
+out, rc, reason = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+run = json.loads((out / "run.json").read_text())
+run.update(finished_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           container_exit=rc, interrupted=reason or None)
+(out / "run.json").write_text(json.dumps(run, indent=2))
+results_path = out / "results.json"
+if reason and results_path.exists():
+    results = json.loads(results_path.read_text())
+    results.update(green=False, interrupted=reason)
+    results_path.write_text(json.dumps(results, indent=2) + "\n")
+if not results_path.exists():  # interrupted before the container wrote tests.txt
+    results_path.write_text(json.dumps({"green": False, "interrupted": reason or None,
+                                        "suites": []}, indent=2) + "\n")
+EOF
+	echo "job $(basename "$JOB_OUT"): exit $rc${reason:+ ($reason)} — $JOB_OUT/results.json" >&2
 }
 
 cmd_stop() {

@@ -11,6 +11,14 @@
 # Minerva's port and profile.
 set -uo pipefail
 
+# Refuse before touching any profile or process unless this is the runner's
+# container: Docker's marker file, the read-only snapshot mount and the work
+# tree in-container.sh made.
+if [[ ! -f /.dockerenv || ! -d /snapshot || "${WORK:-}" != /work/tree || ! -d "$WORK/src" ]]; then
+	echo "app-smoke: refusing to run outside the container-test container (use scripts/container-test.sh run app-smoke)" >&2
+	exit 2
+fi
+
 PORT=9315
 URL="http://127.0.0.1:$PORT/mcp"
 STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S:-120}"
