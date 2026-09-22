@@ -206,4 +206,7 @@ func _test_text_layer_wiring() -> void:
 			"plain=%d" % native.plain_calls)
 	menu.hide()
 	layer.queue_free()
+	# Hand the fake session back (term._session = null) before freeing:
+	# detaching a real session disconnects signals the fake does not have.
+	made[2]._session = null
 	made[2].free()
