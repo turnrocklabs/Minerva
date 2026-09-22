@@ -77,7 +77,10 @@ jobs:
   # ─── Build macOS universal binary (arm64 + x86_64) ─────────────────
   build-macos:
     needs: [submodule-hash, test]
-    runs-on: macos-latest
+    # Pinned to macos-15, as build.yml's build-macos: macos-latest moved to
+    # macos-26 (Xcode 26 SDK), which Zig 0.15.2 cannot link against (undefined
+    # libSystem symbols). Revisit when Zig supports the macOS 26 SDK.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
