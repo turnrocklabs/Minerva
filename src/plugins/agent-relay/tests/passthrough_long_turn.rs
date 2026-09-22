@@ -290,6 +290,12 @@ fn a_resume_during_a_parked_stop_retry_waits_for_the_turn() {
     host.pump_while(&[], |v| escapes(v) < 2 && t0.elapsed() < Duration::from_secs(5));
     assert_eq!(escapes(&host.view()), 2, "the retry's ESC is in flight");
 
+    // A resume whose budget runs out while the turn is borrowed: still pending.
+    let id = resume(&mut host, "chat-long", "tok-race", 150);
+    let short = reply(&mut host, id);
+    assert_eq!(short["kind"], "pending", "{short}");
+    assert_eq!(short["operation_token"], "tok-race", "{short}");
+
     let waiting = resume(&mut host, "chat-long", "tok-race", 5_000);
     pump_for(&mut host, 300);
     assert!(!host.has_reply(waiting), "the resume waits while the turn is borrowed");

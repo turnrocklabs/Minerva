@@ -585,14 +585,18 @@ pub(crate) fn handle_passthrough_resume(params: &Value, id: Value, router: &Arc<
     let token = args.get("operation_token").and_then(|v| v.as_str()).unwrap_or("");
     let deadline = Instant::now() + Duration::from_millis(passthrough_budget_ms(args));
     // A turn borrowed to have its Stop written comes back within one host
-    // write; wait for it rather than calling it gone.
+    // write; wait for it rather than calling it gone. Still borrowed at this
+    // call's deadline, it is still running: pending, for the next resume.
     let pending = loop {
         match passthrough_ops::take(token, chat_id) {
             passthrough_ops::Take::Turn(p) => break p,
-            passthrough_ops::Take::Busy if Instant::now() < deadline => {
+            passthrough_ops::Take::Busy(started) => {
+                if Instant::now() >= deadline {
+                    return ok_response(id, tool_ok(pending_result(token, started)));
+                }
                 std::thread::sleep(Duration::from_millis(20));
             }
-            _ => return ok_response(id, tool_ok(json!({
+            passthrough_ops::Take::Gone => return ok_response(id, tool_ok(json!({
                 "kind": "error",
                 "text": "this chat has no running terminal turn to resume: it finished, was \
                          cancelled, or waited too long for its resume. Any reply it produced \

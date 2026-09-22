@@ -61,15 +61,17 @@ struct Ops {
     owners: HashMap<String, String>, // token → terminal_id
     interrupted: HashSet<String>,
     parked: HashMap<String, PendingTurn>,
-    /// Parked turns out of the store for an interrupt write: token → chat_id.
-    borrowed: HashMap<String, String>,
+    /// Parked turns out of the store for an interrupt write: token →
+    /// (chat_id, when the turn started).
+    borrowed: HashMap<String, (String, Instant)>,
 }
 
 /// What a resume finds under its token.
 pub(crate) enum Take {
     Turn(PendingTurn),
-    /// Out for a moment to have its Stop written; ask again shortly.
-    Busy,
+    /// Out for a moment to have its Stop written; ask again shortly. Carries
+    /// when the turn started, for a pending reply.
+    Busy(Instant),
     Gone,
 }
 
@@ -133,7 +135,7 @@ pub(crate) fn latch_interrupt(token: &str) -> (bool, Option<PendingTurn>) {
         o.interrupted.insert(token.to_string());
         let parked = o.parked.remove(token);
         if let Some(p) = &parked {
-            o.borrowed.insert(token.to_string(), p.chat_id.clone());
+            o.borrowed.insert(token.to_string(), (p.chat_id.clone(), p.started));
         }
         (true, parked)
     })
@@ -158,8 +160,10 @@ pub(crate) fn take(token: &str, chat_id: &str) -> Take {
     with_ops(|o| match o.parked.get(token) {
         Some(p) if p.chat_id == chat_id => Take::Turn(o.parked.remove(token).expect("present")),
         Some(_) => Take::Gone,
-        None if o.borrowed.get(token).map(String::as_str) == Some(chat_id) => Take::Busy,
-        None => Take::Gone,
+        None => match o.borrowed.get(token) {
+            Some((chat, started)) if chat == chat_id => Take::Busy(*started),
+            _ => Take::Gone,
+        },
     })
 }
 
@@ -194,7 +198,7 @@ pub(crate) fn park(token: &str, mut pending: PendingTurn) -> Option<PendingTurn>
     pending.parked_at = Instant::now();
     let unwritten = with_ops(|o| {
         if o.interrupted.contains(token) && !pending.turn.interrupt_written() {
-            o.borrowed.insert(token.to_string(), pending.chat_id.clone());
+            o.borrowed.insert(token.to_string(), (pending.chat_id.clone(), pending.started));
             return Some(pending);
         }
         o.parked.insert(token.to_string(), pending);
@@ -235,7 +239,7 @@ fn retry_interrupts() {
             .collect();
         tokens.into_iter()
             .filter_map(|t| o.parked.remove(&t).map(|p| (t, p)))
-            .inspect(|(t, p)| { o.borrowed.insert(t.clone(), p.chat_id.clone()); })
+            .inspect(|(t, p)| { o.borrowed.insert(t.clone(), (p.chat_id.clone(), p.started)); })
             .collect()
     });
     for (token, mut pending) in waiting {
