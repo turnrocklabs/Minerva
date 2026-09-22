@@ -172,6 +172,11 @@ elif [[ -n "${1:-}" ]]; then
 	exit 2
 fi
 
+# Tests run headless unless the caller supplies a display: dev-test.sh
+# --display sets MINERVA_TEST_DISPLAY under Xvfb for real windows and popups.
+GODOT_DISPLAY_MODE=(--headless)
+[[ -n "${MINERVA_TEST_DISPLAY:-}" ]] && GODOT_DISPLAY_MODE=()
+
 pass=0
 fail=0
 failed_names=()
@@ -192,7 +197,7 @@ for t in "${tests[@]}"; do
 	else
 		log_file=$(mktemp)
 		{ "$GODOT" --headless --path "$REPO_ROOT/src" --script "$t" --check-only &&
-			"$GODOT" --headless --path "$REPO_ROOT/src" --script "$t"; } 2>&1 | tee "$log_file"
+			"$GODOT" "${GODOT_DISPLAY_MODE[@]}" --path "$REPO_ROOT/src" --script "$t"; } 2>&1 | tee "$log_file"
 		rc=${PIPESTATUS[0]}
 		if grep -q 'SCRIPT ERROR:' "$log_file"; then rc=1; fi
 		rm -f "$log_file"

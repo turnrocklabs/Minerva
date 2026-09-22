@@ -155,10 +155,15 @@ def git(*args: str) -> str:
                           capture_output=True, text=True).stdout.strip()
 
 
+def builder_tag() -> str:
+    """The builder image tag: a content hash of its Dockerfile, so it needs no docker."""
+    digest = hashlib.sha256((IMAGE_DIR / "Dockerfile").read_bytes()).hexdigest()[:12]
+    return f"minerva-container-build:{digest}"
+
+
 def ensure_image() -> tuple[str, str]:
     """Build (once) and return the builder image tag and id."""
-    digest = hashlib.sha256((IMAGE_DIR / "Dockerfile").read_bytes()).hexdigest()[:12]
-    tag = f"minerva-container-build:{digest}"
+    tag = builder_tag()
     probe = subprocess.run(["docker", "image", "inspect", "-f", "{{.Id}}", tag],
                            capture_output=True, text=True)
     if probe.returncode != 0:

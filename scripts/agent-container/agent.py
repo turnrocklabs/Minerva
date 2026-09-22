@@ -37,7 +37,8 @@ Everything a session keeps lives under the state root
   sessions/NAME/launcher.json         the attached launcher's process group and
                                       the container's init, for Minerva to see
                                       the harness in front (host-only)
-  run/NAME-*/                         one gateway run's sessions.json + sockets
+  run/NAME-*/                         one gateway run's sessions.json + sockets,
+                                      and natives.json (see natives_manifest)
 Every session mounts all four task repositories (REPOS), independent clones
 under ${MINERVA_AGENT_WORK:-~/agent-work}/TASK/, made once from the host
 checkouts and mounted at the same absolute path. --start-in only picks the
@@ -65,6 +66,9 @@ import threading
 import time
 
 HERE = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(HERE.parent / "container-build"))
+import build as container_build  # noqa: E402  the builder image and native cache
 COMPOSE = HERE / "docker-compose.yml"
 IMAGE_FILES = ["Dockerfile", "forwarder.py", "minerva-session", "agent-env.sh", "agent-bashrc",
                "agent-upgrade", "tmux.conf", "claude-mcp.json", "smoke.py"]
@@ -78,6 +82,7 @@ NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 NOTE_ID = re.compile(r"[0-9a-f]{32,64}")
 # Characters that would change the meaning of a `docker -v src:dst[:ro]`.
+NATIVES_MANIFEST = "/run/minerva-natives.json"
 UNSAFE_PATH = re.compile(r"[:,\n\r\0]")
 SOCKETS = ("minerva", "docket", "nudge", "proxy")
 SOCKET_WAIT_S = 15
@@ -187,7 +192,7 @@ def session_dir(name):
 
 def image_tag():
     """Content hash of everything that goes into the image."""
-    digest = hashlib.sha256()
+    digest = hashlib.sha256(container_build.builder_tag().encode() + b"\0")  # the base image
     files = [HERE / f for f in IMAGE_FILES] + sorted((HERE / "gateway").glob("*.py")) \
         + sorted((HERE / "gateway").glob("*.json"))
     for path in files:
@@ -199,6 +204,7 @@ def image_tag():
 
 def compose_env():
     return {**os.environ, "MINERVA_AGENT_IMAGE": image_tag(),
+            "MINERVA_BUILDER_IMAGE": container_build.builder_tag(),
             "AGENT_UID": str(os.getuid()), "AGENT_GID": str(os.getgid())}
 
 
@@ -362,7 +368,30 @@ def check_saved(name, config):
 
 
 def cmd_build(args):
+    container_build.ensure_image()  # the agent image is built on the builder image
     return run(compose("build", "build", "gateway")).returncode
+
+
+def natives_manifest(run_dir):
+    """Write run_dir/natives.json for dev-natives.py and return the mounts that
+    carry it: the builder image the agent image was built on, and the native
+    build cache, mounted read-only at its own path so symlinks into it resolve
+    on the host too. The container reads this but cannot change it."""
+    tag = container_build.builder_tag()
+    probe = subprocess.run(["docker", "image", "inspect", "-f", "{{.Id}}", tag],
+                           capture_output=True, text=True)
+    if probe.returncode != 0 or not probe.stdout.strip():
+        raise Refused(f"builder image {tag} is missing: run `agent.py build` first")
+    try:
+        cache = container_build.cache_root()
+    except SystemExit as exc:
+        raise Refused(str(exc))
+    builds = cache / "builds"
+    has_cache = builds.is_dir() and not builds.is_symlink()
+    write_json(run_dir / "natives.json", {"builder_image": {"tag": tag, "id": probe.stdout.strip()},
+                                          "cache": str(cache) if has_cache else None})
+    mounts = bind_mount(run_dir / "natives.json", NATIVES_MANIFEST, True)
+    return mounts + (bind_mount(builds, builds, True) if has_cache else [])
 
 
 def cmd_start(args):
@@ -391,6 +420,7 @@ def cmd_start(args):
 
         run_dir = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=private_dir(state_root() / "run")))
         sock = private_dir(run_dir / "sock")
+        native_mounts = natives_manifest(run_dir)  # may refuse: before anything starts
         write_json(run_dir / "sessions.json", {"sessions": [{
             "name": name, "harness": args.harness, "socket_dir": "/run/minerva-agent/sock",
             "docket_projects": config["projects"], "control_dir": "/run/minerva-agent/control"}]})
@@ -410,11 +440,13 @@ def cmd_start(args):
             time.sleep(0.2)
 
         mounts = bind_mount(sock, "/run/minerva-agent", True) + bind_mount(home, "/agent-home")
+        mounts += native_mounts
         for clone in clones:
             mounts += bind_mount(clone, clone)
         workdir = work_root() / args.task / config["start_in"]
         started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", str(workdir),
-                              "-e", f"MINERVA_AGENT_SESSION={name}", *mounts,
+                              "-e", f"MINERVA_AGENT_SESSION={name}",
+                              "-e", f"MINERVA_NATIVES_MANIFEST={NATIVES_MANIFEST}", *mounts,
                               "dev", "/opt/minerva-agent/minerva-session", args.harness, args.mode),
                       stdout=subprocess.DEVNULL)
         if started.returncode != 0:

@@ -1,9 +1,14 @@
 # Agent dev image for scripts/agent-container: one image for both compose
 # services (dev = the harness, gateway = the host-side filter). Holds tools
 # only — never source, credentials or harness state; those arrive per run as
-# mounts chosen by agent.py. Pins below are kept equal to
-# scripts/container-test/Dockerfile (tests/test_agent_launcher.py checks).
-FROM ubuntu:24.04
+# mounts chosen by agent.py. It is built on the pinned builder image
+# (scripts/container-build/Dockerfile), so an agent rebuilds natives with the
+# toolchains build.py uses, and adds the test image's runtime: Godot, Node,
+# the X/GL runtime libraries and Xvfb. Pins and runtime packages below are
+# kept equal to scripts/container-test/Dockerfile (tests/test_agent_launcher.py
+# checks).
+ARG BUILDER_IMAGE
+FROM ${BUILDER_IMAGE}
 
 ARG GODOT_VERSION=4.6.2
 ARG GODOT_SHA512=b6e4d5a716085e9649905be2afe77f723f97853544fb33392ce3d32594c730a95d9eb4d1042ed51508904c9e1d996bd36b7c7a2bf4f93f5b1885e98d81b792e7
@@ -17,7 +22,11 @@ ARG CODEX_VERSION=0.155.1
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl unzip xz-utils python3 g++ make procps git ripgrep less tmux \
+        procps ripgrep less tmux \
+        libx11-6 libxcursor1 libxinerama1 libgl1 libglu1-mesa libegl1 \
+        libasound2t64 libpulse0 libdbus-1-3 libudev1 libxi6 libxrandr2 \
+        libgtk-3-0 libnss3 libgbm1 libxkbcommon0 libfontconfig1 \
+        xvfb xauth \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL -o /tmp/godot.zip \

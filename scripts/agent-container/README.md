@@ -36,6 +36,27 @@ directory: starting in Minerva does not bring back a conversation held in
 and run `claude --resume` there, choosing the conversation explicitly (or
 migrate with `--start-in ccsandbox`).
 
+## Dev tests inside a session
+
+The image is built on the native builder image (`scripts/container-build/Dockerfile`),
+so a session has the same pinned toolchains (Rust, Zig, SCons, CMake) plus
+Godot, the X/GL runtime libraries and Xvfb. From the Minerva clone:
+
+```bash
+scripts/dev-test.sh test/test_markdownlabel_tables.gd        # headless
+scripts/dev-test.sh --display test/test_terminal_selection_copy.gd   # real window under Xvfb
+(cd src/plugins/agent-relay && cargo test --locked)
+```
+
+`dev-test.sh` first runs `scripts/container-build/dev-natives.py`, which puts
+each native binary in place: a read-only symlink into the host's build cache
+when that component's inputs are unedited and the cache holds a verified
+build, otherwise a local build from the working tree. It then imports the
+project twice and runs the tests through `run-functional-tests.sh`. Anything
+stale, unverifiable or failing stops the run with the reason. `agent.py
+start` hands the session the builder image identity and the cache through a
+read-only `natives.json`; cargo keeps its registry in `/agent-home/cargo`.
+
 ## Upgrading Claude Code or Codex in a session
 
 The image's copy of each CLI is read-only, and `claude update` does not work

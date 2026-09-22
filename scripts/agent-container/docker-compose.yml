@@ -5,7 +5,8 @@
 #            network, and nothing else mounted: no repos, no credentials.
 #   dev      the harness, long-running inside tmux: no network at all, host
 #            uid, read-only root, per-session mounts (task clones, harness
-#            config dir, sockets) added by agent.py at `compose run` time.
+#            config dir, sockets, native build cache read-only) added by
+#            agent.py at `compose run` time.
 #            Minerva terminals attach with `docker exec ... tmux attach`.
 # Both services sit in the "session" profile, so a bare `docker compose up`
 # starts nothing half-configured. Build with `agent.py build`.
@@ -26,6 +27,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILDER_IMAGE: "${MINERVA_BUILDER_IMAGE:?set by agent.py}"
     network_mode: host
     pids_limit: 128
     mem_limit: 256m
@@ -36,9 +39,11 @@ services:
   dev:
     <<: *hardened
     network_mode: none
+    # exec: Docker's tmpfs default is noexec, which breaks tests and builds
+    # that run helpers they write under /tmp or HOME.
     tmpfs:
-      - /tmp:size=2g,mode=1777
-      - /home/agent:size=512m,mode=1777
+      - /tmp:size=2g,mode=1777,exec
+      - /home/agent:size=512m,mode=1777,exec
     pids_limit: 1024
     mem_limit: 8g
     memswap_limit: 8g

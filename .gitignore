@@ -38,6 +38,7 @@ zig-out/
 
 # ffmpeg addon binaries (downloaded or built from vendor/EIRTeam.FFmpeg)
 src/addons/ffmpeg/linux64/*.so*
+src/addons/ffmpeg/linux64
 src/addons/ffmpeg/macos/*.dylib
 src/addons/ffmpeg/macos/*.framework/
 src/addons/ffmpeg/win64/*.dll
@@ -45,7 +46,7 @@ src/addons/ffmpeg/win64/*.lib
 src/addons/ffmpeg/.ffmpeg-version
 
 # godot-sqlite addon binaries (downloaded by build script)
-src/addons/godot-sqlite/bin/
+src/addons/godot-sqlite/bin
 src/addons/godot-sqlite/.sqlite-version
 *.dbliteMinerva.dmg
 

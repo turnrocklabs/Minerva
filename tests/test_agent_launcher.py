@@ -35,7 +35,11 @@ with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
 def save():
     state.write_text(json.dumps(data))
 if args[:2] == ["image", "inspect"]:
-    sys.exit(0 if os.environ.get("FAKE_IMAGE") == "present" else 1)
+    if os.environ.get("FAKE_IMAGE") != "present":
+        sys.exit(1)
+    if "{{.Id}}" in args:
+        print("sha256:fakebuilder")
+    sys.exit(0)
 if args[0] == "inspect" and "{{.State.Pid}}" in args:
     if args[-1] in data["running"]:
         print(1); sys.exit(0)     # the host's init stands in for the container's
@@ -166,7 +170,9 @@ class LauncherTest(unittest.TestCase):
             f"{state}/sessions/alpha/control:/run/minerva-agent/control:ro"]))
         self.assertEqual(sorted(self.mounts(dev)), sorted([
             f"{run_dir}/sock:/run/minerva-agent:ro",
+            f"{run_dir}/natives.json:/run/minerva-natives.json:ro",
             f"{state}/sessions/alpha/home:/agent-home"] + [f"{c}:{c}" for c in clones]))
+        self.assertIn("MINERVA_NATIVES_MANIFEST=/run/minerva-natives.json", dev)
         self.assertEqual(dev[-4:], ["dev", "/opt/minerva-agent/minerva-session", "claude", "start"])
         self.assertEqual(dev[dev.index("--workdir") + 1], str(clone))
         for argv in (gateway, dev):
@@ -193,6 +199,30 @@ class LauncherTest(unittest.TestCase):
             objects = [p for p in (c / ".git/objects").rglob("*") if p.is_file()]
             self.assertTrue(objects)
             self.assertTrue(all(p.stat().st_nlink == 1 for p in objects))
+
+    def test_start_hands_the_native_cache_over_read_only(self):
+        # No cache yet: the manifest says so and nothing extra is mounted.
+        self.start_alpha()
+        run_dir = next((self.home / "state/run").iterdir())
+        manifest = json.loads((run_dir / "natives.json").read_text())
+        self.assertEqual(manifest["cache"], None)
+        self.assertEqual(manifest["builder_image"]["id"], "sha256:fakebuilder")
+        self.assertTrue(manifest["builder_image"]["tag"].startswith("minerva-container-build:"))
+        self.assertEqual(self.agent("stop", "alpha").returncode, 0)
+
+        builds = self.home / ".cache/minerva-container-tests/builds"
+        builds.mkdir(parents=True)
+        self.start_alpha()
+        dev = self.runs()[-1]
+        self.assertIn(f"{builds}:{builds}:ro", self.mounts(dev))
+        newest = max((self.home / "state/run").iterdir(), key=lambda d: d.stat().st_mtime_ns)
+        self.assertEqual(json.loads((newest / "natives.json").read_text())["cache"], str(builds.parent))
+
+    def test_start_refuses_without_the_builder_image(self):
+        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1",
+                            env={**self.env, "FAKE_IMAGE": "absent"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.runs(), [])
 
     def test_start_in_picks_the_directory_and_never_reduces_mounts(self):
         self.start_alpha("--start-in", "ccsandbox")
@@ -554,6 +584,15 @@ class StaticTest(unittest.TestCase):
         self.assertEqual(set(ours), {"GODOT_VERSION", "GODOT_SHA512", "NODE_VERSION", "NODE_SHA256"})
         self.assertEqual(ours, theirs)
 
+    def test_image_has_the_test_images_runtime_packages(self):
+        def packages(path):
+            block = re.search(r"apt-get install[^\n]*\\\n((?:.*\\\n)+)", path.read_text()).group(1)
+            return set(re.findall(r"[a-z0-9][\w.+-]+", block.replace("&& rm", "")))
+        runtime = {p for p in packages(ROOT / "scripts/container-test/Dockerfile")
+                   if p.startswith("lib") or p in ("xvfb", "xauth")}
+        self.assertTrue(runtime)
+        self.assertLessEqual(runtime, packages(AGENT / "Dockerfile"))
+
     def test_image_copies_every_file_the_launcher_hashes(self):
         sys.path.insert(0, str(AGENT))
         import agent
@@ -608,7 +647,8 @@ class StaticTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("docker"), "docker CLI not installed")
     def test_compose_services_are_hardened(self):
         # `docker compose config` only parses the file; it starts nothing.
-        env = {**os.environ, "MINERVA_AGENT_IMAGE": "minerva-agent:test", "AGENT_UID": "1000", "AGENT_GID": "1000"}
+        env = {**os.environ, "MINERVA_AGENT_IMAGE": "minerva-agent:test",
+               "MINERVA_BUILDER_IMAGE": "minerva-container-build:test", "AGENT_UID": "1000", "AGENT_GID": "1000"}
         out = subprocess.run(["docker", "compose", "-f", str(AGENT / "docker-compose.yml"), "--profile", "session",
                               "config", "--format", "json"], env=env, capture_output=True, text=True, check=True)
         services = json.loads(out.stdout)["services"]
@@ -623,6 +663,8 @@ class StaticTest(unittest.TestCase):
                 self.assertFalse(svc.get("privileged", False))
         self.assertEqual(services["gateway"]["network_mode"], "host")
         self.assertEqual(services["dev"]["network_mode"], "none")
+        self.assertEqual(services["gateway"]["build"]["args"]["BUILDER_IMAGE"], "minerva-container-build:test")
+        self.assertTrue(all(",exec" in t for t in services["dev"]["tmpfs"]), services["dev"]["tmpfs"])
 
 
 class ForwarderTest(unittest.TestCase):
