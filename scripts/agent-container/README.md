@@ -4,6 +4,38 @@
 hardened dev container; see its docstring for `build`, `start`, `attach`,
 `stop` and where session state lives.
 
+## One workspace, four repositories
+
+Every session mounts its own clones of Minerva, minerva-plugins,
+minervaservices and ccsandbox under `~/agent-work/TASK/`, so an agent can
+work across all four. `--start-in REPO` only picks where the harness starts
+(default `Minerva`, which loads Minerva's `CLAUDE.md`); it never reduces the
+mounts. The old `--repo` filter is refused.
+
+```bash
+python3 ~/github/Minerva/scripts/agent-container/agent.py up NAME --harness claude --task TASK
+python3 ~/github/Minerva/scripts/agent-container/agent.py up NAME --harness claude --task TASK --start-in ccsandbox
+```
+
+### Sessions started with a single repository
+
+A session saved before this mounts only the repos it was started with.
+`start` and `up` refuse it; `attach` still works but warns. To move it over,
+exit the harness and the session shell (or `agent.py stop NAME`), then:
+
+```bash
+python3 ~/github/Minerva/scripts/agent-container/agent.py migrate NAME [--start-in REPO]
+python3 ~/github/Minerva/scripts/agent-container/agent.py up NAME --harness H --task SAME_TASK --start-in REPO --mode shell
+```
+
+`migrate` keeps the old settings as `session.legacy.json` and never touches
+the session home (login, transcripts) or its existing clone; the next start
+clones only the missing repositories. Harness transcripts are indexed by
+directory: starting in Minerva does not bring back a conversation held in
+`ccsandbox`. To continue it, `cd` to the ccsandbox clone in the session shell
+and run `claude --resume` there, choosing the conversation explicitly (or
+migrate with `--start-in ccsandbox`).
+
 ## Upgrading Claude Code or Codex in a session
 
 The image's copy of each CLI is read-only, and `claude update` does not work

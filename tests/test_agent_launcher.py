@@ -20,6 +20,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENT = ROOT / "scripts/agent-container"
+REPOS = {"Minerva": "github/Minerva", "minerva-plugins": "github/minerva-plugins",
+         "minervaservices": "gitlab/minervaservices", "ccsandbox": "gitlab/ccsandbox"}
 sys.dont_write_bytecode = True
 
 FAKE_DOCKER = r'''#!/usr/bin/env python3
@@ -92,13 +94,14 @@ class LauncherTest(unittest.TestCase):
             path.write_text(text)
             path.chmod(0o755)
         self.home = self.s / "home"
-        src = self.home / "github" / "Minerva"
-        src.mkdir(parents=True)
-        subprocess.run(["/usr/bin/git", "init", "-q", str(src)], check=True)
-        (src / "README").write_text("hello\n")
-        subprocess.run(["/usr/bin/git", "-C", str(src), "add", "README"], check=True)
-        subprocess.run(["/usr/bin/git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t",
-                        "commit", "-qm", "init"], check=True)
+        for rel in REPOS.values():
+            src = self.home / rel
+            src.mkdir(parents=True)
+            subprocess.run(["/usr/bin/git", "init", "-q", str(src)], check=True)
+            (src / "README").write_text("hello\n")
+            subprocess.run(["/usr/bin/git", "-C", str(src), "add", "README"], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-qm", "init"], check=True)
         self.env = {**os.environ, "HOME": str(self.home), "PATH": f"{self.s / 'bin'}:{os.environ['PATH']}",
                     "MINERVA_AGENT_STATE": str(self.home / "state"),
                     "FAKE_DOCKER_STATE": str(self.s / "docker-state.json"),
@@ -152,6 +155,7 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         gateway, dev = self.runs()
         clone = self.home / "agent-work/t1/Minerva"
+        clones = [self.home / "agent-work/t1" / repo for repo in REPOS]
         state = self.home / "state"
         run_dir = next((state / "run").iterdir())
 
@@ -162,15 +166,15 @@ class LauncherTest(unittest.TestCase):
             f"{state}/sessions/alpha/control:/run/minerva-agent/control:ro"]))
         self.assertEqual(sorted(self.mounts(dev)), sorted([
             f"{run_dir}/sock:/run/minerva-agent:ro",
-            f"{state}/sessions/alpha/home:/agent-home",
-            f"{clone}:{clone}"]))
+            f"{state}/sessions/alpha/home:/agent-home"] + [f"{c}:{c}" for c in clones]))
         self.assertEqual(dev[-4:], ["dev", "/opt/minerva-agent/minerva-session", "claude", "start"])
         self.assertEqual(dev[dev.index("--workdir") + 1], str(clone))
         for argv in (gateway, dev):
             joined = " ".join(argv)
             self.assertNotIn("docker.sock", joined)
             self.assertNotIn(f"{self.home}:", joined)                      # never HOME itself
-            self.assertNotIn(f"{self.home}/github/Minerva", joined)        # never the host checkout
+            for rel in REPOS.values():
+                self.assertNotIn(f"{self.home}/{rel}", joined)             # never a host checkout
             self.assertNotIn("TOKEN", joined)
             self.assertNotIn("MINERVA_TERMINAL_ID", joined)                # identity is the binding's job
         self.assertTrue(all(c["image"] and c["image"].startswith("minerva-agent:")
@@ -185,9 +189,87 @@ class LauncherTest(unittest.TestCase):
         for d in (state / "sessions/alpha/home", state / "sessions/alpha/control", run_dir / "sock"):
             self.assertEqual(d.stat().st_mode & 0o777, 0o700, d)
         # An independent clone: object files are copies, not hardlinks into the host repo.
-        objects = [p for p in (clone / ".git/objects").rglob("*") if p.is_file()]
-        self.assertTrue(objects)
-        self.assertTrue(all(p.stat().st_nlink == 1 for p in objects))
+        for c in clones:
+            objects = [p for p in (c / ".git/objects").rglob("*") if p.is_file()]
+            self.assertTrue(objects)
+            self.assertTrue(all(p.stat().st_nlink == 1 for p in objects))
+
+    def test_start_in_picks_the_directory_and_never_reduces_mounts(self):
+        self.start_alpha("--start-in", "ccsandbox")
+        dev = self.runs()[-1]
+        work = self.home / "agent-work/t1"
+        self.assertEqual(dev[dev.index("--workdir") + 1], str(work / "ccsandbox"))
+        for repo in REPOS:
+            self.assertIn(f"{work / repo}:{work / repo}", self.mounts(dev))
+        saved = json.loads((self.home / "state/sessions/alpha/session.json").read_text())
+        self.assertEqual((saved["repos"], saved["start_in"]), (sorted(REPOS), "ccsandbox"))
+        # Same session, other starting directory: different settings, refused.
+        self.agent("stop", "alpha")
+        other = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+        self.assertEqual(other.returncode, 1)
+        self.assertIn("different settings", other.stderr)
+        # The old repo filter is refused, never read as a subset or a start directory.
+        legacy = self.agent("start", "beta", "--harness", "claude", "--task", "t2", "--repo", "Minerva")
+        self.assertEqual(legacy.returncode, 1)
+        self.assertIn("--start-in", legacy.stderr)
+        self.assertEqual(len(self.runs()), 2)
+
+    def test_a_missing_source_checkout_is_refused_before_anything_happens(self):
+        missing = self.home / "gitlab/minervaservices"
+        missing.rename(self.s / "moved-away")
+        before = self.tree()
+        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{missing} is not a git checkout", result.stderr)
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(self.runs(), [])
+        self.assertFalse((self.s / "git.log").exists())
+
+    def test_legacy_single_repo_session_is_refused_until_migrated(self):
+        sdir = self.home / "state/sessions/alpha"
+        (sdir / "home").mkdir(parents=True)
+        for d in (self.home / "state", self.home / "state/sessions", sdir, sdir / "home"):
+            d.chmod(0o700)
+        (sdir / "home/transcript").write_text("kept\n")
+        legacy = {"harness": "claude", "task": "t1", "repos": ["ccsandbox"],
+                  "projects": ["minerva", "plugins.dct", "minerva-services", "Master"]}
+        (sdir / "session.json").write_text(json.dumps(legacy))
+        # The legacy session's own clone, made earlier; the host never runs git inside it.
+        old_clone = self.home / "agent-work/t1/ccsandbox"
+        subprocess.run(["/usr/bin/git", "clone", "-q", str(self.home / "gitlab/ccsandbox"), str(old_clone)],
+                       check=True)
+        for command in ("start", "up"):
+            result = self.agent(command, "alpha", "--harness", "claude", "--task", "t1")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("legacy session that mounts only ccsandbox", result.stderr)
+        self.assertEqual(self.runs(), [])
+
+        # Attaching a running legacy session still works, with a warning.
+        state = self.s / "docker-state.json"
+        state.write_text(json.dumps({"running": ["minerva-agent-alpha"]}))
+        refused = self.agent("migrate", "alpha")
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("stop it first", refused.stderr)
+        attached = self.agent("attach", "alpha")
+        self.assertEqual(attached.returncode, 0, attached.stderr)
+        self.assertIn("legacy session alpha mounts only ccsandbox", attached.stderr)
+        state.write_text(json.dumps({"running": []}))
+
+        migrated = self.agent("migrate", "alpha")
+        self.assertEqual(migrated.returncode, 0, migrated.stderr)
+        self.assertEqual(json.loads((sdir / "session.legacy.json").read_text()), legacy)
+        self.assertEqual(json.loads((sdir / "session.json").read_text()),
+                         {**legacy, "repos": sorted(REPOS), "start_in": "Minerva"})
+        self.assertEqual(self.agent("migrate", "alpha").returncode, 1)     # never twice
+        self.start_alpha()
+        dev = self.runs()[-1]
+        for repo in REPOS:
+            clone = self.home / "agent-work/t1" / repo
+            self.assertIn(f"{clone}:{clone}", self.mounts(dev))
+        self.assertEqual((sdir / "home/transcript").read_text(), "kept\n")
+        git_log = (self.s / "git.log").read_text().splitlines()
+        self.assertEqual(len(git_log), 3, git_log)                    # only the three missing clones
+        self.assertFalse(any("ccsandbox" in line for line in git_log))
 
     def test_no_duplicate_launch_and_no_git_inside_existing_clones(self):
         self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
@@ -201,8 +283,8 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(self.agent("stop", "alpha").returncode, 0)
         self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
         git_log = (self.s / "git.log").read_text().splitlines()
-        self.assertEqual(len(git_log), 1, git_log)                   # the one initial clone
-        self.assertNotIn(str(clone), git_log[0].split("\t")[0])       # not run from inside it
+        self.assertEqual(len(git_log), len(REPOS), git_log)          # the four initial clones
+        self.assertFalse(any(line.split("\t")[0].startswith(str(clone.parent)) for line in git_log))
 
     def test_changed_settings_for_a_name_are_refused(self):
         self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)

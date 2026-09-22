@@ -2,13 +2,14 @@
 """Trusted host launcher for agent containers (one harness per session).
 
   agent.py build
-  agent.py start NAME --harness claude|codex --task TASK [--repo R]... [--project P]...
+  agent.py start NAME --harness claude|codex --task TASK [--start-in REPO] [--project P]...
                  [--mode start|resume|shell] [--note-read ID]... [--note-write ID]...
   agent.py attach NAME [--notify-to TERMINAL_ID]... [--takeover]
   agent.py up NAME [start options] [attach options]     start if needed, then attach
   agent.py notes NAME [--note-read ID]... [--note-write ID]...
   agent.py stop NAME
   agent.py list
+  agent.py migrate NAME [--start-in REPO]    move a stopped pre-unified session to all four repos
 
 A session is long-running: `start` launches its gateway and dev containers
 detached. In the dev container a tmux session holds an interactive shell
@@ -37,8 +38,13 @@ Everything a session keeps lives under the state root
                                       the container's init, for Minerva to see
                                       the harness in front (host-only)
   run/NAME-*/                         one gateway run's sessions.json + sockets
-Task repositories are independent clones under ${MINERVA_AGENT_WORK:-~/agent-work}/TASK/,
-made once from the host checkouts and mounted at the same absolute path.
+Every session mounts all four task repositories (REPOS), independent clones
+under ${MINERVA_AGENT_WORK:-~/agent-work}/TASK/, made once from the host
+checkouts and mounted at the same absolute path. --start-in only picks the
+directory the harness starts in (default Minerva, whose CLAUDE.md it loads).
+Sessions saved before this (a "repos" subset, no "start_in") are legacy:
+start and up refuse them and attach warns, until `migrate` rewrites their
+session.json (keeping the old one as session.legacy.json).
 This tool never deletes files and never runs git inside an existing clone.
 """
 import argparse
@@ -150,6 +156,15 @@ def check_clone_paths(task, repos):
             if os.path.lexists(path) and (os.path.islink(path) or not os.path.isdir(path)
                                           or os.path.realpath(path) != str(path)):
                 raise Refused(f"{path} is not a plain directory inside the work root")
+
+
+def check_sources(task, repos):
+    """Every repository still to be cloned must have its host checkout, so a
+    missing one is refused before anything is written or started."""
+    for repo in repos:
+        src = source_root() / REPOS[repo]
+        if not os.path.lexists(work_root() / task / repo) and not (src / ".git").is_dir():
+            raise Refused(f"{src} is not a git checkout (needed for {repo})")
 
 
 def private_dir(path):
@@ -308,8 +323,22 @@ def ensure_clone(repo, task):
 # ── commands ─────────────────────────────────────────────────────────────
 
 def settings(args):
-    return {"harness": args.harness, "task": args.task, "repos": args.repo or ["Minerva"],
-            "projects": args.project or DOCKET_PROJECTS}
+    if args.repo:
+        raise Refused("--repo is gone: every session mounts all four repositories; "
+                      "use --start-in REPO to choose where the harness starts")
+    return {"harness": args.harness, "task": args.task, "repos": sorted(REPOS),
+            "start_in": args.start_in, "projects": args.project or DOCKET_PROJECTS}
+
+
+def is_legacy(saved):
+    """A session.json from before every session mounted all four repositories."""
+    return isinstance(saved, dict) and "repos" in saved and "start_in" not in saved
+
+
+def legacy_refusal(name, saved):
+    return Refused(f"session {name} is a legacy session that mounts only {', '.join(saved['repos'])}; "
+                   f"stop it, then `agent.py migrate {name}` to mount all four repositories "
+                   "(its home and clones are kept), or use a new name")
 
 
 def check_saved(name, config):
@@ -322,6 +351,8 @@ def check_saved(name, config):
         saved = json.loads(path.read_text())
     except (OSError, ValueError):
         saved = None
+    if is_legacy(saved):
+        raise legacy_refusal(name, saved)
     if not isinstance(saved, dict) or set(saved) != set(config):
         raise Refused(f"{path} is unreadable or incomplete; fix it by hand or use a new name")
     if saved != config:
@@ -338,6 +369,7 @@ def cmd_start(args):
     check_layout()
     name, config = args.name, settings(args)
     check_clone_paths(args.task, config["repos"])
+    check_sources(args.task, config["repos"])
     dev, gw = containers(name)
     tag = image_tag()
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode != 0:
@@ -380,7 +412,8 @@ def cmd_start(args):
         mounts = bind_mount(sock, "/run/minerva-agent", True) + bind_mount(home, "/agent-home")
         for clone in clones:
             mounts += bind_mount(clone, clone)
-        started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", str(clones[0]),
+        workdir = work_root() / args.task / config["start_in"]
+        started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", str(workdir),
                               "-e", f"MINERVA_AGENT_SESSION={name}", *mounts,
                               "dev", "/opt/minerva-agent/minerva-session", args.harness, args.mode),
                       stdout=subprocess.DEVNULL)
@@ -459,6 +492,11 @@ def cmd_attach(args):
             raise Refused(f"bad terminal id {target!r}")
     if not running(dev):
         raise Refused(f"session {name} is not running: use `agent.py up` or `agent.py start`")
+    saved = read_json(session_dir(name) / "session.json")
+    if is_legacy(saved):
+        # Attach still works, so a live legacy session is never cut off.
+        print(f"agent.py: warning: legacy session {name} mounts only {', '.join(saved['repos'])}; "
+              f"after it stops, `agent.py migrate {name}`", file=sys.stderr)
     lease = Lease(name, terminal, args.notify_to or [], container_identity(dev))
     client = None
 
@@ -542,6 +580,33 @@ def cmd_stop(args):
     return 0
 
 
+def cmd_migrate(args):
+    """Rewrite a stopped legacy session's settings to the unified shape. The old
+    file is kept beside it; the home (login, transcripts) is untouched. The
+    missing clones are made by the next start."""
+    check_layout()
+    with session_lock(args.name):
+        if running(containers(args.name)[0]):
+            raise Refused(f"session {args.name} is running: stop it first")
+        path = session_dir(args.name) / "session.json"
+        saved = read_json(path)
+        if not is_legacy(saved):
+            raise Refused(f"{path} is not a legacy session")
+        backup = session_dir(args.name) / "session.legacy.json"
+        try:
+            fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            raise Refused(f"{backup} already exists") from None
+        with os.fdopen(fd, "wb") as f:
+            f.write(path.read_bytes())
+        config = {**saved, "repos": sorted(REPOS), "start_in": args.start_in}
+        write_json(path, config)
+    print(f"session {args.name} is configured to mount all four repositories on its next start, "
+          f"starting in {args.start_in}; "
+          f"previous settings kept in {backup}; start it with the same --harness/--task")
+    return 0
+
+
 def cmd_list(args):
     root = state_root() / "sessions"
     for sdir in sorted(root.iterdir()) if root.is_dir() else []:
@@ -568,7 +633,8 @@ def parse(argv):
     def start_options(p):
         p.add_argument("--harness", required=True, choices=["claude", "codex"])
         p.add_argument("--task", required=True, type=session_name)
-        p.add_argument("--repo", action="append", choices=sorted(REPOS))
+        p.add_argument("--start-in", default="Minerva", choices=sorted(REPOS))
+        p.add_argument("--repo", action="append", help=argparse.SUPPRESS)  # refused: see settings()
         p.add_argument("--project", action="append", choices=DOCKET_PROJECTS)
         p.add_argument("--mode", default="start", choices=MODES)
 
@@ -578,7 +644,9 @@ def parse(argv):
 
     for command, options in (("start", [start_options, note_options]), ("attach", [attach_options]),
                              ("up", [start_options, note_options, attach_options]),
-                             ("notes", [note_options]), ("stop", []), ("list", [])):
+                             ("notes", [note_options]), ("stop", []), ("list", []),
+                             ("migrate", [lambda p: p.add_argument("--start-in", default="Minerva",
+                                                                   choices=sorted(REPOS))])):
         p = sub.add_parser(command)
         if command != "list":
             p.add_argument("name", type=session_name)
@@ -588,7 +656,7 @@ def parse(argv):
 
 
 COMMANDS = {"build": cmd_build, "start": cmd_start, "attach": cmd_attach, "up": cmd_up,
-            "notes": cmd_notes, "stop": cmd_stop, "list": cmd_list}
+            "notes": cmd_notes, "stop": cmd_stop, "list": cmd_list, "migrate": cmd_migrate}
 
 
 def main(argv=None):
