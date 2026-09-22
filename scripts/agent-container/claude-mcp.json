@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "minerva": {"type": "http", "url": "http://127.0.0.1:9315/mcp"},
+    "docket": {"type": "http", "url": "http://127.0.0.1:3010/mcp"},
+    "nudge": {"type": "http", "url": "http://127.0.0.1:8765/mcp"}
+  }
+}

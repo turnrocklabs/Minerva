@@ -38,6 +38,7 @@ PARAM_KEYS = {
     "tools/call": {"name", "arguments", "_meta"},
 }
 REF = re.compile(r"(?:([A-Za-z0-9._-]{1,64}):)?([0-9a-f]{32})")
+NOTE_ID = re.compile(r"[0-9a-f]{32,64}")
 TOOL_NAME = re.compile(r"[a-z0-9_]{1,64}")
 PROTOCOL_VERSION = re.compile(r"[0-9A-Za-z.-]{1,32}")
 # Characters that end or fake a line in a terminal or a Docket field.
@@ -52,6 +53,7 @@ KIND_SCHEMA = {
     "str_list": {"type": "array", "items": {"type": "string"}, "maxItems": LIST_MAX},
     "json": {},
     "ref": {"type": "string", "pattern": REF.pattern},
+    "note_id": {"type": "string", "pattern": NOTE_ID.pattern},
 }
 
 
@@ -76,17 +78,43 @@ class ProtocolError(Exception):
 
 
 @dataclass(frozen=True)
-class Session:
-    """One terminal's run, as registered by the trusted launcher."""
-    terminal_id: str
-    harness: str
+class Binding:
+    """Which Minerva terminal is attached to a session right now, and whom it
+    may notify. Terminal ids change when Minerva restarts, so these come
+    from the launcher's binding file on every call, never from startup."""
+    terminal_id: object     # str, or None when no terminal is attached
     notify_targets: frozenset
+
+
+UNATTACHED = Binding(None, frozenset())
+
+
+@dataclass(frozen=True)
+class NoteGrants:
+    """Minerva notes the launcher lets this session use (coordination and
+    handoff notes). Note ids survive Minerva restarts, so these do not
+    depend on the attach. Write implies read."""
+    read: frozenset
+    write: frozenset
+
+
+NO_NOTES = NoteGrants(frozenset(), frozenset())
+
+
+@dataclass(frozen=True)
+class Session:
+    """One long-running agent session, as registered by the trusted launcher.
+    binding() returns the current Binding, notes() the current NoteGrants."""
+    name: str
+    harness: str
     docket_projects: frozenset
+    binding: object
+    notes: object = lambda: NO_NOTES
 
     @property
     def label(self):
-        # Cannot collide with a Minerva tab name used as a notify address.
-        return f"container:{self.harness}@{self.terminal_id}"
+        # Stable across reattaches; cannot collide with a Minerva tab name.
+        return f"container:{self.harness}@{self.name}"
 
 
 @dataclass(frozen=True)
@@ -232,6 +260,9 @@ def _check_value(kind, name, value, session):
     elif kind == "json":
         if len(strict_json.dumps(value)) > JSON_ARG_MAX:
             raise Deny("bad_argument", f"{name}: over {JSON_ARG_MAX} bytes")
+    elif kind == "note_id":
+        if not isinstance(value, str) or not NOTE_ID.fullmatch(value):
+            raise Deny("bad_argument", f"{name}: must be a Minerva note id")
     elif kind == "ref":
         if not isinstance(value, str) or not REF.fullmatch(value):
             raise Deny("bad_argument", f"{name}: must be a full 32-hex item id")
@@ -389,7 +420,10 @@ def _check_references(ctx, args):
 
 
 def rule_terminal_notify(ctx, args):
-    if args["to"] not in ctx.session.notify_targets:
+    binding = ctx.session.binding()
+    if binding.terminal_id is None:
+        raise Deny("not_attached")
+    if args["to"] not in binding.notify_targets:
         raise Deny("notify_target_not_allowed")
     if not args["text"] or len(args["text"]) > NOTIFY_TEXT_MAX:
         raise Deny("bad_argument", f"text must be 1-{NOTIFY_TEXT_MAX} characters")
@@ -397,12 +431,35 @@ def rule_terminal_notify(ctx, args):
         raise Deny("bad_argument", f"wait_ms must be 0-{NOTIFY_WAIT_MAX}")
     # The gateway, not the container, says who is speaking and where replies go.
     args["from"] = ctx.session.label
-    args["reply_to"] = ctx.session.terminal_id
+    args["reply_to"] = binding.terminal_id
+    return Call(args, shape_passthrough)
+
+
+def rule_note_read(ctx, args):
+    grants = ctx.session.notes()
+    if args["note_id"] not in grants.read | grants.write:
+        raise Deny("note_not_granted")
+
+    def shape(result):
+        note = result_json(result)
+        if not isinstance(note, dict) or note.get("note_id") != args["note_id"] \
+                or note.get("type") != "TEXT" or not isinstance(note.get("content"), str) \
+                or not isinstance(note.get("title"), str):
+            raise Deny("note_not_available")
+        return json_result({"success": True, "note_id": note["note_id"], "title": note["title"],
+                            "content": note["content"]})
+    return Call(args, shape)
+
+
+def rule_note_write(ctx, args):
+    if args["note_id"] not in ctx.session.notes().write:
+        raise Deny("note_not_granted")
     return Call(args, shape_passthrough)
 
 
 def rule_terminal_list(ctx, args):
-    visible = ctx.session.notify_targets | {ctx.session.terminal_id}
+    binding = ctx.session.binding()
+    visible = binding.notify_targets | ({binding.terminal_id} if binding.terminal_id else set())
 
     def shape(result):
         listing = result_json(result)
@@ -490,6 +547,8 @@ def rule_docket_mutate(ctx, args):
 RULES = {
     "terminal_notify": rule_terminal_notify,
     "terminal_list": rule_terminal_list,
+    "note_read": rule_note_read,
+    "note_write": rule_note_write,
     "docket_get": rule_docket_get,
     "docket_query": rule_docket_query,
     "docket_comment": rule_docket_comment,

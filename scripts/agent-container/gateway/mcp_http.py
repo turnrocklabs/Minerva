@@ -239,7 +239,7 @@ class Service:
     def _log(self, action, code, **fields):
         if fields.get("tool") is not None and fields["tool"] not in self.policy.tools(self.name):
             fields["tool"] = "(unlisted)"   # never persist a client-chosen name
-        log({"kind": "mcp", "service": self.name, "session": self.session.terminal_id,
+        log({"kind": "mcp", "service": self.name, "session": self.session.name,
              "action": action, "code": code, **fields})
 
 

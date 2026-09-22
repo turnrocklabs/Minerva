@@ -1,0 +1,13 @@
+# rcfile for the session shell inside tmux (bash --rcfile agent-bashrc -i).
+# minerva-session sets MINERVA_AGENT_FIRST to one of a fixed set of commands
+# (the harness, its resume picker, or nothing); it runs once, when the shell
+# starts, and never again on attach. Leaving the harness returns here.
+. "${MINERVA_AGENT_DIR:-/opt/minerva-agent}/agent-env.sh"
+PS1="[agent ${MINERVA_AGENT_SESSION:-?}] \w\$ "
+case "${MINERVA_AGENT_FIRST:-}" in
+	"claude") unset MINERVA_AGENT_FIRST; claude ;;
+	"claude --resume") unset MINERVA_AGENT_FIRST; claude --resume ;;
+	"codex") unset MINERVA_AGENT_FIRST; codex ;;
+	"codex resume") unset MINERVA_AGENT_FIRST; codex resume ;;
+	*) unset MINERVA_AGENT_FIRST ;;
+esac

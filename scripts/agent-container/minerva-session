@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Main process of a dev container: start the forwarder, then an interactive
+# session shell inside tmux that first runs the harness (mode start), its
+# resume picker (resume) or nothing (shell). Minerva terminals attach as tmux
+# clients (agent.py attach), so a closed or crashed Minerva only detaches a
+# client. The container lives as long as the session shell. If the forwarder
+# ever dies it is restarted, so the harness keeps its MCP and egress routes.
+set -euo pipefail
+harness="${1:?usage: minerva-session claude|codex start|resume|shell}"
+mode="${2:-start}"
+case "$harness:$mode" in
+	claude:start) first="claude" ;;
+	claude:resume) first="claude --resume" ;;
+	codex:start) first="codex" ;;
+	codex:resume) first="codex resume" ;;
+	claude:shell | codex:shell) first="" ;;
+	*) echo "minerva-session: unknown harness or mode '$harness' '$mode'" >&2; exit 2 ;;
+esac
+export TMUX_TMPDIR=/tmp
+
+starts=0
+start_forwarder() {
+	starts=$((starts + 1))
+	ready="/tmp/forwarder.ready.$starts"
+	python3 -B /opt/minerva-agent/forwarder.py --ready "$ready" /run/minerva-agent \
+		9315=minerva 3010=docket 8765=nudge 3128=proxy &
+	forwarder=$!
+	for _ in $(seq 100); do
+		[[ -e "$ready" ]] && return 0
+		kill -0 "$forwarder" 2>/dev/null || break
+		sleep 0.1
+	done
+	echo "minerva-session: forwarder did not start" >&2
+	return 1
+}
+
+start_forwarder || exit 1
+tmux -f /opt/minerva-agent/tmux.conf new-session -d -s harness -x 220 -y 50 \
+	env MINERVA_AGENT_FIRST="$first" bash --rcfile /opt/minerva-agent/agent-bashrc -i
+while tmux has-session -t harness 2>/dev/null; do
+	if ! kill -0 "$forwarder" 2>/dev/null; then
+		echo "minerva-session: forwarder exited; restarting it" >&2
+		start_forwarder || true
+	fi
+	sleep 2
+done
