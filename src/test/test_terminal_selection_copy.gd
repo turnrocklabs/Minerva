@@ -1,6 +1,6 @@
 extends SceneTree
 ## Terminal copy takes the highlighted text, not the whole screen (bug
-## 01a0ca18bfd3). Two levels: TerminalNew.selection_text over a fake viewport
+## 01a0ca18bfd3). Two levels: TerminalNew's static selection_text over a fake viewport
 ## grid, and the real TextLayer wiring (selection, context menu, copy
 ## actions) over a fake native terminal that counts which read it gets.
 ##
@@ -23,6 +23,13 @@ extends SceneTree
 ##     is enabled with a selection and disabled without one;
 ##   - choosing "Copy selection" reads cells only, "Copy screen" reads the
 ##     whole-screen export; each clears the highlight afterwards.
+##
+## TerminalNew names the SingletonObject autoload, so it is load()ed at run
+## time and used duck-typed, never named as a compile-time global: a --script
+## test compiles before autoloads register (see test_background_terminals.gd).
+
+const TERMINAL_SCRIPT_PATH := "res://Scripts/UI/Controls/TerminalNew.gd"
+var Terminal: GDScript
 
 var _passed := 0
 var _failed := 0
@@ -93,6 +100,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	Terminal = load(TERMINAL_SCRIPT_PATH)
 	_test_selection_text()
 	_test_text_layer_wiring()
 	print("=== Results: %d passed, %d failed ===" % [_passed, _failed])
@@ -101,17 +109,17 @@ func _run() -> void:
 
 func _test_selection_text() -> void:
 	var get_cell := func(col: int, row: int) -> Dictionary: return FakeNative.grid_cell(col, row)
-	_check_text("partial row", TerminalNew.selection_text(get_cell, Vector2i(0, 0), Vector2i(4, 0), COLS), "hello")
-	_check_text("inner columns", TerminalNew.selection_text(get_cell, Vector2i(6, 0), Vector2i(10, 0), COLS), "world")
-	_check_text("multi row", TerminalNew.selection_text(get_cell, Vector2i(6, 0), Vector2i(5, 1), COLS),
+	_check_text("partial row", Terminal.selection_text(get_cell, Vector2i(0, 0), Vector2i(4, 0), COLS), "hello")
+	_check_text("inner columns", Terminal.selection_text(get_cell, Vector2i(6, 0), Vector2i(10, 0), COLS), "world")
+	_check_text("multi row", Terminal.selection_text(get_cell, Vector2i(6, 0), Vector2i(5, 1), COLS),
 			"world\nsecond")
-	_check_text("whole rows between", TerminalNew.selection_text(get_cell, Vector2i(6, 0), Vector2i(3, 2), COLS),
+	_check_text("whole rows between", Terminal.selection_text(get_cell, Vector2i(6, 0), Vector2i(3, 2), COLS),
 			"world\nsecond line\n  in")
-	_check_text("trailing blanks dropped", TerminalNew.selection_text(get_cell, Vector2i(0, 2), Vector2i(11, 2), COLS),
+	_check_text("trailing blanks dropped", Terminal.selection_text(get_cell, Vector2i(0, 2), Vector2i(11, 2), COLS),
 			"  indented")
-	_check_text("wide character once", TerminalNew.selection_text(get_cell, Vector2i(0, 3), Vector2i(7, 3), COLS),
+	_check_text("wide character once", Terminal.selection_text(get_cell, Vector2i(0, 3), Vector2i(7, 3), COLS),
 			"中文 ok")
-	_check_text("end past the grid clamps", TerminalNew.selection_text(get_cell, Vector2i(0, 1), Vector2i(40, 1), COLS),
+	_check_text("end past the grid clamps", Terminal.selection_text(get_cell, Vector2i(0, 1), Vector2i(40, 1), COLS),
 			"second line")
 
 
@@ -120,12 +128,12 @@ func _make_layer() -> Array:
 	var native := FakeNative.new()
 	var session := FakeSession.new()
 	session.terminal = native
-	var term := TerminalNew.new()
+	var term = Terminal.new()
 	term._auto_create_session = false
 	term._session = session
 	term.line_height = CELL
 	term.char_width = CELL
-	var layer := TerminalNew.TextLayer.new()
+	var layer = Terminal.TextLayer.new()
 	layer.terminal = term
 	term.text_layer = layer
 	root.add_child(layer)
