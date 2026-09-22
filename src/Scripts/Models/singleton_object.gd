@@ -1833,12 +1833,11 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 			_:
 				print("[Toast] %s" % content)
 
-	var toast: = ToastNotification.create(type, content)
-
 	# No UI tree (headless / --script run, or pre-_ready): skip the toast.
+	# Checked before creating it, since an unparented toast is never freed.
 	if main_scene == null:
 		return
-	main_scene.add_child(toast)
+	main_scene.add_child(ToastNotification.create(type, content))
 
 
 
