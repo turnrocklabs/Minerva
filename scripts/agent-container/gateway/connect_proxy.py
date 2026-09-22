@@ -1,6 +1,6 @@
 """The gateway's egress: an HTTPS CONNECT proxy on a Unix socket.
 
-Only `CONNECT <allowlisted hostname>:443` is accepted. The name is resolved
+Only `CONNECT <hostname>:443` is accepted. The name is resolved
 once; EVERY candidate address must be public (loopback, private, link-local,
 CGNAT, multicast, reserved, unspecified and IPv6 forms that embed or translate
 IPv4 all refuse), and the proxy then connects once to a vetted address. No
@@ -46,13 +46,16 @@ class Refused(Exception):
 
 
 class Allowlist:
-    """Destination names from egress.json: exact names, and suffixes that
+    """Public-internet mode or destination names from egress.json. Suffixes
     start with '.', so '.example.com' matches 'a.example.com' but neither
     'example.com' nor 'evilexample.com'."""
 
     def __init__(self, data):
+        self.public_internet = data.get("public_internet", False)
+        if not isinstance(self.public_internet, bool):
+            raise ValueError("public_internet must be a boolean")
         self.exact, self.suffixes = set(), []
-        for entry in data["allow"]:
+        for entry in data.get("allow", []):
             if set(entry) == {"exact"} and valid_hostname(entry["exact"]):
                 self.exact.add(entry["exact"])
             elif set(entry) == {"suffix"} and entry["suffix"].startswith(".") \
@@ -67,7 +70,8 @@ class Allowlist:
             return cls(strict_json.loads(f.read(), 1024 * 1024))
 
     def allows(self, host):
-        return host in self.exact or any(host.endswith(s) for s in self.suffixes)
+        return valid_hostname(host) and (self.public_internet or host in self.exact
+                                        or any(host.endswith(s) for s in self.suffixes))
 
 
 def valid_hostname(host):
@@ -245,4 +249,3 @@ def make_server(path, session_id, allowlist, resolve=system_resolve, connect=sys
     server.session_id, server.allowlist = session_id, allowlist
     server.resolve, server.connect = BoundedResolver(resolve), connect
     return server
-

@@ -7,8 +7,8 @@ Checks what the session can and cannot reach, using only calls that are
 harmless even if the gateway were wrong: tools/list per service; two
 DENIED-but-harmless tools (minerva_clock, docket_project_list) that must be
 refused by the gateway; one Docket read; one Nudge read; and, unless
---no-egress, the egress proxy (an allowlisted host must tunnel, a
-non-allowlisted one must be refused) and a direct connection (must fail:
+--no-egress, the egress proxy (a public host must tunnel, a
+loopback literal must be refused) and a direct connection (must fail:
 the container has no network). Prints one JSON report; exits non-zero if
 any probe did not behave as expected.
 """
@@ -56,8 +56,8 @@ def main():
     parser.add_argument("--docket-item", required=True)
     parser.add_argument("--docket-project", required=True)
     parser.add_argument("--no-egress", action="store_true")
-    parser.add_argument("--allowed-host", default="api.anthropic.com")
-    parser.add_argument("--denied-host", default="example.com")
+    parser.add_argument("--allowed-host", default="registry.npmjs.org")
+    parser.add_argument("--denied-host", default="127.0.0.1")
     parser.add_argument("--ports", default="minerva=9315,docket=3010,nudge=8765,proxy=3128")
     args = parser.parse_args()
     ports = {k: int(v) for k, v in (p.split("=") for p in args.ports.split(","))}

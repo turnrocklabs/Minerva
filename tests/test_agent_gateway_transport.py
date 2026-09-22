@@ -428,6 +428,25 @@ class Test(GatewayCase):
                 with self.assertRaises(ValueError):
                     gateway.connect_proxy.Allowlist({"allow": [entry]})
 
+    def test_public_internet_keeps_address_boundary(self):
+        proxy = gateway.connect_proxy
+        policy = proxy.Allowlist.load(GATEWAY / "egress.json")
+        calls = []
+        def connect(ip, port):
+            calls.append((ip, port))
+            return "tunnel"
+        for host in ("registry.npmjs.org", "en.wikipedia.org", "github.com"):
+            self.assertEqual(proxy.open_tunnel(host, policy, lambda _: ["1.1.1.1"], connect),
+                             ("tunnel", "1.1.1.1"))
+        self.assertEqual(len(calls), 3)
+        for addresses in (["127.0.0.1"], ["10.0.0.1"], ["169.254.169.254"],
+                          ["::1"], ["::ffff:127.0.0.1"], ["1.1.1.1", "192.168.1.1"]):
+            with self.subTest(addresses=addresses), self.assertRaises(proxy.Refused):
+                proxy.open_tunnel("research.example.org", policy, lambda _: addresses, connect)
+        self.assertEqual(len(calls), 3)
+        with self.assertRaises(ValueError):
+            proxy.Allowlist({"public_internet": "true"})
+
     def test_existing_socket_path_refuses_and_is_untouched(self):
         taken = self.scratch / "taken"
         taken.mkdir(mode=0o700)
