@@ -24,15 +24,18 @@
 # own loopback, so two jobs and the live app can all use port 9315), user
 # profile, HOME and Xvfb display. The host checkout is never mounted — the
 # revision arrives as a read-only `git archive` snapshot, and the gitignored
-# native binaries (terminal extension, sqlite, ffmpeg, CEF, staged runtimes)
-# as read-only content-addressed copies taken at launch. The results directory
-# is the only writable host mount. Caches live in
-# ${MINERVA_CT_CACHE:-~/.cache/minerva-container-tests}.
+# native binaries are built FROM THAT REVISION by container-build/build.py
+# (terminal extension, schema helper, agent-relay stage, godot-cef, and the
+# pinned sqlite/ffmpeg releases), cached by their inputs and mounted
+# read-only. The results directory is the only writable host mount. Caches
+# live in ${MINERVA_CT_CACHE:-~/.cache/minerva-container-tests}.
 #
-# Limits of what a run proves: the native binaries are whatever the host
-# checkout holds at launch (hashes in natives.txt / run.json), NOT built from
-# --rev, so a green run is not a clean revision-native build. app-smoke boots
-# the source tree, not a packaged export.
+# Limits of what a run proves: the voice runtime and host-pdf sidecar are not
+# built, so suites needing them fail (never fall back to host copies).
+# app-smoke boots the source tree, not a packaged export. A native build
+# failure fails the job before any suite runs (stage native-build). --timeout
+# bounds the test container only; native builds (build.py) have no deadline
+# of their own in this batch.
 #
 # Results: <out>/run.json (revision, native hashes, image, limits, docker's own
 # view of mounts/namespaces), <out>/results.json (per-suite strict verdicts, see
@@ -63,18 +66,7 @@ DEFAULT_SUITES=(
 	test/test_chat_groups_integration.gd
 	app-smoke
 )
-# Gitignored runtime binaries a test run needs, relative to the repo root.
-NATIVE_PATHS=(
-	src/bin/libterminal.linux.template_debug.x86_64.so
-	src/bin/libminerva-vt.so
-	src/bin/minerva-json-schema-helper
-	src/bin/minerva-host-pdf-linux
-	src/addons/godot-sqlite/bin
-	src/addons/ffmpeg/linux64
-	src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
-	src/plugins/agent-relay/runtime-build/stage/linux-x86_64
-	src/plugins/voice/runtime-build/stage/linux-x86_64
-)
+BUILD=(python3 -B "$REPO_ROOT/scripts/container-build/build.py")
 
 die() { echo "container-test: $*" >&2; exit 2; }
 
@@ -107,29 +99,29 @@ validate_cache_root() {
 # no fallback) and a tree digest that never follows symlinks.
 PUBLISH=(python3 -B "$REPO_ROOT/scripts/container-build/publish.py")
 
-# content_hash PATH: tree digest of PATH (names, types, bytes, exec bits, link
-# text, empty directories).
-content_hash() { "${PUBLISH[@]}" digest "$1" || die "could not hash $1"; }
-
 # publish TMP DEST: no-clobber publish of a staged copy. An existing DEST is
 # accepted only when it matches TMP exactly (TMP is then kept and reported);
 # anything else fails the run with both left in place.
 publish() { "${PUBLISH[@]}" publish "$1" "$2" || die "could not publish $2; see the message above"; }
 
-# freeze SRC DEST: cache SRC at DEST (DEST's name is SRC's tree digest) once,
-# read-only. An existing DEST must still match its name and is never modified.
-# The copy is made at a fixed child of a private staging directory that
-# mktemp -d created atomically; the staging directory is kept.
-freeze() {
-	local src="$1" dest="$2" stage
-	if [[ -e "$dest" || -L "$dest" ]]; then
-		"${PUBLISH[@]}" check "$dest" "$(basename "$dest")" || die "cache entry $dest is corrupt; left as is"
-	else
-		mkdir -p "$(dirname "$dest")"
-		stage="$(mktemp -d "$dest.stage.XXXXXX")" || die "could not stage a copy for $dest"
-		cp -a "$src" "$stage/entry" || die "could not cache $src"
-		publish "$stage/entry" "$dest"
-	fi
+# fail_before_container OUT RC STAGE SHA NAME SUITE...: a job that fails
+# before its container exists still leaves exit_code, a not-green
+# results.json (the failed stage, every suite not_run) and a run.json naming
+# the job, revision and stage. accounting.py exits 1 for "not green" — that
+# is expected here and recorded, never allowed to cut the handler short.
+fail_before_container() {
+	local out="$1" rc="$2" stage="$3" sha="$4" name="$5" acct_rc=0
+	shift 5
+	printf '%s\n' "$@" > "$out/tests.txt"
+	echo "$stage 1" >> "$out/logs/stages.txt"
+	echo "$rc" > "$out/exit_code"
+	python3 -B "$TOOLS_DIR/accounting.py" "$out/logs" "$out/tests.txt" "$out/results.json" || acct_rc=$?
+	python3 -c 'import json, sys, time; json.dump({"job": sys.argv[2], "revision": sys.argv[3],
+	    "failed_stage": sys.argv[4], "accounting_exit": int(sys.argv[5]), "container_exit": None,
+	    "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, open(sys.argv[1], "w"), indent=2)' \
+		"$out/run.json" "$name" "$sha" "$stage" "$acct_rc" || echo "container-test: could not write $out/run.json" >&2
+	echo "job $name: $stage failed at $sha — $out/results.json" >&2
+	exit "$rc"
 }
 
 ensure_image() {
@@ -184,22 +176,25 @@ cmd_run() {
 		publish "$tmp" "$snapshot"
 	fi
 
-	mkdir -p "$out/logs" || die "cannot create $out"
+	mkdir -p "$out/logs" "$out/provenance" || die "cannot create $out"
+	# Natives built from this revision (cache hits verified by build.py); a
+	# build failure is a failed stage, not a crash.
+	echo "building natives for $sha (log: $out/native-build.log)" >&2
+	MINERVA_CT_CACHE="$CACHE" "${BUILD[@]}" ensure --rev "$sha" --manifest "$out/natives.json" \
+		> "$out/native-build.log" 2>&1 \
+		|| fail_before_container "$out" 1 native-build "$sha" "$name" "${suites[@]}"
+	# Rows are produced whole or not at all (build.py mount-rows re-verifies
+	# every entry first); only a successful, complete file is consumed.
+	"${BUILD[@]}" mount-rows --manifest "$out/natives.json" --provenance-dir "$out/provenance" \
+		> "$out/native-mounts.tsv" 2>> "$out/native-build.log" \
+		|| fail_before_container "$out" 1 native-mounts "$sha" "$name" "${suites[@]}"
 	local mounts=(-v "$snapshot:/snapshot:ro" -v "$out:/out" -v "$out/natives-paths.txt:/natives/paths.txt:ro")
-	: > "$out/natives-paths.txt"
-	: > "$out/natives.txt"
-	local p h
-	for p in "${NATIVE_PATHS[@]}"; do
-		if [[ ! -e "$REPO_ROOT/$p" ]]; then
-			echo "missing native: $p" >> "$out/natives.txt"
-			continue
-		fi
-		h="$(content_hash "$REPO_ROOT/$p")"
-		freeze "$REPO_ROOT/$p" "$CACHE/natives/$h"
-		echo "$p" >> "$out/natives-paths.txt"
-		echo "$h $p" >> "$out/natives.txt"
-		mounts+=(-v "$CACHE/natives/$h:/natives/tree/$p:ro")
-	done
+	local src target
+	while IFS=$'\t' read -r src target; do
+		mounts+=(-v "$src:/natives/tree/$target:ro")
+		echo "$target" >> "$out/natives-paths.txt"
+	done < "$out/native-mounts.tsv"
+	[[ -s "$out/natives-paths.txt" ]] || fail_before_container "$out" 1 native-mounts "$sha" "$name" "${suites[@]}"
 
 	local container="minerva-ct-$name"
 	docker create --name "$container" --label "$LABEL=$name" --rm --init \
@@ -210,7 +205,7 @@ cmd_run() {
 
 	# Record docker's own account of the isolation before anything runs.
 	python3 - "$out/run.json" "$sha" "$name" "$IMAGE" "$cpus" "$memory" "$timeout_s" "$import_timeout" \
-		"$(docker image inspect -f '{{.Id}}' "$IMAGE")" "$(docker inspect "$container")" "$out/natives.txt" \
+		"$(docker image inspect -f '{{.Id}}' "$IMAGE")" "$(docker inspect "$container")" "$out/natives.json" \
 		"${suites[@]}" <<'EOF'
 import json, sys, time
 path, sha, name, image, cpus, memory, timeout_s, import_timeout, image_id, inspect, natives, *suites = sys.argv[1:]
@@ -219,8 +214,8 @@ hc = c["HostConfig"]
 json.dump({
     "job": name, "revision": sha, "image": image, "image_id": image_id,
     "suites": suites, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    "natives": {"source": "host checkout at launch, not built from revision",
-                "entries": open(natives).read().splitlines()},
+    "natives": {"source": "built from this revision by scripts/container-build/build.py",
+                "manifest": json.load(open(natives)), "provenance_dir": "provenance/"},
     "limits": {"cpus": cpus, "memory": memory, "timeout_s": int(timeout_s),
                "import_timeout_s": int(import_timeout), "pids_limit": hc.get("PidsLimit")},
     "isolation": {"network_mode": hc.get("NetworkMode"), "pid_mode": hc.get("PidMode") or "private",

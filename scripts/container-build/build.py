@@ -3,6 +3,9 @@
 
     build.py ensure --rev REV [--component NAME ...] [--manifest OUT.json]
     build.py keys   --rev REV            # cache keys only; builds nothing
+    build.py mount-rows --manifest M --provenance-dir D
+                                         # "<src>\t<target>" mount rows for M's
+                                         # outputs, after re-verifying every entry
 
 Each component in RECIPES is built by the repo's own entry point, inside a
 container of the pinned builder image (Dockerfile here), from a fresh clone of
@@ -20,6 +23,8 @@ the inputs, toolchain versions, command and the sha256 of every output file.
 Builds run with network access for their pinned fetches (crates via
 Cargo.lock, zig deps by hash, the jsoncons tarball by sha256, the CEF bundle,
 the sqlite/ffmpeg release archives); tests that consume the outputs do not.
+A build's only writable host mount is its own fresh work directory; download
+caches stay inside the builder container.
 No deletes or replacements: each build works in a fresh uniquely named
 directory beside its destination and publishes with publish.py's no-clobber
 rename (renameat2 RENAME_NOREPLACE, no fallback). A failed build is renamed,
@@ -197,9 +202,6 @@ def build(cache: Path, name: str, recipe: dict, sha: str, key: str, ids: dict,
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     # Unique and beside dest, so publishing is a same-directory rename.
     work = Path(tempfile.mkdtemp(prefix=f".tmp-{key}-", dir=dest.parent))
-    downloads = cache / "downloads"
-    for sub in ("cargo", "zig", "cef-home"):
-        (downloads / sub).mkdir(parents=True, exist_ok=True)
     git_dir = Path(git("rev-parse", "--absolute-git-dir"))
     started = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     cmd = ["docker", "run", "--rm", "--init", "--name", f"minerva-cb-{name}-{key[:12]}",
@@ -208,11 +210,11 @@ def build(cache: Path, name: str, recipe: dict, sha: str, key: str, ids: dict,
            "--cpus", os.environ.get("MINERVA_CB_CPUS", "12"),
            "--memory", os.environ.get("MINERVA_CB_MEMORY", "24g"),
            "--memory-swap", os.environ.get("MINERVA_CB_MEMORY", "24g"), "--pids-limit", "8192",
+           # The only writable host mount is this build's own fresh work dir.
+           # Download caches (cargo, zig, the CEF bundle) stay in the container:
+           # the build scripts clean and --force them, which must never reach
+           # the host. A rebuild re-downloads; builds are cached per key.
            "-v", f"{git_dir}:/hostgit:ro", "-v", f"{work}:/out",
-           "-v", f"{downloads / 'cargo'}:/cache/cargo", "-v", f"{downloads / 'zig'}:/cache/zig",
-           # build-godot-cef.sh exports the CEF bundle under $HOME/.local/share/cef.
-           "-v", f"{downloads / 'cef-home'}:/home/builder/.local/share/cef",
-           "-e", "CARGO_HOME=/cache/cargo", "-e", "ZIG_GLOBAL_CACHE_DIR=/cache/zig",
            "-e", f"REV={sha}", "-e", f"SUBMODULES={' '.join(recipe['submodules'])}",
            "-e", f"COMMAND={recipe['command']}", "-e", f"OUTPUTS={' '.join(recipe['outputs'])}",
            tag, "bash", "-c", IN_CONTAINER]
@@ -303,6 +305,36 @@ def verify_entry(dest: Path, key: str, recipe: dict) -> bool:
         return False
 
 
+def mount_rows(manifest_path: Path, provenance_dir: Path) -> int:
+    """Print one "<source>\t<target>" row per declared output of an `ensure`
+    manifest, copying each entry's provenance.json into provenance_dir. Every
+    entry is re-verified and every copy made BEFORE any row is printed, so a
+    failure yields exit 3 and no rows — never a partial mount list. Copies are
+    exclusive-create: an existing file there is an error, not overwritten."""
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        rows, entries = [], []
+        for name, comp in manifest["components"].items():
+            recipe = RECIPES.get(name)
+            entry = Path(comp["dir"])
+            if recipe is None or comp.get("outputs") != recipe["outputs"]:
+                raise ValueError(f"{name}: not a known component or outputs differ from its recipe")
+            if not verify_entry(entry, comp["key"], recipe):
+                raise ValueError(f"{name}: entry {entry} does not verify")
+            entries.append((name, entry))
+            rows += [f"{entry / 'files' / out}\t{out}" for out in recipe["outputs"]]
+        if not rows:
+            raise ValueError("manifest lists no outputs")
+        for name, entry in entries:
+            with open(entry / "provenance.json", "rb") as src, open(provenance_dir / f"{name}.json", "xb") as dst:
+                dst.write(src.read())
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        print(f"mount-rows refused: {e}", file=sys.stderr)
+        return 3
+    print("\n".join(rows))
+    return 0
+
+
 def plan(sha: str, names: list[str], image_id: str) -> dict:
     return {name: (ids := input_ids(sha, RECIPES[name]),
                    cache_key(name, RECIPES[name], ids, image_id)) for name in names}
@@ -310,11 +342,17 @@ def plan(sha: str, names: list[str], image_id: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["ensure", "keys"])
+    parser.add_argument("action", choices=["ensure", "keys", "mount-rows"])
     parser.add_argument("--rev", default="HEAD")
     parser.add_argument("--component", action="append", choices=sorted(RECIPES))
-    parser.add_argument("--manifest", type=Path, help="write the ensure result as JSON here")
+    parser.add_argument("--manifest", type=Path,
+                        help="ensure: write the result as JSON here; mount-rows: read it")
+    parser.add_argument("--provenance-dir", type=Path, help="mount-rows: copy provenance here")
     args = parser.parse_args()
+    if args.action == "mount-rows":  # no git, no docker: reads a finished manifest
+        if not args.manifest or not args.provenance_dir:
+            parser.error("mount-rows needs --manifest and --provenance-dir")
+        return mount_rows(args.manifest, args.provenance_dir)
 
     cache = cache_root()
     sha = git("rev-parse", "--verify", f"{args.rev}^{{commit}}")
