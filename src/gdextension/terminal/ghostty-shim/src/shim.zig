@@ -433,7 +433,99 @@ export fn minerva_vt_encode_key(
     }
 }
 
+/// Encode one mouse-wheel notch as the terminal's application asked to receive
+/// mouse input (DECSET 1000/1002/1003 with 1005/1006/1015), following
+/// ghostty's own Surface.mouseReport for buttons 4/5 (codes 64/65) — that
+/// encoder lives in the app runtime, not in libghostty-vt. col/row are the
+/// 0-based cell under the pointer. Only ctrl/alt modifiers are reported
+/// (shift is the caller's local-scroll override).
+///
+/// Returns 0 — the caller scrolls locally — when the application is not
+/// tracking the mouse (none, or X10 mode, which reports clicks only), for
+/// SGR-pixels (needs pixel positions), and for an X10-format position whose
+/// byte would not be ASCII: callers write a UTF-8 string.
+export fn minerva_vt_encode_wheel(
+    term: ?*anyopaque,
+    up: bool,
+    col: u16,
+    row: u16,
+    mods: u16,
+    out_buf: ?[*]u8,
+    out_buf_size: usize,
+) callconv(.c) usize {
+    const state: *TerminalState = @ptrCast(@alignCast(term orelse return 0));
+    const buf = out_buf orelse return 0;
+
+    state.mutex.lock();
+    const flags = state.terminal.flags;
+    state.mutex.unlock();
+
+    if (flags.mouse_event == .none or flags.mouse_event == .x10) return 0;
+
+    const key_mods: ghostty.input.KeyMods = @bitCast(mods);
+    var code: u8 = if (up) 64 else 65;
+    if (key_mods.alt) code += 8;
+    if (key_mods.ctrl) code += 16;
+    const x: u32 = @as(u32, col) + 1;
+    const y: u32 = @as(u32, row) + 1;
+
+    var writer: std.Io.Writer = .fixed(buf[0..out_buf_size]);
+    switch (flags.mouse_format) {
+        .x10 => {
+            if (32 + x > 127 or 32 + y > 127) return 0;
+            writer.print("\x1b[M{c}{c}{c}", .{ 32 + code, @as(u8, @intCast(32 + x)), @as(u8, @intCast(32 + y)) }) catch return 0;
+        },
+        .utf8 => {
+            writer.print("\x1b[M{c}{u}{u}", .{ 32 + code, @as(u21, @intCast(32 + x)), @as(u21, @intCast(32 + y)) }) catch return 0;
+        },
+        .sgr => writer.print("\x1b[<{d};{d};{d}M", .{ code, x, y }) catch return 0,
+        .urxvt => writer.print("\x1b[{d};{d};{d}M", .{ 32 + @as(u32, code), x, y }) catch return 0,
+        .sgr_pixels => return 0,
+    }
+    return writer.buffered().len;
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
+
+fn wheelFor(term: ?*anyopaque, up: bool, col: u16, row: u16, mods: u16, buf: []u8) []const u8 {
+    return buf[0..minerva_vt_encode_wheel(term, up, col, row, mods, buf.ptr, buf.len)];
+}
+
+test "wheel is encoded only while the application tracks the mouse" {
+    const term = minerva_vt_new(80, 24);
+    defer minerva_vt_free(term);
+    var buf: [64]u8 = undefined;
+    const feed = struct {
+        fn f(t: ?*anyopaque, bytes: []const u8) void {
+            minerva_vt_write(t, bytes.ptr, bytes.len);
+        }
+    }.f;
+
+    try std.testing.expectEqualStrings("", wheelFor(term, true, 4, 2, 0, &buf));
+
+    // SGR any-event tracking, as tmux and Claude Code request it.
+    feed(term, "\x1b[?1003h\x1b[?1006h");
+    try std.testing.expectEqualStrings("\x1b[<64;5;3M", wheelFor(term, true, 4, 2, 0, &buf));
+    try std.testing.expectEqualStrings("\x1b[<65;1;1M", wheelFor(term, false, 0, 0, 0, &buf));
+    // ctrl (1 << 1) adds 16, alt (1 << 2) adds 8; shift is never reported.
+    try std.testing.expectEqualStrings("\x1b[<88;5;3M", wheelFor(term, true, 4, 2, 0b111, &buf));
+
+    // urxvt and UTF-8 formats.
+    feed(term, "\x1b[?1006l\x1b[?1015h");
+    try std.testing.expectEqualStrings("\x1b[96;5;3M", wheelFor(term, true, 4, 2, 0, &buf));
+    feed(term, "\x1b[?1015l\x1b[?1005h");
+    try std.testing.expectEqualStrings("\x1b[M`\xc3\x88#", wheelFor(term, true, 167, 2, 0, &buf));
+
+    // Normal (X10-format) reporting while every byte stays ASCII.
+    feed(term, "\x1b[?1005l\x1b[?1003l\x1b[?1000h");
+    try std.testing.expectEqualStrings("\x1b[Ma%#", wheelFor(term, false, 4, 2, 0, &buf));
+    try std.testing.expectEqualStrings("", wheelFor(term, false, 100, 2, 0, &buf));
+
+    // Tracking switched off again: back to local scrolling.
+    feed(term, "\x1b[?1000l");
+    try std.testing.expectEqualStrings("", wheelFor(term, true, 4, 2, 0, &buf));
+}
+
 
 test "create and destroy terminal" {
     const term = minerva_vt_new(80, 24);

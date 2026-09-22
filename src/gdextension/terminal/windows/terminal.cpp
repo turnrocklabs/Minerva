@@ -99,6 +99,7 @@ void Terminal::_bind_methods()
 
     // Key encoding (powered by ghostty key encoder)
     ClassDB::bind_method(D_METHOD("encode_key", "ghostty_key", "action", "mods", "utf8_text"), &Terminal::encode_key);
+    ClassDB::bind_method(D_METHOD("encode_wheel", "up", "col", "row", "mods"), &Terminal::encode_wheel);
 }
 
 bool Terminal::_process_sequence(const String &seq)
@@ -1054,6 +1055,21 @@ Dictionary Terminal::get_scroll_info() const {
     result["total_rows"] = (int)total;
     result["viewport_rows"] = (int)viewport;
     result["is_at_bottom"] = at_bottom;
+    return result;
+}
+
+// Wheel bytes for the application's mouse mode, or empty when it is not
+// tracking the mouse (see minerva_vt_encode_wheel).
+PackedByteArray Terminal::encode_wheel(bool up, int col, int row, int mods) const {
+    PackedByteArray result;
+    if (!_vt_terminal) return result;
+    uint8_t buf[64];
+    size_t written = minerva_vt_encode_wheel(_vt_terminal, up, (uint16_t)(col < 0 ? 0 : col), (uint16_t)(row < 0 ? 0 : row),
+                                             (uint16_t)mods, buf, sizeof(buf));
+    if (written > 0) {
+        result.resize((int)written);
+        memcpy(result.ptrw(), buf, written);
+    }
     return result;
 }
 

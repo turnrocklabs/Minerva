@@ -19,7 +19,11 @@ extends SceneTree
 ##   - with focus elsewhere (the composer, a button) no terminal pastes;
 ##   - Ctrl+C with no selection sends one ^C to the focused terminal only;
 ##   - with a display: the right-click menu opens at the click, on screen,
-##     even when the window is not at the screen origin.
+##     even when the window is not at the screen origin;
+##   - the wheel goes to the application as mouse input while it tracks the
+##     mouse — once, for the 0-based cell under the pointer (clamped to the
+##     grid), with ctrl reported — and never also scrolls Minerva's view;
+##     without tracking, with Shift held, or mid-selection it scrolls locally.
 
 const TERMINAL_SCRIPT_PATH := "res://Scripts/UI/Controls/TerminalNew.gd"
 var TerminalScript: GDScript
@@ -28,8 +32,18 @@ var _passed := 0
 var _failed := 0
 
 
-## Stands in for the native terminal: a blank 40×10 grid.
+## Stands in for the native terminal: a blank 40×10 grid. While `tracking`,
+## encode_wheel answers bytes as the real encoder does for a mouse-tracking
+## application; otherwise nothing (scroll locally).
 class FakeNative extends RefCounted:
+	var tracking := false
+	var wheel_calls: Array = []
+	var scrolls: Array[int] = []
+
+	func encode_wheel(up: bool, col: int, row: int, mods: int) -> PackedByteArray:
+		wheel_calls.append([up, col, row, mods])
+		return "WHEEL".to_utf8_buffer() if tracking else PackedByteArray()
+
 	func get_cell(_col: int, _row: int) -> Dictionary:
 		return {"codepoint": 0x61, "wide": 0}
 
@@ -42,8 +56,8 @@ class FakeNative extends RefCounted:
 	func get_cursor() -> Dictionary:
 		return {"x": 0, "y": 0}
 
-	func scroll_viewport(_lines: int) -> void:
-		pass
+	func scroll_viewport(lines: int) -> void:
+		scrolls.append(lines)
 
 	func encode_key(_key: int, _action: int, _mods: int, _text: String) -> PackedByteArray:
 		return PackedByteArray()
@@ -148,10 +162,66 @@ func _run() -> void:
 	_check("focus on another control: no terminal pastes", a.writes.size() == 3 and b.writes.is_empty(),
 		"%s / %s" % [a.writes, b.writes])
 
+	_check_wheel(shown)
 	await _check_menu_placement(shown, at)
 
 	print("=== Results: %d passed, %d failed ===" % [_passed, _failed])
 	quit(1 if _failed else 0)
+
+
+func _check_wheel(view) -> void:
+	var session: FakeSession = view._session
+	var native: FakeNative = session.terminal
+	var layer: Control = view.text_layer
+	var cell := func(col: float, row: float) -> Vector2:
+		return layer.global_position + Vector2(col * view.char_width, row * view.line_height)
+	var before := session.writes.size()
+
+	_wheel(cell.call(3.5, 2.5), MOUSE_BUTTON_WHEEL_UP)
+	_check("no mouse tracking: the wheel scrolls Minerva's view", native.scrolls == [-3]
+		and session.writes.size() == before, "%s / %s" % [native.scrolls, session.writes])
+
+	native.tracking = true
+	native.wheel_calls.clear()
+	_wheel(cell.call(3.5, 2.5), MOUSE_BUTTON_WHEEL_UP)
+	_check("tracking: one wheel event is sent for the cell under the pointer, nothing scrolls",
+		session.writes.size() == before + 1 and session.writes[-1] == "WHEEL" and native.scrolls == [-3]
+		and native.wheel_calls == [[true, 3, 2, 0]], "%s / %s / %s" % [native.wheel_calls, session.writes, native.scrolls])
+
+	native.wheel_calls.clear()
+	_wheel(cell.call(3.5, 25.5), MOUSE_BUTTON_WHEEL_DOWN, KEY_MASK_CTRL)
+	_check("tracking: below the grid clamps to the last row; ctrl is reported",
+		native.wheel_calls == [[false, 3, session.get_rows() - 1, 2]], str(native.wheel_calls))
+
+	native.wheel_calls.clear()
+	_wheel(cell.call(3.5, 2.5), MOUSE_BUTTON_WHEEL_UP, KEY_MASK_SHIFT)
+	_check("Shift+wheel scrolls locally even while tracking", native.wheel_calls.is_empty()
+		and native.scrolls == [-3, -3] and session.writes.size() == before + 2, str(native.scrolls))
+
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = cell.call(1.5, 1.5)
+	root.push_input(press)
+	_wheel(cell.call(1.5, 1.5), MOUSE_BUTTON_WHEEL_DOWN)
+	_check("mid-selection the wheel scrolls locally", native.wheel_calls.is_empty()
+		and native.scrolls == [-3, -3, 3] and session.writes.size() == before + 2, str(native.scrolls))
+	var release := press.duplicate()
+	release.pressed = false
+	root.push_input(release)
+	layer.reset_selection()
+	native.tracking = false
+
+
+func _wheel(at: Vector2, button: MouseButton, modifiers: int = 0) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = button
+	event.pressed = true
+	event.position = at
+	event.global_position = at
+	event.shift_pressed = modifiers & KEY_MASK_SHIFT != 0
+	event.ctrl_pressed = modifiers & KEY_MASK_CTRL != 0
+	root.push_input(event)
 
 
 func _add_terminal(parent: Control, visible: bool):

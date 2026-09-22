@@ -863,12 +863,38 @@ func _shortcut_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 
+## Send a wheel notch to the application as mouse input when it asked for
+## it (xterm mouse tracking — tmux, Claude Code, vim, less --mouse), for the
+## cell under the pointer; true when sent. Minerva's own viewport never
+## scrolls then: a full-screen application's history is its own. Shift+wheel
+## always scrolls locally, and so does a native build without encode_wheel.
+func _forward_wheel(event: InputEventMouseButton) -> bool:
+	if event.shift_pressed or not terminal.has_method("encode_wheel"):
+		return false
+	var at: Vector2 = text_layer.get_global_transform().affine_inverse() \
+		* (get_global_transform() * event.position)
+	var col: int = clampi(floori(at.x / char_width), 0, maxi(_cols - 1, 0))
+	var row: int = clampi(floori(at.y / line_height), 0, maxi(_rows - 1, 0))
+	var mods: int = (GK_MODS_CTRL if event.ctrl_pressed else 0) | (GK_MODS_ALT if event.alt_pressed else 0)
+	var encoded: PackedByteArray = terminal.encode_wheel(
+		event.button_index == MOUSE_BUTTON_WHEEL_UP, col, row, mods)
+	if encoded.is_empty():
+		return false
+	write_human_input(encoded.get_string_from_utf8())
+	return true
+
+
 func _gui_input(event: InputEvent) -> void:
 	if not _terminal_available or text_layer == null:
 		return
 
-	# Scroll wheel → ghostty viewport scrolling
+	# Scroll wheel → the application when it tracks the mouse, else ghostty
+	# viewport scrolling
 	if event is InputEventMouseButton and event.pressed:
+		if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] \
+				and _forward_wheel(event):
+			get_viewport().set_input_as_handled()
+			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			terminal.scroll_viewport(-3)
 			_scrolled_up = true

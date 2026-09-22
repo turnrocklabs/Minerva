@@ -347,6 +347,28 @@ size_t minerva_vt_encode_key(
     size_t out_buf_size
 );
 
+/**
+ * Encode one mouse-wheel notch the way the running application asked to
+ * receive mouse input (DECSET 1000/1002/1003 with 1005/1006/1015).
+ *
+ * @param term      Terminal handle (for reading current mouse modes)
+ * @param up        true for wheel up (button 4), false for down (button 5)
+ * @param col, row  0-based cell under the pointer
+ * @param mods      Modifier bitmask (MINERVA_MODS_*); ctrl/alt are reported
+ * @return Number of bytes written; 0 when the application is not tracking
+ *         the mouse (scroll locally), or the position cannot be encoded as
+ *         ASCII in X10 format, or the format is SGR-pixels.
+ */
+size_t minerva_vt_encode_wheel(
+    MinervaTerminal term,
+    bool up,
+    uint16_t col,
+    uint16_t row,
+    uint16_t mods,
+    uint8_t* out_buf,
+    size_t out_buf_size
+);
+
 #ifdef __cplusplus
 }
 #endif

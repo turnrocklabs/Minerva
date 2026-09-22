@@ -122,6 +122,7 @@ public:
 
     // Key encoding (powered by ghostty key encoder)
     PackedByteArray encode_key(int ghostty_key, int action, int mods, const String &utf8_text) const;
+    PackedByteArray encode_wheel(bool up, int col, int row, int mods) const;
 };
 
 }
