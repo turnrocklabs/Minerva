@@ -145,10 +145,21 @@ func _init() -> void:
 		var tool_names: Array[String] = []
 		for entry in relay.tools:
 			tool_names.append(str(entry.get("name", "")))
-		check("agent_relay keeps its 15 namespaced tool names (A2)",
-			tool_names.size() == 15
-				and tool_names.has("minerva_agent_relay_watch_start")
-				and tool_names.has("minerva_agent_relay_relay_ask"))
+		# The exact contract the Rust worker dispatches (passthrough_interrupt
+		# joined in 857499fb). A new or dropped tool must update this list.
+		var expected_tools: Array[String] = [
+			"minerva_agent_relay_filter_delete", "minerva_agent_relay_filter_list",
+			"minerva_agent_relay_filter_set", "minerva_agent_relay_passthrough_generate",
+			"minerva_agent_relay_passthrough_interrupt", "minerva_agent_relay_profile_get",
+			"minerva_agent_relay_profile_set", "minerva_agent_relay_profiles_list",
+			"minerva_agent_relay_read_clean", "minerva_agent_relay_read_turn",
+			"minerva_agent_relay_relay_ask", "minerva_agent_relay_send",
+			"minerva_agent_relay_wait_turn", "minerva_agent_relay_watch_start",
+			"minerva_agent_relay_watch_status", "minerva_agent_relay_watch_stop",
+		]
+		var sorted_names := tool_names.duplicate()
+		sorted_names.sort()
+		check("agent_relay keeps its exact namespaced tool set (A2)", sorted_names == expected_tools)
 		var skill_ids: Array[String] = []
 		for skill in relay.skills:
 			skill_ids.append(str(skill.get("id", "")))

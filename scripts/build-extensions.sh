@@ -207,7 +207,9 @@ fi
 echo ""
 echo "=== Building ghostty-vt shim ==="
 cd src/gdextension/terminal/ghostty-shim
-zig build -Doptimize=ReleaseFast
+# Baseline CPU: a native-CPU build can SIGILL on another machine (CI runners
+# differ, and copies of the shim travel).
+zig build -Doptimize=ReleaseFast -Dcpu=baseline
 cd "$OLDPWD"
 
 # Verify output

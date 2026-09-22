@@ -441,7 +441,9 @@ jobs:
 
     - name: Build ghostty-vt shim
       working-directory: src/gdextension/terminal/ghostty-shim
-      run: zig build -Doptimize=ReleaseFast
+      # -Dcpu=baseline: without it Zig targets this runner's native CPU, and
+      # the functional-tests job (another runner) can die with SIGILL.
+      run: zig build -Doptimize=ReleaseFast -Dcpu=baseline
 
     - name: Copy shim library to bin
       run: |
