@@ -29,7 +29,7 @@ extends SceneTree
 ## test compiles before autoloads register (see test_background_terminals.gd).
 
 const TERMINAL_SCRIPT_PATH := "res://Scripts/UI/Controls/TerminalNew.gd"
-var Terminal: GDScript
+var TerminalScript: GDScript
 
 var _passed := 0
 var _failed := 0
@@ -100,7 +100,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	Terminal = load(TERMINAL_SCRIPT_PATH)
+	TerminalScript = load(TERMINAL_SCRIPT_PATH)
 	_test_selection_text()
 	_test_text_layer_wiring()
 	print("=== Results: %d passed, %d failed ===" % [_passed, _failed])
@@ -109,17 +109,17 @@ func _run() -> void:
 
 func _test_selection_text() -> void:
 	var get_cell := func(col: int, row: int) -> Dictionary: return FakeNative.grid_cell(col, row)
-	_check_text("partial row", Terminal.selection_text(get_cell, Vector2i(0, 0), Vector2i(4, 0), COLS), "hello")
-	_check_text("inner columns", Terminal.selection_text(get_cell, Vector2i(6, 0), Vector2i(10, 0), COLS), "world")
-	_check_text("multi row", Terminal.selection_text(get_cell, Vector2i(6, 0), Vector2i(5, 1), COLS),
+	_check_text("partial row", TerminalScript.selection_text(get_cell, Vector2i(0, 0), Vector2i(4, 0), COLS), "hello")
+	_check_text("inner columns", TerminalScript.selection_text(get_cell, Vector2i(6, 0), Vector2i(10, 0), COLS), "world")
+	_check_text("multi row", TerminalScript.selection_text(get_cell, Vector2i(6, 0), Vector2i(5, 1), COLS),
 			"world\nsecond")
-	_check_text("whole rows between", Terminal.selection_text(get_cell, Vector2i(6, 0), Vector2i(3, 2), COLS),
+	_check_text("whole rows between", TerminalScript.selection_text(get_cell, Vector2i(6, 0), Vector2i(3, 2), COLS),
 			"world\nsecond line\n  in")
-	_check_text("trailing blanks dropped", Terminal.selection_text(get_cell, Vector2i(0, 2), Vector2i(11, 2), COLS),
+	_check_text("trailing blanks dropped", TerminalScript.selection_text(get_cell, Vector2i(0, 2), Vector2i(11, 2), COLS),
 			"  indented")
-	_check_text("wide character once", Terminal.selection_text(get_cell, Vector2i(0, 3), Vector2i(7, 3), COLS),
+	_check_text("wide character once", TerminalScript.selection_text(get_cell, Vector2i(0, 3), Vector2i(7, 3), COLS),
 			"中文 ok")
-	_check_text("end past the grid clamps", Terminal.selection_text(get_cell, Vector2i(0, 1), Vector2i(40, 1), COLS),
+	_check_text("end past the grid clamps", TerminalScript.selection_text(get_cell, Vector2i(0, 1), Vector2i(40, 1), COLS),
 			"second line")
 
 
@@ -128,12 +128,12 @@ func _make_layer() -> Array:
 	var native := FakeNative.new()
 	var session := FakeSession.new()
 	session.terminal = native
-	var term = Terminal.new()
+	var term = TerminalScript.new()
 	term._auto_create_session = false
 	term._session = session
 	term.line_height = CELL
 	term.char_width = CELL
-	var layer = Terminal.TextLayer.new()
+	var layer = TerminalScript.TextLayer.new()
 	layer.terminal = term
 	term.text_layer = layer
 	root.add_child(layer)
