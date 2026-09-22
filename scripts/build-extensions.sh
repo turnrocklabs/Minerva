@@ -207,6 +207,9 @@ fi
 echo ""
 echo "=== Building ghostty-vt shim ==="
 cd src/gdextension/terminal/ghostty-shim
+# Zig's own fetcher fails behind an HTTPS proxy (agent containers); put the
+# manifest's pinned dependencies in its cache first, hash-checked.
+python3 "$OLDPWD/scripts/zig-prefetch.py" build.zig.zon
 # Baseline CPU: a native-CPU build can SIGILL on another machine (CI runners
 # differ, and copies of the shim travel).
 zig build -Doptimize=ReleaseFast -Dcpu=baseline

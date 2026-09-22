@@ -61,7 +61,7 @@ LABEL = "minerva-container-build"
 RECIPES = {
     "terminal": {
         "inputs": ["src/gdextension/terminal", "src/SConstruct", "src/godot-cpp",
-                   "vendor/ghostty", "scripts/build-extensions.sh"],
+                   "vendor/ghostty", "scripts/build-extensions.sh", "scripts/zig-prefetch.py"],
         "submodules": ["src/godot-cpp", "vendor/ghostty"],
         "command": "scripts/build-extensions.sh linux --terminal-only",
         "outputs": ["src/bin/libterminal.linux.template_debug.x86_64.so",
