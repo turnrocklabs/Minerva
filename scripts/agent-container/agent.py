@@ -33,6 +33,9 @@ Everything a session keeps lives under the state root
                                       there once, inside the harness)
   sessions/NAME/control/binding.json  attached terminal, notify targets, lease
   sessions/NAME/control/notes.json    Minerva notes the session may read/write
+  sessions/NAME/launcher.json         the attached launcher's process group and
+                                      the container's init, for Minerva to see
+                                      the harness in front (host-only)
   run/NAME-*/                         one gateway run's sessions.json + sockets
 Task repositories are independent clones under ${MINERVA_AGENT_WORK:-~/agent-work}/TASK/,
 made once from the host checkouts and mounted at the same absolute path.
@@ -199,6 +202,22 @@ def running(container):
     return probe.returncode == 0 and probe.stdout.strip() == "true"
 
 
+def container_identity(container):
+    """(host pid, /proc start time) of the container's init, or (0, 0)."""
+    probe = subprocess.run(["docker", "inspect", "-f", "{{.State.Pid}}", container],
+                           capture_output=True, text=True)
+    pid = probe.stdout.strip()
+    if probe.returncode != 0 or not pid.isdigit() or int(pid) <= 0:
+        return 0, 0
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return 0, 0
+    fields = stat[stat.rfind(")") + 1:].split()
+    start = fields[19] if len(fields) > 19 else ""
+    return (int(pid), int(start)) if start.isdigit() and int(start) > 0 else (0, 0)
+
+
 def stop(*names):
     for container in names:
         if running(container):
@@ -247,6 +266,10 @@ def session_lock(name):
 
 def binding_path(name):
     return session_dir(name) / "control" / "binding.json"
+
+
+def launcher_path(name):
+    return session_dir(name) / "launcher.json"
 
 
 def write_notes(name, read, write):
@@ -375,10 +398,16 @@ class Lease:
     still carries this generation, so a client that was taken over can
     neither renew nor clear its successor's binding."""
 
-    def __init__(self, name, terminal, targets):
+    def __init__(self, name, terminal, targets, container=(0, 0)):
         self.name, self.path, self.seconds = name, binding_path(name), lease_s()
         self.value = {"terminal_id": terminal, "notify_targets": targets,
                       "generation": secrets.token_hex(8), "expires_at": 0}
+        # Beside the binding, never in it (the gateway reads the binding's
+        # exact keys): Minerva matches this generation, the launcher group in
+        # front of the tab and the container's init to find the harness the
+        # tab shows (AgentContainerForeground.gd). Zeros make it hold.
+        self.launcher = {"generation": self.value["generation"], "launcher_pgid": os.getpgrp(),
+                         "container_pid": container[0], "container_start": container[1]}
         self._stop = threading.Event()
 
     def claim_locked(self, takeover):
@@ -388,6 +417,7 @@ class Lease:
         if live and not takeover:
             raise Refused(f"session {self.name} is attached from terminal {current.get('terminal_id')}; "
                           "pass --takeover to move it here")
+        write_json(launcher_path(self.name), self.launcher)
         self._write()
 
     def _write(self):
@@ -410,6 +440,7 @@ class Lease:
         self._stop.set()
         if self._mine():
             write_json(self.path, {})
+            write_json(launcher_path(self.name), {})
 
     def release(self):
         with session_lock(self.name):
@@ -428,7 +459,7 @@ def cmd_attach(args):
             raise Refused(f"bad terminal id {target!r}")
     if not running(dev):
         raise Refused(f"session {name} is not running: use `agent.py up` or `agent.py start`")
-    lease = Lease(name, terminal, args.notify_to or [])
+    lease = Lease(name, terminal, args.notify_to or [], container_identity(dev))
     client = None
 
     def hang_up(signum, frame):

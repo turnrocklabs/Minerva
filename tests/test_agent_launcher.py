@@ -34,6 +34,10 @@ def save():
     state.write_text(json.dumps(data))
 if args[:2] == ["image", "inspect"]:
     sys.exit(0 if os.environ.get("FAKE_IMAGE") == "present" else 1)
+if args[0] == "inspect" and "{{.State.Pid}}" in args:
+    if args[-1] in data["running"]:
+        print(1); sys.exit(0)     # the host's init stands in for the container's
+    sys.exit(1)
 if args[0] == "inspect":
     if args[-1] in data["running"]:
         print("true"); sys.exit(0)
@@ -236,6 +240,14 @@ class LauncherTest(unittest.TestCase):
             time.sleep(0.05)
         bound = self.binding()
         self.assertEqual((bound["terminal_id"], bound["notify_targets"]), ("1111", ["2222"]))
+        # The gateway reads the binding's exact keys; Minerva's foreground
+        # identity sits beside it, tied to the same lease generation.
+        self.assertEqual(set(bound), {"terminal_id", "notify_targets", "generation", "expires_at"})
+        launcher = self.home / "state/sessions/alpha/launcher.json"
+        init_start = int(Path("/proc/1/stat").read_text().rsplit(")", 1)[1].split()[19])
+        self.assertEqual(json.loads(launcher.read_text()),
+                         {"generation": bound["generation"], "launcher_pgid": os.getpgid(first.pid),
+                          "container_pid": 1, "container_start": init_start})
         # A second terminal cannot silently steal a live attach...
         second = self.agent("attach", "alpha", env={**self.env, "MINERVA_TERMINAL_ID": "9999"})
         self.assertEqual(second.returncode, 1)
@@ -243,6 +255,7 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(self.binding()["terminal_id"], "1111")
         first.wait(10)
         self.assertEqual(self.binding(), {})                          # detached: nothing to notify
+        self.assertEqual(json.loads(launcher.read_text()), {})
         # ...and a new terminal after a Minerva restart rebinds.
         self.assertEqual(self.agent("attach", "alpha", env={**self.env, "MINERVA_TERMINAL_ID": "9999"})
                          .returncode, 0)

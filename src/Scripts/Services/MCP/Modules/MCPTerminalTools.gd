@@ -359,6 +359,9 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				var harness: String = session.harness_of(foreground)
 				if not harness.is_empty():
 					entry["harness"] = harness
+				# Seen through an agent-container launcher: the session it shows.
+				if foreground.has("container"):
+					entry["container"] = str(foreground["container"])
 			# cwd is absent, never guessed: a session started without one runs
 			# in Minerva's own working directory, which the host cannot report
 			# as the child's launch directory.

@@ -25,6 +25,7 @@ signal bell_rung(count: int)
 ## Re-emitted from the underlying Terminal node's `process_exited`.
 const ShellEnvironment := preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
 const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
+const AgentContainerForeground := preload("res://Scripts/Services/Terminal/AgentContainerForeground.gd")
 
 signal shell_exited(exit_code: int)
 
@@ -298,10 +299,13 @@ func foreground_supported() -> bool:
 ## The process group holding the PTY: {pid, name, argv, exe, exe_name}, or {}
 ## when the query failed (not running, tcgetpgrp or /proc unreadable). `name`
 ## is the main thread's name, `exe`/`exe_name` the running binary's path and
-## basename (empty where the executable could not be read).
+## basename (empty where the executable could not be read). When the PTY's
+## foreground is an agent-container launcher bound to this tab, the answer is
+## the program in front inside that container, plus `container` (its session
+## name); see AgentContainerForeground.
 func get_foreground_process() -> Dictionary:
 	if terminal_available and terminal.has_method("get_foreground_process"):
-		return terminal.get_foreground_process()
+		return AgentContainerForeground.resolve(terminal_id, terminal.get_foreground_process())
 	return {}
 
 
