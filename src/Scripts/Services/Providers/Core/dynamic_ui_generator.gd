@@ -1,8 +1,8 @@
 class_name DynamicUIGenerator
-extends Node
-
-@warning_ignore("unused_signal")
-signal parameter_changed(param_name, value)
+extends RefCounted
+## Builds field controls from action parameter schemas and reads/writes their
+## values. Shared through Core.dynamic_ui_generator; it touches no scene tree,
+## so it is reference-counted and freed with Core.
 
 # if we have file fields in input data, this will be true
 var binary_data: = false
