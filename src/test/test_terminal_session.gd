@@ -107,10 +107,17 @@ func _run() -> void:
 	check("AC2: view reports terminal_available", view._terminal_available)
 	check("AC2: view.terminal is session's node", view.terminal == session.terminal)
 	check("AC2: session records its attached view", session.get_attached_view() == view)
+	# The shell's own prompt markers may already have made blocks, so count
+	# only what these two calls add (a check button + redirect button each).
+	var blocks_before: int = view._blocks.size()
+	var controls_before: int = view._check_buttons_container.get_child_count()
 	view._start_new_block(0, 0)
 	view._start_new_block(2, 2)
 	check("AC2: prompt markers created real block controls",
-		view._blocks.size() == 2 and view._check_buttons_container.get_child_count() == 4)
+		view._blocks.size() == blocks_before + 2
+		and view._check_buttons_container.get_child_count() == controls_before + 4,
+		"blocks=%d controls=%d (before %d/%d)" % [view._blocks.size(),
+			view._check_buttons_container.get_child_count(), blocks_before, controls_before])
 	var so = root.get_node_or_null("SingletonObject")
 	var NoteScript = load(NOTE_SCRIPT)
 	var proxy = NoteScript.Proxy.new(func(): return null)
