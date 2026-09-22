@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build Minerva native editor dependencies, including the MCP schema helper.
 # Run from repo root: scripts/build-extensions.sh
+# --terminal-only / --addons-only run one step alone; scripts/container-build
+# uses them to build each component from a clean checkout.
 #
 # Prerequisites installed automatically if missing:
 #   - Zig 0.15.2 (installed persistently under ~/.local/share/minerva)
@@ -16,31 +18,37 @@ CHECK_ONLY=0
 HELPER_ONLY=0
 VOICE_ONLY=0
 AGENT_RELAY_ONLY=0
+TERMINAL_ONLY=0
+ADDONS_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --check) CHECK_ONLY=1 ;;
         --helper-only) HELPER_ONLY=1 ;;
         --voice-only) VOICE_ONLY=1 ;;
         --agent-relay-only) AGENT_RELAY_ONLY=1 ;;
+        --terminal-only) TERMINAL_ONLY=1 ;;
+        --addons-only) ADDONS_ONLY=1 ;;
         linux|macos) PLATFORM="$arg" ;;
         -h|--help)
-            echo "Usage: $0 [linux|macos] [--check] [--helper-only|--voice-only|--agent-relay-only]"
+            echo "Usage: $0 [linux|macos] [--check] [--helper-only|--voice-only|--agent-relay-only|--terminal-only|--addons-only]"
             echo "--check validates installed artifacts without building or launching Godot."
             echo "--helper-only builds/checks only the MCP schema helper."
             echo "--voice-only builds/checks only the bundled Voice runtime."
             echo "--agent-relay-only builds/checks only the bundled Agent Relay worker."
+            echo "--terminal-only builds only the ghostty-vt shim and terminal extension."
+            echo "--addons-only installs only the godot-sqlite and EIRTeam.FFmpeg addons."
             exit 0 ;;
         *) echo "Unknown argument: $arg. Use --help. For Windows use build-extensions.ps1."; exit 2 ;;
     esac
 done
-if [ $((HELPER_ONLY + VOICE_ONLY + AGENT_RELAY_ONLY)) -gt 1 ]; then
-    echo "--helper-only, --voice-only and --agent-relay-only are mutually exclusive." >&2
+if [ $((HELPER_ONLY + VOICE_ONLY + AGENT_RELAY_ONLY + TERMINAL_ONLY + ADDONS_ONLY)) -gt 1 ]; then
+    echo "The --*-only options are mutually exclusive." >&2
     exit 2
 fi
 # check-editor-ready.py has no Agent Relay probe; the host's runtime_issue()
 # is what reports a missing stage.
-if [ "$CHECK_ONLY" = 1 ] && [ "$AGENT_RELAY_ONLY" = 1 ]; then
-    echo "--agent-relay-only has no --check probe; run it without --check." >&2
+if [ "$CHECK_ONLY" = 1 ] && [ $((AGENT_RELAY_ONLY + TERMINAL_ONLY + ADDONS_ONLY)) -gt 0 ]; then
+    echo "--agent-relay-only, --terminal-only and --addons-only have no --check probe." >&2
     exit 2
 fi
 ZIG_VERSION="0.15.2"
@@ -141,19 +149,28 @@ if ! command -v scons >/dev/null; then
     export PATH="$PWD/.build-venv/bin:$PATH"
 fi
 
-# The helper has no Godot dependency; repair it without touching loaded libraries.
-python3 scripts/build-json-schema-helper.py --platform "$PLATFORM"
-if [ "$HELPER_ONLY" = 1 ]; then
-    exec python3 scripts/check-editor-ready.py --helper-only
+if [ $((TERMINAL_ONLY + ADDONS_ONLY)) = 0 ]; then
+    # The helper has no Godot dependency; repair it without touching loaded libraries.
+    python3 scripts/build-json-schema-helper.py --platform "$PLATFORM"
+    if [ "$HELPER_ONLY" = 1 ]; then
+        exec python3 scripts/check-editor-ready.py --helper-only
+    fi
+
+    build_voice_runtime
+    build_agent_relay_runtime
 fi
 
-build_voice_runtime
-build_agent_relay_runtime
-
+build_terminal_extension() {
 # ── Git submodules ────────────────────────────────────────────────────
 
-echo "Initializing git submodules..."
-git submodule update --init --recursive
+if [ "$TERMINAL_ONLY" = 1 ]; then
+    # Only what the shim and SCons build read.
+    echo "Initializing git submodules: src/godot-cpp vendor/ghostty"
+    git submodule update --init src/godot-cpp vendor/ghostty
+else
+    echo "Initializing git submodules..."
+    git submodule update --init --recursive
+fi
 
 # ── Install Zig if needed ─────────────────────────────────────────────
 
@@ -224,7 +241,9 @@ echo "=== Installing libraries ==="
 # first so the old inode survives until the process exits.
 install -m 755 "$SHIM_LIB" src/bin/
 echo "Copied $(basename "$SHIM_LIB") to src/bin/"
+}
 
+install_addons() {
 # ── Install EIRTeam.FFmpeg (download prebuilt, fallback to source build) ──
 
 FFMPEG_VERSION="1.1.4"
@@ -342,6 +361,14 @@ else
         echo "WARNING: Failed to download godot-sqlite. SQLite addon will not be available."
     fi
     rm -rf "$TMP_SQLITE"
+fi
+
+}
+
+[ "$ADDONS_ONLY" = 1 ] || build_terminal_extension
+[ "$TERMINAL_ONLY" = 1 ] || install_addons
+if [ $((TERMINAL_ONLY + ADDONS_ONLY)) -gt 0 ]; then
+    exit 0
 fi
 
 # ── Verify ────────────────────────────────────────────────────────────
