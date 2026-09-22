@@ -1,0 +1,9 @@
+{
+  "upstreams": {
+    "minerva": "http://127.0.0.1:9315/mcp",
+    "docket": "http://127.0.0.1:3010/mcp",
+    "nudge": "http://127.0.0.1:8765/mcp"
+  },
+  "policy": "policy.json",
+  "egress": "egress.json"
+}

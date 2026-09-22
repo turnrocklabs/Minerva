@@ -1,0 +1,9 @@
+{
+  "comment": "Hostnames an agent container may CONNECT to on port 443, and nothing else. Starter entries are the harness auth and model APIs only; P1b's smoke test logs every denied host, and each addition is reviewed one by one, never by widening to a broad suffix. 'suffix' entries start with '.' and match on a label boundary.",
+  "allow": [
+    {"exact": "api.anthropic.com"},
+    {"exact": "chatgpt.com"},
+    {"exact": "auth.openai.com"},
+    {"exact": "api.openai.com"}
+  ]
+}

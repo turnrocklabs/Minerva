@@ -1,0 +1,520 @@
+"""What an agent container may ask of the host MCP services, and how.
+
+Pure policy, no sockets: mcp_http.py calls parse_request() on every JSON-RPC
+body, plan_call() on every tools/call, and shape_*() on every upstream answer.
+Everything not allowed by policy.json is denied before it reaches an
+upstream, and nothing an upstream sends is relayed as-is: each answer is
+rebuilt from values the gateway has checked, so upstream error details,
+structuredContent and extra fields never reach the container.
+
+Deny and ProtocolError carry a fixed code (safe to log) and a detail (shown
+only to the container, bounded, never upstream data).
+"""
+from dataclasses import dataclass
+import json
+import re
+
+import strict_json
+
+MAX_RESULT_TEXT = 4 * 1024 * 1024
+LINE_MAX = 512
+TEXT_MAX = 64 * 1024
+JSON_ARG_MAX = 64 * 1024
+LIST_MAX = 64
+DETAIL_MAX = 200
+ERROR_TEXT_MAX = 500
+NOTIFY_TEXT_MAX = 400      # Minerva's NOTIFY_MAX_TEXT_LENGTH
+NOTIFY_WAIT_MAX = 20000    # Minerva's NOTIFY_MAX_WAIT_MS
+QUERY_LIMIT_MAX = 200
+ID_MAX = 2**53
+
+METHODS = {"initialize", "notifications/initialized", "ping", "tools/list", "tools/call"}
+ENVELOPE_KEYS = {"jsonrpc", "id", "method", "params"}
+PARAM_KEYS = {
+    "initialize": {"protocolVersion", "capabilities", "clientInfo", "_meta"},
+    "notifications/initialized": {"_meta"},
+    "ping": {"_meta"},
+    "tools/list": {"cursor", "_meta"},
+    "tools/call": {"name", "arguments", "_meta"},
+}
+REF = re.compile(r"(?:([A-Za-z0-9._-]{1,64}):)?([0-9a-f]{32})")
+TOOL_NAME = re.compile(r"[a-z0-9_]{1,64}")
+PROTOCOL_VERSION = re.compile(r"[0-9A-Za-z.-]{1,32}")
+# Characters that end or fake a line in a terminal or a Docket field.
+LINE_BREAKERS = re.compile("[\x00-\x1f\x7f\x85\u2028\u2029]")
+TEXT_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+KIND_SCHEMA = {
+    "line": {"type": "string", "maxLength": LINE_MAX},
+    "project": {"type": "string"},
+    "text": {"type": "string", "maxLength": TEXT_MAX},
+    "int": {"type": "integer"},
+    "bool": {"type": "boolean"},
+    "str_list": {"type": "array", "items": {"type": "string"}, "maxItems": LIST_MAX},
+    "json": {},
+    "ref": {"type": "string", "pattern": REF.pattern},
+}
+
+
+def _bounded(text):
+    return text if len(text) <= DETAIL_MAX else text[:DETAIL_MAX] + "…"
+
+
+class Deny(Exception):
+    """A request or answer the policy refuses."""
+
+    def __init__(self, code, detail=""):
+        self.code, self.detail = code, _bounded(detail)
+        super().__init__(f"{code}: {self.detail}" if self.detail else code)
+
+
+class ProtocolError(Exception):
+    """A malformed JSON-RPC message."""
+
+    def __init__(self, rpc_code, code, detail=""):
+        self.rpc_code, self.code, self.detail = rpc_code, code, _bounded(detail)
+        super().__init__(f"{code}: {self.detail}" if self.detail else code)
+
+
+@dataclass(frozen=True)
+class Session:
+    """One terminal's run, as registered by the trusted launcher."""
+    terminal_id: str
+    harness: str
+    notify_targets: frozenset
+    docket_projects: frozenset
+
+    @property
+    def label(self):
+        # Cannot collide with a Minerva tab name used as a notify address.
+        return f"container:{self.harness}@{self.terminal_id}"
+
+
+@dataclass(frozen=True)
+class Request:
+    id: object          # None for a notification
+    method: str
+    params: dict
+
+    @property
+    def is_notification(self):
+        return self.id is None
+
+
+@dataclass
+class Call:
+    """A tools/call the policy lets through: what to forward, and how to
+    rebuild the upstream's result for the container."""
+    arguments: dict
+    shape: object
+
+    def shape_result(self, result):
+        return self.shape(result)
+
+
+class Policy:
+    def __init__(self, data):
+        self.readable_types = frozenset(data["docket_readable_types"])
+        self.mutable_types = frozenset(data["docket_mutable_types"])
+        if not self.mutable_types <= self.readable_types:
+            raise ValueError("every mutable Docket type must also be readable")
+        self.services = data["services"]
+        for service, tools in self.services.items():
+            for name, spec in tools.items():
+                if set(spec) - {"args", "required", "rule"}:
+                    raise ValueError(f"{service}.{name}: unknown spec keys")
+                for arg in spec["required"]:
+                    if arg not in spec["args"]:
+                        raise ValueError(f"{service}.{name}: required {arg} not in args")
+                for kind in spec["args"].values():
+                    if not (isinstance(kind, dict) and set(kind) == {"enum"}) and kind not in KIND_SCHEMA:
+                        raise ValueError(f"{service}.{name}: unknown argument kind {kind}")
+                rule = spec.get("rule")
+                if rule is not None and rule not in RULES:
+                    raise ValueError(f"{service}.{name}: unknown rule {rule}")
+
+    @classmethod
+    def load(cls, path):
+        with open(path, "rb") as f:
+            return cls(strict_json.loads(f.read(), 1024 * 1024))
+
+    def tools(self, service):
+        return self.services.get(service, {})
+
+
+# ── JSON-RPC envelope ──────────────────────────────────────────────────────
+
+def request_id(msg):
+    """The id to answer a message with, when it has a well-formed one."""
+    if isinstance(msg, dict):
+        rid = msg.get("id")
+        if (isinstance(rid, int) and not isinstance(rid, bool) and abs(rid) <= ID_MAX) \
+                or (isinstance(rid, str) and 0 < len(rid) <= 128):
+            return rid
+    return None
+
+
+def _check_initialize(params):
+    if not isinstance(params.get("protocolVersion"), str) \
+            or not PROTOCOL_VERSION.fullmatch(params["protocolVersion"]):
+        raise ProtocolError(-32602, "bad_initialize", "protocolVersion")
+    for key, limit in (("capabilities", 16384), ("clientInfo", 4096)):
+        if not isinstance(params.get(key, {}), dict) or len(strict_json.dumps(params.get(key, {}))) > limit:
+            raise ProtocolError(-32602, "bad_initialize", key)
+
+
+def parse_request(msg):
+    """Validate one JSON-RPC 2.0 request or notification; batches are refused."""
+    if isinstance(msg, list):
+        raise ProtocolError(-32600, "batch_refused")
+    if not isinstance(msg, dict):
+        raise ProtocolError(-32600, "not_an_object")
+    extra = set(msg) - ENVELOPE_KEYS
+    if extra:
+        raise ProtocolError(-32600, "unknown_envelope_field", ", ".join(sorted(extra)))
+    if msg.get("jsonrpc") != "2.0":
+        raise ProtocolError(-32600, "bad_jsonrpc_version")
+    method = msg.get("method")
+    if not isinstance(method, str):
+        raise ProtocolError(-32600, "bad_method")
+    if "id" in msg and request_id(msg) is None:
+        raise ProtocolError(-32600, "bad_id")
+    params = msg.get("params", {})
+    if not isinstance(params, dict):
+        raise ProtocolError(-32602, "bad_params")
+    if method not in METHODS:
+        raise ProtocolError(-32601, "method_not_available", method)
+    if method.startswith("notifications/") != ("id" not in msg):
+        raise ProtocolError(-32600, "id_mismatch")
+    extra = set(params) - PARAM_KEYS[method]
+    if extra:
+        raise ProtocolError(-32602, "unknown_param", ", ".join(sorted(extra)))
+    params = {k: v for k, v in params.items() if k != "_meta"}
+    if method == "initialize":
+        _check_initialize(params)
+    elif method == "tools/list":
+        cursor = params.get("cursor")
+        if cursor is not None and (not isinstance(cursor, str) or len(cursor) > LINE_MAX):
+            raise ProtocolError(-32602, "bad_cursor")
+    elif method == "tools/call":
+        if not isinstance(params.get("name"), str) or not TOOL_NAME.fullmatch(params["name"]):
+            raise ProtocolError(-32602, "bad_tool_name")
+        if not isinstance(params.get("arguments", {}), dict):
+            raise ProtocolError(-32602, "bad_arguments")
+    return Request(msg["id"] if "id" in msg else None, method, params)
+
+
+# ── argument validation ───────────────────────────────────────────────────
+
+def _check_value(kind, name, value, session):
+    if isinstance(kind, dict):
+        if value not in kind["enum"]:
+            raise Deny("bad_argument", f"{name}: value not allowed")
+        return
+    if kind in ("line", "project"):
+        if not isinstance(value, str) or len(value) > LINE_MAX or LINE_BREAKERS.search(value):
+            raise Deny("bad_argument", f"{name}: must be one line of at most {LINE_MAX} characters")
+        if kind == "project" and value not in session.docket_projects:
+            raise Deny("project_not_allowed", name)
+    elif kind == "text":
+        if not isinstance(value, str) or len(value) > TEXT_MAX or TEXT_FORBIDDEN.search(value):
+            raise Deny("bad_argument", f"{name}: must be text of at most {TEXT_MAX} characters")
+    elif kind == "int":
+        if isinstance(value, bool) or not isinstance(value, int) or abs(value) > 2**31:
+            raise Deny("bad_argument", f"{name}: must be an integer")
+    elif kind == "bool":
+        if not isinstance(value, bool):
+            raise Deny("bad_argument", f"{name}: must be a boolean")
+    elif kind == "str_list":
+        if not isinstance(value, list) or len(value) > LIST_MAX:
+            raise Deny("bad_argument", f"{name}: must be a list of at most {LIST_MAX} strings")
+        for item in value:
+            _check_value("line", name, item, session)
+    elif kind == "json":
+        if len(strict_json.dumps(value)) > JSON_ARG_MAX:
+            raise Deny("bad_argument", f"{name}: over {JSON_ARG_MAX} bytes")
+    elif kind == "ref":
+        if not isinstance(value, str) or not REF.fullmatch(value):
+            raise Deny("bad_argument", f"{name}: must be a full 32-hex item id")
+
+
+def validate_arguments(spec, args, session):
+    extra = set(args) - set(spec["args"])
+    if extra:
+        raise Deny("argument_not_allowed", ", ".join(sorted(extra)))
+    for name in spec["required"]:
+        if name not in args:
+            raise Deny("missing_argument", name)
+    for name, value in args.items():
+        _check_value(spec["args"][name], name, value, session)
+
+
+# ── upstream result shaping ──────────────────────────────────────────────
+
+def result_json(result):
+    """The JSON value in a successful tool result's single text block."""
+    if not isinstance(result, dict) or result.get("isError"):
+        raise Deny("upstream_tool_error")
+    content = result.get("content")
+    if not isinstance(content, list) or len(content) != 1 \
+            or not isinstance(content[0], dict) or content[0].get("type") != "text" \
+            or not isinstance(content[0].get("text"), str):
+        raise Deny("upstream_bad_shape")
+    try:
+        return strict_json.loads(content[0]["text"].encode("utf-8"), MAX_RESULT_TEXT)
+    except strict_json.StrictJSONError:
+        raise Deny("upstream_bad_shape") from None
+
+
+def json_result(value):
+    """A fresh tool result carrying only value."""
+    return {"content": [{"type": "text", "text": strict_json.dumps(value).decode("utf-8")}]}
+
+
+def shape_passthrough(result):
+    """Allowed tools whose target the gateway has already vetted: keep only
+    the checked JSON value. A tool error keeps only a bounded top-level
+    "error" string (the vetted item's own complaint, e.g. a bad transition);
+    anything else in it is dropped."""
+    if isinstance(result, dict) and result.get("isError") is True:
+        content = result.get("content")
+        message = "tool reported an error"
+        if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict) \
+                and isinstance(content[0].get("text"), str):
+            try:
+                value = strict_json.loads(content[0]["text"].encode("utf-8"), MAX_RESULT_TEXT)
+            except strict_json.StrictJSONError:
+                value = None
+            if isinstance(value, dict) and isinstance(value.get("error"), str):
+                message = value["error"][:ERROR_TEXT_MAX]
+        return {"content": [{"type": "text", "text": strict_json.dumps({"error": message}).decode()}],
+                "isError": True}
+    return json_result(result_json(result))
+
+
+def shape_initialize(result):
+    if not isinstance(result, dict) or not isinstance(result.get("protocolVersion"), str) \
+            or not PROTOCOL_VERSION.fullmatch(result["protocolVersion"]):
+        raise Deny("upstream_bad_shape")
+    info = result.get("serverInfo") if isinstance(result.get("serverInfo"), dict) else {}
+    server_info = {k: info[k][:LINE_MAX] for k in ("name", "version") if isinstance(info.get(k), str)}
+    return {"protocolVersion": result["protocolVersion"], "capabilities": {"tools": {}},
+            "serverInfo": server_info or {"name": "gateway"}}
+
+
+def shape_ping(result):
+    return {}
+
+
+def tool_schema(spec, upstream_schema):
+    """The container-facing schema, generated from the policy spec. Upstream
+    property descriptions are kept; nothing else of the upstream schema is."""
+    upstream_props = {}
+    if isinstance(upstream_schema, dict) and isinstance(upstream_schema.get("properties"), dict):
+        upstream_props = upstream_schema["properties"]
+    props = {}
+    for name, kind in spec["args"].items():
+        prop = dict(KIND_SCHEMA[kind]) if not isinstance(kind, dict) \
+            else {"type": "string", "enum": list(kind["enum"])}
+        described = upstream_props.get(name)
+        if isinstance(described, dict) and isinstance(described.get("description"), str):
+            prop["description"] = described["description"][:2000]
+        props[name] = prop
+    return {"type": "object", "properties": props, "required": list(spec["required"]),
+            "additionalProperties": False}
+
+
+def shape_tools_list(policy, service, result):
+    """Allowed tools only, each rebuilt: name, bounded description, and the
+    schema generated from the policy."""
+    if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
+        raise Deny("upstream_bad_shape")
+    allowed = policy.tools(service)
+    tools = []
+    for tool in result["tools"]:
+        if not isinstance(tool, dict) or tool.get("name") not in allowed:
+            continue
+        rebuilt = {"name": tool["name"],
+                   "inputSchema": tool_schema(allowed[tool["name"]], tool.get("inputSchema"))}
+        if isinstance(tool.get("description"), str):
+            rebuilt["description"] = tool["description"][:4000]
+        tools.append(rebuilt)
+    shaped = {"tools": tools}
+    if isinstance(result.get("nextCursor"), str) and len(result["nextCursor"]) <= LINE_MAX:
+        shaped["nextCursor"] = result["nextCursor"]
+    return shaped
+
+
+# ── rules ────────────────────────────────────────────────────────────────
+
+def _split_ref(value, project, same_project):
+    ref_project, hex_id = REF.fullmatch(value).groups()
+    ref_project = ref_project or project
+    if same_project and ref_project != project:
+        raise Deny("cross_project_ref")
+    return ref_project, hex_id
+
+
+def _item_type(ctx, ref_project, hex_id):
+    """Look an item's type up upstream; any failure denies."""
+    if ref_project not in ctx.session.docket_projects:
+        raise Deny("project_not_allowed", "referenced project")
+    try:
+        result = ctx.lookup("docket_get", {"id": hex_id, "project": ref_project, "include": []})
+    except Deny:
+        raise
+    except Exception:
+        raise Deny("lookup_failed") from None
+    try:
+        item = result_json(result)
+    except Deny:
+        raise Deny("lookup_failed") from None
+    if not isinstance(item, dict) or item.get("id") != hex_id or not isinstance(item.get("type"), str):
+        raise Deny("lookup_failed")
+    return item["type"]
+
+
+def _require_item(ctx, value, project, same_project, allowed):
+    """The canonical reference to forward, once the item's type is allowed."""
+    ref_project, hex_id = _split_ref(value, project, same_project)
+    if _item_type(ctx, ref_project, hex_id) not in allowed:
+        raise Deny("item_type_not_allowed")
+    return hex_id if ref_project == project else f"{ref_project}:{hex_id}"
+
+
+def _check_references(ctx, args):
+    for field in ("parent", "blocked_by"):
+        if field in args:
+            args[field] = _require_item(ctx, args[field], args["project"], False,
+                                        ctx.policy.mutable_types)
+
+
+def rule_terminal_notify(ctx, args):
+    if args["to"] not in ctx.session.notify_targets:
+        raise Deny("notify_target_not_allowed")
+    if not args["text"] or len(args["text"]) > NOTIFY_TEXT_MAX:
+        raise Deny("bad_argument", f"text must be 1-{NOTIFY_TEXT_MAX} characters")
+    if not 0 <= args.get("wait_ms", 0) <= NOTIFY_WAIT_MAX:
+        raise Deny("bad_argument", f"wait_ms must be 0-{NOTIFY_WAIT_MAX}")
+    # The gateway, not the container, says who is speaking and where replies go.
+    args["from"] = ctx.session.label
+    args["reply_to"] = ctx.session.terminal_id
+    return Call(args, shape_passthrough)
+
+
+def rule_terminal_list(ctx, args):
+    visible = ctx.session.notify_targets | {ctx.session.terminal_id}
+
+    def shape(result):
+        listing = result_json(result)
+        terminals = listing.get("terminals") if isinstance(listing, dict) else None
+        if not isinstance(terminals, list):
+            raise Deny("upstream_bad_shape")
+        kept = []
+        for entry in terminals:
+            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                raise Deny("upstream_bad_shape")
+            if entry["id"] in visible:
+                kept.append({k: entry[k][:LINE_MAX] for k in ("id", "name", "harness")
+                             if isinstance(entry.get(k), str)})
+        return json_result({"success": True, "terminals": kept, "count": len(kept)})
+    return Call(args, shape)
+
+
+def rule_docket_get(ctx, args):
+    _, hex_id = _split_ref(args["id"], args["project"], True)
+    args["id"] = hex_id
+    if not set(args.get("include", [])) <= {"events", "links"}:
+        raise Deny("bad_argument", "include: value not allowed")
+
+    def shape(result):
+        item = result_json(result)  # an upstream error denies without detail
+        if not isinstance(item, dict) or item.get("id") != hex_id \
+                or item.get("type") not in ctx.policy.readable_types:
+            raise Deny("item_not_available")
+        return json_result(item)
+    return Call(args, shape)
+
+
+def rule_docket_query(ctx, args):
+    args["detail"] = "full"  # lean rows carry no type, so they could not be filtered
+    if not 1 <= args.get("limit", 50) <= QUERY_LIMIT_MAX:
+        raise Deny("bad_argument", f"limit must be 1-{QUERY_LIMIT_MAX}")
+    args.setdefault("limit", 50)
+
+    def shape(result):
+        value = result_json(result)
+        items = value.get("items") if isinstance(value, dict) else None
+        if not isinstance(items, list):
+            raise Deny("upstream_bad_shape")
+        kept = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("type"), str):
+                raise Deny("upstream_bad_shape")
+            if item["type"] in ctx.policy.readable_types:
+                kept.append(item)
+        return json_result({"count": len(kept), "items": kept})
+    return Call(args, shape)
+
+
+def rule_docket_comment(ctx, args):
+    # Replies and accept/reject are not offered: nothing here could check that
+    # a comment id belongs to the vetted item. Checked here as well as in
+    # policy.json, so widening the data alone cannot enable them.
+    if args["action"] not in ("list", "add"):
+        raise Deny("bad_argument", "action not allowed")
+    allowed = ctx.policy.readable_types if args["action"] == "list" else ctx.policy.mutable_types
+    args["item_id"] = _require_item(ctx, args["item_id"], args["project"], True, allowed)
+    if args["action"] == "list":
+        if "text" in args:
+            raise Deny("bad_argument", "list takes no text")
+        return Call(args, shape_passthrough)
+    if "text" not in args:
+        raise Deny("missing_argument", "text")
+    args["author"] = ctx.session.label
+    return Call(args, shape_passthrough)
+
+
+def rule_docket_create(ctx, args):
+    if args["type"] not in ctx.policy.mutable_types:
+        raise Deny("item_type_not_allowed")
+    _check_references(ctx, args)
+    return Call(args, shape_passthrough)
+
+
+def rule_docket_mutate(ctx, args):
+    args["id"] = _require_item(ctx, args["id"], args["project"], True, ctx.policy.mutable_types)
+    _check_references(ctx, args)
+    return Call(args, shape_passthrough)
+
+
+RULES = {
+    "terminal_notify": rule_terminal_notify,
+    "terminal_list": rule_terminal_list,
+    "docket_get": rule_docket_get,
+    "docket_query": rule_docket_query,
+    "docket_comment": rule_docket_comment,
+    "docket_create": rule_docket_create,
+    "docket_mutate": rule_docket_mutate,
+}
+
+
+@dataclass
+class _Context:
+    policy: Policy
+    session: Session
+    lookup: object
+
+
+def plan_call(policy, service, session, name, arguments, lookup):
+    """Decide one tools/call. lookup(tool, args) performs a side-effect-free
+    upstream call on the same service and returns its result; a raised
+    exception denies. Returns a Call or raises Deny."""
+    spec = policy.tools(service).get(name)
+    if spec is None:
+        raise Deny("tool_not_allowed", name)
+    args = json.loads(json.dumps(arguments))  # private copy the rules may rewrite
+    validate_arguments(spec, args, session)
+    rule = spec.get("rule")
+    if rule is None:
+        return Call(args, shape_passthrough)
+    return RULES[rule](_Context(policy, session, lookup), args)
