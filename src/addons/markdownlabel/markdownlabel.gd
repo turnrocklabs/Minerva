@@ -50,8 +50,6 @@ var _current_paragraph: int = 0
 var _header_anchor_paragraph := {}
 var _header_anchor_count := {}
 var _within_table := false
-var _table_row := -1
-var _line_break := true
 var _debug_mode := false
 var _redraw_request: bool = false
 #endregion
@@ -171,18 +169,26 @@ func _convert_markdown(source_text = "") -> String:
 	var within_code_block := false
 	var current_code_block_char_count: int
 	_within_table = false
-	_table_row = -1
-	_line_break = true
+	var skip_table_delimiter := false
 	
 	for line in lines:
 		line = line.trim_suffix("\r")
 		_debug("Parsing line: '%s'" % line)
+		iline+=1 # from here on, lines[iline] is the next line
+		if skip_table_delimiter:
+			skip_table_delimiter = false
+			continue
 		within_code_block = within_tilde_block or within_backtick_block
-		if iline > 0 and _line_break:
+		# Closed before fence handling so a code block can't open inside a table,
+		# even when the fence's info string contains pipes.
+		var is_fence := _denotes_fenced_code_block(line,"`") or _denotes_fenced_code_block(line,"~")
+		if _within_table and (is_fence or not _is_table_row(line)):
+			_debug("... end of table")
+			_converted_text += "\n[/table]"
+			_within_table = false
+		if iline > 1:
 			_converted_text += "\n"
 			_current_paragraph += 1
-			_line_break = true
-		iline+=1
 		if not within_tilde_block and _denotes_fenced_code_block(line,"`"):
 			if within_backtick_block:
 				if line.strip_edges().length() >= current_code_block_char_count:
@@ -237,165 +243,19 @@ func _convert_markdown(source_text = "") -> String:
 			_processed_line = _processed_line.erase(_start,2).insert(_start,_ESCAPE_PLACEHOLDER % _escaped_characters_map[_escaped_char])
 		
 		# Tables:
-		_processed_line = _process_table_syntax(_processed_line)
+		var next_line: String = lines[iline] if iline < lines.size() else ""
+		var is_table_row := _within_table or (_is_table_row(line)
+				and _is_table_delimiter_row(next_line, _split_table_cells(line).size()))
+		if is_table_row:
+			if not _within_table:
+				skip_table_delimiter = true
+			_processed_line = _process_table_row(_processed_line)
 		
 		# Lists:
 		_processed_line = _process_list_syntax(_processed_line,indent_spaces,indent_types)
 		
-		# In-line code
-		regex.compile("(`+)(.+?)\\1")
-		while true:
-			var result = regex.search(_processed_line)
-			if result:
-				var _start = result.get_start()
-				var _end = result.get_end()
-				var unescaped_content := _reset_escaped_chars(result.get_string(2),true)
-				unescaped_content = _escape_bbcode(unescaped_content)
-				unescaped_content = _escape_chars(unescaped_content)
-				_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[code]%s[/code]"%unescaped_content)
-				_debug("... in-line code: "+unescaped_content)
-			else:
-				break
-		
-		# Images
-		var img_pattern := "\\!\\[(.*?)\\]\\((.*?)\\)"
-		while true:
-			regex.compile(img_pattern)
-			var result = regex.search(_processed_line)
-			var found_proper_match := false
-			if result:
-				var _start = result.get_start()
-				var _end = result.get_end()
-				regex.compile("\\[(.*?)\\]")
-				var texts = regex.search_all(result.get_string())
-				for _text in texts:
-					if result.get_string()[_text.get_end()] != "(":
-						continue
-					found_proper_match = true
-					# Check if link has a title:
-					regex.compile("\\\"(.*?)\\\"")
-					var title_result = regex.search(result.get_string(2))
-					var title: String
-					var url := result.get_string(2)
-					if title_result:
-						title = title_result.get_string(1)
-						url = url.rstrip(" ").trim_suffix(title_result.get_string()).rstrip(" ")
-					url = _escape_chars(url)
-					_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[img]%s[/img]" % url)
-					if title_result and title:
-						_processed_line = _processed_line.insert(_start+12+url.length()+_text.get_string(1).length(),"[/hint]").insert(_start,"[hint=%s]"%title)
-					_debug("... hyperlink: "+result.get_string())
-					break
-			if not found_proper_match:
-				break
-		
-		# Links
-		var link_pattern := "\\[(.*?)\\]\\((.*?)\\)"
-		while true:
-			regex.compile(link_pattern)
-			var result = regex.search(_processed_line)
-			var found_proper_match := false
-			if result:
-				var _start = result.get_start()
-				var _end = result.get_end()
-				regex.compile("\\[(.*?)\\]")
-				var texts = regex.search_all(result.get_string())
-				for _text in texts:
-					if result.get_string()[_text.get_end()] != "(":
-						continue
-					found_proper_match = true
-					# Check if link has a title:
-					regex.compile("\\\"(.*?)\\\"")
-					var title_result = regex.search(result.get_string(2))
-					var title: String
-					var url := result.get_string(2)
-					if title_result:
-						title = title_result.get_string(1)
-						url = url.rstrip(" ").trim_suffix(title_result.get_string()).rstrip(" ")
-					url = _escape_chars(url)
-					_processed_line = _processed_line.erase(_start+_text.get_start(),_end-_start-_text.get_start()).insert(_start+_text.get_start(),"[url=%s]%s[/url]" % [url,_text.get_string(1)])
-					if title_result and title:
-						_processed_line = _processed_line.insert(_start+_text.get_start()+12+url.length()+_text.get_string(1).length(),"[/hint]").insert(_start+_text.get_start(),"[hint=%s]"%title)
-					_debug("... hyperlink: "+result.get_string())
-					break
-			if not found_proper_match:
-				break
-			
-		while true:
-			regex.compile("\\<(.*?)\\>")
-			var result = regex.search(_processed_line)
-			if result:
-				var _start = result.get_start()
-				var _end = result.get_end()
-				var url = result.get_string(1)
-				regex.compile("^\\s*?([^\\s]+\\@[^\\s]+\\.[^\\s]+)\\s*?$")
-				var mail = regex.search(result.get_string(1))
-				if mail:
-					url = mail.get_string(1)
-				url = _escape_chars(url)
-				if mail:
-					_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[url=mailto:%s]%s[/url]"%[url,url])
-					_debug("... mail link: "+result.get_string())
-				else:
-					_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[url]%s[/url]"%url)
-					_debug("... explicit link: "+result.get_string())
-				
-			else:
-				break
-		
-		# Bold text
-		regex.compile("(\\*\\*|\\_\\_)(.+?)\\1")
-		while true:
-			var result = regex.search(_processed_line)
-			if not result:
-				break
-			var _start = result.get_start()
-			var _end = result.get_end()
-			_processed_line = _processed_line.erase(_start,2).insert(_start,"[b]")
-			_processed_line = _processed_line.erase(_end-1,2).insert(_end-1,"[/b]")
-			_debug("... bold text: "+result.get_string(2))
-		
-		# Italic text
-		while true:
-			regex.compile("(\\*|_)(.+?)\\1")
-			var result = regex.search(_processed_line)
-			if not result:
-				break
-			var _start = result.get_start()
-			var _end = result.get_end()
-			# Sanitize nested bold+italics (Godot-specific, b and i tags must not be intertwined):
-			var result_string := result.get_string(2)
-			var open_b := false
-			var close_b := false
-			if result_string.begins_with("[b]") and result_string.find("[/b]")==-1:
-				open_b = true
-			elif result_string.ends_with("[/b]") and result_string.find("[b]")==-1:
-				close_b = true
-			if open_b:
-				_processed_line = _processed_line.erase(_start,4).insert(_start,"[b][i]")
-				_processed_line = _processed_line.erase(_end-2,1).insert(_end-2,"[/i]")
-			elif close_b:
-				_processed_line = _processed_line.erase(_start,1).insert(_start,"[i]")
-				_processed_line = _processed_line.erase(_end-3,5).insert(_end-3,"[/i][/b]")
-			else:
-				_processed_line = _processed_line.erase(_start,1).insert(_start,"[i]")
-				_processed_line = _processed_line.erase(_end+1,1).insert(_end+1,"[/i]")
-				
-			_debug("... italic text: "+result.get_string(2))
-		
-		# Strike-through text
-		regex.compile("(\\~\\~)(.+?)\\1")
-		while true:
-			var result = regex.search(_processed_line)
-			if result:
-				#_debug(result.get_string())
-				var _start = result.get_start()
-				_processed_line = _processed_line.erase(_start,2).insert(_start,"[s]")
-				var _end = result.get_end()
-				_processed_line = _processed_line.erase(_end-1,2).insert(_end-1,"[/s]")
-				_debug("... strike-through text: "+result.get_string(2))
-			else:
-				break
+		if not is_table_row:
+			_processed_line = _process_inline_syntax(_processed_line)
 		
 		# Headers
 		regex.compile("^#+\\s*[^\\s].*")
@@ -442,6 +302,167 @@ func _convert_markdown(source_text = "") -> String:
 	_debug(_converted_text)
 	return _converted_text
 
+
+## Applies span-level syntax (code, images, links, emphasis, strike-through) to
+## one line, or to one table cell so tags never straddle [cell] boundaries.
+func _process_inline_syntax(line: String) -> String:
+	var regex := RegEx.new()
+	var _processed_line := line
+	# In-line code
+	regex.compile("(`+)(.+?)\\1")
+	while true:
+		var result = regex.search(_processed_line)
+		if result:
+			var _start = result.get_start()
+			var _end = result.get_end()
+			var unescaped_content := _reset_escaped_chars(result.get_string(2),true)
+			unescaped_content = _escape_bbcode(unescaped_content)
+			unescaped_content = _escape_chars(unescaped_content)
+			_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[code]%s[/code]"%unescaped_content)
+			_debug("... in-line code: "+unescaped_content)
+		else:
+			break
+	
+	# Images
+	var img_pattern := "\\!\\[(.*?)\\]\\((.*?)\\)"
+	while true:
+		regex.compile(img_pattern)
+		var result = regex.search(_processed_line)
+		var found_proper_match := false
+		if result:
+			var _start = result.get_start()
+			var _end = result.get_end()
+			regex.compile("\\[(.*?)\\]")
+			var texts = regex.search_all(result.get_string())
+			for _text in texts:
+				if result.get_string()[_text.get_end()] != "(":
+					continue
+				found_proper_match = true
+				# Check if link has a title:
+				regex.compile("\\\"(.*?)\\\"")
+				var title_result = regex.search(result.get_string(2))
+				var title: String
+				var url := result.get_string(2)
+				if title_result:
+					title = title_result.get_string(1)
+					url = url.rstrip(" ").trim_suffix(title_result.get_string()).rstrip(" ")
+				url = _escape_chars(url)
+				_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[img]%s[/img]" % url)
+				if title_result and title:
+					_processed_line = _processed_line.insert(_start+12+url.length()+_text.get_string(1).length(),"[/hint]").insert(_start,"[hint=%s]"%title)
+				_debug("... hyperlink: "+result.get_string())
+				break
+		if not found_proper_match:
+			break
+	
+	# Links
+	var link_pattern := "\\[(.*?)\\]\\((.*?)\\)"
+	while true:
+		regex.compile(link_pattern)
+		var result = regex.search(_processed_line)
+		var found_proper_match := false
+		if result:
+			var _start = result.get_start()
+			var _end = result.get_end()
+			regex.compile("\\[(.*?)\\]")
+			var texts = regex.search_all(result.get_string())
+			for _text in texts:
+				if result.get_string()[_text.get_end()] != "(":
+					continue
+				found_proper_match = true
+				# Check if link has a title:
+				regex.compile("\\\"(.*?)\\\"")
+				var title_result = regex.search(result.get_string(2))
+				var title: String
+				var url := result.get_string(2)
+				if title_result:
+					title = title_result.get_string(1)
+					url = url.rstrip(" ").trim_suffix(title_result.get_string()).rstrip(" ")
+				url = _escape_chars(url)
+				_processed_line = _processed_line.erase(_start+_text.get_start(),_end-_start-_text.get_start()).insert(_start+_text.get_start(),"[url=%s]%s[/url]" % [url,_text.get_string(1)])
+				if title_result and title:
+					_processed_line = _processed_line.insert(_start+_text.get_start()+12+url.length()+_text.get_string(1).length(),"[/hint]").insert(_start+_text.get_start(),"[hint=%s]"%title)
+				_debug("... hyperlink: "+result.get_string())
+				break
+		if not found_proper_match:
+			break
+		
+	while true:
+		regex.compile("\\<(.*?)\\>")
+		var result = regex.search(_processed_line)
+		if result:
+			var _start = result.get_start()
+			var _end = result.get_end()
+			var url = result.get_string(1)
+			regex.compile("^\\s*?([^\\s]+\\@[^\\s]+\\.[^\\s]+)\\s*?$")
+			var mail = regex.search(result.get_string(1))
+			if mail:
+				url = mail.get_string(1)
+			url = _escape_chars(url)
+			if mail:
+				_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[url=mailto:%s]%s[/url]"%[url,url])
+				_debug("... mail link: "+result.get_string())
+			else:
+				_processed_line = _processed_line.erase(_start,_end-_start).insert(_start,"[url]%s[/url]"%url)
+				_debug("... explicit link: "+result.get_string())
+			
+		else:
+			break
+	
+	# Bold text (an intraword "__", as in foo__bar__baz, is literal)
+	regex.compile("(\\*\\*|(?<![\\p{L}\\p{N}])__)(.+?)\\1(?!(?<=_)[\\p{L}\\p{N}])")
+	while true:
+		var result = regex.search(_processed_line)
+		if not result:
+			break
+		var _start = result.get_start()
+		var _end = result.get_end()
+		_processed_line = _processed_line.erase(_start,2).insert(_start,"[b]")
+		_processed_line = _processed_line.erase(_end-1,2).insert(_end-1,"[/b]")
+		_debug("... bold text: "+result.get_string(2))
+	
+	# Italic text (an intraword "_", as in snake_case, is literal; CommonMark)
+	while true:
+		regex.compile("(\\*|(?<![\\p{L}\\p{N}_])_)(.+?)\\1(?!(?<=_)[\\p{L}\\p{N}])")
+		var result = regex.search(_processed_line)
+		if not result:
+			break
+		var _start = result.get_start()
+		var _end = result.get_end()
+		# Sanitize nested bold+italics (Godot-specific, b and i tags must not be intertwined):
+		var result_string := result.get_string(2)
+		var open_b := false
+		var close_b := false
+		if result_string.begins_with("[b]") and result_string.find("[/b]")==-1:
+			open_b = true
+		elif result_string.ends_with("[/b]") and result_string.find("[b]")==-1:
+			close_b = true
+		if open_b:
+			_processed_line = _processed_line.erase(_start,4).insert(_start,"[b][i]")
+			_processed_line = _processed_line.erase(_end-2,1).insert(_end-2,"[/i]")
+		elif close_b:
+			_processed_line = _processed_line.erase(_start,1).insert(_start,"[i]")
+			_processed_line = _processed_line.erase(_end-3,5).insert(_end-3,"[/i][/b]")
+		else:
+			_processed_line = _processed_line.erase(_start,1).insert(_start,"[i]")
+			_processed_line = _processed_line.erase(_end+1,1).insert(_end+1,"[/i]")
+			
+		_debug("... italic text: "+result.get_string(2))
+	
+	# Strike-through text
+	regex.compile("(\\~\\~)(.+?)\\1")
+	while true:
+		var result = regex.search(_processed_line)
+		if result:
+			#_debug(result.get_string())
+			var _start = result.get_start()
+			_processed_line = _processed_line.erase(_start,2).insert(_start,"[s]")
+			var _end = result.get_end()
+			_processed_line = _processed_line.erase(_end-1,2).insert(_end-1,"[/s]")
+			_debug("... strike-through text: "+result.get_string(2))
+		else:
+			break
+	return _processed_line
 
 func _process_list_syntax(line: String, indent_spaces: Array, indent_types: Array) -> String:
 	var processed_line := ""
@@ -597,34 +618,37 @@ func _get_codeblock_char_count(line: String, character: String) -> int:
 	var stripped_line := line.strip_edges()
 	return stripped_line.count(character)
 
-func _process_table_syntax(line: String) -> String:
-	if line.count("|") < 2:
-		if _within_table:
-			_debug ("... end of table")
-			_within_table = false
-			return "\n[/table]\n"+line
-		else:
-			return line
+func _is_table_row(line: String) -> bool:
+	return line.count("|") >= 2
+
+func _split_table_cells(line: String) -> PackedStringArray:
+	return line.strip_edges().trim_prefix("|").trim_suffix("|").split("|")
+
+## True for a GFM delimiter row such as "|---|:--:|" with one cell per header
+## column. A table only starts when its header row is followed by one, so prose
+## and shell pipes stay text.
+func _is_table_delimiter_row(line: String, column_count: int) -> bool:
+	if not "|" in line:
+		return false
+	var cells := _split_table_cells(line)
+	if cells.size() != column_count:
+		return false
+	var delimiter_cell := RegEx.create_from_string("^:?-+:?$")
+	for cell in cells:
+		if not delimiter_cell.search(cell.strip_edges()):
+			return false
+	return true
+
+## Converts one table row to cells, opening the table on its header row.
+func _process_table_row(line: String) -> String:
 	_debug("... table row: "+line)
-	_table_row += 1
-	var split_line := line.trim_prefix("|").trim_suffix("|").split("|")
+	var split_line := _split_table_cells(line)
 	var processed_line := ""
 	if not _within_table:
 		processed_line += "[table=%d]\n" % split_line.size()
 		_within_table = true
-	elif _table_row == 1:
-		# Handle delimiter row
-		var is_delimiter := true
-		for cell in split_line:
-			var stripped_cell := cell.strip_edges()
-			if stripped_cell.count("-")+stripped_cell.count(":") != stripped_cell.length():
-				is_delimiter = false
-				break
-		if is_delimiter:
-			_line_break = false
-			return ""
 	for cell in split_line:
-		processed_line += "[cell]%s[/cell]" % cell.strip_edges()
+		processed_line += "[cell]%s[/cell]" % _process_inline_syntax(cell.strip_edges())
 	return processed_line
 
 func _get_header_format(level: int) -> Resource:
