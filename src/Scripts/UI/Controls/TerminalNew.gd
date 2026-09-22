@@ -846,15 +846,21 @@ var _godot_to_ghostty: Dictionary = {
 }
 
 
+## Copy/paste for the focused terminal when _gui_input left the key alone
+## (it does while a selection is active). This callback reaches EVERY
+## terminal in the tree, hidden tabs included, so only the one holding
+## keyboard focus may act, and it marks the key handled.
 func _shortcut_input(event: InputEvent) -> void:
-	if not _terminal_available or text_layer == null:
+	if not _terminal_available or text_layer == null or not has_focus():
 		return
 	if event is InputEventKey:
 		if not event.is_pressed(): return
 		if event.ctrl_pressed and event.keycode == KEY_C:
 			DisplayServer.clipboard_set(text_layer.get_selected_text())
-		if event.ctrl_pressed and event.keycode == KEY_V:
+			get_viewport().set_input_as_handled()
+		elif event.ctrl_pressed and event.keycode == KEY_V:
 			write_human_input(DisplayServer.clipboard_get())
+			get_viewport().set_input_as_handled()
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -1157,7 +1163,7 @@ class TextLayer extends Control:
 
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed == false:
-				_create_context_menu(event.global_position)
+				_create_context_menu(event.position)
 
 	func _draw() -> void:
 		if not terminal or not terminal._terminal_available:
@@ -1268,8 +1274,13 @@ class TextLayer extends Control:
 		# highlighted it is greyed out rather than clearing the clipboard.
 		# Copy screen is the whole-screen copy (bug 01a0ca18bfd3).
 		_context_menu.set_item_disabled(_context_menu.get_item_index(MENU_COPY), not selection_active)
+		# The menu opens at the click. `at` is local to this layer; the screen
+		# transform maps it to screen coordinates for a native popup window and
+		# to viewport ones for an embedded one. Positioned BEFORE popup(), which
+		# then keeps the menu inside the usable screen.
+		_context_menu.reset_size()
+		_context_menu.position = Vector2i(get_screen_transform() * at)
 		_context_menu.popup()
-		_context_menu.position = at + Vector2(0, _context_menu.size.y / 2.0)
 
 	## keycode KEY_NONE adds the item with no shortcut.
 	func _create_context_menu_item(text: String, keycode: Key, id: int, callback: Callable = Callable()):

@@ -102,6 +102,7 @@ HERMETIC_TESTS=(
 	test/test_terminal_session.gd
 	test/test_agent_container_foreground.gd
 	test/test_terminal_selection_copy.gd
+	test/test_terminal_input_routing.gd
 	test/test_background_terminals.gd
 	test/test_worker_parent_chat.gd
 	test/test_core_action_catalog.gd
