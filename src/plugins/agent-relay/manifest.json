@@ -176,7 +176,7 @@
     },
     {
       "name": "minerva_agent_relay_passthrough_generate",
-      "description": "Chat-provider generate hook (chat-passthrough): service ONE chat turn against the watched terminal bound to this provider entry. Reuses the relay_ask core (send + arm, BLOCK until the turn ends, read the turn) with distill OFF — passthrough is verbatim. Returns JSON {kind:'answer', text} | {kind:'question', text, options:[{label, keystroke}]} when the turn ends in a permission dialog | {kind:'error', text}. After a 'question' result, a single-keystroke text (e.g. 'y', '1', '\\r', ESC) is written raw to the PTY with no Enter. The host calls this automatically for chats bound to a terminal provider entry; it is not meant for direct MCP use (prefer minerva_agent_relay_relay_ask).",
+      "description": "Chat-provider generate hook (chat-passthrough): service ONE chat turn against the watched terminal bound to this provider entry. Reuses the relay_ask core (send + arm, BLOCK until the turn ends, read the turn) with distill OFF — passthrough is verbatim. Returns JSON {kind:'answer', text} | {kind:'question', text, options:[{label, keystroke}]} when the turn ends in a permission dialog | {kind:'error', text} | {kind:'pending', operation_token, elapsed_ms} when the turn is still running at wait_budget_ms — call again with resume:true and the same operation_token to keep waiting (nothing is re-sent). After a 'question' result, a single-keystroke text (e.g. 'y', '1', '\\r', ESC) is written raw to the PTY with no Enter. The host calls this automatically for chats bound to a terminal provider entry; it is not meant for direct MCP use (prefer minerva_agent_relay_relay_ask).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -198,7 +198,15 @@
           },
           "operation_token": {
             "type": "string",
-            "description": "Opaque host token for interrupting only this generate call."
+            "description": "Opaque host token for this chat turn: interrupts it, and resumes it after a 'pending' reply."
+          },
+          "wait_budget_ms": {
+            "type": "integer",
+            "description": "How long this call may wait (gate plus turn), in ms; default and maximum 590000. The host passes its call timeout less a margin."
+          },
+          "resume": {
+            "type": "boolean",
+            "description": "Continue waiting on the turn that operation_token's generate left pending. text is ignored and nothing is written."
           }
         },
         "required": [

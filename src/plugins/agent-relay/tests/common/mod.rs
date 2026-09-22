@@ -77,11 +77,21 @@ pub struct FakeHost {
     pub refuse_write: RefuseWriteFn,
     /// Writes whose reply is being withheld: (request id, arguments).
     held_writes: Vec<(Value, Value)>,
+    /// When this says true, a windowed read (read_turn's) is RECORDED but not
+    /// answered until release_turn_reads(): the plugin thread stays blocked in
+    /// its read, so a test can change the world under it.
+    pub hold_turn_reads: FailFn,
+    held_turn_reads: Vec<Value>,
 }
 
 impl FakeHost {
     /// Spawn the plugin with its own state file and complete the MCP handshake.
     pub fn start() -> Self {
+        Self::start_with_env(&[])
+    }
+
+    /// start(), with extra environment for the plugin process.
+    pub fn start_with_env(env: &[(&str, &str)]) -> Self {
         let bin = env!("CARGO_BIN_EXE_agent-relay-plugin");
         let state_file = std::env::temp_dir().join(format!(
             "agent-relay-gate-state-{}-{}.json",
@@ -93,6 +103,7 @@ impl FakeHost {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("AGENT_RELAY_STATE_FILE", &state_file)
+            .envs(env.iter().copied())
             .spawn()
             .expect("spawn agent-relay-plugin");
         let stdin = child.stdin.take().expect("stdin");
@@ -116,6 +127,8 @@ impl FakeHost {
             hold_writes: Box::new(|_| false),
             refuse_write: Box::new(|_| None),
             held_writes: Vec::new(),
+            hold_turn_reads: Box::new(|_| false),
+            held_turn_reads: Vec::new(),
         };
         host.handshake();
         host
@@ -248,6 +261,10 @@ impl FakeHost {
             "host.terminal.read" => {
                 if args.get("start_row").is_some() {
                     self.view.turn_reads += 1;
+                    if (self.hold_turn_reads)(&self.view) {
+                        self.held_turn_reads.push(id);
+                        return;
+                    }
                     let content = (self.turn)(&self.view);
                     json!({"content": content})
                 } else {
@@ -300,6 +317,20 @@ impl FakeHost {
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {"success": true, "result": write_receipt(&args)},
+            });
+            let line = reply.to_string();
+            self.raw_line(&line);
+        }
+    }
+
+    /// Answer every windowed read held back so far, with the current turn text.
+    pub fn release_turn_reads(&mut self) {
+        for id in std::mem::take(&mut self.held_turn_reads) {
+            let content = (self.turn)(&self.view);
+            let reply = json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"success": true, "result": {"content": content}},
             });
             let line = reply.to_string();
             self.raw_line(&line);

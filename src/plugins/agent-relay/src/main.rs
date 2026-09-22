@@ -31,6 +31,10 @@ mod chrome_filter;
 mod detector;
 mod dialog;
 mod filter_rules;
+// Chat passthrough: generate/resume for a chat bound to a watched terminal.
+mod passthrough;
+// Passthrough operation tokens, interrupts and turns parked between calls.
+mod passthrough_ops;
 mod profiles;
 mod router;
 // Hold / one-outstanding-prompt / submit-confirmation guard for relay writes.
@@ -46,6 +50,7 @@ mod watcher;
 
 use std::sync::Arc;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -55,6 +60,12 @@ use filter_rules::{FilterRule, FilterRuleSet, RuleAction};
 use router::{CapError, Router};
 use send_gate::TurnSlot;
 use watcher::NotifyMode;
+use passthrough::{
+    clear_passthrough_terminal_bindings, handle_passthrough_generate, handle_passthrough_resume,
+    latch_passthrough_interrupt, live_question_region, passthrough_resume_requested,
+    passthrough_terminal_is_bound, region_identity, register_passthrough_operation,
+    question_pending, watched_profile_id, NOTIFY_ENVELOPE_PREFIX, NOTIFY_HUMAN_GUARD_MS,
+};
 
 // ---------------------------------------------------------------------------
 // Global worker state
@@ -597,7 +608,7 @@ fn send_core_with_mode(
         if let GateHold::Bypass(ref expected) = hold {
             let live =
                 live_question_region(terminal_id, router).map(|r| region_identity(&r));
-            let pending = with_passthrough(|s| s.pending_question.contains(terminal_id));
+            let pending = question_pending(terminal_id);
             if !pending || live.as_deref() != Some(expected.as_str()) {
                 return Err(STALE_BYPASS.to_string().into());
             }
@@ -1330,7 +1341,7 @@ fn handle_relay_ask(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 
     match relay_ask_core(
         terminal_id, text, SendMode::Submit, GateHold::Wait, timeout_ms,
-        do_distill, do_redact, model, None, router,
+        do_distill, do_redact, model, router,
     ) {
         // A refusal reaches the caller with the same structured keys a send
         // refusal carries: relay_ask is a send, and a hold is retryable.
@@ -1342,12 +1353,15 @@ fn handle_relay_ask(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 /// The relay_ask composite shared by handle_relay_ask and the chat-passthrough
 /// generate hook (B7 — a parallel send/wait/read pipeline is forbidden):
 /// send (mode-aware) + arm → block until the armed turn ends → read the turn.
-/// Composes send_core_with_mode + watcher::wait_for_turn + read_turn_core.
+/// Composes start_turn + continue_turn, which compose send_core_with_mode,
+/// watcher::wait_for_turn and read_turn_core.
 ///
 /// Returns the relay_ask result payload:
 ///   {ok, terminal_id, timed_out, answer, cause, detection_method, distilled,
 ///    truncated} — on timeout, answer/cause are null and a hint explains that
 ///   the arm REMAINS set (the one-shot event still fires on a late turn end).
+/// The gate and the wait each get timeout_ms, as they always have for a
+/// direct relay_ask; the passthrough path shares one deadline instead.
 #[allow(clippy::too_many_arguments)]
 fn relay_ask_core(
     terminal_id: &str,
@@ -1358,12 +1372,117 @@ fn relay_ask_core(
     do_distill: bool,
     do_redact: bool,
     model: Option<&str>,
-    interrupt_token: Option<&str>,
     router: &Arc<Router>,
 ) -> Result<Value, SendError> {
-    // Send + arm (auto-starts the watch when none exists). The gate inside may
-    // wait out a modal screen or another relay turn before it writes, on this
-    // caller's timeout budget.
+    let turn = start_turn(terminal_id, text, mode, hold, timeout_ms, router)?;
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    match continue_turn(turn, deadline, false, do_distill, do_redact, model, None, router)? {
+        AskProgress::Finished(result) => Ok(result),
+        AskProgress::Running(turn) | AskProgress::WatchLost(turn) => {
+            // The turn is still RUNNING — this caller only stopped waiting for it.
+            turn.hand_over();
+            // The arm stays set: if the turn finishes later, the one-shot event
+            // still wakes any Minerva-side trigger. We just stop blocking.
+            Ok(json!({
+                "ok": true,
+                "terminal_id": terminal_id,
+                "timed_out": true,
+                "answer": Value::Null,
+                "cause": Value::Null,
+                "hint": "turn did not complete within timeout_ms; the arm remains set — poll watch_status or call read_turn later",
+            }))
+        }
+    }
+}
+
+/// A relay prompt that has been written and whose turn has not been read yet.
+/// It owns the terminal's prompt slot, so nothing else is written into the
+/// turn while it exists; dropping it releases the slot (its guard's Drop).
+pub(crate) struct RunningTurn {
+    terminal_id: String,
+    slot: Option<TurnSlot>,
+    /// The detection serial read BEFORE the write: the first counted
+    /// detection past it is this turn's end, however many waits it takes.
+    serial_before_write: u64,
+    /// A submitted prompt's text, which read_turn uses to re-anchor on its echo.
+    echo_text: Option<String>,
+    /// The watch running when the prompt was written (watcher::watch_epoch).
+    /// Only that watch's detections and turn window describe this turn.
+    watch_epoch: Option<u64>,
+    interrupt_sent: bool,
+    interrupt_failed: bool,
+}
+
+impl RunningTurn {
+    pub(crate) fn terminal_id(&self) -> &str {
+        &self.terminal_id
+    }
+
+    /// Write one guarded ESC into the turn, unless one was already written or
+    /// failed. A write the host holds for an in-flight transaction is left
+    /// for the next attempt.
+    pub(crate) fn interrupt(&mut self, router: &Arc<Router>) {
+        if self.interrupt_sent || self.interrupt_failed {
+            return;
+        }
+        let write = router.call_capability_detailed("host.terminal.write", json!({
+            "terminal_id": self.terminal_id,
+            "text": "\u{1b}",
+            "raw": true,
+            "expect_harness": watched_profile_id(&self.terminal_id),
+        }));
+        match write {
+            Ok(reply) if reply.get("success").and_then(Value::as_bool) == Some(true) => {
+                self.interrupt_sent = true;
+            }
+            Err(error) if error.held()
+                && error.outcome() == Some("refused_transaction_in_flight") => {}
+            _ => self.interrupt_failed = true,
+        }
+    }
+
+    /// Whether an interrupt was written into this turn, or tried and failed.
+    pub(crate) fn interrupt_written(&self) -> bool {
+        self.interrupt_sent || self.interrupt_failed
+    }
+
+    /// True when the watch that counts this turn's end is gone or replaced.
+    pub(crate) fn watch_changed(&self) -> bool {
+        watcher::watch_epoch(&self.terminal_id) != self.watch_epoch
+    }
+
+    /// Stop waiting for a turn that is still running: the slot passes to the
+    /// watch loop and frees on the next counted detection, or when the watch
+    /// on this terminal is stopped or restarted — never on a clock, which
+    /// would put the next prompt inside this running turn.
+    pub(crate) fn hand_over(mut self) {
+        if let Some(slot) = self.slot.take() {
+            hand_over_or_end(&self.terminal_id, slot);
+        }
+    }
+}
+
+pub(crate) enum AskProgress {
+    /// The turn ended and was read: the relay_ask result payload.
+    Finished(Value),
+    /// The deadline passed first; the turn is still running and still owned.
+    Running(RunningTurn),
+    /// The watch was stopped or restarted before the turn could be read, so
+    /// its end can no longer be told from the next turn's (check_watch only).
+    WatchLost(RunningTurn),
+}
+
+/// Send `text` (mode-aware) and arm. The gate inside may wait out a modal
+/// screen or another relay turn before it writes, for at most gate_budget_ms.
+fn start_turn(
+    terminal_id: &str,
+    text: &str,
+    mode: SendMode,
+    hold: GateHold,
+    gate_budget_ms: u64,
+    router: &Arc<Router>,
+) -> Result<RunningTurn, SendError> {
+    // Send + arm (auto-starts the watch when none exists).
     //
     // A notification that reached this terminal through its passthrough chat
     // was queued there and may be dispatched long after it was checked; the
@@ -1381,66 +1500,73 @@ fn relay_ask_core(
     } else {
         None
     };
+    // Read before the write: a send on an unwatched terminal starts its watch
+    // itself, and that watch is then the turn's.
+    let watch_before = watcher::watch_epoch(terminal_id);
     let outcome = send_core_with_mode(
-        terminal_id, text, true, mode, hold, timeout_ms, None, human_guard,
+        terminal_id, text, true, mode, hold, gate_budget_ms, None, human_guard,
         expected_profile.as_deref(), router,
     )?;
+    Ok(RunningTurn {
+        watch_epoch: watch_before.or_else(|| watcher::watch_epoch(terminal_id)),
+        terminal_id: terminal_id.to_string(),
+        slot: outcome.slot,
+        serial_before_write: outcome.serial_before_write,
+        echo_text: (mode == SendMode::Submit).then(|| text.to_string()),
+        interrupt_sent: false,
+        interrupt_failed: false,
+    })
+}
 
+/// Block until the turn ends or `deadline` passes. An ended turn is read and
+/// its slot released (Finished); an unfinished one comes back still owning
+/// its slot (Running), for the caller to hand over or keep waiting on.
+///
+/// A latched interrupt for `interrupt_token` is honoured while waiting: one
+/// guarded ESC, whichever wait it lands in.
+///
+/// With check_watch, the turn's watch must still be the one running at every
+/// step — while waiting, before an ESC and before the read — or the turn comes
+/// back as WatchLost, unread and still owned.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn continue_turn(
+    mut turn: RunningTurn,
+    deadline: Instant,
+    check_watch: bool,
+    do_distill: bool,
+    do_redact: bool,
+    model: Option<&str>,
+    interrupt_token: Option<&str>,
+    router: &Arc<Router>,
+) -> Result<AskProgress, SendError> {
     // Block until the armed turn ends (busy-gate guarantees the next counted
     // detection is OUR turn, not the pre-existing idle screen). The baseline is
     // the serial read BEFORE the write, so a turn that ended while the send
     // path was confirming the submit still counts as ours. However long this
     // wait runs, the prompt slot stays ours: an attached slot has no age.
-    let mut interrupt_sent = false;
-    let mut interrupt_failed = false;
+    let terminal_id = turn.terminal_id.clone();
+    let remaining = deadline.saturating_duration_since(Instant::now()).as_millis() as u64;
+    let mut watch_lost = false;
     let (payload, timed_out) = watcher::wait_for_turn_from_poll(
-        terminal_id,
-        outcome.serial_before_write,
-        timeout_ms,
+        &terminal_id,
+        turn.serial_before_write,
+        remaining,
         || {
-            let Some(token) = interrupt_token else { return };
-            if interrupt_sent || interrupt_failed
-                || !with_passthrough(|s| s.interrupted.contains(token)) {
-                return;
+            if check_watch && turn.watch_changed() {
+                watch_lost = true;
+                return true;
             }
-            let write = router.call_capability_detailed("host.terminal.write", json!({
-                "terminal_id": terminal_id,
-                "text": "\u{1b}",
-                "raw": true,
-                "expect_harness": watched_profile_id(terminal_id),
-            }));
-            match write {
-                Ok(reply) if reply.get("success").and_then(Value::as_bool) == Some(true) => {
-                    interrupt_sent = true;
-                }
-                Err(error) if error.held()
-                    && error.outcome() == Some("refused_transaction_in_flight") => {}
-                _ => interrupt_failed = true,
+            if interrupt_token.is_some_and(passthrough_ops::interrupt_latched) {
+                turn.interrupt(router);
             }
+            false
         },
     );
-
+    if watch_lost || (check_watch && turn.watch_changed()) {
+        return Ok(AskProgress::WatchLost(turn));
+    }
     if timed_out {
-        // The turn is still RUNNING — this caller only stopped waiting for it.
-        // Ending the slot here would let the next caller write at once (an
-        // ordinary busy screen is not a hold), so its prompt would land inside
-        // this turn and overwrite the bookkeeping. Hand the turn to the watch
-        // loop instead: the slot frees on the next counted detection, or when
-        // the watch on this terminal is stopped or restarted — never on a
-        // clock, which would put the next prompt inside this running turn.
-        if let Some(slot) = outcome.slot {
-            hand_over_or_end(terminal_id, slot);
-        }
-        // The arm stays set: if the turn finishes later, the one-shot event
-        // still wakes any Minerva-side trigger. We just stop blocking.
-        return Ok(json!({
-            "ok": true,
-            "terminal_id": terminal_id,
-            "timed_out": true,
-            "answer": Value::Null,
-            "cause": Value::Null,
-            "hint": "turn did not complete within timeout_ms; the arm remains set — poll watch_status or call read_turn later",
-        }));
+        return Ok(AskProgress::Running(turn));
     }
 
     let cause = payload.as_ref()
@@ -1455,23 +1581,27 @@ fn relay_ask_core(
     // The read is next. It may block in a host call for as long as that call
     // takes; the slot is still attached, so nothing can displace this caller
     // while it reads the window it opened.
-    let echo_hint = (mode == SendMode::Submit).then_some(text);
     let read = read_turn_core(
-        terminal_id, do_distill, do_redact, model, echo_hint, router,
+        &terminal_id, do_distill, do_redact, model, turn.echo_text.as_deref(), router,
     );
+    // The read blocks on the host; a watch replaced meanwhile means the window
+    // it returned may be the replacement's. Such a read is discarded.
+    if check_watch && turn.watch_changed() {
+        return Ok(AskProgress::WatchLost(turn));
+    }
 
     // The slot is released only once this turn's answer has been READ. The read
     // window is anchored at the pre-write screen and is open-ended, so a prompt
     // written into the same terminal before the read would land inside it and be
     // returned as part of this answer — and the next caller's turn would then be
     // read from an anchor that already has its own prompt above it.
-    if let Some(slot) = outcome.slot {
+    if let Some(slot) = turn.slot.take() {
         slot.end();
     }
 
     match read {
         Err(e) => Err(SendError::prose(format!("turn completed (cause={cause}) but read failed: {e}"))),
-        Ok(read) => Ok(json!({
+        Ok(read) => Ok(AskProgress::Finished(json!({
             "ok": true,
             "terminal_id": terminal_id,
             "timed_out": false,
@@ -1482,710 +1612,10 @@ fn relay_ask_core(
             "detection_method": detection_method,
             "distilled": read.get("distilled").cloned().unwrap_or(json!(false)),
             "truncated": read.get("truncated").cloned().unwrap_or(json!(false)),
-            "interrupted": interrupt_sent,
-            "interrupt_failed": interrupt_failed,
-        })),
+            "interrupted": turn.interrupt_sent,
+            "interrupt_failed": turn.interrupt_failed,
+        }))),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Chat-passthrough generate hook (B7, DCR 019eb7f329 #483)
-// ---------------------------------------------------------------------------
-
-/// Plugin-side wait budget for a passthrough turn: 10s under the registered
-/// timeout_sec=600 so the host receives a structured {kind:"error"} instead
-/// of a bare call_tool transport timeout.
-const PASSTHROUGH_TIMEOUT_MS: u64 = 590_000;
-
-/// The envelope the HOST writes in front of every minerva_terminal_notify
-/// line. Shared by convention with MCPTerminalTools.NOTIFY_ENVELOPE_PREFIX
-/// (src/Scripts/Services/MCP/Modules/MCPTerminalTools.gd): the same string in
-/// both places, and only the host ever writes it.
-///
-/// A notification is never an answer to a question card. Everything else a
-/// passthrough chat sends while a card is pending IS that card's answer — it
-/// bypasses the hold and is typed into the card — so an envelope arriving then
-/// would be entered into the chooser as a custom answer nobody asked for. A
-/// line with this prefix is therefore always a FRESH prompt: held until the
-/// card clears, with the card left filed for the answer still to come.
-const NOTIFY_ENVELOPE_PREFIX: &str = "[MINERVA NOTIFY from ";
-/// How recent a human keystroke in the target holds a notification's write.
-/// Shared by convention with MCPTerminalTools.NOTIFY_HUMAN_TYPING_MS.
-const NOTIFY_HUMAN_GUARD_MS: u64 = 5000;
-
-/// Per-chat passthrough state. SEAM GAP (filed): the host's PluginProvider
-/// sends only {chat_id, text} to the generate tool — no entry/terminal
-/// identity — so the plugin must resolve the terminal itself:
-///   1. explicit terminal_id arg (tests / future host versions),
-///   2. the remembered chat_id → terminal binding,
-///   3. the single active watch session (unambiguous),
-///   else a kind:"error" asking for terminal_id.
-/// `pending_question` tracks terminals whose last passthrough turn ended in a
-/// question — the next single-character text is a dialog keystroke, not a
-/// message.
-#[derive(Default)]
-struct PassthroughState {
-    bindings: std::collections::HashMap<String, String>, // chat_id → terminal_id
-    pending_question: std::collections::HashSet<String>, // terminal_ids
-    // Terminals whose pending question is an AskUserQuestion CHOOSER (vs a
-    // permission dialog). A chooser is driven by ↑/↓ + Enter — a digit TYPES a
-    // custom answer, it does not select (Claude Code v2.1.181) — so a selection
-    // is delivered as ChooserNav (arrow keystrokes, then Enter) and a custom
-    // answer as Submit, never as a single raw keystroke.
-    pending_is_chooser: std::collections::HashSet<String>, // terminal_ids
-    // Option numbers OFFERED on a pending chooser (real answers only; the meta
-    // affordances are dropped). The card sends a plain number; the send path maps
-    // a number that's in this set to a navigation sequence (Down×(K-1)+Enter) and
-    // treats anything else as a typed custom answer — control bytes are generated
-    // here and written straight to the PTY, never round-tripped through a chat
-    // message (which hangs the turn).
-    pending_chooser_options: std::collections::HashMap<String, Vec<u32>>, // terminal_id → numbers
-    // The "Type something…" option's number on a pending chooser, if present. It
-    // opens a free-text editor rather than being a direct answer, so a click on
-    // it does NOT navigate — it prompts the user to type a custom answer (which
-    // then goes through the free-text path), avoiding the sub-prompt that hangs.
-    pending_type_option: std::collections::HashMap<String, u32>, // terminal_id → option number
-    // The question region the pending card was built from. A pending question is
-    // only answerable while THAT card is still the screen: the human can answer
-    // the card in the terminal directly, and the agent then runs on and may draw
-    // a different modal. Comparing this text with the region on screen at the
-    // next turn separates the live card (its answer bypasses the hold) from a
-    // superseded one (stale: drop the pending state and send as a fresh prompt).
-    pending_question_region: std::collections::HashMap<String, String>, // terminal_id → region
-    // Last-known watch profile per terminal. The idle reap (watch_timeout_ms,
-    // 10 min) tears down an UNARMED watch — and a passthrough chat sits unarmed
-    // between turns, so an idle chat loses its watch. We cache the profile while
-    // the watch is live so auto-revive restores the SAME calibration (codex /
-    // opencode differ from the "claude" default).
-    profiles: std::collections::HashMap<String, String>, // terminal_id → profile_id
-    operations: std::collections::HashMap<String, String>, // token → terminal_id
-    interrupted: std::collections::HashSet<String>, // operation tokens
-}
-
-static PASSTHROUGH: Mutex<Option<PassthroughState>> = Mutex::new(None);
-
-fn with_passthrough<R>(f: impl FnOnce(&mut PassthroughState) -> R) -> R {
-    let mut guard = PASSTHROUGH.lock().unwrap();
-    f(guard.get_or_insert_with(PassthroughState::default))
-}
-
-/// A chat that has resolved to this terminal owns its watch for this plugin
-/// process. Minerva currently has no plugin callback when a history is deleted;
-/// terminal close, explicit watch_stop, and plugin restart remain the cleanup
-/// boundaries. Watches never selected by a chat still use the idle reap.
-pub(crate) fn passthrough_terminal_is_bound(terminal_id: &str) -> bool {
-    with_passthrough(|s| s.bindings.values().any(|bound| bound == terminal_id))
-}
-
-fn clear_passthrough_terminal_bindings(terminal_id: &str) {
-    with_passthrough(|s| s.bindings.retain(|_, bound| bound != terminal_id));
-}
-
-fn register_passthrough_operation(params: &Value) -> bool {
-    let args = params.get("arguments").unwrap_or(params);
-    let Some(token) = args.get("operation_token").and_then(|v| v.as_str()).filter(|v| !v.is_empty()) else {
-        return true;
-    };
-    let terminal = args.get("terminal_id")
-        .and_then(|v| v.as_str())
-        .filter(|v| !v.is_empty())
-        .or_else(|| args.get("entry_id").and_then(|v| v.as_str())
-            .and_then(|v| v.strip_prefix("terminal-")))
-        .unwrap_or("");
-    if terminal.is_empty() { return false; }
-    with_passthrough(|s| {
-        if s.operations.contains_key(token) { return false; }
-        s.operations.insert(token.to_string(), terminal.to_string());
-        true
-    })
-}
-
-fn latch_passthrough_interrupt(params: &Value, id: Value) -> RpcResponse {
-    let args = params.get("arguments").unwrap_or(params);
-    let token = args.get("operation_token").and_then(|v| v.as_str()).unwrap_or("");
-    let accepted = with_passthrough(|s| {
-        if token.is_empty() || !s.operations.contains_key(token) || s.interrupted.contains(token) {
-            return false;
-        }
-        s.interrupted.insert(token.to_string());
-        true
-    });
-    ok_response(id, tool_ok(json!({"ok": true, "accepted": accepted})))
-}
-
-struct PassthroughOperationGuard(Option<String>);
-
-impl Drop for PassthroughOperationGuard {
-    fn drop(&mut self) {
-        if let Some(token) = self.0.as_deref() {
-            with_passthrough(|s| {
-                s.operations.remove(token);
-                s.interrupted.remove(token);
-            });
-        }
-    }
-}
-
-/// Drop every trace of a pending question for a terminal: the next text sent
-/// there is a fresh prompt, gated like any other.
-/// Retire the pending card ONLY while the region still filed is `expected` —
-/// the one this caller validated, or None when it had nothing pending.
-///
-/// Read and clear happen under ONE lock. Two acquisitions would leave a window
-/// in which another handler's turn files a NEWER card between them, and this
-/// caller would then wipe a filing the chat user is already looking at.
-/// Returns true when the card was retired.
-fn clear_pending_question_if(terminal_id: &str, expected: Option<&str>) -> bool {
-    with_passthrough(|s| {
-        if s.pending_question_region.get(terminal_id).map(String::as_str) != expected {
-            return false;
-        }
-        drop_pending(s, terminal_id);
-        true
-    })
-}
-
-/// The field-by-field retire, for callers that already hold the lock.
-fn drop_pending(s: &mut PassthroughState, terminal_id: &str) {
-    s.pending_question.remove(terminal_id);
-    s.pending_is_chooser.remove(terminal_id);
-    s.pending_chooser_options.remove(terminal_id);
-    s.pending_type_option.remove(terminal_id);
-    s.pending_question_region.remove(terminal_id);
-}
-
-/// Resolve which terminal a passthrough chat turn targets. See
-/// PassthroughState for the resolution ladder and the seam-gap rationale.
-fn resolve_passthrough_terminal(
-    chat_id: &str,
-    explicit: Option<&str>,
-) -> Result<String, String> {
-    if let Some(tid) = explicit {
-        if !chat_id.is_empty() {
-            with_passthrough(|s| {
-                s.bindings.insert(chat_id.to_string(), tid.to_string())
-            });
-        }
-        return Ok(tid.to_string());
-    }
-
-    if !chat_id.is_empty() {
-        if let Some(tid) = with_passthrough(|s| s.bindings.get(chat_id).cloned()) {
-            return Ok(tid);
-        }
-    }
-
-    let sessions = watcher::session_specs();
-    match sessions.len() {
-        1 => {
-            let tid = sessions[0].terminal_id.clone();
-            if !chat_id.is_empty() {
-                with_passthrough(|s| {
-                    s.bindings.insert(chat_id.to_string(), tid.clone())
-                });
-            }
-            Ok(tid)
-        }
-        0 => Err(
-            "no watch session is active; call minerva_agent_relay_watch_start \
-             on the terminal first (the chat-provider entry follows the watch \
-             lifecycle)".to_string(),
-        ),
-        n => Err(format!(
-            "{n} terminals are watched and the host did not identify the \
-             provider entry for this chat; pass terminal_id explicitly"
-        )),
-    }
-}
-
-/// If `text` is a single keystroke for a pending dialog, return the byte(s)
-/// to write raw. "\n" normalises to "\r" (the PTY Enter key); any other
-/// single character (letter/number hints, "\r", ESC) passes through as-is.
-fn normalize_keystroke(text: &str) -> Option<String> {
-    match text {
-        "\r" | "\n" => Some("\r".to_string()),
-        _ if text.chars().count() == 1 => Some(text.to_string()),
-        _ => None,
-    }
-}
-
-/// Re-establish a watch that the idle reap (or a non-resumed restart) tore
-/// down under a live passthrough chat. Refuses only when the terminal itself
-/// is gone — a reaped watch leaves the PTY alive (Minerva background session),
-/// but a CLOSED terminal makes host.terminal.read error, and reviving a watch
-/// on a dead terminal would just spin to a TerminalClosed detection. Restores
-/// the cached profile so the agent's calibration survives the revive.
-fn revive_passthrough_watch(terminal_id: &str, router: &Arc<Router>) -> Result<(), String> {
-    // Liveness probe: only the terminal-gone case should surface an error.
-    if let Err(e) = router.call_capability(
-        "host.terminal.read", json!({ "terminal_id": terminal_id }),
-    ) {
-        return Err(format!(
-            "terminal {terminal_id} is no longer available ({e}); its agent's \
-             terminal was closed — start a new passthrough chat"
-        ));
-    }
-    let profile = with_passthrough(|s| s.profiles.get(terminal_id).cloned())
-        .unwrap_or_else(|| "claude".to_string());
-    watcher::watch_start(
-        terminal_id.to_string(),
-        Some(profile.clone()),
-        watcher::NotifyMode::Armed,
-        router.clone(),
-    )
-    .map_err(|e| format!("failed to revive watch for terminal {terminal_id}: {e}"))?;
-    log::info!("passthrough: auto-revived reaped watch for {terminal_id} (profile {profile})");
-    Ok(())
-}
-
-/// B7: passthrough_generate — services ONE chat turn for a terminal-backed
-/// chat-provider entry. The relay_ask core does the work (send + arm → block
-/// until turn end → read); this handler only resolves the terminal, picks the
-/// write mode (message submit vs raw dialog keystroke), and maps the outcome
-/// to the seam result shape:
-///   {kind:"answer", text} | {kind:"question", text, options} | {kind:"error", text}.
-/// Errors are IN-BAND (kind:"error", normal tool content) so the host's
-/// PluginProvider can render them uniformly. distill is OFF: passthrough is
-/// verbatim (no LLM in the transport path — DCR #479 constraint).
-/// Locate the chooser's currently-highlighted option number from the `❯` cursor
-/// line on the screen (the only option row prefixed with the selection glyph).
-/// Returns None when no cursor+number line is visible.
-fn chooser_cursor_option(screen: &str) -> Option<u32> {
-    let re = regex::Regex::new(r"^\s*[❯›>]\s*(\d+)[.)]").ok()?;
-    for line in screen.lines() {
-        if let Some(c) = re.captures(line) {
-            if let Some(n) = c.get(1).and_then(|m| m.as_str().parse::<u32>().ok()) {
-                return Some(n);
-            }
-        }
-    }
-    None
-}
-
-/// Build the arrow-key run to move the chooser cursor from its CURRENT option
-/// (read live from the screen) to the target option K. Using the live cursor —
-/// rather than assuming the top — is robust to scrolling, cancel/retry, and any
-/// prior navigation. Empty string when already on the target (Enter alone
-/// selects). Falls back to assuming the top option if the cursor isn't readable.
-fn chooser_nav_keys(terminal_id: &str, target: u32, router: &Arc<Router>) -> String {
-    let screen = router
-        .call_capability("host.terminal.read", json!({ "terminal_id": terminal_id }))
-        .ok()
-        .and_then(|r| r.get("content").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_default();
-    let current = chooser_cursor_option(&screen).unwrap_or(1);
-    if target >= current {
-        "\u{1b}[B".repeat((target - current) as usize) // Down
-    } else {
-        "\u{1b}[A".repeat((current - target) as usize) // Up
-    }
-}
-
-fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
-    let args = params.get("arguments").unwrap_or(params);
-    let chat_id = args.get("chat_id").and_then(|v| v.as_str()).unwrap_or("");
-    let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
-    // The host's PluginProvider sends entry_id ("terminal-<tid>") with every
-    // generate — the authoritative answer to WHICH watched terminal this chat
-    // targets. An explicit terminal_id arg still wins (direct/test use).
-    let entry_tid = args.get("entry_id")
-        .and_then(|v| v.as_str())
-        .and_then(|e| e.strip_prefix("terminal-"))
-        .filter(|s| !s.is_empty());
-    let explicit_tid = args.get("terminal_id")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .or(entry_tid);
-    let operation_token = args.get("operation_token")
-        .and_then(|v| v.as_str())
-        .filter(|v| !v.is_empty());
-    let _operation = PassthroughOperationGuard(operation_token.map(str::to_string));
-
-    if text.is_empty() {
-        return ok_response(id, tool_ok(json!({
-            "kind": "error",
-            "text": "text is required",
-        })));
-    }
-
-    let terminal_id = match resolve_passthrough_terminal(chat_id, explicit_tid) {
-        Ok(t) => t,
-        Err(e) => return ok_response(id, tool_ok(json!({"kind": "error", "text": e}))),
-    };
-    if operation_token.is_some_and(|token| {
-        with_passthrough(|s| s.operations.get(token).map(String::as_str) != Some(terminal_id.as_str()))
-    }) {
-        return ok_response(id, tool_ok(json!({
-            "kind": "error",
-            "text": "operation token does not belong to this terminal",
-        })));
-    }
-
-    // A bound chat now owns its watch across idle periods. The watch can still
-    // be absent after a relay restart or a bind/cleanup race, while the PTY
-    // remains alive, so auto-revive remains the recovery boundary. We only
-    // refuse when the terminal itself is gone (genuinely closed).
-    match watcher::watch_status(&terminal_id) {
-        Some(status) => {
-            if let Some(prof) = status.get("profile_id").and_then(|v| v.as_str()) {
-                with_passthrough(|s| {
-                    s.profiles.insert(terminal_id.clone(), prof.to_string());
-                });
-            }
-        }
-        None => {
-            if let Err(e) = revive_passthrough_watch(&terminal_id, router) {
-                return ok_response(id, tool_ok(json!({"kind": "error", "text": e})));
-            }
-        }
-    }
-
-    // Dialog answer? After a "question" result, a single-keystroke text is
-    // written raw with NO Enter — dialog pickers act on the keypress (codex
-    // calibration is ambiguous on enter-confirm, so letter/number hints go
-    // alone; the Confirm option carries "\r" itself).
-    //
-    // A pending question only survives while the card that produced it is still
-    // the screen. Nothing on the passthrough path sees the human answer that
-    // same card in the terminal — the agent then runs on and can draw a NEW
-    // modal — so the region on screen is compared with the one the card was
-    // built from. A match means this write is the answer that clears the card
-    // (bypass the hold); anything else is stale: drop the pending state so the
-    // text is sent as a fresh prompt and the gate holds it while a modal owns
-    // the keyboard. An unreadable screen also drops the state; the gate then
-    // treats the same unreadable terminal as writable, which only a dead
-    // terminal produces.
-    // A notification answers nothing: it never takes the card's bypass, and it
-    // leaves the pending state alone (NOTIFY_ENVELOPE_PREFIX).
-    let is_notify = text.starts_with(NOTIFY_ENVELOPE_PREFIX);
-    let mut pending_question =
-        !is_notify && with_passthrough(|s| s.pending_question.contains(&terminal_id));
-    let mut filed_region: Option<String> = None;
-    if pending_question {
-        let filed = with_passthrough(|s| {
-            s.pending_question_region.get(&terminal_id).cloned()
-        });
-        let live = live_question_region(&terminal_id, router).map(|r| region_identity(&r));
-        if live.is_none() || live != filed {
-            // Retire only the card read above: a concurrent handler may have
-            // filed a newer one during the screen read, and that one stays.
-            clear_pending_question_if(&terminal_id, filed.as_deref());
-            pending_question = false;
-        } else {
-            filed_region = filed;
-        }
-    }
-    let pending_chooser =
-        with_passthrough(|s| s.pending_is_chooser.contains(&terminal_id));
-
-    // "Type something…" click: this option opens a free-text editor — navigating
-    // to it would block the turn waiting on input the card can't supply. So don't
-    // touch the terminal: keep the chooser pending and return a prompt telling the
-    // user to type their custom answer. Their next message is plain text → the
-    // free-text path types it into the chooser and submits it (typing creates a
-    // custom answer without pre-selecting "Type something"). Returning early
-    // leaves the pending state untouched so that next message routes correctly.
-    if pending_question && pending_chooser {
-        let type_n = with_passthrough(|s| s.pending_type_option.get(&terminal_id).copied());
-        if let Some(tn) = type_n {
-            if text.trim().parse::<u32>().ok() == Some(tn) {
-                return ok_response(id, tool_ok(json!({
-                    "kind": "question",
-                    "text": "Type your custom answer in the message box below and send it.",
-                    "options": [],
-                })));
-            }
-        }
-    }
-
-    // Chooser select: the card sends the option NUMBER as a plain chat message.
-    // Translate it to arrow-key navigation HERE — moving from the live cursor
-    // position to option K, delivered one keypress at a time (ChooserNav mode) —
-    // so raw ESC bytes are generated in the plugin and written straight to the
-    // PTY, never round-tripped through a chat message (control bytes in a chat
-    // message hang the turn). Only a number that was actually OFFERED maps to
-    // navigation; anything else (words, or a number that wasn't an option) is a
-    // typed custom answer via the free-text path.
-    let chooser_nav: Option<String> = if pending_question && pending_chooser {
-        let offered = with_passthrough(|s| {
-            s.pending_chooser_options
-                .get(&terminal_id)
-                .cloned()
-                .unwrap_or_default()
-        });
-        text.trim()
-            .parse::<u32>()
-            .ok()
-            .filter(|k| *k >= 1 && offered.contains(k))
-            .map(|k| chooser_nav_keys(&terminal_id, k, router))
-    } else {
-        None
-    };
-
-    // Only a permission-dialog answer is a single raw keystroke (no Enter).
-    let keystroke = if pending_question && !pending_chooser {
-        normalize_keystroke(text)
-    } else {
-        None
-    };
-    // Precedence: chooser navigation (Submit adds Enter) → permission keystroke
-    // (raw, no Enter) → Submit (a normal message OR a chooser custom answer, both
-    // body + Enter).
-    let (send_text, mode): (&str, SendMode) = if let Some(ref nav) = chooser_nav {
-        (nav.as_str(), SendMode::ChooserNav)
-    } else if let Some(ref k) = keystroke {
-        (k.as_str(), SendMode::RawKeystroke)
-    } else {
-        (text, SendMode::Submit)
-    };
-
-    // Anything sent while a question is pending ANSWERS the modal on screen —
-    // a chooser's custom free text as much as a permission keystroke or a
-    // chooser arrow. The hold guards a FRESH prompt from landing on a screen
-    // that owns the keyboard; here the screen is waiting on exactly this write,
-    // so holding for it would burn the whole passthrough budget and error.
-    let hold = match (pending_question, filed_region.clone()) {
-        (true, Some(region)) => GateHold::Bypass(region),
-        _ => GateHold::Wait,
-    };
-
-    let mut outcome = relay_ask_core(
-        &terminal_id, send_text, mode, hold, PASSTHROUGH_TIMEOUT_MS,
-        false, // distill OFF — passthrough is verbatim
-        true,  // redact stays on: secrets never enter chat history
-        None, operation_token, router,
-    );
-    // The card was cleared by someone else while this answer queued for the
-    // slot, so nothing was written: the text is a fresh prompt now, sent as a
-    // plain submit that the gate holds like any other.
-    //
-    // WHAT IS FILED IS NOT NECESSARILY THIS CALLER'S CARD. The usual reason a
-    // bypass goes stale is that the first answer's turn already filed a NEW
-    // question card for this terminal. That filing is live — the chat user is
-    // looking at it — and dropping it would make their answer to it arrive
-    // with no pending state, so it would be sent as a fresh prompt and held by
-    // the very card it answers for the whole budget. So the pending state is
-    // dropped only when what is filed is still the region THIS caller
-    // validated, i.e. nobody has re-filed since.
-    if matches!(outcome, Err(ref e) if e.message == STALE_BYPASS) {
-        clear_pending_question_if(&terminal_id, filed_region.as_deref());
-        // The bypass also goes stale when the WATCH went away under the answer
-        // (watch_stop, the idle reap): the card could no longer be confirmed,
-        // so nothing was written. The re-send is a fresh prompt and needs the
-        // watch back before it goes out — without one the gate has nothing to
-        // classify screens with, and the prompt would be written unheld onto
-        // the modal that replaced the card, which is the write this refusal
-        // just prevented.
-        if watcher::watch_status(&terminal_id).is_none() {
-            if let Err(e) = revive_passthrough_watch(&terminal_id, router) {
-                return ok_response(id, tool_ok(json!({"kind": "error", "text": e})));
-            }
-        }
-        outcome = relay_ask_core(
-            &terminal_id, text, SendMode::Submit, GateHold::Wait, PASSTHROUGH_TIMEOUT_MS,
-            false, true, None, operation_token, router,
-        );
-    }
-
-    let result = match outcome {
-        // The chat path reports the failure the same way the send tools do:
-        // held and its outcome ride along, so the host classifies a hold by
-        // its keys rather than by the prose it happens to carry.
-        Err(e) => {
-            let payload = send_error_payload(&e);
-            let mut err = json!({"kind": "error", "text": e.message});
-            for key in ["held", "hold_reason", "outcome"] {
-                if let Some(v) = payload.get(key) {
-                    err[key] = v.clone();
-                }
-            }
-            err
-        }
-        Ok(v) => {
-            let cause = v.get("cause").and_then(|c| c.as_str()).unwrap_or("");
-            if v.get("timed_out").and_then(|t| t.as_bool()).unwrap_or(false) {
-                json!({
-                    "kind": "error",
-                    "text": format!(
-                        "terminal {terminal_id} did not finish its turn within \
-                         {}s; the arm remains set — collect the late reply via \
-                         minerva_agent_relay_read_turn",
-                        PASSTHROUGH_TIMEOUT_MS / 1000
-                    ),
-                })
-            } else if cause == "input_requested" {
-                build_question_result(&terminal_id, router)
-            } else if cause == "turn_completed" {
-                let mut answer = v.get("answer").and_then(|a| a.as_str()).unwrap_or("").to_string();
-                if v.get("interrupted").and_then(|x| x.as_bool()).unwrap_or(false) {
-                    if !answer.is_empty() {
-                        answer.push_str("\n\n");
-                    }
-                    answer.push_str("[Interrupted]");
-                } else if v.get("interrupt_failed").and_then(|x| x.as_bool()).unwrap_or(false) {
-                    if !answer.is_empty() {
-                        answer.push_str("\n\n");
-                    }
-                    answer.push_str("[Interrupt request failed]");
-                }
-                json!({
-                    "kind": "answer",
-                    "text": answer,
-                    "answer_source": v.get("answer_source").cloned()
-                        .unwrap_or(json!(answer_backfill::SOURCE_SCREEN)),
-                })
-            } else {
-                json!({
-                    "kind": "error",
-                    "text": format!(
-                        "terminal {terminal_id} turn ended abnormally \
-                         (cause={cause}); the terminal session may be gone"
-                    ),
-                })
-            }
-        }
-    };
-
-    if result.get("kind").and_then(|k| k.as_str()) == Some("question") {
-        // The card's own region text identifies the screen this question came
-        // from; the next turn compares it with the screen then. pending_is_chooser
-        // and the option maps are set by build_question_result (chooser vs
-        // permission); leave them as that call decided.
-        let region = region_identity(result.get("text").and_then(|t| t.as_str()).unwrap_or(""));
-        with_passthrough(|s| {
-            s.pending_question.insert(terminal_id.clone());
-            s.pending_question_region.insert(terminal_id.clone(), region);
-        });
-    } else {
-        // Only the card this caller saw when it started is its to retire. A
-        // concurrent caller's turn may have filed a newer card meanwhile; that
-        // filing belongs to the answer still to come, so it stays.
-        clear_pending_question_if(&terminal_id, filed_region.as_deref());
-    }
-
-    ok_response(id, tool_ok(result))
-}
-
-/// The question region a screen draws, and whether it is a CHOOSER.
-///
-/// Two block shapes need different region anchoring. A permission dialog
-/// carries its marker ABOVE its options (anchor top-down via the permission
-/// regex). An AskUserQuestion chooser carries its marker — the nav footer —
-/// BELOW its options, so the same regex would anchor on the footer and drop
-/// every option; extract it header-anchored instead. extract_question_region
-/// is chooser-unique ("enter to select"), so the permission path is unchanged.
-fn question_region(screen: &str, profile_id: &str) -> (String, bool) {
-    let dialog_re = profiles::profile_get(profile_id)
-        .and_then(|p| p.detection.permission_dialog_regex)
-        .and_then(|pat| regex::Regex::new(&pat).ok());
-    match dialog::extract_question_region(screen) {
-        Some(region) => (region, true),
-        None => (
-            dialog::extract_dialog_region(screen, dialog_re.as_ref(), 20),
-            false,
-        ),
-    }
-}
-
-/// A dialog region with its volatile marks removed: the highlight caret moves
-/// when the human arrows through the same card, so identity keys on the option
-/// text alone (leading caret glyphs and indentation dropped on every row).
-fn region_identity(region: &str) -> String {
-    region
-        .lines()
-        .map(|l| l.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '\u{276f}' | '\u{203a}' | '>')))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// The profile currently watching a terminal, defaulted like the card builder.
-fn watched_profile_id(terminal_id: &str) -> String {
-    watcher::watch_status(terminal_id)
-        .and_then(|s| s.get("profile_id").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_else(|| "claude".to_string())
-}
-
-/// The question region on the terminal's CURRENT screen, or None when the
-/// screen cannot be read.
-fn live_question_region(terminal_id: &str, router: &Arc<Router>) -> Option<String> {
-    let screen = router.call_capability("host.terminal.read", json!({
-        "terminal_id": terminal_id,
-    })).ok()?
-        .get("content")
-        .and_then(|v| v.as_str())?
-        .to_string();
-    Some(question_region(&screen, &watched_profile_id(terminal_id)).0)
-}
-
-/// Build the {kind:"question"} result for an input_requested turn: read the
-/// RAW viewport (the cleaned turn window is for prose answers — the chrome /
-/// redaction pipeline must not touch the dialog's option lines before
-/// parsing), extract the dialog region with the profile's permission regex,
-/// and parse the {label, keystroke} options.
-fn build_question_result(terminal_id: &str, router: &Arc<Router>) -> Value {
-    let screen = match router.call_capability("host.terminal.read", json!({
-        "terminal_id": terminal_id,
-    })) {
-        Ok(r) => r.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        Err(e) => {
-            return json!({
-                "kind": "error",
-                "text": format!("input requested but screen read failed: {e}"),
-            });
-        }
-    };
-
-    let profile_id = watched_profile_id(terminal_id);
-    let (region, is_chooser) = question_region(&screen, &profile_id);
-    let parsed = dialog::parse_options(&profile_id, &region);
-    // Keep ALL options on the card. A chooser selects via ↑/↓ + Enter (a digit
-    // TYPES a custom answer, it does not select — Claude Code v2.1.181). The card
-    // keeps the plain option NUMBER as its keystroke; the digit→navigation
-    // translation happens in the SEND path, so raw ESC bytes never round-trip
-    // through a chat message (that hangs the turn). The "Type something…" option
-    // is surfaced too but is NOT navigable (selecting it opens a text editor that
-    // blocks the turn) — its number is remembered separately so a click on it
-    // prompts the user to type a custom answer (free-text path). Every other
-    // option, including "Chat about this", is a normal navigable selection.
-    let mut chooser_numbers: Vec<u32> = Vec::new();
-    let mut type_option: Option<u32> = None;
-    if is_chooser {
-        for o in &parsed {
-            if let Ok(n) = o.keystroke.parse::<u32>() {
-                if dialog::is_type_option(&o.label) {
-                    type_option = Some(n);
-                } else {
-                    chooser_numbers.push(n);
-                }
-            }
-        }
-    }
-    // Record the shape for the NEXT turn's send routing: a navigable number → nav
-    // (ChooserNav: one write per arrow keystroke, then Enter); the type-option
-    // number → a "type your answer" prompt (no terminal action); typed text →
-    // a custom answer.
-    with_passthrough(|s| {
-        if is_chooser {
-            s.pending_is_chooser.insert(terminal_id.to_string());
-            s.pending_chooser_options
-                .insert(terminal_id.to_string(), chooser_numbers.clone());
-            match type_option {
-                Some(n) => {
-                    s.pending_type_option.insert(terminal_id.to_string(), n);
-                }
-                None => {
-                    s.pending_type_option.remove(terminal_id);
-                }
-            }
-        } else {
-            s.pending_is_chooser.remove(terminal_id);
-            s.pending_chooser_options.remove(terminal_id);
-            s.pending_type_option.remove(terminal_id);
-        }
-    });
-    let options: Vec<Value> = parsed.iter().map(|o| o.to_json()).collect();
-
-    json!({"kind": "question", "text": region, "options": options})
 }
 
 /// B2 IMPLEMENTED: filter_set — installs or replaces a named filter rule.
@@ -2447,7 +1877,7 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_passthrough_generate",
-                "description": "Chat-provider generate hook (chat-passthrough): service ONE chat turn against the watched terminal bound to this provider entry. Reuses the relay_ask core (send + arm, BLOCK until the turn ends, read the turn) with distill OFF — passthrough is verbatim. Returns JSON {kind:'answer', text} | {kind:'question', text, options:[{label, keystroke}]} when the turn ends in a permission dialog | {kind:'error', text}. After a 'question' result, a single-keystroke text (e.g. 'y', '1', '\\r', ESC) is written raw to the PTY with no Enter.",
+                "description": "Chat-provider generate hook (chat-passthrough): service ONE chat turn against the watched terminal bound to this provider entry. Reuses the relay_ask core (send + arm, BLOCK until the turn ends, read the turn) with distill OFF — passthrough is verbatim. Returns JSON {kind:'answer', text} | {kind:'question', text, options:[{label, keystroke}]} when the turn ends in a permission dialog | {kind:'error', text} | {kind:'pending', operation_token, elapsed_ms} when the turn is still running at wait_budget_ms — call again with resume:true and the same operation_token to keep waiting (nothing is re-sent). After a 'question' result, a single-keystroke text (e.g. 'y', '1', '\\r', ESC) is written raw to the PTY with no Enter.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2455,7 +1885,9 @@ fn tools_list_schema() -> Value {
                         "text": {"type": "string", "description": "Newest user message, or a single dialog-answer keystroke after a 'question' result."},
                         "entry_id": {"type": "string", "description": "Provider entry id ('terminal-<tid>') — sent by the host with every generate; identifies the watched terminal."},
                         "terminal_id": {"type": "string", "description": "Optional explicit terminal override; normally resolved from entry_id, the chat binding, or the single active watch session."},
-                        "operation_token": {"type": "string", "description": "Opaque host token for interrupting only this generate call."}
+                        "operation_token": {"type": "string", "description": "Opaque host token for this chat turn: interrupts it, and resumes it after a 'pending' reply."},
+                        "wait_budget_ms": {"type": "integer", "description": "How long this call may wait (gate plus turn), in ms; default and maximum 590000. The host passes its call timeout less a margin."},
+                        "resume": {"type": "boolean", "description": "Continue waiting on the turn that operation_token's generate left pending. text is ignored and nothing is written."}
                     },
                     "required": ["chat_id", "text"]
                 }
@@ -2601,6 +2033,7 @@ fn main() {
     // Spawn the async router (stdin-reader thread + shared stdout writer).
     // tool_rx stays on the main thread (Receiver is not Sync; can't put it in Arc).
     let (router, tool_rx) = Router::spawn();
+    passthrough_ops::set_router(Arc::clone(&router));
 
     // Resume persisted watch sessions — watches survive plugin restarts.
     // Sessions whose terminals are gone self-heal via terminal_closed.
@@ -2652,7 +2085,11 @@ fn main() {
                     | "minerva_agent_relay_send"
                     | "minerva_agent_relay_passthrough_generate")
             {
-                    if tool_name == "minerva_agent_relay_passthrough_generate"
+                    // A resume continues an operation that is already
+                    // registered; only a fresh generate claims its token.
+                    let resume = tool_name == "minerva_agent_relay_passthrough_generate"
+                        && passthrough_resume_requested(&req.params);
+                    if tool_name == "minerva_agent_relay_passthrough_generate" && !resume
                         && !register_passthrough_operation(&req.params) {
                         let resp = ok_response(req.id, tool_ok(json!({
                             "kind": "error",
@@ -2670,6 +2107,8 @@ fn main() {
                                 handle_relay_ask(&req.params, req.id, &router2),
                             "minerva_agent_relay_send" =>
                                 handle_send(&req.params, req.id, &router2),
+                            _ if resume =>
+                                handle_passthrough_resume(&req.params, req.id, &router2),
                             _ =>
                                 handle_passthrough_generate(&req.params, req.id, &router2),
                         };
@@ -2686,7 +2125,7 @@ fn main() {
                     "minerva_agent_relay_watch_status" =>
                         handle_watch_status(&req.params, req.id),
                     "minerva_agent_relay_passthrough_interrupt" =>
-                        latch_passthrough_interrupt(&req.params, req.id),
+                        latch_passthrough_interrupt(&req.params, req.id, &router),
                     "minerva_agent_relay_read_clean" =>
                         handle_read_clean(&req.params, req.id, &router),
                     "minerva_agent_relay_read_turn" =>
@@ -2951,75 +2390,4 @@ mod tests {
         assert_eq!(out, "ping\npong", "answer kept even when it repeats the message");
     }
 
-    /// A pending card is retired only by the caller whose card it still is.
-    /// The read and the clear happen under ONE lock, so a card filed by another
-    /// handler between them cannot be wiped — the chat user is already looking
-    /// at that newer card, and wiping it would make their answer arrive with no
-    /// pending state and be held by the very card it answers.
-    #[test]
-    fn a_pending_card_is_retired_only_by_the_caller_whose_card_it_is() {
-        let terminal = "main-tests-compare-and-clear";
-        with_passthrough(|s| {
-            s.pending_question.insert(terminal.to_string());
-            s.pending_question_region
-                .insert(terminal.to_string(), "card one".to_string());
-        });
-
-        assert!(
-            !clear_pending_question_if(terminal, Some("card zero")),
-            "a caller whose card has been replaced must not retire the new one"
-        );
-        assert!(
-            with_passthrough(|s| s.pending_question.contains(terminal)),
-            "the newer filing stays answerable"
-        );
-
-        assert!(
-            !clear_pending_question_if(terminal, None),
-            "a caller that had nothing pending must not retire someone's card"
-        );
-
-        assert!(
-            clear_pending_question_if(terminal, Some("card one")),
-            "the caller whose card is still filed retires it"
-        );
-        assert!(
-            with_passthrough(|s| !s.pending_question.contains(terminal)
-                && !s.pending_question_region.contains_key(terminal)),
-            "and every trace of it is gone"
-        );
-    }
-
-    #[test]
-    fn passthrough_operation_tokens_have_one_owner_and_stale_interrupts_are_noops() {
-        let token = "main-tests-operation-owner";
-        let first = json!({"arguments": {
-            "entry_id": "terminal-owner-a", "operation_token": token,
-        }});
-        let duplicate = json!({"arguments": {
-            "entry_id": "terminal-owner-b", "operation_token": token,
-        }});
-        assert!(register_passthrough_operation(&first));
-        assert!(!register_passthrough_operation(&duplicate));
-        assert_eq!(with_passthrough(|s| s.operations.get(token).cloned()),
-            Some("owner-a".to_string()));
-
-        let interrupt = json!({"arguments": {"operation_token": token}});
-        let first_reply = latch_passthrough_interrupt(&interrupt, json!(1));
-        let duplicate_reply = latch_passthrough_interrupt(&interrupt, json!(2));
-        let first_body: Value = serde_json::from_str(first_reply.result.unwrap()
-            ["content"][0]["text"].as_str().unwrap()).unwrap();
-        let duplicate_body: Value = serde_json::from_str(duplicate_reply.result.unwrap()
-            ["content"][0]["text"].as_str().unwrap()).unwrap();
-        assert_eq!(first_body["accepted"], true);
-        assert_eq!(duplicate_body["accepted"], false);
-
-        drop(PassthroughOperationGuard(Some(token.to_string())));
-        assert!(with_passthrough(|s| !s.operations.contains_key(token)
-            && !s.interrupted.contains(token)));
-        let stale_reply = latch_passthrough_interrupt(&interrupt, json!(3));
-        let stale_body: Value = serde_json::from_str(stale_reply.result.unwrap()
-            ["content"][0]["text"].as_str().unwrap()).unwrap();
-        assert_eq!(stale_body["accepted"], false);
-    }
 }

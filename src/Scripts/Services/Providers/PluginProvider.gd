@@ -6,7 +6,9 @@ extends BaseProvider
 ## from a PluginChatProviderRegistry entry via configure_from_entry(). On
 ## generate_content it resolves the plugin's MCPServerConnection and dispatches
 ## the entry's generate_tool, mapping the plugin's structured reply
-## ({kind:"answer"|"question"|"error"}) onto a BotResponse.
+## ({kind:"answer"|"question"|"error"}) onto a BotResponse. A reply of
+## {kind:"pending"} means the turn outlived one call; the same operation is
+## resumed until it ends (see _dispatch_call).
 ##
 ## This path is a DETERMINISTIC transport — there is NO LLM in it, ever. Token
 ## counts come from the plugin's reply if present, else 0.
@@ -14,6 +16,10 @@ extends BaseProvider
 ## Cancellation: BaseProvider routes SingletonObject.stop_all_requests →
 ## cancel_active_resquests(); we override that hook to abandon an in-flight
 ## plugin call and (if a cancel_tool is configured) fire-and-forget it.
+
+## How much sooner than the call timeout the plugin must answer, so a running
+## turn comes back "pending" rather than as a transport timeout.
+const RESUME_MARGIN_SEC := 10.0
 
 ## Registry key this provider was configured from ("plugin:<plugin_id>:<entry_id>").
 var entry_key: String = ""
@@ -134,6 +140,11 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 		args["messages"] = prompt
 
 	var timeout_sec: float = get_effective_timeout()
+	# A resumable entry waits at most this long per call, so a still-running
+	# turn comes back "pending" before the call itself times out. Other
+	# plugins' generate tools never see the argument.
+	if _resumable():
+		args["wait_budget_ms"] = int(maxf(1.0, timeout_sec - RESUME_MARGIN_SEC) * 1000.0)
 
 	# Dispatch via an async helper that stores the result on this provider and
 	# fires _call_settled when call_tool resolves. generate_content then awaits
@@ -200,6 +211,21 @@ func _clear_pending(generation: int) -> void:
 ## dropped silently — no stored result, no second chat_completed.
 func _dispatch_call(conn, args: Dictionary, timeout_sec: float, generation: int) -> void:
 	var raw = await conn.call_tool(generate_tool, args, timeout_sec)
+	# A turn longer than one call comes back "pending" under this call's own
+	# operation token: keep waiting on that same operation (nothing is re-sent)
+	# until it ends, while this generation is still the live, uncancelled one.
+	# The chat's live status keeps updating throughout, since generate_content
+	# is still waiting.
+	var token := str(args.get("operation_token", ""))
+	while _resumable() and _is_resumable_pending(raw, token) and _generation_live(generation):
+		raw = await conn.call_tool(generate_tool, {
+			"chat_id": args.get("chat_id", ""),
+			"entry_id": args.get("entry_id", ""),
+			"operation_token": token,
+			"text": "",
+			"resume": true,
+			"wait_budget_ms": args.get("wait_budget_ms", 0),
+		}, timeout_sec)
 	if generation != _call_generation or generation <= _consumed_generation:
 		# Stale: a newer call superseded us, OR this generation's turn already
 		# resolved (e.g. via cancel). Discard silently — no stored result, no
@@ -207,6 +233,25 @@ func _dispatch_call(conn, args: Dictionary, timeout_sec: float, generation: int)
 		return
 	_pending_results[generation] = raw
 	_call_settled.emit(generation)
+
+
+## The entry registered {metadata: {resumable: true}}: it answers "pending"
+## for a turn that outlives one call, and takes resume:true to continue it.
+func _resumable() -> bool:
+	return bool(entry_metadata.get("resumable", false))
+
+
+func _generation_live(generation: int) -> bool:
+	return generation == _call_generation and generation > _consumed_generation \
+		and _cancelled_generation != generation
+
+
+## True for a "pending" reply carrying this call's own (non-empty) token. A
+## pending reply for any other token is not resumed; it surfaces as an error.
+func _is_resumable_pending(raw, token: String) -> bool:
+	var reply := _unwrap_tool_result(raw)
+	return not token.is_empty() and str(reply.get("kind", "")) == "pending" \
+		and str(reply.get("operation_token", "")) == token
 
 
 ## Map a plugin reply Dictionary onto a BotResponse per the W1 contract.
@@ -241,6 +286,8 @@ func _apply_result_to_bot(result: Dictionary, bot: BotResponse) -> void:
 			bot.hcp_data["passthrough_question_options"] = options
 		"error":
 			bot.error = str(result.get("text", "Plugin reported an error."))
+		"pending":
+			bot.error = "Plugin reported a still-running turn this chat cannot resume."
 		_:
 			bot.error = "Plugin returned an unrecognised reply kind '%s'." % kind
 
@@ -295,6 +342,13 @@ func cancel_active_resquests() -> void:
 	# Mark the in-flight generation cancelled and wake the awaiting
 	# generate_content so it resolves promptly (it awaits _call_settled OR this).
 	# A late call_tool resolution is neutralised by the generation token.
+	# Settling clears the active operation synchronously, so its token is read
+	# first: a plugin that interrupts by operation (the terminal relay) needs
+	# it to stop that turn, which may be parked between calls and will not be
+	# resumed after this cancel.
+	var args := {"chat_id": owner_history_id}
+	if supports_in_place_interrupt():
+		args["operation_token"] = _active_operation_token
 	if _call_generation > 0:
 		_cancelled_generation = _call_generation
 		_call_settled.emit(_call_generation)
@@ -307,7 +361,7 @@ func cancel_active_resquests() -> void:
 	if conn == null:
 		return
 	# Fire-and-forget; we do not await the cancellation acknowledgement.
-	conn.call_tool(cancel_tool, {"chat_id": owner_history_id})
+	conn.call_tool(cancel_tool, args)
 
 
 ## Opt-in passthrough interruption keeps the provider request alive while the

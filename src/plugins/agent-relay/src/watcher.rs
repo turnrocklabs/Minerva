@@ -143,7 +143,14 @@ struct WatchSession {
     /// sessions idle past this anchor — an armed session never self-reaps
     /// mid-turn (lifecycle item 019eb3617c38).
     reap_anchor: Instant,
+
+    /// Which watch this is: unique per watch_start in this process. A caller
+    /// that must outlive one wait (a pending passthrough turn) records it, so
+    /// a watch stopped or restarted in between is told apart from its own.
+    epoch: u64,
 }
+
+static NEXT_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl WatchSession {
     fn new(terminal_id: String, profile_id: String, notify_mode: NotifyMode) -> Self {
@@ -165,6 +172,7 @@ impl WatchSession {
             facts: SessionFacts::default(),
             log_binding: LogBinding::default(),
             reap_anchor: Instant::now(),
+            epoch: NEXT_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 }
@@ -296,22 +304,23 @@ pub fn wait_for_turn_from(
     baseline: u64,
     timeout_ms: u64,
 ) -> (Option<serde_json::Value>, bool) {
-	wait_for_turn_from_poll(terminal_id, baseline, timeout_ms, || {})
+	wait_for_turn_from_poll(terminal_id, baseline, timeout_ms, || false)
 }
 
+/// wait_for_turn_from that runs `poll` every tick; a poll answering true ends
+/// the wait early, reported like a timeout (the caller knows why it asked).
 pub fn wait_for_turn_from_poll(
     terminal_id: &str,
     baseline: u64,
     timeout_ms: u64,
-    mut poll: impl FnMut(),
+    mut poll: impl FnMut() -> bool,
 ) -> (Option<serde_json::Value>, bool) {
     let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
     loop {
         if detection_serial(terminal_id) > baseline {
             return (last_event_payload(terminal_id), false);
         }
-        poll();
-        if Instant::now() >= deadline {
+        if poll() || Instant::now() >= deadline {
             return (None, true);
         }
         thread::sleep(std::time::Duration::from_millis(100));
@@ -598,6 +607,15 @@ pub fn session_specs() -> Vec<SessionSpec> {
 
 /// Query the current status of a watch session.
 /// Returns None if no session exists.
+/// The epoch of the watch now running on `terminal_id`, or None when there is none.
+pub fn watch_epoch(terminal_id: &str) -> Option<u64> {
+    let sessions = get_sessions();
+    let map = sessions.lock().unwrap();
+    let session = map.get(terminal_id)?;
+    let s = session.lock().unwrap();
+    (!s.stop).then_some(s.epoch)
+}
+
 pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
     let sessions = get_sessions();
     let map = sessions.lock().unwrap();
@@ -650,7 +668,9 @@ fn register_chat_provider(terminal_id: &str, profile_id: &str, router: &Arc<Rout
         "display_name": format!("terminal {terminal_id} ({profile_id})"),
         "generate_tool": "minerva_agent_relay_passthrough_generate",
         "cancel_tool": "minerva_agent_relay_passthrough_interrupt",
-        "metadata": {"interrupt_in_place": true},
+        // resumable: a turn still running at wait_budget_ms answers "pending"
+        // and is continued with resume:true (passthrough_ops).
+        "metadata": {"interrupt_in_place": true, "resumable": true},
         "history_mode": "newest_only",
         "timeout_sec": 600,
     });
@@ -1109,9 +1129,8 @@ mod tests {
             .lock()
             .unwrap()
             .insert(terminal.to_string(), session.clone());
-        crate::with_passthrough(|s| {
-            s.bindings.insert("chat-owned".to_string(), terminal.to_string());
-        });
+        crate::passthrough::resolve_passthrough_terminal("chat-owned", Some(terminal))
+            .expect("an explicit terminal binds the chat");
 
         assert!(!idle_reap_due(terminal, &session.lock().unwrap(), timeout));
         assert!(watch_stop(terminal), "explicit stop still stops a bound watch");

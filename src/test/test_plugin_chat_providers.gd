@@ -76,6 +76,10 @@ class StubConnection extends RefCounted:
 	var reply_delay_sec: float = 0.0
 	var tree: SceneTree = null   # needed to create timers for the delay
 	var generate_calls: int = 0  # count of non-cancel dispatches issued
+	# Replies for successive generate calls, used before scripted_result. An
+	# entry may be a Callable(args) -> reply, for replies that echo the call.
+	var scripted_queue: Array = []
+	var generate_args: Array = []
 
 	func call_tool(tool_name: String, args: Dictionary, _timeout_sec: float = 120.0):
 		last_tool = tool_name
@@ -84,10 +88,14 @@ class StubConnection extends RefCounted:
 			cancel_calls.append(args)
 			return cancel_reply
 		generate_calls += 1
+		generate_args.append(args.duplicate(true))
 		if reply_delay_sec > 0.0 and tree != null:
 			await tree.create_timer(reply_delay_sec).timeout
 		if die_after_call:
 			return {"error": "connection closed"}
+		if not scripted_queue.is_empty():
+			var next = scripted_queue.pop_front()
+			return next.call(args) if next is Callable else next
 		return scripted_result
 
 
@@ -138,6 +146,7 @@ func _run() -> void:
 	await _test_chooser_population(so)
 	await _test_cancel_mid_flight(so)
 	await _test_in_place_interrupt(so)
+	await _test_long_turn_resume(so)
 	await _test_stale_reply_after_regenerate(so)
 	await _test_saved_selection_key_restore(so)
 	_test_service_history_roundtrip(so)
@@ -462,6 +471,90 @@ func _test_in_place_interrupt(_so) -> void:
 		and conn.cancel_calls.size() == 2)
 	while not done[0]:
 		await process_frame
+	prov.queue_free()
+
+
+func _pending_for(args: Dictionary) -> Dictionary:
+	return {"content": [{"type": "text", "text": JSON.stringify({"kind": "pending",
+		"operation_token": str(args.get("operation_token", "")), "elapsed_ms": 1})}]}
+
+
+# --- A turn longer than one call is resumed, never re-sent -----------------
+func _test_long_turn_resume(_so) -> void:
+	print("\n-- Long turn: pending replies are resumed on the same operation --")
+	var entry = {"key": "plugin:chatprovider:longturn", "plugin_id": PLUGIN_ID,
+		"entry_id": "longturn", "display_name": "Long Turn Probe",
+		"generate_tool": "minerva_chatprovider_generate", "history_mode": "newest_only",
+		"timeout_sec": 600, "cancel_tool": "minerva_chatprovider_cancel",
+		"metadata": {"interrupt_in_place": true, "resumable": true}}
+	var conn = StubConnection.new()
+	conn.scripted_queue = [_pending_for, _pending_for, _answer_envelope("the long answer")]
+	var prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-long"
+	var bot = await prov.generate_content([{"text": "long prompt"}])
+	check("long turn: the answer arrives after two pending replies",
+		bot.error == "" and bot.text == "the long answer", "%s / %s" % [bot.text, bot.error])
+	var calls: Array = conn.generate_args
+	var token := str(calls[0].get("operation_token", "")) if calls.size() > 0 else ""
+	check("long turn: one generate then two resumes", calls.size() == 3, str(calls))
+	check("long turn: the first call sends the prompt with a budget under the timeout",
+		calls.size() == 3 and calls[0].get("text") == "long prompt" and not calls[0].has("resume")
+		and int(calls[0].get("wait_budget_ms", 0)) == 590000, str(calls))
+	var is_resume := func(a: Dictionary) -> bool:
+		return a.get("resume") == true and str(a.get("operation_token")) == token \
+			and a.get("chat_id") == "hist-long" and a.get("text") == ""
+	check("long turn: resumes carry the same chat and token and no prompt",
+		calls.size() == 3 and calls.slice(1).all(is_resume), str(calls))
+	prov.queue_free()
+
+	# An entry that did not register as resumable gets no budget and no resume.
+	var plain_entry: Dictionary = entry.duplicate(true)
+	plain_entry["key"] = "plugin:chatprovider:plainturn"
+	plain_entry["entry_id"] = "plainturn"
+	plain_entry["metadata"] = {"interrupt_in_place": true}
+	conn = StubConnection.new()
+	conn.scripted_queue = [_pending_for]
+	prov = _make_provider(plain_entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-plain"
+	bot = await prov.generate_content([{"text": "long prompt"}])
+	check("long turn: a non-resumable entry is sent no wait_budget_ms and never resumed",
+		not conn.generate_args[0].has("wait_budget_ms") and conn.generate_calls == 1
+		and not bot.error.is_empty(), str(conn.generate_args))
+	prov.queue_free()
+
+	# A pending reply for another operation is never resumed.
+	conn = StubConnection.new()
+	conn.scripted_queue = [{"content": [{"type": "text", "text": JSON.stringify(
+		{"kind": "pending", "operation_token": "someone-else"})}]}]
+	prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-long-foreign"
+	bot = await prov.generate_content([{"text": "long prompt"}])
+	check("long turn: a foreign pending token is an error, not a resume",
+		not bot.error.is_empty() and conn.generate_calls == 1, "%s / %d" % [bot.error, conn.generate_calls])
+	prov.queue_free()
+
+	# Stop during a resume ends the chat turn and issues no further resume.
+	conn = StubConnection.new()
+	conn.tree = self
+	conn.reply_delay_sec = 0.2
+	conn.scripted_queue = [_pending_for, _pending_for, _pending_for]
+	prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-long-cancel"
+	var captured: Array = []
+	var run := func() -> void:
+		captured.append(await prov.generate_content([{"text": "long prompt"}]))
+	run.call()
+	while conn.generate_calls < 2:
+		await process_frame
+	prov.cancel_active_resquests()
+	await create_timer(0.6).timeout
+	check("long turn: cancel resolves the chat turn",
+		captured.size() == 1 and captured[0].error == "Request cancelled.", str(captured))
+	check("long turn: no resume after cancel", conn.generate_calls == 2, str(conn.generate_calls))
+	check("long turn: the cancel carries the parked operation's token",
+		conn.cancel_calls.size() == 1 and str(conn.cancel_calls[0].get("operation_token", "")) != ""
+		and str(conn.cancel_calls[0].get("operation_token")) == str(conn.generate_args[0].get("operation_token")),
+		str(conn.cancel_calls))
 	prov.queue_free()
 
 
