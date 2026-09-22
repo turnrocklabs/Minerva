@@ -566,7 +566,7 @@ jobs:
     # plugin change cannot turn a Minerva commit red without a reviewed pin.
     - name: Checkout pinned plugin contract guards
       env:
-        PLUGIN_GUARD_REV: 2d318b7fc2f5d360a198df1c032c215919e66687
+        PLUGIN_GUARD_REV: 3001ff17a6460f61b0c8067810f69ffe8a07e15c
       run: |
         plugin_root="$GITHUB_WORKSPACE/../minerva-plugins"
         rm -rf "$plugin_root"
@@ -596,7 +596,7 @@ jobs:
 
     - name: Run pinned plugin contract guards against this host
       env:
-        PLUGIN_GUARD_REV: 2d318b7fc2f5d360a198df1c032c215919e66687
+        PLUGIN_GUARD_REV: 3001ff17a6460f61b0c8067810f69ffe8a07e15c
       run: |
         # The runner builds each selected worker from its reviewed manifest,
         # uses an isolated user profile, and records both repository revisions
