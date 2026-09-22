@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Upgrade a harness CLI inside an agent session without rebuilding the image:
+#   agent-upgrade claude|codex [VERSION]     (default: latest)
+# The image's global install is read-only, so the new version goes into
+# tools/ under the session's persistent home, which agent-env.sh puts first
+# on PATH. It survives container restarts, stays private to this session and
+# never touches login or transcripts. Renaming /agent-home/tools (say to
+# tools.off) returns to the image's version. Restart the harness (exit, then
+# `claude --resume`) to pick the new version up. `claude update` is not the
+# route here: auto-update is off and the image's install is read-only.
+set -euo pipefail
+(( $# <= 2 )) || set -- ""
+case "${1:-}" in
+	claude) package="@anthropic-ai/claude-code" ;;
+	codex) package="@openai/codex" ;;
+	*) echo "usage: agent-upgrade claude|codex [VERSION]" >&2; exit 2 ;;
+esac
+version="${2:-latest}"
+if [[ ! "$version" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]*$ ]]; then
+	echo "agent-upgrade: bad version '$version'" >&2; exit 2
+fi
+tools="${MINERVA_AGENT_TOOLS:-/agent-home/tools}"
+npm install -g --prefix "$tools" --no-fund --no-audit --no-update-notifier \
+	"$package@$version"
+"$tools/bin/$1" --version

@@ -3,12 +3,15 @@
 # other network), the harness keeps its config, login and transcripts in the
 # session's persistent home, and `claude`/`codex` are wrapped so they always
 # reach Minerva, Docket and Nudge through the forwarder's loopback ports.
-# Auto-update and telemetry are off, so the only egress is model and login
-# traffic. Login is the owner's interactive step; no credential is set here.
+# Auto-update and telemetry are off; public HTTPS is available for research
+# and downloads. `agent-upgrade` installs newer harness CLIs into the
+# persistent home's tools/, which comes first on PATH. Login is the owner's
+# interactive step; no credential is set here.
 export HTTPS_PROXY=http://127.0.0.1:3128 HTTP_PROXY=http://127.0.0.1:3128
 export https_proxy="$HTTPS_PROXY" http_proxy="$HTTP_PROXY"
 export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 export CLAUDE_CONFIG_DIR=/agent-home CODEX_HOME=/agent-home
+export PATH="/agent-home/tools/bin:$PATH:${MINERVA_AGENT_DIR:-/opt/minerva-agent}"
 export DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 claude() {

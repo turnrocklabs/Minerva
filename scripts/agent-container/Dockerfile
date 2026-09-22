@@ -10,8 +10,9 @@ ARG GODOT_SHA512=b6e4d5a716085e9649905be2afe77f723f97853544fb33392ce3d32594c730a
 ARG NODE_VERSION=22.23.2
 ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
 # Harness CLIs at exact versions (npm has no checksum pin; the exact version
-# plus the registry's integrity check is the pin).
-ARG CLAUDE_CODE_VERSION=2.1.278
+# plus the registry's integrity check is the pin). A running session can move
+# past these with agent-upgrade.
+ARG CLAUDE_CODE_VERSION=2.1.280
 ARG CODEX_VERSION=0.155.1
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -42,5 +43,5 @@ RUN mkdir -m 1777 /home/agent
 ENV HOME=/home/agent
 
 COPY gateway/ /opt/minerva-agent/gateway/
-COPY forwarder.py minerva-session agent-env.sh agent-bashrc tmux.conf claude-mcp.json smoke.py \
+COPY forwarder.py minerva-session agent-env.sh agent-bashrc agent-upgrade tmux.conf claude-mcp.json smoke.py \
      /opt/minerva-agent/

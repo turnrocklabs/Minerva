@@ -469,7 +469,8 @@ class StaticTest(unittest.TestCase):
 
     def test_scripts_parse(self):
         self.assertTrue(os.access(AGENT / "minerva-session", os.X_OK))
-        for script in ("minerva-session", "agent-env.sh", "agent-bashrc"):
+        self.assertTrue(os.access(AGENT / "agent-upgrade", os.X_OK))
+        for script in ("minerva-session", "agent-env.sh", "agent-bashrc", "agent-upgrade"):
             subprocess.run(["bash", "-n", str(AGENT / script)], check=True)
 
     def test_session_shell_runs_only_a_fixed_first_command(self):
@@ -485,6 +486,29 @@ class StaticTest(unittest.TestCase):
         self.assertEqual((scratch / "calls").read_text().splitlines(),
                          [f"--mcp-config {AGENT}/claude-mcp.json --strict-mcp-config --resume"])
         self.assertFalse((scratch / "INJECTED").exists())
+
+    def test_upgrade_installs_into_the_session_tools_dir(self):
+        # A stub npm stands in for the registry; it records its argv and
+        # drops a fake harness binary where the real install would.
+        scratch = short_scratch()
+        tools = scratch / "tools"
+        (scratch / "npm").write_text(
+            f"#!/bin/sh\necho \"$*\" >> {scratch}/npm-calls\nmkdir -p {tools}/bin\n"
+            f"printf '#!/bin/sh\\necho 9.9.9\\n' > {tools}/bin/claude\nchmod +x {tools}/bin/claude\n")
+        (scratch / "npm").chmod(0o755)
+        env = {**os.environ, "PATH": f"{scratch}:{os.environ['PATH']}", "MINERVA_AGENT_TOOLS": str(tools)}
+        def upgrade(*args):
+            return subprocess.run([str(AGENT / "agent-upgrade"), *args], env=env,
+                                  capture_output=True, text=True, timeout=20)
+        done = upgrade("claude", "2.1.280")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), "9.9.9")
+        for bad in (["bash"], [], ["claude", "1.0; touch INJECTED"], ["claude", "--registry=x"]):
+            with self.subTest(bad=bad):
+                self.assertEqual(upgrade(*bad).returncode, 2)
+        self.assertEqual((scratch / "npm-calls").read_text().splitlines(),
+                         [f"install -g --prefix {tools} --no-fund --no-audit --no-update-notifier "
+                          "@anthropic-ai/claude-code@2.1.280"])
 
     @unittest.skipUnless(shutil.which("docker"), "docker CLI not installed")
     def test_compose_services_are_hardened(self):

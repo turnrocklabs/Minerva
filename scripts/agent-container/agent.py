@@ -58,7 +58,7 @@ import time
 HERE = Path(__file__).resolve().parent
 COMPOSE = HERE / "docker-compose.yml"
 IMAGE_FILES = ["Dockerfile", "forwarder.py", "minerva-session", "agent-env.sh", "agent-bashrc",
-               "tmux.conf", "claude-mcp.json", "smoke.py"]
+               "agent-upgrade", "tmux.conf", "claude-mcp.json", "smoke.py"]
 # The four repositories an agent session may work on, relative to the source
 # root (HOME, or MINERVA_AGENT_SOURCE_ROOT).
 REPOS = {"Minerva": "github/Minerva", "minerva-plugins": "github/minerva-plugins",
