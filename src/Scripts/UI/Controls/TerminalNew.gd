@@ -950,6 +950,27 @@ func _gui_input(event: InputEvent) -> void:
 
 # region CursorLayer
 
+## The text of a selection on the viewport grid, as the selection highlight
+## draws it: from start (col, row) to end inclusive, whole rows in between.
+## get_cell(col, row) returns a cell Dictionary like Terminal.get_cell. Rows
+## are joined with newlines and lose trailing blanks; the spacer half of a
+## wide character is skipped, so it appears once.
+static func selection_text(get_cell: Callable, start: Vector2i, end: Vector2i, cols: int) -> String:
+	var lines: PackedStringArray = []
+	for row in range(start.y, end.y + 1):
+		var first: int = start.x if row == start.y else 0
+		var last: int = end.x if row == end.y else cols - 1
+		var line: String = ""
+		for col in range(first, mini(last, cols - 1) + 1):
+			var cell: Dictionary = get_cell.call(col, row)
+			if cell.get("wide", 0) == 3:
+				continue
+			var codepoint: int = cell.get("codepoint", 0)
+			line += char(codepoint) if codepoint > 32 else " "
+		lines.append(line.rstrip(" "))
+	return "\n".join(lines)
+
+
 class CursorLayer extends Control:
 	var terminal: TerminalNew
 	var blink_time: float = 0.5
@@ -1228,35 +1249,58 @@ class TextLayer extends Control:
 		custom_minimum_size.y = rows * lh
 
 	var _context_menu: PopupMenu
+	const MENU_COPY := 0
+	const MENU_PASTE := 1
+	const MENU_ZOOM_IN := 2
+	const MENU_ZOOM_OUT := 3
+	const MENU_COPY_SCREEN := 4
 	func _create_context_menu(at: Vector2) -> void:
 		if not _context_menu:
 			_context_menu = PopupMenu.new()
 			_context_menu.initial_position = Window.WINDOW_INITIAL_POSITION_ABSOLUTE
 			add_child(_context_menu)
-			_create_context_menu_item("Copy", KEY_CTRL, 0, func(): DisplayServer.clipboard_set(get_selected_text()); reset_selection())
-			_create_context_menu_item("Paste", KEY_V, 1, func(): terminal.write_human_input(DisplayServer.clipboard_get()))
-			_create_context_menu_item("Zoom In", KEY_PLUS, 2, func(): terminal.font_size += 1; terminal._update_font_metrics(); queue_redraw())
-			_create_context_menu_item("Zoom Out", KEY_MINUS, 3, func(): terminal.font_size -= 1; terminal._update_font_metrics(); queue_redraw())
+			_create_context_menu_item("Copy selection", KEY_CTRL, MENU_COPY, func(): DisplayServer.clipboard_set(get_selected_text()); reset_selection())
+			_create_context_menu_item("Copy screen", KEY_NONE, MENU_COPY_SCREEN, func(): DisplayServer.clipboard_set(get_screen_text()); reset_selection())
+			_create_context_menu_item("Paste", KEY_V, MENU_PASTE, func(): terminal.write_human_input(DisplayServer.clipboard_get()))
+			_create_context_menu_item("Zoom In", KEY_PLUS, MENU_ZOOM_IN, func(): terminal.font_size += 1; terminal._update_font_metrics(); queue_redraw())
+			_create_context_menu_item("Zoom Out", KEY_MINUS, MENU_ZOOM_OUT, func(): terminal.font_size -= 1; terminal._update_font_metrics(); queue_redraw())
+		# Copy selection takes only the highlighted text; with nothing
+		# highlighted it is greyed out rather than clearing the clipboard.
+		# Copy screen is the whole-screen copy (bug 01a0ca18bfd3).
+		_context_menu.set_item_disabled(_context_menu.get_item_index(MENU_COPY), not selection_active)
 		_context_menu.popup()
 		_context_menu.position = at + Vector2(0, _context_menu.size.y / 2.0)
 
+	## keycode KEY_NONE adds the item with no shortcut.
 	func _create_context_menu_item(text: String, keycode: Key, id: int, callback: Callable = Callable()):
-		var shortcut: = Shortcut.new()
-		var event: = InputEventKey.new()
-		event.keycode = keycode
-		event.ctrl_pressed = true
-		shortcut.events.append(event)
-		_context_menu.add_shortcut(shortcut, id)
-		_context_menu.set_item_text(id, text)
+		if keycode == KEY_NONE:
+			_context_menu.add_item(text, id)
+		else:
+			var shortcut: = Shortcut.new()
+			var event: = InputEventKey.new()
+			event.keycode = keycode
+			event.ctrl_pressed = true
+			shortcut.events.append(event)
+			_context_menu.add_shortcut(shortcut, id)
+			_context_menu.set_item_text(_context_menu.get_item_index(id), text)
 		if callback.is_valid():
 			_context_menu.id_pressed.connect(func(id_: int): if id_ == id: callback.call())
 
+	## The highlighted text only; empty when nothing is highlighted.
 	func get_selected_text() -> String:
+		if not selection_active or not terminal or not terminal._terminal_available:
+			return ""
+		if not terminal.terminal.has_method("get_cell"):
+			return ""
+		return TerminalNew.selection_text(terminal.terminal.get_cell, _selection_start,
+				_selection_end, terminal._cols)
+
+	## Everything on the terminal screen as plain text (libghostty-vt).
+	func get_screen_text() -> String:
 		if not terminal or not terminal._terminal_available:
 			return ""
 		if not terminal.terminal.has_method("get_plain_text"):
 			return ""
-		# Use libghostty-vt plain text extraction
 		return terminal.terminal.get_plain_text()
 
 # endregion

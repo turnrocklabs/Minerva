@@ -99,6 +99,7 @@ HERMETIC_TESTS=(
 	test/test_chat_outgoing_queue.gd
 	test/test_terminal_notify.gd
 	test/test_terminal_session.gd
+	test/test_terminal_selection_copy.gd
 	test/test_background_terminals.gd
 	test/test_worker_parent_chat.gd
 	test/test_core_action_catalog.gd
