@@ -29,11 +29,14 @@ setup() {
 	step "copying snapshot into $WORK"
 	cp -a /snapshot "$WORK" && chmod -R u+w "$WORK"
 	record snapshot-copy $? || return 1
-	# Native overlay: gitignored runtime binaries, symlinked so they stay read-only.
+	# Native overlay: gitignored runtime binaries, symlinked so they stay
+	# read-only. Nothing is deleted: a path the snapshot already holds, or one
+	# reached through a symlink (which could lead to the /out host mount),
+	# fails the stage instead.
 	local path
 	while IFS= read -r path; do
 		[[ -n "$path" ]] || continue
-		rm -rf "${WORK:?}/$path"
+		overlay_path_ok "$path" || { record native-overlay 1; return 1; }
 		mkdir -p "$(dirname "$WORK/$path")"
 		ln -s "/natives/tree/$path" "$WORK/$path" || { record native-overlay 1; return 1; }
 	done < /natives/paths.txt
@@ -55,6 +58,26 @@ setup() {
 }
 
 slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'; }
+
+# overlay_path_ok PATH: PATH is relative, every component is a plain name (not
+# empty, "." or ".."), no existing ancestor under $WORK is a symlink or a
+# non-directory, and PATH itself does not exist yet.
+overlay_path_ok() {
+	local path="$1" prefix="$WORK" part
+	local -a parts
+	[[ -n "$path" ]] || { echo "overlay: empty path" >&2; return 1; }
+	IFS=/ read -r -a parts <<< "$path"
+	[[ "$path" != /* && "$path" != */ ]] || { echo "overlay: bad path '$path'" >&2; return 1; }
+	for part in "${parts[@]}"; do
+		case "$part" in ""|.|..) echo "overlay: bad component in '$path'" >&2; return 1 ;; esac
+	done
+	for part in "${parts[@]:0:${#parts[@]}-1}"; do
+		prefix="$prefix/$part"
+		[[ -L "$prefix" ]] && { echo "overlay: $prefix is a symlink" >&2; return 1; }
+		[[ ! -e "$prefix" || -d "$prefix" ]] || { echo "overlay: $prefix is not a directory" >&2; return 1; }
+	done
+	[[ ! -e "$WORK/$path" && ! -L "$WORK/$path" ]] || { echo "overlay: $path is already in the snapshot" >&2; return 1; }
+}
 
 if setup; then
 	for t in "$@"; do

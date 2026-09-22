@@ -5,7 +5,7 @@
 #   scripts/container-test.sh run [options] [SUITE...]
 #   scripts/container-test.sh stop NAME     # kill one run; others keep going
 #   scripts/container-test.sh list          # running jobs
-#   scripts/container-test.sh prune [DAYS]  # drop caches/results unused for DAYS (7)
+#   scripts/container-test.sh prune         # report cache size; reclaiming is disabled
 #
 # run options:
 #   --rev REV       commit to test (default HEAD). Uncommitted edits are NOT
@@ -45,7 +45,12 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS_DIR="$REPO_ROOT/scripts/container-test"
-CACHE="${MINERVA_CT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/minerva-container-tests}"
+# Set-but-empty MINERVA_CT_CACHE is refused (validate_cache_root), not defaulted.
+if [[ -v MINERVA_CT_CACHE ]]; then
+	CACHE="$MINERVA_CT_CACHE"
+else
+	CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/minerva-container-tests"
+fi
 LABEL=minerva-container-test
 
 DEFAULT_SUITES=(
@@ -73,37 +78,58 @@ NATIVE_PATHS=(
 
 die() { echo "container-test: $*" >&2; exit 2; }
 
-# content_hash PATH: sha256 over every file's relative path and content.
-content_hash() {
-	if [[ -d "$1" ]]; then
-		(cd "$1" && find . \( -type f -o -type l \) -print0 | sort -z | xargs -0 -r sha256sum) | sha256sum | cut -c1-32
-	else
-		sha256sum "$1" | cut -c1-32
-	fi
+# This script deletes nothing on the host: cache entries are staged in private
+# directories created atomically by mktemp -d, published by rename, a race
+# loser's identical copy is left in place and reported, and prune only reports.
+# Reclaiming disk is a separate, reviewed step. These checks assume nothing else
+# mutates the cache concurrently; they are not protection against a hostile
+# filesystem (a symlinked ancestor of the root, for one, is not refused).
+
+# validate_cache_root: the same rules as container-build/build.py. $CACHE must
+# be a non-empty absolute path that is not a symlink, /, $HOME or above it, or
+# this repo or above it. Sets CACHE to the canonical path.
+validate_cache_root() {
+	local root home lexical="$CACHE"
+	[[ "$lexical" == /* ]] || die "MINERVA_CT_CACHE must be an absolute path, got '$CACHE'"
+	# Strip trailing slashes first, as pathlib does, so "link/" is tested as "link".
+	while [[ "$lexical" == */ && "$lexical" != / ]]; do lexical="${lexical%/}"; done
+	[[ -L "$lexical" ]] && die "refusing cache root $lexical: it is a symlink"
+	root="$(realpath -m -- "$lexical")"
+	home="$(realpath -m -- "$HOME")"
+	[[ "$root" == / ]] && die "refusing cache root /"
+	case "$home/" in "$root"/*) die "refusing cache root $root: too broad" ;; esac
+	case "$REPO_ROOT/" in "$root"/*) die "refusing cache root $root: too broad" ;; esac
+	CACHE="$root"
 }
 
-# publish TMP DEST: make TMP read-only and rename it to DEST. DEST is keyed by
-# content, so when a concurrent job published first its copy is identical and
-# ours is discarded.
-publish() {
-	local tmp="$1" dest="$2"
-	chmod -R a-w "$tmp" || die "could not cache $dest"
-	if ! mv -T "$tmp" "$dest" 2>/dev/null; then
-		[[ -e "$dest" ]] || die "could not cache $dest"
-		chmod -R u+w "$tmp" && rm -rf "$tmp"
-	fi
-}
+# All publishing and integrity checks go through one helper, shared with
+# container-build/build.py: a no-clobber rename (renameat2 RENAME_NOREPLACE,
+# no fallback) and a tree digest that never follows symlinks.
+PUBLISH=(python3 -B "$REPO_ROOT/scripts/container-build/publish.py")
 
-# freeze SRC DEST: copy SRC to DEST once, read-only; touching DEST marks it in
-# use for prune.
+# content_hash PATH: tree digest of PATH (names, types, bytes, exec bits, link
+# text, empty directories).
+content_hash() { "${PUBLISH[@]}" digest "$1" || die "could not hash $1"; }
+
+# publish TMP DEST: no-clobber publish of a staged copy. An existing DEST is
+# accepted only when it matches TMP exactly (TMP is then kept and reported);
+# anything else fails the run with both left in place.
+publish() { "${PUBLISH[@]}" publish "$1" "$2" || die "could not publish $2; see the message above"; }
+
+# freeze SRC DEST: cache SRC at DEST (DEST's name is SRC's tree digest) once,
+# read-only. An existing DEST must still match its name and is never modified.
+# The copy is made at a fixed child of a private staging directory that
+# mktemp -d created atomically; the staging directory is kept.
 freeze() {
-	local src="$1" dest="$2"
-	if [[ ! -e "$dest" ]]; then
+	local src="$1" dest="$2" stage
+	if [[ -e "$dest" || -L "$dest" ]]; then
+		"${PUBLISH[@]}" check "$dest" "$(basename "$dest")" || die "cache entry $dest is corrupt; left as is"
+	else
 		mkdir -p "$(dirname "$dest")"
-		cp -a "$src" "$dest.tmp.$$" || die "could not cache $src"
-		publish "$dest.tmp.$$" "$dest"
+		stage="$(mktemp -d "$dest.stage.XXXXXX")" || die "could not stage a copy for $dest"
+		cp -a "$src" "$stage/entry" || die "could not cache $src"
+		publish "$stage/entry" "$dest"
 	fi
-	touch -h "$dest" 2>/dev/null || true
 }
 
 ensure_image() {
@@ -139,19 +165,24 @@ cmd_run() {
 	out="${out:-$CACHE/runs/$name}"
 	[[ -e "$out" ]] && die "results directory already exists: $out"
 
+	validate_cache_root
 	local sha
 	sha="$(git -C "$REPO_ROOT" rev-parse --verify "$rev^{commit}")" || die "no such revision: $rev"
 	ensure_image
 
 	local snapshot="$CACHE/snapshots/$sha"
-	if [[ ! -e "$snapshot" ]]; then
+	if [[ -e "$snapshot" || -L "$snapshot" ]]; then
+		"${PUBLISH[@]}" check-git "$snapshot" "$REPO_ROOT" "$sha" \
+			|| die "cached snapshot $snapshot is not git archive $sha; left as is"
+	else
 		echo "snapshotting $sha" >&2
-		mkdir -p "$snapshot.tmp.$$" \
-			&& git -C "$REPO_ROOT" archive "$sha" | tar -x -C "$snapshot.tmp.$$" \
+		local tmp
+		mkdir -p "$CACHE/snapshots" && tmp="$(mktemp -d "$snapshot.tmp.XXXXXX")" \
+			&& git -C "$REPO_ROOT" archive "$sha" | tar -x -C "$tmp" \
 			|| die "git archive failed"
-		publish "$snapshot.tmp.$$" "$snapshot"
+		"${PUBLISH[@]}" check-git "$tmp" "$REPO_ROOT" "$sha" || die "staged snapshot $tmp does not match $sha"
+		publish "$tmp" "$snapshot"
 	fi
-	touch -h "$snapshot"
 
 	mkdir -p "$out/logs" || die "cannot create $out"
 	local mounts=(-v "$snapshot:/snapshot:ro" -v "$out:/out" -v "$out/natives-paths.txt:/natives/paths.txt:ro")
@@ -268,17 +299,14 @@ cmd_list() {
 	docker ps --filter "label=$LABEL" --format '{{.Label "'"$LABEL"'"}}\t{{.Status}}\t{{.Names}}'
 }
 
+# prune: report what the cache holds. Automatic reclamation was withdrawn after
+# the delete-safety review (Target 1 01a0c71330d8, comment 2012); it needs its
+# own reviewed design. Reclaim by hand, after review, until then.
 cmd_prune() {
-	local days="${1:-7}"
-	[[ -z "$(docker ps -q --filter "label=$LABEL")" ]] || die "jobs are running; prune when idle"
-	local d
-	for d in snapshots natives runs; do
-		[[ -d "$CACHE/$d" ]] || continue
-		find "$CACHE/$d" -mindepth 1 -maxdepth 1 -mtime "+$days" -print0 |
-			while IFS= read -r -d '' entry; do
-				chmod -R u+w "$entry" && rm -rf "$entry" && echo "pruned $entry"
-			done
-	done
+	validate_cache_root
+	echo "container-test: automatic reclamation is disabled pending a reviewed design." >&2
+	[[ -d "$CACHE" ]] && du -sh -- "$CACHE"/*/ 2>/dev/null
+	exit 2
 }
 
 case "${1:-}" in

@@ -20,7 +20,15 @@ the inputs, toolchain versions, command and the sha256 of every output file.
 Builds run with network access for their pinned fetches (crates via
 Cargo.lock, zig deps by hash, the jsoncons tarball by sha256, the CEF bundle,
 the sqlite/ffmpeg release archives); tests that consume the outputs do not.
-A failed build leaves its log under <cache>/builds/_failed/ and exits 1.
+No deletes or replacements: each build works in a fresh uniquely named
+directory beside its destination and publishes with publish.py's no-clobber
+rename (renameat2 RENAME_NOREPLACE, no fallback). A failed build is renamed,
+also no-clobber, to <component>/.failed-<key>-* with its log. An existing entry
+is used only when its provenance names its key and every declared output is
+present with its recorded type and the recorded tree digest (never read
+through a symlink); otherwise the run fails and nothing is touched — not even
+an entry's mtime. Reclaiming disk is a separate, reviewed step (not
+implemented).
 """
 import argparse
 import datetime
@@ -29,15 +37,17 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
+import tempfile
 
 REPO = Path(__file__).resolve().parents[2]
 IMAGE_DIR = Path(__file__).resolve().parent
-CACHE = Path(os.environ.get("MINERVA_CT_CACHE",
-                            Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-                            / "minerva-container-tests"))
+sys.dont_write_bytecode = True  # no __pycache__ beside the tooling
+sys.path.insert(0, str(IMAGE_DIR))
+import stat  # noqa: E402
+from publish import (PublishError, entry_type, publish_tree, rename_noreplace,  # noqa: E402
+                     tree_digest, tree_problem)
 LABEL = "minerva-container-build"
 
 # component -> how to build it. inputs: repo paths whose content at REV the
@@ -113,6 +123,28 @@ done
 """
 
 
+def cache_root() -> Path:
+    """The cache root, validated once; the same rules as container-test.sh.
+
+    MINERVA_CT_CACHE, when set, must be a non-empty absolute path. The root
+    may not be a symlink (tested after dropping trailing slashes, which Path
+    does), /, $HOME or above it, or this repo or above it. This assumes nothing
+    else mutates the cache concurrently; a symlinked ancestor is not refused.
+    """
+    override = os.environ.get("MINERVA_CT_CACHE")
+    if override is not None and not os.path.isabs(override):
+        raise SystemExit(f"MINERVA_CT_CACHE must be an absolute path, got {override!r}")
+    xdg = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    lexical = Path(override if override is not None else os.path.join(xdg, "minerva-container-tests"))
+    if lexical.is_symlink():
+        raise SystemExit(f"refusing cache root {lexical}: it is a symlink")
+    root = Path(os.path.realpath(lexical))
+    home = Path(os.path.realpath(Path.home()))
+    if root == Path("/") or root == home or root in home.parents or root == REPO or root in REPO.parents:
+        raise SystemExit(f"refusing cache root {root}: too broad")
+    return root
+
+
 def git(*args: str) -> str:
     return subprocess.run(["git", "-C", str(REPO), *args], check=True,
                           capture_output=True, text=True).stdout.strip()
@@ -159,14 +191,13 @@ def hash_outputs(root: Path) -> dict:
     return hashes
 
 
-def build(name: str, recipe: dict, sha: str, key: str, ids: dict, image: tuple[str, str],
-          dest: Path) -> None:
+def build(cache: Path, name: str, recipe: dict, sha: str, key: str, ids: dict,
+          image: tuple[str, str], dest: Path) -> None:
     tag, image_id = image
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    work = CACHE / "builds" / "_tmp" / f"{name}-{key}-{os.getpid()}"
-    shutil.rmtree(work, ignore_errors=True)
-    work.mkdir(parents=True)
-    downloads = CACHE / "downloads"
+    # Unique and beside dest, so publishing is a same-directory rename.
+    work = Path(tempfile.mkdtemp(prefix=f".tmp-{key}-", dir=dest.parent))
+    downloads = cache / "downloads"
     for sub in ("cargo", "zig", "cef-home"):
         (downloads / sub).mkdir(parents=True, exist_ok=True)
     git_dir = Path(git("rev-parse", "--absolute-git-dir"))
@@ -189,11 +220,37 @@ def build(name: str, recipe: dict, sha: str, key: str, ids: dict, image: tuple[s
     with open(work / "build.log", "w") as log:
         rc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT).returncode
     if rc != 0:
-        failed = CACHE / "builds" / "_failed" / f"{name}-{key}-{stamp}"
-        failed.parent.mkdir(parents=True, exist_ok=True)
-        work.rename(failed)
-        raise SystemExit(f"[{name}] build failed (exit {rc}); log: {failed / 'build.log'}")
+        raise SystemExit(f"[{name}] build failed (exit {rc}); log: {keep_failed(work, key, stamp)}/build.log")
+    try:
+        publish(name, recipe, sha, key, ids, image, started, work, dest)
+    except BaseException:
+        print(f"[{name}] publish failed; kept {keep_failed(work, key, stamp)}", file=sys.stderr)
+        raise
 
+
+def keep_failed(work: Path, key: str, stamp: str) -> Path:
+    """Rename a failed build's work dir (log included) to .failed-<key>-<stamp>-*
+    in the same directory, never replacing anything. Returns where it now is
+    (work itself if the rename was refused)."""
+    failed = work.with_name(f".failed-{key}-{stamp}-{work.name.rsplit('-', 1)[-1]}")
+    try:
+        return failed if rename_noreplace(str(work), str(failed)) == "published" else work
+    except PublishError:
+        return work
+
+
+def publish(name: str, recipe: dict, sha: str, key: str, ids: dict, image: tuple[str, str],
+            started: str, work: Path, dest: Path) -> None:
+    """Write provenance.json and move the finished build to dest, read-only."""
+    tag, image_id = image
+    files = str(work / "files")
+    problem = tree_problem(files)
+    if problem:
+        raise PublishError(f"build output breaks the symlink policy: {problem}")
+    output_types = {out: entry_type(files, out) for out in recipe["outputs"]}
+    bad = {out: kind for out, kind in output_types.items() if kind not in ("file", "dir")}
+    if bad:
+        raise PublishError(f"declared outputs are not plain files or directories: {bad}")
     provenance = {
         "component": name, "key": key, "revision": sha, "inputs": ids,
         "submodules": {sm: ids[sm] for sm in recipe["submodules"]},
@@ -203,11 +260,47 @@ def build(name: str, recipe: dict, sha: str, key: str, ids: dict, image: tuple[s
         "started_utc": started,
         "finished_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "files": hash_outputs(work / "files"),
+        "files_digest": tree_digest(files),
+        "output_types": output_types,
     }
     (work / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    subprocess.run(["chmod", "-R", "a-w", str(work)], check=True)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    os.rename(work, dest)  # dest is absent: the caller holds the key's lock
+    # Read-only, then a no-clobber same-directory rename: dest is absent or
+    # complete. The caller holds the key's lock, so "exists" means a writer
+    # that ignored it; that entry is accepted only if it verifies.
+    if publish_tree(str(work), str(dest)) == "exists":
+        if not verify_entry(dest, key, recipe):
+            raise PublishError(f"{dest} appeared during the build and does not verify; "
+                               f"left it and kept this build at {work}")
+        print(f"[{name}] {dest} was published concurrently and verifies; kept {work}", file=sys.stderr)
+
+
+def verify_entry(dest: Path, key: str, recipe: dict) -> bool:
+    """A published entry is usable when dest and dest/files are real
+    directories, dest/provenance.json is a regular file naming this key, every
+    declared output has its recorded type (reached without passing through a
+    symlink), the symlink policy holds, and files/ matches the recorded tree
+    digest. Anything odd — including I/O errors — is simply "not usable"."""
+    try:
+        if not stat.S_ISDIR(os.lstat(dest).st_mode):
+            return False
+        prov_path = dest / "provenance.json"
+        if not stat.S_ISREG(os.lstat(prov_path).st_mode):
+            return False
+        prov = json.loads(prov_path.read_text())
+        files = str(dest / "files")
+        if not stat.S_ISDIR(os.lstat(files).st_mode):
+            return False
+        if not isinstance(prov, dict) or prov.get("key") != key:
+            return False
+        types = prov.get("output_types")
+        if not isinstance(types, dict):
+            return False
+        for out in recipe["outputs"]:  # recorded and actual: the same plain type
+            if types.get(out) not in ("file", "dir") or entry_type(files, out) != types[out]:
+                return False
+        return tree_problem(files) == "" and prov.get("files_digest") == tree_digest(files)
+    except (OSError, ValueError):
+        return False
 
 
 def plan(sha: str, names: list[str], image_id: str) -> dict:
@@ -223,6 +316,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, help="write the ensure result as JSON here")
     args = parser.parse_args()
 
+    cache = cache_root()
     sha = git("rev-parse", "--verify", f"{args.rev}^{{commit}}")
     names = args.component or list(RECIPES)
     image = ensure_image()
@@ -234,16 +328,18 @@ def main() -> int:
 
     manifest = {"revision": sha, "builder_image": {"tag": image[0], "id": image[1]}, "components": {}}
     for name, (ids, key) in keys.items():
-        dest = CACHE / "builds" / name / key
+        dest = cache / "builds" / name / key
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest.parent / f"{key}.lock", "w") as lock:
+        with open(dest.parent / f"{key}.lock", "a") as lock:  # "a": never truncates
             fcntl.flock(lock, fcntl.LOCK_EX)  # a concurrent job building the same key waits
-            hit = dest.exists()
+            hit = os.path.lexists(dest)
+            if hit and not verify_entry(dest, key, RECIPES[name]):
+                raise SystemExit(f"[{name}] cache entry {dest} is incomplete or foreign; "
+                                 "not using or deleting it — move it aside by hand after review")
             if hit:
                 print(f"[{name}] cache hit {key}", file=sys.stderr)
             else:
-                build(name, RECIPES[name], sha, key, ids, image, dest)
-        os.utime(dest)  # marks it in use for container-test.sh prune
+                build(cache, name, RECIPES[name], sha, key, ids, image, dest)
         manifest["components"][name] = {"key": key, "cache_hit": hit, "dir": str(dest),
                                         "outputs": RECIPES[name]["outputs"]}
     if args.manifest:
