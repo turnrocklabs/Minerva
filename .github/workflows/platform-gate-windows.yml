@@ -55,25 +55,28 @@ jobs:
       - name: Stage addons, schema helper and Godot
         run: |
           set -euo pipefail
+          # RUNNER_TEMP is a Windows path (D:\a\_temp); the Git Bash tools
+          # here want the POSIX form (GNU tar reads "D:..." as host:path).
+          tmp=$(cygpath -u "$RUNNER_TEMP")
           archive=mcp-schema-helper/minerva-json-schema-helper-windows-x86_64.tar.gz
           [ "$(sha256sum "$archive" | cut -d' ' -f1)" = "$(tr -d '\r\n' < "$archive.sha256")" ]
-          mkdir -p "$RUNNER_TEMP/helper" && tar -xzf "$archive" -C "$RUNNER_TEMP/helper"
-          cp "$RUNNER_TEMP/helper/minerva-json-schema-helper.exe" src/bin/
+          mkdir -p "$tmp/helper" && tar -xzf "$archive" -C "$tmp/helper"
+          cp "$tmp/helper/minerva-json-schema-helper.exe" src/bin/
 
-          curl -fL -o "$RUNNER_TEMP/sqlite.zip" https://github.com/2shady4u/godot-sqlite/releases/download/v4.7/bin.zip
-          unzip -o "$RUNNER_TEMP/sqlite.zip" -d "$RUNNER_TEMP/sqlite" >/dev/null
-          mkdir -p src/addons/godot-sqlite/bin && cp -r "$RUNNER_TEMP/sqlite/bin/"* src/addons/godot-sqlite/bin/
+          curl -fL -o "$tmp/sqlite.zip" https://github.com/2shady4u/godot-sqlite/releases/download/v4.7/bin.zip
+          unzip -o "$tmp/sqlite.zip" -d "$tmp/sqlite" >/dev/null
+          mkdir -p src/addons/godot-sqlite/bin && cp -r "$tmp/sqlite/bin/"* src/addons/godot-sqlite/bin/
 
-          curl -fL -o "$RUNNER_TEMP/ffmpeg.zip" https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip
-          unzip -o "$RUNNER_TEMP/ffmpeg.zip" -d "$RUNNER_TEMP/ffmpeg" >/dev/null
-          ffmpeg_src=$(dirname "$(find "$RUNNER_TEMP/ffmpeg" -name ffmpeg.gdextension | head -1)")
+          curl -fL -o "$tmp/ffmpeg.zip" https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip
+          unzip -o "$tmp/ffmpeg.zip" -d "$tmp/ffmpeg" >/dev/null
+          ffmpeg_src=$(dirname "$(find "$tmp/ffmpeg" -name ffmpeg.gdextension | head -1)")
           mkdir -p src/addons/ffmpeg/win64 && cp -r "$ffmpeg_src/win64/"* src/addons/ffmpeg/win64/
 
           # The console build keeps stdout attached, which the runner reads.
           godot_zip="Godot_v${{ inputs.godot_version }}-stable_win64.exe.zip"
-          curl -fL -o "$RUNNER_TEMP/godot.zip" "https://github.com/godotengine/godot/releases/download/${{ inputs.godot_version }}-stable/$godot_zip"
-          unzip -o "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot" >/dev/null
-          echo "GODOT=$RUNNER_TEMP/godot/Godot_v${{ inputs.godot_version }}-stable_win64_console.exe" >> "$GITHUB_ENV"
+          curl -fL -o "$tmp/godot.zip" "https://github.com/godotengine/godot/releases/download/${{ inputs.godot_version }}-stable/$godot_zip"
+          unzip -o "$tmp/godot.zip" -d "$tmp/godot" >/dev/null
+          echo "GODOT=$tmp/godot/Godot_v${{ inputs.godot_version }}-stable_win64_console.exe" >> "$GITHUB_ENV"
           ls src/bin/
 
       - name: Import project
@@ -86,9 +89,10 @@ jobs:
 
       - name: Platform gate suites
         timeout-minutes: 30
-        env:
-          MINERVA_TEST_LOG_DIR: ${{ runner.temp }}/platform-gate
-        run: scripts/run-functional-tests.sh --platform-gate
+        run: |
+          # The upload step below reads the same directory by its Windows path.
+          MINERVA_TEST_LOG_DIR="$(cygpath -u "$RUNNER_TEMP")/platform-gate" \
+            scripts/run-functional-tests.sh --platform-gate
 
       - name: Upload platform gate logs
         if: always()
