@@ -10,15 +10,22 @@ const allocator = std.heap.c_allocator;
 
 // ── Handler wrapper ─────────────────────────────────────────────────
 // Wraps ghostty's ReadonlyHandler to observe actions the readonly
-// handler deliberately ignores (currently: .bell). Everything else is
-// forwarded unchanged, so terminal state stays identical to a plain
-// ReadonlyStream and vendor/ghostty stays pristine. Note the parser
-// already disambiguates BEL-as-OSC-terminator from a standalone BEL —
-// only the latter reaches .bell.
+// handler deliberately ignores (currently: .bell and .window_title).
+// Everything else is forwarded unchanged, so terminal state stays
+// identical to a plain ReadonlyStream and vendor/ghostty stays pristine.
+// Note the parser already disambiguates BEL-as-OSC-terminator from a
+// standalone BEL — only the latter reaches .bell — and ends OSC titles on
+// BEL or ST alike.
+
+/// Titles longer than this are kept truncated.
+const TITLE_CAP = 256;
 
 const MinervaHandler = struct {
     inner: ghostty.ReadonlyHandler,
     bell_count: u32 = 0,
+    title: [TITLE_CAP]u8 = undefined,
+    title_len: usize = 0,
+    title_changed: bool = false,
 
     fn init(terminal: *Terminal) MinervaHandler {
         return .{ .inner = .init(terminal) };
@@ -34,6 +41,11 @@ const MinervaHandler = struct {
         value: StreamAction.Value(action),
     ) !void {
         if (comptime action == .bell) self.bell_count +|= 1;
+        if (comptime action == .window_title) {
+            self.title_len = @min(value.title.len, TITLE_CAP);
+            @memcpy(self.title[0..self.title_len], value.title[0..self.title_len]);
+            self.title_changed = true;
+        }
         try self.inner.vt(action, value);
     }
 };
@@ -388,6 +400,22 @@ export fn minerva_vt_take_bell(term: ?*anyopaque) callconv(.c) u32 {
     return count;
 }
 
+/// Copies the latest OSC 0/2 title into `out` (at most `cap` bytes, length
+/// in `out_len`) and returns true when one arrived since the last call;
+/// returns false, copying nothing, otherwise.
+export fn minerva_vt_take_title(term: ?*anyopaque, out: ?[*]u8, cap: usize, out_len: ?*usize) callconv(.c) bool {
+    const state: *TerminalState = @ptrCast(@alignCast(term orelse return false));
+    state.mutex.lock();
+    defer state.mutex.unlock();
+    const handler = &state.stream.handler;
+    if (!handler.title_changed) return false;
+    handler.title_changed = false;
+    const n = @min(handler.title_len, cap);
+    if (out) |buf| @memcpy(buf[0..n], handler.title[0..n]);
+    if (out_len) |len| len.* = n;
+    return true;
+}
+
 export fn minerva_vt_encode_key(
     term: ?*anyopaque,
     key_code: c_int,
@@ -606,6 +634,28 @@ test "BEL as OSC terminator is not a bell" {
     // A standalone BEL after the OSCs still counts.
     minerva_vt_write(term, "\x07", 1);
     try std.testing.expectEqual(@as(u32, 1), minerva_vt_take_bell(term));
+}
+
+test "titles arrive whole across split reads and either terminator" {
+    const term = minerva_vt_new(80, 24) orelse unreachable;
+    defer minerva_vt_free(term);
+    var buf: [64]u8 = undefined;
+    var len: usize = 0;
+    try std.testing.expect(!minerva_vt_take_title(term, &buf, buf.len, &len));
+
+    // tmux on attach: ST-terminated colour queries, then its title (BEL),
+    // fed one byte per read.
+    const attach = "\x1b]10;?\x1b\\\x1b]11;?\x1b\\\x1b[1;1H\x1b]0;minerva-pane-mode:1\x07";
+    for (attach) |byte| minerva_vt_write(term, &[_]u8{byte}, 1);
+    try std.testing.expect(minerva_vt_take_title(term, &buf, buf.len, &len));
+    try std.testing.expectEqualStrings("minerva-pane-mode:1", buf[0..len]);
+    // Taken once: no change is reported again until another title.
+    try std.testing.expect(!minerva_vt_take_title(term, &buf, buf.len, &len));
+
+    const st_title = "\x1b]2;minerva-pane-mode:0\x1b\\";
+    minerva_vt_write(term, st_title.ptr, st_title.len);
+    try std.testing.expect(minerva_vt_take_title(term, &buf, buf.len, &len));
+    try std.testing.expectEqualStrings("minerva-pane-mode:0", buf[0..len]);
 }
 
 test "bell does not modify terminal content" {

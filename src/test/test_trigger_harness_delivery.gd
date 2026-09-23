@@ -26,12 +26,17 @@ const AGENT_WINDOW_PATH := "res://Scripts/UI/Windows/AgentManagerWindow.gd"
 const ARBITER_PATH := "res://Scripts/Services/Terminal/TerminalInputArbiter.gd"
 
 ## A terminal session as the host's write guard reads it: the foreground
-## harness and its process group, which a test replaces mid-flight.
+## harness and its process group, which a test replaces mid-flight, and the
+## container pane's mode (TerminalSession.pane_mode).
 const FAKE_SESSION_SRC := """
 extends Node
 var harness: String = "codex"
 var pid: int = 5050
 var last_input_ticks_ms: int = 0
+var pane: String = "not_container"
+
+func pane_mode() -> String:
+	return pane
 
 func foreground_supported() -> bool:
 	return true
@@ -847,6 +852,57 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	var r24b: Dictionary = await _await_receipt(tm, withdrawn.id, ["written", "failed"])
 	check("T24: the next delivery goes through, with its own receipt",
 		r24b.get("status") == "written" and host_writes.size() == 1 and host_writes[0].contains("T24 withdrawn"), str(r24b))
+	module.relay_send_source = plain_relay_24
+
+	# T27 — a container pane in a mode holds the delivery at the host's write,
+	# for as long as it lasts; the verdict reaches the receipt either way. The
+	# scripted relay hands notify's typing guard, harness, process and ticket
+	# to the real host guard and returns the host's pane_mode_check, as the
+	# relay plugin does. No one types here, so only the mode can hold.
+	var writes_27: Array = []
+	module.relay_send_source = func(args: Dictionary) -> Dictionary:
+		module.relay_calls.append(args)
+		var verdict: Dictionary = arbiter.check_guards({
+			"unless_typed_within_ms": args.get("human_guard_ms", 0),
+			"expect_harness": args.get("expect_harness", ""),
+			"expect_process": args.get("expect_process", 0), "write_ticket": args.get("write_ticket", "")})
+		if not verdict.get("success", false):
+			return verdict
+		writes_27.append(str(args.get("text", "")))
+		var reply: Dictionary = OK_REPLY.duplicate()
+		reply["pane_mode_check"] = verdict.get("pane_mode_check", "")
+		return reply
+	session_node.pane = "unknown"
+	var unreported := await _harness_trigger(tm, "unreported", "codex@Codex Bare", "T27 unreported")
+	tm._fire_trigger(unreported.id)
+	var r27u: Dictionary = await _await_receipt(tm, unreported.id, ["written", "failed", "held"])
+	check("T27: a container that does not report its mode is written to, and the receipt says unknown",
+		r27u.get("status") == "written" and r27u.get("pane_mode_check") == "unknown" and writes_27.size() == 1,
+		str(r27u))
+	session_node.pane = "in_mode"
+	var dropped_27 := await _harness_trigger(tm, "dropped while held", "codex@Codex Bare", "T27 dropped")
+	var kept_27 := await _harness_trigger(tm, "kept while held", "codex@Codex Bare", "T27 kept")
+	tm._fire_trigger(dropped_27.id)
+	tm._fire_trigger(kept_27.id)
+	var r27h: Dictionary = await _await_receipt(tm, kept_27.id, ["held", "written", "failed"])
+	await create_timer(2.5 * tm.harness_delivery.RETRY_S).timeout
+	var r27still: Dictionary = tm.harness_delivery.receipt(kept_27.id)
+	check("T27: in a mode both deliveries are held on it across retries, nothing written",
+		r27h.get("status") == "held" and r27h.get("hold_reason") == "pane_mode"
+			and r27still.get("status") == "held" and writes_27.size() == 1, "%s / %s" % [str(r27h), str(r27still)])
+	tm.set_trigger_enabled(dropped_27.id, false)
+	session_node.pane = "live"
+	var r27k: Dictionary = await _await_receipt(tm, kept_27.id, ["written", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
+	await create_timer(1.5 * tm.harness_delivery.RETRY_S).timeout
+	check("T27: leaving the mode delivers the still-active attempt exactly once, its receipt saying live",
+		r27k.get("status") == "written" and r27k.get("pane_mode_check") == "live"
+			and writes_27.filter(func(t: String) -> bool: return t.contains("T27 kept")).size() == 1, str(r27k))
+	check("T27: the attempt cancelled while held writes nothing, even after the mode ends",
+		tm.harness_delivery.receipt(dropped_27.id).get("status") == "cancelled"
+			and writes_27.filter(func(t: String) -> bool: return t.contains("T27 dropped")).is_empty(),
+		str(tm.harness_delivery.receipt(dropped_27.id)))
+	for trig: TriggerDefinition in [unreported, dropped_27, kept_27]:
+		tm.remove_trigger(trig.id)
 	module.relay_send_source = plain_relay_24
 	session_node.queue_free()
 

@@ -47,6 +47,7 @@ static func resolve(terminal_id: String, host: Dictionary) -> Dictionary:
 	var pane: Dictionary = _pane_foreground(int(binding["container_pid"]), int(binding["container_start"]))
 	if not pane.is_empty():
 		pane["container"] = str(binding["name"])
+		pane["container_generation"] = str(binding["generation"])
 	return pane
 
 
@@ -73,7 +74,8 @@ static func _state_root() -> String:
 
 
 ## Every binding that names this terminal, is unexpired and whose launcher
-## group is the one in front. Each is {name, container_pid, container_start}.
+## group is the one in front. Each is {name, generation, container_pid,
+## container_start}.
 static func _live_bindings(terminal_id: String, foreground_pgid: int) -> Array:
 	var found: Array = []
 	if terminal_id.is_empty() or foreground_pgid <= 0:
@@ -100,7 +102,8 @@ static func _live_bindings(terminal_id: String, foreground_pgid: int) -> Array:
 		var start: int = _positive_int(launcher.get("container_start", null))
 		if pgid != foreground_pgid or pid <= 0 or start <= 0:
 			continue
-		found.append({"name": String(name), "container_pid": pid, "container_start": start})
+		found.append({"name": String(name), "generation": str(generation),
+			"container_pid": pid, "container_start": start})
 	return found
 
 

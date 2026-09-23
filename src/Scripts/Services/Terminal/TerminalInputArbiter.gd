@@ -44,6 +44,7 @@ const OUTCOME_REFUSED_EMPTY := "refused_empty_body"
 const OUTCOME_REFUSED_COMPOSER := "refused_composer_not_empty"
 const OUTCOME_REFUSED_PROCESS := "refused_expect_process"
 const OUTCOME_REFUSED_WITHDRAWN := "refused_write_withdrawn"
+const OUTCOME_REFUSED_PANE_MODE := "refused_pane_mode"
 
 # How the expect_harness guard was resolved, as reported back to the caller.
 const HARNESS_NOT_REQUESTED := "not_requested"
@@ -54,6 +55,14 @@ const HARNESS_SKIPPED := "skipped"
 const COMPOSER_NOT_REQUESTED := "not_requested"
 const COMPOSER_CHECKED := "checked"
 const COMPOSER_SKIPPED := "skipped"
+
+# The agent container's tmux pane, as the pane-mode guard found it (see
+# TerminalSession.pane_mode): reported back like the checks above.
+const PANE_MODE_NOT_REQUESTED := "not_requested"
+const PANE_MODE_NOT_CONTAINER := "not_container"
+const PANE_MODE_LIVE := "live"
+const PANE_MODE_ACTIVE := "in_mode"
+const PANE_MODE_UNKNOWN := "unknown"
 
 ## Write tickets: a caller that may still withdraw a write it has handed on
 ## (a relay round trip, say) issues one, passes it with the write, and
@@ -210,6 +219,7 @@ func begin_transaction(body: String, options: Dictionary = {}) -> Dictionary:
 		return guards
 	var harness_check: String = str(guards.get("harness_check", HARNESS_NOT_REQUESTED))
 	var composer_check: String = str(guards.get("composer_check", COMPOSER_NOT_REQUESTED))
+	var pane_mode_check: String = str(guards.get("pane_mode_check", PANE_MODE_NOT_REQUESTED))
 
 	var txn_id: int = _next_txn_id
 	_next_txn_id += 1
@@ -220,6 +230,7 @@ func begin_transaction(body: String, options: Dictionary = {}) -> Dictionary:
 		"outcome": "",
 		"harness_check": harness_check,
 		"composer_check": composer_check,
+		"pane_mode_check": pane_mode_check,
 		"pause_ms": pause_ms,
 		"enter": str(options.get("enter", ENTER)),
 		"body_bytes": body.length(),
@@ -261,6 +272,7 @@ func _admission_receipt(record: Dictionary) -> Dictionary:
 	var receipt: Dictionary = {"success": true, "txn_id": int(record["id"]),
 		"phase": str(record["phase"]), "harness_check": str(record["harness_check"]),
 		"composer_check": str(record["composer_check"]),
+		"pane_mode_check": str(record["pane_mode_check"]),
 		"pause_ms": int(record["pause_ms"]), "bytes_sent": int(record["bytes_sent"])}
 	if str(record["phase"]) == PHASE_FINISHED:
 		receipt["outcome"] = str(record["outcome"])
@@ -278,7 +290,20 @@ func _is_active(txn_id: int) -> bool:
 ## transaction refuse on identical evidence and from one clock. Options:
 ##   unless_typed_within_ms  — refuse if a person typed here that recently,
 ##                             measured on the monotonic stamp so a wall-clock
-##                             step cannot open or close the window
+##                             step cannot open or close the window. Such a
+##                             write is a message nobody typed, so it is also
+##                             refused while a person has an agent container's
+##                             tmux pane in a mode, where the bytes would drive
+##                             tmux (see TerminalSession.pane_mode). Refused
+##                             only on a report of that mode; a container that
+##                             sends none is written to, and pane_mode_check
+##                             says "unknown".
+##                             A report follows the change by a PTY read and
+##                             a frame. A mode entered from this terminal is
+##                             keyed here, so a window longer than that lag
+##                             (notify's is seconds) covers it; a mode entered
+##                             from inside the pane is not covered until the
+##                             report arrives.
 ##   expect_harness          — refuse unless that harness is in front; the
 ##                             check is SKIPPED, and said to be, where the
 ##                             platform cannot read the foreground at all
@@ -292,8 +317,8 @@ func _is_active(txn_id: int) -> bool:
 ##   write_ticket            — refuse unless this ticket is still issued; not
 ##                             held (held:false, and its message avoids the
 ##                             hold phrase callers match): it stays withdrawn
-## Returns {success:true, harness_check, composer_check} when the write may go
-## ahead, or a refusal {success:false, held:true, outcome, error} — carrying
+## Returns {success:true, harness_check, composer_check, pane_mode_check} when
+## the write may go ahead, or a refusal {success:false, held:true, outcome, error} — carrying
 ## the checks that had already run when it refused, because a write stopped by
 ## an earlier guard never reached the later ones.
 func check_guards(options: Dictionary) -> Dictionary:
@@ -310,6 +335,15 @@ func check_guards(options: Dictionary) -> Dictionary:
 				return _refusal(OUTCOME_REFUSED_TYPING,
 					"a person typed in this terminal %d ms ago; nothing was written" % typed_ago)
 
+	var pane_mode_check: String = PANE_MODE_NOT_REQUESTED
+	if typed_window > 0 and _session.has_method("pane_mode"):
+		pane_mode_check = _session.pane_mode()
+		if pane_mode_check == PANE_MODE_ACTIVE:
+			var in_mode: Dictionary = _refusal(OUTCOME_REFUSED_PANE_MODE,
+				"a person has this terminal's tmux pane in scrollback or another mode; nothing was written")
+			in_mode["pane_mode_check"] = pane_mode_check
+			return in_mode
+
 	var harness_check: String = HARNESS_NOT_REQUESTED
 	var expected: String = str(options.get("expect_harness", ""))
 	if not expected.is_empty():
@@ -323,6 +357,7 @@ func check_guards(options: Dictionary) -> Dictionary:
 					"the foreground of this terminal is %s, not %s; nothing was written" % [
 						str(live.get("name", "unreadable")) if actual.is_empty() else actual, expected])
 				refusal["harness_check"] = HARNESS_CHECKED
+				refusal["pane_mode_check"] = pane_mode_check
 				return refusal
 			harness_check = HARNESS_CHECKED
 
@@ -335,6 +370,7 @@ func check_guards(options: Dictionary) -> Dictionary:
 				"the foreground process of this terminal is %s, not the expected one; nothing was written" % (
 					"unreadable" if live_process == 0 else "another"))
 			replaced["harness_check"] = harness_check
+			replaced["pane_mode_check"] = pane_mode_check
 			return replaced
 
 	var composer_check: String = COMPOSER_NOT_REQUESTED
@@ -351,8 +387,10 @@ func check_guards(options: Dictionary) -> Dictionary:
 						_session_label(), COMPOSER_HOLD_PHRASE, str(verdict.get("row", ""))])
 				held["harness_check"] = harness_check
 				held["composer_check"] = COMPOSER_CHECKED
+				held["pane_mode_check"] = pane_mode_check
 				return held
-	return {"success": true, "harness_check": harness_check, "composer_check": composer_check}
+	return {"success": true, "harness_check": harness_check, "composer_check": composer_check,
+		"pane_mode_check": pane_mode_check}
 
 
 ## The glyphs that open the composer row: the ones the harness in front draws.

@@ -83,7 +83,8 @@ func cancel(trigger_id: String) -> void:
 
 ## The latest outcome for `trigger_id`, or {} when it has never delivered:
 ## status is sending, held, queued, written, dispatched, dropped, unknown,
-## failed, cancelled or withdrawn, with the reason, target and time.
+## failed, cancelled or withdrawn, with the reason, target and time. A direct
+## write also carries pane_mode_check (see TerminalInputArbiter).
 func receipt(trigger_id: String) -> Dictionary:
 	_is_outstanding(trigger_id)
 	return _receipts.get(trigger_id, {}).duplicate()
@@ -153,7 +154,11 @@ func _send_until_settled(trig: TriggerDefinition, line: String, attempt: int, ti
 			if _latest.get(trig.id) != attempt or (cancelled and not sent.get("success", false)):
 				return
 			var reason: String = "" if sent.get("success", false) else str(sent.get("error", ""))
-			_record(trig, {"status": "failed" if status == "error" else status, "reason": reason, "target": target})
+			var outcome: Dictionary = {"status": "failed" if status == "error" else status,
+				"reason": reason, "target": target}
+			if sent.has("pane_mode_check"):
+				outcome["pane_mode_check"] = sent["pane_mode_check"]
+			_record(trig, outcome)
 			return
 		if not _current(trig.id, attempt):
 			return
@@ -189,7 +194,7 @@ func _finish(trig: TriggerDefinition, fields: Dictionary) -> void:
 ## `fresh` starts a new attempt's receipt, carrying nothing from the last one.
 func _record(trig: TriggerDefinition, fields: Dictionary, fresh: bool = false) -> void:
 	var receipt: Dictionary = {} if fresh or not _receipts.has(trig.id) else _receipts[trig.id]
-	for key in ["reason", "hold_reason"]:
+	for key in ["reason", "hold_reason", "pane_mode_check"]:
 		receipt.erase(key)
 	receipt.merge(fields, true)
 	receipt["destination"] = trig.destination.label

@@ -105,6 +105,17 @@ var _attached_view: WeakRef = null
 # The one gate every byte to the PTY passes. Built in _ready().
 var _arbiter: TerminalInputArbiter = null
 
+## The agent container's tmux reports whether its pane is in a mode by setting
+## this terminal's title to this prefix, the attachment's lease generation, ":"
+## and 0 or 1 (scripts/agent-container/tmux.conf). Anything in the pane can
+## only set the pane's own title, not this one.
+const PANE_MODE_TITLE_PREFIX := "minerva-pane-mode:"
+
+# The last report from the attachment in front when it arrived:
+# {in_mode, container, generation}, or {} when the last title was not a well
+# formed report.
+var _pane_mode_report: Dictionary = {}
+
 
 func _init(p_name: String = "Terminal") -> void:
 	session_name = p_name
@@ -145,9 +156,11 @@ func _create_terminal_node() -> void:
 	if terminal.has_signal("seq_erase_saved_lines"):
 		terminal.seq_erase_saved_lines.connect(_on_screen_cleared.bind(true))
 
-	# Bell + shell-exit (guarded: older extension builds lack these)
+	# Bell, title + shell-exit (guarded: older extension builds lack these)
 	if terminal.has_signal("bell"):
 		terminal.bell.connect(_on_bell)
+	if terminal.has_signal("vt_title_changed"):
+		terminal.vt_title_changed.connect(_on_vt_title_changed)
 	if terminal.has_signal("process_exited"):
 		terminal.process_exited.connect(_on_shell_exited)
 
@@ -302,11 +315,32 @@ func foreground_supported() -> bool:
 ## basename (empty where the executable could not be read). When the PTY's
 ## foreground is an agent-container launcher bound to this tab, the answer is
 ## the program in front inside that container, plus `container` (its session
-## name); see AgentContainerForeground.
+## name) and `container_generation` (that attachment's lease generation); see
+## AgentContainerForeground.
 func get_foreground_process() -> Dictionary:
 	if terminal_available and terminal.has_method("get_foreground_process"):
 		return AgentContainerForeground.resolve(terminal_id, terminal.get_foreground_process())
 	return {}
+
+
+## Whether bytes written now would reach the program in the agent container's
+## tmux pane or drive tmux itself (a person has the pane in copy, clock or
+## tree mode): TerminalInputArbiter.PANE_MODE_ACTIVE or _LIVE, from the last
+## report the attachment in front sent; _UNKNOWN for an attachment that has
+## sent none (an image or launcher without the report, or none since it
+## attached); or
+## _NOT_CONTAINER when no agent container is in front. Reports arrive after
+## tmux changes mode, not with it; see TerminalInputArbiter.check_guards.
+func pane_mode() -> String:
+	var front: Dictionary = get_foreground_process()
+	if str(front.get("container", "")).is_empty():
+		return TerminalInputArbiter.PANE_MODE_NOT_CONTAINER
+	if _pane_mode_report.is_empty() \
+			or _pane_mode_report["container"] != str(front["container"]) \
+			or _pane_mode_report["generation"] != str(front.get("container_generation", "")):
+		return TerminalInputArbiter.PANE_MODE_UNKNOWN
+	return TerminalInputArbiter.PANE_MODE_ACTIVE if _pane_mode_report["in_mode"] \
+		else TerminalInputArbiter.PANE_MODE_LIVE
 
 
 ## Which agent harness the foreground process is: "claude", "codex", or ""
@@ -516,7 +550,25 @@ func _on_bell(count: int) -> void:
 
 func _on_shell_exited(exit_code: int) -> void:
 	shell_exit_code = exit_code
+	_pane_mode_report = {}
 	shell_exited.emit(exit_code)
+
+
+## A report names the attachment that sent it, so one that arrives after
+## another attachment took this tab (titles are delivered a frame late) is
+## ignored rather than taken as the new attachment's.
+func _on_vt_title_changed(title: String) -> void:
+	var fields: PackedStringArray = title.trim_prefix(PANE_MODE_TITLE_PREFIX).split(":")
+	if not title.begins_with(PANE_MODE_TITLE_PREFIX) or fields.size() != 2 \
+			or fields[0].is_empty() or not fields[1] in ["0", "1"]:
+		_pane_mode_report = {}
+		return
+	var front: Dictionary = get_foreground_process()
+	if str(front.get("container", "")).is_empty() \
+			or str(front.get("container_generation", "")) != fields[0]:
+		return
+	_pane_mode_report = {"in_mode": fields[1] == "1", "container": str(front["container"]),
+		"generation": fields[0]}
 
 
 func _on_vt_state_changed() -> void:

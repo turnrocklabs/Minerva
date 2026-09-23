@@ -2431,14 +2431,18 @@ fn a_send_forwards_its_session_guards_to_the_host_write() {
     let guarded = host.tool(
         "minerva_agent_relay_send",
         json!({"terminal_id": terminal, "text": "ping", "arm": false, "profile": "claude",
+               "human_guard_ms": 5000,
                "expect_harness": "claude", "expect_process": 4242, "write_ticket": "wt-7"}),
     );
     assert!(guarded.get("error").is_none(), "{guarded}");
+    // The host's pane-mode verdict comes back with the send, as the host gave it.
+    assert_eq!(guarded["pane_mode_check"], json!("unknown"), "{guarded}");
     let plain = host.tool(
         "minerva_agent_relay_send",
         json!({"terminal_id": terminal, "text": "pong", "arm": false, "profile": "claude"}),
     );
     assert!(plain.get("error").is_none(), "{plain}");
+    assert_eq!(plain["pane_mode_check"], json!("not_requested"), "{plain}");
     let args = host.view().write_args;
     assert_eq!(args.len(), 2, "{args:?}");
     assert_eq!(args[0]["expect_harness"], json!("claude"), "{args:?}");

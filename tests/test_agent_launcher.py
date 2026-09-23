@@ -372,8 +372,12 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(self.agent("attach", "alpha", env={**self.env, "MINERVA_TERMINAL_ID": "9999"})
                          .returncode, 0)
         attach = [c["argv"] for c in self.docker_calls() if "attach-session" in c["argv"]][-1]
-        self.assertEqual(attach, ["exec", "-it", "minerva-agent-alpha",
-                                  "tmux", "attach-session", "-d", "-t", "harness"])
+        # tmux learns this attachment's generation before attaching, for its title.
+        self.assertEqual(attach[:7], ["exec", "-it", "minerva-agent-alpha",
+                                      "tmux", "set-option", "-g", "@minerva_attachment"])
+        self.assertRegex(attach[7], r"^[0-9a-f]{16}$")
+        self.assertNotEqual(attach[7], bound["generation"], "a new attachment, a new generation")
+        self.assertEqual(attach[8:], [";", "attach-session", "-d", "-t", "harness"])
 
     def test_takeover_and_hangup_clear_only_their_own_binding(self):
         self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)

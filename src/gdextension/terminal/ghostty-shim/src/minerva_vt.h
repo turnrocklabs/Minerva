@@ -144,6 +144,14 @@ void minerva_vt_scroll_viewport(MinervaTerminal term, int32_t lines);
  */
 uint32_t minerva_vt_take_bell(MinervaTerminal term);
 
+/**
+ * When an OSC 0/2 title arrived since the last call, copy the latest one
+ * (at most cap bytes; its length in *out_len) and return true; otherwise
+ * return false and copy nothing. The title is parsed by the VT stream, so
+ * BEL or ST terminators and titles split across PTY reads are handled.
+ */
+bool minerva_vt_take_title(MinervaTerminal term, char* out, size_t cap, size_t* out_len);
+
 /* ── Key encoding (ghostty key encoder) ─────────────────────────────── */
 
 /**

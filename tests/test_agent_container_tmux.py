@@ -8,7 +8,9 @@ the outer terminal tracks the mouse (TerminalNew._forward_wheel). Checks:
   - tmux asks the outer terminal for mouse input (so Minerva forwards the wheel);
   - on a shell pane the wheel enters copy-mode and scrolls tmux's history;
   - when the program in the pane tracks the mouse itself (as Claude Code
-    does), tmux hands it the wheel and stays out of copy-mode.
+    does), tmux hands it the wheel and stays out of copy-mode;
+  - the outer terminal's title reports the pane mode (TerminalSession.pane_mode)
+    on attach, on every entry and exit, and again on reattach.
 
     python3 -m unittest tests.test_agent_container_tmux
 """
@@ -16,6 +18,7 @@ import fcntl
 import os
 from pathlib import Path
 import pty
+import re
 import shutil
 import struct
 import subprocess
@@ -26,6 +29,8 @@ import unittest
 
 CONF = Path(__file__).resolve().parents[1] / "scripts/agent-container/tmux.conf"
 WHEEL_UP = b"\x1b[<64;10;5M"
+PREFIX = b"\x1d"  # Ctrl-]
+MODE_TITLE = re.compile(rb"\x1b\][02];minerva-pane-mode:([0-9a-z]*):([01])(?:\x07|\x1b\\)")
 
 
 @unittest.skipUnless(shutil.which("tmux"), "tmux not installed")
@@ -50,11 +55,15 @@ class ContainerTmuxWheelTest(unittest.TestCase):
         return subprocess.run(self.tmux("display-message", "-p", "-t", target, fmt), env=self.env,
                               capture_output=True, text=True, check=True).stdout.strip()
 
-    def attach(self, session):
-        """Attach a client in a pty; return its master fd and what it has drawn so far."""
+    def attach(self, session, generation=None):
+        """Attach a client in a pty; return its master fd and what it has drawn so far.
+        With a generation, attach as agent.py does, naming the attachment first."""
+        command = ["attach-session", "-t", session]
+        if generation:
+            command = ["set-option", "-g", "@minerva_attachment", generation, ";", *command]
         pid, fd = pty.fork()
         if pid == 0:
-            os.execvpe("tmux", self.tmux("attach-session", "-t", session), self.env)
+            os.execvpe("tmux", self.tmux(*command), self.env)
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         self.clients.append((pid, fd))
         return fd, self.drain(fd, 1.0)
@@ -104,6 +113,31 @@ class ContainerTmuxWheelTest(unittest.TestCase):
                         "the program tracking the mouse receives the wheel")
         self.assertTrue(out.read_bytes().startswith(b"\x1b[<64;"), out.read_bytes())
         self.assertEqual(self.query("#{pane_in_mode}", "app"), "0", "and tmux stays out of copy-mode")
+        self.assertNotIn(b"1", [mode for _, mode in MODE_TITLE.findall(self.drain(fd, 0.5))],
+                         "so no mode is reported")
+
+    def last_mode(self, fd, seconds=0.6):
+        """The last pane-mode report (generation, mode) received within `seconds`, or None."""
+        reports = MODE_TITLE.findall(self.drain(fd, seconds))
+        return tuple(r.decode() for r in reports[-1]) if reports else None
+
+    def test_the_outer_title_reports_the_pane_mode(self):
+        subprocess.run(self.tmux("new-session", "-d", "-s", "shell", "-x", "80", "-y", "24",
+                                 "bash --norc -c 'seq 1 300; exec sleep 60'"), env=self.env, check=True)
+        fd, drawn = self.attach("shell", "a1")
+        self.assertEqual(MODE_TITLE.findall(drawn)[-1:], [(b"a1", b"0")], "attaching reports the live pane")
+        steps = [(WHEEL_UP, "1", "the wheel enters copy-mode"), (b"q", "0", "q leaves it"),
+                 (PREFIX + b"t", "1", "clock-mode is a mode too"), (b"q", "0", "and q leaves it"),
+                 (WHEEL_UP, "1", "copy-mode again, before detaching")]
+        for keys, expected, why in steps:
+            os.write(fd, keys)
+            self.assertEqual(self.last_mode(fd), ("a1", expected), why)
+            self.assertEqual(self.query("#{pane_in_mode}", "shell"), expected, why)
+        os.write(fd, PREFIX + b"d")
+        self.drain(fd, 0.5)
+        fd, drawn = self.attach("shell", "b2")
+        self.assertEqual(MODE_TITLE.findall(drawn)[-1:], [(b"b2", b"1")],
+                         "reattaching reports the mode still on, under the new attachment")
 
 
 if __name__ == "__main__":

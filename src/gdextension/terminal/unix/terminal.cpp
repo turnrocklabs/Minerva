@@ -112,6 +112,9 @@ void Terminal::_bind_methods()
 
     // Standalone BEL actions (OSC-terminating BELs excluded by the shim parser)
     ADD_SIGNAL(MethodInfo("bell", PropertyInfo(Variant::INT, "count")));
+    // The latest OSC 0/2 title, as the VT stream parsed it (either terminator,
+    // split reads), emitted once per title received.
+    ADD_SIGNAL(MethodInfo("vt_title_changed", PropertyInfo(Variant::STRING, "title")));
 
     // The PTY child (shell) exited on its own — distinct from stop()
     ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
@@ -880,6 +883,11 @@ bool Terminal::start(int width, int height)
                     uint32_t bells = minerva_vt_take_bell(_vt_terminal);
                     if (bells > 0) {
                         call_deferred("emit_signal", "bell", (int)bells);
+                    }
+                    char title[256];
+                    size_t title_len = 0;
+                    if (minerva_vt_take_title(_vt_terminal, title, sizeof(title), &title_len)) {
+                        call_deferred("emit_signal", "vt_title_changed", String::utf8(title, (int)title_len));
                     }
                 }
                 // Also run legacy signal-based parser (kept for backward compat)

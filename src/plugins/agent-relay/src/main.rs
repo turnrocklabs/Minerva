@@ -776,6 +776,14 @@ fn send_core_with_mode(
         router.call_capability_detailed("host.terminal.write", write)
     };
 
+    // What the host's pane-mode guard found ("unknown" for a container that
+    // does not report its tmux mode), handed back so a caller can tell a
+    // guarded write from one the guard could not judge.
+    let pane_mode_check = write_result
+        .as_ref()
+        .ok()
+        .and_then(|reply| reply.get("pane_mode_check").cloned())
+        .unwrap_or(Value::Null);
     if let Err(e) = write_result {
         if let Some(taken) = slot.take() {
             taken.end();
@@ -854,6 +862,7 @@ fn send_core_with_mode(
             "armed": armed,
             "auto_started_watch": auto_started,
             "submit": confirmation,
+            "pane_mode_check": pane_mode_check,
         }),
         slot,
         serial_before_write,
@@ -1529,6 +1538,8 @@ fn start_turn(
     // itself, and that watch is then the turn's.
     let watch_before = watcher::watch_epoch(terminal_id);
     let guards = WriteGuards { expect_harness: expected_profile.as_deref(), ..Default::default() };
+    // The host's pane-mode guard applies here too; its verdict is not carried
+    // back through the chat queue, which reports only the dispatch.
     let outcome = send_core_with_mode(
         terminal_id, text, true, mode, hold, gate_budget_ms, None, human_guard, &guards, router,
     )?;

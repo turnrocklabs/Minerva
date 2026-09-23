@@ -81,7 +81,7 @@ func register_tools() -> void:
 			"text": {"type": "string", "description": "Text to send. Use \\r at end to submit commands (Enter key). Example: 'echo hello\\r'"},
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
 			"raw": {"type": "boolean", "description": "Send text byte-for-byte without unescaping \\r/\\n/\\t etc. Use when the text already contains real control characters (default false)."},
-			"unless_typed_within_ms": {"type": "integer", "description": "Refuse (held) when a person typed in this terminal within this many milliseconds. 0 = no guard."},
+			"unless_typed_within_ms": {"type": "integer", "description": "Refuse (held) when a person typed in this terminal within this many milliseconds. Also refuse (held) while an agent container reports its tmux pane in scrollback or another mode; a container that does not report it is written to, and the receipt's pane_mode_check says 'unknown'. 0 = neither guard."},
 			"expect_harness": {"type": "string", "description": "Refuse (held) unless this harness (claude/codex) is the terminal's foreground process at the moment of the write. The receipt's harness_check says whether the check ran ('checked'), was skipped because this platform cannot read the foreground ('skipped'), or was not asked for ('not_requested')."},
 			"expect_process": {"type": "integer", "description": "Refuse (held) unless the terminal's foreground process group is this one at the moment of the write (a harness restarted there has another)."},
 			"write_ticket": {"type": "string", "description": "Refuse unless this host write ticket is still issued; its issuer revokes it to withdraw a write it handed on."},
@@ -420,7 +420,9 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 	var result: Dictionary = {"success": true, "bytes_sent": text.length(),
 		"harness_check": harness_check,
 		"composer_check": str(guards.get("composer_check",
-			TerminalInputArbiter.COMPOSER_NOT_REQUESTED))}
+			TerminalInputArbiter.COMPOSER_NOT_REQUESTED)),
+		"pane_mode_check": str(guards.get("pane_mode_check",
+			TerminalInputArbiter.PANE_MODE_NOT_REQUESTED))}
 	for key in ["queued", "queue_depth", "transaction", "released", "aborted_transaction"]:
 		if receipt.has(key):
 			result[key] = receipt[key]
@@ -897,12 +899,19 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 			var classified: Dictionary = PassthroughLaunchDialog._classify_watch_result(
 				raw if raw is Dictionary else {"error": "relay send returned nothing"})
 			if classified.get("ok", false):
-				var submit = (classified.get("result", {}) as Dictionary).get("submit", null)
-				return {
+				var sent: Dictionary = classified.get("result", {})
+				var submit = sent.get("submit", null)
+				var written: Dictionary = {
 					"success": true, "target": receipt_target, "status": "written",
 					"harness": harness,
 					"submit": str(submit.get("state", "")) if submit is Dictionary else "",
 				}
+				# The host's pane-mode verdict ("unknown": the container does not
+				# report it, so nothing could hold this for it); absent from an
+				# older relay or host.
+				if sent.get("pane_mode_check") is String:
+					written["pane_mode_check"] = sent["pane_mode_check"]
+				return written
 			var reason: String = str(classified.get("error", ""))
 			if not _relay_reply_is_hold(raw):
 				var failed: Dictionary = MCPToolUtils.error(reason)

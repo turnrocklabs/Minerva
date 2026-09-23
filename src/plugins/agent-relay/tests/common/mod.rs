@@ -366,13 +366,19 @@ impl Drop for FakeHost {
 fn write_receipt(args: &Value) -> Value {
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
     let bytes = text.len();
+    // As the host reports its pane-mode guard: judged only for a write with
+    // the typing guard, and "unknown" as for a container that does not
+    // report its mode.
+    let pane_mode_check =
+        if args.get("unless_typed_within_ms").is_some() { "unknown" } else { "not_requested" };
     match args.get("then_enter_after_ms").and_then(|v| v.as_u64()) {
-        None => json!({"success": true, "bytes_sent": bytes}),
+        None => json!({"success": true, "bytes_sent": bytes, "pane_mode_check": pane_mode_check}),
         Some(pause) => json!({
             "success": true,
             "txn_id": 1,
             "phase": "body_written",
             "harness_check": "not_requested",
+            "pane_mode_check": pane_mode_check,
             "pause_ms": pause,
             "bytes_sent": bytes,
         }),

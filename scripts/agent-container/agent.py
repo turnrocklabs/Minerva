@@ -546,8 +546,12 @@ def cmd_attach(args):
         with session_lock(name):
             lease.claim_locked(args.takeover)
             before = tmux_clients(dev)
-            client = subprocess.Popen(["docker", "exec", "-it", dev,
-                                       "tmux", "attach-session", "-d", "-t", "harness"])
+            # The pane-mode title names this attachment (tmux.conf), so Minerva
+            # never takes an earlier attachment's late title for this one's.
+            client = subprocess.Popen(["docker", "exec", "-it", dev, "tmux",
+                                       "set-option", "-g", "@minerva_attachment",
+                                       lease.value["generation"], ";",
+                                       "attach-session", "-d", "-t", "harness"])
             state = attach_established(dev, before, client)
             if state == "exited":   # attached and already gone, or tmux refused (its message shown)
                 return client.returncode

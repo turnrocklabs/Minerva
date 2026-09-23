@@ -29,7 +29,14 @@ extends SceneTree
 ##     transaction, cannot make the arbiter write the wrong bytes — an overflow
 ##     at the admitted phase leaves the body unwritten, an overflow after the
 ##     Enter does not "abort" what already committed, and a transaction started
-##     from a finish handler is not completed by its predecessor.
+##     from a finish handler is not completed by its predecessor;
+##   - pane mode: in a tab attached to an agent container, a guarded write is
+##     held with no byte written while tmux's title reports the pane in a mode,
+##     and goes out exactly once after it reports live; a person's own keys
+##     still reach the pane; a container that never reported, or a report
+##     from an earlier attachment, even one delivered after the new attachment
+##     took the tab, reads "unknown" and does not hold, until the new one
+##     reports; a tab with no container reports "not_container".
 
 const ARBITER_PATH := "res://Scripts/Services/Terminal/TerminalInputArbiter.gd"
 const DUMP_SCRIPT := """import os, sys, tty
@@ -42,6 +49,34 @@ while True:
 		break
 	sys.stdout.write("HEX %02x\\r\\n" % b[0])
 	sys.stdout.flush()
+"""
+
+# The hex dumper, which also plays tmux's title report for attachment "g1":
+# byte 0x01 makes it print the "pane in a mode" title, 0x02 the "live" one,
+# and 0x03 moves it to attachment "g2" (none of them is dumped).
+const MODE_DUMP_SCRIPT := """import os, sys, tty
+tty.setraw(0)
+sys.stdout.write("DUMPREADY\\r\\n")
+sys.stdout.flush()
+gen = "g1"
+while True:
+	b = os.read(0, 1)
+	if not b:
+		break
+	if b[0] in (1, 2):
+		sys.stdout.write("\\x1b]0;minerva-pane-mode:%s:%d\\x07" % (gen, 1 if b[0] == 1 else 0))
+	elif b[0] == 3:
+		gen = "g2"
+	else:
+		sys.stdout.write("HEX %02x\\r\\n" % b[0])
+	sys.stdout.flush()
+"""
+# A session standing in for a tab attached to an agent container: only the
+# foreground answer is substituted; the PTY, title parsing and guard are real.
+const CONTAINER_SESSION_SRC := """extends "res://Scripts/Services/Terminal/TerminalSession.gd"
+var generation := "g1"
+func get_foreground_process() -> Dictionary:
+	return {"pid": 1, "name": "codex", "container": "box", "container_generation": generation}
 """
 
 var _pass: int = 0
@@ -139,6 +174,7 @@ func _run() -> void:
 	await _test_admitted_phase_overflow()
 	await _test_reentrant_completion()
 	await _test_lifecycle()
+	await _test_pane_mode()
 
 
 # ── Oracle 1: a human keystroke cannot split a transaction ─────────────
@@ -443,6 +479,88 @@ func _test_lifecycle() -> void:
 			and busy.written == ["first", "\r"],
 		"%s / %s" % [str(busy_arbiter.get_transaction(first_id)), str(busy.written)])
 	busy.queue_free()
+
+
+# ── Oracle 7: a message waits while a person reads the pane's history ──
+
+func _test_pane_mode() -> void:
+	var plain = _registry.create_session("arbiter-no-container", 80, 24)
+	if plain == null or not plain.started or not plain.terminal_available:
+		print("SKIP: PTY unavailable for the pane-mode oracle")
+		return
+	var plain_receipt: Dictionary = plain.begin_write_transaction(
+		"true", {"unless_typed_within_ms": 1000, "pause_ms": 50})
+	check("a tab with no agent container is written to and says so",
+		bool(plain_receipt.get("success", false))
+			and str(plain_receipt.get("pane_mode_check", "")) == "not_container", str(plain_receipt))
+	_registry.close_session(plain.terminal_id)
+
+	var f := FileAccess.open("user://terminal_arbiter_mode_dump.py", FileAccess.WRITE)
+	f.store_string(MODE_DUMP_SCRIPT)
+	f.close()
+	var script := GDScript.new()
+	script.source_code = CONTAINER_SESSION_SRC
+	script.reload()
+	var session = script.new("arbiter-pane-mode")
+	root.add_child(session)
+	session.start(80, 24)
+	session.write_input("python3 -u %s\r" % ProjectSettings.globalize_path("user://terminal_arbiter_mode_dump.py"))
+	if not await _wait_until(func() -> bool: return session.get_plain_text().find("DUMPREADY") != -1):
+		check("pane-mode dumper started", false, session.read_viewport_text().right(300))
+		session.close()
+		session.queue_free()
+		return
+	var arbiter = session.get_input_arbiter()
+	var guarded := {"unless_typed_within_ms": 1000, "pause_ms": 50}
+
+	var unknown: Dictionary = session.begin_write_transaction("u", guarded)
+	await _wait_until(func() -> bool: return _dumped(session) == _bytes_of("u\r"))
+	check("a container that has not reported is written to, and the receipt says unknown",
+		str(unknown.get("pane_mode_check", "")) == "unknown" and _dumped(session) == _bytes_of("u\r"),
+		"%s / %s" % [str(unknown), str(_dumped(session))])
+
+	session.write_input("\u0001")
+	await _wait_until(func() -> bool: return session.pane_mode() == "in_mode")
+	var held: Dictionary = session.begin_write_transaction("h", guarded)
+	session.write_human_input("k")
+	await _sleep_ms(300)
+	check("in a mode the guarded write is held with no byte written, while a person's key gets through",
+		not bool(held.get("success", true)) and bool(held.get("held", false))
+			and str(held.get("outcome", "")) == arbiter.OUTCOME_REFUSED_PANE_MODE
+			and _dumped(session) == _bytes_of("u\rk"), "%s / %s" % [str(held), str(_dumped(session))])
+
+	# Past the typing window the person's key opened, the mode alone still holds.
+	await _sleep_ms(1100)
+	check("once the typing window has passed the mode still holds it",
+		str(session.begin_write_transaction("h", guarded).get("outcome", "")) == arbiter.OUTCOME_REFUSED_PANE_MODE)
+
+	session.write_input("\u0002")
+	await _wait_until(func() -> bool: return session.pane_mode() == "live")
+	var sent: Dictionary = session.begin_write_transaction("h", guarded)
+	await _wait_until(func() -> bool: return _dumped(session).size() >= 5)
+	await _sleep_ms(200)
+	check("reported live again, the held message goes out exactly once",
+		bool(sent.get("success", false)) and str(sent.get("pane_mode_check", "")) == "live"
+			and _dumped(session) == _bytes_of("u\rkh\r"), "%s / %s" % [str(sent), str(_dumped(session))])
+
+	# Another attachment takes the tab while the first one's last title is
+	# still on its way: that title must not become the new attachment's.
+	session.write_input("\u0001")
+	await _wait_until(func() -> bool: return session.pane_mode() == "in_mode")
+	session.generation = "g2"
+	check("a report from an earlier attachment does not count for the one in front",
+		session.pane_mode() == "unknown", session.pane_mode())
+	session.write_input("\u0002")
+	await _sleep_ms(300)
+	check("nor does one of its titles arriving after the new attachment took the tab",
+		session.pane_mode() == "unknown", session.pane_mode())
+	session.write_input("\u0003\u0001")
+	await _wait_until(func() -> bool: return session.pane_mode() == "in_mode")
+	check("the new attachment's own report counts, and holds",
+		str(session.begin_write_transaction("n", guarded).get("outcome", "")) == arbiter.OUTCOME_REFUSED_PANE_MODE
+			and _dumped(session) == _bytes_of("u\rkh\r"), str(_dumped(session)))
+	session.close()
+	session.queue_free()
 
 
 ## Stands in for a platform that cannot report the PTY's foreground process.

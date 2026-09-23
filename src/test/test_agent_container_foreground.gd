@@ -176,6 +176,7 @@ func _test_resolution() -> void:
 		_harness(seen) == "claude" and int(seen.get("pid", 0)) == CLAUDE
 			and str(seen.get("exe_name", "")) == "claude.exe", str(seen))
 	check("and names the container session", str(seen.get("container", "")) == "proto1", str(seen))
+	check("and its attachment's generation", str(seen.get("container_generation", "")) == "gen1", str(seen))
 
 	_reset(SHELL)
 	seen = _fg.resolve(TERMINAL, _host())
