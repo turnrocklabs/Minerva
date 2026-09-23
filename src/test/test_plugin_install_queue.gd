@@ -23,7 +23,11 @@ extends SceneTree
 ##     a dialog's queued install, returns its result, and does not change the
 ##     confirmation choice the dialog's request was made with;
 ##   - once a URL-only install reveals its plugin, a queued request for the
-##     same version joins it and one for another version ends as a conflict.
+##     same version joins it and one for another version ends as a conflict;
+##   - an MCP install that outlasts its wait answers running with a job id,
+##     and minerva_plugin_marketplace_job follows that job to its result
+##     without starting another; unknown ids, and ids from another queue,
+##     are errors there.
 ##
 ## A job outliving the dialog that started it is covered against the real
 ## dialog scene in test_marketplace_browse.gd.
@@ -91,6 +95,7 @@ func _init() -> void:
 	await _test_start_cancel_and_failed_restart(port)
 	await _test_mcp_attach_keeps_the_first_requests_choices()
 	await _test_url_install_absorbs_or_refuses_queued_duplicates()
+	await _test_mcp_install_outlasting_its_wait_is_followed_by_job_id()
 	_finish(1 if _fail else 0)
 
 
@@ -285,6 +290,56 @@ func _test_url_install_absorbs_or_refuses_queued_duplicates() -> void:
 		"the same-version request joined the running install and ended with it: %s" % [same.summary()])
 	_check(conflicting.outcome == Job.OUTCOME_FAILED and conflicting.result.get("error") == "install_conflict",
 		"the other-version request ends as a conflict: %s" % [conflicting.summary()])
+
+
+# The install tool's wait stands in for the MCP request deadline: a short
+# wait over the ~3 s slow archive has the call answer while it still runs.
+func _test_mcp_install_outlasting_its_wait_is_followed_by_job_id() -> void:
+	await _scrub()
+	var queue = _pm.install_queue
+	var tools = load(MCP_TOOLS_GD).new(_pm)
+	var ids_before: Array = queue.jobs().map(func(j) -> String: return j.id)
+	var first: Dictionary = await tools.handle_tool_call("minerva_plugin_marketplace_install",
+		{"url": _slow_url, "auto_confirm_skills": true, "wait_seconds": 0.5})
+	var job_id := str(first.get("job_id", ""))
+	_check(first.get("done") == false and first.get("outcome") == "running" and not job_id.is_empty(),
+		"an install outlasting the wait answers running with a job id: %s" % [first])
+	var outcomes: Array = []
+	var last := first
+	var give_up := Time.get_ticks_msec() + 60000
+	while last.get("done") != true and Time.get_ticks_msec() < give_up:
+		last = await tools.handle_tool_call("minerva_plugin_marketplace_job", {"job_id": job_id, "wait_seconds": 0.5})
+		outcomes.append(last.get("outcome"))
+	_check(outcomes.has("running") and last.get("done") == true and last.get("job_id") == job_id
+		and last.get("outcome") == Job.OUTCOME_INSTALLED and last.get("plugin_id") == SLOW,
+		"polling the job reports it running, then its installed result: %s, %s" % [outcomes, last])
+	var new_jobs: Array = queue.jobs().filter(func(j) -> bool: return not ids_before.has(j.id))
+	_check(new_jobs.size() == 1 and new_jobs[0].id == job_id and _pm.get_db().has_plugin(SLOW),
+		"polling never started another install: %d new job(s)" % new_jobs.size())
+	var unknown: Dictionary = await tools.handle_tool_call("minerva_plugin_marketplace_job", {"job_id": "0-0"})
+	_check(unknown.has("error") and not unknown.has("done"), "an unknown job id is an error: %s" % [unknown])
+	# Two queues made back to back each number their first job 1; their ids
+	# must still differ, so one queue never answers for another's job.
+	var others: Array = []
+	for i in 2:
+		var other = queue.get_script().new()
+		other.manager = _pm
+		var queued = other.request(_entry(FAST, _fast_url))
+		other.cancel(queued)  # before its deferred start
+		others.append([other, queued])
+	var a_id: String = others[0][1].id
+	var b_id: String = others[1][1].id
+	_check(a_id != b_id and others[1][0].job_by_id(a_id) == null and queue.job_by_id(a_id) == null
+		and others[0][0].job_by_id(a_id) == others[0][1],
+		"job ids from different queues never alias: %s / %s" % [a_id, b_id])
+	await process_frame  # let the deferred starts find nothing queued
+	for pair in others:
+		pair[0].free()
+	var fast: Dictionary = await tools.handle_tool_call("minerva_plugin_marketplace_install",
+		{"url": _fast_url, "auto_confirm_skills": true})
+	_check(fast.get("done") == true and fast.get("outcome") == Job.OUTCOME_INSTALLED
+		and queue.job_by_id(str(fast.get("job_id", ""))) != null,
+		"an install inside the wait answers with its result and job id: %s" % [fast])
 
 
 ## Wait for `job` to finish, at most 60 s (a finished signal already emitted

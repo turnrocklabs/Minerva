@@ -106,6 +106,32 @@ mcp_call() {
         -d "$body"
 }
 
+# Install from a marketplace URL and follow the job to its end. The install
+# tool answers within the MCP request deadline, with the result or with
+# {done:false, job_id} while the install is still going; the job is then
+# polled (each call waits up to 20 s server-side) until it ends, for at most
+# INSTALL_TIMEOUT_S. Progress goes to stderr; stdout is the final result, and
+# it returns 1 (having said why) when the install outlives that bound.
+INSTALL_TIMEOUT_S="${INSTALL_TIMEOUT_S:-900}"
+marketplace_install() {
+    local url="$1" raw result job_id deadline
+    raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${url}\",\"auto_confirm_skills\":true}")
+    echo "raw: $raw" >&2
+    result=$(echo "$raw" | mcp_unwrap)
+    deadline=$((SECONDS + INSTALL_TIMEOUT_S))
+    while [[ "$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('done', True))")" == "False" ]]; do
+        echo "still installing: $result" >&2
+        if (( SECONDS >= deadline )); then
+            echo "::error::tarball-smoke: install still running after ${INSTALL_TIMEOUT_S}s: $result" >&2
+            return 1
+        fi
+        job_id=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin)['job_id'])")
+        raw=$(mcp_call "minerva_plugin_marketplace_job" "{\"job_id\":\"${job_id}\",\"wait_seconds\":20}")
+        result=$(echo "$raw" | mcp_unwrap)
+    done
+    echo "$result"
+}
+
 # Boot Minerva ---------------------------------------------------------------
 # Strategy (iter-4 — both --headless AND xvfb-run):
 #   --headless tells Godot's DisplayServer not to create a window. That alone
@@ -215,9 +241,7 @@ echo "::group::Step 1: marketplace install (scansort)"
 # auto_confirm_skills=true: this is a headless, programmatic caller — there is no
 # user to dismiss the skill-seed confirmation dialog, and awaiting it would hang
 # the install. (scansort has no skills today, but pass it for consistency.)
-raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${SCANSORT_TARBALL_URL}\",\"auto_confirm_skills\":true}")
-echo "raw: $raw"
-result=$(echo "$raw" | mcp_unwrap)
+result=$(marketplace_install "$SCANSORT_TARBALL_URL") || exit 1
 echo "unwrapped: $result"
 ok=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok', False))")
 if [[ "$ok" != "True" ]]; then
@@ -285,9 +309,7 @@ echo "::group::Step 5: marketplace install (cad)"
 echo "cad tarball: $CAD_TARBALL_URL"
 # cad DOES declare skills — without auto_confirm_skills the install succeeds then
 # blocks on the interactive seed dialog (the bug this gate was catching).
-raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${CAD_TARBALL_URL}\",\"auto_confirm_skills\":true}")
-echo "raw: $raw"
-result=$(echo "$raw" | mcp_unwrap)
+result=$(marketplace_install "$CAD_TARBALL_URL") || exit 1
 echo "unwrapped: $result"
 ok=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok', False))")
 if [[ "$ok" != "True" ]]; then

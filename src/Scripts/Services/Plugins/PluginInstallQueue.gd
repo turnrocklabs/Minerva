@@ -34,6 +34,11 @@ var manager: Node
 
 var _jobs: Array[Job] = []
 var _busy := false
+# Job ids are a random per-queue nonce and a counter, so an id handed out by
+# another queue (an earlier run's, or another manager's) never names a job
+# of this one.
+var _nonce := Crypto.new().generate_random_bytes(8).hex_encode()
+var _serial := 0
 
 
 ## Install a registry entry for this platform.
@@ -45,6 +50,14 @@ func request(entry: Dictionary, auto_confirm_skills: bool = false) -> Job:
 ## Install from an archive URL (the MCP tool's entry point).
 func request_url(url: String, auto_confirm_skills: bool = false) -> Job:
 	return _enqueue({}, url, auto_confirm_skills)
+
+
+## The job with this `id`, finished or not; null once it is no longer kept.
+func job_by_id(id: String) -> Job:
+	for job in _jobs:
+		if job.id == id:
+			return job
+	return null
 
 
 ## The most recent job for `plugin_id`, finished or not; null if none is kept.
@@ -137,6 +150,8 @@ func _enqueue(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 
 func _new_job(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 	var job := Job.new()
+	_serial += 1
+	job.id = "%s-%d" % [_nonce, _serial]
 	job.entry = entry
 	job.url = url
 	job.auto_confirm_skills = auto_confirm_skills

@@ -23,6 +23,9 @@ const OUTCOME_FAILED := "failed"              # not installed; any previous inst
 const OUTCOME_RECOVERY_NEEDED := "failed_needs_recovery"  # not installed; the previous install is not fully back yet
 const OUTCOME_CANCELLED := "cancelled"        # stopped before registration; nothing changed
 
+## Stable handle for this job (set by the queue), for asking how it stands
+## after the request that started it has returned.
+var id := ""
 ## The registry entry asked for, or {} when only a URL was given.
 var entry := {}
 var url := ""
@@ -79,3 +82,21 @@ func summary() -> Dictionary:
 	if not message.is_empty():
 		out["message"] = message
 	return out
+
+
+## How the job stands for a caller polling it: once DONE, its summary with
+## job_id and done:true; before that {job_id, done:false, outcome, plugin_id,
+## stage, bytes_done, bytes_total, stage_seconds}, where outcome is queued
+## (waiting behind another install) or running, and a joined request reports
+## the install it follows.
+func status() -> Dictionary:
+	if state == State.DONE:
+		var ended := summary()
+		ended["job_id"] = id
+		ended["done"] = true
+		return ended
+	var running = joined if joined != null else self
+	var waiting: bool = running.state == State.QUEUED
+	return {"job_id": id, "done": false, "outcome": "queued" if waiting else "running", "plugin_id": plugin_id(),
+		"stage": running.stage(), "bytes_done": running.op.done, "bytes_total": running.op.total,
+		"stage_seconds": snappedf(running.stage_elapsed_seconds(), 0.1)}

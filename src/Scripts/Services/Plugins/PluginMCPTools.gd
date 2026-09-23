@@ -10,6 +10,12 @@ extends RefCounted
 # Dependencies (injected via init)
 # ---------------------------------------------------------------------------
 
+## wait_seconds for the marketplace install and job tools, kept under the
+## MCP HTTP server's 30 s request deadline.
+const DEFAULT_JOB_WAIT_S := 20.0
+const MAX_JOB_WAIT_S := 25.0
+const InstallQueue := preload("res://Scripts/Services/Plugins/PluginInstallQueue.gd")
+
 var _plugin_manager = null  # PluginManager
 var _plugin_policy = null   # PluginPolicy
 var _audit_log = null       # PluginAuditLog
@@ -122,6 +128,7 @@ func get_tool_definitions() -> Array:
 		_get_plugin_marketplace_install_tool_def(),
 		_get_plugin_marketplace_list_tool_def(),
 		_get_plugin_marketplace_detail_tool_def(),
+		_get_plugin_marketplace_job_tool_def(),
 		_get_plugin_remove_tool_def(),
 		_get_plugin_start_tool_def(),
 		_get_plugin_stop_tool_def(),
@@ -151,6 +158,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return await _handle_plugin_marketplace_list(args)
 		"minerva_plugin_marketplace_detail":
 			return await _handle_plugin_marketplace_detail(args)
+		"minerva_plugin_marketplace_job":
+			return await _handle_plugin_marketplace_job(args)
 		"minerva_plugin_remove":
 			return await _handle_plugin_remove(args)
 		"minerva_plugin_start":
@@ -217,7 +226,7 @@ func _get_plugin_install_tool_def() -> Dictionary:
 func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_marketplace_install",
-		"description": "Install a plugin from a marketplace tarball URL. Runs through Minerva's install queue, one install at a time. A request for a plugin or URL already being installed waits for that install and returns its result; the first request's auto_confirm_skills choice stands, a later request cannot change it. A queued request for a plugin another request turns out to be installing joins it when the versions match and fails with install_conflict when they differ. Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load), and starts the plugin if it was running or autostarts. Returns {ok, plugin_id, version, platform_verified, manifest_path, outcome} on success, where outcome is ready, installed (starts when used), or start_failed (with message); on failure {ok:false, error, outcome, message, rollback?}, where outcome failed means any previous install is back and failed_needs_recovery means it is not fully back yet (Minerva restores it on its next start).",
+		"description": "Install a plugin from a marketplace tarball URL. Runs through Minerva's install queue, one install at a time, and waits up to wait_seconds for the install to end. An install not yet ended then returns {job_id, done:false, outcome:\"queued\" or \"running\", stage, bytes_done, bytes_total}; it carries on, and minerva_plugin_marketplace_job with that job_id follows it to its result (call that, not this tool again, which would start a new install once this one has ended). A request for a plugin or URL already being installed waits for that install and returns its result; the first request's auto_confirm_skills choice stands, a later request cannot change it. A queued request for a plugin another request turns out to be installing joins it when the versions match and fails with install_conflict when they differ. Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load), and starts the plugin if it was running or autostarts. Returns {ok, plugin_id, version, platform_verified, manifest_path, outcome, job_id, done:true} on success, where outcome is ready, installed (starts when used), or start_failed (with message); on failure {ok:false, error, outcome, message, rollback?}, where outcome failed means any previous install is back and failed_needs_recovery means it is not fully back yet (Minerva restores it on its next start).",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -228,6 +237,10 @@ func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 				"auto_confirm_skills": {
 					"type": "boolean",
 					"description": "If true, seed the plugin's skills without showing the interactive confirmation dialog. Pass true from headless/MCP contexts — otherwise a skill-bearing plugin installs but then deadlocks awaiting a dialog. Default: false."
+				},
+				"wait_seconds": {
+					"type": "number",
+					"description": "How long to wait for the install to end before answering that it is running (0-%d, default %d)." % [int(MAX_JOB_WAIT_S), int(DEFAULT_JOB_WAIT_S)]
 				}
 			},
 			"required": ["url"]
@@ -265,6 +278,24 @@ func _get_plugin_marketplace_detail_tool_def() -> Dictionary:
 				}
 			},
 			"required": ["id"]
+		}
+	}
+
+
+func _get_plugin_marketplace_job_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_marketplace_job",
+		"description": "How a marketplace install started by minerva_plugin_marketplace_install stands, by the job_id it returned. Waits up to wait_seconds for it to end. Until it ends: {job_id, done:false, outcome:\"queued\" or \"running\", plugin_id, stage, bytes_done, bytes_total, stage_seconds}. Once it has ended: the install's result as minerva_plugin_marketplace_install returns it, with done:true. Never starts or repeats an install. Errors for a job_id Minerva does not know: another run's, or one finished long enough ago that it is no longer kept (the last %d finished installs are)." % InstallQueue.MAX_FINISHED,
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"job_id": {"type": "string", "description": "The job_id minerva_plugin_marketplace_install returned"},
+				"wait_seconds": {
+					"type": "number",
+					"description": "How long to wait for the install to end before answering that it is still running (0-%d, default %d)." % [int(MAX_JOB_WAIT_S), int(DEFAULT_JOB_WAIT_S)]
+				}
+			},
+			"required": ["job_id"]
 		}
 	}
 
@@ -478,9 +509,39 @@ func _handle_plugin_marketplace_install(args: Dictionary) -> Dictionary:
 	if plugin_manager.install_queue == null:
 		return {"error": "Plugin install queue not available"}
 	var job = plugin_manager.install_queue.request_url(url, auto_confirm)
-	if job.state != job.State.DONE:
-		await job.finished
-	return job.summary()
+	await _await_job(job, _job_wait_seconds(args))
+	return job.status()
+
+
+func _handle_plugin_marketplace_job(args: Dictionary) -> Dictionary:
+	var job_id = args.get("job_id", "")
+	if not (job_id is String) or (job_id as String).is_empty():
+		return {"error": "job_id is required and must be a non-empty String"}
+	var plugin_manager = _get_plugin_manager()
+	if plugin_manager == null or plugin_manager.install_queue == null:
+		return {"error": "Plugin install queue not available"}
+	var job = plugin_manager.install_queue.job_by_id(job_id)
+	if job == null:
+		return {"error": "unknown job_id '%s': not an install of this Minerva run, or no longer kept (the last %d finished installs are)" % [job_id, InstallQueue.MAX_FINISHED]}
+	await _await_job(job, _job_wait_seconds(args))
+	return job.status()
+
+
+## A tool call answers within the transport's request deadline (the HTTP
+## server closes a request after 30 s), so an install that takes longer is
+## reported as running and followed by job id instead of being waited out.
+func _job_wait_seconds(args: Dictionary) -> float:
+	var asked = args.get("wait_seconds", DEFAULT_JOB_WAIT_S)
+	if not (asked is float or asked is int):
+		asked = DEFAULT_JOB_WAIT_S
+	return clampf(float(asked), 0.0, MAX_JOB_WAIT_S)
+
+
+func _await_job(job, seconds: float) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	var deadline := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while job.state != job.State.DONE and Time.get_ticks_msec() < deadline:
+		await tree.process_frame
 
 
 func _handle_plugin_marketplace_list(args: Dictionary) -> Dictionary:
