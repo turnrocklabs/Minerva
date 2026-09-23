@@ -194,21 +194,36 @@ func start_http_server(directory: String, port: int, timeout_sec: float = 15.0) 
 		return false
 
 	# Stage 2: HTTP request returns 200/403/404 (proves the server is HTTP,
-	# not a leftover process from a different protocol).
+	# not a leftover process from a different protocol), asked again until
+	# the timeout in case the first request lands before it serves.
+	var deadline := Time.get_ticks_msec() + int(timeout_sec * 1000)
+	var answer := [HTTPRequest.RESULT_NO_RESPONSE, 0]
+	while true:
+		answer = await _http_probe(port)
+		if answer[1] in [200, 403, 404]:
+			return true
+		if not OS.is_process_running(_server_pid):
+			print("  http.server: exited after opening port %d" % port)
+			return false
+		if Time.get_ticks_msec() >= deadline:
+			break
+		await _tree.create_timer(0.2).timeout
+	print("  http.server: HTTP probe got result %d, status %d (expected 200/403/404)" % answer)
+	return false
+
+
+## One GET of / on the fixture server: [HTTPRequest.Result, status code].
+func _http_probe(port: int) -> Array:
 	var probe := HTTPRequest.new()
 	probe.timeout = 5.0
 	_tree.root.add_child(probe)
 	var err := probe.request("http://127.0.0.1:%d/" % port)
 	if err != OK:
 		probe.queue_free()
-		print("  http.server: HTTPRequest.request returned %d" % err)
-		return false
+		return [HTTPRequest.RESULT_CANT_CONNECT, 0]
 	var result: Array = await probe.request_completed
 	probe.queue_free()
-	if result[1] in [200, 403, 404]:
-		return true
-	print("  http.server: HTTP probe returned status %d (expected 200/403/404)" % result[1])
-	return false
+	return [result[0], result[1]]
 
 
 func stop_http_server() -> void:
@@ -217,10 +232,18 @@ func stop_http_server() -> void:
 		_server_pid = -1
 
 
-# Pick a port in the 30000-50000 ephemeral-ish range, time-seeded to avoid
-# collision with orphaned http.server processes from prior killed test runs.
+# A random port in 30000-49000 where neither it nor the next one (some tests
+# serve a second fixture there) accepts connections yet. Checked, not
+# assumed: on Windows http.server binds with SO_REUSEADDR, which succeeds
+# over another process's listener, and that listener may then answer.
 func random_high_port() -> int:
-	return 30000 + (Time.get_ticks_msec() % 20000)
+	var port := 30000
+	for _i in 20:
+		port = randi_range(30000, 49000)
+		if not port_open(port) and not port_open(port + 1):
+			return port
+	print("  random_high_port: no free pair found; using busy port %d" % port)
+	return port
 
 
 # ---------------------------------------------------------------------------
