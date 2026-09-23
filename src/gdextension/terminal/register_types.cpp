@@ -10,6 +10,8 @@
     #include "unix/subprocess.h"
 #endif
 
+#include "common/process_file_lock.h"
+
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -29,6 +31,8 @@ void initialize_terminal_module(ModuleInitializationLevel p_level) {
     #if defined(PLATFORM_WINDOWS) || defined(PLATFORM_LINUX) || defined(PLATFORM_MACOS)
         ClassDB::register_class<SubProcess>();
     #endif
+
+    ClassDB::register_class<ProcessFileLock>();
 }
 
 void uninitialize_terminal_module(ModuleInitializationLevel p_level) {

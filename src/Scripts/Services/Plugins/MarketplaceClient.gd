@@ -187,12 +187,14 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 	DirAccess.make_dir_recursive_absolute(staging_root)
 	var txn := PluginInstallTransaction.begin(staging_root)
 	if txn == null:
+		if not ClassDB.class_exists("ProcessFileLock"):
+			return _err("install_lock_unavailable", {})
 		return _err("staging_failed", {"dir": staging_root})
 	op.staging_dir = txn.op_dir
 	var result := await _install(tarball_url, installer, auto_confirm_skills, op, expected, txn)
-	txn.unlock()
-	# An incomplete rollback keeps the operation (and its backup) for the
-	# recovery the next start runs.
+	txn.leave()
+	# An incomplete rollback keeps the operation (and its backup) for a later
+	# recovery pass.
 	var rollback: Dictionary = result.get("rollback", {})
 	if rollback.is_empty() or (rollback.files_restored and rollback.db_restored):
 		_rm_dir_recursive(op.staging_dir)
@@ -274,15 +276,16 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	var final_abs := ProjectSettings.globalize_path(final_dir)
 	var db = _installer_db(installer)
 	txn.plugin_id = plugin_id
-	var busy: Dictionary = txn.lock(ProjectSettings.globalize_path(STAGING_DIR), db)
-	if not busy.is_empty():
-		return busy
-	# Read after locking: taking the lock may have just recovered this record.
+	# Holds the staging lock from here to the end of the install (released by
+	# install_from_url); waiting for another process's install is cancellable.
+	op.enter(PluginInstallOperation.STAGE_WAIT)
+	var entered: Dictionary = await txn.enter(ProjectSettings.globalize_path(STAGING_DIR), db, op, get_tree())
+	if not entered.is_empty():
+		return entered
+	# Read under the lock: entering may have just recovered this record.
 	var previous_def = db.get_by_id(plugin_id) if db != null else null
 	txn.db_before = previous_def.to_dict() if previous_def != null else null
 	op.enter(PluginInstallOperation.STAGE_REGISTER)
-	if not txn.holds_lock():
-		return _err("plugin_busy", {"id": plugin_id})
 	_ensure_dir(PLUGINS_DIR)
 	txn.had_previous = DirAccess.dir_exists_absolute(final_abs)
 	if not txn.publish(PluginInstallTransaction.PHASE_REPLACING):
@@ -312,11 +315,10 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		registered = _err("register_not_saved", {"id": plugin_id})
 	if not registered.get("ok", false):
 		return _failed_replace(registered, txn, final_abs, db, previous_def)
-	# A crash before this record lands rolls back to the previous install and
-	# its DB record together, which is consistent. If it cannot be written,
-	# dropping the record keeps a later recovery from undoing this commit.
+	# The install commits only once this record is saved too; until then a
+	# crash rolls back to the previous install and DB record together.
 	if not txn.publish(PluginInstallTransaction.PHASE_COMMITTED):
-		txn.discard_record()
+		return _failed_replace(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db, previous_def)
 	_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 	registered["version"] = str(manifest.get("version", ""))
 	registered["platform_verified"] = identity.platform_verified
@@ -407,7 +409,7 @@ static func _installer_db(installer):
 ## every install another (exited) process left half-done. Returns the
 ## operations that need a person ({dir, id, reason}).
 static func sweep_staging(db) -> Array:
-	return PluginInstallTransaction.recover_all(ProjectSettings.globalize_path(STAGING_DIR), db)
+	return PluginInstallTransaction.sweep(ProjectSettings.globalize_path(STAGING_DIR), db)
 
 
 # ---------------------------------------------------------------------------
@@ -584,10 +586,10 @@ static func format_install_error(result: Dictionary) -> String:
 			cause = "Unpacking needs %s but only %s is free." % [String.humanize_size(int(detail_dict.get("needed", 0))),
 				String.humanize_size(int(detail_dict.get("free", 0)))]
 			hint = "Free some disk space and install again. Nothing was changed."
-		"plugin_busy":
-			title = "Another Minerva is installing this plugin"
-			cause = "A running Minerva process holds the install lock for '%s'." % str(detail_dict.get("id", "?"))
-			hint = "Wait for that install to finish, then try again. Nothing was changed."
+		"install_lock_unavailable":
+			title = "Plugin installs are unavailable in this build"
+			cause = "Minerva's native file-lock support (ProcessFileLock) is missing, so an install could not be protected."
+			hint = "Update or rebuild Minerva's native libraries. Nothing was changed."
 		"recovery_pending":
 			title = "An earlier install of this plugin is not undone yet"
 			cause = str(detail_dict.get("reason", "An unfinished install left files Minerva could not restore."))

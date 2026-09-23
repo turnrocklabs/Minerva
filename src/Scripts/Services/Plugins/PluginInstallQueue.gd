@@ -101,41 +101,58 @@ func retry_start(job: Job) -> void:
 		_run_next.call_deferred()
 
 
+## A request for a plugin (by id) or URL that an unfinished install already
+## covers keeps its own expectations: it attaches when they agree with that
+## install's, ends as install_conflict when they contradict it, and follows
+## it (checked when the archive is read) when the install cannot tell yet.
 func _enqueue(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
-	var plugin_id := str(entry.get("id", ""))
-	var wanted := str(entry.get("version", ""))
+	var wanted_id := str(entry.get("id", ""))
+	var wanted_version := str(entry.get("version", ""))
 	for job in _jobs:
-		if job.state == Job.State.DONE or job.start_only:
+		if job.state == Job.State.DONE or job.start_only or job.joined != null:
 			continue
 		var same_url := not url.is_empty() and job.url == url
-		if not same_url and (plugin_id.is_empty() or job.plugin_id() != plugin_id):
+		if not same_url and (wanted_id.is_empty() or job.plugin_id() != wanted_id):
 			continue
-		var theirs: String = job.expected_version()
-		if not same_url and not wanted.is_empty() and not theirs.is_empty() and wanted != theirs:
-			var refused := Job.new()
-			refused.entry = entry
-			refused.url = url
-			_jobs.append(refused)
-			_conflict(refused, plugin_id, theirs, wanted)
+		var their_id: String = job.plugin_id()
+		var their_version: String = job.expected_version()
+		if _differs(wanted_id, their_id) or _differs(wanted_version, their_version):
+			var refused := _new_job(entry, url, auto_confirm_skills)
+			_conflict(refused, their_id, their_version, wanted_id, wanted_version)
 			return refused
+		if (not wanted_id.is_empty() and their_id.is_empty()) or (not wanted_version.is_empty() and their_version.is_empty()):
+			var follower := _new_job(entry, url, auto_confirm_skills)
+			follower.joined = job
+			follower.state = Job.State.RUNNING
+			_changed(follower)
+			return follower
 		return job
+	var job := _new_job(entry, url, auto_confirm_skills)
+	job.op.stage_changed.connect(_on_stage.bind(job))
+	job.op.identified.connect(_on_identified.bind(job))
+	_changed(job)
+	_run_next.call_deferred()  # the caller holds the job before it starts
+	return job
+
+
+func _new_job(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 	var job := Job.new()
 	job.entry = entry
 	job.url = url
 	job.auto_confirm_skills = auto_confirm_skills
-	job.op.stage_changed.connect(_on_stage.bind(job))
-	job.op.identified.connect(_on_identified.bind(job))
 	_jobs.append(job)
-	_changed(job)
-	_run_next.call_deferred()  # the caller holds the job before it starts
 	return job
+
+
+static func _differs(wanted: String, theirs: String) -> bool:
+	return not wanted.is_empty() and not theirs.is_empty() and wanted != theirs
 
 
 func _run_next() -> void:
 	if _busy:
 		return
 	for job in _jobs:
-		if job.state == Job.State.QUEUED:
+		if job.state == Job.State.QUEUED and job.joined == null:
 			_busy = true
 			await _run(job)
 			_busy = false
@@ -206,29 +223,40 @@ func _start(job: Job) -> void:
 		_finish(job, Job.OUTCOME_START_FAILED, str(started.error))
 
 
-## The archive of `job` holds `plugin_id` at `version`: queued requests for
-## that plugin join it, or end as a conflict when they expect another version.
+## The archive of `job` holds `plugin_id` at `version`: its followers and
+## the queued requests for that plugin join it when their expectations agree,
+## and end as install_conflict when they do not.
 func _on_identified(plugin_id: String, version: String, job: Job) -> void:
 	job.identified_version = version
 	for other in _jobs.duplicate():
-		if other == job or other.state != Job.State.QUEUED or other.start_only or other.plugin_id() != plugin_id:
+		var follows: bool = other.joined == job and other.state != Job.State.DONE
+		var queued: bool = other != job and other.state == Job.State.QUEUED and not other.start_only \
+			and other.joined == null and other.plugin_id() == plugin_id
+		if not (follows or queued):
 			continue
-		var wanted := str(other.entry.get("version", ""))
-		if wanted.is_empty() or wanted == version:
+		var wanted_id := str(other.entry.get("id", ""))
+		var wanted_version := str(other.entry.get("version", ""))
+		if _differs(wanted_id, plugin_id) or _differs(wanted_version, version):
+			other.joined = null
+			_conflict(other, plugin_id, version, wanted_id, wanted_version)
+		elif queued:
 			other.joined = job
 			other.state = Job.State.RUNNING
 			_changed(other)
-		else:
-			_conflict(other, plugin_id, version, wanted)
 
 
-## End `job` as a request for `requested` refused while `installing` of the
-## same plugin is under way.
-func _conflict(job: Job, plugin_id: String, installing: String, requested: String) -> void:
-	job.result = {"ok": false, "error": "install_conflict", "detail": {"id": plugin_id,
-		"installing": installing, "requested": requested}}
-	_finish(job, Job.OUTCOME_FAILED, "v%s of %s is being installed by another request; v%s was not installed." % [
-		installing, plugin_id, requested])
+## End `job`, whose request expected `wanted_id` v`wanted_version`, as
+## refused while an install of `their_id` v`their_version` covers it.
+func _conflict(job: Job, their_id: String, their_version: String, wanted_id: String, wanted_version: String) -> void:
+	job.result = {"ok": false, "error": "install_conflict", "detail": {"installing_id": their_id,
+		"installing_version": their_version, "requested_id": wanted_id, "requested_version": wanted_version}}
+	_finish(job, Job.OUTCOME_FAILED, "%s is being installed by another request; %s was not installed." % [
+		_describe(their_id if not their_id.is_empty() else "the plugin at that URL", their_version),
+		_describe(wanted_id if not wanted_id.is_empty() else their_id, wanted_version)])
+
+
+static func _describe(id: String, version: String) -> String:
+	return id if version.is_empty() else "%s v%s" % [id, version]
 
 
 func _on_stage(stage: String, job: Job) -> void:

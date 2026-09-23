@@ -2,7 +2,7 @@ extends RefCounted
 ## The crash-safe part of a marketplace install: replacing
 ## user://plugins/<id>/ and its DB record, with a record on disk (txn.json in
 ## the operation's staging directory) saying how far the replacement got, so
-## the next start of Minerva can undo it.
+## a later pass can undo it.
 ##
 ## Phases, each published (written, then renamed into place) before the step
 ## it describes:
@@ -11,20 +11,29 @@ extends RefCounted
 ##              files may be in place, and registration may have changed the
 ##              DB; recovery moves `previous` back (or removes a first install)
 ##              and restores the DB record saved in the record.
-##   committed  registration was saved; recovery only deletes scratch.
+##   committed  registration and this record were saved; recovery only
+##              deletes scratch.
 ##
-## Directories appear only complete: an operation or lock is built under a
-## ".new" name with its record inside, then renamed into place. An operation
-## belongs to the process named in its record; recovery touches only
-## operations whose owner has exited (asked of the OS, never judged by age)
-## and claims each by renaming it, so two Minerva processes never recover the
-## same one. Ambiguous state is kept and reported, never deleted. A lock per
-## plugin keeps two processes from replacing it at once, and a plugin with an
-## unresolved earlier operation is not installed again until that is undone.
+## Exclusion comes from OS file locks (ProcessFileLock: flock / LockFileEx),
+## which the OS releases however a process ends:
+##   staging.lock           held for each install's destructive section (from
+##                          checking for unfinished work, through setting the
+##                          old install aside, to commit or rollback) and for
+##                          every recovery pass, so no two processes ever
+##                          replace plugins or recover at the same time.
+##   owners/<session>.lock  held by each Minerva process for its lifetime. An
+##                          operation directory is named after its session, so
+##                          its owner has exited exactly when that lock can be
+##                          taken.
+## Recovery therefore acts only on operations of exited processes, while no
+## process can be replacing anything. A record that is missing or not fully
+## valid never justifies deleting a backup: that operation is kept and
+## reported.
 
 const RECORD := "txn.json"
-const OWNER := "owner.json"
 const PREVIOUS := "previous"
+const STAGING_LOCK := "staging.lock"
+const OWNERS := "owners"
 const PHASE_STAGED := "staged"
 const PHASE_REPLACING := "replacing"
 const PHASE_COMMITTED := "committed"
@@ -33,87 +42,66 @@ var op_dir := ""
 var plugin_id := ""
 var had_previous := false
 var db_before = null  # PluginDefinition.to_dict() of the record being replaced, or null
-var _lock_dir := ""
+var _staging_lock = null  # ProcessFileLock while in the destructive section
 
-# Distinguishes this process from an earlier one that had the same pid.
+# This process's session: distinct from every earlier process, even one that
+# had the same pid. Digits and "-" only, so it can sit in a directory name.
 static var _session := "%d-%d" % [Time.get_unix_time_from_system() * 1000, randi()]
+static var _owner_lock = null  # ProcessFileLock on owners/<_session>.lock, held for life
+static var _serial := 0
 
 
-## A new operation directory under `staging_root`, recorded as staged.
-## Returns null when it cannot be created.
+## A new operation directory, named after this process's session and
+## recorded as staged. Returns null when it cannot be created or the
+## platform has no ProcessFileLock (then nothing may be replaced).
 static func begin(staging_root: String) -> RefCounted:
+	if not _hold_owner_lock(staging_root):
+		return null
+	_serial += 1
 	var txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").new()
-	var name := "op_%d_%d" % [Time.get_ticks_usec(), randi()]
-	txn.op_dir = staging_root.path_join(name + ".new")
+	txn.op_dir = staging_root.path_join("op_%s_%d" % [_session, _serial])
 	DirAccess.make_dir_recursive_absolute(txn.op_dir)
-	if not txn.publish(PHASE_STAGED) or DirAccess.rename_absolute(txn.op_dir, staging_root.path_join(name)) != OK:
+	if not txn.publish(PHASE_STAGED):
 		_remove_tree(txn.op_dir)
 		return null
-	txn.op_dir = staging_root.path_join(name)
 	return txn
 
 
 func publish(phase: String) -> bool:
 	return _publish_json(op_dir, RECORD, {"format": 1, "phase": phase, "id": plugin_id,
-		"had_previous": had_previous, "db_before": db_before, "owner": owner()})
+		"had_previous": had_previous, "db_before": db_before})
 
 
-## Drop the record, leaving the directory for recovery to report rather than
-## act on: used when a committed install cannot record that it committed.
-func discard_record() -> void:
-	DirAccess.remove_absolute(op_dir.path_join(RECORD))
-	DirAccess.remove_absolute(op_dir.path_join(RECORD + ".tmp"))
-
-
-## Take the per-plugin lock, then undo whatever an exited process, or an
-## earlier failed rollback in this one, left for the plugin. Returns {} or a
-## failure: plugin_busy (a live process holds the lock) or recovery_pending
-## (the lock is released again).
-func lock(staging_root: String, db) -> Dictionary:
-	var taken := _take_lock(staging_root)
-	if not taken.is_empty():
-		return taken
+## Wait for the staging lock (another process may be replacing a plugin),
+## then undo what exited processes left and check `plugin_id` has no
+## unresolved earlier operation. Returns {} while holding the lock, or a
+## failure without it: cancelled (op cancelled while waiting) or
+## recovery_pending.
+func enter(staging_root: String, db, op, tree: SceneTree) -> Dictionary:
+	_staging_lock = ClassDB.instantiate("ProcessFileLock")
+	while not _staging_lock.try_lock(staging_root.path_join(STAGING_LOCK)):
+		if op.cancelled:
+			_staging_lock = null
+			return {"ok": false, "error": "cancelled", "detail": {}}
+		await tree.process_frame
+	# A cancel that arrived during the last wait still stops the install.
+	if op.cancelled:
+		leave()
+		return {"ok": false, "error": "cancelled", "detail": {}}
 	var pending := _resolve_pending(staging_root, db)
 	if not pending.is_empty():
-		unlock()
+		leave()
 	return pending
 
 
-func _take_lock(staging_root: String) -> Dictionary:
-	var lock_dir := staging_root.path_join("lock_" + plugin_id)
-	for attempt in 3:
-		var building := lock_dir + ".new-%d-%d" % [OS.get_process_id(), randi()]
-		DirAccess.make_dir_recursive_absolute(building)
-		if not _publish_json(building, OWNER, owner()):
-			_remove_tree(building)
-			return {"ok": false, "error": "staging_failed", "detail": {"dir": building}}
-		if DirAccess.rename_absolute(building, lock_dir) == OK:
-			_lock_dir = lock_dir
-			return {}
-		_remove_tree(building)
-		if not _take_over_stale(lock_dir):
-			break
-	return {"ok": false, "error": "plugin_busy", "detail": {"id": plugin_id}}
-
-
-## Whether the per-plugin lock still names this process. Checked right before
-## the destructive phase: a stale-lock takeover racing a third process can,
-## rarely, hand the lock on (see _take_over_stale).
-func holds_lock() -> bool:
-	if _lock_dir.is_empty():
-		return false
-	var holder = _read_json(_lock_dir.path_join(OWNER))
-	return holder is Dictionary and _is_self(holder)
-
-
-func unlock() -> void:
-	if not _lock_dir.is_empty() and holds_lock():
-		_remove_tree(_lock_dir)
-	_lock_dir = ""
+func leave() -> void:
+	if _staging_lock != null:
+		_staging_lock.unlock()
+		_staging_lock = null
 
 
 ## Undo a replacement that did not commit. Returns what was restored; files
-## that could not be moved back stay in `previous` for the next attempt.
+## that could not be moved back stay in `previous` for a later pass.
 func roll_back(final_abs: String, db, previous_def) -> Dictionary:
 	var files := _restore_files(final_abs, op_dir.path_join(PREVIOUS), had_previous)
 	var record := restore_record(db, plugin_id, previous_def)
@@ -134,9 +122,24 @@ static func restore_record(db, id: String, before) -> bool:
 	return def != null and db.restore(def)
 
 
-## Undo every operation whose owner process is gone, and delete locks they
-## held and the loose scratch older clients left. Returns one entry per
-## operation that needs a person: {dir, id, reason}.
+## One recovery pass at startup, if no other process holds the staging lock
+## (if one does, the next install's pass recovers instead). Returns the
+## operations that need a person: [{dir, id, reason}].
+static func sweep(staging_root: String, db) -> Array:
+	var lock = ClassDB.instantiate("ProcessFileLock")
+	if lock == null:
+		return []
+	DirAccess.make_dir_recursive_absolute(staging_root)
+	if not lock.try_lock(staging_root.path_join(STAGING_LOCK)):
+		return []
+	var problems := recover_all(staging_root, db)
+	lock.unlock()
+	return problems
+
+
+## With the staging lock held: undo every operation whose owner has exited
+## and delete scratch older clients left. Returns [{dir, id, reason}] for
+## what cannot be undone.
 static func recover_all(staging_root: String, db) -> Array:
 	var problems := []
 	var root := DirAccess.open(staging_root)
@@ -144,50 +147,29 @@ static func recover_all(staging_root: String, db) -> Array:
 		return problems
 	root.include_hidden = true
 	for file in root.get_files():
-		DirAccess.remove_absolute(staging_root.path_join(file))
+		if file != STAGING_LOCK:
+			DirAccess.remove_absolute(staging_root.path_join(file))  # an older client's download
 	for name in root.get_directories():
 		var dir := staging_root.path_join(name)
-		if name.begins_with("lock_"):
-			var holder = _read_json(dir.path_join(OWNER))
-			# A ".new" lock without its owner file is being created right now.
-			if holder is Dictionary and not owner_alive(holder) or holder == null and not name.contains(".new-"):
-				_remove_tree(dir)
+		if name == OWNERS:
 			continue
 		if not name.begins_with("op_"):
 			_remove_tree(dir)  # an older client's extract dir; it never held a backup
 			continue
-		var record = _read_record(dir)
-		if name.ends_with(".new"):
-			if record is Dictionary and not owner_alive(record.get("owner", {})):
-				_remove_tree(dir)  # created by a process that died before using it
+		if _owner_alive(staging_root, _session_of(name)):
 			continue
-		if record is Dictionary and owner_alive(record.get("owner", {})):
-			continue
-		# Claim it: a rename succeeds for exactly one process, which then
-		# records itself as owner so others leave it alone.
-		var claimed := staging_root.path_join(name.get_slice(".recovering-", 0) + ".recovering-%d" % OS.get_process_id())
-		if claimed != dir and DirAccess.rename_absolute(dir, claimed) != OK:
-			continue
-		# Another process may have claimed it again before the rewrite landed.
-		if record is Dictionary:
-			record["owner"] = owner()
-			if not _publish_json(claimed, RECORD, record):
-				continue
-			var mine = _read_record(claimed)
-			if not (mine is Dictionary and _is_self(mine.get("owner", {}))):
-				continue  # re-claimed by another process after the rename
-		var problem := _recover(claimed, record, db)
+		var problem := _recover(dir, _read_record(dir), db)
 		if problem.is_empty():
-			_remove_tree(claimed)
+			_remove_tree(dir)
 		else:
 			problems.append(problem)
 	return problems
 
 
-## With the lock held: recover what exited processes left, then any
-## unresolved operation for `plugin_id`: this process's own (a rollback that
-## failed earlier) is retried; a live other process's cannot be touched, so
-## the install waits. Returns {} or recovery_pending while any of them stands.
+## With the staging lock held: recover what exited processes left, then
+## check the live operations for `plugin_id`: this process's own (a rollback
+## that failed earlier) is retried; another live process's cannot be touched,
+## so the install waits. Returns {} or recovery_pending.
 func _resolve_pending(staging_root: String, db) -> Dictionary:
 	for problem in recover_all(staging_root, db):
 		if problem.id == plugin_id:
@@ -196,13 +178,10 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 	for name in root.get_directories() if root != null else []:
 		var dir := staging_root.path_join(name)
 		var record = _read_record(dir)
-		if dir == op_dir or not name.begins_with("op_") or name.ends_with(".new") or not record is Dictionary \
-				or record.get("id") != plugin_id or record.get("phase") != PHASE_REPLACING:
+		if dir == op_dir or not name.begins_with("op_") or not _validate(record).is_empty() \
+				or record.id != plugin_id or record.phase != PHASE_REPLACING:
 			continue
-		# This process holds the lock, so a live owner here kept a failed
-		# rollback; its later recovery would undo whatever this install puts
-		# in place.
-		if not _is_self(record.get("owner", {})):
+		if _session_of(name) != _session:
 			return _pending({"dir": dir, "id": plugin_id, "reason":
 				"another running Minerva has not yet restored an earlier install of '%s'" % plugin_id})
 		var problem := _recover(dir, record, db)
@@ -212,22 +191,40 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 	return {}
 
 
-## Drop the unresolved operations for `plugin_id` that this process owns or
-## whose owner has exited, because the plugin is being removed: undoing them
-## later would bring it back.
-## Nothing is dropped while this process is itself installing the plugin:
-## that install's `previous` is still its only way back.
-static func forget(staging_root: String, plugin_id: String) -> void:
-	var holder = _read_json(staging_root.path_join("lock_" + plugin_id).path_join(OWNER))
-	if holder is Dictionary and _is_self(holder):
-		return
+## Drop the unresolved operations for `plugin_id` owned by this process or by
+## exited ones, because the plugin is being removed and undoing them later
+## would bring it back. Returns "" when done, else why the removal must wait
+## (dropping nothing): an install holds the staging lock, a live other process
+## owns one of them, or this build has no ProcessFileLock.
+static func forget(staging_root: String, plugin_id: String) -> String:
+	if not _has_operation_for(staging_root, plugin_id):
+		return ""
+	var lock = ClassDB.instantiate("ProcessFileLock")
+	if lock == null:
+		return "Plugin '%s' has an unfinished install, and this build cannot lock its install records; update Minerva's native libraries" % plugin_id
+	if not lock.try_lock(staging_root.path_join(STAGING_LOCK)):
+		return "An install is in progress; remove plugin '%s' once it finishes" % plugin_id
+	var ok := true
 	var root := DirAccess.open(staging_root)
 	for name in root.get_directories() if root != null else []:
-		var dir := staging_root.path_join(name)
-		var record = _read_record(dir)
-		if name.begins_with("op_") and record is Dictionary and record.get("id") == plugin_id \
-				and (_is_self(record.get("owner", {})) or not owner_alive(record.get("owner", {}))):
-			_remove_tree(dir)
+		var record = _read_record(staging_root.path_join(name))
+		if not name.begins_with("op_") or not (record is Dictionary and record.get("id") == plugin_id):
+			continue
+		if _owner_alive(staging_root, _session_of(name)) and _session_of(name) != _session:
+			ok = false
+		else:
+			_remove_tree(staging_root.path_join(name))
+	lock.unlock()
+	return "" if ok else "Another running Minerva has an unfinished install of plugin '%s'; remove it once that Minerva restores it or exits" % plugin_id
+
+
+static func _has_operation_for(staging_root: String, plugin_id: String) -> bool:
+	var root := DirAccess.open(staging_root)
+	for name in root.get_directories() if root != null else []:
+		var record = _read_record(staging_root.path_join(name))
+		if name.begins_with("op_") and record is Dictionary and record.get("id") == plugin_id:
+			return true
+	return false
 
 
 static func _pending(problem: Dictionary) -> Dictionary:
@@ -235,24 +232,47 @@ static func _pending(problem: Dictionary) -> Dictionary:
 
 
 static func _recover(dir: String, record, db) -> Dictionary:
-	var has_previous := DirAccess.dir_exists_absolute(dir.path_join(PREVIOUS))
-	if not record is Dictionary:
-		# Operations appear with their record, so a missing one means it was
-		# removed on purpose (see discard_record) or lost; a backup is kept.
-		return {} if not has_previous else {"dir": dir, "id": "", "reason":
-			"an install left a plugin backup at %s without a readable record; move it back to user://plugins/<id>/ if that plugin is broken, otherwise delete it" % dir.path_join(PREVIOUS)}
-	var phase := str(record.get("phase", ""))
-	if phase != PHASE_REPLACING:
-		return {}  # staged: nothing replaced; committed: the new install stands
-	var id := str(record.get("id", ""))
-	if not PluginDefinition._is_valid_id(id) or id == "data" or InternalPlugins.has(id):
-		return {"dir": dir, "id": id, "reason": "an unfinished install recorded an invalid plugin id '%s'; its backup is kept at %s" % [id, dir]}
-	var final_abs := ProjectSettings.globalize_path("user://plugins").path_join(id)
-	if not _restore_files(final_abs, dir.path_join(PREVIOUS), bool(record.get("had_previous", false))):
-		return {"dir": dir, "id": id, "reason": "could not move the previous version of '%s' back from %s" % [id, dir.path_join(PREVIOUS)]}
-	if not restore_record(db, id, record.get("db_before")):
-		return {"dir": dir, "id": id, "reason": "restored the files of '%s' but could not save its previous DB record" % id}
+	var backup := dir.path_join(PREVIOUS)
+	var invalid := _validate(record)
+	if not invalid.is_empty():
+		# Only a directory holding no backup can be discarded unexplained.
+		if not DirAccess.dir_exists_absolute(backup):
+			return {}
+		return {"dir": dir, "id": str(record.get("id", "")) if record is Dictionary else "", "reason":
+			"an unfinished install left a plugin backup at %s with a record that is %s; move it back to user://plugins/<id>/ if that plugin is broken, otherwise delete it" % [backup, invalid]}
+	match record.phase:
+		PHASE_STAGED:
+			if DirAccess.dir_exists_absolute(backup):
+				return {"dir": dir, "id": record.id, "reason": "a staged install holds an unexpected backup at %s" % backup}
+			return {}
+		PHASE_COMMITTED:
+			return {}  # the new install stands; its backup is obsolete
+	var final_abs := ProjectSettings.globalize_path("user://plugins").path_join(record.id)
+	if not _restore_files(final_abs, backup, record.had_previous):
+		return {"dir": dir, "id": record.id, "reason": "could not move the previous version of '%s' back from %s" % [record.id, backup]}
+	if not restore_record(db, record.id, record.db_before):
+		return {"dir": dir, "id": record.id, "reason": "restored the files of '%s' but could not save its previous DB record" % record.id}
 	return {}
+
+
+## Why `record` cannot be trusted, or "" when it is a complete record of a
+## known phase whose plugin id and saved DB record agree.
+static func _validate(record) -> String:
+	if not record is Dictionary:
+		return "missing or unreadable"
+	if record.get("format") != 1 or not record.get("phase") in [PHASE_STAGED, PHASE_REPLACING, PHASE_COMMITTED]:
+		return "of an unknown format or phase"
+	if not record.get("id") is String or not record.get("had_previous") is bool:
+		return "incomplete"
+	var id: String = record.id
+	if record.phase == PHASE_STAGED and id.is_empty():
+		return ""
+	if not PluginDefinition._is_valid_id(id) or id == "data" or InternalPlugins.has(id):
+		return "for an invalid plugin id '%s'" % id
+	var before = record.get("db_before")
+	if before != null and not (before is Dictionary and before.get("id") == id):
+		return "for '%s' but holding another plugin's DB record" % id
+	return ""
 
 
 ## Remove what an unfinished install put at `final_abs` and move the old
@@ -267,72 +287,43 @@ static func _restore_files(final_abs: String, previous_abs: String, had_previous
 	return DirAccess.rename_absolute(previous_abs, final_abs) == OK
 
 
-## Rename a lock whose holder has exited out of the way. Returns whether
-## taking the lock is worth another try.
-static func _take_over_stale(lock_dir: String) -> bool:
-	var holder = _read_json(lock_dir.path_join(OWNER))
-	if holder is Dictionary and owner_alive(holder):
+## Take this process's owner lock once; it is released only when the process
+## ends. False when the platform has no ProcessFileLock.
+static func _hold_owner_lock(staging_root: String) -> bool:
+	if _owner_lock != null:
+		return true
+	var lock = ClassDB.instantiate("ProcessFileLock")
+	if lock == null:
 		return false
-	var claimed := lock_dir + ".stale-%d-%d" % [OS.get_process_id(), randi()]
-	if DirAccess.rename_absolute(lock_dir, claimed) != OK:
-		return true  # it changed hands meanwhile; look again
-	# The lock renamed may be a live one taken after the check above.
-	var taken = _read_json(claimed.path_join(OWNER))
-	if taken is Dictionary and owner_alive(taken):
-		DirAccess.rename_absolute(claimed, lock_dir)
+	DirAccess.make_dir_recursive_absolute(staging_root.path_join(OWNERS))
+	if not lock.try_lock(staging_root.path_join(OWNERS).path_join(_session + ".lock")):
 		return false
-	_remove_tree(claimed)
+	_owner_lock = lock
 	return true
 
 
-## This process, as recorded: pid, executable file name, and session.
-static func owner() -> Dictionary:
-	return {"pid": OS.get_process_id(), "exe": OS.get_executable_path().get_file(), "session": _session}
+## Whether the process whose session is `session` still runs, i.e. holds its
+## owner lock. A lock that can be taken belongs to an exited process; with no
+## ProcessFileLock the owner counts as alive. Owner files are never deleted:
+## a process could be taking a lock on the file being removed.
+static func _owner_alive(staging_root: String, session: String) -> bool:
+	if session == _session:
+		return true
+	var probe = ClassDB.instantiate("ProcessFileLock")
+	if probe == null:
+		return true
+	DirAccess.make_dir_recursive_absolute(staging_root.path_join(OWNERS))
+	var path := staging_root.path_join(OWNERS).path_join(session + ".lock")
+	if not probe.try_lock(path):
+		return true
+	probe.unlock()
+	return false
 
 
-static func _is_self(recorded: Dictionary) -> bool:
-	return int(recorded.get("pid", 0)) == OS.get_process_id() and str(recorded.get("session", "")) == _session
-
-
-## Whether the recorded owner is still running: its pid is alive and runs
-## the same executable. When the OS cannot say, the owner counts as alive,
-## so nothing is recovered out from under a running process.
-static func owner_alive(recorded: Dictionary) -> bool:
-	var pid := int(recorded.get("pid", 0))
-	var exe := str(recorded.get("exe", ""))
-	if pid <= 0:
-		return false
-	if pid == OS.get_process_id():
-		return _is_self(recorded)  # else an earlier process with our pid
-	var running := ""
-	match OS.get_name():
-		"Linux", "FreeBSD", "BSD":
-			var proc := DirAccess.open("/proc/%d" % pid)
-			if proc == null:
-				return false
-			# An executable replaced on disk reads as "<path> (deleted)".
-			running = proc.read_link("exe").trim_suffix(" (deleted)").get_file()
-			if running.is_empty():
-				return true
-		"macOS":
-			var out := []
-			var code := OS.execute("ps", ["-o", "comm=", "-p", str(pid)], out)
-			if code == 1:
-				return false  # no such process
-			if code != 0 or out.is_empty():
-				return true
-			running = str(out[0]).strip_edges().get_file()
-		"Windows":
-			var out := []
-			if OS.execute("tasklist", ["/FI", "PID eq %d" % pid, "/FO", "CSV", "/NH"], out) != 0 or out.is_empty():
-				return true
-			var line := str(out[0]).strip_edges()
-			if not line.begins_with("\""):
-				return false  # "INFO: No tasks are running..."
-			running = line.get_slice("\"", 1)
-		_:
-			return true
-	return running.to_lower() == exe.to_lower()
+## "op_<session>_<serial>" -> "<session>"; older clients' names give "".
+static func _session_of(name: String) -> String:
+	var parts := name.split("_")
+	return parts[1] if parts.size() == 3 and parts[1].contains("-") else ""
 
 
 static func _read_record(dir: String):

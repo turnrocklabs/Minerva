@@ -8,11 +8,15 @@ extends SceneTree
 ##   - a registration that fails after changing the DB puts the old files and
 ##     the old DB record back; one whose DB cannot be saved says the rollback
 ##     is incomplete rather than claiming the old install is back;
-##   - after a crash, the next start undoes a half-done replacement (files and
-##     DB record, whether or not the old install had been set aside yet) and a
-##     half-done first install, keeps a committed one, keeps and reports a
-##     backup it cannot account for, leaves a live process's operation alone,
-##     and removes an older client's scratch;
+##   - recovery undoes an exited process's half-done replacement (files and
+##     DB record, whether or not the old install had been set aside yet) and
+##     half-done first install, keeps a committed one, keeps and reports every
+##     backup whose record is missing or untrustworthy, leaves live processes'
+##     operations alone, removes an older client's scratch, and does nothing
+##     while another process holds the staging lock; an install waits for
+##     that lock and for another live process's unrestored operation;
+##   - a plugin database that cannot be written keeps its previous complete
+##     file;
 ##   - frames keep ticking while a large archive is extracted and verified,
 ##     and the result names the installed id, version and platform check;
 ##   - cancelling while downloading, extracting, verifying, or waiting for the
@@ -32,8 +36,6 @@ const FRESH_ID := "test_txn_fresh"
 const PLUGIN_DIR := "user://plugins/" + ID
 const STAGING := "user://plugins/.staging"
 const BIG_BYTES := 96 * 1024 * 1024
-# No process has this pid on any supported OS.
-const DEAD_OWNER := {"pid": 2147483000, "exe": "godot", "session": "gone"}
 
 ## A PluginDB whose next update_definition applies the change and then
 ## reports failure: registration that fails after touching the DB.
@@ -120,7 +122,9 @@ func _test_refused_archives_leave_install_intact() -> void:
 	var result: Dictionary = await client.install_from_registry_entry(entry, db)
 	_check(result.get("error", "") == "identity_mismatch", "a version other than the entry's is refused: %s" % result)
 	for case in [["wrong_arch", "identity_mismatch"], ["no_binary", "identity_mismatch"],
-			["escaping_link", "archive_unsafe"], ["dotdot", "archive_unsafe"]]:
+			["escaping_link", "archive_unsafe"], ["dotdot", "archive_unsafe"],
+			["huge_pax", "archive_unsafe"], ["global_path", "archive_unsafe"],
+			["pax_escape", "archive_unsafe"], ["through_link", "archive_unsafe"]]:
 		result = await _client().install_from_url(_base_url + case[0] + ".tar.gz", db)
 		_check(result.get("error", "") == case[1], "%s is refused as %s: %s" % [case[0], case[1], result])
 	_check_v1_intact(db, "after every refused archive")
@@ -145,26 +149,29 @@ func _test_unsaved_registration_reports_incomplete_rollback() -> void:
 		"the rollback says the files are back but the DB record is not saved")
 	_check("could not be restored" in load(MARKETPLACE_GD).format_install_error(result),
 		"the error tells the user the database was not restored")
+	# A real write failure: something else occupies the database's side file.
+	var real = load(PLUGINDB_GD).new()
+	var db_file := ProjectSettings.globalize_path("user://plugins/plugins.json")
+	var before := FileAccess.get_file_as_string(db_file)
+	DirAccess.make_dir_recursive_absolute(db_file + ".tmp")
+	_check(not real.save() and FileAccess.get_file_as_string(db_file) == before,
+		"a database save that cannot be written fails and leaves the previous file whole")
+	DirAccess.remove_absolute(db_file + ".tmp")
 
 
 func _test_recovery_after_a_crash() -> void:
 	var db = await _installed_v1(load(PLUGINDB_GD).new())
 	var staging := ProjectSettings.globalize_path(STAGING)
-	var txn_cls = load(TXN_GD)
-	# Half-done: v1 set aside, v2 moved in and registered, then the process died.
-	var crashed := staging.path_join("op_crashed")
-	DirAccess.make_dir_recursive_absolute(crashed)
 	var v1_record: Dictionary = db.get_by_id(ID).to_dict()
+	# Operation directories are named op_<session>_<n>; a session nobody holds
+	# the owner lock of belongs to an exited process.
+	# Half-done: v1 set aside, v2 moved in and registered, then the process died.
+	var crashed := _op(staging, "dead-1", {"phase": "replacing", "id": ID, "had_previous": true, "db_before": v1_record})
 	DirAccess.rename_absolute(ProjectSettings.globalize_path(PLUGIN_DIR), crashed.path_join("previous"))
 	_extract("v2", ProjectSettings.globalize_path(PLUGIN_DIR))
 	db.update_definition(PluginDefinition.from_manifest(PLUGIN_DIR + "/manifest.json"))
-	_write(crashed.path_join("txn.json"), JSON.stringify({"format": 1, "phase": "replacing", "id": ID,
-		"had_previous": true, "db_before": v1_record, "owner": DEAD_OWNER}))
 	# Crashed before setting v1 aside: nothing moved, but the record stands.
-	var before_aside := staging.path_join("op_before_aside")
-	DirAccess.make_dir_recursive_absolute(before_aside)
-	_write(before_aside.path_join("txn.json"), JSON.stringify({"format": 1, "phase": "replacing", "id": ID,
-		"had_previous": true, "db_before": v1_record, "owner": DEAD_OWNER}))
+	_op(staging, "dead-2", {"phase": "replacing", "id": ID, "had_previous": true, "db_before": v1_record})
 	# A first install that crashed after moving its files in and registering.
 	var fresh_dir := ProjectSettings.globalize_path("user://plugins/" + FRESH_ID)
 	DirAccess.make_dir_recursive_absolute(fresh_dir)
@@ -172,41 +179,95 @@ func _test_recovery_after_a_crash() -> void:
 	fresh_manifest["id"] = FRESH_ID
 	_write(fresh_dir.path_join("manifest.json"), JSON.stringify(fresh_manifest))
 	db.install(fresh_dir.path_join("manifest.json"))
-	var fresh := staging.path_join("op_fresh")
-	DirAccess.make_dir_recursive_absolute(fresh)
-	_write(fresh.path_join("txn.json"), JSON.stringify({"format": 1, "phase": "replacing", "id": FRESH_ID,
-		"had_previous": false, "db_before": null, "owner": DEAD_OWNER}))
+	_op(staging, "dead-3", {"phase": "replacing", "id": FRESH_ID, "had_previous": false, "db_before": null})
 	# Committed before the crash: its leftover backup must not come back.
-	var committed := staging.path_join("op_committed")
-	DirAccess.make_dir_recursive_absolute(committed.path_join("previous"))
-	_write(committed.path_join("txn.json"), JSON.stringify({"format": 1, "phase": "committed", "id": ID,
-		"had_previous": true, "db_before": null, "owner": DEAD_OWNER}))
-	# A backup with no record: nobody can say where it belongs.
-	var unknown := staging.path_join("op_unknown")
-	DirAccess.make_dir_recursive_absolute(unknown.path_join("previous"))
-	# A live operation of this process.
-	var live := staging.path_join("op_live")
-	DirAccess.make_dir_recursive_absolute(live)
-	_write(live.path_join("txn.json"), JSON.stringify({"format": 1, "phase": "replacing", "id": ID,
-		"had_previous": false, "db_before": null, "owner": txn_cls.owner()}))
+	DirAccess.make_dir_recursive_absolute(_op(staging, "dead-4", {"phase": "committed", "id": ID,
+		"had_previous": true, "db_before": null}).path_join("previous"))
+	# Backups whose records cannot be trusted: none, empty, an unknown phase,
+	# and another plugin's DB record. Each must be kept and reported.
+	for bad in [null, {}, {"phase": "unknown", "id": ID, "had_previous": true, "db_before": null},
+			{"phase": "replacing", "id": ID, "had_previous": true, "db_before": {"id": "someone_else"}}]:
+		var dir := staging.path_join("op_dead-bad%d_1" % _serial_bad())
+		DirAccess.make_dir_recursive_absolute(dir.path_join("previous"))
+		if bad != null:
+			_write(dir.path_join("txn.json"), JSON.stringify(bad if bad.is_empty() else _record(bad)))
+	# This process's own live operation, and a live other process's (its owner
+	# lock held here, as that process would).
+	_op(staging, load(TXN_GD)._session, {"phase": "replacing", "id": FRESH_ID, "had_previous": false, "db_before": null}, 99)
+	var other_process = ClassDB.instantiate("ProcessFileLock")
+	DirAccess.make_dir_recursive_absolute(staging.path_join("owners"))
+	other_process.try_lock(staging.path_join("owners/live-1.lock"))
+	# It set v1 aside (a copy stands in here) before it stopped making progress.
+	var live_other := _op(staging, "live-1", {"phase": "replacing", "id": ID, "had_previous": true, "db_before": v1_record})
+	_extract("v1", live_other.path_join("previous"))
+	_write(live_other.path_join("previous/sentinel.txt"), "v1 install")
 	# An older client's scratch.
 	DirAccess.make_dir_recursive_absolute(staging.path_join("extract_123"))
 	_write(staging.path_join("dl_123.tar.gz"), "partial")
+
+	# While another process holds the staging lock, recovery does nothing.
+	var busy = ClassDB.instantiate("ProcessFileLock")
+	busy.try_lock(staging.path_join("staging.lock"))
+	_check(load(MARKETPLACE_GD).sweep_staging(db).is_empty() and DirAccess.dir_exists_absolute(crashed),
+		"no recovery while another process holds the staging lock")
+	busy.unlock()
 
 	var problems: Array = load(MARKETPLACE_GD).sweep_staging(db)
 	_check_v1_intact(db, "after recovery undid the half-done replacement")
 	_check(not DirAccess.dir_exists_absolute(fresh_dir) and not db.has_plugin(FRESH_ID),
 		"a half-done first install is removed, files and DB record")
 	var left := Array(DirAccess.get_directories_at(staging))
-	_check(not "op_crashed" in left and not "op_before_aside" in left and not "op_fresh" in left
-		and not "op_committed" in left and not "extract_123" in left
+	_check(not "op_dead-1_1" in left and not "op_dead-2_1" in left and not "op_dead-3_1" in left
+		and not "op_dead-4_1" in left and not "extract_123" in left
 		and not FileAccess.file_exists(staging.path_join("dl_123.tar.gz")), "recovered and legacy staging is gone: %s" % [left])
-	_check("op_live" in left, "the live operation is left alone")
-	var kept := left.filter(func(n: String) -> bool: return n.begins_with("op_unknown"))
-	_check(kept.size() == 1 and problems.size() == 1 and "without a readable record" in str(problems[0].get("reason", "")),
-		"the unexplained backup is kept and reported: %s" % [problems])
-	for name in left:
+	_check("op_%s_99" % load(TXN_GD)._session in left and "op_live-1_1" in left, "live operations are left alone")
+	_check(left.filter(func(n: String) -> bool: return n.begins_with("op_dead-bad")).size() == 4 and problems.size() == 4,
+		"every backup with an untrustworthy record is kept and reported: %s" % [problems])
+	# A person acts on those reports; until then they would hold back installs of ID.
+	for name in left.filter(func(n: String) -> bool: return n.begins_with("op_dead-bad")):
 		_h.rm_dir_recursive(staging.path_join(name))
+
+	# The live other process's unrestored operation holds back installs of ID;
+	# once it exits, the next install's recovery pass puts v1 back first.
+	var blocked: Dictionary = await _client().install_from_url(_base_url + "v2.tar.gz", db)
+	_check(blocked.get("error", "") == "recovery_pending" and DirAccess.dir_exists_absolute(live_other),
+		"an install waits for another live process's unrestored operation: %s" % blocked)
+	other_process.unlock()
+	# An install waits while another process holds the staging lock.
+	busy.try_lock(staging.path_join("staging.lock"))
+	var op = load(OPERATION_GD).new()
+	var box := _run(func(): return await _client().install_from_url(_base_url + "v2.tar.gz", db, false, op))
+	await _wait(func() -> bool: return op.stage == "wait")
+	await create_timer(0.5).timeout
+	_check(op.stage == "wait" and box[0] == null, "an install waits for the staging lock")
+	busy.unlock()
+	await _wait(func() -> bool: return box[0] != null)
+	_check(box[0] != null and box[0].get("ok", false) and box[0].get("version") == "2.0.0" and db.get_by_id(ID).version == "2.0.0"
+		and not DirAccess.dir_exists_absolute(live_other),
+		"after the other process exits its operation is undone and v2 installs over v1: %s" % [box[0]])
+	for name in DirAccess.get_directories_at(staging):
+		if name != "owners":
+			_h.rm_dir_recursive(staging.path_join(name))
+
+
+var _bad_serial := 0
+func _serial_bad() -> int:
+	_bad_serial += 1
+	return _bad_serial
+
+
+func _record(fields: Dictionary) -> Dictionary:
+	var record := {"format": 1}
+	record.merge(fields)
+	return record
+
+
+## An operation directory for `session` holding a record with `fields`.
+func _op(staging: String, session: String, fields: Dictionary, serial: int = 1) -> String:
+	var dir := staging.path_join("op_%s_%d" % [session, serial])
+	DirAccess.make_dir_recursive_absolute(dir)
+	_write(dir.path_join("txn.json"), JSON.stringify(_record(fields)))
+	return dir
 
 
 func _test_frames_tick_during_extract_and_verify() -> void:
@@ -336,6 +397,10 @@ func _pack(name: String, version: String, payload_bytes: int) -> bool:
 ##   no_binary      manifest names an entrypoint the archive lacks
 ##   escaping_link  a symlink pointing out of the plugin directory
 ##   dotdot         a member named ../outside.txt
+##   huge_pax       a pax record over the scanner's metadata bound
+##   global_path    a global pax record renaming every later member
+##   pax_escape     a harmless-looking member renamed by pax to ../escape.txt
+##   through_link   link -> sub then link/x.txt, written through the link
 func _pack_crafted() -> bool:
 	var other_machine := 0xB7 if MarketplaceClient.resolve_platform_target() != "linux-arm64" else 0x3E
 	var spec := {
@@ -343,6 +408,10 @@ func _pack_crafted() -> bool:
 		"no_binary": {"manifest": _manifest("2.0.0", "./missing-binary")},
 		"escaping_link": {"manifest": _manifest("2.0.0"), "link": ["escape", "../../../../etc"]},
 		"dotdot": {"manifest": _manifest("2.0.0"), "extra_name": "../outside.txt"},
+		"huge_pax": {"manifest": _manifest("2.0.0"), "pax": {"comment": "x".repeat(70000)}},
+		"global_path": {"manifest": _manifest("2.0.0"), "global_pax": {"path": "renamed.txt"}},
+		"pax_escape": {"manifest": _manifest("2.0.0"), "pax": {"path": "../escape.txt"}},
+		"through_link": {"manifest": _manifest("2.0.0"), "link": ["link", "sub"], "extra_name": "link/x.txt"},
 	}
 	_write(_temp.path_join("crafted.json"), JSON.stringify(spec))
 	var script := """
@@ -355,9 +424,13 @@ for name, s in json.load(open(root + '/crafted.json')).items():
     elif s['manifest']['backend']['entrypoint'] == './test-binary':
         files['test-binary'] = b'PLACEHOLDER'
     files['SHA256SUMS'] = ''.join('%s  %s\\n' % (hashlib.sha256(v).hexdigest(), k) for k, v in files.items()).encode()
-    with tarfile.open('%s/%s.tar.gz' % (root, name), 'w:gz') as tar:
+    with tarfile.open('%s/%s.tar.gz' % (root, name), 'w:gz', format=tarfile.PAX_FORMAT,
+                      pax_headers=s.get('global_pax', {})) as tar:
         for k, v in files.items():
-            info = tarfile.TarInfo('./' + k); info.size = len(v); tar.addfile(info, io.BytesIO(v))
+            info = tarfile.TarInfo('./' + k); info.size = len(v)
+            if k == 'manifest.json' and 'pax' in s:
+                info.pax_headers = s['pax']
+            tar.addfile(info, io.BytesIO(v))
         if 'link' in s:
             info = tarfile.TarInfo(s['link'][0]); info.type = tarfile.SYMTYPE; info.linkname = s['link'][1]; tar.addfile(info)
         if 'extra_name' in s:

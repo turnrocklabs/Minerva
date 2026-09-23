@@ -242,17 +242,23 @@ func set_auto_reload(plugin_id: String, enabled: bool) -> bool:
 
 ## Load plugin records from disk. Called automatically in _init().
 func load_db() -> Error:
-	if not FileAccess.file_exists(DB_PATH):
-		return OK  # Empty database is valid
+	var path := DB_PATH
+	if not FileAccess.file_exists(path):
+		# On Windows a save interrupted between removing and renaming leaves
+		# only the complete side file. Elsewhere the rename is atomic, so a
+		# side file is only a save that never finished.
+		path = DB_PATH + ".tmp"
+		if OS.get_name() != "Windows" or not FileAccess.file_exists(path):
+			return OK  # Empty database is valid
 
-	var file := FileAccess.open(DB_PATH, FileAccess.READ)
+	var file := FileAccess.open(path, FileAccess.READ)
 	if not file:
-		push_error("[PluginDB] Cannot open %s" % DB_PATH)
+		push_error("[PluginDB] Cannot open %s" % path)
 		return FileAccess.get_open_error()
 
 	var json := JSON.new()
 	if json.parse(file.get_as_text()) != OK:
-		push_error("[PluginDB] Failed to parse %s" % DB_PATH)
+		push_error("[PluginDB] Failed to parse %s" % path)
 		return ERR_PARSE_ERROR
 
 	var root: Dictionary = json.data if json.data is Dictionary else {}
@@ -336,15 +342,30 @@ func _save() -> bool:
 		"internal_autostart": _internal_autostart,
 	}
 
+	# Written to a side file and renamed over the database, so a crash leaves
+	# either the old complete file or the new one, never a truncated one.
 	var json := JSON.stringify(data, "\t")
-	var file := FileAccess.open(DB_PATH, FileAccess.WRITE)
+	var tmp_path := DB_PATH + ".tmp"
+	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if not file:
-		push_error("[PluginDB] Cannot write %s: %s" % [DB_PATH, FileAccess.get_open_error()])
+		push_error("[PluginDB] Cannot write %s: %s" % [tmp_path, FileAccess.get_open_error()])
 		return false
-
 	var stored := file.store_string(json)
+	file.flush()
 	file.close()
-	return stored
+	if not stored:
+		push_error("[PluginDB] Could not write all of %s" % tmp_path)
+		return false
+	var db_abs := ProjectSettings.globalize_path(DB_PATH)
+	# Windows cannot rename over an existing file; load_db falls back to the
+	# side file when the database itself is missing.
+	if OS.get_name() == "Windows":
+		DirAccess.remove_absolute(db_abs)
+	var err := DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp_path), db_abs)
+	if err != OK:
+		push_error("[PluginDB] Cannot replace %s: %s" % [DB_PATH, error_string(err)])
+		return false
+	return true
 
 
 func _ensure_data_dir() -> void:

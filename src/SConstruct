@@ -19,7 +19,7 @@ env.Append(LIBPATH=["gdextension/terminal/ghostty-shim/zig-out/lib"])
 env.Append(LIBS=["minerva-vt"])
 
 # Platform specific sources
-sources = ["gdextension/terminal/register_types.cpp"]
+sources = ["gdextension/terminal/register_types.cpp", "gdextension/terminal/common/process_file_lock.cpp"]
 
 if env["platform"] == "windows":
     sources.append("gdextension/terminal/windows/terminal.cpp")

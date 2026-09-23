@@ -22,6 +22,8 @@ const STAGE_EXTRACT := "extract"
 const STAGE_VERIFY := "verify"
 ## Waiting for the user's decisions (skill consent) before anything changes.
 const STAGE_CONFIRM := "confirm"
+## Waiting for another Minerva process to finish replacing a plugin.
+const STAGE_WAIT := "wait"
 const STAGE_REGISTER := "register"
 ## Entered by PluginInstallQueue after a successful install that should run.
 const STAGE_START := "start"

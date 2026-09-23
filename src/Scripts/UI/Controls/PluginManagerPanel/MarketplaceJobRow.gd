@@ -15,6 +15,7 @@ const STAGE_NAMES := {
 	Operation.STAGE_EXTRACT: "Extracting",
 	Operation.STAGE_VERIFY: "Verifying files",
 	Operation.STAGE_CONFIRM: "Waiting for your confirmation",
+	Operation.STAGE_WAIT: "Waiting for another Minerva to finish installing",
 	Operation.STAGE_REGISTER: "Registering",
 	Operation.STAGE_START: "Starting",
 }

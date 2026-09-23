@@ -49,7 +49,8 @@ var joined = null
 var identified_version := ""
 
 
-## The actual id once the archive has been read, else the one requested.
+## The actual id once the archive has been read, else the one requested
+## ("" for a URL-only request until then).
 func plugin_id() -> String:
 	if not str(result.get("plugin_id", "")).is_empty():
 		return result.plugin_id

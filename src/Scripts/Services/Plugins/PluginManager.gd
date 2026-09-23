@@ -656,6 +656,14 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		if stop_result.get("error"):
 			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
 
+	# Last refusal before anything irreversible: an unfinished marketplace
+	# install of it must not bring it back later, and one still in progress
+	# has to finish first.
+	var forgotten: String = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").forget(
+			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), id)
+	if not forgotten.is_empty():
+		return {"error": forgotten}
+
 	# Unseed plugin-shipped skills before removing the plugin from the DB
 	# (DCR 019df57b T6).  Pristine records hard-delete; customised records
 	# auto-convert to source="user" so user edits are preserved.
@@ -682,9 +690,6 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 			print("[PluginManager] Deleted plugin data directory: %s" % data_dir)
 
 	print("[PluginManager] Removed plugin '%s'" % id)
-	# An unfinished marketplace install of it must not bring it back later.
-	load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").forget(
-		ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), id)
 
 	# Cross-plugin reactivity (DCR 019df57b T7).  Plugin's declared tools are
 	# no longer "available"; any remaining skill (any source) whose tool_deps
