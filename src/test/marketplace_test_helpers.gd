@@ -54,6 +54,23 @@ func run_cmd(cmd: String, args: Array) -> bool:
 	return true
 
 
+## Write SHA256SUMS for the files in `dir` (absolute), as the marketplace
+## verifier reads it, and pack the directory into the .tar.gz `archive`. Tar
+## gets its arguments directly: OS.execute passes them to /bin/sh inside
+## double quotes, so shell text such as $(...) in them would be expanded.
+func pack_plugin_dir(dir: String, archive: String) -> bool:
+	var files := Array(DirAccess.get_files_at(dir))
+	files.erase("SHA256SUMS")
+	files.sort()
+	var sums := FileAccess.open(dir.path_join("SHA256SUMS"), FileAccess.WRITE)
+	if sums == null:
+		return false
+	for file in files:
+		sums.store_string("%s  %s\n" % [FileAccess.get_sha256(dir.path_join(file)), file])
+	sums.close()
+	return run_cmd("tar", ["-czf", archive, "-C", dir, "."])
+
+
 func mkdir_recursive(path: String) -> bool:
 	if path.begins_with("user://") or path.begins_with("res://"):
 		return DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path)) == OK

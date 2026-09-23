@@ -113,7 +113,6 @@ class WaitingInstaller extends RefCounted:
 var _h
 var _temp := ""
 var _base_url := ""
-var _sha := ""
 var _fail := 0
 
 
@@ -125,7 +124,6 @@ func _init() -> void:
 	await process_frame
 	_h = load(HELPERS_GD).new(self)
 	_temp = "%s/test_install_txn_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
-	_sha = "sha256sum" if _h.have_cmd("sha256sum") else "shasum -a 256"
 	var packed: bool = _pack("v1", "1.0.0", 0) and _pack("v2", "2.0.0", 0) and _pack("big", "3.0.0", BIG_BYTES) \
 		and _pack_crafted()
 	var port: int = _h.random_high_port()
@@ -552,7 +550,7 @@ func _pack(name: String, version: String, payload_bytes: int) -> bool:
 		var f := FileAccess.open(dir.path_join("payload.bin"), FileAccess.WRITE)
 		f.store_buffer(Crypto.new().generate_random_bytes(payload_bytes))
 		f.close()
-	return _h.run_cmd("bash", ["-c", "cd '%s' && %s $(ls) > SHA256SUMS && tar -czf ../%s.tar.gz ." % [dir, _sha, name]])
+	return _h.pack_plugin_dir(dir, _temp.path_join(name + ".tar.gz"))
 
 
 ## Archives no install may accept, built with Python's tarfile so that names

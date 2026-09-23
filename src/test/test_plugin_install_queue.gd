@@ -57,16 +57,15 @@ func _init() -> void:
 	await process_frame
 	_h = load(HELPERS_GD).new(self)
 	_temp = "%s/test_install_queue_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
-	var sha := "sha256sum" if _h.have_cmd("sha256sum") else "shasum -a 256"
 	var port: int = _h.random_high_port()
 	_fast_url = "http://127.0.0.1:%d/%s.tar.gz" % [port, FAST]
 	_slow_url = "http://127.0.0.1:%d/%s.tar.gz" % [port + 1, SLOW]
 	_pm = await _h.bootstrap_plugin_manager()
-	var ready: bool = _pm != null and _pack(FAST, 0, sha) and _pack(SLOW, SLOW_BYTES, sha) \
-		and _pack(READY, 0, sha, {"entrypoint": "python3", "args": ["capability_probe.py"]}, true) \
-		and _pack(CRASHES, 0, sha, {"entrypoint": "python3", "args": ["crash.py"]}, true) \
-		and _pack(CRASHES, 0, sha, PROBE, false, {"version": "1.0.1"}, "crashes_fixed") \
-		and _pack(READY, 0, sha, PROBE, true, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
+	var ready: bool = _pm != null and _pack(FAST, 0) and _pack(SLOW, SLOW_BYTES) \
+		and _pack(READY, 0, {"entrypoint": "python3", "args": ["capability_probe.py"]}, true) \
+		and _pack(CRASHES, 0, {"entrypoint": "python3", "args": ["crash.py"]}, true) \
+		and _pack(CRASHES, 0, PROBE, false, {"version": "1.0.1"}, "crashes_fixed") \
+		and _pack(READY, 0, PROBE, true, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
 		and await _h.start_http_server(_temp, port)
 	if ready:
@@ -310,7 +309,7 @@ func _port_open(port: int) -> bool:
 ## Archive `<archive>.tar.gz` (default `<id>`) in the temp dir: manifest
 ## (with `overrides` applied), placeholder binary (or the capability probe
 ## when `backend` launches python3), optional random payload, SHA256SUMS.
-func _pack(id: String, payload_bytes: int, sha: String,
+func _pack(id: String, payload_bytes: int,
 		backend: Dictionary = {"entrypoint": "./test-binary", "args": []}, autostart: bool = false,
 		overrides: Dictionary = {}, archive: String = "") -> bool:
 	archive = id if archive.is_empty() else archive
@@ -340,7 +339,7 @@ func _pack(id: String, payload_bytes: int, sha: String,
 		f = FileAccess.open(dir.path_join("payload.bin"), FileAccess.WRITE)
 		f.store_buffer(Crypto.new().generate_random_bytes(payload_bytes))
 		f.close()
-	return _h.run_cmd("bash", ["-c", "cd '%s' && %s $(ls) > SHA256SUMS && tar -czf ../%s.tar.gz ." % [dir, sha, archive]])
+	return _h.pack_plugin_dir(dir, dir.get_base_dir().path_join(archive + ".tar.gz"))
 
 
 func _check(ok: bool, what: String) -> void:

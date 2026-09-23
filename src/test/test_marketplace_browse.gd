@@ -45,15 +45,14 @@ func _init() -> void:
 	await process_frame
 	_h = load(HELPERS_GD).new(self)
 	_temp = "%s/test_marketplace_browse_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
-	var sha := "sha256sum" if _h.have_cmd("sha256sum") else "shasum -a 256"
 	var port: int = _h.random_high_port()
 	for id in [PLAIN, EXTERNAL]:
 		_urls[id] = "http://127.0.0.1:%d/%s.tar.gz" % [port, id]
 	_urls[SLOW] = "http://127.0.0.1:%d/%s.tar.gz" % [port + 1, SLOW]
 	_registry_url = "http://127.0.0.1:%d/registry.json" % port
 	_pm = await _h.bootstrap_plugin_manager()
-	var ready: bool = _pm != null and _pack(SLOW, 3 * 1024 * 1024, sha) and _pack(PLAIN, 0, sha) \
-		and _pack(EXTERNAL, 0, sha) and _write_registry() and await _h.start_http_server(_temp, port)
+	var ready: bool = _pm != null and _pack(SLOW, 3 * 1024 * 1024) and _pack(PLAIN, 0) \
+		and _pack(EXTERNAL, 0) and _write_registry() and await _h.start_http_server(_temp, port)
 	if ready:
 		_slow_server = OS.create_process("python3", [ProjectSettings.globalize_path(THROTTLED_PY),
 			_temp.path_join(SLOW + ".tar.gz"), str(port + 1), "--rate", "1048576"])
@@ -215,7 +214,7 @@ func _port_open(port: int) -> bool:
 
 ## Archive `<id>.tar.gz` in the temp dir: manifest, placeholder binary,
 ## optional random payload, SHA256SUMS.
-func _pack(id: String, payload_bytes: int, sha: String) -> bool:
+func _pack(id: String, payload_bytes: int) -> bool:
 	var dir := _temp.path_join(id)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
@@ -233,7 +232,7 @@ func _pack(id: String, payload_bytes: int, sha: String) -> bool:
 		f = FileAccess.open(dir.path_join("payload.bin"), FileAccess.WRITE)
 		f.store_buffer(Crypto.new().generate_random_bytes(payload_bytes))
 		f.close()
-	return _h.run_cmd("bash", ["-c", "cd '%s' && %s $(ls) > SHA256SUMS && tar -czf ../%s.tar.gz ." % [dir, sha, id]])
+	return _h.pack_plugin_dir(dir, dir.get_base_dir().path_join(id + ".tar.gz"))
 
 
 func _check(ok: bool, what: String) -> void:
