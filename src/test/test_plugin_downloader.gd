@@ -13,6 +13,7 @@ extends SceneTree
 
 const DOWNLOADER_GD := "res://Scripts/Services/Plugins/PluginDownloader.gd"
 const SERVER_PY := "res://test/fixtures/throttled_http_server.py"
+const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 const SIZE := 3 * 1024 * 1024
 
 var _dir := ""
@@ -50,7 +51,7 @@ func _init() -> void:
 	_check(no_range.result.get("error", "") == "download_resume_unsupported", "drop without Range support reports download_resume_unsupported: %s" % no_range.result)
 	_check(not FileAccess.file_exists(no_range.path), "unresumable download leaves no partial file")
 
-	OS.execute("rm", ["-rf", _dir])
+	load(HELPERS_GD).remove_tree(_dir)
 	print("=== %s ===" % ("FAIL" if _fail else "PASS"))
 	quit(1 if _fail else 0)
 
@@ -58,9 +59,10 @@ func _init() -> void:
 ## Serve the source with `server_args`, download it, stop the server.
 func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
 	var port := 30000 + randi() % 20000
-	_server_pid = OS.create_process("python3", [ProjectSettings.globalize_path(SERVER_PY), _source, str(port)] + server_args)
+	var helpers = load(HELPERS_GD)
+	_server_pid = OS.create_process(helpers.python_cmd(), [ProjectSettings.globalize_path(SERVER_PY), _source, str(port)] + server_args)
 	for i in 50:
-		if OS.execute("bash", ["-c", "exec 3<>/dev/tcp/127.0.0.1/%d" % port]) == 0:
+		if helpers.port_open(port):
 			break
 		await create_timer(0.1).timeout
 	# The probe alone would accept a port some other process already held.

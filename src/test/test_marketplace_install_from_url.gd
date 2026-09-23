@@ -13,13 +13,12 @@ const MARKETPLACE_GD := "res://Scripts/Services/Plugins/MarketplaceClient.gd"
 const PLUGINDB_GD := "res://Scripts/Services/Plugins/PluginDB.gd"
 
 const PORT := 18765
+const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 
 var _temp_dir: String = ""
 var _server_pid: int = -1
 var _pass: int = 0
 var _fail: int = 0
-var _sha_cmd: String = ""
-var _skipped: bool = false
 
 
 func _init() -> void:
@@ -33,8 +32,7 @@ func _init() -> void:
 func _run() -> void:
 	await process_frame
 	if not await _setup():
-		if not _skipped:
-			_fail += 1
+		_fail += 1
 		return
 
 	await _test_happy_path()
@@ -53,17 +51,6 @@ func _run() -> void:
 # ---------------------------------------------------------------------------
 
 func _setup() -> bool:
-	# Base macOS ships shasum, not sha256sum; use whichever exists and SKIP
-	# (not fail) when neither does, like the other hermetic-tier tests.
-	if _run_cmd("bash", ["-c", "command -v sha256sum >/dev/null"]):
-		_sha_cmd = "sha256sum"
-	elif _run_cmd("bash", ["-c", "command -v shasum >/dev/null"]):
-		_sha_cmd = "shasum -a 256"
-	else:
-		print("SKIP: neither sha256sum nor shasum is available")
-		_skipped = true
-		return false
-
 	# Use a unique temp dir under user-data so we don't pollute the real
 	# user://plugins/.
 	_temp_dir = "%s/test_marketplace_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
@@ -92,11 +79,8 @@ func _setup() -> bool:
 	}
 	_write_file("%s/manifest.json" % good_pack, JSON.stringify(manifest))
 	_write_file("%s/test-marketplace-binary" % good_pack, "FAKE_BINARY_PLACEHOLDER")
-	if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json > SHA256SUMS" % [good_pack, _sha_cmd]]):
-		print("setup FAIL: sha256sum failed")
-		return false
-	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_good.tar.gz ." % good_pack]):
-		print("setup FAIL: tar good failed")
+	if not _pack(good_pack, ["test-marketplace-binary", "manifest.json"], "test_good"):
+		print("setup FAIL: pack good failed")
 		return false
 
 	# Build corrupted fixture: same layout but SHA256SUMS lists wrong hash.
@@ -104,12 +88,9 @@ func _setup() -> bool:
 	_mkdir(bad_pack)
 	_write_file("%s/manifest.json" % bad_pack, JSON.stringify(manifest))
 	_write_file("%s/test-marketplace-binary" % bad_pack, "FAKE_BINARY_PLACEHOLDER_BAD")
-	# Hash from the GOOD pack (mismatches the bad binary content).
-	if not _run_cmd("bash", ["-c", "cp '%s/SHA256SUMS' '%s/SHA256SUMS'" % [good_pack, bad_pack]]):
-		print("setup FAIL: copy SHA256SUMS for bad pack")
-		return false
-	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_bad.tar.gz ." % bad_pack]):
-		print("setup FAIL: tar bad failed")
+	# Hashes from the GOOD pack (mismatches the bad binary content).
+	if not _pack(bad_pack, ["test-marketplace-binary", "manifest.json"], "test_bad", good_pack):
+		print("setup FAIL: pack bad failed")
 		return false
 
 	# Build hidden-file fixture: like the pcb plugin, ships a dotfile inside a
@@ -124,11 +105,8 @@ func _setup() -> bool:
 	_write_file("%s/manifest.json" % hidden_pack, JSON.stringify(hidden_manifest))
 	_write_file("%s/test-marketplace-binary" % hidden_pack, "FAKE_BINARY_PLACEHOLDER")
 	_write_file("%s/library/.gitattributes" % hidden_pack, "*.kicad_mod text\n")
-	if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json library/.gitattributes > SHA256SUMS" % [hidden_pack, _sha_cmd]]):
-		print("setup FAIL: sha256sum hidden pack failed")
-		return false
-	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_hidden.tar.gz ." % hidden_pack]):
-		print("setup FAIL: tar hidden failed")
+	if not _pack(hidden_pack, ["test-marketplace-binary", "manifest.json", "library/.gitattributes"], "test_hidden"):
+		print("setup FAIL: pack hidden failed")
 		return false
 
 	# Build reserved-id fixture: id "data" would alias user://plugins/data/,
@@ -139,11 +117,8 @@ func _setup() -> bool:
 	reserved_manifest["id"] = "data"
 	_write_file("%s/manifest.json" % reserved_pack, JSON.stringify(reserved_manifest))
 	_write_file("%s/test-marketplace-binary" % reserved_pack, "FAKE_BINARY_PLACEHOLDER")
-	if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json > SHA256SUMS" % [reserved_pack, _sha_cmd]]):
-		print("setup FAIL: sha256sum reserved pack failed")
-		return false
-	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_reserved.tar.gz ." % reserved_pack]):
-		print("setup FAIL: tar reserved failed")
+	if not _pack(reserved_pack, ["test-marketplace-binary", "manifest.json"], "test_reserved"):
+		print("setup FAIL: pack reserved failed")
 		return false
 
 	# One fixture per host-owned id (C4). Same shape as the reserved pack, but
@@ -155,16 +130,13 @@ func _setup() -> bool:
 		internal_manifest["id"] = internal_id
 		_write_file("%s/manifest.json" % internal_pack, JSON.stringify(internal_manifest))
 		_write_file("%s/test-marketplace-binary" % internal_pack, "FAKE_BINARY_PLACEHOLDER")
-		if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json > SHA256SUMS" % [internal_pack, _sha_cmd]]):
-			print("setup FAIL: sha256sum internal pack '%s' failed" % internal_id)
-			return false
-		if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_internal_%s.tar.gz ." % [internal_pack, internal_id]]):
-			print("setup FAIL: tar internal pack '%s' failed" % internal_id)
+		if not _pack(internal_pack, ["test-marketplace-binary", "manifest.json"], "test_internal_" + internal_id):
+			print("setup FAIL: pack internal pack '%s' failed" % internal_id)
 			return false
 
 	# Spawn Python http server. --directory points at _temp_dir, so the
 	# tarballs are served at http://127.0.0.1:PORT/test_good.tar.gz etc.
-	_server_pid = OS.create_process("python3", [
+	_server_pid = OS.create_process(load(HELPERS_GD).python_cmd(), [
 		"-m", "http.server", str(PORT),
 		"--directory", _temp_dir,
 		"--bind", "127.0.0.1",
@@ -387,7 +359,8 @@ func _test_reinstall_symlink_not_followed() -> void:
 	_mkdir(external)
 	_write_file("%s/sentinel.txt" % external, "must survive reinstall")
 	var plug_abs := ProjectSettings.globalize_path("user://plugins/test_hidden_plugin")
-	if not _run_cmd("ln", ["-s", external, "%s/.linked" % plug_abs]):
+	var plug_dir := DirAccess.open(plug_abs)
+	if plug_dir == null or plug_dir.create_link(external, "%s/.linked" % plug_abs) != OK:
 		print("FAIL: symlink — could not create test symlink")
 		_fail += 1
 		_rm_dir_recursive("user://plugins/test_hidden_plugin")
@@ -501,6 +474,17 @@ func _write_file(abs_path: String, content: String) -> void:
 		f.close()
 
 
+## Write `dir`/SHA256SUMS for `files` (relative, hashed in `hash_dir`, by
+## default `dir` itself) and pack `dir` into `<temp>/<archive>.tar.gz`.
+func _pack(dir: String, files: Array, archive: String, hash_dir: String = "") -> bool:
+	hash_dir = dir if hash_dir.is_empty() else hash_dir
+	var sums := ""
+	for file in files:
+		sums += "%s  %s\n" % [FileAccess.get_sha256(hash_dir.path_join(file)), file]
+	_write_file(dir.path_join("SHA256SUMS"), sums)
+	return _run_cmd("tar", ["-czf", "%s/%s.tar.gz" % [_temp_dir, archive], "-C", dir, "."])
+
+
 func _run_cmd(cmd: String, args: Array) -> bool:
 	var out := []
 	var rc := OS.execute(cmd, args, out, true)
@@ -514,14 +498,14 @@ func _rm_dir_recursive(rel_path: String) -> void:
 	var abs_path := ProjectSettings.globalize_path(rel_path)
 	if not DirAccess.dir_exists_absolute(abs_path):
 		return
-	OS.execute("rm", ["-rf", abs_path], [], true)
+	load(HELPERS_GD).remove_tree(abs_path)
 
 
 func _teardown() -> void:
 	if _server_pid > 0:
 		OS.kill(_server_pid)
 	if not _temp_dir.is_empty():
-		OS.execute("rm", ["-rf", _temp_dir], [], true)
+		load(HELPERS_GD).remove_tree(_temp_dir)
 	# Also clean any installed test plugin if a test left it behind.
 	_rm_dir_recursive("user://plugins/test_marketplace_plugin")
 	_rm_dir_recursive("user://plugins/test_hidden_plugin")

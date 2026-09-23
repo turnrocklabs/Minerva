@@ -83,7 +83,80 @@ func rm_dir_recursive(rel_path: String) -> void:
 		abs_path = ProjectSettings.globalize_path(rel_path)
 	if not DirAccess.dir_exists_absolute(abs_path):
 		return
-	OS.execute("rm", ["-rf", abs_path], [], true)
+	remove_tree(abs_path)
+
+
+## Delete `path` (an absolute filesystem path) and everything under it
+## without a shell, so it works where no `rm` is on PATH. A symlink inside it
+## is removed, never followed.
+static func remove_tree(path: String) -> void:
+	# An empty or relative path would resolve against the working directory,
+	# and res:// or user:// could name the project or the whole profile.
+	if not path.is_absolute_path() or "://" in path:
+		return
+	var dir := DirAccess.open(path)
+	if dir == null:
+		DirAccess.remove_absolute(path)
+		return
+	dir.include_hidden = true
+	for name in dir.get_files():
+		DirAccess.remove_absolute(path.path_join(name))
+	for name in dir.get_directories():
+		var child := path.path_join(name)
+		if dir.is_link(name):
+			DirAccess.remove_absolute(child)
+		else:
+			remove_tree(child)
+	DirAccess.remove_absolute(path)
+
+
+## Copy the tree at `src` to `dst` (both absolute) without a shell. A
+## symlink is recreated pointing where it pointed, as `cp -a` does.
+static func copy_tree(src: String, dst: String) -> bool:
+	if not src.is_absolute_path() or not dst.is_absolute_path() or "://" in src or "://" in dst:
+		return false
+	var dir := DirAccess.open(src)
+	if dir == null or DirAccess.make_dir_recursive_absolute(dst) != OK:
+		return false
+	dir.include_hidden = true
+	for name in dir.get_files():
+		if dir.is_link(name):
+			if dir.create_link(dir.read_link(name), dst.path_join(name)) != OK:
+				return false
+		elif DirAccess.copy_absolute(src.path_join(name), dst.path_join(name)) != OK:
+			return false
+	for name in dir.get_directories():
+		if dir.is_link(name):
+			if dir.create_link(dir.read_link(name), dst.path_join(name)) != OK:
+				return false
+		elif not copy_tree(src.path_join(name), dst.path_join(name)):
+			return false
+	return true
+
+
+## The Python interpreter's command name: Windows installs `python`, not
+## `python3`.
+static func python_cmd() -> String:
+	return "python" if OS.get_name() == "Windows" else "python3"
+
+
+## Whether something accepts TCP connections on 127.0.0.1:`port`, asked
+## directly rather than through a shell's /dev/tcp.
+static func port_open(port: int) -> bool:
+	var peer := StreamPeerTCP.new()
+	if peer.connect_to_host("127.0.0.1", port) != OK:
+		return false
+	for _i in range(50):
+		peer.poll()
+		match peer.get_status():
+			StreamPeerTCP.STATUS_CONNECTED:
+				peer.disconnect_from_host()
+				return true
+			StreamPeerTCP.STATUS_ERROR, StreamPeerTCP.STATUS_NONE:
+				return false
+		OS.delay_msec(10)
+	peer.disconnect_from_host()
+	return false
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +172,7 @@ func rm_dir_recursive(rel_path: String) -> void:
 # Returns true on success. Server pid is stored for teardown.
 func start_http_server(directory: String, port: int, timeout_sec: float = 15.0) -> bool:
 	_http_dir = directory
-	_server_pid = OS.create_process("python3", [
+	_server_pid = OS.create_process(python_cmd(), [
 		"-m", "http.server", str(port),
 		"--directory", directory,
 		"--bind", "127.0.0.1",
@@ -113,11 +186,7 @@ func start_http_server(directory: String, port: int, timeout_sec: float = 15.0) 
 	var sock_up := false
 	for i in range(iters):
 		await _tree.create_timer(0.1).timeout
-		var out: Array = []
-		var rc := OS.execute("bash", ["-c",
-			"exec 3<>/dev/tcp/127.0.0.1/%d 2>/dev/null && echo up && exec 3<&-" % port],
-			out, true)
-		if rc == 0 and out.size() > 0 and "up" in str(out[0]):
+		if port_open(port):
 			sock_up = true
 			break
 	if not sock_up:
@@ -414,4 +483,4 @@ func teardown() -> void:
 		# OS.get_user_data_dir or user://). Don't rm a user-supplied serve dir.
 		var udd := OS.get_user_data_dir()
 		if _http_dir.begins_with(udd) or _http_dir.begins_with(ProjectSettings.globalize_path("user://")):
-			OS.execute("rm", ["-rf", _http_dir], [], true)
+			remove_tree(_http_dir)

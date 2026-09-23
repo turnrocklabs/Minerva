@@ -82,11 +82,13 @@ class FlakyDB extends "res://Scripts/Services/Plugins/PluginDB.gd":
 class SnapshotDB extends "res://Scripts/Services/Plugins/PluginDB.gd":
 	var staging := ""
 	var snapshot := ""
+	## Whether the copy was taken; the test cannot simulate the crash without it.
+	var copied := false
 
 	func remove(plugin_id: String) -> bool:
 		var removed := super(plugin_id)
 		if removed:
-			OS.execute("cp", ["-a", staging, snapshot])
+			copied = load(HELPERS_GD).copy_tree(staging, snapshot)
 		return removed
 
 
@@ -123,6 +125,12 @@ func _init() -> void:
 		quit(1))
 	await process_frame
 	_h = load(HELPERS_GD).new(self)
+	# The locks below are the native extension's; without it every case would
+	# fail for that one reason, so it is said first.
+	if not ClassDB.class_exists("ProcessFileLock"):
+		print("FAIL: the native ProcessFileLock class is not loaded")
+		_finish(1)
+		return
 	_temp = "%s/test_install_txn_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
 	var packed: bool = _pack("v1", "1.0.0", 0) and _pack("v2", "2.0.0", 0) and _pack("big", "3.0.0", BIG_BYTES) \
 		and _pack_crafted()
@@ -358,14 +366,25 @@ func _test_removal_is_never_undone_by_recovery() -> void:
 
 	crashed = _half_done_update(db, staging, 2)
 	var snapshot := _temp.path_join("staging_at_removal")
+	var snapped := snapshot.path_join(crashed.get_file())
+	if not _check(_holds_half_done_update(crashed), "the half-done update is in staging before the removal"):
+		pm.queue_free()
+		return
 	var removing = SnapshotDB.new()
 	removing.staging = staging
 	removing.snapshot = snapshot
 	pm._db = removing
 	var removed: Dictionary = pm.remove_plugin(ID)
 	_check(removed.get("ok", false) and not DirAccess.dir_exists_absolute(crashed), "a saved removal drops the unfinished update: %s" % removed)
+	if not _check(removing.copied and _holds_half_done_update(snapped),
+			"the staging was captured, journal and backup included, as the removal was saved"):
+		pm.queue_free()
+		return
 	# The process died right after saving the removal: its staging is as it was then.
-	_h.run_cmd("cp", ["-a", snapshot.path_join(crashed.get_file()), crashed])
+	if not _check(_h.copy_tree(snapped, crashed) and _holds_half_done_update(crashed),
+			"the crash leaves that half-done update back in staging"):
+		pm.queue_free()
+		return
 	db = load(PLUGINDB_GD).new()
 	problems = load(MARKETPLACE_GD).sweep_staging(db)
 	_check(problems.is_empty() and not db.has_plugin(ID) and not DirAccess.dir_exists_absolute(crashed)
@@ -374,6 +393,12 @@ func _test_removal_is_never_undone_by_recovery() -> void:
 	pm.queue_free()
 	_h.rm_dir_recursive(PLUGIN_DIR)
 	_h.rm_dir_recursive(snapshot)
+
+
+## Whether `dir` is a half-done update's operation directory: its journal and
+## the set-aside previous version.
+func _holds_half_done_update(dir: String) -> bool:
+	return FileAccess.file_exists(dir.path_join("txn.json")) and DirAccess.dir_exists_absolute(dir.path_join("previous"))
 
 
 ## An exited process's update of v1 to v2, stopped after v1 was set aside and
@@ -454,11 +479,11 @@ func _test_cancel_at_every_cancellable_stage(port: int) -> void:
 	var sibling := ProjectSettings.globalize_path(STAGING).path_join("op_sibling")
 	DirAccess.make_dir_recursive_absolute(sibling)
 	_write(sibling.path_join("keep.txt"), "another install's scratch")
-	var server := OS.create_process("python3", [ProjectSettings.globalize_path(THROTTLED_PY),
+	var server := OS.create_process(_h.python_cmd(), [ProjectSettings.globalize_path(THROTTLED_PY),
 		_temp.path_join("big.tar.gz"), str(port + 1), "--rate", "1048576"])
 	var slow_url := "http://127.0.0.1:%d/big.tar.gz" % (port + 1)
 	for i in 50:
-		if OS.execute("bash", ["-c", "exec 3<>/dev/tcp/127.0.0.1/%d" % (port + 1)]) == 0:
+		if _h.port_open(port + 1):
 			break
 		await create_timer(0.1).timeout
 	for stage in ["download", "extract", "verify"]:
@@ -631,7 +656,7 @@ for name, s in json.load(open(root + '/crafted.json')).items():
             info = tarfile.TarInfo(s['extra_name']); info.size = 1; tar.addfile(info, io.BytesIO(b'x'))
 """
 	_write(_temp.path_join("crafted.py"), script)
-	return _h.run_cmd("python3", [_temp.path_join("crafted.py"), _temp])
+	return _h.run_cmd(_h.python_cmd(), [_temp.path_join("crafted.py"), _temp])
 
 
 func _extract(name: String, into_abs: String) -> void:
@@ -651,10 +676,11 @@ func _write(path: String, text: String) -> void:
 	f.close()
 
 
-func _check(ok: bool, what: String) -> void:
+func _check(ok: bool, what: String) -> bool:
 	print(("PASS: " if ok else "FAIL: ") + what)
 	if not ok:
 		_fail += 1
+	return ok
 
 
 func _finish(code: int) -> void:
@@ -664,6 +690,6 @@ func _finish(code: int) -> void:
 			db.remove(id)
 		_h.rm_dir_recursive("user://plugins/" + id)
 	_h.teardown()
-	OS.execute("rm", ["-rf", _temp])
+	_h.remove_tree(_temp)
 	print("=== %s ===" % ("FAIL" if code else "PASS"))
 	quit(code)

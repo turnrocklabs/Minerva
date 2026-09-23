@@ -1,0 +1,100 @@
+name: Platform Gate (Windows)
+
+# The release gate's Windows half: the marketplace install suites and native
+# SubProcess launching (scripts/run-functional-tests.sh --platform-gate), run
+# headless against this run's own Windows builds of the terminal extension
+# (ProcessFileLock, SubProcess), godot-cef and the MCP schema helper, with the
+# project imported as build-godot packages it. build.yml calls this and
+# create-release requires it; the macOS half runs inside export-macos.
+
+on:
+  workflow_call:
+    inputs:
+      godot_version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  suites:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Download terminal extension
+        uses: actions/download-artifact@v4
+        with:
+          name: terminal-windows
+          path: src/bin/
+
+      - name: Download godot-cef
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-cef-windows-x86_64
+          path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
+
+      - name: Download MCP schema helper
+        uses: actions/download-artifact@v4
+        with:
+          name: minerva-json-schema-helper-windows-x86_64
+          path: mcp-schema-helper
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Stage addons, schema helper and Godot
+        run: |
+          set -euo pipefail
+          archive=mcp-schema-helper/minerva-json-schema-helper-windows-x86_64.tar.gz
+          [ "$(sha256sum "$archive" | cut -d' ' -f1)" = "$(tr -d '\r\n' < "$archive.sha256")" ]
+          mkdir -p "$RUNNER_TEMP/helper" && tar -xzf "$archive" -C "$RUNNER_TEMP/helper"
+          cp "$RUNNER_TEMP/helper/minerva-json-schema-helper.exe" src/bin/
+
+          curl -fL -o "$RUNNER_TEMP/sqlite.zip" https://github.com/2shady4u/godot-sqlite/releases/download/v4.7/bin.zip
+          unzip -o "$RUNNER_TEMP/sqlite.zip" -d "$RUNNER_TEMP/sqlite" >/dev/null
+          mkdir -p src/addons/godot-sqlite/bin && cp -r "$RUNNER_TEMP/sqlite/bin/"* src/addons/godot-sqlite/bin/
+
+          curl -fL -o "$RUNNER_TEMP/ffmpeg.zip" https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip
+          unzip -o "$RUNNER_TEMP/ffmpeg.zip" -d "$RUNNER_TEMP/ffmpeg" >/dev/null
+          ffmpeg_src=$(dirname "$(find "$RUNNER_TEMP/ffmpeg" -name ffmpeg.gdextension | head -1)")
+          mkdir -p src/addons/ffmpeg/win64 && cp -r "$ffmpeg_src/win64/"* src/addons/ffmpeg/win64/
+
+          # The console build keeps stdout attached, which the runner reads.
+          godot_zip="Godot_v${{ inputs.godot_version }}-stable_win64.exe.zip"
+          curl -fL -o "$RUNNER_TEMP/godot.zip" "https://github.com/godotengine/godot/releases/download/${{ inputs.godot_version }}-stable/$godot_zip"
+          unzip -o "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot" >/dev/null
+          echo "GODOT=$RUNNER_TEMP/godot/Godot_v${{ inputs.godot_version }}-stable_win64_console.exe" >> "$GITHUB_ENV"
+          ls src/bin/
+
+      - name: Import project
+        timeout-minutes: 10
+        working-directory: src
+        run: |
+          mkdir -p .godot
+          "$GODOT" --headless --import --path .
+          "$GODOT" --headless --import --path .
+
+      - name: Platform gate suites
+        timeout-minutes: 30
+        env:
+          MINERVA_TEST_LOG_DIR: ${{ runner.temp }}/platform-gate
+        run: scripts/run-functional-tests.sh --platform-gate
+
+      - name: Upload platform gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-gate-windows-logs
+          path: ${{ runner.temp }}/platform-gate/
+          if-no-files-found: warn
+          retention-days: 14

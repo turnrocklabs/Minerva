@@ -40,7 +40,10 @@ const FAST := "test_queue_fast"
 const READY := "test_queue_ready"
 const CRASHES := "test_queue_crashes"
 const SLOW_BYTES := 3 * 1024 * 1024
-const PROBE := {"entrypoint": "python3", "args": ["capability_probe.py"]}
+# Bare interpreter names, which the host's SubProcess finds on PATH (Windows
+# installs `python`, not `python3`).
+var PYTHON: String = load(HELPERS_GD).python_cmd()
+var PROBE := {"entrypoint": PYTHON, "args": ["capability_probe.py"]}
 
 var _h
 var _pm: Node
@@ -65,14 +68,14 @@ func _init() -> void:
 	_pm = await _h.bootstrap_plugin_manager(true)
 	var ready: bool = _pm != null and _pack(FAST, 0) and _pack(SLOW, SLOW_BYTES) \
 		and _pack(READY, 0, PROBE) \
-		and _pack(CRASHES, 0, {"entrypoint": "python3", "args": ["crash.py"]}) \
+		and _pack(CRASHES, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}) \
 		and _pack(CRASHES, 0, PROBE, {"version": "1.0.1"}, "crashes_fixed") \
 		and _pack(READY, 0, PROBE, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
 		and await _h.start_http_server(_temp, port)
 	if ready:
 		# ~3 s per download of the slow archive.
-		_slow_server = OS.create_process("python3", [ProjectSettings.globalize_path(THROTTLED_PY),
+		_slow_server = OS.create_process(PYTHON, [ProjectSettings.globalize_path(THROTTLED_PY),
 			_temp.path_join(SLOW + ".tar.gz"), str(port + 1), "--rate", "1048576"])
 		ready = await _port_open(port + 1)
 	if not ready:
@@ -318,7 +321,7 @@ func _scrub() -> void:
 
 func _port_open(port: int) -> bool:
 	for i in 50:
-		if OS.execute("bash", ["-c", "exec 3<>/dev/tcp/127.0.0.1/%d" % port]) == 0:
+		if _h.port_open(port):
 			return true
 		await create_timer(0.1).timeout
 	return false
@@ -326,7 +329,7 @@ func _port_open(port: int) -> bool:
 
 ## Archive `<archive>.tar.gz` (default `<id>`) in the temp dir: manifest
 ## (with `overrides` applied), placeholder binary (or the capability probe
-## when `backend` launches python3), optional random payload, SHA256SUMS.
+## when `backend` launches Python), optional random payload, SHA256SUMS.
 func _pack(id: String, payload_bytes: int,
 		backend: Dictionary = {"entrypoint": "./test-binary", "args": []},
 		overrides: Dictionary = {}, archive: String = "") -> bool:
@@ -343,9 +346,9 @@ func _pack(id: String, payload_bytes: int,
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
 	f.store_string(JSON.stringify(manifest))
 	f.close()
-	if backend.entrypoint == "python3" and backend.args[0] == "capability_probe.py":
+	if backend.entrypoint == PYTHON and backend.args[0] == "capability_probe.py":
 		DirAccess.copy_absolute(ProjectSettings.globalize_path(PROBE_PY), dir.path_join("capability_probe.py"))
-	elif backend.entrypoint == "python3":
+	elif backend.entrypoint == PYTHON:
 		f = FileAccess.open(dir.path_join(backend.args[0]), FileAccess.WRITE)
 		f.store_string("raise SystemExit(1)\n")  # exits before the MCP handshake
 		f.close()
@@ -376,6 +379,6 @@ func _finish(code: int) -> void:
 	if _slow_server > 0:
 		OS.kill(_slow_server)
 	_h.teardown()
-	OS.execute("rm", ["-rf", _temp])
+	_h.remove_tree(_temp)
 	print("=== %s ===" % ("FAIL" if code else "PASS"))
 	quit(code)

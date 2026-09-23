@@ -3,16 +3,27 @@
 #   source scripts/lib/test-profile.sh
 #   seed_test_profile "$(mktemp -d)"
 #
-# Exports XDG_CONFIG_HOME / XDG_DATA_HOME / XDG_CACHE_HOME under <root> and
-# seeds the Minerva user dir with voice and HCP auto-connect off and the known
-# MCP servers disabled. Known servers otherwise default to auto-connect and can
-# consume the shared schema helper's bounded admission slots mid-test.
+# Points Godot's user dir under <root> the way each platform finds it (Linux:
+# XDG_*_HOME; macOS: HOME's Library/Application Support; Windows: APPDATA)
+# and seeds the Minerva user dir with voice and HCP auto-connect off and the
+# known MCP servers disabled. Known servers otherwise default to auto-connect
+# and can consume the shared schema helper's bounded admission slots mid-test.
 seed_test_profile() {
 	local root="$1" user_dir
-	export XDG_CONFIG_HOME="$root/config"
-	export XDG_DATA_HOME="$root/data"
-	export XDG_CACHE_HOME="$root/cache"
-	user_dir="$XDG_DATA_HOME/godot/app_userdata/Minerva"
+	case "$(uname -s)" in
+	Darwin)
+		unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
+		export HOME="$root/home"
+		user_dir="$HOME/Library/Application Support/Godot/app_userdata/Minerva" ;;
+	MINGW* | MSYS* | CYGWIN*)
+		export APPDATA="$(cygpath -w "$root/appdata")"
+		user_dir="$root/appdata/Godot/app_userdata/Minerva" ;;
+	*)
+		export XDG_CONFIG_HOME="$root/config"
+		export XDG_DATA_HOME="$root/data"
+		export XDG_CACHE_HOME="$root/cache"
+		user_dir="$XDG_DATA_HOME/godot/app_userdata/Minerva" ;;
+	esac
 	mkdir -p "$user_dir" || return 1
 	cat > "$user_dir/config_file.cfg" <<'EOF' || return 1
 [Voice]

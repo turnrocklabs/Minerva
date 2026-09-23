@@ -1085,6 +1085,38 @@ jobs:
           echo "Total .app size:"
           du -sh build/macos/Minerva.app
 
+      # Release gate, macOS half, on the tree the export was just made from.
+      - name: Platform gate suites (macOS)
+        timeout-minutes: 30
+        env:
+          MINERVA_TEST_LOG_DIR: ${{ runner.temp }}/platform-gate
+        run: |
+          archive=mcp-schema-helpers/minerva-json-schema-helper-macos-arm64/minerva-json-schema-helper-macos-arm64.tar.gz
+          [ "$(shasum -a 256 "$archive" | cut -d' ' -f1)" = "$(tr -d '\r\n' < "$archive.sha256")" ]
+          mkdir -p "$RUNNER_TEMP/helper" && tar -xzf "$archive" -C "$RUNNER_TEMP/helper"
+          cp "$RUNNER_TEMP/helper/minerva-json-schema-helper" src/bin/
+          scripts/run-functional-tests.sh --platform-gate
+          rm src/bin/minerva-json-schema-helper
+
+      # Before/after CPU of a slow download, recorded (no pass threshold).
+      - name: Download CPU benchmark (macOS)
+        timeout-minutes: 15
+        shell: bash  # -eo pipefail: a failed benchmark must not pass through tee
+        run: |
+          mkdir -p "$RUNNER_TEMP/platform-gate"
+          scripts/bench-plugin-download-cpu.sh 64 8 | tee "$RUNNER_TEMP/platform-gate/bench-plugin-download-cpu-macos.txt"
+          { echo '### Plugin download CPU (macOS, 64 MiB at 8 MiB/s)'; echo '```'
+            cat "$RUNNER_TEMP/platform-gate/bench-plugin-download-cpu-macos.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload platform gate logs (macOS)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-gate-macos-logs
+          path: ${{ runner.temp }}/platform-gate/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Bundle godot-cef framework into exported .app
         # Godot's macOS exporter mangled the framework's internal symlinks
         # in iterations 1-10 (the bundled framework had nlink=4, missing
@@ -1743,6 +1775,16 @@ jobs:
           name: Minerva-Linux-Debug-Build
           path: src/build/Minerva-Linux-Debug.tar.gz
 
+  # Release gate, Windows half: marketplace install suites and native
+  # SubProcess launching against this run's Windows builds. (The env context
+  # is not available to a reusable-workflow call; keep equal to GODOT_VERSION.)
+  platform-gate-windows:
+    needs: [build-windows, build-godot-cef, build-mcp-schema-helpers]
+    if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    uses: ./.github/workflows/platform-gate-windows.yml
+    with:
+      godot_version: "4.6.2"
+
   verify-packaged-native:
     needs: [build-godot, export-macos]
     if: always()
@@ -1756,7 +1798,7 @@ jobs:
       verify_debug: ${{ github.ref == 'refs/heads/development' }}
 
   create-release:
-    needs: [secret-history, build-godot, export-macos, verify-packaged-native, functional-tests, tarball-smoke]
+    needs: [secret-history, build-godot, export-macos, verify-packaged-native, functional-tests, tarball-smoke, platform-gate-windows]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
@@ -1766,11 +1808,12 @@ jobs:
       needs.verify-packaged-native.result == 'success' &&
       needs.functional-tests.result == 'success' &&
       (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) &&
-      ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success') ||
+      ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
        (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' &&
-        ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success') ||
+        ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
          (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') ||
-         ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'windows') && needs.build-godot.result == 'success'))))
+         (github.event.inputs.platform == 'linux' && needs.build-godot.result == 'success') ||
+         (github.event.inputs.platform == 'windows' && needs.build-godot.result == 'success' && needs.platform-gate-windows.result == 'success'))))
     runs-on: ubuntu-latest
     permissions:
       contents: write

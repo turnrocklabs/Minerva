@@ -26,6 +26,13 @@
 # any test failed. Relies on the SceneTree tests calling quit(1) on failure.
 #
 #   scripts/run-functional-tests.sh --quarantined  # quarantined-flaky tier only
+#   scripts/run-functional-tests.sh --platform-gate  # Windows/macOS release gate
+#
+# The --platform-gate tier is the marketplace install path (archives, locks,
+# downloads, queue, browse) plus native SubProcess launching, run on each
+# release platform. It is strict: a SKIP or FAIL line, or no summary line
+# reporting at least one pass and no failures, fails the test even when it
+# exits 0. MINERVA_TEST_LOG_DIR, when set, keeps each test's log there.
 #
 # The --quarantined tier holds tests that are known-flaky (intermittent native
 # crash or timing race, unrelated to the diff under test) and have been pulled
@@ -133,6 +140,14 @@ PLUGIN_TESTS=(
 	test/test_codetools_panel_gate.gd
 	test/test_passthrough_e2e.gd
 )
+PLATFORM_GATE_TESTS=(
+	test/test_marketplace_install_transaction.gd
+	test/test_plugin_install_queue.gd
+	test/test_marketplace_browse.gd
+	test/test_marketplace_install_from_url.gd
+	test/test_plugin_downloader.gd
+	test/test_subprocess_bounded_io.gd
+)
 PCB_GUARD_TESTS=(
 	test/test_cad_plugin_smoke.gd
 	test/test_plugin_scene_panel_broker.gd
@@ -144,7 +159,11 @@ PCB_GUARD_TESTS=(
 )
 
 tests=("${HERMETIC_TESTS[@]}")
-if [[ "${1:-}" == "--all" ]]; then
+strict=false
+if [[ "${1:-}" == "--platform-gate" ]]; then
+	tests=("${PLATFORM_GATE_TESTS[@]}")
+	strict=true
+elif [[ "${1:-}" == "--all" ]]; then
 	# --all must still cover the quarantined set (019fbd21a8) — quarantine
 	# only shields the CI functional gate, it must not shrink a full run.
 	tests+=("${QUARANTINED_TESTS[@]}" "${PLUGIN_TESTS[@]}")
@@ -162,7 +181,7 @@ elif [[ "${1:-}" == "--test" ]]; then
 	fi
 	registered=false
 	for registered_test in "${HERMETIC_TESTS[@]}" "${QUARANTINED_TESTS[@]}" \
-			"${PLUGIN_TESTS[@]}" "${PCB_GUARD_TESTS[@]}"; do
+			"${PLUGIN_TESTS[@]}" "${PCB_GUARD_TESTS[@]}" "${PLATFORM_GATE_TESTS[@]}"; do
 		if [[ "$requested_test" == "$registered_test" ]]; then
 			registered=true
 			break
@@ -206,6 +225,17 @@ for t in "${tests[@]}"; do
 			"$GODOT" "${GODOT_DISPLAY_MODE[@]}" --path "$REPO_ROOT/src" --script "$t"; } 2>&1 | tee "$log_file"
 		rc=${PIPESTATUS[0]}
 		if grep -q 'SCRIPT ERROR:' "$log_file"; then rc=1; fi
+		if $strict; then
+			# Windows output may end lines in CR.
+			plain=$(tr -d '\r' < "$log_file")
+			if grep -qE '^(SKIP|FAIL)' <<<"$plain"; then rc=1; fi
+			grep -qE '^=== (PASS|Results: [1-9][0-9]* passed, 0 failed|[1-9][0-9]* passed, 0 failed) ===$' <<<"$plain" || rc=1
+			# A bare PASS verdict counts only with a check behind it.
+			if grep -qx '=== PASS ===' <<<"$plain" && ! grep -q '^PASS:' <<<"$plain"; then rc=1; fi
+		fi
+		if [[ -n "${MINERVA_TEST_LOG_DIR:-}" ]]; then
+			mkdir -p "$MINERVA_TEST_LOG_DIR" && cp "$log_file" "$MINERVA_TEST_LOG_DIR/$(basename "$t" .gd).log"
+		fi
 		rm -f "$log_file"
 	fi
 	if (( rc == 0 )); then

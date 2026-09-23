@@ -54,7 +54,7 @@ func _init() -> void:
 	var ready: bool = _pm != null and _pack(SLOW, 3 * 1024 * 1024) and _pack(PLAIN, 0) \
 		and _pack(EXTERNAL, 0) and _write_registry() and await _h.start_http_server(_temp, port)
 	if ready:
-		_slow_server = OS.create_process("python3", [ProjectSettings.globalize_path(THROTTLED_PY),
+		_slow_server = OS.create_process(_h.python_cmd(), [ProjectSettings.globalize_path(THROTTLED_PY),
 			_temp.path_join(SLOW + ".tar.gz"), str(port + 1), "--rate", "1048576"])
 		ready = await _port_open(port + 1)
 	if not ready:
@@ -206,7 +206,7 @@ func _write_registry() -> bool:
 
 func _port_open(port: int) -> bool:
 	for i in 50:
-		if OS.execute("bash", ["-c", "exec 3<>/dev/tcp/127.0.0.1/%d" % port]) == 0:
+		if _h.port_open(port):
 			return true
 		await create_timer(0.1).timeout
 	return false
@@ -250,6 +250,6 @@ func _finish(code: int) -> void:
 	if _slow_server > 0:
 		OS.kill(_slow_server)
 	_h.teardown()
-	OS.execute("rm", ["-rf", _temp])
+	_h.remove_tree(_temp)
 	print("=== %s ===" % ("FAIL" if code else "PASS"))
 	quit(code)
