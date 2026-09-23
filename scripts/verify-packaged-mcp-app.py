@@ -57,6 +57,33 @@ def _seed_profile(root: Path, env: dict[str, str]) -> None:
             json.dumps({"version": 3, "servers": disabled_servers}), encoding="utf-8")
 
 
+# The helper probe writes its phases to stderr and the bridge probe to stdout;
+# each run has only one probe's phases.
+def _phases(text: str) -> list[str]:
+    return re.findall(r"PACKAGED_(?:MCP_HELPER|BRIDGE)_PHASE=([^\r\n]+)", text)
+
+
+# The app and its direct children (a child it is waiting on, such as a helper
+# or a tool it ran, shows up here), without command-line arguments.
+def _process_snapshot(pid: int) -> str:
+    if os.name == "nt":
+        command = ["powershell", "-NoProfile", "-Command",
+                   "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq %d -or "
+                   "$_.ParentProcessId -eq %d } | Format-Table -AutoSize ProcessId, "
+                   "ParentProcessId, Name, CreationDate | Out-String -Width 200" % (pid, pid)]
+    else:
+        command = ["ps", "-A", "-o", "pid=,ppid=,stat=,etime=,comm="]
+    try:
+        listing = subprocess.run(command, capture_output=True, text=True, timeout=10,
+                                 check=False).stdout
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"unavailable: {error}"
+    if os.name != "nt":
+        listing = "\n".join(line for line in listing.splitlines()
+                            if str(pid) in line.split()[:2])
+    return listing.strip() or "no matching process"
+
+
 def _terminate_tree(process: subprocess.Popen[str]) -> None:
     if os.name == "nt":
         try:
@@ -132,19 +159,12 @@ def main() -> int:
                         encoding="utf-8", errors="replace")
                     timeout_stderr = stderr_path.read_text(
                         encoding="utf-8", errors="replace")
-                    phases = re.findall(
-                        r"PACKAGED_(?:MCP_HELPER|BRIDGE)_PHASE=([^\r\n]+)", timeout_stdout)
+                    phases = _phases(timeout_stdout + timeout_stderr)
                     print("exported native probe timeout snapshot: "
                           f"pid={process.pid}, last_phase={phases[-1] if phases else 'not-entered'}, "
                           f"stdout_bytes={len(timeout_stdout.encode())}, "
                           f"stderr_bytes={len(timeout_stderr.encode())}")
-                    try:
-                        snapshot = subprocess.run(
-                            ["ps", "-o", "pid=,ppid=,stat=,etime=,comm=", "-p", str(process.pid)],
-                            capture_output=True, text=True, timeout=2, check=False)
-                        print("exported native probe process snapshot: " + snapshot.stdout.strip())
-                    except (OSError, subprocess.TimeoutExpired) as error:
-                        print(f"exported native probe process snapshot unavailable: {error}")
+                    print("exported native probe process snapshot:\n" + _process_snapshot(process.pid))
             finally:
                 # Unix can retire the app's process group after leader exit.
                 # taskkill is best-effort once a Windows leader has exited; the
@@ -176,8 +196,7 @@ def main() -> int:
         if timed_out:
             sys.stdout.write(stdout)
             sys.stderr.write(stderr)
-            phases = re.findall(
-                r"PACKAGED_(?:MCP_HELPER|BRIDGE)_PHASE=([^\r\n]+)", stdout)
+            phases = _phases(stdout + stderr)
             last_phase = phases[-1] if phases else "not-entered"
             print(
                 "exported native probe timed out: "
