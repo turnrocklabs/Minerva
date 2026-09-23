@@ -10,11 +10,13 @@ extends RefCounted
 ## After MAX_FRUITLESS_ATTEMPTS attempts in a row that add no bytes, the
 ## download gives up with the last attempt's error.
 ##
-## The socket is polled once per frame on the main thread, draining what it
-## holds within FRAME_BUDGET_USEC, so a waiting transfer should cost little
-## CPU. The expectation, that this beats threaded HTTPRequest (whose worker
-## appears to spin between polls), is what scripts/bench-plugin-download-cpu.sh
-## measures.
+## The transfer runs on a worker thread that drains what the socket holds
+## and sleeps IDLE_MS when nothing has arrived, so a waiting transfer costs
+## little CPU and the rate does not depend on the frame rate (a busy or
+## slow-rendering UI would otherwise throttle it). The caller's thread only
+## mirrors progress into `op` once a frame. The expectation, that this beats
+## threaded HTTPRequest (whose worker appears to spin between polls), is what
+## scripts/bench-plugin-download-cpu.sh measures.
 ##
 ## Results use MarketplaceClient's shape: {ok:true, bytes} or
 ## {ok:false, error, detail}.
@@ -23,16 +25,29 @@ const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperatio
 
 const MAX_REDIRECTS := 10
 const MAX_FRUITLESS_ATTEMPTS := 3
-const FRAME_BUDGET_USEC := 4000
+const IDLE_MS := 5
 const CHUNK_BYTES := 256 * 1024
 const URL_RE := "^(https?)://([^/:?#]+)(?::(\\d+))?([^#]*)"
 
 var stall_timeout_s: float = 30.0
 var max_bytes: int = 0  # 0 = no limit
+## Final once download() returns; while it runs they belong to the worker,
+## and progress reaches `op` through the snapshot below.
 var bytes_received: int = 0
 var bytes_total: int = -1  # -1 until the server states a length
 ## A PluginInstallOperation to report bytes to and to stop on cancel; optional.
 var op: Operation = null
+
+
+# What crosses between the worker and the caller's thread, under _lock: the
+# worker's progress, published as it changes, and a cancel request.
+var _lock := Mutex.new()
+var _shared_done := 0
+var _shared_total := -1
+var _stop := false
+# The thread lives as long as this downloader, not the caller's coroutine,
+# and is let go only after it has been waited for.
+var _worker: Thread = null
 
 
 func download(url: String, dest_path: String, tree: SceneTree) -> Dictionary:
@@ -40,13 +55,27 @@ func download(url: String, dest_path: String, tree: SceneTree) -> Dictionary:
 	if file == null:
 		return _result("download_write_failed", {"path": dest_path, "godot_err": FileAccess.get_open_error()})
 	var outcome := {}
-	var fruitless := 0
-	while fruitless < MAX_FRUITLESS_ATTEMPTS:
-		var before := bytes_received
-		outcome = await _attempt(url, file, tree)
-		if outcome.get("ok", false) or not outcome.get("retry", false):
-			break
-		fruitless = 0 if bytes_received > before else fruitless + 1
+	_worker = Thread.new()
+	var started := _worker.start(_transfer.bind(url, file, outcome))
+	if started != OK:
+		_worker = null
+		file.close()
+		DirAccess.remove_absolute(dest_path)
+		return {"ok": false, "error": "download_request_failed",
+			"detail": {"url": url, "reason": "the download thread could not start", "godot_err": started}}
+	while _worker.is_alive():
+		if op != null:
+			_lock.lock()
+			_stop = op.cancelled
+			op.done = _shared_done
+			op.total = _shared_total
+			_lock.unlock()
+		await tree.process_frame
+	_worker.wait_to_finish()
+	_worker = null
+	if op != null:
+		op.done = bytes_received
+		op.total = bytes_total
 	file.close()
 	outcome.erase("retry")
 	if not outcome.get("ok", false):
@@ -54,19 +83,32 @@ func download(url: String, dest_path: String, tree: SceneTree) -> Dictionary:
 	return outcome
 
 
+## The worker: attempts until one completes, fails for good, or several in a
+## row add no bytes. Fills `outcome`.
+func _transfer(url: String, file: FileAccess, outcome: Dictionary) -> void:
+	var fruitless := 0
+	while fruitless < MAX_FRUITLESS_ATTEMPTS:
+		var before := bytes_received
+		outcome.clear()
+		outcome.merge(_attempt(url, file))
+		if outcome.get("ok", false) or not outcome.get("retry", false):
+			return
+		fruitless = 0 if bytes_received > before else fruitless + 1
+
+
 ## One request, following redirects, that appends to `file` from
 ## bytes_received. A failure marked `retry` may be resumed.
-func _attempt(url: String, file: FileAccess, tree: SceneTree) -> Dictionary:
+func _attempt(url: String, file: FileAccess) -> Dictionary:
 	var target := url
 	for _hop in MAX_REDIRECTS + 1:
-		var outcome := await _exchange(target, file, tree)
+		var outcome := _exchange(target, file)
 		if not outcome.has("redirect"):
 			return outcome
 		target = outcome.redirect
 	return _result("download_redirect_limit", {"url": url})
 
 
-func _exchange(url: String, file: FileAccess, tree: SceneTree) -> Dictionary:
+func _exchange(url: String, file: FileAccess) -> Dictionary:
 	var re := RegEx.create_from_string(URL_RE)
 	var m := re.search(url)
 	if m == null:
@@ -82,12 +124,12 @@ func _exchange(url: String, file: FileAccess, tree: SceneTree) -> Dictionary:
 	var err := client.connect_to_host(m.get_string(2), port, TLSOptions.client() if tls else null)
 	if err != OK:
 		return _result("download_request_failed", {"url": url, "godot_err": err})
-	var outcome := await _pump(client, url, path, file, tree)
+	var outcome := _pump(client, url, path, file)
 	client.close()
 	return outcome
 
 
-func _pump(client: HTTPClient, url: String, path: String, file: FileAccess, tree: SceneTree) -> Dictionary:
+func _pump(client: HTTPClient, url: String, path: String, file: FileAccess) -> Dictionary:
 	var status := -1
 	var requested := false
 	var answered := false
@@ -120,14 +162,16 @@ func _pump(client: HTTPClient, url: String, path: String, file: FileAccess, tree
 						return _result("download_request_failed", {"url": url, "godot_err": err})
 					requested = true
 			HTTPClient.STATUS_BODY:
-				var budget_end := Time.get_ticks_usec() + FRAME_BUDGET_USEC
-				while client.get_status() == HTTPClient.STATUS_BODY and Time.get_ticks_usec() < budget_end:
+				while client.get_status() == HTTPClient.STATUS_BODY:
+					if _stopping():
+						return _result("cancelled", {})
 					var chunk := client.read_response_body_chunk()
 					if chunk.is_empty():
 						break
 					if not file.store_buffer(chunk):
 						return _result("download_write_failed", {"path": file.get_path_absolute(), "godot_err": file.get_error()})
 					bytes_received += chunk.size()
+					_publish()
 					last_progress = Time.get_ticks_msec()
 					if max_bytes > 0 and bytes_received > max_bytes:
 						return _result("download_too_large", {"url": url, "limit": max_bytes})
@@ -136,16 +180,13 @@ func _pump(client: HTTPClient, url: String, path: String, file: FileAccess, tree
 				if answered:
 					return _finished(url, status)
 				return _result("download_interrupted", {"url": url, "bytes": bytes_received, "total": bytes_total}, true)
-		if op != null:
-			op.done = bytes_received
-			op.total = bytes_total
-			if op.cancelled:
-				return _result("cancelled", {})
+		if _stopping():
+			return _result("cancelled", {})
 		if Time.get_ticks_msec() - last_progress > stall_timeout_s * 1000.0:
 			return _result("download_stalled", {"url": url, "seconds": stall_timeout_s, "bytes": bytes_received, "total": bytes_total}, true)
-		# The body may have ended during the drain; judge that without a frame's wait.
+		# The body may have ended during the drain; judge that without waiting.
 		if status != HTTPClient.STATUS_BODY or client.get_status() == HTTPClient.STATUS_BODY:
-			await tree.process_frame
+			OS.delay_msec(IDLE_MS)
 	return {}
 
 
@@ -176,9 +217,26 @@ func _accept_response(client: HTTPClient, url: String) -> Dictionary:
 		bytes_total = int(m.get_string(2))
 	else:
 		return _result("download_bad_status", {"code": code, "url": url})
+	_publish()
 	if max_bytes > 0 and bytes_total > max_bytes:
 		return _result("download_too_large", {"url": url, "limit": max_bytes, "total": bytes_total})
 	return {}
+
+
+## Worker side: share the byte counts with the caller's thread.
+func _publish() -> void:
+	_lock.lock()
+	_shared_done = bytes_received
+	_shared_total = bytes_total
+	_lock.unlock()
+
+
+## Worker side: whether the caller has asked to stop.
+func _stopping() -> bool:
+	_lock.lock()
+	var stop := _stop
+	_lock.unlock()
+	return stop
 
 
 ## The body ended: complete when the stated length arrived, or when no
