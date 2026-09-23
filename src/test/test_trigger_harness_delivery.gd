@@ -610,6 +610,38 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	check("T18: an editor save that meets a disable during its lookup changes nothing",
 		after_race != null and not after_race.enabled and after_race.destination.chat_id == str(claude_chat.HistoryId),
 		str(after_race.serialize() if after_race != null else null))
+	# Reopening a saved trigger selects its type and shows that type's fields;
+	# a type the picker does not list is left unselected, and still saved.
+	var shown := {}
+	for type: int in [TriggerDefinition.TriggerType.TIMER, TriggerDefinition.TriggerType.EVENT, TriggerDefinition.TriggerType.TIME]:
+		var saved_type := TriggerDefinition.new()
+		saved_type.name = "T18 type %d" % type
+		saved_type.trigger_type = type
+		saved_type.schedule_type = TriggerDefinition.ScheduleType.INTERVAL if type != TriggerDefinition.TriggerType.TIME \
+			else TriggerDefinition.ScheduleType.DAILY
+		app_tm.add_trigger(saved_type)
+		window._on_trigger_selected(app_tm.triggers.find(saved_type))
+		shown[type] = [window.trigger_type_option.get_selected_id(), window.trigger_interval_spin.visible,
+			window.trigger_event_option.visible, window.trigger_schedule_type_option.visible]
+		app_tm.remove_trigger(saved_type.id)
+	check("T18: a saved Timer, Event and Time reopen as themselves with their own fields",
+		shown[TriggerDefinition.TriggerType.TIMER] == [TriggerDefinition.TriggerType.TIMER, true, false, false]
+			and shown[TriggerDefinition.TriggerType.EVENT] == [TriggerDefinition.TriggerType.EVENT, false, true, false]
+			and shown[TriggerDefinition.TriggerType.TIME] == [TriggerDefinition.TriggerType.TIME, false, false, true], str(shown))
+	window._on_trigger_selected(app_tm.triggers.find(after_race))
+	var plugin_shown: Array = [window.trigger_type_option.selected, window.trigger_interval_spin.visible,
+		window.trigger_event_option.visible, window.trigger_schedule_type_option.visible]
+	window.trigger_name_edit.text = "T18 plugin renamed"
+	await window._on_trigger_save()
+	var resaved: TriggerDefinition = app_tm.get_trigger(edited_trig.id)
+	check("T18: a plugin event opened after a Time shows no other type's fields and is saved still a plugin event",
+		plugin_shown == [-1, false, false, false] and resaved != null and resaved.name == "T18 plugin renamed"
+			and resaved.trigger_type == TriggerDefinition.TriggerType.PLUGIN_EVENT and resaved.plugin_id == "t18plugin",
+		str(plugin_shown) + " " + str(resaved.serialize() if resaved != null else null))
+	window._on_trigger_new()
+	check("T18: a new trigger starts as a Timer with the Timer's fields",
+		[window.trigger_type_option.get_selected_id(), window.trigger_interval_spin.visible, window.trigger_event_option.visible]
+			== [TriggerDefinition.TriggerType.TIMER, true, false])
 	app_tm.remove_trigger(edited_trig.id)
 	window.queue_free()
 	_so.trigger_manager.harness_delivery.tools = app_delivery_tools

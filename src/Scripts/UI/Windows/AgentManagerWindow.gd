@@ -1104,7 +1104,9 @@ func _on_trigger_selected(index: int) -> void:
 		if not receipt.is_empty():
 			trigger_delivery_label.text = "Last delivery: %s %s" % [receipt.get("status", ""), receipt.get("reason", "")]
 
-	_select_option_by_id(trigger_type_option, trig.trigger_type)
+	# A type the picker does not list (a plugin event) is left unselected;
+	# the save keeps it.
+	trigger_type_option.select(trigger_type_option.get_item_index(trig.trigger_type))
 	_populate_schedule_type_options(trig.trigger_type, trig.schedule_type)
 	trigger_interval_spin.value = trig.interval_seconds
 	_select_option_by_id(trigger_schedule_type_option, trig.schedule_type)
@@ -1140,21 +1142,26 @@ func _on_trigger_selected(index: int) -> void:
 	trigger_hook_tool_pattern_edit.text = trig.hook_tool_name_pattern
 	trigger_hook_route_table_edit.text = trig.hook_route_table
 	trigger_hook_pending_label.visible = trig.pending_approval
-	_on_trigger_type_changed(trig.trigger_type)
+	_show_fields_for_type(trig.trigger_type)
 	_populate_watched_agents(trig.watched_agent_ids)
 	_update_watched_visibility(trig.trigger_type, trig.event_type)
 	_update_schedule_preview()
 
 
 func _on_trigger_type_changed(index: int) -> void:
-	index = trigger_type_option.get_item_id(index)
-	var is_timer = (index == TriggerDefinition.TriggerType.TIMER)
-	var is_time = (index == TriggerDefinition.TriggerType.TIME)
-	var is_docket_poll = (index == TriggerDefinition.TriggerType.DOCKET_POLL)
-	_populate_schedule_type_options(index, trigger_schedule_type_option.get_selected_id())
+	_show_fields_for_type(trigger_type_option.get_item_id(index))
+
+
+## Show the form fields for `trigger_type` (a TriggerDefinition.TriggerType).
+func _show_fields_for_type(trigger_type: int) -> void:
+	var is_timer = (trigger_type == TriggerDefinition.TriggerType.TIMER)
+	var is_time = (trigger_type == TriggerDefinition.TriggerType.TIME)
+	var is_docket_poll = (trigger_type == TriggerDefinition.TriggerType.DOCKET_POLL)
+	var is_event = (trigger_type == TriggerDefinition.TriggerType.EVENT)
+	_populate_schedule_type_options(trigger_type, trigger_schedule_type_option.get_selected_id())
 	trigger_schedule_type_label.visible = is_time
 	trigger_schedule_type_option.visible = is_time
-	trigger_event_option.visible = not (is_timer or is_time or is_docket_poll)
+	trigger_event_option.visible = is_event
 	trigger_fire_if_missed_check.visible = is_time
 	trigger_docket_container.visible = is_docket_poll
 	if is_timer or is_time:
@@ -1172,8 +1179,8 @@ func _on_trigger_type_changed(index: int) -> void:
 		trigger_interval_spin.visible = false
 		trigger_schedule_preview.visible = false
 		trigger_last_fired_label.visible = false
-	var event_type = trigger_event_option.get_selected_id() if not (is_timer or is_time or is_docket_poll) else -1
-	_update_watched_visibility(index, event_type)
+	var event_type = trigger_event_option.get_selected_id() if is_event else -1
+	_update_watched_visibility(trigger_type, event_type)
 
 
 func _on_event_type_changed(index: int) -> void:
@@ -1363,7 +1370,7 @@ func _on_trigger_new() -> void:
 	trigger_hook_tool_pattern_edit.text = ""
 	trigger_hook_route_table_edit.text = ""
 	trigger_hook_pending_label.visible = false
-	_on_trigger_type_changed(0)
+	_show_fields_for_type(TriggerDefinition.TriggerType.TIMER)
 	var empty_ids: Array[String] = []
 	_populate_watched_agents(empty_ids)
 
