@@ -13,11 +13,15 @@ extends RefCounted
 
 enum Kind { CHAT, TERMINAL }
 
+# Loaded where used, not named: TriggerDefinition holds a TriggerDestination,
+# and scripts compiled before the SingletonObject autoload (test harnesses)
+# must not pull in these, which refer to it.
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+const TOOL_UTILS_PATH := "res://Scripts/Services/MCP/Modules/MCPToolUtils.gd"
 
 ## The MCPTerminalTools that terminal_tools() hands out instead of a fresh
 ## one; tests set one whose terminal listing is scripted.
-static var address_tools: MCPTerminalTools = null
+static var address_tools: RefCounted = null
 
 ## This Minerva run, distinct from every earlier one (tests may stand in a
 ## later run).
@@ -67,7 +71,7 @@ func resolve() -> Dictionary:
 		if process <= 0:
 			return {"error": "the harness process of '%s' was never identified; pick the session again" % label}
 		return {"terminal_id": terminal_id}
-	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	var history = load(TOOL_UTILS_PATH).find_chat_by_id(chat_id)
 	if history == null:
 		return {"error": "the chat '%s' is not open" % label}
 	var bound: String = terminal_of(history)
@@ -104,7 +108,7 @@ func availability(listing: Array) -> Dictionary:
 		return {"ok": true} if not now.is_empty() else {"ok": false, "reason": "no harness runs in the terminal of '%s'" % label}
 	if int(entry.get("foreground_pid", 0)) <= 0:
 		return {"ok": false, "reason": "the harness process of '%s' cannot be identified just now" % label}
-	var broken: String = MCPTerminalTools._expectation_broken(expectation(), now,
+	var broken: String = load(TERMINAL_TOOLS_PATH)._expectation_broken(expectation(), now,
 		int(entry.get("foreground_pid", 0)), str(entry.get("name", "")))
 	return {"ok": true} if broken.is_empty() else {"ok": false, "reason": broken}
 
@@ -113,13 +117,15 @@ func availability(listing: Array) -> Dictionary:
 ## is the chat provider's entry id, "terminal-<id>".
 static func terminal_of(history) -> String:
 	var provider = history.provider if history != null else null
-	if provider is PluginProvider and provider.entry_id.begins_with(MCPTerminalTools.PASSTHROUGH_ENTRY_PREFIX):
-		return provider.entry_id.trim_prefix(MCPTerminalTools.PASSTHROUGH_ENTRY_PREFIX)
+	var prefix: String = load(TERMINAL_TOOLS_PATH).PASSTHROUGH_ENTRY_PREFIX
+	var entry_id: String = str(provider.get("entry_id")) if provider != null and "entry_id" in provider else ""
+	if entry_id.begins_with(prefix):
+		return entry_id.trim_prefix(prefix)
 	return ""
 
 
 ## The terminal tools that list and resolve sessions for choosing one.
-static func terminal_tools() -> MCPTerminalTools:
+static func terminal_tools() -> RefCounted:
 	return address_tools if address_tools != null else load(TERMINAL_TOOLS_PATH).new(null)
 
 

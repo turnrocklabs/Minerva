@@ -21,7 +21,7 @@ var hold_limit_s: float = HOLD_LIMIT_S
 
 ## The MCPTerminalTools that resolves and delivers; tests swap in one whose
 ## terminal listing and relay are scripted.
-var tools: MCPTerminalTools = TriggerDestination.terminal_tools()
+var tools: MCPTerminalTools = TriggerDestination.terminal_tools() as MCPTerminalTools
 ## trigger id -> {attempt, entry_id, ticket}: the delivery in progress.
 ## entry_id is its chat queue entry once it is queued, else 0 (being sent or
 ## held); ticket is its host write ticket (TerminalInputArbiter).

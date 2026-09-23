@@ -327,7 +327,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	# T12 — the MCP tools take a destination, refuse what it cannot do, and list
 	# it. They act on the app's TriggerManager, so it delivers through the
 	# scripted terminals too until T18 is done.
-	var app_delivery_tools: MCPTerminalTools = _so.trigger_manager.harness_delivery.tools
+	var app_delivery_tools: RefCounted = _so.trigger_manager.harness_delivery.tools
 	_so.trigger_manager.harness_delivery.tools = module
 	var tools = load(AGENT_TOOLS_PATH).new(null)
 	var created: Dictionary = await tools.handle("minerva_create_trigger", {"name": "T12",
@@ -547,7 +547,10 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	edited_trig.pending_approval = true
 	edited_trig.initial_message = "T18 marker"
 	app_tm.add_trigger(edited_trig)
-	var window = load(AGENT_WINDOW_PATH).new(AgentManagerWindow.ManagerMode.TRIGGERS)
+	# By path: naming the window's class would compile it, and what it uses,
+	# before the SingletonObject autoload exists.
+	var window_script: GDScript = load(AGENT_WINDOW_PATH)
+	var window = window_script.new(window_script.ManagerMode.TRIGGERS)
 	root.add_child(window)
 	await process_frame
 	window._on_trigger_selected(app_tm.triggers.find(edited_trig))
