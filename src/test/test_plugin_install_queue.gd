@@ -167,22 +167,21 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_START_FAILED and not failed.message.is_empty(),
 		"an autostarting plugin that exits before its handshake ends start_failed with the reason: %s" % [failed.summary()])
+	# Two start failures only: a third within a minute would put the plugin
+	# in a crash loop by design. The fixed version is requested by id while
+	# the retry is queued, so it reaches the retry job, and is installed
+	# after it; its autostart setting survives the update, so it starts.
 	queue.retry_start(failed)
-	var reinstall = queue.request(_entry(CRASHES, crashes_url))
-	_check(reinstall != failed, "a new install request does not attach to a start retry")
+	var fixed_entry := _entry(CRASHES, "http://127.0.0.1:%d/crashes_fixed.tar.gz" % port)
+	fixed_entry["version"] = "1.0.1"
+	var fixed = queue.request(fixed_entry)
+	# A conflict would also be a new job, but one that has already ended.
+	_check(fixed != failed and fixed.state != Job.State.DONE, "a new install request does not attach to a start retry")
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_START_FAILED, "the retry ran and reported again")
-	await _done(reinstall)
-
-	# A newer, startable version is installed and started meanwhile (the
-	# preference outlives updates): retrying the old failure reports what is
-	# installed and running now.
-	# Start failures that reach the unexpected-exit path count toward a crash
-	# loop, which start_plugin refuses.
-	_check(_pm.get_db().get_by_id(CRASHES).state != _pm.S_CRASH_LOOP, "the crashed version is not crash-looping")
-	var fixed = queue.request_url("http://127.0.0.1:%d/crashes_fixed.tar.gz" % port)
 	await _done(fixed)
 	_check(fixed.outcome == Job.OUTCOME_READY, "the fixed version starts: %s" % [fixed.summary()])
+	# Retrying the old failure reports what is installed and running now.
 	queue.retry_start(failed)
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_READY and failed.result.get("version") == "1.0.1" and "already running" in failed.message,
