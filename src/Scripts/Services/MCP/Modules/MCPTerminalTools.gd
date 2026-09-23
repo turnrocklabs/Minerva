@@ -658,8 +658,9 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 	var start_time: int = Time.get_ticks_msec()
 	var last_change_time: int = 0
 
-	# Poll loop
-	while true:
+	# A tab can close and free its session while process_frame is awaited.
+	while is_instance_valid(session) and not session.is_queued_for_deletion() \
+			and session.terminal_available:
 		var elapsed: int = Time.get_ticks_msec() - start_time
 		if elapsed >= timeout_ms:
 			timed_out = true
@@ -681,7 +682,11 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 		# Yield to let the engine process
 		await session.get_tree().process_frame
 
-	session.vt_state_changed.disconnect(on_change)
+	if is_instance_valid(session):
+		session.vt_state_changed.disconnect(on_change)
+	if not is_instance_valid(session) or session.is_queued_for_deletion() \
+			or not session.terminal_available:
+		return {"success": false, "error": "Terminal closed while waiting"}
 
 	# Read the screen content
 	var read_result: Dictionary = _terminal_read({"terminal_id": session.terminal_id})

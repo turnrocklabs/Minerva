@@ -17,6 +17,28 @@ const REGISTRY_SCRIPT := "res://Scripts/Services/Terminal/TerminalSessionRegistr
 const TERMINAL_SCENE := "res://Scenes/Terminal.tscn"
 const NOTE_SCRIPT := "res://Scripts/UI/Controls/Note.gd"
 
+## Load after autoloads initialize: the MCP module references SingletonObject.
+## Keep the real wait/read path, scoped to this test's real registry.
+const TERMINAL_TOOLS_SOURCE := """
+extends "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+var registry: Node
+
+func _get_registry():
+	return registry
+"""
+
+
+class PendingWait extends RefCounted:
+	var done := false
+	var result: Dictionary = {}
+
+	func run(tools, terminal_id: String, timeout_ms: int) -> void:
+		result = await tools.handle("minerva_terminal_wait", {
+			"terminal_id": terminal_id, "timeout_ms": timeout_ms, "settle_ms": 10000,
+		})
+		done = true
+
+
 var _pass_count: int = 0
 var _fail_count: int = 0
 
@@ -226,6 +248,41 @@ func _run() -> void:
 	var out3: String = await _wait_for_marker(session, "cycles_done")
 	check("AC4: round-trip after 2 cycles", out3.find("cycles_done") != -1,
 		"viewport=%s" % out3)
+
+	# Closing one backing terminal must finish its suspended MCP wait safely
+	# while another terminal's pending wait still returns its own screen.
+	var tools_script := GDScript.new()
+	tools_script.source_code = TERMINAL_TOOLS_SOURCE
+	if tools_script.reload() != OK:
+		check("MCP terminal tools compile", false)
+		registry.queue_free()
+		return
+	var tools = tools_script.new()
+	tools.registry = registry
+	var closing_session = registry.create_session("closing-wait", 80, 24)
+	var closed_wait := PendingWait.new()
+	var surviving_wait := PendingWait.new()
+	closed_wait.run(tools, closing_session.terminal_id, 10000)
+	surviving_wait.run(tools, session.terminal_id, 100)
+	check("both MCP waits are pending", not closed_wait.done and not surviving_wait.done)
+	registry.call_deferred("close_session", closing_session.terminal_id)
+	var wait_deadline := Time.get_ticks_msec() + 3000
+	while (not closed_wait.done or not surviving_wait.done) \
+			and Time.get_ticks_msec() < wait_deadline:
+		await process_frame
+	check("closed session was freed", not is_instance_valid(closing_session))
+	check("closing terminal completes its MCP wait", closed_wait.done)
+	check("closed wait returns a terminal-closed error",
+		closed_wait.result.get("success") == false
+		and closed_wait.result.get("error", "") == "Terminal closed while waiting",
+		str(closed_wait.result))
+	check("other terminal's wait still succeeds",
+		surviving_wait.done and surviving_wait.result.get("success", false)
+		and surviving_wait.result.get("timed_out", false)
+		and str(surviving_wait.result.get("content", "")).contains("cycles_done"),
+		str(surviving_wait.result))
+	check("surviving wait disconnects its output callback",
+		session.vt_state_changed.get_connections().is_empty())
 
 	# ── Cleanup + leak check ─────────────────────────────────────────────
 	var closing_view = load(TERMINAL_SCENE).instantiate()

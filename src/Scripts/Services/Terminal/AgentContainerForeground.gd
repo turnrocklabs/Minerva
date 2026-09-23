@@ -134,8 +134,8 @@ static func _pane_foreground(init_pid: int, init_start: int) -> Dictionary:
 		return {}
 	var servers: Array[int] = []
 	for child in _children(init_pid):
-		var argv: PackedStringArray = _argv(child)
-		if argv.size() > 0 and argv[0].get_file() == "tmux":
+		var child_argv: PackedStringArray = _argv(child)
+		if child_argv.size() > 0 and child_argv[0].get_file() == "tmux":
 			servers.append(child)
 	if servers.size() != 1:
 		return {}

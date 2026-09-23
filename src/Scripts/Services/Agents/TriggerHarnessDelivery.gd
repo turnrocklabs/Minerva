@@ -72,13 +72,13 @@ func cancel(trigger_id: String) -> void:
 	TerminalInputArbiter.revoke_ticket(_outstanding[trigger_id].ticket)
 	var entry_id: int = _outstanding[trigger_id].entry_id
 	_outstanding.erase(trigger_id)
-	var receipt: Dictionary = _receipts.get(trigger_id, {})
+	var delivery_receipt: Dictionary = _receipts.get(trigger_id, {})
 	if entry_id <= 0:
-		receipt["status"] = "cancelled"
+		delivery_receipt["status"] = "cancelled"
 	elif MCPToolUtils.withdraw_outgoing(entry_id):
-		receipt["status"] = "withdrawn"
+		delivery_receipt["status"] = "withdrawn"
 	else:
-		receipt["status"] = MCPTerminalTools.notify_status(entry_id, 0)
+		delivery_receipt["status"] = MCPTerminalTools.notify_status(entry_id, 0)
 
 
 ## The latest outcome for `trigger_id`, or {} when it has never delivered:
@@ -193,13 +193,13 @@ func _finish(trig: TriggerDefinition, fields: Dictionary) -> void:
 ## Replace the receipt's outcome fields, keeping what the attempt started with;
 ## `fresh` starts a new attempt's receipt, carrying nothing from the last one.
 func _record(trig: TriggerDefinition, fields: Dictionary, fresh: bool = false) -> void:
-	var receipt: Dictionary = {} if fresh or not _receipts.has(trig.id) else _receipts[trig.id]
+	var delivery_receipt: Dictionary = {} if fresh or not _receipts.has(trig.id) else _receipts[trig.id]
 	for key in ["reason", "hold_reason", "pane_mode_check"]:
-		receipt.erase(key)
-	receipt.merge(fields, true)
-	receipt["destination"] = trig.destination.label
-	receipt["at"] = Time.get_datetime_string_from_system(false, true)
-	_receipts[trig.id] = receipt
+		delivery_receipt.erase(key)
+	delivery_receipt.merge(fields, true)
+	delivery_receipt["destination"] = trig.destination.label
+	delivery_receipt["at"] = Time.get_datetime_string_from_system(false, true)
+	_receipts[trig.id] = delivery_receipt
 
 
 ## The envelope's sender: "trigger <name>", made safe for it (no brackets, no

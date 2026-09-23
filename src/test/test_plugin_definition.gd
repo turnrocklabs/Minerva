@@ -116,6 +116,7 @@ func _init() -> void:
 	test_script_arg_rescues_unknown_launcher()
 	test_empty_entrypoint_not_a_binary()
 	test_validate_does_not_emit_the_advisory()
+	test_marketplace_lane_applied_while_parsing_staged_manifest()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -1022,3 +1023,25 @@ func test_validate_does_not_emit_the_advisory() -> void:
 		def.validate().is_empty())
 	check("advisory helper exists on the install path",
 		def.has_method("warn_if_binary_has_no_producer"))
+
+
+func test_marketplace_lane_applied_while_parsing_staged_manifest() -> void:
+	# Consent reads an absolute staging path before PluginDB registers it.
+	# The publisher supplies the binary; no local setup recipe is required.
+	var path := ProjectSettings.globalize_path(
+		"user://marketplace-lane-%d.json" % OS.get_process_id())
+	var manifest := _minimal_manifest()
+	manifest["backend"] = {"transport": "stdio", "entrypoint": "./test-plugin"}
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	check("can write staged manifest", file != null)
+	if file == null:
+		return
+	file.store_string(JSON.stringify(manifest))
+	file.close()
+	var def = PluginDefinition_.from_manifest(path, PluginDefinition_.LANE_MARKETPLACE)
+	DirAccess.remove_absolute(path)
+	check("staged marketplace manifest parses", def != null)
+	if def != null:
+		check("marketplace lane is applied during parsing",
+			def.install_lane == PluginDefinition_.LANE_MARKETPLACE)
+		check("prebuilt marketplace binary needs no setup recipe", def.setup.is_empty())

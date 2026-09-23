@@ -188,7 +188,7 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 		if problem.id == plugin_id:
 			return _pending(problem)
 	var root := DirAccess.open(staging_root)
-	for name in root.get_directories() if root != null else []:
+	for name in root.get_directories() if root != null else PackedStringArray():
 		var dir := staging_root.path_join(name)
 		var record = _read_record(dir)
 		if dir == op_dir or not name.begins_with("op_") or not _validate(record).is_empty() \
@@ -211,24 +211,24 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 ## pass to end_removal, or {error} when the removal must wait or cannot be
 ## made safe: an install holds the lock, the lock cannot be used, a live
 ## other process owns an unfinished install of it, or a mark cannot be saved.
-static func begin_removal(staging_root: String, plugin_id: String) -> Dictionary:
+static func begin_removal(staging_root: String, target_plugin_id: String) -> Dictionary:
 	if not ClassDB.class_exists("ProcessFileLock"):
 		# Operations another build left cannot be resolved without the lock.
-		if not _operations_for(staging_root, plugin_id).is_empty():
-			return {"error": "Plugin '%s' has an unfinished install that this build (without native file locks) cannot resolve" % plugin_id}
+		if not _operations_for(staging_root, target_plugin_id).is_empty():
+			return {"error": "Plugin '%s' has an unfinished install that this build (without native file locks) cannot resolve" % target_plugin_id}
 		return {"lock": null, "marked": []}
 	var lock = ClassDB.instantiate("ProcessFileLock")
 	DirAccess.make_dir_recursive_absolute(staging_root)
 	var status: int = lock.try_lock_status(staging_root.path_join(STAGING_LOCK))
 	if status == ERR_BUSY:
-		return {"error": "An install is in progress; remove plugin '%s' once it finishes" % plugin_id}
+		return {"error": "An install is in progress; remove plugin '%s' once it finishes" % target_plugin_id}
 	if status != OK:
 		return {"error": "Cannot lock %s: %s" % [staging_root.path_join(STAGING_LOCK), error_string(status)]}
-	var names := _operations_for(staging_root, plugin_id)
+	var names := _operations_for(staging_root, target_plugin_id)
 	for name in names:
 		if _session_of(name) != _session and _owner_alive(staging_root, _session_of(name)):
 			lock.unlock()
-			return {"error": "Another running Minerva has an unfinished install of plugin '%s'; remove it once that Minerva restores it or exits" % plugin_id}
+			return {"error": "Another running Minerva has an unfinished install of plugin '%s'; remove it once that Minerva restores it or exits" % target_plugin_id}
 	var removal := {"lock": lock, "marked": []}
 	for name in names:
 		var dir := staging_root.path_join(name)
@@ -237,8 +237,8 @@ static func begin_removal(staging_root: String, plugin_id: String) -> Dictionary
 			continue  # never restored automatically, so nothing to guard
 		record["removing"] = true
 		if not _publish_json(dir, RECORD, record):
-			end_removal(staging_root, plugin_id, removal, false)
-			return {"error": "Could not record the removal of plugin '%s' in %s" % [plugin_id, dir]}
+			end_removal(staging_root, target_plugin_id, removal, false)
+			return {"error": "Could not record the removal of plugin '%s' in %s" % [target_plugin_id, dir]}
 		removal.marked.append(dir)
 	return removal
 
@@ -247,11 +247,11 @@ static func begin_removal(staging_root: String, plugin_id: String) -> Dictionary
 ## saved (`removed`) its unfinished installs are dropped; otherwise their
 ## marks are cleared so recovery restores them as before, and their backups
 ## stay.
-static func end_removal(staging_root: String, plugin_id: String, removal: Dictionary, removed: bool) -> void:
+static func end_removal(staging_root: String, target_plugin_id: String, removal: Dictionary, removed: bool) -> void:
 	if removal.get("lock") == null:
 		return
 	if removed:
-		for name in _operations_for(staging_root, plugin_id):
+		for name in _operations_for(staging_root, target_plugin_id):
 			_remove_tree(staging_root.path_join(name))
 	else:
 		for dir in removal.marked:
@@ -262,12 +262,12 @@ static func end_removal(staging_root: String, plugin_id: String, removal: Dictio
 	removal.lock.unlock()
 
 
-static func _operations_for(staging_root: String, plugin_id: String) -> Array:
+static func _operations_for(staging_root: String, target_plugin_id: String) -> Array:
 	var names := []
 	var root := DirAccess.open(staging_root)
-	for name in root.get_directories() if root != null else []:
+	for name in root.get_directories() if root != null else PackedStringArray():
 		var record = _read_record(staging_root.path_join(name))
-		if name.begins_with("op_") and record is Dictionary and record.get("id") == plugin_id:
+		if name.begins_with("op_") and record is Dictionary and record.get("id") == target_plugin_id:
 			names.append(name)
 	return names
 
@@ -333,11 +333,11 @@ static func _validate(record) -> String:
 ## Remove what an unfinished install put at `final_abs` and move the old
 ## install back from `previous_abs`. Returns whether `final_abs` again holds
 ## what it held before the install.
-static func _restore_files(final_abs: String, previous_abs: String, had_previous: bool) -> bool:
-	if had_previous and not DirAccess.dir_exists_absolute(previous_abs):
+static func _restore_files(final_abs: String, previous_abs: String, previous_exists: bool) -> bool:
+	if previous_exists and not DirAccess.dir_exists_absolute(previous_abs):
 		return true  # it was never moved aside
 	_remove_tree(final_abs)
-	if not had_previous:
+	if not previous_exists:
 		return not DirAccess.dir_exists_absolute(final_abs)
 	return DirAccess.rename_absolute(previous_abs, final_abs) == OK
 

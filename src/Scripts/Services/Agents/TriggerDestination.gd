@@ -137,14 +137,14 @@ static func from_address(address: String) -> Dictionary:
 	var target: Dictionary = await terminal_tools().resolve_address(address)
 	if not target.get("success", false):
 		return {"error": str(target.get("error", "no such terminal"))}
-	var harness: String = str(target.get("harness", ""))
-	if harness.is_empty():
+	var target_harness: String = str(target.get("harness", ""))
+	if target_harness.is_empty():
 		return {"error": "'%s' has no agent harness in the foreground; a trigger can only deliver to one" % address}
 	var dest := TriggerDestination.new()
-	dest.harness = harness
-	dest.label = "%s@%s" % [harness, str(target.get("name", ""))]
-	var chat_id: String = str(target.get("chat_id", ""))
-	if chat_id.is_empty():
+	dest.harness = target_harness
+	dest.label = "%s@%s" % [target_harness, str(target.get("name", ""))]
+	var target_chat_id: String = str(target.get("chat_id", ""))
+	if target_chat_id.is_empty():
 		# Without its process group a restarted harness could not be told
 		# from this one, so such a session cannot be named this way.
 		if int(target.get("foreground_pid", 0)) <= 0:
@@ -154,5 +154,5 @@ static func from_address(address: String) -> Dictionary:
 		dest.run_id = current_run
 		dest.process = int(target.get("foreground_pid", 0))
 	else:
-		dest.chat_id = chat_id
+		dest.chat_id = target_chat_id
 	return {"destination": dest}

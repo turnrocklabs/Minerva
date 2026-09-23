@@ -1436,7 +1436,7 @@ func _trigger_from_form(existing: TriggerDefinition) -> TriggerDefinition:
 	trig.name = trigger_name_edit.text
 	trig.agent_id = "" if trigger_agent_option.selected < 0 \
 		else str(trigger_agent_option.get_item_metadata(trigger_agent_option.selected))
-	trig.trigger_type = trigger_type_option.get_selected_id()
+	trig.trigger_type = trigger_type_option.get_selected_id() as TriggerDefinition.TriggerType
 	if existing != null and trigger_type_option.get_item_index(existing.trigger_type) == -1:
 		trig.trigger_type = existing.trigger_type
 	trig.schedule_type = TriggerDefinition.ScheduleType.INTERVAL if trig.trigger_type == TriggerDefinition.TriggerType.TIMER \
@@ -1447,8 +1447,8 @@ func _trigger_from_form(existing: TriggerDefinition) -> TriggerDefinition:
 	trig.schedule_day_of_month = int(trigger_schedule_day_of_month.value)
 	trig.schedule_month = int(trigger_schedule_month.value)
 	trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
-	trig.event_type = trigger_event_option.get_selected_id()
-	trig.action_type = trigger_action_type_option.get_selected_id()
+	trig.event_type = trigger_event_option.get_selected_id() as TriggerDefinition.EventType
+	trig.action_type = trigger_action_type_option.get_selected_id() as TriggerDefinition.ActionType
 	trig.watched_agent_ids = _get_watched_agent_ids()
 	trig.initial_message = trigger_message_edit.text
 	trig.batch_params = _parse_batch_params()

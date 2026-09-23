@@ -62,7 +62,7 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 		_last_install_error = {"error": "plugin_db_stale", "detail": {"path": DB_PATH}}
 		push_error("[PluginDB] %s was changed by another Minerva; restart Minerva before installing" % DB_PATH)
 		return null
-	var def := PluginDefinition.from_manifest(manifest_path)
+	var def := PluginDefinition.from_manifest(manifest_path, lane)
 	if def == null:
 		push_error("[PluginDB] Failed to parse manifest: %s" % manifest_path)
 		return null

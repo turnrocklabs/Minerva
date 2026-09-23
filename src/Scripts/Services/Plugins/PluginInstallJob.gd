@@ -11,7 +11,10 @@ extends RefCounted
 
 const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
 
+# Emitted by PluginInstallQueue, which owns job state transitions.
+@warning_ignore("unused_signal")
 signal changed
+@warning_ignore("unused_signal")
 signal finished
 
 enum State { QUEUED, RUNNING, DONE }

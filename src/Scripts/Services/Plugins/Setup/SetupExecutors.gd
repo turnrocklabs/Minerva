@@ -176,16 +176,16 @@ static func spawn(argv: Array[String], timeout_s: int, stop: Callable = Callable
 	for i in range(1, argv.size()):
 		args.append(argv[i])
 
-	var spawn: Dictionary = OS.execute_with_pipe(argv[0], args, false)
-	if spawn.is_empty():
+	var process: Dictionary = OS.execute_with_pipe(argv[0], args, false)
+	if process.is_empty():
 		return {
 			"exit_code": -1, "stdout": "", "stderr": "failed to spawn '%s'" % argv[0], "timed_out": false,
 			"stopped": false,
 		}
 
-	var pid: int = spawn.get("pid", -1)
-	var stdio: FileAccess = spawn.get("stdio", null)
-	var stderr_pipe: FileAccess = spawn.get("stderr", null)
+	var pid: int = process.get("pid", -1)
+	var stdio: FileAccess = process.get("stdio", null)
+	var stderr_pipe: FileAccess = process.get("stderr", null)
 	var stdout_tail := PackedByteArray()
 	var stderr_tail := PackedByteArray()
 

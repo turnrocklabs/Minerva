@@ -374,7 +374,7 @@ func _register(plugin_id: String, final_manifest: String, installer, auto_confir
 		# PluginDB path — handle install vs update_definition.
 		var definition
 		if installer.has_method("has_plugin") and installer.has_plugin(plugin_id):
-			var new_def = LaneCls.from_manifest(final_manifest)
+			var new_def = LaneCls.from_manifest(final_manifest, lane)
 			if new_def == null:
 				return _err("update_parse_failed", {"path": final_manifest})
 			new_def.install_lane = lane

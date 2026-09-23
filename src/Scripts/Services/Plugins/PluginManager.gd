@@ -349,7 +349,7 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 	if def == null:
 		# PluginDB.install already push_error'd; check for duplicate separately.
 		var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-		var check_def = PluginDef.from_manifest(manifest_path)
+		var check_def = PluginDef.from_manifest(manifest_path, lane)
 		if check_def != null and _db.has_plugin(check_def.id):
 			return {"error": "Plugin '%s' is already installed" % check_def.id}
 		return {"error": "Failed to install plugin from manifest: %s" % manifest_path}
@@ -482,7 +482,7 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-	var def = PluginDef.from_manifest(manifest_path)
+	var def = PluginDef.from_manifest(manifest_path, lane)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
 	if InternalPlugins.has(def.id):

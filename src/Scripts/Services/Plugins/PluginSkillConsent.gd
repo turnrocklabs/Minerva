@@ -20,7 +20,7 @@ const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 static func collect(host: Node, db, available_tools: Dictionary, docket_manager, manifest_path: String,
 		auto_confirm: bool, op = null) -> Dictionary:
 	var consent := {"collected": true}
-	var def = PluginDefinition.from_manifest(manifest_path)
+	var def = PluginDefinition.from_manifest(manifest_path, PluginDefinition.LANE_MARKETPLACE)
 	if def == null or InternalPlugins.has(def.id):
 		return consent
 	if not db.has_plugin(def.id):

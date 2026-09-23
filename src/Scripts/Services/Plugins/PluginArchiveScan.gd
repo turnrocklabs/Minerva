@@ -259,7 +259,10 @@ func _apply_record() -> bool:
 		if key in ["path", "linkpath", "size"] and _capture_type == "x":
 			if key == "size" and not _decimal(value):
 				return _fail("archive_unsafe", {"reason": "pax size is not a non-negative number"})
-			if not _override(key, int(value) if key == "size" else value):
+			if key == "size":
+				if not _override(key, int(value)):
+					return false
+			elif not _override(key, value):
 				return false
 		elif key == "hdrcharset" and value == UTF8_HDRCHARSET:
 			pass
@@ -380,6 +383,8 @@ static func _cstr(field: PackedByteArray) -> String:
 
 
 static func _padded(size: int) -> int:
+	# Round up to whole tar blocks using exact integer arithmetic.
+	@warning_ignore("integer_division")
 	return (size + BLOCK - 1) / BLOCK * BLOCK
 
 

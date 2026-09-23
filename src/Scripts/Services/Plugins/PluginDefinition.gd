@@ -311,7 +311,8 @@ func _init(p_id: String = "") -> void:
 
 ## Parse a manifest.json file and return a PluginDefinition, or null on failure.
 ## `path` should be the absolute or res:// path to the manifest.json file.
-static func from_manifest(path: String) -> PluginDefinition:
+## Supply the install lane when known; otherwise infer it from the location.
+static func from_manifest(path: String, lane: String = "") -> PluginDefinition:
 	if not FileAccess.file_exists(path):
 		push_error("[PluginDefinition] Manifest not found: %s" % path)
 		return null
@@ -334,9 +335,9 @@ static func from_manifest(path: String) -> PluginDefinition:
 
 	# Derive data_directory from the manifest path
 	def.data_directory = path.get_base_dir()
-	# Provisional lane from that location; PluginDB.install() overwrites it with
-	# the lane the caller actually installed through.
-	def.install_lane = resolve_install_lane("", def.data_directory)
+	# Apply the caller's lane before advisories: marketplace archives are also
+	# parsed from temporary absolute paths before being moved into place.
+	def.install_lane = resolve_install_lane(lane, def.data_directory)
 
 	# Validate required fields
 	var errors := def.validate()
@@ -630,7 +631,8 @@ static func resolve_install_lane(stored: String, dir: String) -> String:
 ## (the manifest already passed it when it was installed) and wrong for the
 ## marketplace lane — a SHA-pinned release artifact ships prebuilt and has no
 ## source tree to declare a producer for (design §1 lane split). Only the
-## manifest-install path, which by definition has source present, calls this.
+## manifest/dev lane should emit it; parsing a marketplace archive must apply
+## that lane before checking this advisory, even in a temporary directory.
 func warn_if_binary_has_no_producer() -> void:
 	if not setup.is_empty():
 		return
