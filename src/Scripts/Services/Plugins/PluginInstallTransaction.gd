@@ -10,7 +10,9 @@ extends RefCounted
 ##   replacing  the old install (if any) may be in <op>/previous, the new
 ##              files may be in place, and registration may have changed the
 ##              DB; recovery moves `previous` back (or removes a first install)
-##              and restores the DB record saved in the record.
+##              and restores the DB record saved in the record. A removal of
+##              the plugin marks the record "removing" before it saves; then
+##              the DB alone says whether the removal happened (_recover).
 ##   committed  registration and this record were saved; recovery only
 ##              deletes scratch.
 ##
@@ -127,9 +129,8 @@ static func restore_record(db, id: String, before) -> bool:
 	if db == null:
 		return true
 	if before == null:
-		if db.has_plugin(id):
-			db.remove(id)
-		return db.save()
+		# remove() saves; when it cannot, the record stays, in memory and on disk.
+		return not db.has_plugin(id) or db.remove(id)
 	var def = before if not before is Dictionary else PluginDefinition.from_dict(before)
 	return def != null and db.restore(def)
 
@@ -204,12 +205,18 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 
 
 ## Start removing `plugin_id`: take the staging lock, so no install replaces
-## anything until end_removal. Returns {lock} to pass to end_removal, or
-## {error} when the removal must wait: an install holds the lock, the lock
-## cannot be used, or a live other process owns an unfinished install of it.
+## anything until end_removal, and mark each unfinished replacement of it as
+## being removed (see _recover), so that once the removal is saved no crash
+## before end_removal can bring the plugin back. Returns {lock, marked} to
+## pass to end_removal, or {error} when the removal must wait or cannot be
+## made safe: an install holds the lock, the lock cannot be used, a live
+## other process owns an unfinished install of it, or a mark cannot be saved.
 static func begin_removal(staging_root: String, plugin_id: String) -> Dictionary:
 	if not ClassDB.class_exists("ProcessFileLock"):
-		return {"lock": null}  # without the lock no install can have staged anything
+		# Operations another build left cannot be resolved without the lock.
+		if not _operations_for(staging_root, plugin_id).is_empty():
+			return {"error": "Plugin '%s' has an unfinished install that this build (without native file locks) cannot resolve" % plugin_id}
+		return {"lock": null, "marked": []}
 	var lock = ClassDB.instantiate("ProcessFileLock")
 	DirAccess.make_dir_recursive_absolute(staging_root)
 	var status: int = lock.try_lock_status(staging_root.path_join(STAGING_LOCK))
@@ -217,22 +224,41 @@ static func begin_removal(staging_root: String, plugin_id: String) -> Dictionary
 		return {"error": "An install is in progress; remove plugin '%s' once it finishes" % plugin_id}
 	if status != OK:
 		return {"error": "Cannot lock %s: %s" % [staging_root.path_join(STAGING_LOCK), error_string(status)]}
-	for name in _operations_for(staging_root, plugin_id):
+	var names := _operations_for(staging_root, plugin_id)
+	for name in names:
 		if _session_of(name) != _session and _owner_alive(staging_root, _session_of(name)):
 			lock.unlock()
 			return {"error": "Another running Minerva has an unfinished install of plugin '%s'; remove it once that Minerva restores it or exits" % plugin_id}
-	return {"lock": lock}
+	var removal := {"lock": lock, "marked": []}
+	for name in names:
+		var dir := staging_root.path_join(name)
+		var record = _read_record(dir)
+		if not _validate(record).is_empty() or record.phase != PHASE_REPLACING:
+			continue  # never restored automatically, so nothing to guard
+		record["removing"] = true
+		if not _publish_json(dir, RECORD, record):
+			end_removal(staging_root, plugin_id, removal, false)
+			return {"error": "Could not record the removal of plugin '%s' in %s" % [plugin_id, dir]}
+		removal.marked.append(dir)
+	return removal
 
 
-## Finish a removal begun with begin_removal. Only when the plugin's removal
-## was saved (`removed`) are its unfinished installs dropped, since undoing
-## them later would bring it back; otherwise their backups stay.
+## Finish a removal begun with begin_removal. When the plugin's removal was
+## saved (`removed`) its unfinished installs are dropped; otherwise their
+## marks are cleared so recovery restores them as before, and their backups
+## stay.
 static func end_removal(staging_root: String, plugin_id: String, removal: Dictionary, removed: bool) -> void:
 	if removal.get("lock") == null:
 		return
 	if removed:
 		for name in _operations_for(staging_root, plugin_id):
 			_remove_tree(staging_root.path_join(name))
+	else:
+		for dir in removal.marked:
+			var record = _read_record(dir)
+			if record is Dictionary:
+				record.erase("removing")
+				_publish_json(dir, RECORD, record)  # if this fails, _recover reports the backup
 	removal.lock.unlock()
 
 
@@ -266,6 +292,15 @@ static func _recover(dir: String, record, db) -> Dictionary:
 			return {}
 		PHASE_COMMITTED:
 			return {}  # the new install stands; its backup is obsolete
+	# Marked by begin_removal: if the plugin is gone from the DB the removal
+	# was saved and the backup must not come back. If it is still there the
+	# removal failed or a new install followed; which one cannot be told, so
+	# the backup is kept and reported rather than restored over it.
+	if record.get("removing", false):
+		if db != null and not db.has_plugin(record.id):
+			return {}
+		return {"dir": dir, "id": record.id, "reason":
+			"an install of '%s' was interrupted while the plugin was being removed; its previous version is kept at %s: move it back to user://plugins/%s/ if you want it, otherwise delete it or remove the plugin again" % [record.id, backup, record.id]}
 	var final_abs := ProjectSettings.globalize_path("user://plugins").path_join(record.id)
 	if not _restore_files(final_abs, backup, record.had_previous):
 		return {"dir": dir, "id": record.id, "reason": "could not move the previous version of '%s' back from %s" % [record.id, backup]}
@@ -281,7 +316,8 @@ static func _validate(record) -> String:
 		return "missing or unreadable"
 	if record.get("format") != 1 or not record.get("phase") in [PHASE_STAGED, PHASE_REPLACING, PHASE_COMMITTED]:
 		return "of an unknown format or phase"
-	if not record.get("id") is String or not record.get("had_previous") is bool:
+	if not record.get("id") is String or not record.get("had_previous") is bool \
+			or not record.get("removing", false) is bool:
 		return "incomplete"
 	var id: String = record.id
 	if record.phase == PHASE_STAGED and id.is_empty():

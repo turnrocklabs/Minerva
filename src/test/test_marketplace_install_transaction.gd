@@ -15,6 +15,9 @@ extends SceneTree
 ##     operations alone, removes an older client's scratch, and does nothing
 ##     while another process holds the staging lock; an install waits for
 ##     that lock and for another live process's unrestored operation;
+##   - removing a plugin over such a half-done update keeps the update's
+##     backup when the removal cannot be saved, and once it is saved recovery
+##     never brings the plugin back, even after a crash before cleanup;
 ##   - a plugin database that cannot be written keeps its previous complete
 ##     file, and a second process's stale snapshot can neither install nor
 ##     save over another's install;
@@ -61,6 +64,30 @@ class UnsavableDB extends "res://Scripts/Services/Plugins/PluginDB.gd":
 	func restore(def) -> bool:
 		super(def)
 		return false
+
+
+## A PluginDB whose next saves go as `outcomes` says, in order (false: fail
+## as a write error would); later saves are real.
+class FlakyDB extends "res://Scripts/Services/Plugins/PluginDB.gd":
+	var outcomes: Array = []
+
+	func _save() -> bool:
+		if not outcomes.is_empty() and not outcomes.pop_front():
+			return false
+		return super()
+
+
+## A PluginDB that copies the staging directory aside the moment a removal
+## is saved: what a process that died right then would leave behind.
+class SnapshotDB extends "res://Scripts/Services/Plugins/PluginDB.gd":
+	var staging := ""
+	var snapshot := ""
+
+	func remove(plugin_id: String) -> bool:
+		var removed := super(plugin_id)
+		if removed:
+			OS.execute("cp", ["-a", staging, snapshot])
+		return removed
 
 
 ## An installer that asks the user before registering and waits until the
@@ -113,6 +140,7 @@ func _init() -> void:
 	await _test_unsaved_registration_reports_incomplete_rollback()
 	await _test_stale_database_writer_is_refused()
 	await _test_recovery_after_a_crash()
+	await _test_removal_is_never_undone_by_recovery()
 	await _test_owner_lock_released_when_its_process_dies()
 	await _test_frames_tick_during_extract_and_verify()
 	await _test_cancel_at_every_cancellable_stage(port)
@@ -169,6 +197,28 @@ func _test_unsaved_registration_reports_incomplete_rollback() -> void:
 	_check(real.has_plugin(ID) and not real.remove(ID) and real.has_plugin(ID),
 		"a removal that cannot be saved fails and is undone in memory")
 	DirAccess.remove_absolute(db_file + ".tmp")
+	# A first install whose commit cannot be saved, and whose rollback cannot
+	# save the record's removal either: the record stays and is reported.
+	real.remove(ID)
+	_h.rm_dir_recursive(PLUGIN_DIR)
+	var staging := ProjectSettings.globalize_path(STAGING)
+	for name in DirAccess.get_directories_at(staging):
+		if name != "owners":
+			_h.rm_dir_recursive(staging.path_join(name))  # the operation kept above
+	var staged_before := Array(DirAccess.get_directories_at(staging))
+	var flaky = FlakyDB.new()
+	flaky.outcomes = [true, false, false]  # registration, the commit's save, the rollback's removal
+	result = await _client().install_from_url(_base_url + "v1.tar.gz", flaky)
+	var kept := Array(DirAccess.get_directories_at(staging)).filter(func(n: String) -> bool: return not n in staged_before)
+	var record = JSON.parse_string(FileAccess.get_file_as_string(staging.path_join(kept[0]).path_join("txn.json"))) \
+		if kept.size() == 1 else null
+	_check(result.get("rollback", {}).get("files_restored") == true and result.rollback.get("db_restored") == false
+		and load(PLUGINDB_GD).new().has_plugin(ID), "a rollback whose removal is not saved says so, and the DB file still has it: %s" % result)
+	_check(record is Dictionary and record.get("phase") == "replacing" and record.get("id") == ID,
+		"its operation is kept for recovery: %s" % [kept])
+	for name in kept:
+		_h.rm_dir_recursive(staging.path_join(name))
+	load(PLUGINDB_GD).new().remove(ID)
 
 
 ## Two Minerva processes, each with its own snapshot of plugins.json: once
@@ -283,6 +333,60 @@ func _test_recovery_after_a_crash() -> void:
 	for name in DirAccess.get_directories_at(staging):
 		if name != "owners":
 			_h.rm_dir_recursive(staging.path_join(name))
+
+
+## PluginManager.remove_plugin over an exited process's half-done update of
+## the plugin: a removal that cannot be saved keeps that update's backup for
+## recovery, and a saved removal is not undone by recovery even when the
+## process dies before dropping the update's journal.
+func _test_removal_is_never_undone_by_recovery() -> void:
+	var pm = await _h.bootstrap_plugin_manager()
+	if pm == null:
+		_check(false, "a PluginManager starts")
+		return
+	var staging := ProjectSettings.globalize_path(STAGING)
+	var db = await _installed_v1(load(PLUGINDB_GD).new())
+	var crashed := _half_done_update(db, staging, 1)
+	var failing = FlakyDB.new()
+	failing.outcomes = [false]
+	pm._db = failing
+	var refused: Dictionary = pm.remove_plugin(ID)
+	_check(refused.has("error") and load(PLUGINDB_GD).new().has_plugin(ID) and DirAccess.dir_exists_absolute(crashed.path_join("previous")),
+		"a removal that cannot be saved keeps the plugin and the backup: %s" % refused)
+	db = load(PLUGINDB_GD).new()
+	var problems: Array = load(MARKETPLACE_GD).sweep_staging(db)
+	_check(problems.is_empty(), "the failed removal left nothing recovery must report: %s" % [problems])
+	_check_v1_intact(db, "when recovery runs after the failed removal")
+
+	crashed = _half_done_update(db, staging, 2)
+	var snapshot := _temp.path_join("staging_at_removal")
+	var removing = SnapshotDB.new()
+	removing.staging = staging
+	removing.snapshot = snapshot
+	pm._db = removing
+	var removed: Dictionary = pm.remove_plugin(ID)
+	_check(removed.get("ok", false) and not DirAccess.dir_exists_absolute(crashed), "a saved removal drops the unfinished update: %s" % removed)
+	# The process died right after saving the removal: its staging is as it was then.
+	_h.run_cmd("cp", ["-a", snapshot.path_join(crashed.get_file()), crashed])
+	db = load(PLUGINDB_GD).new()
+	problems = load(MARKETPLACE_GD).sweep_staging(db)
+	_check(problems.is_empty() and not db.has_plugin(ID) and not DirAccess.dir_exists_absolute(crashed)
+		and not FileAccess.file_exists(PLUGIN_DIR + "/sentinel.txt"),
+		"recovery after that crash does not bring the removed plugin back: %s" % [problems])
+	pm.queue_free()
+	_h.rm_dir_recursive(PLUGIN_DIR)
+	_h.rm_dir_recursive(snapshot)
+
+
+## An exited process's update of v1 to v2, stopped after v1 was set aside and
+## v2 moved in and registered. Returns its operation directory.
+func _half_done_update(db, staging: String, serial: int) -> String:
+	var dir := _op(staging, "dead-rm", {"phase": "replacing", "id": ID, "had_previous": true,
+		"db_before": db.get_by_id(ID).to_dict()}, serial)
+	DirAccess.rename_absolute(ProjectSettings.globalize_path(PLUGIN_DIR), dir.path_join("previous"))
+	_extract("v2", ProjectSettings.globalize_path(PLUGIN_DIR))
+	db.update_definition(PluginDefinition.from_manifest(PLUGIN_DIR + "/manifest.json"))
+	return dir
 
 
 var _bad_serial := 0

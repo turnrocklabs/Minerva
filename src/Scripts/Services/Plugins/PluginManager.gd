@@ -570,9 +570,10 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
 
 	# The staging lock is held until the removal is saved, so no install
-	# replaces this plugin meanwhile; unfinished installs of it are dropped
-	# only once the record is gone from disk. Only stopping the plugin
-	# happens before that.
+	# replaces this plugin meanwhile. Its unfinished installs are marked
+	# first, so recovery after a crash does not bring it back once removed,
+	# and are dropped only once the record is gone from disk. Only stopping
+	# the plugin happens before that.
 	if _db.is_stale():
 		return {"error": "Another Minerva changed the plugin list; restart Minerva before removing '%s'" % id}
 	var Transaction = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
