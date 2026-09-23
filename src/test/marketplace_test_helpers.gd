@@ -235,15 +235,23 @@ func release_triple_for_host() -> String:
 # ---------------------------------------------------------------------------
 
 # bootstrap_plugin_manager waits for SingletonObject to be available, then
-# instantiates a PluginManager attached to the tree root. Returns the
-# PluginManager instance or null on failure.
-func bootstrap_plugin_manager() -> Node:
+# instantiates a PluginManager attached to the tree root, or with
+# `app_manager` returns SingletonObject's own. Returns the PluginManager
+# instance or null on failure.
+func bootstrap_plugin_manager(app_manager: bool = false) -> Node:
 	await _tree.process_frame
 	var so = _tree.root.get_node_or_null("SingletonObject")
 	if so != null:
 		var deadline_ms: int = Time.get_ticks_msec() + 10000
 		while so.get("plugin_tool_registry") == null and Time.get_ticks_msec() < deadline_ms:
 			await _tree.create_timer(0.1).timeout
+	# The app's own manager is the one its tool registry, policy and brokers
+	# are wired to; a second manager has a PluginDB they never read.
+	if app_manager:
+		var pm = so.get("plugin_manager") if so != null else null
+		if pm == null:
+			print("  bootstrap: SingletonObject has no plugin_manager")
+		return pm
 
 	var pm_cls = load(PLUGIN_MANAGER_GD)
 	if pm_cls == null:

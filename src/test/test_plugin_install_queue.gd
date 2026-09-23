@@ -10,10 +10,12 @@ extends SceneTree
 ##     a downloading job removes its staging;
 ##   - cancel is refused once registration begins, and the job then reports
 ##     the install that actually happened (id, version, outcome);
-##   - an autostarting plugin ends Ready only once it is running; one that
-##     installs but exits before its handshake ends start_failed, its retry
-##     runs in the queue without capturing a new install request, and after a
-##     fixed version is installed and started a retry reports that version as
+##   - a new install is not started (autostart is the user's persisted
+##     preference, off until set, never the manifest's); once the user sets
+##     it, an install ends Ready only once the plugin is running, and one
+##     that exits before its handshake ends start_failed, its retry runs in
+##     the queue without capturing a new install request, and after a fixed
+##     version is installed and started a retry reports that version as
 ##     already running;
 ##   - reinstalling a running plugin stops it before its files are replaced
 ##     and ends Ready with it running again;
@@ -60,12 +62,12 @@ func _init() -> void:
 	var port: int = _h.random_high_port()
 	_fast_url = "http://127.0.0.1:%d/%s.tar.gz" % [port, FAST]
 	_slow_url = "http://127.0.0.1:%d/%s.tar.gz" % [port + 1, SLOW]
-	_pm = await _h.bootstrap_plugin_manager()
+	_pm = await _h.bootstrap_plugin_manager(true)
 	var ready: bool = _pm != null and _pack(FAST, 0) and _pack(SLOW, SLOW_BYTES) \
-		and _pack(READY, 0, {"entrypoint": "python3", "args": ["capability_probe.py"]}, true) \
-		and _pack(CRASHES, 0, {"entrypoint": "python3", "args": ["crash.py"]}, true) \
-		and _pack(CRASHES, 0, PROBE, false, {"version": "1.0.1"}, "crashes_fixed") \
-		and _pack(READY, 0, PROBE, true, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
+		and _pack(READY, 0, PROBE) \
+		and _pack(CRASHES, 0, {"entrypoint": "python3", "args": ["crash.py"]}) \
+		and _pack(CRASHES, 0, PROBE, {"version": "1.0.1"}, "crashes_fixed") \
+		and _pack(READY, 0, PROBE, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
 		and await _h.start_http_server(_temp, port)
 	if ready:
@@ -151,12 +153,16 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	var queue = _pm.install_queue
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
 	var crashes_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, CRASHES]
+	var first = await _installed_then_autostart(READY, ready_url)
+	_check(first.outcome == Job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(READY).state != _pm.S_RUNNING,
+		"a new install is installed, not started: %s" % [first.summary()])
 	var started = queue.request(_entry(READY, ready_url))
 	await _done(started)
 	_check(started.outcome == Job.OUTCOME_READY and _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING,
-		"an autostarting plugin is Ready once it runs: %s" % [started.summary()])
+		"a plugin set to autostart is Ready once it runs: %s" % [started.summary()])
 	_pm.stop_plugin(READY)
 
+	await _installed_then_autostart(CRASHES, crashes_url)
 	var failed = queue.request(_entry(CRASHES, crashes_url))
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_START_FAILED and not failed.message.is_empty(),
@@ -168,14 +174,15 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	_check(failed.outcome == Job.OUTCOME_START_FAILED, "the retry ran and reported again")
 	await _done(reinstall)
 
-	# A newer, startable version is installed and started meanwhile: retrying
-	# the old failure reports what is installed and running now.
+	# A newer, startable version is installed and started meanwhile (the
+	# preference outlives updates): retrying the old failure reports what is
+	# installed and running now.
+	# Start failures that reach the unexpected-exit path count toward a crash
+	# loop, which start_plugin refuses.
+	_check(_pm.get_db().get_by_id(CRASHES).state != _pm.S_CRASH_LOOP, "the crashed version is not crash-looping")
 	var fixed = queue.request_url("http://127.0.0.1:%d/crashes_fixed.tar.gz" % port)
 	await _done(fixed)
-	# The crashes above must not have left it in a crash loop, which start_plugin refuses.
-	_check(_pm.get_db().get_by_id(CRASHES).state != _pm.S_CRASH_LOOP, "the crashed version is not crash-looping")
-	_pm.start_plugin(CRASHES)
-	await _until(func() -> bool: return _pm.get_db().get_by_id(CRASHES).state == _pm.S_RUNNING)
+	_check(fixed.outcome == Job.OUTCOME_READY, "the fixed version starts: %s" % [fixed.summary()])
 	queue.retry_start(failed)
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_READY and failed.result.get("version") == "1.0.1" and "already running" in failed.message,
@@ -187,6 +194,7 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 ## version fails, with the real probe plugin.
 func _test_start_cancel_and_failed_restart(port: int) -> void:
 	var queue = _pm.install_queue
+	_check(_pm.get_db().set_autostart(READY, true), "READY (installed above) is set to autostart")
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
 	var cancelled = queue.request(_entry(READY, ready_url))
 	cancelled.op.stage_changed.connect(func(stage: String) -> void:
@@ -213,6 +221,7 @@ func _test_start_cancel_and_failed_restart(port: int) -> void:
 
 func _test_running_plugin_is_restarted_on_update(port: int) -> void:
 	var queue = _pm.install_queue
+	_check(_pm.get_db().set_autostart(READY, true), "READY (installed above) is set to autostart")
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
 	var first = queue.request(_entry(READY, ready_url))
 	await _done(first)
@@ -288,6 +297,16 @@ func _until(ready: Callable, seconds: float = 30.0) -> void:
 		await process_frame
 
 
+## Install `id` as a user first gets it, then set its persisted autostart
+## preference, as the plugin panel's switch does.
+func _installed_then_autostart(id: String, url: String):
+	var job = _pm.install_queue.request(_entry(id, url))
+	await _done(job)
+	if not _pm.get_db().set_autostart(id, true):
+		_check(false, "%s is set to autostart" % id)
+	return job
+
+
 func _entry(id: String, url: String) -> Dictionary:
 	return {"id": id, "version": "1.0.0",
 		"downloads": {MarketplaceClient.resolve_platform_target(): url}}
@@ -310,7 +329,7 @@ func _port_open(port: int) -> bool:
 ## (with `overrides` applied), placeholder binary (or the capability probe
 ## when `backend` launches python3), optional random payload, SHA256SUMS.
 func _pack(id: String, payload_bytes: int,
-		backend: Dictionary = {"entrypoint": "./test-binary", "args": []}, autostart: bool = false,
+		backend: Dictionary = {"entrypoint": "./test-binary", "args": []},
 		overrides: Dictionary = {}, archive: String = "") -> bool:
 	archive = id if archive.is_empty() else archive
 	var dir := _temp.path_join(archive)
@@ -319,7 +338,7 @@ func _pack(id: String, payload_bytes: int,
 		"id": id, "name": id, "version": "1.0.0", "host_api_version": "1",
 		"backend": {"transport": "stdio", "entrypoint": backend.entrypoint, "args": backend.args},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
-		"permissions": {"host_capabilities": []}, "autostart": autostart, "auto_reload": false,
+		"permissions": {"host_capabilities": []}, "auto_reload": false,
 	}
 	manifest.merge(overrides, true)
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)

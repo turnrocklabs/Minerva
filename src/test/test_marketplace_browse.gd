@@ -50,7 +50,7 @@ func _init() -> void:
 		_urls[id] = "http://127.0.0.1:%d/%s.tar.gz" % [port, id]
 	_urls[SLOW] = "http://127.0.0.1:%d/%s.tar.gz" % [port + 1, SLOW]
 	_registry_url = "http://127.0.0.1:%d/registry.json" % port
-	_pm = await _h.bootstrap_plugin_manager()
+	_pm = await _h.bootstrap_plugin_manager(true)
 	var ready: bool = _pm != null and _pack(SLOW, 3 * 1024 * 1024) and _pack(PLAIN, 0) \
 		and _pack(EXTERNAL, 0) and _write_registry() and await _h.start_http_server(_temp, port)
 	if ready:
