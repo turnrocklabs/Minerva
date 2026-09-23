@@ -20,6 +20,7 @@ const OUTCOME_READY := "ready"                # installed and started
 const OUTCOME_INSTALLED := "installed"        # installed; starts when used
 const OUTCOME_START_FAILED := "start_failed"  # installed; starting it failed (retry_start)
 const OUTCOME_FAILED := "failed"              # not installed; any previous install kept
+const OUTCOME_RECOVERY_NEEDED := "failed_needs_recovery"  # not installed; the previous install is not fully back yet
 const OUTCOME_CANCELLED := "cancelled"        # stopped before registration; nothing changed
 
 ## The registry entry asked for, or {} when only a URL was given.
@@ -41,6 +42,11 @@ var stopped_for_replace := false
 var start_cancelled := false
 ## This run only starts the installed plugin again (PluginInstallQueue.retry_start).
 var start_only := false
+## The running install of the same plugin this request joined, if any; this
+## job then ends as that one does.
+var joined = null
+## The version this job's archive turned out to hold, once read.
+var identified_version := ""
 
 
 ## The actual id once the archive has been read, else the one requested.
@@ -48,6 +54,13 @@ func plugin_id() -> String:
 	if not str(result.get("plugin_id", "")).is_empty():
 		return result.plugin_id
 	return op.plugin_id if not op.plugin_id.is_empty() else str(entry.get("id", ""))
+
+
+## The version this job will install: the registry entry's, or the one its
+## archive declared; "" while unknown.
+func expected_version() -> String:
+	var wanted := str(entry.get("version", ""))
+	return wanted if not wanted.is_empty() else identified_version
 
 
 func stage() -> String:

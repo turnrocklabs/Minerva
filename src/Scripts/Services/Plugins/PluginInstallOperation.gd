@@ -7,15 +7,21 @@ extends RefCounted
 ## `done`/`total` count the current stage's units (bytes while downloading
 ## and verifying); `total` is -1 while the size is unknown (extracting).
 ## Cancellation is honored until registration begins; from then on the
-## install runs to completion or rolls back. STAGE_REGISTER is entered
-## immediately before the installed files are replaced. Main-thread only; a worker
+## install commits or rolls back. STAGE_REGISTER is entered immediately
+## before the installed files are replaced, after every user decision. Main-thread only; a worker
 ## thread may read `cancelled`.
 
 signal stage_changed(stage: String)
+## The archive has been read: it holds `plugin_id` at `version`.
+signal identified(plugin_id: String, version: String)
+## cancel() was called; a dialog waiting on the user closes on it.
+signal cancel_requested
 
 const STAGE_DOWNLOAD := "download"
 const STAGE_EXTRACT := "extract"
 const STAGE_VERIFY := "verify"
+## Waiting for the user's decisions (skill consent) before anything changes.
+const STAGE_CONFIRM := "confirm"
 const STAGE_REGISTER := "register"
 ## Entered by PluginInstallQueue after a successful install that should run.
 const STAGE_START := "start"
@@ -32,6 +38,12 @@ var staging_dir := ""
 
 func cancel() -> void:
 	cancelled = true
+	cancel_requested.emit()
+
+
+func identify(id: String, version: String) -> void:
+	plugin_id = id
+	identified.emit(id, version)
 
 
 func enter(new_stage: String) -> void:

@@ -215,6 +215,9 @@ var _unattended_deny_ids: Dictionary = {}
 
 ## Marketplace installs; lives as long as this manager (PluginInstallQueue.gd).
 var install_queue: Node = null
+## What the startup recovery of unfinished installs could not undo:
+## [{dir, id, reason}] (PluginInstallTransaction.recover_all).
+var install_recovery_problems: Array = []
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +227,12 @@ var install_queue: Node = null
 func _ready() -> void:
 	if _db == null:
 		_db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
-	MarketplaceClient.sweep_staging(_db)
+	install_recovery_problems = MarketplaceClient.sweep_staging(_db)
+	for problem in install_recovery_problems:
+		push_error("[PluginManager] An unfinished plugin install needs attention: %s" % problem.reason)
+		if SingletonObject and SingletonObject.has_method("create_toast_notification"):
+			SingletonObject.call_deferred("create_toast_notification",
+				"An unfinished plugin install needs attention: %s" % problem.reason, 1, false)
 	install_queue = load("res://Scripts/Services/Plugins/PluginInstallQueue.gd").new()
 	install_queue.manager = self
 	add_child(install_queue)
@@ -334,7 +342,7 @@ func _process(delta: float) -> void:
 ##
 ## Returns {"error": "..."} on install failure.
 func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
-		lane: String = PluginDefinition.LANE_MANIFEST) -> Dictionary:
+		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var def = _db.install(manifest_path, lane)
 	if def == null:
 		# PluginDB.install already push_error'd; check for duplicate separately.
@@ -384,7 +392,7 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 
 	# Skill seeding (DCR 019df57b T3).
 	if not def.skills.is_empty():
-		var seed_result := await _seed_plugin_skills(def, auto_confirm_skills)
+		var seed_result := await _seed_plugin_skills(def, auto_confirm_skills, consent)
 		result.merge(seed_result)
 
 	# Cross-plugin reactivity (DCR 019df57b T7).  This plugin's declared tools
@@ -401,15 +409,17 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 
 ## Resolve tool_deps + (optionally) confirm with user + materialise skill records.
 ## Internal helper for install_plugin's skill-seeding path.
-func _seed_plugin_skills(def, auto_confirm: bool) -> Dictionary:
+func _seed_plugin_skills(def, auto_confirm: bool, consent: Dictionary = {}) -> Dictionary:
 	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 	var available_tools: Dictionary = _build_available_tools()
 	var docket_manager = _get_docket_manager()
 
 	var resolved: Array = SeederClass.resolve_deps(def, available_tools)
 
-	var accepted: bool = auto_confirm
-	if not auto_confirm:
+	# Consent collected before the install began is final: nothing is asked
+	# now, and a question it did not cover counts as declined.
+	var accepted: bool = bool(consent.get("seed", false)) if consent.get("collected", false) else auto_confirm
+	if not auto_confirm and not consent.get("collected", false):
 		accepted = await _show_skill_seed_dialog(def, resolved)
 
 	if not accepted:
@@ -434,7 +444,7 @@ func _seed_plugin_skills(def, auto_confirm: bool) -> Dictionary:
 ## If the PluginManager isn't in a SceneTree (headless smoke test that forgot
 ## to add_child the manager), defaults to false (decline) rather than blocking
 ## indefinitely.
-func _show_skill_seed_dialog(def, resolved: Array) -> bool:
+func _show_skill_seed_dialog(def, resolved: Array, op = null) -> bool:
 	if not is_inside_tree():
 		push_warning("[PluginManager] Skill seed dialog requested but PluginManager not in SceneTree; declining by default")
 		return false
@@ -453,7 +463,12 @@ func _show_skill_seed_dialog(def, resolved: Array) -> bool:
 	var display_name: String = def.name if not def.name.is_empty() else def.id
 	dialog.configure(display_name, resolved)
 	dialog.popup_centered()
+	var close := func() -> void: dialog.seed_decision.emit(false)
+	if op != null:
+		op.cancel_requested.connect(close, CONNECT_ONE_SHOT)
 	var accepted: bool = await dialog.seed_decision
+	if op != null and op.cancel_requested.is_connected(close):
+		op.cancel_requested.disconnect(close)
 	dialog.queue_free()
 	return accepted
 
@@ -498,7 +513,7 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 ##   {"ok": true, "id": "...", "reconcile": {...counts...}, ...}
 ##   {"error": "..."}
 func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
-		lane: String = PluginDefinition.LANE_MANIFEST) -> Dictionary:
+		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
 	var def = PluginDef.from_manifest(manifest_path)
 	if def == null:
@@ -533,6 +548,11 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 			continue
 		var skill: Dictionary = action.get("skill", {})
 		var skill_id := str(skill.get("id", ""))
+		if consent.get("collected", false):
+			# Asked before the install changed anything; a skill not asked
+			# about then is left as the user customised it.
+			decisions[skill_id] = bool(consent.get("update_decisions", {}).get(skill_id, false))
+			continue
 		if auto_confirm_updates:
 			decisions[skill_id] = true
 			continue
@@ -554,11 +574,44 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	return result
 
 
+## Ask now every skill question registering `manifest_path` would ask, so a
+## marketplace install can wait for the user while nothing has changed and
+## then register without stopping: seed consent for a new plugin, or one
+## decision per customised skill an update would change. Pass the result to
+## install_plugin / update_plugin as `consent`. Cancelling `op` closes an
+## open dialog as a decline and asks nothing more.
+func collect_skill_consent(manifest_path: String, auto_confirm: bool, op = null) -> Dictionary:
+	var consent := {"collected": true}
+	var def = load("res://Scripts/Services/Plugins/PluginDefinition.gd").from_manifest(manifest_path)
+	if def == null or InternalPlugins.has(def.id):
+		return consent
+	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+	if not _db.has_plugin(def.id):
+		if not def.skills.is_empty() and not (op != null and op.cancelled):
+			var resolved: Array = SeederClass.resolve_deps(def, _build_available_tools())
+			consent["seed"] = auto_confirm or await _show_skill_seed_dialog(def, resolved, op)
+		return consent
+	var plan: Dictionary = SeederClass.plan_reconcile(def, _build_available_tools(), _get_docket_manager())
+	var decisions := {}
+	for action in plan.get("actions", []):
+		if str(action.get("action", "")) == SeederClass.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
+			var skill: Dictionary = action.get("skill", {})
+			decisions[str(skill.get("id", ""))] = auto_confirm \
+				or await _show_skill_update_dialog(def, action.get("existing", {}), skill, op)
+	consent["update_decisions"] = decisions
+	return consent
+
+
 ## Spawn the update-confirmation dialog for one customised+changed skill,
 ## await the user's choice.  Returns true on accept (overwrite), false otherwise.
-func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dictionary) -> bool:
+func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dictionary, op = null) -> bool:
 	if not is_inside_tree():
 		push_warning("[PluginManager] Skill update dialog requested but PluginManager not in SceneTree; declining by default")
+		return false
+	# As for the seed dialog: with no display there is no one to answer, so
+	# keep the customised skill rather than wait forever.
+	if DisplayServer.get_name() == "headless":
+		push_warning("[PluginManager] Skill update dialog suppressed in headless mode; keeping the customised skill")
 		return false
 	var DialogClass = load("res://Scripts/Services/Plugins/PluginSkillUpdateDialog.gd")
 	var dialog = DialogClass.new()
@@ -566,7 +619,12 @@ func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dict
 	var display_name: String = def.name if not def.name.is_empty() else def.id
 	dialog.configure(display_name, existing_record, new_skill)
 	dialog.popup_centered()
+	var close := func() -> void: dialog.update_decision.emit(false)
+	if op != null:
+		op.cancel_requested.connect(close, CONNECT_ONE_SHOT)
 	var accepted: bool = await dialog.update_decision
+	if op != null and op.cancel_requested.is_connected(close):
+		op.cancel_requested.disconnect(close)
 	dialog.queue_free()
 	return accepted
 
@@ -624,6 +682,9 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 			print("[PluginManager] Deleted plugin data directory: %s" % data_dir)
 
 	print("[PluginManager] Removed plugin '%s'" % id)
+	# An unfinished marketplace install of it must not bring it back later.
+	load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").forget(
+		ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), id)
 
 	# Cross-plugin reactivity (DCR 019df57b T7).  Plugin's declared tools are
 	# no longer "available"; any remaining skill (any source) whose tool_deps

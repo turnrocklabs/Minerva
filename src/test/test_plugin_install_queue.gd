@@ -12,7 +12,14 @@ extends SceneTree
 ##     the install that actually happened (id, version, outcome);
 ##   - an autostarting plugin ends Ready only once it is running; one whose
 ##     binary is missing ends start_failed, and its retry runs in the queue
-##     without capturing a new install request.
+##     without capturing a new install request;
+##   - reinstalling a running plugin stops it before its files are replaced
+##     and ends Ready with it running again;
+##   - minerva_plugin_marketplace_install (the real MCP handler) attaches to
+##     a dialog's queued install, returns its result, and does not change the
+##     confirmation choice the dialog's request was made with;
+##   - once a URL-only install reveals its plugin, a queued request for the
+##     same version joins it and one for another version ends as a conflict.
 ##
 ## A job outliving the dialog that started it is covered against the real
 ## dialog scene in test_marketplace_browse.gd.
@@ -21,6 +28,7 @@ extends SceneTree
 
 const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 const JOB_GD := "res://Scripts/Services/Plugins/PluginInstallJob.gd"
+const MCP_TOOLS_GD := "res://Scripts/Services/Plugins/PluginMCPTools.gd"
 const THROTTLED_PY := "res://test/fixtures/throttled_http_server.py"
 const PROBE_PY := "res://test/fixtures/capability_probe/capability_probe.py"
 const SLOW := "test_queue_slow"
@@ -69,6 +77,9 @@ func _init() -> void:
 	await _test_cancel_queued_and_downloading()
 	await _test_cancel_refused_during_registration()
 	await _test_start_outcomes_and_retry(port)
+	await _test_running_plugin_is_restarted_on_update(port)
+	await _test_mcp_attach_keeps_the_first_requests_choices()
+	await _test_url_install_absorbs_or_refuses_queued_duplicates()
 	_finish(1 if _fail else 0)
 
 
@@ -150,6 +161,58 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	await failed.finished
 	_check(failed.outcome == Job.OUTCOME_START_FAILED, "the retry ran and reported again")
 	await reinstall.finished
+
+
+func _test_running_plugin_is_restarted_on_update(port: int) -> void:
+	var queue = _pm.install_queue
+	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
+	var first = queue.request(_entry(READY, ready_url))
+	await first.finished
+	var second = queue.request(_entry(READY, ready_url))
+	await second.finished
+	_check(second.stopped_for_replace and second.outcome == Job.OUTCOME_READY \
+		and _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING,
+		"a running plugin is stopped for the update and running again after it: %s" % [second.summary()])
+	_pm.stop_plugin(READY)
+
+
+func _test_mcp_attach_keeps_the_first_requests_choices() -> void:
+	await _scrub()
+	var queue = _pm.install_queue
+	var blocker = queue.request(_entry(SLOW, _slow_url))
+	var dialog_job = queue.request(_entry(FAST, _fast_url), false)
+	var count_before: int = queue.jobs().size()
+	var tools = load(MCP_TOOLS_GD).new(_pm)
+	var box := [null]
+	(func() -> void: box[0] = await tools.handle_tool_call("minerva_plugin_marketplace_install",
+		{"url": _fast_url, "auto_confirm_skills": true})).call()
+	await process_frame
+	_check(queue.jobs().size() == count_before and dialog_job.auto_confirm_skills == false,
+		"the MCP request attached without changing the first request's confirmation choice")
+	await dialog_job.finished
+	await process_frame
+	_check(box[0] != null and box[0].get("outcome") == dialog_job.outcome and box[0].get("plugin_id") == FAST,
+		"the MCP call returns the attached install's result: %s" % [box[0]])
+	await blocker.finished
+
+
+func _test_url_install_absorbs_or_refuses_queued_duplicates() -> void:
+	await _scrub()
+	var queue = _pm.install_queue
+	var by_url = queue.request_url(_slow_url)  # its plugin is unknown until the archive is read
+	# The same plugin from the registry, under a different URL string.
+	var other_url := _slow_url.replace("127.0.0.1", "localhost")
+	var same = queue.request(_entry(SLOW, other_url))
+	var entry := _entry(SLOW, other_url)
+	entry["version"] = "9.0.0"
+	var conflicting = queue.request(entry)
+	_check(same != by_url and conflicting != by_url, "before the archive is read the requests are separate")
+	await by_url.finished
+	await process_frame
+	_check(same.state == Job.State.DONE and same.result == by_url.result and same.outcome == by_url.outcome,
+		"the same-version request joined the running install and ended with it: %s" % [same.summary()])
+	_check(conflicting.outcome == Job.OUTCOME_FAILED and conflicting.result.get("error") == "install_conflict",
+		"the other-version request ends as a conflict: %s" % [conflicting.summary()])
 
 
 func _entry(id: String, url: String) -> Dictionary:

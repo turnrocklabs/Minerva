@@ -217,7 +217,7 @@ func _get_plugin_install_tool_def() -> Dictionary:
 func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_marketplace_install",
-		"description": "Install a plugin from a marketplace tarball URL. Runs through Minerva's install queue (one install at a time; a request for a plugin or URL already being installed waits for that install instead of starting another, and keeps that install's auto_confirm_skills choice). Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load), and starts the plugin if it was running or autostarts. Returns {ok, plugin_id, version, manifest_path, outcome} on success, where outcome is ready, installed (starts when used), or start_failed (with message); on failure {ok:false, error, outcome, message}.",
+		"description": "Install a plugin from a marketplace tarball URL. Runs through Minerva's install queue, one install at a time. A request for a plugin or URL already being installed waits for that install and returns its result; the first request's auto_confirm_skills choice stands, a later request cannot change it. A queued request for a plugin another request turns out to be installing joins it when the versions match and fails with install_conflict when they differ. Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load), and starts the plugin if it was running or autostarts. Returns {ok, plugin_id, version, platform_verified, manifest_path, outcome} on success, where outcome is ready, installed (starts when used), or start_failed (with message); on failure {ok:false, error, outcome, message, rollback?}, where outcome failed means any previous install is back and failed_needs_recovery means it is not fully back yet (Minerva restores it on its next start).",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -238,7 +238,7 @@ func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 func _get_plugin_marketplace_list_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_marketplace_list",
-		"description": "List the plugins in the marketplace registry with their long descriptions (what each does, what it can do, what it needs), version, platforms, whether this computer has a build (available_here, with unavailable_reason when not), and the installed version if any. A release published before descriptions existed has description_missing:true. Install one with minerva_plugin_marketplace_install using its download URL from minerva_plugin_marketplace_detail.",
+		"description": "List the plugins in the marketplace registry with their long descriptions (what each does, what it can do, what it needs), version, platforms, whether this computer has a build (available_here, with unavailable_reason when not), and the installed version if any. A release published before descriptions existed has description_missing:true. recovery_problems lists unfinished installs Minerva could not undo at startup ({dir, id, reason}). Install one with minerva_plugin_marketplace_install using its download URL from minerva_plugin_marketplace_detail.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -490,7 +490,9 @@ func _handle_plugin_marketplace_list(args: Dictionary) -> Dictionary:
 	var plugins := []
 	for entry in fetched.plugins:
 		plugins.append(MarketplaceClient.describe_entry(entry, _installed_version(str(entry.get("id", "")))))
-	return {"ok": true, "this_platform": MarketplaceClient.resolve_platform_target(), "plugins": plugins}
+	var manager = _get_plugin_manager()
+	return {"ok": true, "this_platform": MarketplaceClient.resolve_platform_target(), "plugins": plugins,
+		"recovery_problems": manager.install_recovery_problems if manager != null else []}
 
 
 func _handle_plugin_marketplace_detail(args: Dictionary) -> Dictionary:

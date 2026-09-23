@@ -187,6 +187,27 @@ func update_definition(def: PluginDefinition) -> bool:
 	return true
 
 
+## Write the database now. Returns whether it reached disk; a marketplace
+## install counts as committed only when this succeeds.
+func save() -> bool:
+	return _save()
+
+
+## Put back a definition exactly as it was before a failed install replaced
+## or added it. Returns whether the result was saved.
+func restore(def: PluginDefinition) -> bool:
+	if _is_reserved(def.id):
+		return false
+	if _plugins.has(def.id):
+		def.state = _plugins[def.id].state
+		_unregister_class_names(def.id)
+	_plugins[def.id] = def
+	_register_class_names(def)
+	var saved := _save()
+	plugins_changed.emit()
+	return saved
+
+
 ## Set the autostart flag for a plugin and persist the change.
 ## Host-owned plugins take the same path; their flag rides in the separate
 ## internal_autostart record because their definitions are not persisted.
@@ -302,7 +323,7 @@ static func _is_reserved(plugin_id: String) -> bool:
 # Private helpers
 # ---------------------------------------------------------------------------
 
-func _save() -> void:
+func _save() -> bool:
 	var records: Array = []
 	for def in _plugins.values():
 		if _is_reserved(def.id):
@@ -319,10 +340,11 @@ func _save() -> void:
 	var file := FileAccess.open(DB_PATH, FileAccess.WRITE)
 	if not file:
 		push_error("[PluginDB] Cannot write %s: %s" % [DB_PATH, FileAccess.get_open_error()])
-		return
+		return false
 
-	file.store_string(json)
+	var stored := file.store_string(json)
 	file.close()
+	return stored
 
 
 func _ensure_data_dir() -> void:

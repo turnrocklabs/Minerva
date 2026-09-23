@@ -2,9 +2,12 @@ extends Node
 ## Runs marketplace installs one at a time and keeps each plugin to one
 ## outstanding install, however often and from wherever it is requested: a
 ## request matching an unfinished install job by plugin id or download URL
-## returns that job (a URL-only job is known by its URL until its archive has
-## been read). An attaching request cannot change choices the job was made
-## with, such as confirming skills without a dialog. PluginManager owns the
+## returns that job. A URL-only job's plugin is known once its archive has
+## been read; then any queued request for the same plugin joins it when it
+## expects that version, and ends as an install_conflict when it expects
+## another. An attaching or joining request never changes the choices the
+## job was made with, such as confirming skills without a dialog; the first
+## request's choices stand. PluginManager owns the
 ## queue, so a job outlives the dialog or tool call that started it; the last
 ## MAX_FINISHED finished jobs are kept so a reopened dialog can show how an
 ## install ended. A start retry is queued in the same serial lane.
@@ -67,6 +70,12 @@ func cancel(job: Job) -> bool:
 		return true
 	if job.state != Job.State.RUNNING:
 		return false
+	if job.joined != null:
+		# Stop following; the install it joined carries on for its own request.
+		job.result = {"ok": false, "error": "cancelled", "detail": {}}
+		job.joined = null
+		_finish(job, Job.OUTCOME_CANCELLED, "Stopped waiting; the install it joined continues.")
+		return true
 	match job.stage():
 		Operation.STAGE_REGISTER:
 			return false
@@ -86,6 +95,7 @@ func retry_start(job: Job) -> void:
 		job.message = ""
 		job.start_only = true
 		job.start_cancelled = false
+		job.joined = null
 		job.op.stage_changed.connect(_on_stage.bind(job))
 		_changed(job)
 		_run_next.call_deferred()
@@ -93,16 +103,28 @@ func retry_start(job: Job) -> void:
 
 func _enqueue(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 	var plugin_id := str(entry.get("id", ""))
+	var wanted := str(entry.get("version", ""))
 	for job in _jobs:
-		if job.state != Job.State.DONE and not job.start_only \
-				and ((not plugin_id.is_empty() and job.plugin_id() == plugin_id) or (not url.is_empty() and job.url == url)):
-			job.auto_confirm_skills = job.auto_confirm_skills or auto_confirm_skills
-			return job
+		if job.state == Job.State.DONE or job.start_only:
+			continue
+		var same_url := not url.is_empty() and job.url == url
+		if not same_url and (plugin_id.is_empty() or job.plugin_id() != plugin_id):
+			continue
+		var theirs: String = job.expected_version()
+		if not same_url and not wanted.is_empty() and not theirs.is_empty() and wanted != theirs:
+			var refused := Job.new()
+			refused.entry = entry
+			refused.url = url
+			_jobs.append(refused)
+			_conflict(refused, plugin_id, theirs, wanted)
+			return refused
+		return job
 	var job := Job.new()
 	job.entry = entry
 	job.url = url
 	job.auto_confirm_skills = auto_confirm_skills
 	job.op.stage_changed.connect(_on_stage.bind(job))
+	job.op.identified.connect(_on_identified.bind(job))
 	_jobs.append(job)
 	_changed(job)
 	_run_next.call_deferred()  # the caller holds the job before it starts
@@ -125,6 +147,15 @@ func _run(job: Job) -> void:
 	job.state = Job.State.RUNNING
 	_changed(job)
 	if job.start_only:
+		# Retry against what is installed now, not what this job once installed.
+		var current = manager.get_db().get_by_id(job.plugin_id())
+		if current == null:
+			_finish(job, Job.OUTCOME_START_FAILED, "The plugin is no longer installed.")
+			return
+		job.result["version"] = str(current.version)
+		if current.state == manager.S_RUNNING:
+			_finish(job, Job.OUTCOME_READY, "v%s is already running." % current.version)
+			return
 		await _start(job)
 		return
 	var client: Node = MarketplaceClient.new()
@@ -138,12 +169,16 @@ func _run(job: Job) -> void:
 	job.result = r
 	if not r.get("ok", false):
 		var message := MarketplaceClient.format_install_error(r)
-		if job.stopped_for_replace:
+		var rollback: Dictionary = r.get("rollback", {})
+		var restored: bool = rollback.is_empty() or (rollback.files_restored and rollback.db_restored)
+		if job.stopped_for_replace and (rollback.is_empty() or rollback.files_restored):
 			var restarted: Dictionary = await manager.start_plugin(job.plugin_id())  # the old files are back
 			if restarted.has("error"):
 				message += "\n\nThe previous version is installed but did not restart: %s" % restarted.error
-		var cancelled := str(r.get("error", "")) == "cancelled"
-		_finish(job, Job.OUTCOME_CANCELLED if cancelled else Job.OUTCOME_FAILED, message)
+		var outcome := Job.OUTCOME_FAILED if restored else Job.OUTCOME_RECOVERY_NEEDED
+		if str(r.get("error", "")) == "cancelled":
+			outcome = Job.OUTCOME_CANCELLED
+		_finish(job, outcome, message)
 		return
 	var registered: Dictionary = r.get("manager_result", {})
 	if registered.get("needs_binary", false):
@@ -171,6 +206,31 @@ func _start(job: Job) -> void:
 		_finish(job, Job.OUTCOME_START_FAILED, str(started.error))
 
 
+## The archive of `job` holds `plugin_id` at `version`: queued requests for
+## that plugin join it, or end as a conflict when they expect another version.
+func _on_identified(plugin_id: String, version: String, job: Job) -> void:
+	job.identified_version = version
+	for other in _jobs.duplicate():
+		if other == job or other.state != Job.State.QUEUED or other.start_only or other.plugin_id() != plugin_id:
+			continue
+		var wanted := str(other.entry.get("version", ""))
+		if wanted.is_empty() or wanted == version:
+			other.joined = job
+			other.state = Job.State.RUNNING
+			_changed(other)
+		else:
+			_conflict(other, plugin_id, version, wanted)
+
+
+## End `job` as a request for `requested` refused while `installing` of the
+## same plugin is under way.
+func _conflict(job: Job, plugin_id: String, installing: String, requested: String) -> void:
+	job.result = {"ok": false, "error": "install_conflict", "detail": {"id": plugin_id,
+		"installing": installing, "requested": requested}}
+	_finish(job, Job.OUTCOME_FAILED, "v%s of %s is being installed by another request; v%s was not installed." % [
+		installing, plugin_id, requested])
+
+
 func _on_stage(stage: String, job: Job) -> void:
 	job.stage_started_msec = Time.get_ticks_msec()
 	if stage == Operation.STAGE_REGISTER:
@@ -188,9 +248,9 @@ func _finish(job: Job, outcome: String, message: String) -> void:
 	job.start_only = false
 	# The operation holds the job through this binding; drop it so a trimmed
 	# job can be freed.
-	for connection in job.op.stage_changed.get_connections():
-		if connection.callable.get_object() == self and connection.callable.get_method() == "_on_stage":
-			job.op.stage_changed.disconnect(connection.callable)
+	for connection in job.op.stage_changed.get_connections() + job.op.identified.get_connections():
+		if connection.callable.get_object() == self:
+			connection.signal.disconnect(connection.callable)
 	# Trim (never the job just finished) before announcing, so listeners see
 	# which jobs are still kept.
 	var finished := _jobs.filter(func(j: Job) -> bool: return j.state == Job.State.DONE and j != job)
@@ -198,6 +258,10 @@ func _finish(job: Job, outcome: String, message: String) -> void:
 		_jobs.erase(finished[i])
 	_changed(job)
 	job.finished.emit()
+	for other in _jobs.duplicate():
+		if other.joined == job and other.state != Job.State.DONE:
+			other.result = job.result
+			_finish(other, outcome, message)
 
 
 func _changed(job: Job) -> void:

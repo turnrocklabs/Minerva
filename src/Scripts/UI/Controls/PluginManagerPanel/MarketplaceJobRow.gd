@@ -14,6 +14,7 @@ const STAGE_NAMES := {
 	Operation.STAGE_DOWNLOAD: "Downloading",
 	Operation.STAGE_EXTRACT: "Extracting",
 	Operation.STAGE_VERIFY: "Verifying files",
+	Operation.STAGE_CONFIRM: "Waiting for your confirmation",
 	Operation.STAGE_REGISTER: "Registering",
 	Operation.STAGE_START: "Starting",
 }
@@ -67,19 +68,23 @@ func _render() -> void:
 
 
 func _render_running() -> void:
-	var stage_name: String = STAGE_NAMES.get(job.stage(), "Preparing")
-	var measurable: bool = job.op.total > 0
+	# A joined request shows the install it is waiting on.
+	var source: Job = job.joined if job.joined != null else job
+	var stage_name: String = STAGE_NAMES.get(source.stage(), "Preparing")
+	var measurable: bool = source.op.total > 0
 	_progress.visible = measurable
 	if measurable:
-		_progress.max_value = job.op.total
-		_progress.value = job.op.done
-		_status.text = "%s — %s of %s" % [stage_name, String.humanize_size(job.op.done),
-			String.humanize_size(job.op.total)]
+		_progress.max_value = source.op.total
+		_progress.value = source.op.done
+		_status.text = "%s — %s of %s" % [stage_name, String.humanize_size(source.op.done),
+			String.humanize_size(source.op.total)]
 	else:
-		_status.text = "%s… %d s" % [stage_name, int(job.stage_elapsed_seconds())]
-	# Registration completes or rolls back; offering cancel there would lie.
-	_cancel.visible = job.stage() != Operation.STAGE_REGISTER
-	if job.stage() == Operation.STAGE_REGISTER:
+		_status.text = "%s… %d s" % [stage_name, int(source.stage_elapsed_seconds())]
+	# Registration commits or rolls back; offering cancel there would lie.
+	_cancel.visible = job.joined != null or source.stage() != Operation.STAGE_REGISTER
+	if job.joined != null:
+		_detail.text = "Joined the install of this plugin already running."
+	elif source.stage() == Operation.STAGE_REGISTER:
 		_detail.text = "Finishing the install; this step cannot be cancelled."
 
 
@@ -97,6 +102,8 @@ func _render_outcome() -> void:
 			_retry.visible = job in queue.jobs()
 		Job.OUTCOME_FAILED:
 			_status.text = "Install failed — nothing was changed"
+		Job.OUTCOME_RECOVERY_NEEDED:
+			_status.text = "Install failed — the previous version is not fully back yet"
 		Job.OUTCOME_CANCELLED:
 			_status.text = "Cancelled — nothing was changed"
 	_detail.text = job.message

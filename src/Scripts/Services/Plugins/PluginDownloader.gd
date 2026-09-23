@@ -11,8 +11,10 @@ extends RefCounted
 ## download gives up with the last attempt's error.
 ##
 ## The socket is polled once per frame on the main thread, draining what it
-## holds within FRAME_BUDGET_USEC, so a waiting transfer costs almost no CPU.
-## (HTTPRequest's threaded mode spins its worker between polls.)
+## holds within FRAME_BUDGET_USEC, so a waiting transfer should cost little
+## CPU. The expectation, that this beats threaded HTTPRequest (whose worker
+## appears to spin between polls), is what scripts/bench-plugin-download-cpu.sh
+## measures.
 ##
 ## Results use MarketplaceClient's shape: {ok:true, bytes} or
 ## {ok:false, error, detail}.
@@ -189,12 +191,14 @@ func _finished(url: String, status: int) -> Dictionary:
 	return _result("download_interrupted", {"url": url, "bytes": bytes_received, "total": bytes_total}, true)
 
 
-## Absolute, protocol-relative, root-relative, or directory-relative
-## Location against the URL that answered with it.
+## Absolute, protocol-relative, root-relative, query-only, or
+## directory-relative Location against the URL that answered with it.
 static func _resolve(base: String, location: String) -> String:
 	if location.begins_with("http://") or location.begins_with("https://"):
 		return location
 	var m := RegEx.create_from_string("^(https?:)(//[^/?#]+)([^?#]*/)?").search(base)
+	if location.begins_with("?"):
+		return base.get_slice("?", 0).get_slice("#", 0) + location
 	if location.begins_with("//"):
 		return m.get_string(1) + location
 	if location.begins_with("/"):

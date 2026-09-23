@@ -14,20 +14,11 @@ extends Node
 const PluginDownloader := preload("res://Scripts/Services/Plugins/PluginDownloader.gd")
 const PluginArchive := preload("res://Scripts/Services/Plugins/PluginArchive.gd")
 const PluginInstallOperation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
+const PluginInstallTransaction := preload("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
 
 const REGISTRY_URL_DEFAULT := "https://raw.githubusercontent.com/imrans-lab/minerva-plugins/main/registry.json"
 
 const STAGING_DIR := "user://plugins/.staging"
-# Inside an operation's staging directory: the install being replaced, and
-# which plugin it belongs to.
-const PREVIOUS := "previous"
-const OP_RECORD := "op.json"
-# A running install rewrites its op record this often; the startup sweep
-# leaves alone any operation whose record is younger than OP_STALE_SECONDS,
-# because another Minerva process (a second instance, a test run) sharing
-# this user directory may still own it.
-const OP_HEARTBEAT_SECONDS := 10.0
-const OP_STALE_SECONDS := 120
 const PLUGINS_DIR := "user://plugins"
 
 # Defensive caps on the small registry JSON. Anything beyond a couple
@@ -192,26 +183,24 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		op: PluginInstallOperation = null, expected: Dictionary = {}) -> Dictionary:
 	if op == null:
 		op = PluginInstallOperation.new()
-	op.staging_dir = ProjectSettings.globalize_path(STAGING_DIR).path_join(
-		"op_%d_%d" % [Time.get_ticks_usec(), randi()])
-	DirAccess.make_dir_recursive_absolute(op.staging_dir)
-	_write_op_record(op)
-	var heartbeat := Timer.new()
-	heartbeat.wait_time = OP_HEARTBEAT_SECONDS
-	heartbeat.process_mode = Node.PROCESS_MODE_ALWAYS
-	heartbeat.timeout.connect(_write_op_record.bind(op))
-	add_child(heartbeat)
-	heartbeat.start()
-	var result := await _install(tarball_url, installer, auto_confirm_skills, op, expected)
-	heartbeat.queue_free()
-	# A previous install that could not be moved back stays for sweep_staging.
-	if result.get("ok", false) or not DirAccess.dir_exists_absolute(op.staging_dir.path_join(PREVIOUS)):
+	var staging_root := ProjectSettings.globalize_path(STAGING_DIR)
+	DirAccess.make_dir_recursive_absolute(staging_root)
+	var txn := PluginInstallTransaction.begin(staging_root)
+	if txn == null:
+		return _err("staging_failed", {"dir": staging_root})
+	op.staging_dir = txn.op_dir
+	var result := await _install(tarball_url, installer, auto_confirm_skills, op, expected, txn)
+	txn.unlock()
+	# An incomplete rollback keeps the operation (and its backup) for the
+	# recovery the next start runs.
+	var rollback: Dictionary = result.get("rollback", {})
+	if rollback.is_empty() or (rollback.files_restored and rollback.db_restored):
 		_rm_dir_recursive(op.staging_dir)
 	return result
 
 
 func _install(tarball_url: String, installer, auto_confirm_skills: bool,
-		op: PluginInstallOperation, expected: Dictionary) -> Dictionary:
+		op: PluginInstallOperation, expected: Dictionary, txn) -> Dictionary:
 	# --- 1. Download ---
 	op.enter(PluginInstallOperation.STAGE_DOWNLOAD)
 	var archive := op.staging_dir.path_join("download.tar.gz")
@@ -251,7 +240,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		return _err("bad_manifest", {"path": manifest_path, "reason": "invalid_id"})
 
 	var identity := PluginArchive.check_identity(manifest, expected, resolve_platform_target(), extract_abs)
-	if not identity.is_empty():
+	if not identity.ok:
 		return identity
 
 	# Host-owned identities are refused HERE, before the replace, not by
@@ -262,35 +251,49 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		return _err("reserved_id", {"id": raw_id})
 
 	var plugin_id: String = raw_id
-	op.plugin_id = plugin_id
+	op.identify(plugin_id, str(manifest.get("version", "")))
 	if installer != null and installer.has_method("can_replace_plugin_files"):
 		var replace_check: Dictionary = installer.can_replace_plugin_files(plugin_id)
 		if replace_check.has("error"):
 			return _err("restart_required", replace_check)
 
+	# --- 4. Ask the user everything registration will need, while nothing
+	# has been replaced and cancelling is still free ---
+	var consent := {}
+	if installer != null and installer.has_method("collect_skill_consent"):
+		op.enter(PluginInstallOperation.STAGE_CONFIRM)
+		consent = await installer.collect_skill_consent(manifest_path, auto_confirm_skills, op)
 	# Cancellation is honored up to here; replacing and registering either
-	# complete or roll back.
+	# commit or roll back.
 	if op.cancelled:
 		return _err("cancelled", {})
-	op.enter(PluginInstallOperation.STAGE_REGISTER)
 
-	# --- 4. Replace user://plugins/<id>/, keeping the old copy until registered ---
+	# --- 5. Replace user://plugins/<id>/, keeping the old copy until the new
+	# registration is saved (PluginInstallTransaction) ---
 	var final_dir := "%s/%s" % [PLUGINS_DIR, plugin_id]
 	var final_abs := ProjectSettings.globalize_path(final_dir)
-	var previous_abs := op.staging_dir.path_join(PREVIOUS)
 	var db = _installer_db(installer)
+	txn.plugin_id = plugin_id
+	var busy: Dictionary = txn.lock(ProjectSettings.globalize_path(STAGING_DIR), db)
+	if not busy.is_empty():
+		return busy
+	# Read after locking: taking the lock may have just recovered this record.
 	var previous_def = db.get_by_id(plugin_id) if db != null else null
-	var had_previous := DirAccess.dir_exists_absolute(final_abs)
+	txn.db_before = previous_def.to_dict() if previous_def != null else null
+	op.enter(PluginInstallOperation.STAGE_REGISTER)
+	if not txn.holds_lock():
+		return _err("plugin_busy", {"id": plugin_id})
 	_ensure_dir(PLUGINS_DIR)
-	if had_previous:
-		_write_op_record(op)  # names the plugin before its files are set aside
-		var aside_err := DirAccess.rename_absolute(final_abs, previous_abs)
+	txn.had_previous = DirAccess.dir_exists_absolute(final_abs)
+	if not txn.publish(PluginInstallTransaction.PHASE_REPLACING):
+		return _err("staging_failed", {"dir": op.staging_dir})
+	if txn.had_previous:
+		var aside_err := DirAccess.rename_absolute(final_abs, op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 		if aside_err != OK:
-			return _err("install_move_failed", {"godot_err": aside_err})
+			return _failed_replace(_err("install_move_failed", {"godot_err": aside_err}), txn, final_abs, db, previous_def)
 	var move_err := DirAccess.rename_absolute(extract_abs, final_abs)
 	if move_err != OK:
-		_roll_back(plugin_id, had_previous, previous_abs, db, previous_def)
-		return _err("install_move_failed", {"godot_err": move_err})
+		return _failed_replace(_err("install_move_failed", {"godot_err": move_err}), txn, final_abs, db, previous_def)
 
 	# Make the binary executable (extracted files lose +x bit on some
 	# filesystems / Windows). manifest.backend.entrypoint is relative to
@@ -303,13 +306,27 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		if FileAccess.file_exists(entrypoint_abs):
 			_chmod_executable(entrypoint_abs)
 
-	# --- 5. Register; a failure restores the previous install ---
-	var registered := await _register(plugin_id, "%s/manifest.json" % final_dir, installer, auto_confirm_skills)
+	# --- 6. Register; commit only once the DB is saved ---
+	var registered := await _register(plugin_id, "%s/manifest.json" % final_dir, installer, auto_confirm_skills, consent)
+	if registered.get("ok", false) and db != null and not db.save():
+		registered = _err("register_not_saved", {"id": plugin_id})
 	if not registered.get("ok", false):
-		_roll_back(plugin_id, had_previous, previous_abs, db, previous_def)
-		return registered
+		return _failed_replace(registered, txn, final_abs, db, previous_def)
+	# A crash before this record lands rolls back to the previous install and
+	# its DB record together, which is consistent. If it cannot be written,
+	# dropping the record keeps a later recovery from undoing this commit.
+	if not txn.publish(PluginInstallTransaction.PHASE_COMMITTED):
+		txn.discard_record()
+	_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 	registered["version"] = str(manifest.get("version", ""))
+	registered["platform_verified"] = identity.platform_verified
 	return registered
+
+
+## `failure` plus what rolling the replacement back restored.
+func _failed_replace(failure: Dictionary, txn, final_abs: String, db, previous_def) -> Dictionary:
+	failure["rollback"] = txn.roll_back(final_abs, db, previous_def)
+	return failure
 
 
 ## Register the manifest now at `final_manifest` through `installer`:
@@ -317,7 +334,8 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 ##   - PluginManager     → full install flow (capability grants, runtime,
 ##                         skill seeding, directory creation)
 ##   - PluginDB          → minimal registration (used by headless tests)
-func _register(plugin_id: String, final_manifest: String, installer, auto_confirm_skills: bool) -> Dictionary:
+func _register(plugin_id: String, final_manifest: String, installer, auto_confirm_skills: bool,
+		consent: Dictionary) -> Dictionary:
 	if installer == null:
 		return {
 			"ok": true,
@@ -337,10 +355,10 @@ func _register(plugin_id: String, final_manifest: String, installer, auto_confir
 		if manager_db != null and manager_db.has_plugin(plugin_id) \
 				and installer.has_method("update_plugin"):
 			pm_result = await installer.update_plugin(
-				final_manifest, auto_confirm_skills, lane)
+				final_manifest, auto_confirm_skills, lane, consent)
 		else:
 			pm_result = await installer.install_plugin(
-				final_manifest, auto_confirm_skills, lane)
+				final_manifest, auto_confirm_skills, lane, consent)
 		if pm_result.has("error"):
 			return _err("manager_install_failed", pm_result)
 		return {
@@ -376,24 +394,6 @@ func _register(plugin_id: String, final_manifest: String, installer, auto_confir
 	return _err("invalid_installer", {"got": typeof(installer)})
 
 
-## Undo a failed replace: drop the new files, move the previous install back,
-## and put the DB record back the way it was before registration.
-func _roll_back(plugin_id: String, had_previous: bool, previous_abs: String, db, previous_def) -> void:
-	var final_abs := ProjectSettings.globalize_path("%s/%s" % [PLUGINS_DIR, plugin_id])
-	_rm_dir_recursive(final_abs)
-	if had_previous:
-		var err := DirAccess.rename_absolute(previous_abs, final_abs)
-		if err != OK:
-			push_error("[MarketplaceClient] could not restore %s (error %d); kept at %s" % [final_abs, err, previous_abs])
-	if db == null:
-		return
-	if previous_def != null:
-		if db.get_by_id(plugin_id) != previous_def:
-			db.update_definition(previous_def)
-	elif db.has_plugin(plugin_id):
-		db.remove(plugin_id)
-
-
 ## The PluginDB behind `installer` (a PluginManager or a PluginDB), or null.
 static func _installer_db(installer):
 	if installer == null:
@@ -403,51 +403,11 @@ static func _installer_db(installer):
 	return installer if installer.has_method("get_by_id") else null
 
 
-## Rewrites the operation's record: which plugin a set-aside `previous`
-## belongs to, and (by its modified time) that the operation is alive.
-static func _write_op_record(op: PluginInstallOperation) -> void:
-	var f := FileAccess.open(op.staging_dir.path_join(OP_RECORD), FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify({"id": op.plugin_id}))
-
-
-## Run once at startup, before this process begins any install. An operation
-## whose record has gone stale belongs to an install that never finished: if
-## it stopped between setting the old install aside and committing, it still
-## has `previous`, which is moved back while the DB records that version.
-## Stale operations are then deleted; live ones are left to their owner.
-static func sweep_staging(db) -> void:
-	var root_abs := ProjectSettings.globalize_path(STAGING_DIR)
-	var root := DirAccess.open(root_abs)
-	if root == null:
-		return
-	root.include_hidden = true
-	var now := Time.get_unix_time_from_system()
-	for name in root.get_directories():
-		var record := root_abs.path_join(name).path_join(OP_RECORD)
-		if FileAccess.file_exists(record) and now - FileAccess.get_modified_time(record) < OP_STALE_SECONDS:
-			continue
-		if not _restore_uncommitted(root_abs.path_join(name), db):
-			_rm_dir_recursive(root_abs.path_join(name))
-	for name in root.get_files():
-		DirAccess.remove_absolute(root_abs.path_join(name))
-
-
-## Moves an operation's `previous` back when the DB still records its version.
-## Returns true when the directory must be kept because that move failed.
-static func _restore_uncommitted(op_abs: String, db) -> bool:
-	var previous_abs := op_abs.path_join(PREVIOUS)
-	var record = JSON.parse_string(FileAccess.get_file_as_string(op_abs.path_join(OP_RECORD)))
-	if db == null or not DirAccess.dir_exists_absolute(previous_abs) or not record is Dictionary:
-		return false
-	var plugin_id := str(record.get("id", ""))
-	var def = db.get_by_id(plugin_id)
-	var previous = JSON.parse_string(FileAccess.get_file_as_string(previous_abs.path_join("manifest.json")))
-	if def == null or not previous is Dictionary or str(previous.get("version", "")) != str(def.version):
-		return false
-	var final_abs := ProjectSettings.globalize_path("%s/%s" % [PLUGINS_DIR, plugin_id])
-	_rm_dir_recursive(final_abs)
-	return DirAccess.rename_absolute(previous_abs, final_abs) != OK
+## Run once at startup, before this process begins any install: undoes
+## every install another (exited) process left half-done. Returns the
+## operations that need a person ({dir, id, reason}).
+static func sweep_staging(db) -> Array:
+	return PluginInstallTransaction.recover_all(ProjectSettings.globalize_path(STAGING_DIR), db)
 
 
 # ---------------------------------------------------------------------------
@@ -607,6 +567,39 @@ static func format_install_error(result: Dictionary) -> String:
 			cause = "Its %s is %s, but %s was expected." % [field, str(detail_dict.get("actual", "?")),
 				str(detail_dict.get("expected", "?"))]
 			hint = "Nothing was changed. This is a packaging or registry error; report it to the plugin author."
+		"archive_unsafe":
+			title = "The plugin archive is unsafe to unpack"
+			cause = "Entry %s: %s." % [str(detail_dict.get("entry", "?")), str(detail_dict.get("reason", "?"))]
+			hint = "Nothing was changed. Report this archive to the plugin author."
+		"archive_too_large":
+			title = "The plugin archive unpacks to too much data"
+			cause = "It would expand past the %s limit." % String.humanize_size(int(detail_dict.get("limit", 0)))
+			hint = "Nothing was changed. Report this archive to the plugin author."
+		"archive_corrupt":
+			title = "The plugin archive is damaged"
+			cause = str(detail_dict.get("reason", "The archive could not be read."))
+			hint = "Nothing was changed. Retry the install; the download may have been corrupted."
+		"insufficient_disk_space":
+			title = "Not enough disk space to install"
+			cause = "Unpacking needs %s but only %s is free." % [String.humanize_size(int(detail_dict.get("needed", 0))),
+				String.humanize_size(int(detail_dict.get("free", 0)))]
+			hint = "Free some disk space and install again. Nothing was changed."
+		"plugin_busy":
+			title = "Another Minerva is installing this plugin"
+			cause = "A running Minerva process holds the install lock for '%s'." % str(detail_dict.get("id", "?"))
+			hint = "Wait for that install to finish, then try again. Nothing was changed."
+		"recovery_pending":
+			title = "An earlier install of this plugin is not undone yet"
+			cause = str(detail_dict.get("reason", "An unfinished install left files Minerva could not restore."))
+			hint = "Resolve that first (restart Minerva to retry automatically), then install again. Nothing was changed."
+		"staging_failed":
+			title = "Could not prepare the install"
+			cause = "Minerva could not write its install record in %s." % str(detail_dict.get("dir", "?"))
+			hint = "Check free disk space and permissions under user://plugins/. Nothing was changed."
+		"register_not_saved":
+			title = "The install could not be saved"
+			cause = "Minerva registered '%s' but could not write its plugin database." % str(detail_dict.get("id", "?"))
+			hint = "Check free disk space and permissions under user://plugins/."
 		"cancelled":
 			title = "Install cancelled"
 			cause = "The install was cancelled before anything was changed."
@@ -640,6 +633,15 @@ static func format_install_error(result: Dictionary) -> String:
 	if not hint.is_empty():
 		lines.append("")
 		lines.append(hint)
+	var rollback: Dictionary = result.get("rollback", {})
+	if not rollback.is_empty():
+		lines.append("")
+		if rollback.files_restored and rollback.db_restored:
+			lines.append("The previously installed version was put back.")
+		elif not rollback.files_restored:
+			lines.append("The previous version could not be put back yet; it is kept at %s and Minerva will restore it when it next starts." % rollback.kept_at)
+		else:
+			lines.append("The previous files were put back, but the plugin database could not be restored; restart Minerva.")
 	lines.append("")
 	lines.append("(internal code: %s)" % code)
 	return "\n".join(lines)

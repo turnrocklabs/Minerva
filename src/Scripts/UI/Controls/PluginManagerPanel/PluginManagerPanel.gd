@@ -1364,6 +1364,8 @@ func _on_install_job_changed(job) -> void:
 	var label := "%s v%s" % [job.plugin_id(), str(job.result.get("version", ""))]
 	if job.outcome == job.OUTCOME_FAILED:
 		_show_status("Marketplace install of '%s' failed." % job.plugin_id(), true)
+	elif job.outcome == job.OUTCOME_RECOVERY_NEEDED:
+		_show_status("Marketplace install of '%s' failed and its previous version is not fully restored; see the marketplace window." % job.plugin_id(), true)
 	elif job.outcome == job.OUTCOME_START_FAILED:
 		_show_status("Installed %s from marketplace, but it failed to start." % label, true)
 	else:

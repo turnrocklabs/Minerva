@@ -70,7 +70,8 @@ func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
 	downloader.stall_timeout_s = stall_timeout_s
 	var path := "%s/dl_%d.bin" % [_dir, port]
 	var result: Dictionary = await downloader.download("http://127.0.0.1:%d/plugin.tar.gz" % port, path, self)
-	OS.kill(_server_pid)
+	if _server_pid > 0:
+		OS.kill(_server_pid)
 	return {"result": result, "path": path}
 
 
