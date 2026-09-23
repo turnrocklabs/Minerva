@@ -78,9 +78,7 @@ func scan(archive_abs: String, max_bytes: int, op) -> Dictionary:
 			fed += put[1]
 			if not _drain(gz, max_bytes, max_decompressed, op):
 				return _error
-	gz.finish()
-	if not _drain(gz, max_bytes, max_decompressed, op):
-		return _error
+	# Decompression has no finish(): what each put produced was drained above.
 	if _zero_blocks < 1:
 		return _err("archive_corrupt", {"reason": "archive ends before its end-of-archive marker"})
 	# A filesystem may reach a symlink by other spellings of its name (short
