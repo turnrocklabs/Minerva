@@ -697,6 +697,8 @@ func _connect_signals() -> void:
 		pm.plugin_build_step_started.connect(_on_plugin_build_step_started)
 	if not pm.plugin_build_step_finished.is_connected(_on_plugin_build_step_finished):
 		pm.plugin_build_step_finished.connect(_on_plugin_build_step_finished)
+	if pm.install_queue != null and not pm.install_queue.job_changed.is_connected(_on_install_job_changed):
+		pm.install_queue.job_changed.connect(_on_install_job_changed)
 
 	# Exec-step approval gate (G4.1): while this panel is alive, exec steps in
 	# any setup pipeline are confirmed through a real dialog instead of
@@ -740,6 +742,8 @@ func _disconnect_signals() -> void:
 		pm.plugin_build_step_started.disconnect(_on_plugin_build_step_started)
 	if pm.plugin_build_step_finished.is_connected(_on_plugin_build_step_finished):
 		pm.plugin_build_step_finished.disconnect(_on_plugin_build_step_finished)
+	if pm.install_queue != null and pm.install_queue.job_changed.is_connected(_on_install_job_changed):
+		pm.install_queue.job_changed.disconnect(_on_install_job_changed)
 
 	# Unhook the approver ONLY if it still points at OUR gate — never clobber
 	# an approver someone else installed after us. The gate node itself (a
@@ -1343,16 +1347,27 @@ func _on_install_pressed() -> void:
 
 
 func _on_browse_marketplace_pressed() -> void:
-	var DialogCls = load("res://Scripts/UI/Controls/PluginManagerPanel/MarketplaceBrowseDialog.gd")
-	var dialog = DialogCls.new()
-	dialog.plugin_installed.connect(_on_marketplace_install_complete)
+	var dialog = load("res://Scenes/MarketplaceBrowseDialog.tscn").instantiate()
+	dialog.plugin_manager = _pm()
 	add_child(dialog)
 	_sync_dialog_scale(dialog)
-	dialog.popup_centered(Vector2i(Vector2(800, 520) * dialog.content_scale_factor))
+	dialog.popup_centered(Vector2i(Vector2(820, 600) * dialog.content_scale_factor))
 
 
-func _on_marketplace_install_complete(plugin_id: String) -> void:
-	_show_status("Installed '%s' from marketplace." % plugin_id, false)
+## Every finished marketplace install, however it was started (the dialog,
+## MCP, or while this panel's dialog was closed), refreshes the list.
+func _on_install_job_changed(job) -> void:
+	if job.state != job.State.DONE:
+		return
+	if job.outcome == job.OUTCOME_CANCELLED:
+		return
+	var label := "%s v%s" % [job.plugin_id(), str(job.result.get("version", ""))]
+	if job.outcome == job.OUTCOME_FAILED:
+		_show_status("Marketplace install of '%s' failed." % job.plugin_id(), true)
+	elif job.outcome == job.OUTCOME_START_FAILED:
+		_show_status("Installed %s from marketplace, but it failed to start." % label, true)
+	else:
+		_show_status("Installed %s from marketplace." % label, false)
 	_refresh_plugin_list()
 
 

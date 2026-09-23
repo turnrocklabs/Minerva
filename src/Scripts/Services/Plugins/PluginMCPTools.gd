@@ -120,6 +120,8 @@ func get_tool_definitions() -> Array:
 		_get_plugin_list_tool_def(),
 		_get_plugin_install_tool_def(),
 		_get_plugin_marketplace_install_tool_def(),
+		_get_plugin_marketplace_list_tool_def(),
+		_get_plugin_marketplace_detail_tool_def(),
 		_get_plugin_remove_tool_def(),
 		_get_plugin_start_tool_def(),
 		_get_plugin_stop_tool_def(),
@@ -145,6 +147,10 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return await _handle_plugin_install(args)
 		"minerva_plugin_marketplace_install":
 			return await _handle_plugin_marketplace_install(args)
+		"minerva_plugin_marketplace_list":
+			return await _handle_plugin_marketplace_list(args)
+		"minerva_plugin_marketplace_detail":
+			return await _handle_plugin_marketplace_detail(args)
 		"minerva_plugin_remove":
 			return await _handle_plugin_remove(args)
 		"minerva_plugin_start":
@@ -225,6 +231,40 @@ func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 				}
 			},
 			"required": ["url"]
+		}
+	}
+
+
+func _get_plugin_marketplace_list_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_marketplace_list",
+		"description": "List the plugins in the marketplace registry with their long descriptions (what each does, what it can do, what it needs), version, platforms, whether this computer has a build (available_here, with unavailable_reason when not), and the installed version if any. A release published before descriptions existed has description_missing:true. Install one with minerva_plugin_marketplace_install using its download URL from minerva_plugin_marketplace_detail.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"registry_url": {
+					"type": "string",
+					"description": "Registry to read instead of the canonical marketplace registry."
+				}
+			}
+		}
+	}
+
+
+func _get_plugin_marketplace_detail_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_marketplace_detail",
+		"description": "Describe one marketplace plugin by id: everything minerva_plugin_marketplace_list returns for it, plus download_url for this computer when a build exists and the state of any install of it in progress or recently finished. Errors when the id is not in the registry.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"id": {"type": "string", "description": "Plugin id, as listed by minerva_plugin_marketplace_list"},
+				"registry_url": {
+					"type": "string",
+					"description": "Registry to read instead of the canonical marketplace registry."
+				}
+			},
+			"required": ["id"]
 		}
 	}
 
@@ -441,6 +481,57 @@ func _handle_plugin_marketplace_install(args: Dictionary) -> Dictionary:
 	if job.state != job.State.DONE:
 		await job.finished
 	return job.summary()
+
+
+func _handle_plugin_marketplace_list(args: Dictionary) -> Dictionary:
+	var fetched := await _fetch_marketplace_registry(args)
+	if fetched.has("error"):
+		return fetched
+	var plugins := []
+	for entry in fetched.plugins:
+		plugins.append(MarketplaceClient.describe_entry(entry, _installed_version(str(entry.get("id", "")))))
+	return {"ok": true, "this_platform": MarketplaceClient.resolve_platform_target(), "plugins": plugins}
+
+
+func _handle_plugin_marketplace_detail(args: Dictionary) -> Dictionary:
+	var id := str(args.get("id", ""))
+	if id.is_empty():
+		return {"error": "id is required"}
+	var fetched := await _fetch_marketplace_registry(args)
+	if fetched.has("error"):
+		return fetched
+	for entry in fetched.plugins:
+		if str(entry.get("id", "")) != id:
+			continue
+		var detail := MarketplaceClient.describe_entry(entry, _installed_version(id))
+		detail["ok"] = true
+		if detail.available_here:
+			detail["download_url"] = entry.downloads[detail.this_platform]
+		var queue = _get_plugin_manager().install_queue if _get_plugin_manager() != null else null
+		var job = queue.job_for(id) if queue != null else null
+		if job != null:
+			detail["install"] = {"state": ["queued", "running", "done"][job.state], "stage": job.stage(),
+				"outcome": job.outcome, "message": job.message}
+		return detail
+	return {"error": "No plugin '%s' in the marketplace registry" % id,
+		"known_ids": fetched.plugins.map(func(e) -> String: return str(e.get("id", "")))}
+
+
+## The registry's plugin entries, or {error} with a readable reason.
+func _fetch_marketplace_registry(args: Dictionary) -> Dictionary:
+	var client: Node = MarketplaceClient.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(client)
+	var result: Dictionary = await client.fetch_registry(str(args.get("registry_url", "")))
+	client.queue_free()
+	if not result.get("ok", false):
+		return {"error": MarketplaceClient.format_install_error(result)}
+	return {"plugins": result.registry.get("plugins", [])}
+
+
+func _installed_version(plugin_id: String) -> String:
+	var manager = _get_plugin_manager()
+	var def = manager.get_db().get_by_id(plugin_id) if manager != null else null
+	return str(def.version) if def != null else ""
 
 
 func _handle_plugin_remove(args: Dictionary) -> Dictionary:

@@ -90,6 +90,31 @@ func fetch_registry(url: String = "") -> Dictionary:
 	return {"ok": true, "registry": parsed}
 
 
+## A registry entry as callers outside the marketplace see it: its listing
+## (a release published before listings existed has no description, and says
+## so), whether this computer has a build, and what is installed.
+static func describe_entry(entry: Dictionary, installed_version: String) -> Dictionary:
+	var target := resolve_platform_target()
+	var downloads: Dictionary = entry.get("downloads", {})
+	var described := {
+		"id": entry.get("id", ""),
+		"name": entry.get("name", entry.get("id", "")),
+		"version": entry.get("version", ""),
+		"description": str(entry.get("description", "")),
+		"description_missing": str(entry.get("description", "")).is_empty(),
+		"platforms": downloads.keys(),
+		"this_platform": target,
+		"available_here": downloads.has(target),
+		"installed_version": installed_version,
+		"release_tag": entry.get("release_tag", ""),
+		"manifest_url": entry.get("manifest_url", ""),
+	}
+	if not described.available_here:
+		described["unavailable_reason"] = "Minerva does not support this operating system (%s)." % OS.get_name() \
+			if target.is_empty() else "No build of this release is published for %s." % target
+	return described
+
+
 # ---------------------------------------------------------------------------
 # Platform target resolution
 # ---------------------------------------------------------------------------

@@ -12,16 +12,16 @@ extends SceneTree
 ##     the install that actually happened (id, version, outcome);
 ##   - an autostarting plugin ends Ready only once it is running; one whose
 ##     binary is missing ends start_failed, and its retry runs in the queue
-##     without capturing a new install request;
-##   - an install started from a MarketplaceBrowseDialog survives the dialog
-##     being freed, and a new dialog shows it as still installing.
+##     without capturing a new install request.
+##
+## A job outliving the dialog that started it is covered against the real
+## dialog scene in test_marketplace_browse.gd.
 ##
 ## Run: godot --headless --path src --script test/test_plugin_install_queue.gd
 
 const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 const JOB_GD := "res://Scripts/Services/Plugins/PluginInstallJob.gd"
 const THROTTLED_PY := "res://test/fixtures/throttled_http_server.py"
-const DIALOG_GD := "res://Scripts/UI/Controls/PluginManagerPanel/MarketplaceBrowseDialog.gd"
 const PROBE_PY := "res://test/fixtures/capability_probe/capability_probe.py"
 const SLOW := "test_queue_slow"
 const FAST := "test_queue_fast"
@@ -69,7 +69,6 @@ func _init() -> void:
 	await _test_cancel_queued_and_downloading()
 	await _test_cancel_refused_during_registration()
 	await _test_start_outcomes_and_retry(port)
-	await _test_install_survives_its_dialog()
 	_finish(1 if _fail else 0)
 
 
@@ -151,38 +150,6 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	await failed.finished
 	_check(failed.outcome == Job.OUTCOME_START_FAILED, "the retry ran and reported again")
 	await reinstall.finished
-
-
-func _test_install_survives_its_dialog() -> void:
-	await _scrub()
-	var singleton: Node = root.get_node("SingletonObject")
-	var app_manager = singleton.plugin_manager
-	singleton.plugin_manager = _pm  # the dialog reaches the queue through SingletonObject
-	var closing = _dialog()
-	closing._on_install_pressed()
-	var job = _pm.install_queue.job_for(SLOW)
-	await create_timer(0.5).timeout
-	closing.free()  # closed mid-install
-	var reopened = _dialog()
-	reopened._on_list_selected(0)
-	_check(job != null and job.state != Job.State.DONE and reopened._install_btn.text == "Installing…" \
-		and reopened._install_btn.disabled, "a reopened dialog shows the unfinished install")
-	reopened.free()
-	await job.finished
-	singleton.plugin_manager = app_manager
-	_check(job.outcome == Job.OUTCOME_INSTALLED and _pm.get_db().has_plugin(SLOW),
-		"the install finished without its dialog: %s" % [job.summary()])
-
-
-## A MarketplaceBrowseDialog built without entering the tree (its _ready
-## would fetch the live registry), listing only the slow plugin, selected.
-func _dialog():
-	var dialog = load(DIALOG_GD).new()
-	dialog._build_ui()
-	dialog._plugins = [_entry(SLOW, _slow_url)]
-	dialog._list.add_item(SLOW)
-	dialog._list.select(0)
-	return dialog
 
 
 func _entry(id: String, url: String) -> Dictionary:

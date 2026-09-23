@@ -1,104 +1,50 @@
 class_name MarketplaceBrowseDialog
 extends Window
-## Lists plugins available in the marketplace registry; one-click install.
+## Lists the plugins in the marketplace registry, describes the selected
+## one, and installs any selection through PluginManager's install queue.
+## Scene: res://Scenes/MarketplaceBrowseDialog.tscn.
 ##
-## On open, fetches the registry from the canonical URL (overridable in
-## settings later). User selects a plugin, clicks Install. The dialog hands
-## the entry to PluginManager's install queue and listens to the job, so
-## closing the dialog neither stops nor loses the install.
-##
-## Emits `plugin_installed(plugin_id)` after a successful install so the
-## parent PluginManagerPanel can refresh its installed-list.
+## The queue owns every install, so closing this dialog neither stops nor
+## loses one. The Installs list shows one MarketplaceJobRow per job the
+## queue still keeps — including installs started elsewhere (MCP) or before
+## this dialog opened — so an install's progress and outcome survive
+## selection changes and reopening.
 
 const MARKETPLACE_CLIENT_GD := "res://Scripts/Services/Plugins/MarketplaceClient.gd"
+const JOB_ROW_TSCN := preload("res://Scenes/MarketplaceJobRow.tscn")
 
-signal plugin_installed(plugin_id: String)
+## Set before the dialog enters the tree; defaults to the app's manager and
+## the canonical registry.
+var plugin_manager: Node = null
+var registry_url := ""
 
 var _client: Node = null
 var _plugins: Array = []
+var _rows := {}  # PluginInstallJob -> MarketplaceJobRow
 
-var _list: ItemList = null
-var _status: Label = null
-var _install_btn: Button = null
-var _refresh_btn: Button = null
-var _details: RichTextLabel = null
+@onready var _list: ItemList = %PluginList
+@onready var _details: RichTextLabel = %Details
+@onready var _status: Label = %Status
+@onready var _install_btn: Button = %Install
+@onready var _refresh_btn: Button = %Refresh
 
 
 func _ready() -> void:
-	title = "Plugin Marketplace"
-	min_size = Vector2(700, 480)
+	if plugin_manager == null:
+		plugin_manager = SingletonObject.plugin_manager
 	close_requested.connect(_on_close_requested)
-	_build_ui()
+	%Close.pressed.connect(_on_close_requested)
+	_refresh_btn.pressed.connect(_refresh)
+	_install_btn.pressed.connect(_on_install_pressed)
+	_list.multi_selected.connect(func(index: int, _selected: bool) -> void: _on_selection_changed(index))
 	_client = load(MARKETPLACE_CLIENT_GD).new()
 	add_child(_client)
+	var queue = _queue()
+	if queue != null:
+		for job in queue.jobs():
+			_add_row(job)
+		queue.job_changed.connect(_on_job_changed)
 	await _refresh()
-
-
-func _build_ui() -> void:
-	var root_vbox := VBoxContainer.new()
-	root_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root_vbox.offset_left = 8
-	root_vbox.offset_top = 8
-	root_vbox.offset_right = -8
-	root_vbox.offset_bottom = -8
-	add_child(root_vbox)
-
-	# Header bar: title + refresh
-	var header := HBoxContainer.new()
-	root_vbox.add_child(header)
-	var heading := Label.new()
-	heading.text = "Available plugins"
-	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(heading)
-	_refresh_btn = Button.new()
-	_refresh_btn.text = "Refresh"
-	_refresh_btn.pressed.connect(func(): await _refresh())
-	header.add_child(_refresh_btn)
-
-	# Split: plugin list (left) + details (right).
-	# HSplitContainer's `split_offset` is measured from the centre, NOT the
-	# left edge — a positive value moves the divider toward the right child
-	# (giving the LEFT pane more space). Negative shifts left → more space
-	# for the right (details) pane. We want details > list.
-	var split := HSplitContainer.new()
-	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	split.split_offset = -120
-	root_vbox.add_child(split)
-
-	_list = ItemList.new()
-	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_list.custom_minimum_size = Vector2(200, 0)
-	_list.item_selected.connect(_on_list_selected)
-	split.add_child(_list)
-
-	_details = RichTextLabel.new()
-	_details.bbcode_enabled = true
-	_details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_details.custom_minimum_size = Vector2(320, 0)
-	_details.text = "Select a plugin to see details."
-	split.add_child(_details)
-
-	# Footer: status + install
-	var footer := HBoxContainer.new()
-	root_vbox.add_child(footer)
-	_status = Label.new()
-	_status.text = ""
-	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer.add_child(_status)
-
-	_install_btn = Button.new()
-	_install_btn.text = "Install"
-	_install_btn.disabled = true
-	_install_btn.pressed.connect(_on_install_pressed)
-	footer.add_child(_install_btn)
-
-	var close_btn := Button.new()
-	close_btn.text = "Close"
-	close_btn.pressed.connect(_on_close_requested)
-	footer.add_child(close_btn)
 
 
 func _refresh() -> void:
@@ -109,129 +55,119 @@ func _refresh() -> void:
 	_plugins = []
 	_details.text = "Select a plugin to see details."
 
-	var result: Dictionary = await _client.fetch_registry()
+	var result: Dictionary = await _client.fetch_registry(registry_url)
 	_refresh_btn.disabled = false
-	if not (result is Dictionary and result.get("ok") == true):
-		var err: String = str(result.get("error", "unknown"))
-		_status.text = "Failed to fetch registry: %s" % err
-		var pretty: String = MarketplaceClient.format_install_error(result)
-		SingletonObject.ErrorDisplay("Marketplace unavailable", pretty)
+	if not result.get("ok", false):
+		_status.text = "Failed to fetch registry: %s" % str(result.get("error", "unknown"))
+		SingletonObject.ErrorDisplay("Marketplace unavailable", MarketplaceClient.format_install_error(result))
 		return
 
-	var registry: Dictionary = result.registry
-	_plugins = registry.get("plugins", [])
-	if _plugins.is_empty():
-		_status.text = "No plugins available in the registry"
-		return
-
-	var target: String = MarketplaceClient.resolve_platform_target()
+	_plugins = result.registry.get("plugins", [])
+	var target := MarketplaceClient.resolve_platform_target()
 	for entry in _plugins:
-		var available_for_this_platform: bool = entry.get("downloads", {}).has(target)
-		var label := "%s — v%s" % [entry.get("name", entry.get("id", "?")), entry.get("version", "?")]
-		_list.add_item(label)
-		if not available_for_this_platform:
-			# Mark unavailable items so user knows why install is greyed.
+		_list.add_item("%s — v%s" % [entry.get("name", entry.get("id", "?")), entry.get("version", "?")])
+		if not entry.get("downloads", {}).has(target):
 			var idx := _list.item_count - 1
 			_list.set_item_disabled(idx, true)
-			_list.set_item_tooltip(idx, "No binary published for %s" % target)
-	_status.text = "%d plugin(s) — your platform: %s" % [_plugins.size(), target]
+			_list.set_item_tooltip(idx, "No build published for %s" % target)
+	_status.text = "No plugins available in the registry" if _plugins.is_empty() \
+		else "%d plugin(s) — your platform: %s" % [_plugins.size(), target]
 
 
-func _on_list_selected(idx: int) -> void:
-	if idx < 0 or idx >= _plugins.size():
-		return
-	var entry: Dictionary = _plugins[idx]
-	var target: String = MarketplaceClient.resolve_platform_target()
-	var downloads: Dictionary = entry.get("downloads", {})
-	var installed: bool = _is_already_installed(entry.get("id", ""))
-	var job = _unfinished_job(entry.get("id", ""))
+## Describe the entry at `index` and count what the selection would install.
+func _on_selection_changed(index: int) -> void:
+	if index >= 0 and index < _plugins.size():
+		_details.text = _describe(_plugins[index])
+	var installable := _installable_selection()
+	_install_btn.disabled = installable.is_empty()
+	_install_btn.text = "Install" if installable.size() <= 1 else "Install %d" % installable.size()
 
-	_install_btn.disabled = installed or job != null or not downloads.has(target)
-	_install_btn.text = "Installing…" if job != null else ("Already installed" if installed else "Install")
 
-	# Compose detail panel.
+func _describe(entry: Dictionary) -> String:
+	var target := MarketplaceClient.resolve_platform_target()
 	var lines := PackedStringArray()
-	lines.append("[b]%s[/b]" % entry.get("name", "?"))
-	lines.append("ID:  [code]%s[/code]" % entry.get("id", "?"))
-	lines.append("Version:  %s" % entry.get("version", "?"))
-	if entry.has("release_tag"):
-		lines.append("Release tag:  [code]%s[/code]" % entry.release_tag)
-	if not downloads.is_empty():
-		lines.append("")
-		lines.append("[b]Available for:[/b]")
-		for t in downloads.keys():
-			var mark := "  ✓" if t == target else "  ·"
-			lines.append("%s %s" % [mark, t])
-	_details.text = "\n".join(lines)
+	lines.append("[b]%s[/b]  v%s" % [_plain(entry.get("name", "?")), _plain(entry.get("version", "?"))])
+	lines.append("ID:  [code]%s[/code]" % _plain(entry.get("id", "?")))
+	var installed := _installed_version(str(entry.get("id", "")))
+	if not installed.is_empty():
+		lines.append("Installed:  v%s" % installed)
+	lines.append("")
+	var description := str(entry.get("description", ""))
+	lines.append(_plain(description) if not description.is_empty()
+		else "[i]This release was published without a description.[/i]")
+	lines.append("")
+	lines.append("[b]Available for:[/b]")
+	for t in entry.get("downloads", {}).keys():
+		lines.append("  %s %s%s" % ["✓" if t == target else "·", _plain(t), "  (this computer)" if t == target else ""])
+	if not entry.get("downloads", {}).has(target):
+		lines.append("[i]No build for this computer (%s).[/i]" % target)
+	return "\n".join(lines)
+
+
+## Selected entries with a build for this computer, not already installed at
+## that version, and not already being installed.
+func _installable_selection() -> Array:
+	var target := MarketplaceClient.resolve_platform_target()
+	var queue = _queue()
+	var picked := []
+	for idx in _list.get_selected_items():
+		var entry: Dictionary = _plugins[idx]
+		var id := str(entry.get("id", ""))
+		var job = queue.job_for(id) if queue != null else null
+		if entry.get("downloads", {}).has(target) and _installed_version(id) != str(entry.get("version", "")) \
+				and (job == null or job.state == job.State.DONE):
+			picked.append(entry)
+	return picked
 
 
 func _on_install_pressed() -> void:
-	var sel: PackedInt32Array = _list.get_selected_items()
-	if sel.is_empty():
+	var queue = _queue()
+	if queue == null:
+		_status.text = "Plugin manager unavailable"
 		return
-	var idx: int = sel[0]
-	var entry: Dictionary = _plugins[idx]
-	var plugin_id: String = entry.get("id", "")
+	for entry in _installable_selection():
+		queue.request(entry)
+	_on_selection_changed(-1)
 
-	_install_btn.disabled = true
-	_refresh_btn.disabled = true
-	_status.text = "Installing %s…" % plugin_id
 
-	var pm = SingletonObject.plugin_manager
-	if pm == null:
-		_status.text = "PluginManager unavailable"
-		_install_btn.disabled = false
-		_refresh_btn.disabled = false
+## Keep the rows to the jobs the queue still keeps (a trimmed job can no
+## longer be retried), and the Install button to what can be installed now.
+func _on_job_changed(job) -> void:
+	_add_row(job)
+	var kept: Array = _queue().jobs()
+	for shown in _rows.keys():
+		if not shown in kept:
+			_rows[shown].queue_free()
+			_rows.erase(shown)
+		elif shown != job:
+			_rows[shown].refresh()
+	_on_selection_changed(-1)
+
+
+func _add_row(job) -> void:
+	if _rows.has(job):
 		return
-
-	# The queue registers through PluginManager so capability auto-grant,
-	# skill seeding, runtime setup, and directory creation all run — same code
-	# path as side-load. Direct PluginDB.install would skip those.
-	var job = pm.install_queue.request(entry)
-	job.finished.connect(_on_install_finished.bind(job, idx))
-
-
-func _on_install_finished(job, idx: int) -> void:
-	_refresh_btn.disabled = false
-	var plugin_id: String = job.plugin_id()
-	if job.outcome == job.OUTCOME_CANCELLED:
-		_install_btn.disabled = false
-		_status.text = "Install of %s cancelled" % plugin_id
-	elif job.outcome == job.OUTCOME_START_FAILED:
-		_status.text = "Installed %s %s, but it failed to start: %s" % [
-			plugin_id, str(job.result.get("version", "")), job.message]
-		plugin_installed.emit(plugin_id)
-		_on_list_selected(idx)
-	elif job.result.get("ok") == true:
-		_status.text = "Installed %s %s" % [plugin_id, str(job.result.get("version", ""))]
-		SingletonObject.create_toast_notification(
-			"Installed plugin: %s" % plugin_id,
-			ToastNotification.Type.INFO
-		)
-		plugin_installed.emit(plugin_id)
-		# Refresh the selection state so the Install button shows
-		# "Already installed".
-		_on_list_selected(idx)
-	else:
-		_install_btn.disabled = false
-		_status.text = "Install failed: %s" % str(job.result.get("error", "unknown"))
-		SingletonObject.ErrorDisplay("Plugin install failed: %s" % plugin_id, job.message)
+	var row = JOB_ROW_TSCN.instantiate()
+	row.bind(job, _queue())
+	_rows[job] = row
+	%JobRows.add_child(row)
+	%JobRows.move_child(row, 0)  # newest first
 
 
-## The queue's unfinished install of `plugin_id`, or null.
-func _unfinished_job(plugin_id: String):
-	var pm = SingletonObject.plugin_manager
-	if plugin_id.is_empty() or pm == null or pm.install_queue == null:
-		return null
-	var job = pm.install_queue.job_for(plugin_id)
-	return job if job != null and job.state != job.State.DONE else null
+## Registry text shown as text, not as BBCode markup.
+static func _plain(value) -> String:
+	return str(value).replace("[", "[lb]")
 
 
-func _is_already_installed(plugin_id: String) -> bool:
-	if plugin_id.is_empty() or SingletonObject.plugin_manager == null:
-		return false
-	var db = SingletonObject.plugin_manager.get_db()
-	return db != null and db.has_plugin(plugin_id)
+func _installed_version(plugin_id: String) -> String:
+	if plugin_manager == null or plugin_id.is_empty():
+		return ""
+	var def = plugin_manager.get_db().get_by_id(plugin_id)
+	return str(def.version) if def != null else ""
+
+
+func _queue():
+	return plugin_manager.install_queue if plugin_manager != null else null
 
 
 func _on_close_requested() -> void:

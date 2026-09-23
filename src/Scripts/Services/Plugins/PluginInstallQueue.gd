@@ -191,11 +191,13 @@ func _finish(job: Job, outcome: String, message: String) -> void:
 	for connection in job.op.stage_changed.get_connections():
 		if connection.callable.get_object() == self and connection.callable.get_method() == "_on_stage":
 			job.op.stage_changed.disconnect(connection.callable)
+	# Trim (never the job just finished) before announcing, so listeners see
+	# which jobs are still kept.
+	var finished := _jobs.filter(func(j: Job) -> bool: return j.state == Job.State.DONE and j != job)
+	for i in finished.size() + 1 - MAX_FINISHED:
+		_jobs.erase(finished[i])
 	_changed(job)
 	job.finished.emit()
-	var finished := _jobs.filter(func(j: Job) -> bool: return j.state == Job.State.DONE)
-	for i in finished.size() - MAX_FINISHED:
-		_jobs.erase(finished[i])
 
 
 func _changed(job: Job) -> void:
