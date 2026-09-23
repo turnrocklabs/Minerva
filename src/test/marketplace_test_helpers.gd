@@ -56,8 +56,8 @@ func run_cmd(cmd: String, args: Array) -> bool:
 
 ## Write SHA256SUMS for the files in `dir` (absolute), as the marketplace
 ## verifier reads it, and pack the directory into the .tar.gz `archive`. Tar
-## gets its arguments directly: OS.execute passes them to /bin/sh inside
-## double quotes, so shell text such as $(...) in them would be expanded.
+## gets only plain paths: OS.execute passes arguments to /bin/sh inside
+## double quotes, so $, backticks or " in them would be interpreted.
 func pack_plugin_dir(dir: String, archive: String) -> bool:
 	var files := Array(DirAccess.get_files_at(dir))
 	files.erase("SHA256SUMS")
