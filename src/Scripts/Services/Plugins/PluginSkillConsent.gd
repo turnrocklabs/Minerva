@@ -1,0 +1,83 @@
+extends RefCounted
+## The questions PluginManager asks about a plugin's skills: whether to seed
+## a new plugin's skills, and whether an update may overwrite each skill the
+## user customised. The dialogs are parented to a `host` node.
+##
+## With no scene tree or no display there is no one to answer, so each
+## question is declined rather than waiting forever; callers that want skills
+## seeded headless pass auto_confirm instead.
+
+const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+
+
+## Ask now every skill question registering `manifest_path` would ask, so a
+## marketplace install can wait for the user while nothing has changed and
+## then register without stopping: seed consent for a new plugin, or one
+## decision per customised skill an update would change. Pass the result to
+## install_plugin / update_plugin as `consent`. Cancelling `op` closes an
+## open dialog as a decline and asks nothing more. `available_tools` and
+## `docket_manager` are as PluginSkillSeeder takes them.
+static func collect(host: Node, db, available_tools: Dictionary, docket_manager, manifest_path: String,
+		auto_confirm: bool, op = null) -> Dictionary:
+	var consent := {"collected": true}
+	var def = PluginDefinition.from_manifest(manifest_path)
+	if def == null or InternalPlugins.has(def.id):
+		return consent
+	if not db.has_plugin(def.id):
+		if not def.skills.is_empty() and not (op != null and op.cancelled):
+			var resolved: Array = Seeder.resolve_deps(def, available_tools)
+			consent["seed"] = auto_confirm or await ask_seed(host, def, resolved, op)
+		return consent
+	var plan: Dictionary = Seeder.plan_reconcile(def, available_tools, docket_manager)
+	var decisions := {}
+	for action in plan.get("actions", []):
+		if str(action.get("action", "")) == Seeder.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
+			var skill: Dictionary = action.get("skill", {})
+			decisions[str(skill.get("id", ""))] = auto_confirm \
+				or await ask_update(host, def, action.get("existing", {}), skill, op)
+	consent["update_decisions"] = decisions
+	return consent
+
+
+## Whether the user accepts seeding `resolved` (PluginSkillSeeder.resolve_deps).
+static func ask_seed(host: Node, def, resolved: Array, op = null) -> bool:
+	if not _can_ask(host, "seed"):
+		return false
+	var dialog := PluginSkillSeedDialog.new()
+	host.add_child(dialog)
+	dialog.configure(_display_name(def), resolved)
+	return await _answer(dialog, dialog.seed_decision, op)
+
+
+## Whether the user lets an update overwrite one customised skill.
+static func ask_update(host: Node, def, existing_record: Dictionary, new_skill: Dictionary, op = null) -> bool:
+	if not _can_ask(host, "update"):
+		return false
+	var dialog := PluginSkillUpdateDialog.new()
+	host.add_child(dialog)
+	dialog.configure(_display_name(def), existing_record, new_skill)
+	return await _answer(dialog, dialog.update_decision, op)
+
+
+static func _can_ask(host: Node, what: String) -> bool:
+	if not host.is_inside_tree() or DisplayServer.get_name() == "headless":
+		push_warning("[PluginSkillConsent] Skill %s dialog suppressed (no scene tree or display); declining" % what)
+		return false
+	return true
+
+
+static func _display_name(def) -> String:
+	return def.name if not def.name.is_empty() else def.id
+
+
+## Show `dialog` and wait for `decision`; cancelling `op` answers it as declined.
+static func _answer(dialog: Window, decision: Signal, op) -> bool:
+	dialog.popup_centered()
+	var close := func() -> void: decision.emit(false)
+	if op != null:
+		op.cancel_requested.connect(close, CONNECT_ONE_SHOT)
+	var accepted: bool = await decision
+	if op != null and op.cancel_requested.is_connected(close):
+		op.cancel_requested.disconnect(close)
+	dialog.queue_free()
+	return accepted

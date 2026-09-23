@@ -16,7 +16,10 @@ extends SceneTree
 ##     while another process holds the staging lock; an install waits for
 ##     that lock and for another live process's unrestored operation;
 ##   - a plugin database that cannot be written keeps its previous complete
-##     file;
+##     file, and a second process's stale snapshot can neither install nor
+##     save over another's install;
+##   - the OS releases a process's lock when that process dies (a real child
+##     Godot process);
 ##   - frames keep ticking while a large archive is extracted and verified,
 ##     and the result names the installed id, version and platform check;
 ##   - cancelling while downloading, extracting, verifying, or waiting for the
@@ -108,7 +111,9 @@ func _init() -> void:
 	await _test_refused_archives_leave_install_intact()
 	await _test_failed_registration_restores_files_and_record()
 	await _test_unsaved_registration_reports_incomplete_rollback()
+	await _test_stale_database_writer_is_refused()
 	await _test_recovery_after_a_crash()
+	await _test_owner_lock_released_when_its_process_dies()
 	await _test_frames_tick_during_extract_and_verify()
 	await _test_cancel_at_every_cancellable_stage(port)
 	_finish(1 if _fail else 0)
@@ -124,7 +129,12 @@ func _test_refused_archives_leave_install_intact() -> void:
 	for case in [["wrong_arch", "identity_mismatch"], ["no_binary", "identity_mismatch"],
 			["escaping_link", "archive_unsafe"], ["dotdot", "archive_unsafe"],
 			["huge_pax", "archive_unsafe"], ["global_path", "archive_unsafe"],
-			["pax_escape", "archive_unsafe"], ["through_link", "archive_unsafe"]]:
+			["pax_escape", "archive_unsafe"], ["through_link", "archive_unsafe"],
+			["raw_absolute", "archive_unsafe"],
+			["link_climb", "archive_unsafe"], ["case_climb", "archive_unsafe"],
+			["hard_to_symlink", "archive_unsafe"], ["junk_size", "archive_corrupt"],
+			["backslash", "archive_unsafe"], ["empty_linkpath", "archive_unsafe"],
+			["slash_file", "archive_unsafe"]]:
 		result = await _client().install_from_url(_base_url + case[0] + ".tar.gz", db)
 		_check(result.get("error", "") == case[1], "%s is refused as %s: %s" % [case[0], case[1], result])
 	_check_v1_intact(db, "after every refused archive")
@@ -156,7 +166,29 @@ func _test_unsaved_registration_reports_incomplete_rollback() -> void:
 	DirAccess.make_dir_recursive_absolute(db_file + ".tmp")
 	_check(not real.save() and FileAccess.get_file_as_string(db_file) == before,
 		"a database save that cannot be written fails and leaves the previous file whole")
+	_check(real.has_plugin(ID) and not real.remove(ID) and real.has_plugin(ID),
+		"a removal that cannot be saved fails and is undone in memory")
 	DirAccess.remove_absolute(db_file + ".tmp")
+
+
+## Two Minerva processes, each with its own snapshot of plugins.json: once
+## one installs, the other may neither install nor save over that.
+func _test_stale_database_writer_is_refused() -> void:
+	var first = load(PLUGINDB_GD).new()
+	if first.has_plugin(ID):
+		first.remove(ID)
+	var second = load(PLUGINDB_GD).new()  # both now read the same file
+	_h.rm_dir_recursive(PLUGIN_DIR)
+	var installed: Dictionary = await _client().install_from_url(_base_url + "v1.tar.gz", first)
+	var staging := ProjectSettings.globalize_path(STAGING)
+	var staged_before := DirAccess.get_directories_at(staging)
+	var refused: Dictionary = await _client().install_from_url(_base_url + "v2.tar.gz", second)
+	_check(installed.get("ok", false) and refused.get("error", "") == "plugin_db_stale",
+		"the second snapshot's install is refused: %s" % refused)
+	_check(not second.save() and load(PLUGINDB_GD).new().get_by_id(ID).version == "1.0.0",
+		"and it cannot save over the first's install")
+	_check(DirAccess.get_directories_at(staging) == staged_before,
+		"and the refused install left nothing staged: %s" % [DirAccess.get_directories_at(staging)])
 
 
 func _test_recovery_after_a_crash() -> void:
@@ -179,7 +211,10 @@ func _test_recovery_after_a_crash() -> void:
 	fresh_manifest["id"] = FRESH_ID
 	_write(fresh_dir.path_join("manifest.json"), JSON.stringify(fresh_manifest))
 	db.install(fresh_dir.path_join("manifest.json"))
-	_op(staging, "dead-3", {"phase": "replacing", "id": FRESH_ID, "had_previous": false, "db_before": null})
+	var fresh_op := _op(staging, "dead-3", {"phase": "replacing", "id": FRESH_ID, "had_previous": false, "db_before": null})
+	# Its commit record never landed: a leftover side file must not count.
+	_write(fresh_op.path_join("txn.json.tmp"), JSON.stringify(_record({"phase": "committed", "id": FRESH_ID,
+		"had_previous": false, "db_before": null})))
 	# Committed before the crash: its leftover backup must not come back.
 	DirAccess.make_dir_recursive_absolute(_op(staging, "dead-4", {"phase": "committed", "id": ID,
 		"had_previous": true, "db_before": null}).path_join("previous"))
@@ -215,7 +250,7 @@ func _test_recovery_after_a_crash() -> void:
 	var problems: Array = load(MARKETPLACE_GD).sweep_staging(db)
 	_check_v1_intact(db, "after recovery undid the half-done replacement")
 	_check(not DirAccess.dir_exists_absolute(fresh_dir) and not db.has_plugin(FRESH_ID),
-		"a half-done first install is removed, files and DB record")
+		"a half-done first install is removed, files and DB record, despite an unlanded commit record")
 	var left := Array(DirAccess.get_directories_at(staging))
 	_check(not "op_dead-1_1" in left and not "op_dead-2_1" in left and not "op_dead-3_1" in left
 		and not "op_dead-4_1" in left and not "extract_123" in left
@@ -268,6 +303,31 @@ func _op(staging: String, session: String, fields: Dictionary, serial: int = 1) 
 	DirAccess.make_dir_recursive_absolute(dir)
 	_write(dir.path_join("txn.json"), JSON.stringify(_record(fields)))
 	return dir
+
+
+## The kernel lock that ownership rests on, across real processes: a child
+## Godot holding it makes it busy here; once the child is killed it can be
+## taken.
+func _test_owner_lock_released_when_its_process_dies() -> void:
+	var lock_path := ProjectSettings.globalize_path(STAGING).path_join("owners/child-test.lock")
+	var marker := _temp.path_join("child_locked")
+	DirAccess.make_dir_recursive_absolute(lock_path.get_base_dir())
+	var child := OS.create_process(OS.get_executable_path(), ["--headless", "--path",
+		ProjectSettings.globalize_path("res://"), "--script", "res://test/fixtures/hold_process_lock.gd", "--", lock_path, marker])
+	await _wait(func() -> bool: return FileAccess.file_exists(marker))
+	var probe = ClassDB.instantiate("ProcessFileLock")
+	_check(child > 0 and FileAccess.file_exists(marker) and probe.try_lock_status(lock_path) == ERR_BUSY,
+		"a lock held by another live process is busy here")
+	if child > 0:
+		OS.kill(child)
+	var give_up := Time.get_ticks_msec() + 10000
+	var status: int = probe.try_lock_status(lock_path)
+	while status != OK and Time.get_ticks_msec() < give_up:
+		await create_timer(0.1).timeout
+		status = probe.try_lock_status(lock_path)
+	_check(status == OK, "the OS releases it when that process dies")
+	probe.unlock()
+	DirAccess.remove_absolute(lock_path)
 
 
 func _test_frames_tick_during_extract_and_verify() -> void:
@@ -401,17 +461,40 @@ func _pack(name: String, version: String, payload_bytes: int) -> bool:
 ##   global_path    a global pax record renaming every later member
 ##   pax_escape     a harmless-looking member renamed by pax to ../escape.txt
 ##   through_link   link -> sub then link/x.txt, written through the link
+##   raw_absolute   a member named /abs.txt (normalising would hide the "/")
+##   link_climb     d/e/s -> ../../d then l -> d/e/s/../../../x: inside the
+##                  archive read as text, outside once the OS follows d/e/s
+##   case_climb     d/e/L2 -> .. then d/e/L1 -> l2/../../x, which climbs out
+##                  where the filesystem ignores case (macOS, Windows)
+##   backslash      d/l -> a\b\c/../../..: three levels up where a backslash
+##                  is not a separator (Linux, macOS), so above the plugin
+##   empty_linkpath a/l -> ../../../x overridden by an empty pax linkpath, which
+##                  bsdtar ignores
+##   slash_file     a regular file named "d/", whose data bsdtar reads as headers
+##   junk_size      a header whose size field starts with a non-digit, which
+##                  tar implementations read differently
+##   hard_to_symlink a/b/s -> .. then hard link h -> a/b/s: tar copies the
+##                  symlink to h, where ".." is above the plugin (refused as
+##                  an archive holding both link kinds)
 func _pack_crafted() -> bool:
 	var other_machine := 0xB7 if MarketplaceClient.resolve_platform_target() != "linux-arm64" else 0x3E
 	var spec := {
 		"wrong_arch": {"manifest": _manifest("2.0.0"), "binary_machine": other_machine},
 		"no_binary": {"manifest": _manifest("2.0.0", "./missing-binary")},
-		"escaping_link": {"manifest": _manifest("2.0.0"), "link": ["escape", "../../../../etc"]},
+		"escaping_link": {"manifest": _manifest("2.0.0"), "links": [["escape", "../../../../etc"]]},
 		"dotdot": {"manifest": _manifest("2.0.0"), "extra_name": "../outside.txt"},
 		"huge_pax": {"manifest": _manifest("2.0.0"), "pax": {"comment": "x".repeat(70000)}},
 		"global_path": {"manifest": _manifest("2.0.0"), "global_pax": {"path": "renamed.txt"}},
 		"pax_escape": {"manifest": _manifest("2.0.0"), "pax": {"path": "../escape.txt"}},
-		"through_link": {"manifest": _manifest("2.0.0"), "link": ["link", "sub"], "extra_name": "link/x.txt"},
+		"through_link": {"manifest": _manifest("2.0.0"), "links": [["link", "sub"]], "extra_name": "link/x.txt"},
+		"raw_absolute": {"manifest": _manifest("2.0.0"), "extra_name": "/abs.txt"},
+		"link_climb": {"manifest": _manifest("2.0.0"), "links": [["d/e/s", "../../d"], ["l", "d/e/s/../../../x"]]},
+		"case_climb": {"manifest": _manifest("2.0.0"), "links": [["d/e/L2", ".."], ["d/e/L1", "l2/../../x"]]},
+		"backslash": {"manifest": _manifest("2.0.0"), "links": [["d/l", "a\\b\\c/../../.."]]},
+		"empty_linkpath": {"manifest": _manifest("2.0.0"), "links": [["a/l", "../../../x"]], "link_pax": {"linkpath": ""}},
+		"slash_file": {"manifest": _manifest("2.0.0"), "extra_name": "d/"},
+		"junk_size": {"manifest": _manifest("2.0.0"), "junk_size": "x0000001000"},
+		"hard_to_symlink": {"manifest": _manifest("2.0.0"), "links": [["a/b/s", ".."]], "hard_links": [["h", "a/b/s"]]},
 	}
 	_write(_temp.path_join("crafted.json"), JSON.stringify(spec))
 	var script := """
@@ -431,8 +514,17 @@ for name, s in json.load(open(root + '/crafted.json')).items():
             if k == 'manifest.json' and 'pax' in s:
                 info.pax_headers = s['pax']
             tar.addfile(info, io.BytesIO(v))
-        if 'link' in s:
-            info = tarfile.TarInfo(s['link'][0]); info.type = tarfile.SYMTYPE; info.linkname = s['link'][1]; tar.addfile(info)
+        for link, target in s.get('links', []):
+            info = tarfile.TarInfo(link); info.type = tarfile.SYMTYPE; info.linkname = target
+            info.pax_headers = s.get('link_pax', {}); tar.addfile(info)
+        if 'junk_size' in s:
+            buf = bytearray(tarfile.TarInfo('junk.txt').tobuf(tarfile.GNU_FORMAT))
+            buf[124:136] = s['junk_size'].encode().ljust(12, b'\\0')
+            buf[148:156] = b' ' * 8
+            buf[148:156] = b'%06o\\0 ' % sum(buf)
+            tar.fileobj.write(bytes(buf) + bytes(512)); tar.offset += 1024
+        for link, target in s.get('hard_links', []):
+            info = tarfile.TarInfo(link); info.type = tarfile.LNKTYPE; info.linkname = target; tar.addfile(info)
         if 'extra_name' in s:
             info = tarfile.TarInfo(s['extra_name']); info.size = 1; tar.addfile(info, io.BytesIO(b'x'))
 """

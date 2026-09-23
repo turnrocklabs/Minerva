@@ -586,6 +586,14 @@ static func format_install_error(result: Dictionary) -> String:
 			cause = "Unpacking needs %s but only %s is free." % [String.humanize_size(int(detail_dict.get("needed", 0))),
 				String.humanize_size(int(detail_dict.get("free", 0)))]
 			hint = "Free some disk space and install again. Nothing was changed."
+		"install_lock_failed":
+			title = "Could not lock plugin installs"
+			cause = "Minerva cannot use %s (%s)." % [str(detail_dict.get("path", "?")), str(detail_dict.get("reason", "?"))]
+			hint = "Check permissions and free space under user://plugins/. Nothing was changed."
+		"plugin_db_stale":
+			title = "Another Minerva changed your plugins"
+			cause = "The plugin list on disk changed since this Minerva read it."
+			hint = "Restart Minerva, then install again. Nothing was changed."
 		"install_lock_unavailable":
 			title = "Plugin installs are unavailable in this build"
 			cause = "Minerva's native file-lock support (ProcessFileLock) is missing, so an install could not be protected."

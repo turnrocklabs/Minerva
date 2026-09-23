@@ -57,6 +57,8 @@ const S_BUILDING := 6
 const S_BUILD_FAILED := 7
 const S_NEEDS_BINARY := 8
 
+const SkillConsent := preload("res://Scripts/Services/Plugins/PluginSkillConsent.gd")
+
 
 # ---------------------------------------------------------------------------
 # Signals
@@ -420,7 +422,7 @@ func _seed_plugin_skills(def, auto_confirm: bool, consent: Dictionary = {}) -> D
 	# now, and a question it did not cover counts as declined.
 	var accepted: bool = bool(consent.get("seed", false)) if consent.get("collected", false) else auto_confirm
 	if not auto_confirm and not consent.get("collected", false):
-		accepted = await _show_skill_seed_dialog(def, resolved)
+		accepted = await SkillConsent.ask_seed(self, def, resolved)
 
 	if not accepted:
 		return {
@@ -436,41 +438,6 @@ func _seed_plugin_skills(def, auto_confirm: bool, consent: Dictionary = {}) -> D
 		"skills_skipped": materialise_result.get("skipped", 0),
 		"skills_deferred_to_update": materialise_result.get("deferred_to_update", 0),
 	}
-
-
-## Spawn the install-skill confirmation dialog, await the user's choice.
-## Returns true on accept, false on cancel / close.
-##
-## If the PluginManager isn't in a SceneTree (headless smoke test that forgot
-## to add_child the manager), defaults to false (decline) rather than blocking
-## indefinitely.
-func _show_skill_seed_dialog(def, resolved: Array, op = null) -> bool:
-	if not is_inside_tree():
-		push_warning("[PluginManager] Skill seed dialog requested but PluginManager not in SceneTree; declining by default")
-		return false
-
-	# Defense in depth: in a headless build (no display server) there is no user
-	# to dismiss the modal, so popup_centered()+await would hang the install
-	# forever. Decline rather than block. Callers that want seeding in headless
-	# pass auto_confirm_skills=true, which bypasses this dialog entirely.
-	if DisplayServer.get_name() == "headless":
-		push_warning("[PluginManager] Skill seed dialog suppressed in headless mode; declining (pass auto_confirm_skills=true to seed)")
-		return false
-
-	var DialogClass = load("res://Scripts/Services/Plugins/PluginSkillSeedDialog.gd")
-	var dialog = DialogClass.new()
-	add_child(dialog)
-	var display_name: String = def.name if not def.name.is_empty() else def.id
-	dialog.configure(display_name, resolved)
-	dialog.popup_centered()
-	var close := func() -> void: dialog.seed_decision.emit(false)
-	if op != null:
-		op.cancel_requested.connect(close, CONNECT_ONE_SHOT)
-	var accepted: bool = await dialog.seed_decision
-	if op != null and op.cancel_requested.is_connected(close):
-		op.cancel_requested.disconnect(close)
-	dialog.queue_free()
-	return accepted
 
 
 ## Create plugin data directories. Called on successful install.
@@ -557,7 +524,7 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 			decisions[skill_id] = true
 			continue
 		var existing: Dictionary = action.get("existing", {})
-		var accepted: bool = await _show_skill_update_dialog(def, existing, skill)
+		var accepted: bool = await SkillConsent.ask_update(self, def, existing, skill)
 		decisions[skill_id] = accepted
 
 	# Phase 3: commit.
@@ -574,59 +541,10 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	return result
 
 
-## Ask now every skill question registering `manifest_path` would ask, so a
-## marketplace install can wait for the user while nothing has changed and
-## then register without stopping: seed consent for a new plugin, or one
-## decision per customised skill an update would change. Pass the result to
-## install_plugin / update_plugin as `consent`. Cancelling `op` closes an
-## open dialog as a decline and asks nothing more.
+## See PluginSkillConsent.collect.
 func collect_skill_consent(manifest_path: String, auto_confirm: bool, op = null) -> Dictionary:
-	var consent := {"collected": true}
-	var def = load("res://Scripts/Services/Plugins/PluginDefinition.gd").from_manifest(manifest_path)
-	if def == null or InternalPlugins.has(def.id):
-		return consent
-	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	if not _db.has_plugin(def.id):
-		if not def.skills.is_empty() and not (op != null and op.cancelled):
-			var resolved: Array = SeederClass.resolve_deps(def, _build_available_tools())
-			consent["seed"] = auto_confirm or await _show_skill_seed_dialog(def, resolved, op)
-		return consent
-	var plan: Dictionary = SeederClass.plan_reconcile(def, _build_available_tools(), _get_docket_manager())
-	var decisions := {}
-	for action in plan.get("actions", []):
-		if str(action.get("action", "")) == SeederClass.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
-			var skill: Dictionary = action.get("skill", {})
-			decisions[str(skill.get("id", ""))] = auto_confirm \
-				or await _show_skill_update_dialog(def, action.get("existing", {}), skill, op)
-	consent["update_decisions"] = decisions
-	return consent
-
-
-## Spawn the update-confirmation dialog for one customised+changed skill,
-## await the user's choice.  Returns true on accept (overwrite), false otherwise.
-func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dictionary, op = null) -> bool:
-	if not is_inside_tree():
-		push_warning("[PluginManager] Skill update dialog requested but PluginManager not in SceneTree; declining by default")
-		return false
-	# As for the seed dialog: with no display there is no one to answer, so
-	# keep the customised skill rather than wait forever.
-	if DisplayServer.get_name() == "headless":
-		push_warning("[PluginManager] Skill update dialog suppressed in headless mode; keeping the customised skill")
-		return false
-	var DialogClass = load("res://Scripts/Services/Plugins/PluginSkillUpdateDialog.gd")
-	var dialog = DialogClass.new()
-	add_child(dialog)
-	var display_name: String = def.name if not def.name.is_empty() else def.id
-	dialog.configure(display_name, existing_record, new_skill)
-	dialog.popup_centered()
-	var close := func() -> void: dialog.update_decision.emit(false)
-	if op != null:
-		op.cancel_requested.connect(close, CONNECT_ONE_SHOT)
-	var accepted: bool = await dialog.update_decision
-	if op != null and op.cancel_requested.is_connected(close):
-		op.cancel_requested.disconnect(close)
-	dialog.queue_free()
-	return accepted
+	return await SkillConsent.collect(self, _db, _build_available_tools(), _get_docket_manager(),
+		manifest_path, auto_confirm, op)
 
 
 ## Stop the plugin if running, then remove it from the DB.
@@ -651,22 +569,29 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	if def.state == S_BUILDING:
 		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
 
+	# The staging lock is held until the removal is saved, so no install
+	# replaces this plugin meanwhile; unfinished installs of it are dropped
+	# only once the record is gone from disk. Only stopping the plugin
+	# happens before that.
+	if _db.is_stale():
+		return {"error": "Another Minerva changed the plugin list; restart Minerva before removing '%s'" % id}
+	var Transaction = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+	var staging_root := ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)
+	var removal: Dictionary = Transaction.begin_removal(staging_root, id)
+	if removal.has("error"):
+		return {"error": removal.error}
 	if def.state in [S_RUNNING, S_STARTING]:
 		var stop_result := stop_plugin(id)
 		if stop_result.get("error"):
+			Transaction.end_removal(staging_root, id, removal, false)
 			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
+	var removed: bool = _db.remove(id)
+	Transaction.end_removal(staging_root, id, removal, removed)
+	if not removed:
+		return {"error": "Failed to remove plugin '%s' from DB" % id}
 
-	# Last refusal before anything irreversible: an unfinished marketplace
-	# install of it must not bring it back later, and one still in progress
-	# has to finish first.
-	var forgotten: String = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").forget(
-			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), id)
-	if not forgotten.is_empty():
-		return {"error": forgotten}
-
-	# Unseed plugin-shipped skills before removing the plugin from the DB
-	# (DCR 019df57b T6).  Pristine records hard-delete; customised records
-	# auto-convert to source="user" so user edits are preserved.
+	# Unseed plugin-shipped skills.  Pristine records hard-delete; customised
+	# records auto-convert to source="user" so user edits are preserved.
 	var unseed_result: Dictionary = _unseed_plugin_skills(id)
 
 	_runtime.erase(id)
@@ -676,9 +601,6 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	_unattended_deny_ids.erase(id)
 	if _setup_envelopes.erase(id):
 		_save_setup_state()
-
-	if not _db.remove(id):
-		return {"error": "Failed to remove plugin '%s' from DB" % id}
 
 	# Clean up data directory if requested
 	if delete_data:

@@ -10,9 +10,11 @@ extends SceneTree
 ##     a downloading job removes its staging;
 ##   - cancel is refused once registration begins, and the job then reports
 ##     the install that actually happened (id, version, outcome);
-##   - an autostarting plugin ends Ready only once it is running; one whose
-##     binary is missing ends start_failed, and its retry runs in the queue
-##     without capturing a new install request;
+##   - an autostarting plugin ends Ready only once it is running; one that
+##     installs but exits before its handshake ends start_failed, its retry
+##     runs in the queue without capturing a new install request, and after a
+##     fixed version is installed and started a retry reports that version as
+##     already running;
 ##   - reinstalling a running plugin stops it before its files are replaced
 ##     and ends Ready with it running again;
 ##   - minerva_plugin_marketplace_install (the real MCP handler) attaches to
@@ -34,7 +36,7 @@ const PROBE_PY := "res://test/fixtures/capability_probe/capability_probe.py"
 const SLOW := "test_queue_slow"
 const FAST := "test_queue_fast"
 const READY := "test_queue_ready"
-const NO_BINARY := "test_queue_no_binary"
+const CRASHES := "test_queue_crashes"
 const SLOW_BYTES := 3 * 1024 * 1024
 const PROBE := {"entrypoint": "python3", "args": ["capability_probe.py"]}
 
@@ -62,8 +64,8 @@ func _init() -> void:
 	_pm = await _h.bootstrap_plugin_manager()
 	var ready: bool = _pm != null and _pack(FAST, 0, sha) and _pack(SLOW, SLOW_BYTES, sha) \
 		and _pack(READY, 0, sha, {"entrypoint": "python3", "args": ["capability_probe.py"]}, true) \
-		and _pack(NO_BINARY, 0, sha, {"entrypoint": "./missing-binary", "args": []}) \
-		and _pack(NO_BINARY, 0, sha, PROBE, false, {"version": "1.0.1"}, "no_binary_fixed") \
+		and _pack(CRASHES, 0, sha, {"entrypoint": "python3", "args": ["crash.py"]}, true) \
+		and _pack(CRASHES, 0, sha, PROBE, false, {"version": "1.0.1"}, "crashes_fixed") \
 		and _pack(READY, 0, sha, PROBE, true, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
 		and await _h.start_http_server(_temp, port)
@@ -149,19 +151,19 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	await _scrub()
 	var queue = _pm.install_queue
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
-	var nobin_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, NO_BINARY]
+	var crashes_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, CRASHES]
 	var started = queue.request(_entry(READY, ready_url))
 	await _done(started)
 	_check(started.outcome == Job.OUTCOME_READY and _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING,
 		"an autostarting plugin is Ready once it runs: %s" % [started.summary()])
 	_pm.stop_plugin(READY)
 
-	var failed = queue.request(_entry(NO_BINARY, nobin_url))
+	var failed = queue.request(_entry(CRASHES, crashes_url))
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_START_FAILED and not failed.message.is_empty(),
-		"a missing binary ends start_failed with the reason: %s" % [failed.summary()])
+		"an autostarting plugin that exits before its handshake ends start_failed with the reason: %s" % [failed.summary()])
 	queue.retry_start(failed)
-	var reinstall = queue.request(_entry(NO_BINARY, nobin_url))
+	var reinstall = queue.request(_entry(CRASHES, crashes_url))
 	_check(reinstall != failed, "a new install request does not attach to a start retry")
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_START_FAILED, "the retry ran and reported again")
@@ -169,17 +171,17 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 
 	# A newer, startable version is installed and started meanwhile: retrying
 	# the old failure reports what is installed and running now.
-	# Removed first, so the fixed version is a fresh install.
-	await _h.scrub_plugin(_pm, NO_BINARY)
-	var fixed = queue.request_url("http://127.0.0.1:%d/no_binary_fixed.tar.gz" % port)
+	var fixed = queue.request_url("http://127.0.0.1:%d/crashes_fixed.tar.gz" % port)
 	await _done(fixed)
-	_pm.start_plugin(NO_BINARY)
-	await _until(func() -> bool: return _pm.get_db().get_by_id(NO_BINARY).state == _pm.S_RUNNING)
+	# The crashes above must not have left it in a crash loop, which start_plugin refuses.
+	_check(_pm.get_db().get_by_id(CRASHES).state != _pm.S_CRASH_LOOP, "the crashed version is not crash-looping")
+	_pm.start_plugin(CRASHES)
+	await _until(func() -> bool: return _pm.get_db().get_by_id(CRASHES).state == _pm.S_RUNNING)
 	queue.retry_start(failed)
 	await _done(failed)
 	_check(failed.outcome == Job.OUTCOME_READY and failed.result.get("version") == "1.0.1" and "already running" in failed.message,
 		"a retry reports the version installed now, already running: %s" % [failed.summary()])
-	_pm.stop_plugin(NO_BINARY)
+	_pm.stop_plugin(CRASHES)
 
 
 ## Cancel while the plugin starts, and a rollback whose restart of the old
@@ -293,7 +295,7 @@ func _entry(id: String, url: String) -> Dictionary:
 
 
 func _scrub() -> void:
-	for id in [SLOW, FAST, READY, NO_BINARY]:
+	for id in [SLOW, FAST, READY, CRASHES]:
 		await _h.scrub_plugin(_pm, id)
 
 
@@ -324,8 +326,12 @@ func _pack(id: String, payload_bytes: int, sha: String,
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
 	f.store_string(JSON.stringify(manifest))
 	f.close()
-	if backend.entrypoint == "python3":
+	if backend.entrypoint == "python3" and backend.args[0] == "capability_probe.py":
 		DirAccess.copy_absolute(ProjectSettings.globalize_path(PROBE_PY), dir.path_join("capability_probe.py"))
+	elif backend.entrypoint == "python3":
+		f = FileAccess.open(dir.path_join(backend.args[0]), FileAccess.WRITE)
+		f.store_string("raise SystemExit(1)\n")  # exits before the MCP handshake
+		f.close()
 	elif backend.entrypoint == "./test-binary":
 		f = FileAccess.open(dir.path_join("test-binary"), FileAccess.WRITE)
 		f.store_string("PLACEHOLDER")
@@ -345,7 +351,7 @@ func _check(ok: bool, what: String) -> void:
 
 func _finish(code: int) -> void:
 	if _pm != null:
-		for id in [SLOW, FAST, READY, NO_BINARY]:
+		for id in [SLOW, FAST, READY, CRASHES]:
 			if _pm.get_db().has_plugin(id):
 				_pm.stop_plugin(id)
 				_pm.get_db().remove(id)

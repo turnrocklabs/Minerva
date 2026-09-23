@@ -29,7 +29,11 @@ extends RefCounted
 ## process can be replacing anything. A record that is missing or not fully
 ## valid never justifies deleting a backup: that operation is kept and
 ## reported.
+##
+## This covers a process that crashes or is killed. Records and files are not
+## synced to disk, so after a power loss the OS may not have kept them.
 
+const AtomicFile := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
 const RECORD := "txn.json"
 const PREVIOUS := "previous"
 const STAGING_LOCK := "staging.lock"
@@ -75,19 +79,27 @@ func publish(phase: String) -> bool:
 ## Wait for the staging lock (another process may be replacing a plugin),
 ## then undo what exited processes left and check `plugin_id` has no
 ## unresolved earlier operation. Returns {} while holding the lock, or a
-## failure without it: cancelled (op cancelled while waiting) or
+## failure without it: cancelled (op cancelled while waiting),
+## install_lock_failed (the lock file cannot be used at all), plugin_db_stale
+## (another Minerva changed the plugin database since this one read it), or
 ## recovery_pending.
 func enter(staging_root: String, db, op, tree: SceneTree) -> Dictionary:
 	_staging_lock = ClassDB.instantiate("ProcessFileLock")
-	while not _staging_lock.try_lock(staging_root.path_join(STAGING_LOCK)):
-		if op.cancelled:
-			_staging_lock = null
-			return {"ok": false, "error": "cancelled", "detail": {}}
+	var lock_path := staging_root.path_join(STAGING_LOCK)
+	var status: int = _staging_lock.try_lock_status(lock_path)
+	while status == ERR_BUSY and not op.cancelled:
 		await tree.process_frame
+		status = _staging_lock.try_lock_status(lock_path)
+	if status != OK and status != ERR_BUSY:
+		_staging_lock = null
+		return {"ok": false, "error": "install_lock_failed", "detail": {"path": lock_path, "reason": error_string(status)}}
 	# A cancel that arrived during the last wait still stops the install.
 	if op.cancelled:
 		leave()
 		return {"ok": false, "error": "cancelled", "detail": {}}
+	if db != null and db.has_method("is_stale") and db.is_stale():
+		leave()
+		return {"ok": false, "error": "plugin_db_stale", "detail": {}}
 	var pending := _resolve_pending(staging_root, db)
 	if not pending.is_empty():
 		leave()
@@ -130,7 +142,7 @@ static func sweep(staging_root: String, db) -> Array:
 	if lock == null:
 		return []
 	DirAccess.make_dir_recursive_absolute(staging_root)
-	if not lock.try_lock(staging_root.path_join(STAGING_LOCK)):
+	if lock.try_lock_status(staging_root.path_join(STAGING_LOCK)) != OK:
 		return []
 	var problems := recover_all(staging_root, db)
 	lock.unlock()
@@ -191,40 +203,47 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 	return {}
 
 
-## Drop the unresolved operations for `plugin_id` owned by this process or by
-## exited ones, because the plugin is being removed and undoing them later
-## would bring it back. Returns "" when done, else why the removal must wait
-## (dropping nothing): an install holds the staging lock, a live other process
-## owns one of them, or this build has no ProcessFileLock.
-static func forget(staging_root: String, plugin_id: String) -> String:
-	if not _has_operation_for(staging_root, plugin_id):
-		return ""
+## Start removing `plugin_id`: take the staging lock, so no install replaces
+## anything until end_removal. Returns {lock} to pass to end_removal, or
+## {error} when the removal must wait: an install holds the lock, the lock
+## cannot be used, or a live other process owns an unfinished install of it.
+static func begin_removal(staging_root: String, plugin_id: String) -> Dictionary:
+	if not ClassDB.class_exists("ProcessFileLock"):
+		return {"lock": null}  # without the lock no install can have staged anything
 	var lock = ClassDB.instantiate("ProcessFileLock")
-	if lock == null:
-		return "Plugin '%s' has an unfinished install, and this build cannot lock its install records; update Minerva's native libraries" % plugin_id
-	if not lock.try_lock(staging_root.path_join(STAGING_LOCK)):
-		return "An install is in progress; remove plugin '%s' once it finishes" % plugin_id
-	var ok := true
-	var root := DirAccess.open(staging_root)
-	for name in root.get_directories() if root != null else []:
-		var record = _read_record(staging_root.path_join(name))
-		if not name.begins_with("op_") or not (record is Dictionary and record.get("id") == plugin_id):
-			continue
-		if _owner_alive(staging_root, _session_of(name)) and _session_of(name) != _session:
-			ok = false
-		else:
+	DirAccess.make_dir_recursive_absolute(staging_root)
+	var status: int = lock.try_lock_status(staging_root.path_join(STAGING_LOCK))
+	if status == ERR_BUSY:
+		return {"error": "An install is in progress; remove plugin '%s' once it finishes" % plugin_id}
+	if status != OK:
+		return {"error": "Cannot lock %s: %s" % [staging_root.path_join(STAGING_LOCK), error_string(status)]}
+	for name in _operations_for(staging_root, plugin_id):
+		if _session_of(name) != _session and _owner_alive(staging_root, _session_of(name)):
+			lock.unlock()
+			return {"error": "Another running Minerva has an unfinished install of plugin '%s'; remove it once that Minerva restores it or exits" % plugin_id}
+	return {"lock": lock}
+
+
+## Finish a removal begun with begin_removal. Only when the plugin's removal
+## was saved (`removed`) are its unfinished installs dropped, since undoing
+## them later would bring it back; otherwise their backups stay.
+static func end_removal(staging_root: String, plugin_id: String, removal: Dictionary, removed: bool) -> void:
+	if removal.get("lock") == null:
+		return
+	if removed:
+		for name in _operations_for(staging_root, plugin_id):
 			_remove_tree(staging_root.path_join(name))
-	lock.unlock()
-	return "" if ok else "Another running Minerva has an unfinished install of plugin '%s'; remove it once that Minerva restores it or exits" % plugin_id
+	removal.lock.unlock()
 
 
-static func _has_operation_for(staging_root: String, plugin_id: String) -> bool:
+static func _operations_for(staging_root: String, plugin_id: String) -> Array:
+	var names := []
 	var root := DirAccess.open(staging_root)
 	for name in root.get_directories() if root != null else []:
 		var record = _read_record(staging_root.path_join(name))
 		if name.begins_with("op_") and record is Dictionary and record.get("id") == plugin_id:
-			return true
-	return false
+			names.append(name)
+	return names
 
 
 static func _pending(problem: Dictionary) -> Dictionary:
@@ -313,8 +332,9 @@ static func _owner_alive(staging_root: String, session: String) -> bool:
 	if probe == null:
 		return true
 	DirAccess.make_dir_recursive_absolute(staging_root.path_join(OWNERS))
-	var path := staging_root.path_join(OWNERS).path_join(session + ".lock")
-	if not probe.try_lock(path):
+	# Only a lock actually taken proves the owner exited; busy or unusable
+	# counts as alive.
+	if probe.try_lock_status(staging_root.path_join(OWNERS).path_join(session + ".lock")) != OK:
 		return true
 	probe.unlock()
 	return false
@@ -326,27 +346,18 @@ static func _session_of(name: String) -> String:
 	return parts[1] if parts.size() == 3 and parts[1].contains("-") else ""
 
 
+## The published record. A leftover txn.json.tmp is a write that never
+## landed and is never read: publication is a single atomic replace.
 static func _read_record(dir: String):
-	var record = _read_json(dir.path_join(RECORD))
-	return record if record is Dictionary else _read_json(dir.path_join(RECORD + ".tmp"))
+	return _read_json(dir.path_join(RECORD))
 
 
 static func _read_json(path: String):
 	return JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 
 
-## Write `value` to dir/name so a reader sees either the old or the new file.
 static func _publish_json(dir: String, name: String, value) -> bool:
-	var tmp := dir.path_join(name + ".tmp")
-	var f := FileAccess.open(tmp, FileAccess.WRITE)
-	if f == null or not f.store_string(JSON.stringify(value)):
-		return false
-	f.close()
-	# Windows cannot rename over an existing file; readers fall back to the
-	# .tmp copy when the file itself is missing.
-	if OS.get_name() == "Windows":
-		DirAccess.remove_absolute(dir.path_join(name))
-	return DirAccess.rename_absolute(tmp, dir.path_join(name)) == OK
+	return AtomicFile.write(dir.path_join(name), JSON.stringify(value))
 
 
 static func _remove_tree(path: String) -> void:

@@ -7,16 +7,21 @@ extends RefCounted
 ##
 ## Accepted entries: regular files, directories, and symlinks or hard links
 ## whose target stays inside the archive, under relative names free of ".."
-## escapes, never written through an earlier symlink. Accepted metadata: GNU
-## long names ("L"/"K") and pax records ("x" per entry, "g" global) parsed
-## exactly by their byte lengths; of pax keys only path, linkpath and size
-## change how an entry is read (in a global record none may appear), and
-## times, ownership, comments, xattrs, ACLs, symlink type and a UTF-8
-## hdrcharset are ignored as harmless. File flags (SCHILY.fflags) are refused:
-## an immutable flag would stop Minerva removing the files later. Every other
-## entry type or pax key is refused, as is a header whose checksum is wrong
-## (tar would skip it and read on differently). Metadata records, entry
-## count, and total decompressed bytes are bounded.
+## escapes and backslashes, never written through an earlier symlink. Symlink
+## names and targets are ASCII and compared ignoring case; an archive may hold
+## hard links or symlinks but not both.
+##
+## Accepted metadata: GNU long names ("L"/"K") and pax records ("x" per
+## entry, "g" global), parsed exactly by their byte lengths. Of pax keys only
+## path, linkpath and size change how an entry is read (each at most once,
+## never empty, never in a global record); times, ownership, comments,
+## xattrs, ACLs, symlink type and a UTF-8 hdrcharset are ignored as harmless.
+## File flags (SCHILY.fflags) are refused: an immutable flag would stop
+## Minerva removing the files later. Every other entry type or pax key is
+## refused, as are size and checksum fields that are not plain digits and
+## headers whose checksum is wrong, which tar implementations read
+## differently. Metadata records, entry count, and total decompressed bytes
+## are bounded.
 ##
 ## Runs on PluginArchive's worker thread; `op.cancelled` is read as data is
 ## decompressed.
@@ -41,8 +46,9 @@ var _captured := PackedByteArray()
 var _capture_type := ""
 var _next := {}           # overrides for the next entry: path, linkpath, size
 var _zero_blocks := 0
-var _symlinks := {}       # normalised path -> true, for every symlink so far
-var _links := []          # [entry, target] of every link, re-checked at the end
+var _symlinks := {}       # lower-cased normalised path -> true, for every symlink so far
+var _links := []          # [entry, base dir, raw target] of every symlink, re-checked at the end
+var _hard_links := 0
 var _error := {}
 
 
@@ -65,6 +71,10 @@ func scan(archive_abs: String, max_bytes: int, op) -> Dictionary:
 			var put: Array = gz.put_partial_data(chunk.slice(fed))
 			if put[0] != OK:
 				return _err("archive_corrupt", {"reason": "not a gzip stream"})
+			# Nothing taken and nothing to read: the stream ended with input left
+			# (a second gzip member or junk), which tar may still read.
+			if put[1] == 0 and gz.get_available_bytes() == 0:
+				return _err("archive_corrupt", {"reason": "data after the end of the gzip stream"})
 			fed += put[1]
 			if not _drain(gz, max_bytes, max_decompressed, op):
 				return _error
@@ -73,10 +83,16 @@ func scan(archive_abs: String, max_bytes: int, op) -> Dictionary:
 		return _error
 	if _zero_blocks < 1:
 		return _err("archive_corrupt", {"reason": "archive ends before its end-of-archive marker"})
+	# A filesystem may reach a symlink by other spellings of its name (short
+	# names, Unicode case folding), and tar copies a symlink a hard link names
+	# to the hard link's place, where its relative target means something
+	# else. So hard links are accepted only in archives with no symlinks.
+	if _hard_links > 0 and not _symlinks.is_empty():
+		return _err("archive_unsafe", {"reason": "hard links and symlinks in one archive"})
 	# A link may name a path that only later became a symlink.
 	for link in _links:
-		if not _link_ok(link[0], link[1]):
-			return _err("archive_unsafe", {"entry": link[0], "reason": "link leaves the archive: " + link[1]})
+		if not _link_ok(link[0], link[1], link[2]):
+			return _err("archive_unsafe", {"entry": link[0], "reason": "link leaves the archive: " + link[2]})
 	return {"ok": true}
 
 
@@ -139,6 +155,8 @@ func _header(h: PackedByteArray, max_bytes: int) -> bool:
 	if h[124] & 0x80:
 		return _fail("archive_too_large", {"reason": "an entry is larger than 8 GiB", "limit": max_bytes})
 	var size := _octal(h.slice(124, 136))
+	if size < 0:
+		return _fail("archive_corrupt", {"reason": "a tar header's size is not an octal number"})
 	var name := _cstr(h.slice(0, 100))
 	# POSIX ustar ("ustar\0") has a name prefix; old GNU ("ustar  ") reuses
 	# those bytes for times.
@@ -166,17 +184,30 @@ func _header(h: PackedByteArray, max_bytes: int) -> bool:
 	# could hide headers from this scan.
 	if not type in ["0", "7"] and size > 0:
 		return _fail("archive_unsafe", {"entry": name, "reason": "a non-file entry carries data"})
-	var path := _normal(name)
+	# Godot decodes names as UTF-8, marking bytes it cannot decode with
+	# U+FFFD; tar uses the raw bytes, so such a name could differ between them.
+	if name.contains("\uFFFD") or link.contains("\uFFFD"):
+		return _fail("archive_unsafe", {"entry": name, "reason": "a name that is not valid UTF-8"})
+	# Windows tar reads a backslash as a separator, other tars as a plain character.
+	if name.contains("\\") or link.contains("\\"):
+		return _fail("archive_unsafe", {"entry": name, "reason": "a backslash in a name"})
+	# Judged on the raw name, before normalising could hide a leading "/".
+	if _raw_unsafe(name):
+		return _fail("archive_unsafe", {"entry": name, "reason": "an absolute name or one containing \":\""})
+	var path := _member(name)
+	if path == PARENT:
+		return _fail("archive_unsafe", {"entry": name, "reason": "a \"..\" component in a member name"})
 	if path.is_empty():
 		if type == "5":
 			return true  # the archive root itself
 		return _fail("archive_unsafe", {"entry": name, "reason": "an entry replaces the archive root"})
-	if not _contained(path):
-		return _fail("archive_unsafe", {"entry": name, "reason": "absolute or escaping path"})
-	if _under_symlink(path, true):
+	if _under_symlink(path):
 		return _fail("archive_unsafe", {"entry": name, "reason": "written through or over a symlink"})
 	match type:
 		"0", "7":
+			# bsdtar reads a file named "x/" as a directory and its data as headers.
+			if name.ends_with("/"):
+				return _fail("archive_unsafe", {"entry": name, "reason": "a file named as a directory"})
 			total_bytes += size
 			if total_bytes > max_bytes:
 				return _fail("archive_too_large", {"bytes": total_bytes, "limit": max_bytes})
@@ -184,16 +215,19 @@ func _header(h: PackedByteArray, max_bytes: int) -> bool:
 		"5":
 			pass
 		"2":
-			var target := _normal(path.get_base_dir().path_join(link)) if not link.is_absolute_path() else ""
-			if link.is_absolute_path() or link.begins_with("\\") or not _link_ok(path, target):
+			# macOS and Windows filesystems ignore case (and macOS normalises
+			# Unicode), so symlinks are compared case-folded and must be ASCII.
+			if not (_ascii(path) and _ascii(link)):
+				return _fail("archive_unsafe", {"entry": name, "reason": "non-ASCII symlink name or target"})
+			if not _link_ok(path, path.get_base_dir(), link):
 				return _fail("archive_unsafe", {"entry": name, "reason": "symlink leaves the archive: " + link})
-			_symlinks[path] = true
-			_links.append([path, target])
+			_symlinks[path.to_lower()] = true
+			_links.append([path, path.get_base_dir(), link])
 		"1":
-			var target := _normal(link)
-			if not _link_ok(path, target):
+			# Hard link targets name members, which never contain "..".
+			if _member(link) == PARENT or not _link_ok(path, "", link):
 				return _fail("archive_unsafe", {"entry": name, "reason": "hard link leaves the archive: " + link})
-			_links.append([path, target])
+			_hard_links += 1
 		_:
 			return _fail("archive_unsafe", {"entry": name, "reason": "unsupported entry type '%s'" % type})
 	return true
@@ -204,9 +238,7 @@ func _header(h: PackedByteArray, max_bytes: int) -> bool:
 func _apply_record() -> bool:
 	match _capture_type:
 		"L", "K":
-			var text := _cstr(_captured)
-			_next["path" if _capture_type == "L" else "linkpath"] = text
-			return true
+			return _override("path" if _capture_type == "L" else "linkpath", _cstr(_captured))
 	# pax: "<length> <key>=<value>\n", where <length> counts the whole record
 	# in bytes; values may themselves contain newlines.
 	var at := 0
@@ -215,7 +247,7 @@ func _apply_record() -> bool:
 		if space < 0:
 			return _fail("archive_unsafe", {"reason": "malformed pax record"})
 		var length_text := _captured.slice(at, space).get_string_from_ascii()
-		if not length_text.is_valid_int() or int(length_text) <= space - at or at + int(length_text) > _captured.size():
+		if not _decimal(length_text) or int(length_text) <= space - at or at + int(length_text) > _captured.size():
 			return _fail("archive_unsafe", {"reason": "malformed pax record"})
 		var record := _captured.slice(space + 1, at + int(length_text))
 		at += int(length_text)
@@ -227,9 +259,10 @@ func _apply_record() -> bool:
 		var key := record.slice(0, eq).get_string_from_utf8()
 		var value := record.slice(eq + 1, record.size() - 1).get_string_from_utf8()
 		if key in ["path", "linkpath", "size"] and _capture_type == "x":
-			if key == "size" and not (value.is_valid_int() and int(value) >= 0):
+			if key == "size" and not _decimal(value):
 				return _fail("archive_unsafe", {"reason": "pax size is not a non-negative number"})
-			_next[key] = int(value) if key == "size" else value
+			if not _override(key, int(value) if key == "size" else value):
+				return false
 		elif key == "hdrcharset" and value == UTF8_HDRCHARSET:
 			pass
 		elif not (key in HARMLESS_PAX_KEYS or HARMLESS_PAX_PREFIXES.any(func(p: String) -> bool: return key.begins_with(p))):
@@ -237,55 +270,110 @@ func _apply_record() -> bool:
 	return true
 
 
-## A link at `path` to `target` (both archive-relative, normalised) is safe
-## when the target stays inside the archive and does not pass through a
-## symlink, so tar resolves it where this scan does.
-func _link_ok(path: String, target: String) -> bool:
-	return not target.is_empty() and _contained(target) and target != path and not _under_symlink(target, false)
+## A link at `path` to `target`, read from directory `base`, is safe when
+## the target resolves inside the archive to something other than the root or
+## the link itself (see _resolve).
+func _link_ok(path: String, base: String, target: String) -> bool:
+	var resolved := "" if _raw_unsafe(target) else _resolve(base, target)
+	return not resolved.is_empty() and resolved != path
 
 
-## Whether `path` lies below a symlink declared so far (or, when
-## `self_too`, is one).
-func _under_symlink(path: String, self_too: bool) -> bool:
+## Whether `path` is, or lies below, a symlink declared so far.
+func _under_symlink(path: String) -> bool:
 	var parts := path.split("/")
-	for i in range(1, parts.size() + (1 if self_too else 0)):
-		if _symlinks.has("/".join(parts.slice(0, i))):
+	for i in range(1, parts.size() + 1):
+		if _symlinks.has("/".join(parts.slice(0, i)).to_lower()):
 			return true
 	return false
 
 
-## "./a//b/./c/" -> "a/b/c"; ".." kept for _contained to judge; "" for the root.
-static func _normal(path: String) -> String:
+## Marks a name with a ".." component (see _member).
+const PARENT := ".."
+
+
+## The one spelling this scan compares member paths in: "./a//b/./c/" ->
+## "a/b/c", "" for the root, and PARENT for any name with a ".." component.
+## Member names never need "..", and allowing it would give one file several
+## spellings, so a symlink prefix check could be dodged.
+static func _member(path: String) -> String:
 	var parts := PackedStringArray()
 	for part in path.replace("\\", "/").split("/", false):
+		if part == "..":
+			return PARENT
 		if part != ".":
 			parts.append(part)
 	return "/".join(parts)
 
 
-## A relative path whose ".." components never climb above the archive root.
-static func _contained(path: String) -> bool:
-	if path.is_absolute_path() or path.begins_with("\\") or path.contains(":"):
-		return false
-	var depth := 0
-	for part in path.replace("\\", "/").split("/", false):
+## A link `target` as seen from directory `base` (in _member form), resolved
+## to _member form: "" when it climbs above the archive root or passes through
+## a symlink declared so far, since the OS would follow that symlink and this
+## scan cannot tell where to.
+func _resolve(base: String, target: String) -> String:
+	var parts := []
+	for part in Array(base.split("/", false)) + Array(target.split("/", false)):
+		if not parts.is_empty() and _symlinks.has("/".join(parts).to_lower()):
+			return ""
 		if part == "..":
-			depth -= 1
-			if depth < 0:
-				return false
+			if parts.is_empty():
+				return ""
+			parts.pop_back()
 		elif part != ".":
-			depth += 1
+			parts.append(part)
+	return "/".join(parts)
+
+
+static func _ascii(text: String) -> bool:
+	return text.to_utf8_buffer().size() == text.length()
+
+
+## Absolute ("/x", "\\x"), UNC, or containing ":" (a Windows drive or an
+## alternate data stream, so any colon), judged unnormalised.
+static func _raw_unsafe(path: String) -> bool:
+	return path.begins_with("/") or path.begins_with("\\") or path.contains(":")
+
+
+## A relative path with no "..": used for SHA256SUMS entries and the
+## entrypoint, which must name files inside the extracted plugin.
+static func _contained(path: String) -> bool:
+	return not _raw_unsafe(path) and _member(path) != PARENT
+
+
+## Set an override for the next entry. Refused when one is already set: GNU
+## tar and bsdtar may not agree on which of two names wins.
+func _override(key: String, value) -> bool:
+	if _next.has(key):
+		return _fail("archive_unsafe", {"reason": "the next entry's %s is set twice" % key})
+	# bsdtar ignores an empty path or linkpath and keeps the header's.
+	if value is String and value.is_empty():
+		return _fail("archive_unsafe", {"reason": "the next entry's %s is empty" % key})
+	_next[key] = value
 	return true
 
 
+## A tar numeric field: optional leading spaces, octal digits, then only NULs
+## or spaces. -1 for anything else, which tar implementations read
+## differently from each other.
 static func _octal(field: PackedByteArray) -> int:
+	var i := 0
+	while i < field.size() and field[i] == 0x20:
+		i += 1
+	var start := i
 	var value := 0
-	for b in field:
-		if b >= 0x30 and b <= 0x37:
-			value = value * 8 + (b - 0x30)
-		elif value > 0 or b == 0:
-			break
+	while i < field.size() and field[i] >= 0x30 and field[i] <= 0x37:
+		value = value * 8 + (field[i] - 0x30)
+		i += 1
+	if i == start:
+		return -1
+	for rest in field.slice(i):
+		if rest != 0 and rest != 0x20:
+			return -1
 	return value
+
+
+## Plain decimal digits, no sign, short enough not to overflow.
+static func _decimal(text: String) -> bool:
+	return not text.is_empty() and text.length() <= 18 and text.lstrip("0123456789").is_empty()
 
 
 static func _cstr(field: PackedByteArray) -> String:

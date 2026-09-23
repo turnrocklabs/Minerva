@@ -4,11 +4,20 @@ extends RefCounted
 ## Stores plugin records as JSON at user://plugins/plugins.json.
 ## Manages install/remove/state CRUD; does not start or stop processes.
 
+const AtomicFile := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
+
 const DB_PATH := "user://plugins/plugins.json"
 const DB_VERSION := 1
 
 ## In-memory store: plugin_id -> PluginDefinition
 var _plugins: Dictionary = {}
+
+## SHA-256 of plugins.json as this instance last loaded or saved it ("" when
+## there was none). Another Minerva process sharing the file changes it; this
+## instance then refuses to save over those changes (is_stale), and every
+## change except restore() that cannot be saved is undone in memory and
+## reported as failed.
+var _disk_signature := ""
 
 ## plugin_id -> bool for host-owned plugins. Their definitions are rebuilt from
 ## res:// on every launch and never persisted, but the user's "start with
@@ -49,6 +58,10 @@ func get_last_install_error() -> Dictionary:
 ## behavior; MarketplaceClient passes LANE_MARKETPLACE.
 func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFEST) -> PluginDefinition:
 	_last_install_error = {}
+	if is_stale():
+		_last_install_error = {"error": "plugin_db_stale", "detail": {"path": DB_PATH}}
+		push_error("[PluginDB] %s was changed by another Minerva; restart Minerva before installing" % DB_PATH)
+		return null
 	var def := PluginDefinition.from_manifest(manifest_path)
 	if def == null:
 		push_error("[PluginDB] Failed to parse manifest: %s" % manifest_path)
@@ -98,7 +111,12 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 	_register_class_names(def)
 
 	_plugins[def.id] = def
-	_save()
+	if not _save():
+		_plugins.erase(def.id)
+		_unregister_class_names(def.id)
+		_last_install_error = {"error": "plugin_db_stale" if is_stale() else "plugin_db_not_saved",
+			"detail": {"path": DB_PATH}}
+		return null
 	plugins_changed.emit()
 	return def
 
@@ -109,9 +127,13 @@ func remove(plugin_id: String) -> bool:
 		return false
 	if not _plugins.has(plugin_id):
 		return false
+	var def: PluginDefinition = _plugins[plugin_id]
 	_unregister_class_names(plugin_id)
 	_plugins.erase(plugin_id)
-	_save()
+	if not _save():
+		_plugins[plugin_id] = def
+		_register_class_names(def)
+		return false
 	plugins_changed.emit()
 	return true
 
@@ -180,9 +202,12 @@ func update_definition(def: PluginDefinition) -> bool:
 		push_warning("[PluginDB] Cannot update unknown plugin '%s' — install it first" % def.id)
 		return false
 	# Preserve runtime state across updates
-	def.state = _plugins[def.id].state
+	var previous: PluginDefinition = _plugins[def.id]
+	def.state = previous.state
 	_plugins[def.id] = def
-	_save()
+	if not _save():
+		_plugins[def.id] = previous
+		return false
 	plugins_changed.emit()
 	return true
 
@@ -194,7 +219,9 @@ func save() -> bool:
 
 
 ## Put back a definition exactly as it was before a failed install replaced
-## or added it. Returns whether the result was saved.
+## or added it. Returns whether the result was saved; unlike the other
+## changes it stays in memory either way, since it is what the recovery pass
+## will write back too.
 func restore(def: PluginDefinition) -> bool:
 	if _is_reserved(def.id):
 		return false
@@ -215,10 +242,15 @@ func set_autostart(plugin_id: String, enabled: bool) -> bool:
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
+	var was: bool = def.autostart
+	var internal_before := _internal_autostart.duplicate()
 	def.autostart = enabled
 	if _is_reserved(plugin_id):
 		_internal_autostart[plugin_id] = enabled
-	_save()
+	if not _save():
+		def.autostart = was
+		_internal_autostart = internal_before
+		return false
 	return true
 
 
@@ -231,8 +263,11 @@ func set_auto_reload(plugin_id: String, enabled: bool) -> bool:
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
+	var was: bool = def.auto_reload
 	def.auto_reload = enabled
-	_save()
+	if not _save():
+		def.auto_reload = was
+		return false
 	return true
 
 
@@ -243,13 +278,9 @@ func set_auto_reload(plugin_id: String, enabled: bool) -> bool:
 ## Load plugin records from disk. Called automatically in _init().
 func load_db() -> Error:
 	var path := DB_PATH
+	_disk_signature = _signature()
 	if not FileAccess.file_exists(path):
-		# On Windows a save interrupted between removing and renaming leaves
-		# only the complete side file. Elsewhere the rename is atomic, so a
-		# side file is only a save that never finished.
-		path = DB_PATH + ".tmp"
-		if OS.get_name() != "Windows" or not FileAccess.file_exists(path):
-			return OK  # Empty database is valid
+		return OK  # Empty database is valid; a leftover .tmp is an unfinished save
 
 	var file := FileAccess.open(path, FileAccess.READ)
 	if not file:
@@ -342,30 +373,42 @@ func _save() -> bool:
 		"internal_autostart": _internal_autostart,
 	}
 
-	# Written to a side file and renamed over the database, so a crash leaves
-	# either the old complete file or the new one, never a truncated one.
-	var json := JSON.stringify(data, "\t")
-	var tmp_path := DB_PATH + ".tmp"
-	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
-	if not file:
-		push_error("[PluginDB] Cannot write %s: %s" % [tmp_path, FileAccess.get_open_error()])
+	# Written with AtomicFile, so a crash leaves the old complete file or the
+	# new one. The write happens under plugins.json.lock (released when `lock`
+	# is freed on return), and only while the file is still the one this
+	# instance loaded: a save never discards another process's changes.
+	var lock = null
+	if ClassDB.class_exists("ProcessFileLock"):
+		lock = ClassDB.instantiate("ProcessFileLock")
+	if lock != null:
+		# Another process holds this lock only while it writes the file, so
+		# the wait is short even though it blocks this thread.
+		var give_up := Time.get_ticks_msec() + 2000
+		var status: int = lock.try_lock_status(ProjectSettings.globalize_path(DB_PATH + ".lock"))
+		while status == ERR_BUSY and Time.get_ticks_msec() < give_up:
+			OS.delay_msec(20)
+			status = lock.try_lock_status(ProjectSettings.globalize_path(DB_PATH + ".lock"))
+		if status != OK:
+			push_error("[PluginDB] Cannot lock %s.lock: %s" % [DB_PATH, error_string(status)])
+			return false
+	if is_stale():
+		push_error("[PluginDB] %s was changed by another Minerva; restart Minerva before changing plugins" % DB_PATH)
 		return false
-	var stored := file.store_string(json)
-	file.flush()
-	file.close()
-	if not stored:
-		push_error("[PluginDB] Could not write all of %s" % tmp_path)
+	if not AtomicFile.write(ProjectSettings.globalize_path(DB_PATH), JSON.stringify(data, "\t")):
+		push_error("[PluginDB] Cannot write %s" % DB_PATH)
 		return false
-	var db_abs := ProjectSettings.globalize_path(DB_PATH)
-	# Windows cannot rename over an existing file; load_db falls back to the
-	# side file when the database itself is missing.
-	if OS.get_name() == "Windows":
-		DirAccess.remove_absolute(db_abs)
-	var err := DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp_path), db_abs)
-	if err != OK:
-		push_error("[PluginDB] Cannot replace %s: %s" % [DB_PATH, error_string(err)])
-		return false
+	_disk_signature = _signature()
 	return true
+
+
+## Whether plugins.json has changed since this instance last loaded or saved
+## it (another Minerva process wrote it).
+func is_stale() -> bool:
+	return _signature() != _disk_signature
+
+
+func _signature() -> String:
+	return FileAccess.get_sha256(DB_PATH) if FileAccess.file_exists(DB_PATH) else ""
 
 
 func _ensure_data_dir() -> void:
