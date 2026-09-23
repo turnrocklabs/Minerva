@@ -211,7 +211,7 @@ func _get_plugin_install_tool_def() -> Dictionary:
 func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_marketplace_install",
-		"description": "Install a plugin from a marketplace tarball URL. Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load). Returns {ok, plugin_id, manifest_path} on success.",
+		"description": "Install a plugin from a marketplace tarball URL. Runs through Minerva's install queue (one install at a time; a request for a plugin or URL already being installed waits for that install instead of starting another, and keeps that install's auto_confirm_skills choice). Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load), and starts the plugin if it was running or autostarts. Returns {ok, plugin_id, version, manifest_path, outcome} on success, where outcome is ready, installed (starts when used), or start_failed (with message); on failure {ok:false, error, outcome, message}.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -429,24 +429,18 @@ func _handle_plugin_marketplace_install(args: Dictionary) -> Dictionary:
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 
-	# MarketplaceClient is a Node — instantiated, added to the tree, used,
-	# and freed in one shot. Matches the call pattern in
-	# MarketplaceBrowseDialog._on_install_pressed.
 	# Thread auto_confirm_skills (same contract as minerva_plugin_install): when
 	# true, skill seeding runs without the interactive dialog. MCP callers driving
 	# a headless Minerva MUST pass true — otherwise a skill-bearing plugin's
 	# install succeeds but then deadlocks awaiting a dialog no one can dismiss.
 	var auto_confirm := bool(args.get("auto_confirm_skills", false))
 
-	var MarketplaceClientCls = load("res://Scripts/Services/Plugins/MarketplaceClient.gd")
-	var mc = MarketplaceClientCls.new()
-	var tree = Engine.get_main_loop()
-	if tree != null and tree.root != null:
-		tree.root.add_child(mc)
-	var result: Dictionary = await mc.install_from_url(url, plugin_manager, auto_confirm)
-	if mc.is_inside_tree():
-		mc.queue_free()
-	return result
+	if plugin_manager.install_queue == null:
+		return {"error": "Plugin install queue not available"}
+	var job = plugin_manager.install_queue.request_url(url, auto_confirm)
+	if job.state != job.State.DONE:
+		await job.finished
+	return job.summary()
 
 
 func _handle_plugin_remove(args: Dictionary) -> Dictionary:

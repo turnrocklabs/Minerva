@@ -7,7 +7,8 @@ extends RefCounted
 ## `done`/`total` count the current stage's units (bytes while downloading
 ## and verifying); `total` is -1 while the size is unknown (extracting).
 ## Cancellation is honored until registration begins; from then on the
-## install runs to completion or rolls back. Main-thread only; a worker
+## install runs to completion or rolls back. STAGE_REGISTER is entered
+## immediately before the installed files are replaced. Main-thread only; a worker
 ## thread may read `cancelled`.
 
 signal stage_changed(stage: String)
@@ -16,6 +17,8 @@ const STAGE_DOWNLOAD := "download"
 const STAGE_EXTRACT := "extract"
 const STAGE_VERIFY := "verify"
 const STAGE_REGISTER := "register"
+## Entered by PluginInstallQueue after a successful install that should run.
+const STAGE_START := "start"
 
 var stage := ""
 var done := 0

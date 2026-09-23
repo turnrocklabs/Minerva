@@ -213,6 +213,9 @@ var _build_logs: Dictionary = {}
 ## "the machine had no way to ask" from a user actually clicking Cancel.
 var _unattended_deny_ids: Dictionary = {}
 
+## Marketplace installs; lives as long as this manager (PluginInstallQueue.gd).
+var install_queue: Node = null
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle (Node)
@@ -222,6 +225,9 @@ func _ready() -> void:
 	if _db == null:
 		_db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	MarketplaceClient.sweep_staging(_db)
+	install_queue = load("res://Scripts/Services/Plugins/PluginInstallQueue.gd").new()
+	install_queue.manager = self
+	add_child(install_queue)
 	for internal_id in _db.register_internal():
 		_ensure_runtime(internal_id)
 	# Chat-provider registry (W1). Drop a plugin's entries when it stops/crashes

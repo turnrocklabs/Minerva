@@ -113,6 +113,7 @@ HERMETIC_TESTS=(
 	test/test_marketplace_install_from_url.gd
 	test/test_plugin_downloader.gd
 	test/test_marketplace_install_transaction.gd
+	test/test_plugin_install_queue.gd
 	test/test_ui_scale_sync.gd
 )
 QUARANTINED_TESTS=(

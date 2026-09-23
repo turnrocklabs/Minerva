@@ -3,9 +3,9 @@ extends Window
 ## Lists plugins available in the marketplace registry; one-click install.
 ##
 ## On open, fetches the registry from the canonical URL (overridable in
-## settings later). User selects a plugin, clicks Install. The dialog
-## delegates to MarketplaceClient.install_from_registry_entry which
-## downloads, verifies SHA256SUMS, extracts, and registers.
+## settings later). User selects a plugin, clicks Install. The dialog hands
+## the entry to PluginManager's install queue and listens to the job, so
+## closing the dialog neither stops nor loses the install.
 ##
 ## Emits `plugin_installed(plugin_id)` after a successful install so the
 ## parent PluginManagerPanel can refresh its installed-list.
@@ -124,7 +124,7 @@ func _refresh() -> void:
 		_status.text = "No plugins available in the registry"
 		return
 
-	var target: String = _client.resolve_platform_target()
+	var target: String = MarketplaceClient.resolve_platform_target()
 	for entry in _plugins:
 		var available_for_this_platform: bool = entry.get("downloads", {}).has(target)
 		var label := "%s — v%s" % [entry.get("name", entry.get("id", "?")), entry.get("version", "?")]
@@ -141,12 +141,13 @@ func _on_list_selected(idx: int) -> void:
 	if idx < 0 or idx >= _plugins.size():
 		return
 	var entry: Dictionary = _plugins[idx]
-	var target: String = _client.resolve_platform_target()
+	var target: String = MarketplaceClient.resolve_platform_target()
 	var downloads: Dictionary = entry.get("downloads", {})
 	var installed: bool = _is_already_installed(entry.get("id", ""))
+	var job = _unfinished_job(entry.get("id", ""))
 
-	_install_btn.disabled = installed or not downloads.has(target)
-	_install_btn.text = "Already installed" if installed else "Install"
+	_install_btn.disabled = installed or job != null or not downloads.has(target)
+	_install_btn.text = "Installing…" if job != null else ("Already installed" if installed else "Install")
 
 	# Compose detail panel.
 	var lines := PackedStringArray()
@@ -183,13 +184,26 @@ func _on_install_pressed() -> void:
 		_refresh_btn.disabled = false
 		return
 
-	# Delegate the registration step to PluginManager so capability auto-grant,
+	# The queue registers through PluginManager so capability auto-grant,
 	# skill seeding, runtime setup, and directory creation all run — same code
 	# path as side-load. Direct PluginDB.install would skip those.
-	var result: Dictionary = await _client.install_from_registry_entry(entry, pm)
+	var job = pm.install_queue.request(entry)
+	job.finished.connect(_on_install_finished.bind(job, idx))
+
+
+func _on_install_finished(job, idx: int) -> void:
 	_refresh_btn.disabled = false
-	if result is Dictionary and result.get("ok") == true:
-		_status.text = "Installed %s successfully" % plugin_id
+	var plugin_id: String = job.plugin_id()
+	if job.outcome == job.OUTCOME_CANCELLED:
+		_install_btn.disabled = false
+		_status.text = "Install of %s cancelled" % plugin_id
+	elif job.outcome == job.OUTCOME_START_FAILED:
+		_status.text = "Installed %s %s, but it failed to start: %s" % [
+			plugin_id, str(job.result.get("version", "")), job.message]
+		plugin_installed.emit(plugin_id)
+		_on_list_selected(idx)
+	elif job.result.get("ok") == true:
+		_status.text = "Installed %s %s" % [plugin_id, str(job.result.get("version", ""))]
 		SingletonObject.create_toast_notification(
 			"Installed plugin: %s" % plugin_id,
 			ToastNotification.Type.INFO
@@ -200,19 +214,17 @@ func _on_install_pressed() -> void:
 		_on_list_selected(idx)
 	else:
 		_install_btn.disabled = false
-		var err: String = str(result.get("error", "unknown"))
-		# MarketplaceClient.format_install_error translates the raw
-		# {error, detail} dict into a user-readable multi-line message:
-		# friendly title, decoded HTTPRequest enum value or HTTP status
-		# code, the offending URL, and a targeted hint for the specific
-		# failure mode. Falls back to a generic "code: X" line for
-		# unknown error codes.
-		var pretty: String = MarketplaceClient.format_install_error(result)
-		_status.text = "Install failed: %s" % err
-		SingletonObject.ErrorDisplay(
-			"Plugin install failed: %s" % plugin_id,
-			pretty
-		)
+		_status.text = "Install failed: %s" % str(job.result.get("error", "unknown"))
+		SingletonObject.ErrorDisplay("Plugin install failed: %s" % plugin_id, job.message)
+
+
+## The queue's unfinished install of `plugin_id`, or null.
+func _unfinished_job(plugin_id: String):
+	var pm = SingletonObject.plugin_manager
+	if plugin_id.is_empty() or pm == null or pm.install_queue == null:
+		return null
+	var job = pm.install_queue.job_for(plugin_id)
+	return job if job != null and job.state != job.State.DONE else null
 
 
 func _is_already_installed(plugin_id: String) -> bool:

@@ -97,7 +97,7 @@ func fetch_registry(url: String = "") -> Dictionary:
 ## Return the canonical target string used in registry `downloads` keys,
 ## e.g. "linux-x86_64", "linux-arm64", "macos-universal", "windows-x86_64".
 ## Returns "" on an unsupported platform.
-func resolve_platform_target() -> String:
+static func resolve_platform_target() -> String:
 	var os_name := OS.get_name()
 	if os_name == "Linux" or os_name == "FreeBSD" or os_name == "BSD":
 		if OS.has_feature("arm64"):
