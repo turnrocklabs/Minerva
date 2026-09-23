@@ -221,6 +221,7 @@ var _unattended_deny_ids: Dictionary = {}
 func _ready() -> void:
 	if _db == null:
 		_db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
+	MarketplaceClient.sweep_staging(_db)
 	for internal_id in _db.register_internal():
 		_ensure_runtime(internal_id)
 	# Chat-provider registry (W1). Drop a plugin's entries when it stops/crashes

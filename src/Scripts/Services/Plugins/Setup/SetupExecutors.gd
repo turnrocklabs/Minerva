@@ -138,7 +138,7 @@ static func _run_and_check(
 	argv: Array[String], plugin_dir: String, timeout_s: int,
 	step_type: String, step_index: int, expected_artifact_rel: String
 ) -> Dictionary:
-	var run := _spawn(argv, timeout_s)
+	var run := spawn(argv, timeout_s)
 
 	if run.get("timed_out", false):
 		var stderr_msg: String = str(run.get("stderr", ""))
@@ -163,12 +163,14 @@ static func _run_and_check(
 
 ## Spawns argv[0] DIRECTLY with argv[1..] (no shell, no wrapper process,
 ## same code path on every OS), enforcing a hard timeout_s deadline (kills
-## the process on overrun). Returns {"exit_code": int, "stdout": String,
-## "stderr": String, "timed_out": bool}. exit_code is the -1 sentinel when
-## the process could not be spawned at all or was killed for a timeout.
-static func _spawn(argv: Array[String], timeout_s: int) -> Dictionary:
+## the process on overrun). `stop`, when valid, is polled with the pipes and
+## kills the process once it returns true. Returns {"exit_code": int,
+## "stdout": String, "stderr": String, "timed_out": bool, "stopped": bool}.
+## exit_code is the -1 sentinel when the process could not be spawned at all
+## or was killed for a timeout or a stop.
+static func spawn(argv: Array[String], timeout_s: int, stop: Callable = Callable()) -> Dictionary:
 	if argv.is_empty():
-		return {"exit_code": -1, "stdout": "", "stderr": "empty argv", "timed_out": false}
+		return {"exit_code": -1, "stdout": "", "stderr": "empty argv", "timed_out": false, "stopped": false}
 
 	var args := PackedStringArray()
 	for i in range(1, argv.size()):
@@ -178,6 +180,7 @@ static func _spawn(argv: Array[String], timeout_s: int) -> Dictionary:
 	if spawn.is_empty():
 		return {
 			"exit_code": -1, "stdout": "", "stderr": "failed to spawn '%s'" % argv[0], "timed_out": false,
+			"stopped": false,
 		}
 
 	var pid: int = spawn.get("pid", -1)
@@ -188,11 +191,16 @@ static func _spawn(argv: Array[String], timeout_s: int) -> Dictionary:
 
 	var deadline_ms: int = Time.get_ticks_msec() + maxi(timeout_s, 1) * 1000
 	var timed_out := false
+	var stopped := false
 	while OS.is_process_running(pid):
 		stdout_tail = _drain_available(stdio, stdout_tail, PIPE_DRAIN_CHUNKS_PER_POLL)
 		stderr_tail = _drain_available(stderr_pipe, stderr_tail, PIPE_DRAIN_CHUNKS_PER_POLL)
 		if Time.get_ticks_msec() > deadline_ms:
 			timed_out = true
+			OS.kill(pid)
+			break
+		if stop.is_valid() and stop.call():
+			stopped = true
 			OS.kill(pid)
 			break
 		OS.delay_msec(20)
@@ -204,9 +212,10 @@ static func _spawn(argv: Array[String], timeout_s: int) -> Dictionary:
 	stderr_tail = _drain_available(stderr_pipe, stderr_tail, PIPE_FINAL_DRAIN_CHUNKS)
 	var stdout_text := stdout_tail.get_string_from_utf8()
 	var stderr_text := stderr_tail.get_string_from_utf8()
-	var exit_code: int = -1 if timed_out else OS.get_process_exit_code(pid)
+	var exit_code: int = -1 if timed_out or stopped else OS.get_process_exit_code(pid)
 
-	return {"exit_code": exit_code, "stdout": stdout_text, "stderr": stderr_text, "timed_out": timed_out}
+	return {"exit_code": exit_code, "stdout": stdout_text, "stderr": stderr_text,
+		"timed_out": timed_out, "stopped": stopped}
 
 
 ## Consume all bytes currently available on a non-blocking child pipe and

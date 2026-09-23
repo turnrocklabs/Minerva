@@ -12,10 +12,22 @@ extends Node
 ##   `error` (short string code) and `detail` (free-form).
 
 const PluginDownloader := preload("res://Scripts/Services/Plugins/PluginDownloader.gd")
+const PluginArchive := preload("res://Scripts/Services/Plugins/PluginArchive.gd")
+const PluginInstallOperation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
 
 const REGISTRY_URL_DEFAULT := "https://raw.githubusercontent.com/imrans-lab/minerva-plugins/main/registry.json"
 
 const STAGING_DIR := "user://plugins/.staging"
+# Inside an operation's staging directory: the install being replaced, and
+# which plugin it belongs to.
+const PREVIOUS := "previous"
+const OP_RECORD := "op.json"
+# A running install rewrites its op record this often; the startup sweep
+# leaves alone any operation whose record is younger than OP_STALE_SECONDS,
+# because another Minerva process (a second instance, a test run) sharing
+# this user directory may still own it.
+const OP_HEARTBEAT_SECONDS := 10.0
+const OP_STALE_SECONDS := 120
 const PLUGINS_DIR := "user://plugins"
 
 # Defensive caps on the small registry JSON. Anything beyond a couple
@@ -105,12 +117,14 @@ func resolve_platform_target() -> String:
 ## High-level: install a plugin given a registry entry. Picks the right URL
 ## for the current platform, downloads + verifies + extracts, then registers
 ## via PluginManager.install_plugin (so capability auto-grant, skill seeding,
-## and runtime setup all run — same code path as side-load).
+## and runtime setup all run — same code path as side-load). The archive must
+## hold the entry's plugin id and version, built for this platform.
 ##
 ## Pass `installer` = SingletonObject.plugin_manager (or null to skip the
 ## registration step — useful for tests that only exercise the
-## download/extract/verify path).
-func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skills: bool = false) -> Dictionary:
+## download/extract/verify path). `op` is as for install_from_url.
+func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skills: bool = false,
+		op: PluginInstallOperation = null) -> Dictionary:
 	var target := resolve_platform_target()
 	if target.is_empty():
 		return _err("unsupported_platform", {"os": OS.get_name()})
@@ -118,7 +132,11 @@ func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skil
 	var url: String = downloads.get(target, "")
 	if url.is_empty():
 		return _err("no_binary_for_target", {"target": target, "plugin": entry.get("id")})
-	return await install_from_url(url, installer, auto_confirm_skills)
+	var expected := {}
+	for field in ["id", "version"]:
+		if not str(entry.get(field, "")).is_empty():
+			expected[field] = entry[field]
+	return await install_from_url(url, installer, auto_confirm_skills, op, expected)
 
 
 ## Download a plugin release tarball from `tarball_url`, extract, verify
@@ -133,105 +151,121 @@ func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skil
 ## headless callers MUST pass true — there is no user to dismiss the dialog, and
 ## awaiting it deadlocks the install (the install otherwise succeeds, then hangs).
 ##
+## `op` reports stage and progress and can cancel (see PluginInstallOperation).
+## `expected` holds the id and/or version the archive must declare.
+##
+## An installed plugin is replaced as a transaction: its directory is set
+## aside, the new one moved in, and only a successful registration commits.
+## Any failure puts the old files and the old DB record back. All scratch
+## files live in this operation's own staging directory, removed at the end;
+## sweep_staging() recovers from a crash in between.
+##
 ## Returns:
-##   {ok:true, plugin_id, manifest_path, definition?}
+##   {ok:true, plugin_id, version, manifest_path, definition?, manager_result?}
 ##   {ok:false, error, detail}
-func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool = false) -> Dictionary:
-	_ensure_dir(PLUGINS_DIR)
-	_ensure_dir(STAGING_DIR)
+func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool = false,
+		op: PluginInstallOperation = null, expected: Dictionary = {}) -> Dictionary:
+	if op == null:
+		op = PluginInstallOperation.new()
+	op.staging_dir = ProjectSettings.globalize_path(STAGING_DIR).path_join(
+		"op_%d_%d" % [Time.get_ticks_usec(), randi()])
+	DirAccess.make_dir_recursive_absolute(op.staging_dir)
+	_write_op_record(op)
+	var heartbeat := Timer.new()
+	heartbeat.wait_time = OP_HEARTBEAT_SECONDS
+	heartbeat.process_mode = Node.PROCESS_MODE_ALWAYS
+	heartbeat.timeout.connect(_write_op_record.bind(op))
+	add_child(heartbeat)
+	heartbeat.start()
+	var result := await _install(tarball_url, installer, auto_confirm_skills, op, expected)
+	heartbeat.queue_free()
+	# A previous install that could not be moved back stays for sweep_staging.
+	if result.get("ok", false) or not DirAccess.dir_exists_absolute(op.staging_dir.path_join(PREVIOUS)):
+		_rm_dir_recursive(op.staging_dir)
+	return result
 
-	# Stage the tarball to disk under a unique-ish name. We don't know the
-	# plugin id yet (it's inside manifest.json), so name by url hash.
-	var staging_file := "%s/dl_%d.tar.gz" % [STAGING_DIR, Time.get_ticks_msec()]
-	var staging_abs := ProjectSettings.globalize_path(staging_file)
 
+func _install(tarball_url: String, installer, auto_confirm_skills: bool,
+		op: PluginInstallOperation, expected: Dictionary) -> Dictionary:
 	# --- 1. Download ---
+	op.enter(PluginInstallOperation.STAGE_DOWNLOAD)
+	var archive := op.staging_dir.path_join("download.tar.gz")
 	var downloader := PluginDownloader.new()
 	downloader.stall_timeout_s = DOWNLOAD_STALL_TIMEOUT_SECONDS
 	downloader.max_bytes = DOWNLOAD_MAX_BODY_BYTES
-	var fetched: Dictionary = await downloader.download(tarball_url, staging_abs, get_tree())
+	downloader.op = op
+	var fetched: Dictionary = await downloader.download(tarball_url, archive, get_tree())
 	if not fetched.ok:
 		return fetched
 
-	# --- 2. Extract to a unique extraction dir ---
-	var extract_dir := "%s/extract_%d" % [STAGING_DIR, Time.get_ticks_msec()]
-	_ensure_dir(extract_dir)
-	var extract_abs := ProjectSettings.globalize_path(extract_dir)
+	# --- 2. Extract and verify SHA256SUMS off the main thread ---
+	var extract_abs := op.staging_dir.path_join("extract")
+	DirAccess.make_dir_recursive_absolute(extract_abs)
+	var unpacked: Dictionary = await PluginArchive.new().unpack(archive, extract_abs, op, get_tree())
+	if not unpacked.ok:
+		return unpacked
+	DirAccess.remove_absolute(archive)  # the extracted copy is all that is needed now
 
-	var tar_out := []
-	var tar_rc := OS.execute("tar", ["-xzf", staging_abs, "-C", extract_abs], tar_out, true)
-	if tar_rc != 0:
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
-		return _err("extract_failed", {"rc": tar_rc, "stderr": "\n".join(tar_out)})
-
-	# --- 3. Verify SHA256SUMS ---
-	var sums_file := "%s/SHA256SUMS" % extract_dir
-	if not FileAccess.file_exists(sums_file):
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
-		return _err("missing_sha256sums", {"extract_dir": extract_dir})
-
-	var sha_check := _verify_sha256sums(extract_dir)
-	if not sha_check.ok:
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
-		return _err("sha256_mismatch", sha_check.detail)
-
-	# --- 4. Read manifest to discover plugin_id ---
-	var manifest_path := "%s/manifest.json" % extract_dir
+	# --- 3. Read the manifest and check it is what was asked for ---
+	var manifest_path := extract_abs.path_join("manifest.json")
 	if not FileAccess.file_exists(manifest_path):
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
-		return _err("missing_manifest", {"extract_dir": extract_dir})
-
-	var manifest_text := FileAccess.get_file_as_string(manifest_path)
-	var manifest = JSON.parse_string(manifest_text)
+		return _err("missing_manifest", {"extract_dir": extract_abs})
+	var manifest = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
 	if not manifest is Dictionary or not manifest.has("id"):
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
 		return _err("bad_manifest", {"path": manifest_path})
 
-	# Guard before the destructive delete below: a hostile manifest id like
-	# "../.." would aim the delete outside user://plugins/, and registration-
-	# time validation (PluginDefinition) runs too late to protect it. Checked
-	# before the typed assignment — a non-String id would throw there and
-	# strand the staging files. "data" is reserved: user://plugins/data/ is
-	# the shared per-plugin data root, not a plugin slot.
+	# Guard before the destructive replace below: a hostile manifest id like
+	# "../.." would aim it outside user://plugins/, and registration-time
+	# validation (PluginDefinition) runs too late to protect it. Checked
+	# before the typed assignment — a non-String id would throw there. "data"
+	# is reserved: user://plugins/data/ is the shared per-plugin data root,
+	# not a plugin slot.
 	var raw_id: Variant = manifest["id"]
 	var PluginDefCls = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
 	if not (raw_id is String) or not PluginDefCls._is_valid_id(raw_id) or raw_id == "data":
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
 		return _err("bad_manifest", {"path": manifest_path, "reason": "invalid_id"})
 
-	# Host-owned identities are refused HERE, before the delete below, not by
-	# PluginDB.install() further downstream: by then user://plugins/<id>/ has
-	# already been wiped and repopulated from the tarball. Only the staging
-	# files this install created are cleaned up; anything already sitting at
-	# the reserved path is left untouched.
+	var identity := PluginArchive.check_identity(manifest, expected, resolve_platform_target(), extract_abs)
+	if not identity.is_empty():
+		return identity
+
+	# Host-owned identities are refused HERE, before the replace, not by
+	# PluginDB.install() further downstream: by then user://plugins/<id>/
+	# would already hold the tarball's files. Anything already sitting at the
+	# reserved path is left untouched.
 	if InternalPlugins.has(raw_id):
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
 		return _err("reserved_id", {"id": raw_id})
 
-	var plugin_id: String = manifest["id"]
+	var plugin_id: String = raw_id
+	op.plugin_id = plugin_id
 	if installer != null and installer.has_method("can_replace_plugin_files"):
 		var replace_check: Dictionary = installer.can_replace_plugin_files(plugin_id)
 		if replace_check.has("error"):
-			_rm_file(staging_file)
-			_rm_dir_recursive(extract_dir)
 			return _err("restart_required", replace_check)
 
-	# --- 5. Move to canonical user://plugins/<id>/ ---
+	# Cancellation is honored up to here; replacing and registering either
+	# complete or roll back.
+	if op.cancelled:
+		return _err("cancelled", {})
+	op.enter(PluginInstallOperation.STAGE_REGISTER)
+
+	# --- 4. Replace user://plugins/<id>/, keeping the old copy until registered ---
 	var final_dir := "%s/%s" % [PLUGINS_DIR, plugin_id]
-	if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(final_dir)):
-		_rm_dir_recursive(final_dir)
-	var rename_err := DirAccess.rename_absolute(extract_abs, ProjectSettings.globalize_path(final_dir))
-	if rename_err != OK:
-		_rm_file(staging_file)
-		_rm_dir_recursive(extract_dir)
-		return _err("install_move_failed", {"godot_err": rename_err})
+	var final_abs := ProjectSettings.globalize_path(final_dir)
+	var previous_abs := op.staging_dir.path_join(PREVIOUS)
+	var db = _installer_db(installer)
+	var previous_def = db.get_by_id(plugin_id) if db != null else null
+	var had_previous := DirAccess.dir_exists_absolute(final_abs)
+	_ensure_dir(PLUGINS_DIR)
+	if had_previous:
+		_write_op_record(op)  # names the plugin before its files are set aside
+		var aside_err := DirAccess.rename_absolute(final_abs, previous_abs)
+		if aside_err != OK:
+			return _err("install_move_failed", {"godot_err": aside_err})
+	var move_err := DirAccess.rename_absolute(extract_abs, final_abs)
+	if move_err != OK:
+		_roll_back(plugin_id, had_previous, previous_abs, db, previous_def)
+		return _err("install_move_failed", {"godot_err": move_err})
 
 	# Make the binary executable (extracted files lose +x bit on some
 	# filesystems / Windows). manifest.backend.entrypoint is relative to
@@ -240,21 +274,25 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		var entrypoint_rel: String = manifest.backend.entrypoint
 		if entrypoint_rel.begins_with("./"):
 			entrypoint_rel = entrypoint_rel.substr(2)
-		var entrypoint_abs := "%s/%s" % [ProjectSettings.globalize_path(final_dir), entrypoint_rel]
+		var entrypoint_abs := final_abs.path_join(entrypoint_rel)
 		if FileAccess.file_exists(entrypoint_abs):
 			_chmod_executable(entrypoint_abs)
 
-	# --- 6. Cleanup staging ---
-	_rm_file(staging_file)
+	# --- 5. Register; a failure restores the previous install ---
+	var registered := await _register(plugin_id, "%s/manifest.json" % final_dir, installer, auto_confirm_skills)
+	if not registered.get("ok", false):
+		_roll_back(plugin_id, had_previous, previous_abs, db, previous_def)
+		return registered
+	registered["version"] = str(manifest.get("version", ""))
+	return registered
 
-	# --- 7. Register via installer (duck-typed) ---
-	# `installer` may be:
-	#   - null              → stop after staging; caller registers
-	#   - PluginManager     → full install flow (capability grants, runtime,
-	#                         skill seeding, directory creation)
-	#   - PluginDB          → minimal registration (used by headless tests)
-	var final_manifest := "%s/manifest.json" % final_dir
 
+## Register the manifest now at `final_manifest` through `installer`:
+##   - null              → stop after staging; caller registers
+##   - PluginManager     → full install flow (capability grants, runtime,
+##                         skill seeding, directory creation)
+##   - PluginDB          → minimal registration (used by headless tests)
+func _register(plugin_id: String, final_manifest: String, installer, auto_confirm_skills: bool) -> Dictionary:
 	if installer == null:
 		return {
 			"ok": true,
@@ -291,8 +329,7 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		# PluginDB path — handle install vs update_definition.
 		var definition
 		if installer.has_method("has_plugin") and installer.has_plugin(plugin_id):
-			var PluginDefinitionCls = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-			var new_def = PluginDefinitionCls.from_manifest(final_manifest)
+			var new_def = LaneCls.from_manifest(final_manifest)
 			if new_def == null:
 				return _err("update_parse_failed", {"path": final_manifest})
 			new_def.install_lane = lane
@@ -312,6 +349,80 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		}
 
 	return _err("invalid_installer", {"got": typeof(installer)})
+
+
+## Undo a failed replace: drop the new files, move the previous install back,
+## and put the DB record back the way it was before registration.
+func _roll_back(plugin_id: String, had_previous: bool, previous_abs: String, db, previous_def) -> void:
+	var final_abs := ProjectSettings.globalize_path("%s/%s" % [PLUGINS_DIR, plugin_id])
+	_rm_dir_recursive(final_abs)
+	if had_previous:
+		var err := DirAccess.rename_absolute(previous_abs, final_abs)
+		if err != OK:
+			push_error("[MarketplaceClient] could not restore %s (error %d); kept at %s" % [final_abs, err, previous_abs])
+	if db == null:
+		return
+	if previous_def != null:
+		if db.get_by_id(plugin_id) != previous_def:
+			db.update_definition(previous_def)
+	elif db.has_plugin(plugin_id):
+		db.remove(plugin_id)
+
+
+## The PluginDB behind `installer` (a PluginManager or a PluginDB), or null.
+static func _installer_db(installer):
+	if installer == null:
+		return null
+	if installer.has_method("get_db"):
+		return installer.get_db()
+	return installer if installer.has_method("get_by_id") else null
+
+
+## Rewrites the operation's record: which plugin a set-aside `previous`
+## belongs to, and (by its modified time) that the operation is alive.
+static func _write_op_record(op: PluginInstallOperation) -> void:
+	var f := FileAccess.open(op.staging_dir.path_join(OP_RECORD), FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"id": op.plugin_id}))
+
+
+## Run once at startup, before this process begins any install. An operation
+## whose record has gone stale belongs to an install that never finished: if
+## it stopped between setting the old install aside and committing, it still
+## has `previous`, which is moved back while the DB records that version.
+## Stale operations are then deleted; live ones are left to their owner.
+static func sweep_staging(db) -> void:
+	var root_abs := ProjectSettings.globalize_path(STAGING_DIR)
+	var root := DirAccess.open(root_abs)
+	if root == null:
+		return
+	root.include_hidden = true
+	var now := Time.get_unix_time_from_system()
+	for name in root.get_directories():
+		var record := root_abs.path_join(name).path_join(OP_RECORD)
+		if FileAccess.file_exists(record) and now - FileAccess.get_modified_time(record) < OP_STALE_SECONDS:
+			continue
+		if not _restore_uncommitted(root_abs.path_join(name), db):
+			_rm_dir_recursive(root_abs.path_join(name))
+	for name in root.get_files():
+		DirAccess.remove_absolute(root_abs.path_join(name))
+
+
+## Moves an operation's `previous` back when the DB still records its version.
+## Returns true when the directory must be kept because that move failed.
+static func _restore_uncommitted(op_abs: String, db) -> bool:
+	var previous_abs := op_abs.path_join(PREVIOUS)
+	var record = JSON.parse_string(FileAccess.get_file_as_string(op_abs.path_join(OP_RECORD)))
+	if db == null or not DirAccess.dir_exists_absolute(previous_abs) or not record is Dictionary:
+		return false
+	var plugin_id := str(record.get("id", ""))
+	var def = db.get_by_id(plugin_id)
+	var previous = JSON.parse_string(FileAccess.get_file_as_string(previous_abs.path_join("manifest.json")))
+	if def == null or not previous is Dictionary or str(previous.get("version", "")) != str(def.version):
+		return false
+	var final_abs := ProjectSettings.globalize_path("%s/%s" % [PLUGINS_DIR, plugin_id])
+	_rm_dir_recursive(final_abs)
+	return DirAccess.rename_absolute(previous_abs, final_abs) != OK
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +575,16 @@ static func format_install_error(result: Dictionary) -> String:
 		"install_move_failed":
 			title = "Could not move the extracted plugin into place"
 			cause = "Godot returned error %d while renaming the staging directory." % int(detail_dict.get("godot_err", -1))
-			hint = "Likely a permission or disk-full issue under user://plugins/."
+			hint = "Likely a permission or disk-full issue under user://plugins/. Any previous version was put back, or will be on a later start of Minerva."
+		"identity_mismatch":
+			var field := str(detail_dict.get("field", "?"))
+			title = "The downloaded plugin is not the one requested"
+			cause = "Its %s is %s, but %s was expected." % [field, str(detail_dict.get("actual", "?")),
+				str(detail_dict.get("expected", "?"))]
+			hint = "Nothing was changed. This is a packaging or registry error; report it to the plugin author."
+		"cancelled":
+			title = "Install cancelled"
+			cause = "The install was cancelled before anything was changed."
 		"manager_install_failed":
 			title = "PluginManager refused the install"
 			cause = str(detail_dict.get("error", JSON.stringify(detail_dict)))
@@ -500,67 +620,13 @@ static func format_install_error(result: Dictionary) -> String:
 	return "\n".join(lines)
 
 
-## Parse SHA256SUMS and verify every line's hash matches the on-disk file.
-## Returns {ok: bool, detail: Dictionary}.
-func _verify_sha256sums(extract_dir: String) -> Dictionary:
-	var sums_file := "%s/SHA256SUMS" % extract_dir
-	var content := FileAccess.get_file_as_string(sums_file)
-	if content.is_empty():
-		return {"ok": false, "detail": {"reason": "empty_sums_file"}}
-	for raw_line in content.split("\n"):
-		var line := raw_line.strip_edges()
-		if line.is_empty():
-			continue
-		# sha256sum format: "<64-char hex>  <filename>"
-		var parts := line.split("  ", false, 1)
-		if parts.size() != 2:
-			# Some shasum variants emit "<hex> *<filename>"; accept that too.
-			parts = line.split(" *", false, 1)
-		if parts.size() != 2:
-			return {"ok": false, "detail": {"reason": "unparseable_line", "line": line}}
-		var expected_hex: String = parts[0].strip_edges()
-		var filename: String = parts[1].strip_edges()
-		var file_path := "%s/%s" % [extract_dir, filename]
-		if not FileAccess.file_exists(file_path):
-			return {"ok": false, "detail": {"reason": "missing_file", "file": filename}}
-		var actual_hex := _sha256_hex(file_path)
-		if actual_hex.to_lower() != expected_hex.to_lower():
-			return {"ok": false, "detail": {
-				"reason": "hash_mismatch",
-				"file": filename,
-				"expected": expected_hex,
-				"actual": actual_hex,
-			}}
-	return {"ok": true, "detail": {}}
-
-
-func _sha256_hex(file_path: String) -> String:
-	var ctx := HashingContext.new()
-	ctx.start(HashingContext.HASH_SHA256)
-	var f := FileAccess.open(file_path, FileAccess.READ)
-	if f == null:
-		return ""
-	while not f.eof_reached():
-		var chunk := f.get_buffer(64 * 1024)
-		if chunk.size() > 0:
-			ctx.update(chunk)
-	f.close()
-	return ctx.finish().hex_encode()
-
-
 func _ensure_dir(rel_path: String) -> void:
 	var abs_path := ProjectSettings.globalize_path(rel_path)
 	if not DirAccess.dir_exists_absolute(abs_path):
 		DirAccess.make_dir_recursive_absolute(abs_path)
 
 
-func _rm_file(rel_path: String) -> void:
-	var abs_path := ProjectSettings.globalize_path(rel_path)
-	if FileAccess.file_exists(abs_path):
-		DirAccess.remove_absolute(abs_path)
-
-
-func _rm_dir_recursive(rel_path: String) -> void:
+static func _rm_dir_recursive(rel_path: String) -> void:
 	var abs_path := ProjectSettings.globalize_path(rel_path)
 	# If the path itself is a symlink (e.g. a side-loaded dev checkout linked
 	# into user://plugins/), unlink it — DirAccess.open would resolve through

@@ -17,6 +17,8 @@ extends RefCounted
 ## Results use MarketplaceClient's shape: {ok:true, bytes} or
 ## {ok:false, error, detail}.
 
+const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
+
 const MAX_REDIRECTS := 10
 const MAX_FRUITLESS_ATTEMPTS := 3
 const FRAME_BUDGET_USEC := 4000
@@ -27,6 +29,8 @@ var stall_timeout_s: float = 30.0
 var max_bytes: int = 0  # 0 = no limit
 var bytes_received: int = 0
 var bytes_total: int = -1  # -1 until the server states a length
+## A PluginInstallOperation to report bytes to and to stop on cancel; optional.
+var op: Operation = null
 
 
 func download(url: String, dest_path: String, tree: SceneTree) -> Dictionary:
@@ -130,6 +134,11 @@ func _pump(client: HTTPClient, url: String, path: String, file: FileAccess, tree
 				if answered:
 					return _finished(url, status)
 				return _result("download_interrupted", {"url": url, "bytes": bytes_received, "total": bytes_total}, true)
+		if op != null:
+			op.done = bytes_received
+			op.total = bytes_total
+			if op.cancelled:
+				return _result("cancelled", {})
 		if Time.get_ticks_msec() - last_progress > stall_timeout_s * 1000.0:
 			return _result("download_stalled", {"url": url, "seconds": stall_timeout_s, "bytes": bytes_received, "total": bytes_total}, true)
 		# The body may have ended during the drain; judge that without a frame's wait.
