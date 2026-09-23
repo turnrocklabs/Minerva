@@ -1,6 +1,9 @@
 extends SceneTree
 ## Real native pipe ownership. This uses the host Python executable only as a
 ## deterministic child that can fill stdin and emit output; no network access.
+## The lookup case always starts Python by its bare name, so PATH is searched;
+## PYTHON, when set, picks the interpreter for the others. An explicit path,
+## spaces included, is started as given.
 
 var passed := 0
 var failed := 0
@@ -20,21 +23,44 @@ func _run() -> void:
 		printerr("SubProcess GDExtension is required")
 		quit(2)
 		return
+	var bare_python := "python" if OS.get_name() == "Windows" else "python3"
 	var python := OS.get_environment("PYTHON")
 	if python.is_empty():
-		python = "python3"
+		python = bare_python
 	var process = ClassDB.instantiate("SubProcess")
 	root.add_child(process)
 	check("missing executable fails synchronously",
 		not process.start("minerva-subprocess-command-that-does-not-exist", PackedStringArray()))
 	check("failed spawn does not publish a running child", not process.is_running())
-	check("PATH lookup and argv survive native spawn", process.start(python,
+	check("PATH lookup and argv survive native spawn", process.start(bare_python,
 		PackedStringArray(["-c", "import sys; print(sys.argv[1])", "argument with spaces"])))
 	var argv_until := Time.get_ticks_msec() + 3000
 	while not process.has_output() and Time.get_ticks_msec() < argv_until:
 		await create_timer(0.01).timeout
 	check("spawned argv is byte-preserved", process.read_line() == "argument with spaces")
 	process.stop()
+	# The macOS Godot binary lives inside its app bundle, so it is not copied.
+	if OS.get_name() != "macOS":
+		var spaced_dir := OS.get_user_data_dir().path_join("sub process path")
+		DirAccess.make_dir_recursive_absolute(spaced_dir)
+		var godot := OS.get_executable_path()
+		var copy := spaced_dir.path_join("godot copy" + ("." + godot.get_extension() if godot.get_extension() != "" else ""))
+		var staged := DirAccess.copy_absolute(godot, copy) == OK
+		if staged and OS.get_name() != "Windows":
+			staged = FileAccess.set_unix_permissions(copy, 493) == OK  # rwxr-xr-x
+		check("a copy of the engine is staged under a path with spaces", staged)
+		check("an explicit path with spaces starts as given, with its arguments",
+			staged and process.start(copy, PackedStringArray(["--headless", "--version"])))
+		var version_until := Time.get_ticks_msec() + 10000
+		while not process.has_output() and Time.get_ticks_msec() < version_until:
+			await create_timer(0.05).timeout
+		check("that child ran: it printed the engine version", process.read_line().begins_with("4."))
+		process.stop()
+		check("an explicit path that does not exist is refused",
+			not process.start(spaced_dir.path_join("no such program"), PackedStringArray()))
+		check("and publishes no running child", not process.is_running())
+		DirAccess.remove_absolute(copy)
+		DirAccess.remove_absolute(spaced_dir)
 	check("blocking-child fixture starts", process.start(python,
 		PackedStringArray(["-c", "import time; time.sleep(60)"])))
 	check("large write is admitted without blocking the Godot caller",

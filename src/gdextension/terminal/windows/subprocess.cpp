@@ -152,6 +152,13 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
     for (auto &c : app)
         if (c == L'/')
             c = L'\\';
+    // A bare name ("python", "node") names no file, and lpApplicationName is
+    // never searched for. For a bare name, lpApplicationName is left null so
+    // CreateProcessW takes the quoted first token of the command line and
+    // looks for it: the parent's directory, the current directory, the system
+    // directories, then PATH, with ".exe" appended when it has no extension.
+    // A path (a separator or drive colon) is launched exactly as given.
+    const bool bare = app.find_first_of(L"\\:") == std::wstring::npos;
 
     std::wstring cmdline = quote_arg(app);
     for (int i = 0; i < args.size(); i++) {
@@ -171,7 +178,7 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
     // lpCommandLine must be mutable.
     std::wstring cmdbuf = cmdline;
     BOOL ok = CreateProcessW(
-        app.c_str(),
+        bare ? nullptr : app.c_str(),
         &cmdbuf[0],
         nullptr,            // process security
         nullptr,            // thread security
