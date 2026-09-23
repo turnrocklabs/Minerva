@@ -173,6 +173,9 @@ class LauncherTest(unittest.TestCase):
             f"{run_dir}/natives.json:/run/minerva-natives.json:ro",
             f"{state}/sessions/alpha/home:/agent-home"] + [f"{c}:{c}" for c in clones]))
         self.assertIn("MINERVA_NATIVES_MANIFEST=/run/minerva-natives.json", dev)
+        sys.path.insert(0, str(AGENT))
+        import agent
+        self.assertIn(f"MINERVA_AGENT_IMAGE={agent.image_tag()}", dev)       # the session can name its image
         self.assertEqual(dev[-4:], ["dev", "/opt/minerva-agent/minerva-session", "claude", "start"])
         self.assertEqual(dev[dev.index("--workdir") + 1], str(clone))
         for argv in (gateway, dev):
@@ -583,9 +586,10 @@ class LauncherTest(unittest.TestCase):
 class StaticTest(unittest.TestCase):
     def test_image_pins_match_the_test_image(self):
         def pins(path):
-            return dict(re.findall(r"(?m)^ARG ((?:GODOT|NODE)_\w+)=(\S+)$", path.read_text()))
+            return dict(re.findall(r"(?m)^ARG ((?:GODOT|NODE|GO)_\w+)=(\S+)$", path.read_text()))
         ours, theirs = pins(AGENT / "Dockerfile"), pins(ROOT / "scripts/container-test/Dockerfile")
-        self.assertEqual(set(ours), {"GODOT_VERSION", "GODOT_SHA512", "NODE_VERSION", "NODE_SHA256"})
+        self.assertEqual(set(ours), {"GODOT_VERSION", "GODOT_SHA512", "NODE_VERSION", "NODE_SHA256",
+                                     "GO_VERSION", "GO_SHA256"})
         self.assertEqual(ours, theirs)
 
     def test_image_has_the_test_images_runtime_packages(self):
@@ -616,7 +620,17 @@ class StaticTest(unittest.TestCase):
         stub = scratch / "claude"
         stub.write_text(f"#!/bin/sh\necho \"$*\" >> {scratch}/calls\n")
         stub.chmod(0o755)
-        env = {**os.environ, "PATH": f"{scratch}:{os.environ['PATH']}", "MINERVA_AGENT_DIR": str(AGENT)}
+        # The session shell puts the upgrade tools dir first on PATH; inside an
+        # agent session the real one holds a real claude, so it is an empty
+        # scratch dir here and the stub is the only claude ahead of the rest.
+        env = {**os.environ, "PATH": f"{scratch}:{os.environ['PATH']}", "MINERVA_AGENT_DIR": str(AGENT),
+               "MINERVA_AGENT_TOOLS": str(scratch / "tools"), "HOME": str(scratch), "MINERVA_AGENT_FIRST": ""}
+        # Resolved through the same rcfile before anything runs: were any other
+        # claude to win, the test stops here instead of launching it.
+        found = subprocess.run(["bash", "--rcfile", str(AGENT / "agent-bashrc"), "-i", "-c", "type -P claude"],
+                               env=env, cwd=scratch, stdin=subprocess.DEVNULL, capture_output=True,
+                               text=True, timeout=20)
+        self.assertEqual(found.stdout.strip(), str(stub), found.stderr)
         for first in ("claude --resume", "touch INJECTED", "claude; touch INJECTED"):
             subprocess.run(["bash", "--rcfile", str(AGENT / "agent-bashrc"), "-i", "-c", "true"],
                            env={**env, "MINERVA_AGENT_FIRST": first}, cwd=scratch,

@@ -446,6 +446,9 @@ def cmd_start(args):
         workdir = work_root() / args.task / config["start_in"]
         started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", str(workdir),
                               "-e", f"MINERVA_AGENT_SESSION={name}",
+                              # Which image this session runs, so it can tell
+                              # an image older than its checkout's recipe.
+                              "-e", f"MINERVA_AGENT_IMAGE={image_tag()}",
                               "-e", f"MINERVA_NATIVES_MANIFEST={NATIVES_MANIFEST}", *mounts,
                               "dev", "/opt/minerva-agent/minerva-session", args.harness, args.mode),
                       stdout=subprocess.DEVNULL)

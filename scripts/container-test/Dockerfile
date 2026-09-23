@@ -1,5 +1,6 @@
 # Test image for scripts/container-test.sh: the runtime the functional-tests CI
-# job installs (Ubuntu 24.04 = ubuntu-latest), plus Xvfb for the app smoke.
+# job installs (Ubuntu 24.04 = ubuntu-latest, Godot, Node, Go), plus Xvfb for
+# the app smoke.
 # Holds tools only — never source, profiles or build output; those arrive per
 # run as read-only mounts.
 FROM ubuntu:24.04
@@ -8,6 +9,11 @@ ARG GODOT_VERSION=4.6.2
 ARG GODOT_SHA512=b6e4d5a716085e9649905be2afe77f723f97853544fb33392ce3d32594c730a95d9eb4d1042ed51508904c9e1d996bd36b7c7a2bf4f93f5b1885e98d81b792e7
 ARG NODE_VERSION=22.23.2
 ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
+# Go for plugin backends and Go-backed tests, as CI's setup-go '1.26' resolves
+# it; GOTOOLCHAIN=local makes a module that needs a newer Go fail rather than
+# download one.
+ARG GO_VERSION=1.26.8
+ARG GO_SHA256=d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,6 +36,11 @@ RUN curl -fsSL -o /tmp/node.tar.xz \
     && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm /tmp/node.tar.xz
+
+RUN curl -fsSL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+    && echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/go.tar.gz -C /usr/local && rm /tmp/go.tar.gz
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local
 
 # Runs as the invoking host uid (docker run --user), which has no passwd entry;
 # give it a writable HOME and work root inside the container layer.

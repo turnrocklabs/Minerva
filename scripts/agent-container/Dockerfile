@@ -4,7 +4,7 @@
 # mounts chosen by agent.py. It is built on the pinned builder image
 # (scripts/container-build/Dockerfile), so an agent rebuilds natives with the
 # toolchains build.py uses, and adds the test image's runtime: Godot, Node,
-# the X/GL runtime libraries and Xvfb. Pins and runtime packages below are
+# Go, the X/GL runtime libraries and Xvfb. Pins and runtime packages below are
 # kept equal to scripts/container-test/Dockerfile (tests/test_agent_launcher.py
 # checks).
 ARG BUILDER_IMAGE
@@ -14,6 +14,11 @@ ARG GODOT_VERSION=4.6.2
 ARG GODOT_SHA512=b6e4d5a716085e9649905be2afe77f723f97853544fb33392ce3d32594c730a95d9eb4d1042ed51508904c9e1d996bd36b7c7a2bf4f93f5b1885e98d81b792e7
 ARG NODE_VERSION=22.23.2
 ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
+# Go for plugin backends and Go-backed tests, as CI's setup-go '1.26' resolves
+# it; GOTOOLCHAIN=local makes a module that needs a newer Go fail rather than
+# download one.
+ARG GO_VERSION=1.26.8
+ARG GO_SHA256=d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b
 # Harness CLIs at exact versions (npm has no checksum pin; the exact version
 # plus the registry's integrity check is the pin). A running session can move
 # past these with agent-upgrade.
@@ -41,6 +46,11 @@ RUN curl -fsSL -o /tmp/node.tar.xz \
     && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm /tmp/node.tar.xz
+
+RUN curl -fsSL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+    && echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/go.tar.gz -C /usr/local && rm /tmp/go.tar.gz
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local
 
 RUN npm install -g --no-fund --no-audit \
         "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}" \

@@ -40,7 +40,9 @@ migrate with `--start-in ccsandbox`).
 
 The image is built on the native builder image (`scripts/container-build/Dockerfile`),
 so a session has the same pinned toolchains (Rust, Zig, SCons, CMake) plus
-Godot, the X/GL runtime libraries and Xvfb. From the Minerva clone:
+Godot, Node, Go (the version CI's `setup-go '1.26'` resolves, with
+`GOTOOLCHAIN=local`, so a module needing a newer Go fails instead of
+downloading one), the X/GL runtime libraries and Xvfb. From the Minerva clone:
 
 ```bash
 scripts/dev-test.sh test/test_markdownlabel_tables.gd        # headless
@@ -55,7 +57,30 @@ build, otherwise a local build from the working tree. It then imports the
 project twice and runs the tests through `run-functional-tests.sh`. Anything
 stale, unverifiable or failing stops the run with the reason. `agent.py
 start` hands the session the builder image identity and the cache through a
-read-only `natives.json`; cargo keeps its registry in `/agent-home/cargo`.
+read-only `natives.json`; cargo keeps its registry in `/agent-home/cargo`,
+Go its module cache in `/agent-home/go`.
+
+### Which image a session runs
+
+The image tag is a hash of everything that goes into it (`agent.py`'s
+`image_tag`), so changing the recipe or the files it copies gives a new tag,
+and `agent.py build` builds it. A running session keeps the image it was
+started on. Inside it, `echo $MINERVA_AGENT_IMAGE` names that image. On the
+host, `python3 -c 'import sys; sys.path.insert(0, "scripts/agent-container");
+import agent; print(agent.image_tag())'` names the one the checkout's recipe
+builds. If they differ, or the variable is empty (an image from before it was
+set), the session is on an older image. Recreate the session to move it, at a
+coordinated checkpoint. Quick checks from the session shell:
+
+```bash
+echo "$MINERVA_AGENT_IMAGE"                  # empty: predates this check
+go version && go env GOTOOLCHAIN             # go1.26.x, local; missing: predates Go
+python3 -c 'import json; m = json.load(open("/run/minerva-natives.json")); print(m["builder_image"], m["cache"])'
+```
+
+The last line is the builder image (tag and id) and native cache the session
+was handed (see above). `dev-natives.py` reports, per component, whether it used that
+cache or built locally.
 
 ## Upgrading Claude Code or Codex in a session
 
