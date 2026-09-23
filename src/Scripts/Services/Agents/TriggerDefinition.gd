@@ -36,7 +36,10 @@ var schedule_day_of_month: int = 1
 var schedule_month: int = 1
 ## ISO datetime of last successful fire (persisted for missed-fire detection).
 var last_fired_at: String = ""
-## If true, fire on next startup if a scheduled time was missed.
+## If true, a scheduled time missed while Minerva was closed fires once when
+## the project loads. It is catch-up, not expiry: while running, a TIME fire
+## that could not start (agent busy, destination unavailable) is tried again
+## at each minute check until it starts.
 var fire_if_missed: bool = true
 ## Docket project name to poll (e.g., "cad", "minerva")
 var docket_project: String = ""
@@ -65,8 +68,12 @@ var plugin_id: String = ""
 ## For PLUGIN_EVENT triggers: the event_name to match (empty = any event)
 var plugin_event_name: String = ""
 ## For PLUGIN_EVENT triggers: max consecutive fires before pausing (0 = unlimited).
-## Counter resets when a human message lands in the target chat.
+## Counter resets when a human message lands in the target agent's chat, and
+## whenever the trigger is re-enabled (the only reset with a destination).
 var consecutive_fire_limit: int = 5
+## An existing harness session to deliver to instead of the agent `agent_id`
+## (null = the agent). Such a trigger never spawns or messages an agent.
+var destination: TriggerDestination = null
 
 
 func _init(p_id: String = ""):
@@ -74,6 +81,22 @@ func _init(p_id: String = ""):
 		id = AgentDefinition._generate_id()
 	else:
 		id = p_id
+
+
+## Why this trigger has no valid target, or "": it needs an agent or a
+## destination, and a destination rules out batching and chaining (both wait
+## for an agent's turn to end) and needs a message unless its source writes
+## one (docket events, and the route hint of an about-to-execute hook).
+func target_problem() -> String:
+	if destination == null:
+		return "" if not agent_id.is_empty() else "Choose an agent, or a session to deliver to"
+	if not batch_params.is_empty() or not chain_trigger_id.is_empty():
+		return "A trigger that delivers to a session cannot batch or chain"
+	var writes_own_line: bool = trigger_type == TriggerType.DOCKET_POLL or (trigger_type == TriggerType.EVENT
+		and event_type == EventType.MCP_TOOL_ABOUT_TO_EXECUTE)
+	if initial_message.strip_edges().is_empty() and not writes_own_line:
+		return "A trigger that delivers to a session needs a message"
+	return ""
 
 
 func serialize() -> Dictionary:
@@ -112,6 +135,7 @@ func serialize() -> Dictionary:
 		"plugin_id": plugin_id,
 		"plugin_event_name": plugin_event_name,
 		"consecutive_fire_limit": consecutive_fire_limit,
+		"destination": destination.serialize() if destination != null else {},
 	}
 	return data
 
@@ -157,6 +181,7 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	trig.plugin_id = data.get("plugin_id", "")
 	trig.plugin_event_name = data.get("plugin_event_name", "")
 	trig.consecutive_fire_limit = int(data.get("consecutive_fire_limit", 5))
+	trig.destination = TriggerDestination.deserialize(data.get("destination", {}))
 	# Backward compatibility: older wall-clock schedules were stored as TIMER + non-INTERVAL schedule.
 	if trig.trigger_type == TriggerType.TIMER and trig.schedule_type != ScheduleType.INTERVAL:
 		trig.trigger_type = TriggerType.TIME

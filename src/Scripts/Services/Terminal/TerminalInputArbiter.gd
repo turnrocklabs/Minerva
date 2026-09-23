@@ -42,6 +42,8 @@ const OUTCOME_REFUSED_BUSY := "refused_transaction_in_flight"
 const OUTCOME_REFUSED_DEAD := "refused_session_not_writable"
 const OUTCOME_REFUSED_EMPTY := "refused_empty_body"
 const OUTCOME_REFUSED_COMPOSER := "refused_composer_not_empty"
+const OUTCOME_REFUSED_PROCESS := "refused_expect_process"
+const OUTCOME_REFUSED_WITHDRAWN := "refused_write_withdrawn"
 
 # How the expect_harness guard was resolved, as reported back to the caller.
 const HARNESS_NOT_REQUESTED := "not_requested"
@@ -52,6 +54,29 @@ const HARNESS_SKIPPED := "skipped"
 const COMPOSER_NOT_REQUESTED := "not_requested"
 const COMPOSER_CHECKED := "checked"
 const COMPOSER_SKIPPED := "skipped"
+
+## Write tickets: a caller that may still withdraw a write it has handed on
+## (a relay round trip, say) issues one, passes it with the write, and
+## revokes it to withdraw. A write carrying a ticket that is revoked or was
+## never issued is refused. Tickets live for this Minerva process.
+static var _tickets: Dictionary = {}
+static var _ticket_serial: int = 0
+
+
+static func issue_ticket() -> String:
+	_ticket_serial += 1
+	var ticket: String = "wt-%d" % _ticket_serial
+	_tickets[ticket] = true
+	return ticket
+
+
+static func revoke_ticket(ticket: String) -> void:
+	_tickets.erase(ticket)
+
+
+static func ticket_valid(ticket: String) -> bool:
+	return _tickets.has(ticket)
+
 
 ## The phrase every composer refusal contains. A caller that only sees the
 ## message — the relay hands the host's error back as prose — tells this hold
@@ -261,11 +286,21 @@ func _is_active(txn_id: int) -> bool:
 ##                             text a person typed and has not submitted (see
 ##                             _composer_verdict); SKIPPED when no marker is
 ##                             known for whatever is in front
+##   expect_process          — refuse unless the foreground process group is
+##                             this one (the harness session meant, not another
+##                             of the same kind); refused too when unreadable
+##   write_ticket            — refuse unless this ticket is still issued; not
+##                             held (held:false, and its message avoids the
+##                             hold phrase callers match): it stays withdrawn
 ## Returns {success:true, harness_check, composer_check} when the write may go
 ## ahead, or a refusal {success:false, held:true, outcome, error} — carrying
 ## the checks that had already run when it refused, because a write stopped by
 ## an earlier guard never reached the later ones.
 func check_guards(options: Dictionary) -> Dictionary:
+	var ticket: String = str(options.get("write_ticket", ""))
+	if not ticket.is_empty() and not ticket_valid(ticket):
+		return {"success": false, "held": false, "outcome": OUTCOME_REFUSED_WITHDRAWN,
+			"error": "the sender withdrew this write before it could be made, so it was not made"}
 	var typed_window: int = int(options.get("unless_typed_within_ms", 0))
 	if typed_window > 0:
 		var stamp: int = int(_session.last_input_ticks_ms)
@@ -290,6 +325,17 @@ func check_guards(options: Dictionary) -> Dictionary:
 				refusal["harness_check"] = HARNESS_CHECKED
 				return refusal
 			harness_check = HARNESS_CHECKED
+
+	var expected_process: int = int(options.get("expect_process", 0))
+	if expected_process > 0:
+		var live_process: int = int(_session.get_foreground_process().get("pid", 0)) \
+			if _session.foreground_supported() else 0
+		if live_process != expected_process:
+			var replaced: Dictionary = _refusal(OUTCOME_REFUSED_PROCESS,
+				"the foreground process of this terminal is %s, not the expected one; nothing was written" % (
+					"unreadable" if live_process == 0 else "another"))
+			replaced["harness_check"] = harness_check
+			return replaced
 
 	var composer_check: String = COMPOSER_NOT_REQUESTED
 	if bool(options.get("refuse_if_composer_holds_text", false)):

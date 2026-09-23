@@ -361,6 +361,19 @@ static func outgoing_queue_position(entry_id: int) -> int:
 	return chat_pane._outgoing_queue.position_of(entry_id)
 
 
+## Take a still-queued entry back out, bubble and all, as removing its bubble
+## does. False when it is no longer queued.
+static func withdraw_outgoing(entry_id: int) -> bool:
+	var chat_pane = SingletonObject.Chats
+	if chat_pane == null or entry_id <= 0:
+		return false
+	var entry = chat_pane._outgoing_queue.find(entry_id)
+	if entry == null:
+		return false
+	chat_pane._on_pending_bubble_removal_requested(entry.bubble, entry)
+	return true
+
+
 ## What became of an entry that has left the queue: a ChatOutgoingQueue.Outcome.
 static func outgoing_queue_outcome(entry_id: int) -> int:
 	var chat_pane = SingletonObject.Chats

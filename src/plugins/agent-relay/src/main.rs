@@ -258,9 +258,14 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     // The host refuses the body write when a person typed in the terminal
     // this recently; checked by the host at the moment of the write.
     let human_guard_ms = args.get("human_guard_ms").and_then(|v| v.as_u64()).filter(|g| *g > 0);
-    // The harness that must be the foreground at the moment of the body
-    // write; the host refuses otherwise.
-    let expect_harness = args.get("expect_harness").and_then(|v| v.as_str()).filter(|h| !h.is_empty());
+    // Who must be in front at the moment of the body write (the harness, and
+    // its process group), and the host ticket a caller revokes to withdraw
+    // the write: the host checks all three when it admits the write.
+    let guards = WriteGuards {
+        expect_harness: args.get("expect_harness").and_then(|v| v.as_str()).filter(|h| !h.is_empty()),
+        expect_process: args.get("expect_process").and_then(|v| v.as_u64()).filter(|p| *p > 0),
+        write_ticket: args.get("write_ticket").and_then(|v| v.as_str()).filter(|t| !t.is_empty()),
+    };
     // How long a held screen is waited out. A caller that must answer within
     // its own client's timeout passes something short; 0 means one look.
     let gate_budget_ms = args
@@ -282,7 +287,7 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
         }
     }
 
-    match send_core(terminal_id, text, do_arm, profile, gate_budget_ms, human_guard_ms, expect_harness, router) {
+    match send_core(terminal_id, text, do_arm, profile, gate_budget_ms, human_guard_ms, &guards, router) {
         Err(e) => ok_response(id, tool_err_value(send_error_payload(&e))),
         Ok(result) => ok_response(id, tool_ok(result)),
     }
@@ -429,6 +434,20 @@ struct SendOutcome {
 /// and the terminal is not watched: the screen is then classified with that
 /// profile for the hold and the submit confirmation, and an auto-started
 /// watch uses it instead of the default.
+/// The host write guards a sender may ask for, beyond the typing guard: each
+/// is forwarded to host.terminal.write and decided by the host when it admits
+/// the write.
+#[derive(Default)]
+struct WriteGuards<'a> {
+    /// The harness that must be in front.
+    expect_harness: Option<&'a str>,
+    /// The foreground process group that must be in front (that harness
+    /// session, not another of the same kind started in the same terminal).
+    expect_process: Option<u64>,
+    /// A host ticket the sender revokes to withdraw a write still in flight.
+    write_ticket: Option<&'a str>,
+}
+
 fn send_core(
     terminal_id: &str,
     text: &str,
@@ -436,7 +455,7 @@ fn send_core(
     profile_hint: Option<&str>,
     gate_budget_ms: u64,
     human_guard_ms: Option<u64>,
-    expect_harness: Option<&str>,
+    guards: &WriteGuards,
     router: &Arc<Router>,
 ) -> Result<Value, SendError> {
     let outcome = send_core_with_mode(
@@ -448,7 +467,7 @@ fn send_core(
         gate_budget_ms,
         profile_hint,
         human_guard_ms,
-        expect_harness,
+        guards,
         router,
     )?;
     // Nobody is waiting for this turn here: the slot is handed to the watch
@@ -504,7 +523,7 @@ fn send_core_with_mode(
     gate_budget_ms: u64,
     profile_hint: Option<&str>,
     human_guard_ms: Option<u64>,
-    expect_harness: Option<&str>,
+    guards: &WriteGuards,
     router: &Arc<Router>,
 ) -> Result<SendOutcome, SendError> {
     // What the screen is classified with: the watch's profile when the
@@ -742,8 +761,14 @@ fn send_core_with_mode(
             // such message may land in someone's half-written prompt.
             write["unless_composer_holds_text"] = json!(true);
         }
-        if let Some(expected) = expect_harness {
+        if let Some(expected) = guards.expect_harness {
             write["expect_harness"] = json!(expected);
+        }
+        if let Some(process) = guards.expect_process {
+            write["expect_process"] = json!(process);
+        }
+        if let Some(ticket) = guards.write_ticket {
+            write["write_ticket"] = json!(ticket);
         }
         if mode == SendMode::Submit {
             write["then_enter_after_ms"] = json!(SUBMIT_ENTER_PAUSE_MS);
@@ -1503,9 +1528,9 @@ fn start_turn(
     // Read before the write: a send on an unwatched terminal starts its watch
     // itself, and that watch is then the turn's.
     let watch_before = watcher::watch_epoch(terminal_id);
+    let guards = WriteGuards { expect_harness: expected_profile.as_deref(), ..Default::default() };
     let outcome = send_core_with_mode(
-        terminal_id, text, true, mode, hold, gate_budget_ms, None, human_guard,
-        expected_profile.as_deref(), router,
+        terminal_id, text, true, mode, hold, gate_budget_ms, None, human_guard, &guards, router,
     )?;
     Ok(RunningTurn {
         watch_epoch: watch_before.or_else(|| watcher::watch_epoch(terminal_id)),
@@ -1842,7 +1867,9 @@ fn tools_list_schema() -> Value {
                         "profile": {"type": "string", "description": "Harness profile id (claude, codex) to classify the screen with when the terminal is not watched."},
                         "gate_budget_ms": {"type": "integer", "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look)."},
                         "human_guard_ms": {"type": "integer", "description": "Refuse (held) when a person typed in the terminal within this many ms of the write. Asking for it also refuses (held) when the harness's composer already holds a line a person typed and did not submit: the Enter would submit that line with this text appended to it."},
-                        "expect_harness": {"type": "string", "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the write."}
+                        "expect_harness": {"type": "string", "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the write."},
+                        "expect_process": {"type": "integer", "description": "Refuse (held) unless this foreground process group is in front at the moment of the write (a harness restarted there has another)."},
+                        "write_ticket": {"type": "string", "description": "Host write ticket; the host refuses the write once its issuer has revoked it."}
                     },
                     "required": ["terminal_id", "text"]
                 }

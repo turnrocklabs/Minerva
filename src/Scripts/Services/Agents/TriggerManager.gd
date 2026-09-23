@@ -15,8 +15,9 @@ var _active_trigger_chats: Dictionary = {}
 ## Timer node references keyed by trigger_id
 var _timer_nodes: Dictionary = {}
 
-## Signal connection state keyed by trigger_id
-var _connected_signals: Dictionary = {}
+## trigger_id -> [[Signal, Callable]] connected for it. The Callables are
+## bound to the trigger id, so only these exact values disconnect them.
+var _connections: Dictionary = {}
 
 ## PLUGIN_EVENT signal connection state: trigger_id -> true
 var _plugin_event_signal_connected: Dictionary = {}
@@ -33,14 +34,21 @@ var _active_batches: Dictionary = {}
 ## Pending single-fire chains: trigger_id -> { chain_trigger_id, chain_visited }
 var _pending_single_chains: Dictionary = {}
 
-## Signal connections for DOCKET_POLL triggers (trigger_id -> true)
-var _docket_signal_connected: Dictionary = {}
-
 ## Per-session dedup for PreToolUse route hints: trigger_id -> Set of fired route indices
 var _hook_route_shown: Dictionary = {}
 
 ## 60-second poll timer for wall-clock schedule evaluation
 var _schedule_check_timer: Timer
+
+## trigger_id -> revision, a value from one ever-increasing counter taken on
+## every add, update and enable/disable (removal drops the entry), so a
+## caller that awaited can tell whether the trigger it read still stands,
+## even across a reload that re-adds the same ids.
+var _revisions: Dictionary = {}
+var _revision_counter: int = 0
+
+## Delivery to triggers' harness destinations (TriggerDestination).
+var harness_delivery := TriggerHarnessDelivery.new()
 
 
 class BatchState:
@@ -83,6 +91,7 @@ func _ready() -> void:
 #region CRUD
 
 func add_trigger(trig: TriggerDefinition) -> void:
+	_bump(trig.id)
 	triggers.append(trig)
 	if trig.enabled:
 		_activate_trigger(trig)
@@ -92,6 +101,7 @@ func add_trigger(trig: TriggerDefinition) -> void:
 func update_trigger(trigger_id: String, updated: TriggerDefinition) -> void:
 	for i in triggers.size():
 		if triggers[i].id == trigger_id:
+			_bump(trigger_id)
 			_deactivate_trigger(triggers[i])
 			updated.id = trigger_id
 			triggers[i] = updated
@@ -104,10 +114,21 @@ func update_trigger(trigger_id: String, updated: TriggerDefinition) -> void:
 func remove_trigger(trigger_id: String) -> void:
 	for i in triggers.size():
 		if triggers[i].id == trigger_id:
+			_revisions.erase(trigger_id)
 			_deactivate_trigger(triggers[i])
 			triggers.remove_at(i)
 			triggers_changed.emit()
 			return
+
+
+## The trigger's current revision, or -1 when there is no such trigger.
+func revision(trigger_id: String) -> int:
+	return _revisions.get(trigger_id, -1)
+
+
+func _bump(trigger_id: String) -> void:
+	_revision_counter += 1
+	_revisions[trigger_id] = _revision_counter
 
 
 func get_trigger(trigger_id: String) -> TriggerDefinition:
@@ -121,6 +142,7 @@ func set_trigger_enabled(trigger_id: String, enabled: bool) -> void:
 	var trig = get_trigger(trigger_id)
 	if not trig:
 		return
+	_bump(trigger_id)
 	trig.enabled = enabled
 	if enabled:
 		_activate_trigger(trig)
@@ -133,10 +155,11 @@ func clear_all() -> void:
 	for trig in triggers:
 		_deactivate_trigger(trig)
 	triggers.clear()
+	_revisions.clear()
 	_active_trigger_chats.clear()
 	_active_batches.clear()
 	_pending_single_chains.clear()
-	_docket_signal_connected.clear()
+	_connections.clear()
 	_hook_route_shown.clear()
 	_plugin_event_signal_connected.clear()
 	_plugin_event_consecutive_counts.clear()
@@ -163,13 +186,14 @@ func _activate_trigger(trig: TriggerDefinition) -> void:
 
 
 func _deactivate_trigger(trig: TriggerDefinition) -> void:
+	harness_delivery.cancel(trig.id)
 	match trig.trigger_type:
 		TriggerDefinition.TriggerType.TIMER:
 			_stop_timer(trig)
 		TriggerDefinition.TriggerType.TIME:
 			pass
 		TriggerDefinition.TriggerType.EVENT:
-			_disconnect_event(trig)
+			_disconnect_all_for(trig.id)
 		TriggerDefinition.TriggerType.DOCKET_POLL:
 			_deactivate_docket_poll(trig)
 		TriggerDefinition.TriggerType.PLUGIN_EVENT:
@@ -199,32 +223,31 @@ func _stop_timer(trig: TriggerDefinition) -> void:
 
 
 func _connect_event(trig: TriggerDefinition) -> void:
-	_disconnect_event(trig)
+	_disconnect_all_for(trig.id)
 	match trig.event_type:
 		TriggerDefinition.EventType.NOTE_CHANGED:
-			SingletonObject.note_changed.connect(_on_event_note_changed.bind(trig.id))
-			_connected_signals[trig.id] = true
-		TriggerDefinition.EventType.CHAT_COMPLETED:
-			# Handled via _on_agent_chat_finished connected in _ready
-			_connected_signals[trig.id] = true
+			_connect_for(trig.id, SingletonObject.note_changed, _on_event_note_changed.bind(trig.id))
 		TriggerDefinition.EventType.NOTE_CREATED:
-			# Connect to note_toggled as a proxy for note creation
-			SingletonObject.note_toggled.connect(_on_event_note_created.bind(trig.id))
-			_connected_signals[trig.id] = true
+			# note_toggled stands in for note creation
+			_connect_for(trig.id, SingletonObject.note_toggled, _on_event_note_created.bind(trig.id))
+		# CHAT_COMPLETED and the hook events are dispatched from handlers
+		# connected once in _ready.
 	print("[TriggerManager] Connected event trigger '%s' (type=%d)" % [trig.id, trig.event_type])
 
 
-func _disconnect_event(trig: TriggerDefinition) -> void:
-	if not _connected_signals.has(trig.id):
-		return
-	match trig.event_type:
-		TriggerDefinition.EventType.NOTE_CHANGED:
-			if SingletonObject.note_changed.is_connected(_on_event_note_changed):
-				SingletonObject.note_changed.disconnect(_on_event_note_changed)
-		TriggerDefinition.EventType.NOTE_CREATED:
-			if SingletonObject.note_toggled.is_connected(_on_event_note_created):
-				SingletonObject.note_toggled.disconnect(_on_event_note_created)
-	_connected_signals.erase(trig.id)
+func _connect_for(trigger_id: String, sig: Signal, callable: Callable) -> void:
+	sig.connect(callable)
+	if not _connections.has(trigger_id):
+		_connections[trigger_id] = []
+	_connections[trigger_id].append([sig, callable])
+
+
+func _disconnect_all_for(trigger_id: String) -> void:
+	for pair: Array in _connections.get(trigger_id, []):
+		var sig: Signal = pair[0]
+		if sig.is_connected(pair[1]):
+			sig.disconnect(pair[1])
+	_connections.erase(trigger_id)
 
 #endregion Activation
 
@@ -382,6 +405,14 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: 
 		return false
 	if not trig.enabled and not force:
 		return false
+
+	# A harness destination is only ever delivered to: there is no agent to
+	# look up, and nothing is spawned when the session is missing. Its
+	# anti-flood is the delivery's own (one outstanding per trigger).
+	if trig.destination != null:
+		var line: String = trig.initial_message if context.is_empty() \
+			else _apply_template(trig.initial_message, context)
+		return harness_delivery.deliver(trig, line)
 
 	# Anti-flood for batch triggers: don't re-fire while a batch is running
 	if _active_batches.has(trigger_id):
@@ -631,7 +662,11 @@ func _on_plugin_event_broker_signal(p_id: String, event_name: String, payload: D
 		var count: int = _plugin_event_consecutive_counts.get(trig.id, 0) + 1
 		_plugin_event_consecutive_counts[trig.id] = count
 
-		_fire_trigger(trig.id, context)
+		# A fire folded into a harness delivery still outstanding sent nothing,
+		# so it does not count toward the limit.
+		if not _fire_trigger(trig.id, context) and trig.destination != null:
+			_plugin_event_consecutive_counts[trig.id] = count - 1
+			continue
 
 		# After firing, check if we have now hit the limit
 		var limit: int = trig.consecutive_fire_limit
@@ -662,6 +697,10 @@ func _reset_plugin_event_consecutive_if_human(history_id: String, agent_definiti
 		if trig.trigger_type != TriggerDefinition.TriggerType.PLUGIN_EVENT:
 			continue
 		if not trig.enabled:
+			continue
+		# A trigger with a destination is re-armed only by re-enabling it: no
+		# agent chat is its target.
+		if trig.destination != null:
 			continue
 		# Match: either same agent_id, or (for MESSAGE_EXISTING) the agent matches
 		if trig.agent_id == agent_definition_id or agent_definition_id.is_empty():
@@ -992,28 +1031,15 @@ func _activate_docket_poll(trig: TriggerDefinition) -> void:
 	if not dm:
 		push_warning("[TriggerManager] DocketManager not available for trigger '%s'" % trig.id)
 		return
-	dm.item_created.connect(_on_docket_event_created.bind(trig.id))
-	dm.item_transitioned.connect(_on_docket_event_transitioned.bind(trig.id))
-	dm.item_updated.connect(_on_docket_event_updated.bind(trig.id))
-	dm.comment_added.connect(_on_docket_event_comment.bind(trig.id))
-	_docket_signal_connected[trig.id] = true
+	_connect_for(trig.id, dm.item_created, _on_docket_event_created.bind(trig.id))
+	_connect_for(trig.id, dm.item_transitioned, _on_docket_event_transitioned.bind(trig.id))
+	_connect_for(trig.id, dm.item_updated, _on_docket_event_updated.bind(trig.id))
+	_connect_for(trig.id, dm.comment_added, _on_docket_event_comment.bind(trig.id))
 	print("[TriggerManager] Connected docket signals for trigger '%s' (project=%s)" % [trig.id, trig.docket_project])
 
 
 func _deactivate_docket_poll(trig: TriggerDefinition) -> void:
-	if not _docket_signal_connected.has(trig.id):
-		return
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm:
-		if dm.item_created.is_connected(_on_docket_event_created):
-			dm.item_created.disconnect(_on_docket_event_created)
-		if dm.item_transitioned.is_connected(_on_docket_event_transitioned):
-			dm.item_transitioned.disconnect(_on_docket_event_transitioned)
-		if dm.item_updated.is_connected(_on_docket_event_updated):
-			dm.item_updated.disconnect(_on_docket_event_updated)
-		if dm.comment_added.is_connected(_on_docket_event_comment):
-			dm.comment_added.disconnect(_on_docket_event_comment)
-	_docket_signal_connected.erase(trig.id)
+	_disconnect_all_for(trig.id)
 
 
 func _on_docket_event_created(item_id: String, item_type: String, project: String, trigger_id: String) -> void:
@@ -1154,6 +1180,7 @@ func deserialize(data: Array) -> void:
 	for item in data:
 		if item is Dictionary:
 			var trig = TriggerDefinition.deserialize(item)
+			_bump(trig.id)
 			triggers.append(trig)
 			if trig.enabled:
 				_activate_trigger(trig)

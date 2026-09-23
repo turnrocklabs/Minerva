@@ -109,6 +109,14 @@
           "expect_harness": {
             "type": "string",
             "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the write."
+          },
+          "expect_process": {
+            "type": "integer",
+            "description": "Refuse (held) unless this foreground process group is in front at the moment of the write (a harness restarted there has another)."
+          },
+          "write_ticket": {
+            "type": "string",
+            "description": "Host write ticket; the host refuses the write once its issuer has revoked it."
           }
         },
         "required": [

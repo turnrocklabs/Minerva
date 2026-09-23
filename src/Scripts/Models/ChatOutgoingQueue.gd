@@ -158,6 +158,15 @@ func pending_texts(history_id: String) -> PackedStringArray:
 	return texts
 
 
+## The queued entry with this id, or null when it is not queued.
+func find(entry_id: int) -> Entry:
+	for history_id: String in _pending:
+		for entry: Entry in _pending[history_id]:
+			if entry.id == entry_id:
+				return entry
+	return null
+
+
 ## Where `entry_id` sits in its chat's queue, 1-based, or 0 when it is not
 ## queued (never was, or has already left).
 func position_of(entry_id: int) -> int:

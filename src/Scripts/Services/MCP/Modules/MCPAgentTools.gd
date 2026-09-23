@@ -1,6 +1,10 @@
 class_name MCPAgentTools
 extends MCPToolModule
 
+## What a trigger's destination is and how delivery to it behaves (the
+## create and update tool schemas).
+const DESTINATION_DESCRIPTION := "Deliver to an existing harness session instead of an agent: a terminal id, tab name, harness@tab name or harness (claude/codex), as minerva_terminal_notify takes it. Resolved now to exactly one terminal with a harness; its passthrough chat is remembered when it has one (that survives a restart), otherwise the terminal for this Minerva run only. The message is delivered as one notify line from 'trigger <name>', held while someone types there or a dialog is open, queued behind a busy chat; a fire while the previous delivery is still held or queued is counted, not sent. A terminal with no chat is delivered to only while the same harness runs in it. Such a trigger cannot batch or chain. Empty string clears it."
+
 const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## MCP tool module for the Agent, Worker, and Trigger domains.
 ## Handles agent registry CRUD, worker spawning/tracking, and trigger management.
@@ -78,9 +82,9 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 		"minerva_list_triggers":
 			return _list_triggers(arguments)
 		"minerva_create_trigger":
-			return _create_trigger(arguments)
+			return await _create_trigger(arguments)
 		"minerva_update_trigger":
-			return _update_trigger(arguments)
+			return await _update_trigger(arguments)
 		"minerva_delete_trigger":
 			return _delete_trigger(arguments)
 		"minerva_fire_trigger":
@@ -446,7 +450,7 @@ func _register_trigger_tools() -> void:
 	, "triggers")
 
 	server._register_tool("minerva_create_trigger",
-		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2, DOCKET_POLL=3, PLUGIN_EVENT=4. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2, MCP_TOOL_EXECUTED=3, MCP_TOOL_ABOUT_TO_EXECUTE=4. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1. For PLUGIN_EVENT: set trigger_type=4, plugin_id, plugin_event_name, and consecutive_fire_limit (default 5; 0=unlimited). The consecutive fire counter resets when a human message lands in the target chat.",
+		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2, DOCKET_POLL=3, PLUGIN_EVENT=4. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2, MCP_TOOL_EXECUTED=3, MCP_TOOL_ABOUT_TO_EXECUTE=4. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1. For PLUGIN_EVENT: set trigger_type=4, plugin_id, plugin_event_name, and consecutive_fire_limit (default 5; 0=unlimited). The consecutive fire counter resets when a human message lands in the target agent's chat, and whenever the trigger is re-enabled (the only reset for a trigger with a destination).",
 		{
 			"type": "object",
 			"properties": {
@@ -456,7 +460,11 @@ func _register_trigger_tools() -> void:
 				},
 				"agent_id": {
 					"type": "string",
-					"description": "ID of the agent definition to run when triggered"
+					"description": "ID of the agent definition to run when triggered (required unless destination is given)"
+				},
+				"destination": {
+					"type": "string",
+					"description": DESTINATION_DESCRIPTION
 				},
 				"trigger_type": {
 					"type": "integer",
@@ -575,10 +583,10 @@ func _register_trigger_tools() -> void:
 				},
 				"consecutive_fire_limit": {
 					"type": "integer",
-					"description": "For PLUGIN_EVENT: max consecutive fires before pausing. Default 5. 0 = unlimited. Resets on human message in target chat."
+					"description": "For PLUGIN_EVENT: max consecutive fires before pausing. Default 5. 0 = unlimited. Resets on a human message in the target agent's chat, and when the trigger is re-enabled (the only reset for a trigger with a destination)."
 				}
 			},
-			"required": ["name", "agent_id"]
+			"required": ["name"]
 		}
 	, "triggers")
 
@@ -593,6 +601,7 @@ func _register_trigger_tools() -> void:
 				},
 				"name": { "type": "string", "description": "New display name" },
 				"agent_id": { "type": "string", "description": "New agent definition ID" },
+				"destination": { "type": "string", "description": DESTINATION_DESCRIPTION },
 				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT, 2=TIME, 3=DOCKET_POLL" },
 				"interval_seconds": { "type": "number", "description": "Timer interval" },
 				"event_type": { "type": "integer", "description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED, 3=MCP_TOOL_EXECUTED, 4=MCP_TOOL_ABOUT_TO_EXECUTE" },
@@ -1359,6 +1368,7 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 
 	var result: Array[Dictionary] = []
 	var registry = SingletonObject.agent_registry
+	var terminals: Array = TriggerDestination.terminal_tools().list_terminals()
 	for trig in tm.triggers:
 		var agent_name := ""
 		if registry:
@@ -1406,6 +1416,15 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 			entry["batch_label"] = trig.batch_label
 		if not trig.chain_trigger_id.is_empty():
 			entry["chain_trigger_id"] = trig.chain_trigger_id
+		if trig.destination != null:
+			# bound: the identity still names a terminal; available: that
+			# terminal is there, alive and running the expected session now.
+			var available: Dictionary = trig.destination.availability(terminals)
+			entry["destination"] = {"label": trig.destination.label,
+				"kind": "chat" if trig.destination.kind == TriggerDestination.Kind.CHAT else "terminal",
+				"bound": not trig.destination.resolve().has("error"),
+				"available": available.ok, "unavailable_reason": str(available.get("reason", ""))}
+			entry["last_delivery"] = tm.harness_delivery.receipt(trig.id)
 		result.append(entry)
 
 	return {"success": true, "triggers": result, "count": result.size()}
@@ -1418,8 +1437,6 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 
 	var trig_name: String = args.get("name", "")
 	var agent_id: String = args.get("agent_id", "")
-	if agent_id.is_empty():
-		return MCPToolUtils.error("agent_id is required")
 
 	var trig = TriggerDefinition.new()
 	trig.name = trig_name
@@ -1469,6 +1486,9 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	for d in sdays:
 		trig.schedule_days.append(int(d))
 
+	var invalid: String = await _apply_destination(trig, args, null)
+	if not invalid.is_empty():
+		return MCPToolUtils.error(invalid)
 	tm.add_trigger(trig)
 
 	return {
@@ -1490,6 +1510,9 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	var existing = tm.get_trigger(trigger_id)
 	if not existing:
 		return MCPToolUtils.error("Trigger not found: %s" % trigger_id)
+	# Resolving a destination awaits; the update applies only to the trigger
+	# as read here.
+	var read_revision: int = tm.revision(trigger_id)
 
 	# Clone into a new TriggerDefinition with same ID
 	var trig = TriggerDefinition.new(trigger_id)
@@ -1510,7 +1533,6 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.schedule_day_of_month = MCPToolUtils.coerce_int(args.get("schedule_day_of_month", existing.schedule_day_of_month))
 	trig.schedule_month = MCPToolUtils.coerce_int(args.get("schedule_month", existing.schedule_month))
 	trig.fire_if_missed = args.get("fire_if_missed", existing.fire_if_missed)
-	trig.last_fired_at = existing.last_fired_at
 
 	# Docket poll fields
 	trig.docket_project = args.get("docket_project", existing.docket_project)
@@ -1519,7 +1541,6 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.docket_filter_types = args.get("docket_filter_types", existing.docket_filter_types)
 	trig.docket_filter_tags = args.get("docket_filter_tags", existing.docket_filter_tags)
 	trig.docket_poll_interval = float(args.get("docket_poll_interval", existing.docket_poll_interval))
-	trig.docket_last_poll_at = existing.docket_last_poll_at
 	# Hook event fields
 	trig.hook_fire_probability = float(args.get("hook_fire_probability", existing.hook_fire_probability))
 	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", existing.hook_tool_name_pattern)
@@ -1551,9 +1572,35 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	else:
 		trig.schedule_days = existing.schedule_days.duplicate()
 
+	var invalid: String = await _apply_destination(trig, args, existing.destination)
+	if not invalid.is_empty():
+		return MCPToolUtils.error(invalid)
+	if tm.revision(trigger_id) == -1:
+		return MCPToolUtils.error("Trigger %s was deleted while this update was being prepared; nothing was changed" % trigger_id)
+	if tm.revision(trigger_id) != read_revision:
+		return MCPToolUtils.error("Trigger %s changed while this update was being prepared (edited or enabled/disabled); nothing was changed — read it again and retry" % trigger_id)
+	# Times the manager records as it runs are taken as they stand now.
+	trig.last_fired_at = existing.last_fired_at
+	trig.docket_last_poll_at = existing.docket_last_poll_at
 	tm.update_trigger(trigger_id, trig)
 
 	return {"success": true, "trigger_id": trigger_id}
+
+
+## Set trig.destination from args["destination"] (an address; "" clears it),
+## else keep `current`. Returns "" when the trigger has a valid target, else
+## why not (TriggerDefinition.target_problem).
+func _apply_destination(trig: TriggerDefinition, args: Dictionary, current: TriggerDestination) -> String:
+	trig.destination = current
+	var address: String = str(args.get("destination", "")).strip_edges()
+	if not address.is_empty():
+		var made: Dictionary = await TriggerDestination.from_address(address)
+		if made.has("error"):
+			return str(made.error)
+		trig.destination = made.destination
+	elif args.has("destination"):
+		trig.destination = null
+	return trig.target_problem()
 
 
 func _delete_trigger(args: Dictionary) -> Dictionary:
@@ -1586,7 +1633,13 @@ func _fire_trigger_mcp(args: Dictionary) -> Dictionary:
 	if not trig:
 		return MCPToolUtils.error("Trigger not found: %s" % trigger_id)
 
-	tm._fire_trigger(trigger_id, {}, {}, true)  # force=true bypasses enabled check for manual fire
+	var fired: bool = tm._fire_trigger(trigger_id, {}, {}, true)  # force=true bypasses enabled check for manual fire
+	if trig.destination != null:
+		# Delivery continues after this returns. started is false when the
+		# fire was folded into an outstanding delivery or could not resolve;
+		# the receipt says which, and how far a started one got.
+		return {"success": true, "trigger_id": trigger_id, "started": fired,
+			"delivery": tm.harness_delivery.receipt(trigger_id)}
 
 	var is_batch = not trig.batch_params.is_empty()
 	return {

@@ -31,6 +31,10 @@ var agent_instance_btn: Button
 var trigger_list: ItemList
 var trigger_name_edit: LineEdit
 var trigger_agent_option: OptionButton
+var trigger_destination_option: OptionButton
+var trigger_delivery_label: Label
+## Terminal id -> the harness the destination picker showed for it.
+var _listed_harness: Dictionary = {}
 var trigger_type_option: OptionButton
 var trigger_interval_spin: SpinBox
 var trigger_event_option: OptionButton
@@ -363,6 +367,15 @@ func _build_triggers_tab() -> Control:
 	trigger_agent_option = OptionButton.new()
 	trigger_agent_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_vbox.add_child(trigger_agent_option)
+
+	# Destination: the agent above, or an existing harness session.
+	right_vbox.add_child(_label("Deliver to:"))
+	trigger_destination_option = OptionButton.new()
+	trigger_destination_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.add_child(trigger_destination_option)
+	trigger_delivery_label = Label.new()
+	trigger_delivery_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	right_vbox.add_child(trigger_delivery_label)
 
 	# Trigger type
 	right_vbox.add_child(_label("Trigger Type:"))
@@ -708,6 +721,33 @@ func _refresh_core_models() -> void:
 	_populate_model_dropdown(SingletonObject.API_PROVIDER.TURNROCK)
 	if not spec.is_empty():
 		_select_core_model(spec)
+
+
+## "The agent above", then every terminal with a harness in the foreground
+## (metadata: its terminal id, resolved to a TriggerDestination on save), then
+## `current` when the trigger already has a destination (metadata "keep"),
+## marked when it is unavailable now.
+func _populate_destination_options(current: TriggerDestination) -> void:
+	trigger_destination_option.clear()
+	trigger_destination_option.add_item("The agent above")
+	trigger_destination_option.set_item_metadata(0, "")
+	var terminals: Array = TriggerDestination.terminal_tools().list_terminals()
+	_listed_harness.clear()
+	for entry: Dictionary in terminals:
+		if entry.get("alive", false) and not str(entry.get("harness", "")).is_empty():
+			trigger_destination_option.add_item("%s@%s" % [entry.harness, entry.name])
+			trigger_destination_option.set_item_metadata(trigger_destination_option.item_count - 1, str(entry.id))
+			_listed_harness[str(entry.id)] = str(entry.harness)
+	trigger_delivery_label.text = ""
+	if current == null:
+		return
+	var available: Dictionary = current.availability(terminals)
+	var text: String = "Current: %s" % current.label
+	if not available.ok:
+		text += " (unavailable: %s)" % available.reason
+	trigger_destination_option.add_item(text)
+	trigger_destination_option.set_item_metadata(trigger_destination_option.item_count - 1, "keep")
+	trigger_destination_option.select(trigger_destination_option.item_count - 1)
 
 
 func _populate_agent_options() -> void:
@@ -1058,6 +1098,11 @@ func _on_trigger_selected(index: int) -> void:
 		if trigger_agent_option.get_item_metadata(i) == trig.agent_id:
 			trigger_agent_option.select(i)
 			break
+	_populate_destination_options(trig.destination)
+	if trig.destination != null:
+		var receipt: Dictionary = tm.harness_delivery.receipt(trig.id)
+		if not receipt.is_empty():
+			trigger_delivery_label.text = "Last delivery: %s %s" % [receipt.get("status", ""), receipt.get("reason", "")]
 
 	_select_option_by_id(trigger_type_option, trig.trigger_type)
 	_populate_schedule_type_options(trig.trigger_type, trig.schedule_type)
@@ -1288,6 +1333,7 @@ func _on_trigger_new() -> void:
 	trigger_name_edit.text = ""
 	if trigger_agent_option.item_count > 0:
 		trigger_agent_option.select(0)
+	_populate_destination_options(null)
 	_select_option_by_id(trigger_type_option, TriggerDefinition.TriggerType.TIMER)
 	trigger_interval_spin.value = 300
 	_populate_schedule_type_options(TriggerDefinition.TriggerType.TIMER, TriggerDefinition.ScheduleType.INTERVAL)
@@ -1326,85 +1372,97 @@ func _on_trigger_save() -> void:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
 		return
-
-	if trigger_agent_option.selected < 0:
-		SingletonObject.create_toast_notification("Select an agent first", ToastNotification.Type.WARNING)
-		return
-
-	var agent_id: String = trigger_agent_option.get_item_metadata(trigger_agent_option.selected)
-	var trigger_type: int = trigger_type_option.get_selected_id()
-	var schedule_type: int = TriggerDefinition.ScheduleType.INTERVAL if trigger_type == TriggerDefinition.TriggerType.TIMER else trigger_schedule_type_option.get_selected_id()
-	if trigger_type == TriggerDefinition.TriggerType.TIME and schedule_type == TriggerDefinition.ScheduleType.WEEKLY and _get_schedule_days().is_empty():
+	var existing: TriggerDefinition = tm.triggers[_selected_trigger_idx] \
+		if _selected_trigger_idx >= 0 and _selected_trigger_idx < tm.triggers.size() else null
+	var read_revision: int = tm.revision(existing.id) if existing != null else -1
+	# The form is read now: it may show another trigger by the time the
+	# destination below is resolved.
+	var trig := _trigger_from_form(existing)
+	if trig.trigger_type == TriggerDefinition.TriggerType.TIME and trig.schedule_type == TriggerDefinition.ScheduleType.WEEKLY \
+			and trig.schedule_days.is_empty():
 		SingletonObject.create_toast_notification("Weekly time triggers need at least one day", ToastNotification.Type.WARNING)
 		return
-
-	if _selected_trigger_idx >= 0 and _selected_trigger_idx < tm.triggers.size():
-		# Update existing
-		var trig = TriggerDefinition.new(tm.triggers[_selected_trigger_idx].id)
-		trig.name = trigger_name_edit.text
-		trig.agent_id = agent_id
-		trig.trigger_type = trigger_type
-		trig.interval_seconds = trigger_interval_spin.value
-		trig.schedule_type = schedule_type
-		trig.schedule_time = _get_schedule_time()
-		trig.schedule_days = _get_schedule_days()
-		trig.schedule_day_of_month = int(trigger_schedule_day_of_month.value)
-		trig.schedule_month = int(trigger_schedule_month.value)
-		trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
-		trig.last_fired_at = tm.triggers[_selected_trigger_idx].last_fired_at
-		trig.event_type = trigger_event_option.get_selected_id()
-		trig.action_type = trigger_action_type_option.get_selected_id()
-		trig.watched_agent_ids = _get_watched_agent_ids()
-		trig.initial_message = trigger_message_edit.text
-		trig.batch_params = _parse_batch_params()
-		trig.batch_label = trigger_batch_label_edit.text.strip_edges()
-		trig.chain_trigger_id = _get_selected_chain_trigger_id()
-		trig.enabled = trigger_enabled_check.button_pressed
-		trig.docket_project = trigger_docket_project_edit.text.strip_edges()
-		trig.docket_filter_parent = trigger_docket_filter_parent_edit.text.strip_edges()
-		trig.docket_filter_item_ids = trigger_docket_filter_item_ids_edit.text.strip_edges()
-		trig.docket_filter_types = trigger_docket_filter_types_edit.text.strip_edges()
-		trig.docket_filter_tags = trigger_docket_filter_tags_edit.text.strip_edges()
-		trig.docket_poll_interval = trigger_docket_poll_interval_spin.value
-		trig.hook_fire_probability = trigger_hook_fire_probability_spin.value
-		trig.hook_tool_name_pattern = trigger_hook_tool_pattern_edit.text.strip_edges()
-		trig.hook_route_table = trigger_hook_route_table_edit.text.strip_edges()
-		tm.update_trigger(trig.id, trig)
+	var chosen: String = "" if trigger_destination_option.selected < 0 \
+		else str(trigger_destination_option.get_item_metadata(trigger_destination_option.selected))
+	if chosen == "keep" and existing != null:
+		trig.destination = existing.destination
+	elif not chosen.is_empty() and chosen != "keep":
+		var made: Dictionary = await TriggerDestination.from_address(chosen)
+		if made.has("error"):
+			SingletonObject.create_toast_notification(str(made.error), ToastNotification.Type.WARNING)
+			return
+		# The session found now must be the one the picker showed.
+		if made.destination.harness != str(_listed_harness.get(chosen, "")):
+			SingletonObject.create_toast_notification("%s now runs %s, not the %s you picked; nothing was saved" % [
+				made.destination.label.get_slice("@", 1), made.destination.harness, _listed_harness.get(chosen, "")],
+				ToastNotification.Type.WARNING)
+			return
+		trig.destination = made.destination
+	if existing != null and (read_revision == -1 or tm.revision(existing.id) != read_revision):
+		SingletonObject.create_toast_notification("That trigger was changed, enabled/disabled or deleted meanwhile; nothing was saved", ToastNotification.Type.WARNING)
+		return
+	if existing != null:
+		# Times the manager records as it runs are taken as they stand now.
+		trig.last_fired_at = existing.last_fired_at
+		trig.docket_last_poll_at = existing.docket_last_poll_at
+	var problem: String = trig.target_problem()
+	if not problem.is_empty():
+		SingletonObject.create_toast_notification(problem, ToastNotification.Type.WARNING)
+		return
+	if existing != null:
+		tm.update_trigger(existing.id, trig)
 		SingletonObject.create_toast_notification("Trigger updated", ToastNotification.Type.SUCCESS)
 	else:
-		# Create new
-		var trig = TriggerDefinition.new()
-		trig.name = trigger_name_edit.text
-		trig.agent_id = agent_id
-		trig.trigger_type = trigger_type
-		trig.interval_seconds = trigger_interval_spin.value
-		trig.schedule_type = schedule_type
-		trig.schedule_time = _get_schedule_time()
-		trig.schedule_days = _get_schedule_days()
-		trig.schedule_day_of_month = int(trigger_schedule_day_of_month.value)
-		trig.schedule_month = int(trigger_schedule_month.value)
-		trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
-		trig.event_type = trigger_event_option.get_selected_id()
-		trig.action_type = trigger_action_type_option.get_selected_id()
-		trig.watched_agent_ids = _get_watched_agent_ids()
-		trig.initial_message = trigger_message_edit.text
-		trig.batch_params = _parse_batch_params()
-		trig.batch_label = trigger_batch_label_edit.text.strip_edges()
-		trig.chain_trigger_id = _get_selected_chain_trigger_id()
-		trig.enabled = trigger_enabled_check.button_pressed
-		trig.docket_project = trigger_docket_project_edit.text.strip_edges()
-		trig.docket_filter_parent = trigger_docket_filter_parent_edit.text.strip_edges()
-		trig.docket_filter_item_ids = trigger_docket_filter_item_ids_edit.text.strip_edges()
-		trig.docket_filter_types = trigger_docket_filter_types_edit.text.strip_edges()
-		trig.docket_filter_tags = trigger_docket_filter_tags_edit.text.strip_edges()
-		trig.docket_poll_interval = trigger_docket_poll_interval_spin.value
-		trig.hook_fire_probability = trigger_hook_fire_probability_spin.value
-		trig.hook_tool_name_pattern = trigger_hook_tool_pattern_edit.text.strip_edges()
-		trig.hook_route_table = trigger_hook_route_table_edit.text.strip_edges()
 		tm.add_trigger(trig)
 		SingletonObject.create_toast_notification("Trigger created", ToastNotification.Type.SUCCESS)
-
 	_refresh_trigger_list()
+
+
+## A definition from the form: a new trigger, or `existing` as edited here.
+## What the form does not show is carried over from `existing` unchanged:
+## plugin event and fire limit, and a trigger type the picker cannot display
+## (the save takes the run-time timestamps once it knows it may apply). A
+## trigger awaiting approval stays so until it is saved enabled from here,
+## which is a person approving it.
+func _trigger_from_form(existing: TriggerDefinition) -> TriggerDefinition:
+	var trig := TriggerDefinition.new(existing.id if existing != null else "")
+	trig.name = trigger_name_edit.text
+	trig.agent_id = "" if trigger_agent_option.selected < 0 \
+		else str(trigger_agent_option.get_item_metadata(trigger_agent_option.selected))
+	trig.trigger_type = trigger_type_option.get_selected_id()
+	if existing != null and trigger_type_option.get_item_index(existing.trigger_type) == -1:
+		trig.trigger_type = existing.trigger_type
+	trig.schedule_type = TriggerDefinition.ScheduleType.INTERVAL if trig.trigger_type == TriggerDefinition.TriggerType.TIMER \
+		else trigger_schedule_type_option.get_selected_id()
+	trig.interval_seconds = trigger_interval_spin.value
+	trig.schedule_time = _get_schedule_time()
+	trig.schedule_days = _get_schedule_days()
+	trig.schedule_day_of_month = int(trigger_schedule_day_of_month.value)
+	trig.schedule_month = int(trigger_schedule_month.value)
+	trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
+	trig.event_type = trigger_event_option.get_selected_id()
+	trig.action_type = trigger_action_type_option.get_selected_id()
+	trig.watched_agent_ids = _get_watched_agent_ids()
+	trig.initial_message = trigger_message_edit.text
+	trig.batch_params = _parse_batch_params()
+	trig.batch_label = trigger_batch_label_edit.text.strip_edges()
+	trig.chain_trigger_id = _get_selected_chain_trigger_id()
+	trig.enabled = trigger_enabled_check.button_pressed
+	trig.docket_project = trigger_docket_project_edit.text.strip_edges()
+	trig.docket_filter_parent = trigger_docket_filter_parent_edit.text.strip_edges()
+	trig.docket_filter_item_ids = trigger_docket_filter_item_ids_edit.text.strip_edges()
+	trig.docket_filter_types = trigger_docket_filter_types_edit.text.strip_edges()
+	trig.docket_filter_tags = trigger_docket_filter_tags_edit.text.strip_edges()
+	trig.docket_poll_interval = trigger_docket_poll_interval_spin.value
+	trig.hook_fire_probability = trigger_hook_fire_probability_spin.value
+	trig.hook_tool_name_pattern = trigger_hook_tool_pattern_edit.text.strip_edges()
+	trig.hook_route_table = trigger_hook_route_table_edit.text.strip_edges()
+	if existing != null:
+		trig.plugin_id = existing.plugin_id
+		trig.plugin_event_name = existing.plugin_event_name
+		trig.consecutive_fire_limit = existing.consecutive_fire_limit
+		trig.pending_approval = existing.pending_approval and not trig.enabled
+	return trig
 
 
 func _on_trigger_delete() -> void:

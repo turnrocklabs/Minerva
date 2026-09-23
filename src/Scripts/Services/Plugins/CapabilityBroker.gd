@@ -3432,7 +3432,7 @@ const _TERMINAL_TOOL_ALLOWED_ARGS := {
 	"host.terminal.list": [],
 	"host.terminal.read": ["terminal_id", "start_row", "end_row"],
 	"host.terminal.write": ["terminal_id", "text", "raw", "unless_typed_within_ms", "expect_harness",
-		"unless_composer_holds_text", "then_enter_after_ms"],
+		"expect_process", "write_ticket", "unless_composer_holds_text", "then_enter_after_ms"],
 	"host.terminal.wait": ["terminal_id", "timeout_ms", "settle_ms"],
 }
 

@@ -31,84 +31,13 @@ extends SceneTree
 ## by profile returns status "queued" with a position, and the envelope becomes
 ## that chat's NEXT user turn once the in-flight turn ends.
 
+
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
-const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
-const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
-const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
-
-## Blocking provider stand-in, keyed by chat so two chats can be in flight
-## independently and "did this chat's next turn start?" is directly observable.
-const FAKE_PROVIDER_SRC := """
-extends RefCounted
-var tree: SceneTree = null
-var calls: Array = []
-var _released: Dictionary = {}
-var _questions: Dictionary = {}
-
-func release(chat: String, text: String) -> void:
-	_released[chat + "|" + text] = true
-
-## Mark the turn this text starts as one that ENDS IN A QUESTION: the harness
-## pane then finalizes it with passthrough question options, the way a real
-## passthrough turn that hit a chooser does.
-func mark_question(chat: String, text: String) -> void:
-	_questions[chat + "|" + text] = true
-
-func is_question(chat: String, text: String) -> bool:
-	return _questions.get(chat + "|" + text, false)
-
-func texts_for(chat: String) -> PackedStringArray:
-	var out: = PackedStringArray()
-	for call_entry: Dictionary in calls:
-		if str(call_entry["chat"]) == chat:
-			out.append(str(call_entry["text"]))
-	return out
-
-func generate_content(chat: String, text: String) -> String:
-	calls.append({"chat": chat, "text": text})
-	while not _released.get(chat + "|" + text, false):
-		await tree.process_frame
-	return "reply"
-"""
-
-## Harness pane: ChatPane's real queue helpers, faked turn body. The UI button
-## refreshers are no-ops because their unique-name nodes only exist in the
-## booted scene.
-const HARNESS_PANE_SRC := """
-extends "res://Scripts/UI/Views/ChatPane.gd"
-
-var provider = null
-
-func _ready() -> void:
-	pass
-
-func _update_stop_button() -> void:
-	pass
-
-func _update_compact_button() -> void:
-	pass
-
-func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
-		return
-	var turn_token: int = _begin_chat_turn(history)
-	var answer = await provider.generate_content(history.HistoryName, text)
-	# The real turn finalizes by appending the bot's ChatHistoryItem, carrying
-	# the passthrough question options when the turn ended in a question. That
-	# item is what ChatHistory.is_awaiting_question_answer() reads, so the
-	# harness must produce it too.
-	var chi: = ChatHistoryItem.new()
-	chi._suppress_save_state = true
-	chi.Role = ChatHistoryItem.ChatRole.MODEL
-	chi.Message = str(answer)
-	if provider.is_question(history.HistoryName, text):
-		chi.HcpData = {"passthrough_question_options": [{"label": "Yes", "keystroke": "1"}]}
-	history.HistoryItemList.append(chi)
-	_release_chat_turn(history, turn_token)
-"""
+const World := preload("res://test/helpers/notify_world.gd")
+const FAKE_PROVIDER_SRC := World.FAKE_PROVIDER_SRC
+const HARNESS_PANE_SRC := World.HARNESS_PANE_SRC
 
 ## Pane that keeps the REAL execute_regular_chat and replaces only its two
 ## network-facing calls, so section K measures what the real executor does with
@@ -143,20 +72,6 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	return null
 """
 
-
-## Module under test with the two environment seams closed: the terminal
-## listing and the watch-profile map. Everything else is the real module.
-const HARNESS_MODULE_SRC := """
-extends "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
-
-var terminals: Array = []
-var relay_calls: Array = []
-var relay_call_times: Array = []
-var relay_reply: Dictionary = {"ok": true, "submit": {"state": "submitted", "evidence": "echo"}}
-
-func _terminal_list(_arguments: Dictionary) -> Dictionary:
-	return {"success": true, "terminals": terminals, "count": terminals.size()}
-"""
 
 ## Runs one notify call as a DETACHED coroutine, so the test can change the
 ## world (end the in-flight turn) while the tool is still inside wait_ms.
@@ -200,63 +115,23 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 
 
 func _make_script(source: String) -> GDScript:
-	var script: = GDScript.new()
-	script.source_code = source
-	script.reload()
-	return script
+	return World.make_script(source)
 
 
-## A chat bound to a terminal exactly the way the passthrough launch path binds
-## one: a PluginProvider whose entry_id is "terminal-<id>".
 func _make_bound_chat(chat_name: String, terminal_id: String):
-	var history = load(CHAT_HISTORY_PATH).new(null)
-	history.HistoryName = chat_name
-	var provider = load(PLUGIN_PROVIDER_PATH).new()
-	provider.configure_from_entry({
-		"key": "plugin:agent_relay:terminal-%s" % terminal_id,
-		"plugin_id": "agent_relay",
-		"entry_id": "terminal-%s" % terminal_id,
-		"generate_tool": "minerva_agent_relay_relay_ask",
-		"display_name": chat_name,
-	})
-	history.provider = provider
-	return history
+	return World.make_bound_chat(chat_name, terminal_id)
 
 
 func _make_pane(chats: Array, source: String = HARNESS_PANE_SRC) -> Node:
-	var pane = _make_script(source).new()
-	pane.name = "NotifyHarnessChatPane"
-	root.add_child(pane)
-	for history in chats:
-		var scroll: = ScrollContainer.new()
-		pane.add_child(scroll)
-		var vbox = load(VBOX_CHAT_PATH).new(pane)
-		vbox.chat_history = history
-		scroll.add_child(vbox)
-		history.VBox = vbox
-		_so.ChatList.append(history)
-	_so.Chats = pane
-	return pane
+	return World.make_pane(self, _so, chats, source)
 
 
 func _teardown(pane: Node, chats: Array) -> void:
-	for history in chats:
-		_so.ChatList.erase(history)
-	_so.Chats = _saved_chats
-	pane.queue_free()
+	World.teardown(_so, _saved_chats, pane, chats)
 
 
-## The module under test, listing `terminals` and reporting `profiles`.
 func _make_module(terminals: Array, profiles: Dictionary) -> Object:
-	var module = _make_script(HARNESS_MODULE_SRC).new(null)
-	module.terminals = terminals
-	module.watch_profile_source = func(_ids: PackedStringArray) -> Dictionary:
-		return profiles
-	module.relay_send_source = func(args: Dictionary) -> Dictionary:
-		module.relay_calls.append(args)
-		module.relay_call_times.append(Time.get_ticks_msec())
-		return module.relay_reply
-	return module
+	return World.make_module(terminals, profiles)
 
 
 func _notify(module: Object, args: Dictionary) -> Dictionary:
@@ -1058,7 +933,7 @@ func _test_receipt_follows_the_entry() -> void:
 	var first_id: int = first_entry.id
 	queue3.pop_next(claude3.HistoryId)
 	check("H7: a freshly dispatched entry IS reported as dispatched",
-		module3._notify_status(first_id, 0) == "dispatched")
+		module3.notify_status(first_id, 0) == "dispatched")
 
 	# Push it out of the ring: OUTCOME_HISTORY newer outcomes.
 	for _i in range(queue3.OUTCOME_HISTORY):
@@ -1067,8 +942,8 @@ func _test_receipt_follows_the_entry() -> void:
 	check("H8: the ring really evicted it",
 		queue3.outcome_of(first_id) == queue3.Outcome.UNKNOWN)
 	check("H9: an evicted entry is NOT reported as dispatched",
-		module3._notify_status(first_id, 0) == "unknown",
-		module3._notify_status(first_id, 0))
+		module3.notify_status(first_id, 0) == "unknown",
+		module3.notify_status(first_id, 0))
 
 	_teardown(pane3, w3["chats"])
 

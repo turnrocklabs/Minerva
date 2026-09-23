@@ -83,6 +83,8 @@ func register_tools() -> void:
 			"raw": {"type": "boolean", "description": "Send text byte-for-byte without unescaping \\r/\\n/\\t etc. Use when the text already contains real control characters (default false)."},
 			"unless_typed_within_ms": {"type": "integer", "description": "Refuse (held) when a person typed in this terminal within this many milliseconds. 0 = no guard."},
 			"expect_harness": {"type": "string", "description": "Refuse (held) unless this harness (claude/codex) is the terminal's foreground process at the moment of the write. The receipt's harness_check says whether the check ran ('checked'), was skipped because this platform cannot read the foreground ('skipped'), or was not asked for ('not_requested')."},
+			"expect_process": {"type": "integer", "description": "Refuse (held) unless the terminal's foreground process group is this one at the moment of the write (a harness restarted there has another)."},
+			"write_ticket": {"type": "string", "description": "Refuse unless this host write ticket is still issued; its issuer revokes it to withdraw a write it handed on."},
 			"unless_composer_holds_text": {"type": "boolean", "description": "Refuse (held) when the harness's input box already holds a line a person typed and did not submit — writing would staple your text to theirs and submit both. The receipt's composer_check says whether the check ran ('checked'), was skipped because no composer could be located for whatever is in front ('skipped'), or was not asked for ('not_requested')."},
 			"then_enter_after_ms": {"type": "integer", "description": "Send Enter this many ms after the text, as ONE guarded transaction: the terminal is held between the two, so a keystroke can never be submitted along with your line. Use instead of a trailing \\r. The receipt carries txn_id, harness_check and composer_check."},
 		}, "required": ["text"]}, "terminal")
@@ -359,6 +361,10 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				var harness: String = session.harness_of(foreground)
 				if not harness.is_empty():
 					entry["harness"] = harness
+				# The foreground process group: a harness that exits and is
+				# started again in the same terminal is a different one.
+				if int(foreground.get("pid", 0)) > 0:
+					entry["foreground_pid"] = int(foreground["pid"])
 				# Seen through an agent-container launcher: the session it shows.
 				if foreground.has("container"):
 					entry["container"] = str(foreground["container"])
@@ -433,6 +439,12 @@ func _guard_options(arguments: Dictionary) -> Dictionary:
 		options["expect_harness"] = expected
 	if bool(arguments.get("unless_composer_holds_text", false)):
 		options["refuse_if_composer_holds_text"] = true
+	var expected_process: int = MCPToolUtils.coerce_int(arguments.get("expect_process", 0))
+	if expected_process > 0:
+		options["expect_process"] = expected_process
+	var ticket: String = str(arguments.get("write_ticket", ""))
+	if not ticket.is_empty():
+		options["write_ticket"] = ticket
 	return options
 
 
@@ -684,11 +696,41 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 
 # ── minerva_terminal_notify ────────────────────────────────────────────
 
+## Deliver one notification exactly as minerva_terminal_notify does; for host
+## code (triggers) that sends through the same holds and receipts. `expect`
+## names the session the line is meant for, checked where the write happens
+## (after every wait): "chat_id" (the passthrough chat bound to the terminal),
+## or "harness" and "process" (the foreground harness and its process group;
+## such a session has no chat, so a terminal that now has one is refused, as
+## its chat would type the line later, unguarded). "ticket" is a host write
+## ticket (TerminalInputArbiter.issue_ticket): once revoked, nothing more is
+## written or queued. A different session there is refused, never written to.
+func notify(arguments: Dictionary, expect: Dictionary = {}) -> Dictionary:
+	return await _terminal_notify(arguments, expect)
+
+
+## The terminals minerva_terminal_list reports, for host code choosing one.
+func list_terminals() -> Array:
+	return _terminal_list({}).get("terminals", [])
+
+
+## The one terminal `to` names, as minerva_terminal_notify resolves it, plus
+## "chat_id" when a passthrough chat is bound to it; {success:false, error}
+## when none or several match.
+func resolve_address(to: String) -> Dictionary:
+	var target: Dictionary = await _resolve_notify_target(to, list_terminals())
+	if target.get("success", false):
+		var history = _find_passthrough_chat(str(target["terminal_id"]))
+		if history != null:
+			target["chat_id"] = str(history.HistoryId)
+	return target
+
+
 ## One line from one harness to another. The host resolves the target, holds
 ## while a person is typing there, then hands the envelope to whichever
 ## delivery path the target has: its passthrough chat (queue + bubble) or the
 ## relay's gated send straight into the harness.
-func _terminal_notify(arguments: Dictionary) -> Dictionary:
+func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}) -> Dictionary:
 	var to: String = str(arguments.get("to", "")).strip_edges()
 	var text: String = str(arguments.get("text", "")).strip_edges()
 	var from: String = str(arguments.get("from", "")).strip_edges()
@@ -725,9 +767,14 @@ func _terminal_notify(arguments: Dictionary) -> Dictionary:
 	}
 
 	var history = _find_passthrough_chat(str(target["terminal_id"]))
+	var expect_chat: String = str(expect.get("chat_id", ""))
+	if not expect_chat.is_empty() and (history == null or str(history.HistoryId) != expect_chat):
+		return _changed(receipt_target, "'%s' is no longer the terminal of the chat this was meant for" % str(target["name"]))
+	if expect.has("process") and history != null:
+		return _changed(receipt_target, "'%s' now has a passthrough chat; its session is not the one this was meant for" % str(target["name"]))
 	if history == null:
 		# The direct path paces its own holds within wait_ms.
-		return await _notify_direct(target, receipt_target, envelope, wait_ms)
+		return await _notify_direct(target, receipt_target, envelope, wait_ms, expect)
 
 	# The chat path queues, so its holds are decided once, now. A person
 	# mid-sentence in the target outranks any agent: the write would submit
@@ -744,6 +791,8 @@ func _terminal_notify(arguments: Dictionary) -> Dictionary:
 			return _held(receipt_target, "foreground_unknown",
 				"the foreground process of '%s' could not be read; nothing was written" % str(target["name"]))
 		return _no_harness(target)
+	if _withdrawn(expect):
+		return _withdrawn_receipt(receipt_target)
 
 	receipt_target["chat_id"] = str(history.HistoryId)
 	# A notification is never urgent enough to take a turn the chat's agent is
@@ -764,7 +813,7 @@ func _terminal_notify(arguments: Dictionary) -> Dictionary:
 	return {
 		"success": true,
 		"target": receipt_target,
-		"status": _notify_status(entry_id, position),
+		"status": notify_status(entry_id, position),
 		"queue_position": position,
 		"entry_id": entry_id,
 	}
@@ -781,8 +830,9 @@ func _terminal_notify(arguments: Dictionary) -> Dictionary:
 ## a dialog would write the instant a person's keystroke cleared it, which is
 ## exactly when that person is at the keyboard.
 func _notify_direct(target: Dictionary, receipt_target: Dictionary,
-		envelope: String, wait_ms: int) -> Dictionary:
+		envelope: String, wait_ms: int, expect: Dictionary = {}) -> Dictionary:
 	var harness: String = str(target.get("harness", ""))
+	var pid: int = int(target.get("foreground_pid", 0))
 	var tid: String = str(target["terminal_id"])
 	var session = _resolve_session(tid)
 	var deadline: int = Time.get_ticks_msec() + wait_ms
@@ -816,18 +866,33 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 					"the foreground process of '%s' could not be read; nothing was written" % str(target["name"]))
 			else:
 				harness = session.harness_of(foreground)
+				pid = int(foreground.get("pid", 0))
 				if harness.is_empty():
 					target["foreground_process"] = session.program_of(foreground)
 					return _no_harness(target)
 		if hold.is_empty() and typed_ago >= 0 and typed_ago < NOTIFY_HUMAN_TYPING_MS:
 			hold = _held(receipt_target, "human_typing",
 				"a person typed in '%s' %d ms ago; nothing was written" % [str(target["name"]), typed_ago])
+		elif hold.is_empty() and _withdrawn(expect):
+			return _withdrawn_receipt(receipt_target)
+		elif hold.is_empty() and int(expect.get("process", 0)) > 0 and pid <= 0:
+			hold = _held(receipt_target, "process_unknown",
+				"the foreground process of '%s' cannot be identified just now, so it cannot be confirmed as the expected session; nothing was written" % str(target["name"]))
 		elif hold.is_empty():
+			var changed: String = _expectation_broken(expect, harness, pid, str(target["name"]))
+			if not changed.is_empty():
+				return _changed(receipt_target, changed)
+			# The host decides these again when it admits the relay's write, so
+			# a restart or a withdrawal during the relay's round trip still
+			# stops it.
+			var expected_harness: String = str(expect.get("harness", ""))
 			var raw = await _relay_send({
 				"terminal_id": tid, "text": envelope, "arm": false,
 				"profile": harness, "gate_budget_ms": 0,
 				"human_guard_ms": NOTIFY_HUMAN_TYPING_MS,
-				"expect_harness": harness,
+				"expect_harness": expected_harness if not expected_harness.is_empty() else harness,
+				"expect_process": int(expect.get("process", 0)),
+				"write_ticket": str(expect.get("ticket", "")),
 			})
 			var classified: Dictionary = PassthroughLaunchDialog._classify_watch_result(
 				raw if raw is Dictionary else {"error": "relay send returned nothing"})
@@ -863,6 +928,42 @@ func _no_harness(target: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Terminal '%s' (id %s) has no agent harness in the foreground (%s); a notification typed into a shell would run as a command" % [
 		str(target["name"]), str(target["terminal_id"]),
 		str(target.get("foreground_process", "unknown process"))])
+
+
+## Why the session in the terminal is not the one `expect` names ("" when it
+## is, or when nothing is expected): another harness, or the same kind of
+## harness started again (a different process group). An unreadable process
+## group is not judged here; callers hold or refuse on it themselves.
+static func _expectation_broken(expect: Dictionary, harness: String, pid: int, name: String) -> String:
+	var want_harness: String = str(expect.get("harness", ""))
+	if not want_harness.is_empty() and harness != want_harness:
+		return "'%s' now runs %s, not %s" % [name, harness if not harness.is_empty() else "no harness", want_harness]
+	var want_pid: int = int(expect.get("process", 0))
+	if want_pid > 0 and pid > 0 and pid != want_pid:
+		return "the %s in '%s' was replaced by another one" % [want_harness, name]
+	return ""
+
+
+## Whether the caller has withdrawn this delivery (revoked its ticket).
+static func _withdrawn(expect: Dictionary) -> bool:
+	var ticket: String = str(expect.get("ticket", ""))
+	return not ticket.is_empty() and not TerminalInputArbiter.ticket_valid(ticket)
+
+
+func _withdrawn_receipt(receipt_target: Dictionary) -> Dictionary:
+	var withdrawn: Dictionary = MCPToolUtils.error("the sender withdrew this notification; nothing was written")
+	withdrawn["status"] = "withdrawn"
+	withdrawn["target"] = receipt_target
+	return withdrawn
+
+
+## A refusal because the terminal now holds a different session than the one
+## the caller meant.
+func _changed(receipt_target: Dictionary, why: String) -> Dictionary:
+	var changed: Dictionary = MCPToolUtils.error("%s; nothing was written" % why)
+	changed["status"] = "error"
+	changed["target"] = receipt_target
+	return changed
 
 
 ## A hold receipt: not delivered, retry later, and why.
@@ -1109,7 +1210,7 @@ func _watch_profiles(terminal_ids: PackedStringArray) -> Dictionary:
 ##                record: the outcome ring is finite, so a burst evicts older
 ##                entries. "dispatched" is the one answer that must never be
 ##                guessed, so only a recorded DISPATCHED earns it.
-func _notify_status(entry_id: int, position: int) -> String:
+static func notify_status(entry_id: int, position: int) -> String:
 	if position > 0:
 		return "queued"
 	# No entry at all means no queue was involved: the turn started on the spot.

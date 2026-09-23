@@ -2411,3 +2411,38 @@ fn a_write_refusal_is_a_hold_by_its_keys_and_by_the_phrase() {
         "{broken}"
     );
 }
+
+
+/// A direct send carries the caller's session guards into the host write, so
+/// the host decides them when it admits the write, after the relay's own
+/// round trip: a harness restarted meanwhile (another process group) or a
+/// write its sender withdrew is refused there.
+///
+/// Oracle: the write args of the one write carry expect_harness,
+/// expect_process and write_ticket exactly as the caller passed them; a send
+/// without them carries none.
+#[test]
+fn a_send_forwards_its_session_guards_to_the_host_write() {
+    let mut host = FakeHost::start();
+    let terminal = "t-send-guards";
+    host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
+    host.wait = Box::new(|_| quiet());
+
+    let guarded = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "ping", "arm": false, "profile": "claude",
+               "expect_harness": "claude", "expect_process": 4242, "write_ticket": "wt-7"}),
+    );
+    assert!(guarded.get("error").is_none(), "{guarded}");
+    let plain = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "pong", "arm": false, "profile": "claude"}),
+    );
+    assert!(plain.get("error").is_none(), "{plain}");
+    let args = host.view().write_args;
+    assert_eq!(args.len(), 2, "{args:?}");
+    assert_eq!(args[0]["expect_harness"], json!("claude"), "{args:?}");
+    assert_eq!(args[0]["expect_process"], json!(4242), "{args:?}");
+    assert_eq!(args[0]["write_ticket"], json!("wt-7"), "{args:?}");
+    assert!(args[1].get("expect_process").is_none() && args[1].get("write_ticket").is_none(), "{args:?}");
+}
