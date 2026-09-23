@@ -111,6 +111,7 @@ HERMETIC_TESTS=(
 	test/test_internal_plugin_autostart.gd
 	test/test_plugin_manager_hot_reload.gd
 	test/test_marketplace_install_from_url.gd
+	test/test_plugin_downloader.gd
 	test/test_ui_scale_sync.gd
 )
 QUARANTINED_TESTS=(

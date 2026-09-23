@@ -11,6 +11,8 @@ extends Node
 ##   {ok: bool, ...op-specific fields}, with ok=false carrying
 ##   `error` (short string code) and `detail` (free-form).
 
+const PluginDownloader := preload("res://Scripts/Services/Plugins/PluginDownloader.gd")
+
 const REGISTRY_URL_DEFAULT := "https://raw.githubusercontent.com/imrans-lab/minerva-plugins/main/registry.json"
 
 const STAGING_DIR := "user://plugins/.staging"
@@ -29,11 +31,9 @@ const REGISTRY_HTTP_TIMEOUT_SECONDS := 30.0
 # legitimate cap below the largest expected plugin is a footgun.
 const DOWNLOAD_MAX_BODY_BYTES := 2 * 1024 * 1024 * 1024  # 2 GiB
 
-# Timeout for the download itself. A 309 MB plugin on a 1 MB/s
-# connection takes ~5 minutes; allow 10 minutes for headroom on
-# slow links. Network failures inside this window still fail fast
-# (cant_connect / tls_handshake fire on the first packet).
-const DOWNLOAD_HTTP_TIMEOUT_SECONDS := 600.0
+# A download fails only when no byte arrives for this long; a slow link that
+# keeps making progress is never cut off (PluginDownloader).
+const DOWNLOAD_STALL_TIMEOUT_SECONDS := 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -146,32 +146,12 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 	var staging_abs := ProjectSettings.globalize_path(staging_file)
 
 	# --- 1. Download ---
-	var http := HTTPRequest.new()
-	http.use_threads = true
-	http.timeout = DOWNLOAD_HTTP_TIMEOUT_SECONDS
-	http.body_size_limit = DOWNLOAD_MAX_BODY_BYTES
-	http.download_file = staging_file
-	add_child(http)
-
-	var err := http.request(tarball_url)
-	if err != OK:
-		http.queue_free()
-		return _err("download_request_failed", {"godot_err": err, "url": tarball_url})
-
-	var result: Array = await http.request_completed
-	http.queue_free()
-
-	var http_result: int = result[0]
-	var response_code: int = result[1]
-
-	if http_result != HTTPRequest.RESULT_SUCCESS:
-		_rm_file(staging_file)
-		return _err("download_http_result", {"http_result": http_result, "url": tarball_url})
-	if response_code < 200 or response_code >= 300:
-		_rm_file(staging_file)
-		return _err("download_bad_status", {"code": response_code, "url": tarball_url})
-	if not FileAccess.file_exists(staging_file):
-		return _err("download_no_file", {"path": staging_file})
+	var downloader := PluginDownloader.new()
+	downloader.stall_timeout_s = DOWNLOAD_STALL_TIMEOUT_SECONDS
+	downloader.max_bytes = DOWNLOAD_MAX_BODY_BYTES
+	var fetched: Dictionary = await downloader.download(tarball_url, staging_abs, get_tree())
+	if not fetched.ok:
+		return fetched
 
 	# --- 2. Extract to a unique extraction dir ---
 	var extract_dir := "%s/extract_%d" % [STAGING_DIR, Time.get_ticks_msec()]
@@ -342,6 +322,12 @@ func _err(code: String, detail = {}) -> Dictionary:
 	return {"ok": false, "error": code, "detail": detail}
 
 
+## "12.5 MB", or "an unknown size" when the server stated no length.
+static func _size_or_unknown(detail: Dictionary) -> String:
+	var total := int(detail.get("total", -1))
+	return String.humanize_size(total) if total >= 0 else "an unknown size"
+
+
 ## Translate Godot HTTPRequest.RESULT_* enum to a human label.
 ## Returns "Unknown HTTP error (<n>)" for values we don't recognize.
 static func _http_result_label(code: int) -> String:
@@ -368,7 +354,7 @@ static func _http_result_label(code: int) -> String:
 ##
 ## Use from any UI surface that surfaces install failures so users see
 ## what actually went wrong (e.g. "TLS handshake failed" + the URL)
-## instead of an opaque error code like `download_http_result`.
+## instead of an opaque error code like `download_connection_failed`.
 static func format_install_error(result: Dictionary) -> String:
 	if result.is_empty() or result.get("ok") == true:
 		return ""
@@ -386,7 +372,7 @@ static func format_install_error(result: Dictionary) -> String:
 			title = "Could not start the network request"
 			cause = "Godot rejected the request before it was sent (error %d)" % int(detail_dict.get("godot_err", -1))
 			hint = "Check that the URL is valid and that no firewall is blocking outbound HTTPS."
-		"http_result_not_success", "download_http_result":
+		"http_result_not_success":
 			var http_code: int = int(detail_dict.get("http_result", -1))
 			title = "Download failed before the server responded"
 			cause = _http_result_label(http_code)
@@ -399,11 +385,50 @@ static func format_install_error(result: Dictionary) -> String:
 				HTTPRequest.RESULT_CANT_CONNECT:
 					hint = "The host is reachable in DNS but the connection was refused. Check VPN / proxy settings."
 				HTTPRequest.RESULT_TIMEOUT:
-					hint = "The download didn't complete within the timeout. Slow network or large archive. Retry once more."
+					hint = "The server didn't answer in time. Retry once more."
 				HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED:
 					hint = "Too many redirects in the download chain. Open the URL in your browser and report the final redirect target."
 				_:
 					hint = "Retry once; if the same code recurs, copy the URL above and try downloading it in a browser to isolate."
+		"download_connection_failed":
+			title = "Could not connect to the download server"
+			match int(detail_dict.get("status", -1)):
+				HTTPClient.STATUS_CANT_RESOLVE:
+					cause = "The host name could not be resolved (DNS failure or no internet)."
+					hint = "Confirm you have internet access — try opening the URL in your browser."
+				HTTPClient.STATUS_TLS_HANDSHAKE_ERROR:
+					cause = "The secure connection could not be established (TLS handshake failed)."
+					hint = "Try again on another network, or update Minerva to a newer build."
+				_:
+					cause = "The connection was refused or could not be opened."
+					hint = "Check VPN / proxy / firewall settings and retry."
+		"download_stalled":
+			title = "Download stalled"
+			cause = "The server stopped sending after %s of %s, and still sent nothing when Minerva retried from where it stopped (it waits %d seconds each time)." % [
+				String.humanize_size(int(detail_dict.get("bytes", 0))), _size_or_unknown(detail_dict), int(detail_dict.get("seconds", 0))]
+			hint = "Check your connection and install again."
+		"download_interrupted":
+			title = "Download was interrupted"
+			cause = "The connection kept dropping after %s of %s, even when Minerva retried from where it stopped." % [
+				String.humanize_size(int(detail_dict.get("bytes", 0))), _size_or_unknown(detail_dict)]
+			hint = "Check your connection and install again."
+		"download_resume_unsupported":
+			title = "Download was interrupted and could not resume"
+			cause = "The connection dropped after %s, and the server does not support resuming, so the partial file was deleted." % \
+				String.humanize_size(int(detail_dict.get("bytes", 0)))
+			hint = "Install again to restart the download from the beginning."
+		"download_too_large":
+			title = "Plugin archive is too large"
+			cause = "The archive exceeds the %s download limit." % String.humanize_size(int(detail_dict.get("limit", 0)))
+			hint = "This is a packaging problem on the plugin side. Report it to the plugin author."
+		"download_redirect_limit":
+			title = "Too many redirects"
+			cause = "The download URL redirected more times than Minerva follows."
+			hint = "Open the URL in your browser and report the final redirect target."
+		"download_write_failed":
+			title = "Could not save the download"
+			cause = "Writing %s failed (error %d)." % [str(detail_dict.get("path", "?")), int(detail_dict.get("godot_err", -1))]
+			hint = "Check available disk space and permissions, then try again."
 		"bad_response_code", "download_bad_status":
 			var status: int = int(detail_dict.get("code", -1))
 			title = "Server returned HTTP %d" % status
@@ -414,10 +439,6 @@ static func format_install_error(result: Dictionary) -> String:
 				500, 502, 503, 504: cause = "GitHub is having problems. Try again shortly."
 				_: cause = "Server returned a non-2xx status."
 			hint = "Try downloading the URL below in your browser to confirm whether the asset is reachable."
-		"download_no_file":
-			title = "Download finished but the file is missing"
-			cause = "Godot reported success but the file wasn't found at %s" % str(detail_dict.get("path", "?"))
-			hint = "Disk write may have failed silently. Check available space and try again."
 		"extract_failed":
 			title = "Could not extract the plugin archive"
 			cause = "`tar -xzf` returned exit code %d" % int(detail_dict.get("rc", -1))
