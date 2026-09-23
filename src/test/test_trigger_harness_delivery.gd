@@ -501,39 +501,51 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	check("T16: re-enabling resumes it", module.relay_calls.size() == calls_at_limit + 1
 		and _sent_containing(module, "T16 e5") == 1, str(module.relay_calls.size()))
 
-	# T17 — edits, disable and re-enable leave one handler per event source; delete leaves none.
+	# T17 — two triggers on one event source each keep their own handler:
+	# edits, disable and re-enable of one leave one handler each, and deleting
+	# one leaves the other connected and delivering.
+	var sources_watched: Array[Signal] = [_so.note_changed, _so.docket_manager.item_created]
+	var baseline: Array = sources_watched.map(func(sig: Signal) -> int: return _handlers_for(tm, sig))
+	var handlers_are := func(extra: int) -> bool:
+		for i in sources_watched.size():
+			if _handlers_for(tm, sources_watched[i]) != baseline[i] + extra:
+				return false
+		return true
 	var once_note := await _harness_trigger(tm, "once note", "codex@Codex Bare", "T17 note", TriggerDefinition.TriggerType.EVENT,
+		{"event_type": TriggerDefinition.EventType.NOTE_CHANGED})
+	var twin_note := await _harness_trigger(tm, "twin note", "codex@Codex Bare", "T17 twin", TriggerDefinition.TriggerType.EVENT,
 		{"event_type": TriggerDefinition.EventType.NOTE_CHANGED})
 	var once_docket := await _harness_trigger(tm, "once docket", "codex@Codex Bare", "", TriggerDefinition.TriggerType.DOCKET_POLL,
 		{"docket_project": "t17project"})
-	var watched: Array = [[once_note.id, _so.note_changed], [once_docket.id, _so.docket_manager.item_created]]
+	var twin_docket := await _harness_trigger(tm, "twin docket", "codex@Codex Bare", "", TriggerDefinition.TriggerType.DOCKET_POLL,
+		{"docket_project": "t17project"})
+	check("T17: a second trigger on the same source gets its own handler", handlers_are.call(2))
 	for trig: TriggerDefinition in [once_note, once_docket]:
 		tm.update_trigger(trig.id, TriggerDefinition.deserialize(trig.serialize()))
 		tm.update_trigger(trig.id, TriggerDefinition.deserialize(trig.serialize()))
 		tm.set_trigger_enabled(trig.id, false)
-	check("T17: disabling leaves no handler connected",
-		watched.all(func(w: Array) -> bool: return _handlers_for(tm, w[1], w[0]) == 0))
+	check("T17: disabling one leaves only the other's handler", handlers_are.call(1))
 	for trig: TriggerDefinition in [once_note, once_docket]:
 		tm.set_trigger_enabled(trig.id, true)
-	check("T17: after two edits and a re-enable exactly one handler per source is connected",
-		watched.all(func(w: Array) -> bool: return _handlers_for(tm, w[1], w[0]) == 1))
+	check("T17: after two edits and a re-enable each trigger has exactly one handler", handlers_are.call(2))
 	_so.note_changed.emit(null)
 	_so.docket_manager.item_created.emit("t17item", "bug", "t17project")
-	for trig: TriggerDefinition in [once_note, once_docket]:
+	for trig: TriggerDefinition in [once_note, twin_note, once_docket, twin_docket]:
 		await _await_receipt(tm, trig.id, ["written", "failed"])
-	for _i in range(10):
-		await process_frame
-	check("T17: each event is delivered exactly once after two edits and a disable/enable",
-		_sent_containing(module, "T17 note") == 1 and _sent_containing(module, "t17item") == 1, str(module.relay_calls))
+	check("T17: each trigger delivers each event exactly once",
+		_sent_containing(module, "T17 note") == 1 and _sent_containing(module, "T17 twin") == 1
+			and _sent_containing(module, "t17item") == 2, str(module.relay_calls))
 	tm.remove_trigger(once_note.id)
 	tm.remove_trigger(once_docket.id)
 	_so.note_changed.emit(null)
 	_so.docket_manager.item_created.emit("t17gone", "bug", "t17project")
-	for _i in range(10):
-		await process_frame
-	check("T17: after delete no handler is connected and the events deliver nothing",
-		watched.all(func(w: Array) -> bool: return _handlers_for(tm, w[1], w[0]) == 0)
-			and _sent_containing(module, "T17 note") == 1 and _sent_containing(module, "t17gone") == 0, str(module.relay_calls))
+	for trig: TriggerDefinition in [twin_note, twin_docket]:
+		await _await_receipt(tm, trig.id, ["written", "failed"])
+	check("T17: deleting one removes only its handler; the other still delivers",
+		handlers_are.call(1) and _sent_containing(module, "T17 note") == 1
+			and _sent_containing(module, "T17 twin") == 2 and _sent_containing(module, "t17gone") == 1, str(module.relay_calls))
+	tm.remove_trigger(twin_note.id)
+	tm.remove_trigger(twin_docket.id)
 
 	# T18 — the editor keeps what it does not show, and saving enabled approves.
 	var app_tm = _so.trigger_manager
@@ -894,12 +906,12 @@ func _await_receipt(tm: Node, trigger_id: String, statuses: Array, seconds: floa
 	return tm.harness_delivery.receipt(trigger_id)
 
 
-## How many of `tm`'s handlers for trigger `trigger_id` are connected to `sig`.
-func _handlers_for(tm: Node, sig: Signal, trigger_id: String) -> int:
+## How many of `tm`'s handlers are connected to `sig`.
+func _handlers_for(tm: Node, sig: Signal) -> int:
 	var count: int = 0
 	for connection: Dictionary in sig.get_connections():
 		var callable: Callable = connection.callable
-		if callable.get_object() == tm and trigger_id in callable.get_bound_arguments():
+		if callable.get_object() == tm:
 			count += 1
 	return count
 

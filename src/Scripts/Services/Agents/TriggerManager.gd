@@ -15,8 +15,8 @@ var _active_trigger_chats: Dictionary = {}
 ## Timer node references keyed by trigger_id
 var _timer_nodes: Dictionary = {}
 
-## trigger_id -> [[Signal, Callable]] connected for it. The Callables are
-## bound to the trigger id, so only these exact values disconnect them.
+## trigger_id -> [[Signal, Callable]] connected for it (_connect_for); only
+## these exact Callables disconnect them.
 var _connections: Dictionary = {}
 
 ## PLUGIN_EVENT signal connection state: trigger_id -> true
@@ -226,16 +226,23 @@ func _connect_event(trig: TriggerDefinition) -> void:
 	_disconnect_all_for(trig.id)
 	match trig.event_type:
 		TriggerDefinition.EventType.NOTE_CHANGED:
-			_connect_for(trig.id, SingletonObject.note_changed, _on_event_note_changed.bind(trig.id))
+			_connect_for(trig.id, SingletonObject.note_changed, _on_event_note_changed)
 		TriggerDefinition.EventType.NOTE_CREATED:
 			# note_toggled stands in for note creation
-			_connect_for(trig.id, SingletonObject.note_toggled, _on_event_note_created.bind(trig.id))
+			_connect_for(trig.id, SingletonObject.note_toggled, _on_event_note_created)
 		# CHAT_COMPLETED and the hook events are dispatched from handlers
 		# connected once in _ready.
 	print("[TriggerManager] Connected event trigger '%s' (type=%d)" % [trig.id, trig.event_type])
 
 
-func _connect_for(trigger_id: String, sig: Signal, callable: Callable) -> void:
+## Connect this node's `method` to `sig` for one trigger: it is called with
+## the signal's arguments and then `trigger_id`. Each trigger gets its own
+## lambda because Godot counts every bind() of one method as the same
+## connection, so a second trigger's bound handler would be refused and
+## disconnecting one would remove the other's. The lambda calls through self
+## so the connection is dropped when this node is freed.
+func _connect_for(trigger_id: String, sig: Signal, method: Callable) -> void:
+	var callable: Callable = func(...args: Array) -> void: callv(method.get_method(), args + [trigger_id])
 	sig.connect(callable)
 	if not _connections.has(trigger_id):
 		_connections[trigger_id] = []
@@ -1031,10 +1038,10 @@ func _activate_docket_poll(trig: TriggerDefinition) -> void:
 	if not dm:
 		push_warning("[TriggerManager] DocketManager not available for trigger '%s'" % trig.id)
 		return
-	_connect_for(trig.id, dm.item_created, _on_docket_event_created.bind(trig.id))
-	_connect_for(trig.id, dm.item_transitioned, _on_docket_event_transitioned.bind(trig.id))
-	_connect_for(trig.id, dm.item_updated, _on_docket_event_updated.bind(trig.id))
-	_connect_for(trig.id, dm.comment_added, _on_docket_event_comment.bind(trig.id))
+	_connect_for(trig.id, dm.item_created, _on_docket_event_created)
+	_connect_for(trig.id, dm.item_transitioned, _on_docket_event_transitioned)
+	_connect_for(trig.id, dm.item_updated, _on_docket_event_updated)
+	_connect_for(trig.id, dm.comment_added, _on_docket_event_comment)
 	print("[TriggerManager] Connected docket signals for trigger '%s' (project=%s)" % [trig.id, trig.docket_project])
 
 
