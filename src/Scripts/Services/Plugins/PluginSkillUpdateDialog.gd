@@ -1,9 +1,7 @@
 ## Confirmation dialog shown during plugin update reconciliation when a
-## customised skill record's pristine_hash differs from the new manifest entry.
-##
-## DCR 019df57b T4: the user has edited a plugin-seeded skill since install;
-## the upstream plugin author has now shipped a new version of that skill.
-## Asking before overwriting their edits.
+## customised skill or knowledge record's pristine_hash differs from the new
+## manifest entry: the user edited a plugin-seeded record since install, and
+## the plugin now ships a new version of it. Asks before overwriting the edits.
 ##
 ## Emits `update_decision(accepted: bool)` on confirm/cancel/close.
 ##   accepted=true  → overwrite with new content, keep customised flag
@@ -22,15 +20,16 @@ var _settled: bool = false
 ##
 ## Call BEFORE add_child / popup_centered.
 func configure(plugin_display_name: String, existing_record: Dictionary, new_skill: Dictionary) -> void:
-	title = "Plugin update — review skill changes"
+	title = "Plugin update — review changes"
 	ok_button_text = "Apply update (overwrite my edits)"
 	cancel_button_text = "Keep my edits"
 	exclusive = false
 
-	var skill_title := str(new_skill.get("title", existing_record.get("title", "(untitled)")))
+	var item_title := str(new_skill.get("title", existing_record.get("title", "(untitled)")))
+	var kind: String = {"kb": "KB article", "hint": "hint"}.get(existing_record.get("type"), "skill")
 	var lines: Array[String] = []
-	lines.append("Plugin '%s' updated the skill '%s'." % [plugin_display_name, skill_title])
-	lines.append("You have customised this skill since installing it.")
+	lines.append("Plugin '%s' updated the %s '%s'." % [plugin_display_name, kind, item_title])
+	lines.append("You have customised it since installing it.")
 	lines.append("")
 	lines.append("─── Your version ───")
 	lines.append(_field_summary(existing_record))
@@ -45,23 +44,23 @@ func configure(plugin_display_name: String, existing_record: Dictionary, new_ski
 
 
 func _field_summary(entry: Dictionary) -> String:
-	# Compact preview: title + summary + first line of steps + tool_deps count.
+	# Compact preview: title + summary + the first line of the main text (a
+	# skill's steps, a KB article, a hint's value) + a skill's tool_deps count.
 	var bits: Array[String] = []
 	bits.append("title: %s" % str(entry.get("title", "")))
 	var summary := str(entry.get("summary", ""))
 	if not summary.is_empty():
 		bits.append("summary: %s" % summary)
-	var steps := str(entry.get("steps", ""))
-	if not steps.is_empty():
-		var first_line := steps.split("\n")[0] if steps.contains("\n") else steps
-		if first_line.length() > 80:
-			first_line = first_line.substr(0, 80) + "…"
-		bits.append("steps[0]: %s" % first_line)
-	var deps_count := 0
-	var deps_raw = entry.get("tool_deps", [])
+	for field in ["steps", "article", "value"]:
+		var text := str(entry.get(field, ""))
+		if not text.is_empty():
+			var first_line := text.split("\n")[0]
+			if first_line.length() > 80:
+				first_line = first_line.substr(0, 80) + "…"
+			bits.append("%s: %s" % [field, first_line])
+	var deps_raw = entry.get("tool_deps")
 	if deps_raw is Array:
-		deps_count = (deps_raw as Array).size()
-	bits.append("tool_deps: %d" % deps_count)
+		bits.append("tool_deps: %d" % (deps_raw as Array).size())
 	return "  " + "\n  ".join(bits)
 
 

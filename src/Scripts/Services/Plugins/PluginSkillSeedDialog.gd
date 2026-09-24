@@ -1,6 +1,7 @@
 ## Confirmation dialog shown during plugin install when the manifest declares
-## a skills[] array.  Lists each skill (title, summary, tool_deps count,
-## unsatisfied_deps count) so the user can decide whether to seed them.
+## skills[] or knowledge[].  Lists each skill (title, summary, tool_deps count,
+## unsatisfied_deps count) and each knowledge record (type and title) so the
+## user can decide whether to seed them.
 ##
 ## Emits `seed_decision(accepted: bool)` when the user clicks OK or Cancel
 ## (or closes the dialog).  PluginManager awaits this signal before deciding
@@ -26,18 +27,18 @@ var _body_label: RichTextLabel = null
 ## Call this BEFORE add_child / popup_centered so the body is built.
 ##
 ## resolved: Array of {skill: Dictionary, unsatisfied: Array[String]} as returned
-## by PluginSkillSeeder.resolve_deps.
-func configure(plugin_display_name: String, resolved: Array) -> void:
-	title = "Install plugin skills?"
-	ok_button_text = "Install skills"
-	cancel_button_text = "Skip skills"
+## by PluginSkillSeeder.resolve_deps; knowledge: the manifest's knowledge[].
+func configure(plugin_display_name: String, resolved: Array, knowledge: Array = []) -> void:
+	title = "Install plugin skills and knowledge?" if not knowledge.is_empty() else "Install plugin skills?"
+	ok_button_text = "Install"
+	cancel_button_text = "Skip"
 	exclusive = false
 	dialog_text = ""  # the built-in Label is replaced by our scroll body
 	min_size = Vector2i(_DIALOG_MIN_W, _DIALOG_MIN_H)
 
 	_ensure_body()
 	if _body_label != null:
-		_body_label.text = _build_body_bbcode(plugin_display_name, resolved)
+		_body_label.text = _build_body_bbcode(plugin_display_name, resolved, knowledge)
 
 
 ## Build the scrollable body once. AcceptDialog adds children below its
@@ -67,10 +68,10 @@ func _ensure_body() -> void:
 	scroll.add_child(_body_label)
 
 
-func _build_body_bbcode(plugin_display_name: String, resolved: Array) -> String:
+func _build_body_bbcode(plugin_display_name: String, resolved: Array, knowledge: Array) -> String:
 	var lines: Array[String] = []
-	lines.append("[b]Plugin '%s'[/b] wants to install %d skill(s):" %
-		[plugin_display_name, resolved.size()])
+	lines.append("[b]Plugin '%s'[/b] wants to install %d skill(s) and %d knowledge record(s):" %
+		[plugin_display_name, resolved.size(), knowledge.size()])
 	lines.append("")
 	for entry in resolved:
 		var skill = entry.get("skill", {})
@@ -90,6 +91,9 @@ func _build_body_bbcode(plugin_display_name: String, resolved: Array) -> String:
 			tools_line += " ([color=#dd6b6b]%d unsatisfied — skill hidden until resolved[/color])" % unsatisfied.size()
 		lines.append(tools_line)
 		lines.append("")  # blank line between skills
+	for entry in knowledge:
+		lines.append("[b]• %s[/b] (%s)" % [str(entry.get("title", "(untitled)")),
+			"KB article" if entry.get("type") == "kb" else "hint"])
 	return "\n".join(lines)
 
 

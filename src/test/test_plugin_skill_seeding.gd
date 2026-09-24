@@ -17,7 +17,9 @@ extends SceneTree
 ## customised record asked about (declining keeps the person's text and is
 ## not asked again), a pristine one updated silently, a dropped key
 ## deprecated, uninstall keeping only what a person changed, and a project
-## that is not loaded left untouched.
+## that is not loaded left untouched. PluginSkillConsent asks one seed
+## question for a plugin that ships only knowledge, and keys an update's
+## decision about a customised record by its manifest key.
 ##
 ## Hits every component: PluginDefinition (T1), PluginSkillRecord (T2),
 ## PluginSkillSeeder.materialize (T3), reconcile plan + apply (T4), unseed (T6),
@@ -33,7 +35,8 @@ var _fail_count: int = 0
 var _tmp_dir: String = ""
 
 
-## The one PluginDB question PluginSkillConsent asks: `plugin_id` is installed.
+## The PluginDB questions PluginSkillConsent asks: `plugin_id` is installed,
+## with no knowledge in its installed definition.
 class InstalledDB extends RefCounted:
 	var _id: String
 
@@ -42,6 +45,9 @@ class InstalledDB extends RefCounted:
 
 	func has_plugin(plugin_id: String) -> bool:
 		return plugin_id == _id
+
+	func get_by_id(plugin_id: String) -> PluginDefinition:
+		return PluginDefinition.new(plugin_id) if plugin_id == _id else null
 
 
 class FailingUpdateDocket extends RefCounted:
@@ -67,6 +73,7 @@ func _init() -> void:
 	test_full_lifecycle()
 	await test_repair_keeps_customised_skills()
 	test_knowledge_lifecycle()
+	await test_knowledge_consent()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -413,4 +420,36 @@ func test_knowledge_lifecycle() -> void:
 	check("uninstall deletes the unchanged hint and hands the edited article to the user",
 		removed.deleted == 1 and removed.kept == 1 and find.call("minerva_notes_demo_baud").is_empty()
 		and kept.get("source") == "user" and kept.get("article") == "Red to red; black to COM.")
+	ctx.db.close()
+
+
+func test_knowledge_consent() -> void:
+	print("test_knowledge_consent")
+	var ctx := _new_docket()
+	var registry = ctx.registry
+	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
+	Knowledge.apply(Knowledge.plan(_knowledge_def("master", [_kb("Red to red.")]), registry), {}, registry)
+	var found: Dictionary = registry.call_tool("docket_query", {"filter": {"type": "kb", "key": "minerva_notes_demo_wiring"}})
+	registry.call_tool("docket_update", {"id": found.items[0].id, "article": "My own wiring notes."})
+
+	var manifest := _manifest("notes_demo", [])
+	manifest["knowledge"] = [_kb("Red to red, always.")]
+	var manifest_path := _tmp_dir.path_join("knowledge_manifest.json")
+	var f := FileAccess.open(manifest_path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(manifest))
+	f.close()
+
+	var fresh: Dictionary = await PluginSkillConsentScript.collect(
+		root, InstalledDB.new("another_plugin"), {}, registry, manifest_path, true)
+	check("a plugin that ships only knowledge is asked the seed question", fresh.get("seed") == true)
+	var update: Dictionary = await PluginSkillConsentScript.collect(
+		root, InstalledDB.new("notes_demo"), {}, registry, manifest_path, true)
+	check("an update's decision about the customised kb is keyed by its manifest key",
+		update.get("update_decisions", {}) == {"minerva_notes_demo_wiring": true})
+	var op = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
+	op.repair_only = true
+	var repair: Dictionary = await PluginSkillConsentScript.collect(
+		root, InstalledDB.new("notes_demo"), {}, registry, manifest_path, true, op)
+	check("a repair keeps the customised kb without asking",
+		repair.get("update_decisions", {}) == {"minerva_notes_demo_wiring": false})
 	ctx.db.close()

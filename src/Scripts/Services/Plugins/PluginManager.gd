@@ -62,6 +62,7 @@ const S_BUILD_FAILED := 7
 const S_NEEDS_BINARY := 8
 
 const SkillConsent := preload("res://Scripts/Services/Plugins/PluginSkillConsent.gd")
+const Knowledge := preload("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
 
 
 # ---------------------------------------------------------------------------
@@ -346,8 +347,8 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 		_start_setup_pipeline(def.id)
 		result["building"] = true
 
-	# Skill seeding (DCR 019df57b T3).
-	if not def.skills.is_empty():
+	# Skill and knowledge seeding (DCR 019df57b T3).
+	if not def.skills.is_empty() or not def.knowledge.is_empty():
 		var seed_result := await _seed_plugin_skills(def, auto_confirm_skills, consent)
 		result.merge(seed_result)
 
@@ -363,8 +364,9 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 	return result
 
 
-## Resolve tool_deps + (optionally) confirm with user + materialise skill records.
-## Internal helper for install_plugin's skill-seeding path.
+## Resolve tool_deps + (optionally) confirm with user + materialise skill and
+## knowledge records (one consent covers both). Internal helper for
+## install_plugin's seeding path.
 func _seed_plugin_skills(def, auto_confirm: bool, consent: Dictionary = {}) -> Dictionary:
 	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 	var available_tools: Dictionary = _build_available_tools()
@@ -387,11 +389,16 @@ func _seed_plugin_skills(def, auto_confirm: bool, consent: Dictionary = {}) -> D
 		}
 
 	var materialise_result: Dictionary = SeederClass.materialize(def.id, resolved, docket_manager)
-	return {
+	var seeded := {
 		"skills_seeded": materialise_result.get("seeded", 0),
 		"skills_skipped": materialise_result.get("skipped", 0),
 		"skills_deferred_to_update": materialise_result.get("deferred_to_update", 0),
 	}
+	if not def.knowledge.is_empty():
+		var knowledge_plan: Dictionary = Knowledge.plan(def, docket_manager)
+		seeded["knowledge"] = Knowledge.apply(knowledge_plan, {}, docket_manager)
+		_note_missing_project(def, knowledge_plan, seeded)
+	return seeded
 
 
 ## Create plugin data directories. Called on successful install.
@@ -458,37 +465,34 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 	var available_tools := _build_available_tools()
 
-	# Phase 1: classify each skill action (no docket writes yet).
+	# Phase 1: classify each skill and knowledge action (no docket writes yet).
 	var plan: Dictionary = SeederClass.plan_reconcile(def, available_tools, docket_manager)
+	var has_knowledge: bool = not (def.knowledge.is_empty() and previous_def.knowledge.is_empty())
+	var knowledge_plan: Dictionary = Knowledge.plan(def, docket_manager) if has_knowledge else {}
 
 	# Phase 2: collect user decisions for prompt_required actions.
-	var decisions: Dictionary = {}
-	for action in plan.get("actions", []):
-		if str(action.get("action", "")) != SeederClass.RECONCILE_PROMPT_REQUIRED:
-			continue
-		var skill: Dictionary = action.get("skill", {})
-		var skill_id := str(skill.get("id", ""))
-		if consent.get("collected", false):
-			# Asked before the install changed anything; a skill not asked
-			# about then is left as the user customised it.
-			decisions[skill_id] = bool(consent.get("update_decisions", {}).get(skill_id, false))
-			continue
-		if auto_confirm_updates:
-			decisions[skill_id] = true
-			continue
-		var existing: Dictionary = action.get("existing", {})
-		var accepted: bool = await SkillConsent.ask_update(self, def, existing, skill)
-		decisions[skill_id] = accepted
+	var decisions: Dictionary = await _update_decisions(def,
+		plan.get("actions", []) + knowledge_plan.get("actions", []), consent, auto_confirm_updates)
 
-	# An unattended update (consent.seed_new false) adds no skill the user
-	# never saw; those wait for an update or reinstall made by hand.
+	# An unattended update (consent.seed_new false) adds no skill or knowledge
+	# the user never saw; those wait for an update or reinstall made by hand.
 	if not consent.get("seed_new", true):
-		plan["actions"] = plan.get("actions", []).filter(func(action) -> bool:
-			return str(action.get("action", "")) != SeederClass.RECONCILE_SEED)
+		for p in [plan, knowledge_plan]:
+			p["actions"] = p.get("actions", []).filter(func(action) -> bool:
+				return str(action.get("action", "")) != SeederClass.RECONCILE_SEED)
 
 	# Phase 3: commit.
 	var reconcile_result: Dictionary = SeederClass.apply_reconcile(plan, decisions, docket_manager)
 	result["reconcile"] = reconcile_result
+	# Knowledge moved to another project: the old project's records are
+	# unseeded there (edited ones stay, as the user's) once the new project
+	# can take the knowledge, which an unattended update does not seed.
+	if previous_def.knowledge_project != def.knowledge_project and has_knowledge \
+			and not knowledge_plan.get("missing_project", false) and consent.get("seed_new", true):
+		result["knowledge_moved_from"] = Knowledge.unseed(def.id, previous_def.knowledge_project, docket_manager)
+	if has_knowledge:
+		result["knowledge"] = Knowledge.apply(knowledge_plan, decisions, docket_manager)
+		_note_missing_project(def, knowledge_plan, result)
 
 	# T7 reactivity — tool_deps may have shifted in silent updates / accepted prompts.
 	var reactivity := _recompute_skill_reactivity()
@@ -498,6 +502,32 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
 
 	return result
+
+
+## Whether each customised skill or knowledge record among `actions` (from
+## plan_reconcile / PluginKnowledgeSeeder.plan) takes the update, keyed by its
+## manifest id: from consent collected before the install began (an item not
+## asked about then keeps its customisation), from auto_confirm, or by asking.
+func _update_decisions(def, actions: Array, consent: Dictionary, auto_confirm: bool) -> Dictionary:
+	var decisions := {}
+	for action in actions:
+		if str(action.get("action", "")) != PluginSkillSeeder.RECONCILE_PROMPT_REQUIRED:
+			continue
+		var item: Dictionary = action.get("entry", action.get("skill", {}))
+		var item_id := str(action.get("id", item.get("id", "")))
+		if consent.get("collected", false):
+			decisions[item_id] = bool(consent.get("update_decisions", {}).get(item_id, false))
+		else:
+			decisions[item_id] = auto_confirm or await SkillConsent.ask_update(self, def, action.get("existing", {}), item)
+	return decisions
+
+
+## Record in `result`, and log, that `def`'s knowledge project is not loaded.
+func _note_missing_project(def, knowledge_plan: Dictionary, result: Dictionary) -> void:
+	if knowledge_plan.get("missing_project", false):
+		result["knowledge_missing_project"] = def.knowledge_project
+		push_warning("[PluginManager] '%s' knowledge was not seeded: Docket project '%s' is not open" % [
+			def.id, def.knowledge_project])
 
 
 ## See PluginSkillConsent.collect.
@@ -550,9 +580,10 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	if not removed:
 		return {"error": "Failed to remove plugin '%s' from DB" % id}
 
-	# Unseed plugin-shipped skills.  Pristine records hard-delete; customised
-	# records auto-convert to source="user" so user edits are preserved.
+	# Unseed plugin-shipped skills and knowledge.  Pristine records hard-delete;
+	# customised records auto-convert to source="user" so user edits are kept.
 	var unseed_result: Dictionary = _unseed_plugin_skills(id)
+	var knowledge_unseeded: Dictionary = Knowledge.unseed(id, def.knowledge_project, _get_docket_manager())
 
 	_runtime.erase(id)
 	_setup_pipelines.erase(id)
@@ -584,6 +615,8 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		result["skills_deleted"] = unseed_result.get("deleted", 0)
 		result["skills_kept"] = unseed_result.get("kept", 0)
 		result["skills_kept_ids"] = unseed_result.get("kept_skill_ids", [])
+	if knowledge_unseeded.get("deleted", 0) > 0 or knowledge_unseeded.get("kept", 0) > 0:
+		result["knowledge"] = knowledge_unseeded
 	if reactivity.get("updated", 0) > 0:
 		result["reactivity_updated"] = reactivity.get("updated", 0)
 		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
