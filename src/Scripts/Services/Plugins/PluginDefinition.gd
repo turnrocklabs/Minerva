@@ -99,6 +99,12 @@ var tools: Array[Dictionary] = []
 ## Materialised into user.dct on install with source="plugin:<id>".
 var skills: Array[Dictionary] = []
 
+## Plugin-shipped knowledge (manifest `knowledge[]`): kb articles and hints
+## seeded into the Docket project `knowledge_project`, which must exist. See
+## PluginKnowledgeSeeder for the entry shape and rules.
+var knowledge: Array[Dictionary] = []
+var knowledge_project: String = PluginKnowledgeSeeder.DEFAULT_PROJECT
+
 ## Declarative user-editable settings contributed to the host Preferences UI.
 ## Each entry: {key, type, label, default?, options? (enum only), help?}.
 ## type is one of SETTING_TYPES. Values are host-owned and persisted in
@@ -397,6 +403,9 @@ func to_dict() -> Dictionary:
 	}
 	if not skills.is_empty():
 		result["skills"] = skills.duplicate(true)
+	if not knowledge.is_empty():
+		result["knowledge"] = knowledge.duplicate(true)
+		result["knowledge_project"] = knowledge_project
 	if not editor_items.is_empty():
 		result["editor_items"] = editor_items.duplicate(true)
 	if not events.is_empty():
@@ -550,6 +559,10 @@ func validate() -> Array[String]:
 							errors.append(
 								"skill '%s' tool_deps entry must be non-empty" % s_id
 							)
+
+	if not id.is_empty():
+		errors.append_array(PluginKnowledgeSeeder.validate_manifest(knowledge, knowledge_project, id,
+			skills.map(func(skill) -> String: return str(skill.get("id", "")))))
 
 	# Validate editor_items panel references — each must name a known ui panel.
 	for ei in editor_items:
@@ -777,6 +790,11 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	for skill_entry in data.get("skills", []):
 		if skill_entry is Dictionary:
 			def.skills.append(skill_entry.duplicate(true))
+	# Knowledge likewise; validate() reports malformed entries.
+	for knowledge_entry in data.get("knowledge", []):
+		if knowledge_entry is Dictionary:
+			def.knowledge.append(knowledge_entry.duplicate(true))
+	def.knowledge_project = str(data.get("knowledge_project", PluginKnowledgeSeeder.DEFAULT_PROJECT))
 
 	# Settings (declarative preferences shown in the host Preferences UI).
 	# Lax parse; structural validation happens in validate().

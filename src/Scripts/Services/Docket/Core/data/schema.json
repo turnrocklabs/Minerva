@@ -90,7 +90,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title", "value"],
-			"optional_fields": ["description", "component", "key", "topic", "subtopic", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed", "target"]
+			"optional_fields": ["description", "component", "key", "topic", "subtopic", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed", "target", "source", "pristine_hash", "pristine_content", "deprecated"]
 		},
 		"insight": {
 			"label": "Insight",
@@ -258,7 +258,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title"],
-			"optional_fields": ["description", "article", "summary", "key", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+			"optional_fields": ["description", "article", "summary", "key", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed", "source", "pristine_hash", "pristine_content", "deprecated"]
 		},
 		"policy": {
 			"label": "Policy",

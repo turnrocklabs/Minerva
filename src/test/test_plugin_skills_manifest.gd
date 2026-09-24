@@ -25,6 +25,12 @@ extends SceneTree
 ##     - skill entry is not a Dictionary → error
 ##     - empty tool_deps array is allowed
 ##     - optimization is optional
+##
+##   knowledge[] (PluginKnowledgeSeeder.validate_manifest):
+##     - kb and hint entries parse, round-trip with knowledge_project, validate
+##     - other types, missing required content, a key reused by a skill or
+##       without the plugin's prefix, an unknown field, non-string content or
+##       tags, and an empty project are errors
 
 const PluginDefinitionScript = preload("res://Scripts/Services/Plugins/PluginDefinition.gd")
 
@@ -75,6 +81,9 @@ func _init() -> void:
 
 	print("\n-- validate(): skill entry shape --")
 	test_skill_entry_not_dict_rejected()
+
+	print("\n-- knowledge[] --")
+	test_knowledge_entries()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -409,3 +418,47 @@ func test_skill_entry_not_dict_rejected() -> void:
 # Mirrors PluginDefinition.REQUIRED_SKILL_FIELDS.size() — keep in sync if the
 # constant changes.  9 required fields per DCR 019df57b.
 const REQUIRED_FIELD_COUNT := 9
+
+
+# ---------------------------------------------------------------------------
+# knowledge[]
+# ---------------------------------------------------------------------------
+
+func test_knowledge_entries() -> void:
+	var manifest := _base_manifest()
+	manifest["skills"] = [_valid_skill()]
+	manifest["knowledge_project"] = "demo_notes"
+	manifest["knowledge"] = [
+		{"key": "minerva_demo_wiring", "type": "kb", "title": "Wiring", "article": "Red to red.",
+			"tags": ["wiring"]},
+		{"key": "minerva_demo_baud", "type": "hint", "title": "Baud", "value": "115200"},
+	]
+	var def = PluginDefinitionScript.from_dict(manifest)
+	check("valid kb and hint entries validate", def != null and def.validate().is_empty())
+	var again = PluginDefinitionScript.from_dict(def.to_dict())
+	check("knowledge and its project survive to_dict/from_dict",
+		again.knowledge.size() == 2 and again.knowledge[1].get("value") == "115200"
+		and again.knowledge_project == "demo_notes")
+
+	var bad := _base_manifest()
+	bad["skills"] = [_valid_skill()]
+	bad["knowledge_project"] = ""
+	bad["knowledge"] = [
+		{"key": "minerva_demo_bug", "type": "bug", "title": "A bug"},
+		{"key": "minerva_demo_tip", "type": "hint", "title": "Tip"},
+		{"key": "minerva_demo_make_thing", "type": "kb", "title": "Clash", "article": "x"},
+		{"key": "minerva_demo_extra", "type": "kb", "title": "Extra", "article": "x", "state": "active"},
+		{"key": "minerva_demo_tagged", "type": "kb", "title": "Tagged", "article": "x", "tags": "one"},
+		{"key": "minerva_other_note", "type": "kb", "title": "Other", "article": "x"},
+		{"key": "minerva_demo_rate", "type": "hint", "title": "Rate", "value": "9600", "topic": 7},
+	]
+	var errors: Array[String] = PluginDefinitionScript.from_dict(bad).validate()
+	check("only kb and hint knowledge may be seeded", _has_error_containing(errors, "type must be kb or hint"))
+	check("a hint needs its value", _has_error_containing(errors, "'minerva_demo_tip' missing required field 'value'"))
+	check("a knowledge key may not reuse a skill id",
+		_has_error_containing(errors, "manifest_duplicate_knowledge_key: 'minerva_demo_make_thing'"))
+	check("an unknown knowledge field is refused", _has_error_containing(errors, "unknown field 'state'"))
+	check("tags must be strings", _has_error_containing(errors, "'minerva_demo_tagged' tags must be"))
+	check("a key must carry this plugin's prefix", _has_error_containing(errors, "'minerva_other_note' must match"))
+	check("content fields must be strings", _has_error_containing(errors, "'minerva_demo_rate' field 'topic' must be a String"))
+	check("the knowledge project may not be empty", _has_error_containing(errors, "knowledge_project must be"))

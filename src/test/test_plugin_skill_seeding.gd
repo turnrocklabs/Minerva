@@ -12,6 +12,13 @@ extends SceneTree
 ##   6. Uninstall plugin                    → customised record converts to source=user
 ##                                             (deprecated stays true; record kept for user)
 ##
+## Plugin knowledge[] (PluginKnowledgeSeeder) walks the same lifecycle for a kb
+## article and a hint: seeded into the named project with provenance, a
+## customised record asked about (declining keeps the person's text and is
+## not asked again), a pristine one updated silently, a dropped key
+## deprecated, uninstall keeping only what a person changed, and a project
+## that is not loaded left untouched.
+##
 ## Hits every component: PluginDefinition (T1), PluginSkillRecord (T2),
 ## PluginSkillSeeder.materialize (T3), reconcile plan + apply (T4), unseed (T6),
 ## reactivity (T7).  T5 picker integration is visual-only — covered by HITL.
@@ -59,6 +66,7 @@ func _init() -> void:
 
 	test_full_lifecycle()
 	await test_repair_keeps_customised_skills()
+	test_knowledge_lifecycle()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -130,7 +138,7 @@ func _new_docket() -> Dictionary:
 	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
 	sf.close()
 	var registry := ToolRegistry.new()
-	registry.init(schema, db)
+	registry.init(schema, db, {"master": db})  # loaded as "master", as in Minerva
 	return {"db": db, "registry": registry}
 
 
@@ -325,4 +333,84 @@ func test_repair_keeps_customised_skills() -> void:
 	var failed: Dictionary = PluginSkillSeederScript.apply_reconcile(
 		failure_plan, {}, FailingUpdateDocket.new(registry))
 	check("reconcile reports failed store writes", int(failed.get("failed", 0)) > 0)
+	ctx.db.close()
+
+
+func _knowledge_def(project: String, entries: Array) -> PluginDefinitionScript:
+	var manifest := _manifest("notes_demo", [])
+	manifest["knowledge_project"] = project
+	manifest["knowledge"] = entries
+	return PluginDefinitionScript.from_dict(manifest)
+
+
+func _kb(article: String) -> Dictionary:
+	return {"key": "minerva_notes_demo_wiring", "type": "kb", "title": "Wiring",
+		"article": article, "tags": ["wiring", "bench"]}
+
+
+func _hint(value: String, component: String = "") -> Dictionary:
+	var hint := {"key": "minerva_notes_demo_baud", "type": "hint", "title": "Baud", "value": value}
+	if not component.is_empty():
+		hint["component"] = component
+	return hint
+
+
+func test_knowledge_lifecycle() -> void:
+	print("test_knowledge_lifecycle")
+	var ctx := _new_docket()
+	var registry = ctx.registry
+	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
+	var find := func(key: String) -> Dictionary:
+		for type in ["kb", "hint"]:
+			var found: Dictionary = registry.call_tool("docket_query", {"filter": {"type": type, "key": key}})
+			for item in found.get("items", []):
+				return registry.call_tool("docket_get", {"id": item.id})
+		return {}
+
+	var missing = Knowledge.plan(_knowledge_def("not_loaded", [_kb("Red to red.")]), registry)
+	check("a project that is not loaded is reported and nothing is planned",
+		missing.get("missing_project", false) and missing.actions.is_empty())
+
+	var v1 := _knowledge_def("master", [_kb("Red to red."), _hint("115200", "serial")])
+	var seeded: Dictionary = Knowledge.apply(Knowledge.plan(v1, registry), {}, registry)
+	var kb: Dictionary = find.call("minerva_notes_demo_wiring")
+	var hint: Dictionary = find.call("minerva_notes_demo_baud")
+	check("kb and hint are seeded with key, source and pristine provenance",
+		seeded.seeded == 2 and kb.get("source") == "plugin:notes_demo" and hint.get("value") == "115200"
+		and kb.get("pristine_hash") == Knowledge.content_hash(kb)
+		and kb.get("pristine_content", {}).get("article") == "Red to red.")
+	check("the kb article is active; the hint stays a draft",
+		kb.get("status") == "active" and hint.get("status") == "draft")
+	check("seeded records read back unchanged, tags included",
+		Knowledge.plan(v1, registry).actions.all(func(a) -> bool: return a.action == "no_change"))
+
+	registry.call_tool("docket_update", {"id": kb.id, "article": "Red to red; black to COM."})
+	var v2 := _knowledge_def("master", [_kb("Red to red, always."), _hint("9600")])
+	var plan2: Dictionary = Knowledge.plan(v2, registry)
+	var asked: Array = plan2.actions.filter(func(a) -> bool: return a.action == "prompt_required")
+	check("an update asks only about the customised kb article",
+		asked.size() == 1 and asked[0].id == "minerva_notes_demo_wiring")
+	var applied: Dictionary = Knowledge.apply(plan2, {}, registry)
+	check("declining keeps the person's article; the pristine hint is updated silently, its dropped field cleared",
+		applied.prompted_declined == 1 and applied.silent_updated == 1
+		and find.call("minerva_notes_demo_wiring").get("article") == "Red to red; black to COM."
+		and find.call("minerva_notes_demo_baud").get("value") == "9600"
+		and str(find.call("minerva_notes_demo_baud").get("component", "")).is_empty())
+	check("the same upstream version is not asked about again",
+		Knowledge.plan(v2, registry).actions.all(func(a) -> bool: return a.action == "no_change"))
+
+	var v3 := _knowledge_def("master", [_kb("Red to red, always.")])
+	var dropped: Dictionary = Knowledge.apply(Knowledge.plan(v3, registry), {}, registry)
+	check("a key the manifest drops is deprecated, not deleted",
+		dropped.deprecated == 1 and find.call("minerva_notes_demo_baud").get("deprecated") == true)
+	var back: Dictionary = Knowledge.apply(Knowledge.plan(v2, registry), {}, registry)
+	check("a dropped key that comes back unchanged is revived",
+		back.restored == 1 and find.call("minerva_notes_demo_baud").get("deprecated") == false
+		and find.call("minerva_notes_demo_baud").get("value") == "9600")
+
+	var removed: Dictionary = Knowledge.unseed("notes_demo", "master", registry)
+	var kept: Dictionary = find.call("minerva_notes_demo_wiring")
+	check("uninstall deletes the unchanged hint and hands the edited article to the user",
+		removed.deleted == 1 and removed.kept == 1 and find.call("minerva_notes_demo_baud").is_empty()
+		and kept.get("source") == "user" and kept.get("article") == "Red to red; black to COM.")
 	ctx.db.close()
