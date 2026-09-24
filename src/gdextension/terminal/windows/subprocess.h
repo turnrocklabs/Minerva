@@ -3,6 +3,7 @@
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -72,6 +73,17 @@ public:
 
     /// Start subprocess with given command and arguments
     bool start(const String &command, const PackedStringArray &args = PackedStringArray());
+
+    /// Start it with `extra_env` ({name: value}) added to, or replacing
+    /// entries of, the environment it inherits; this process's own
+    /// environment is untouched. Refuses (false) a name that is empty or has
+    /// '=' or NUL, or a value with NUL, and on Windows two names equal but
+    /// for case.
+    bool start_with_env(const String &command, const PackedStringArray &args, const Dictionary &extra_env);
+
+    /// The operating-system account this process runs as, or "" when it
+    /// cannot be told.
+    static String os_account_name();
 
     /// Stop the subprocess
     void stop();

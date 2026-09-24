@@ -1,5 +1,6 @@
 #include "subprocess.h"
 #include "common/utf8_line_buffer.h"
+#include "common/env_overrides.h"
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -10,7 +11,10 @@
 #include <poll.h>
 #include <sys/wait.h>
 #include <spawn.h>
+#include <pwd.h>
 #include <cstring>
+#include <string>
+#include <vector>
 #ifdef __APPLE__
 #include <crt_externs.h>
 #define MINERVA_ENVIRON (*_NSGetEnviron())
@@ -24,6 +28,8 @@ using namespace godot;
 void SubProcess::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("start", "command", "args"), &SubProcess::start, DEFVAL(PackedStringArray()));
+    ClassDB::bind_method(D_METHOD("start_with_env", "command", "args", "extra_env"), &SubProcess::start_with_env);
+    ClassDB::bind_static_method("SubProcess", D_METHOD("os_account_name"), &SubProcess::os_account_name);
     ClassDB::bind_method(D_METHOD("stop"), &SubProcess::stop);
     ClassDB::bind_method(D_METHOD("write_data", "data"), &SubProcess::write_data);
     ClassDB::bind_method(D_METHOD("has_io_overflow"), &SubProcess::has_io_overflow);
@@ -58,8 +64,53 @@ SubProcess::~SubProcess()
 
 bool SubProcess::start(const String &command, const PackedStringArray &args)
 {
+    return start_with_env(command, args, Dictionary());
+}
+
+String SubProcess::os_account_name()
+{
+    long size = sysconf(_SC_GETPW_R_SIZE_MAX);
+    std::vector<char> buffer(static_cast<size_t>(size > 0 ? size : 16384));
+    struct passwd entry;
+    struct passwd *found = nullptr;
+    int error;
+    // A long entry needs a bigger buffer than the system suggests.
+    while ((error = getpwuid_r(geteuid(), &entry, buffer.data(), buffer.size(), &found)) == ERANGE
+            && buffer.size() < (1u << 20))
+        buffer.resize(buffer.size() * 2);
+    if (error != 0 || found == nullptr || found->pw_name == nullptr)
+        return String();
+    return String::utf8(found->pw_name);
+}
+
+bool SubProcess::start_with_env(const String &command, const PackedStringArray &args, const Dictionary &extra_env)
+{
     if (_running)
         return false;
+    std::vector<std::pair<std::string, std::string>> overrides;
+    if (!minerva_env_overrides(extra_env, overrides)) {
+        UtilityFunctions::push_error("SubProcess: an environment override has an invalid name or value");
+        return false;
+    }
+    // The child's environment: this process's, less the overridden names,
+    // plus the overrides. The storage outlives posix_spawnp. Reading environ
+    // races a setenv on another thread, as passing environ itself always did.
+    std::vector<std::string> env_storage;
+    for (char **entry = MINERVA_ENVIRON; entry != nullptr && *entry != nullptr; ++entry) {
+        const char *equals = std::strchr(*entry, '=');
+        const std::string name(*entry, equals != nullptr ? static_cast<size_t>(equals - *entry) : std::strlen(*entry));
+        bool overridden = false;
+        for (const auto &override_entry : overrides)
+            overridden = overridden || override_entry.first == name;
+        if (!overridden)
+            env_storage.emplace_back(*entry);
+    }
+    for (const auto &override_entry : overrides)
+        env_storage.push_back(override_entry.first + "=" + override_entry.second);
+    std::vector<char *> envp;
+    envp.reserve(env_storage.size() + 1);
+    for (std::string &entry : env_storage) envp.push_back(&entry[0]);
+    envp.push_back(nullptr);
 
     // Create pipes for stdin, stdout, and stderr (all separate)
     int stdin_pipe[2] = {-1, -1};   // [0] = read end, [1] = write end
@@ -131,7 +182,7 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
     pid_t child = -1;
     if (spawn_error == 0)
         spawn_error = posix_spawnp(&child, cmd_utf8.ptr(), &actions, nullptr,
-                                   argv.data(), MINERVA_ENVIRON);
+                                   argv.data(), envp.data());
     if (actions_initialized) posix_spawn_file_actions_destroy(&actions);
     if (spawn_error != 0) {
         close_pipes();

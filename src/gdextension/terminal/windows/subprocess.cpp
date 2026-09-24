@@ -1,9 +1,11 @@
 #include "subprocess.h"
 #include "common/utf8_line_buffer.h"
+#include "common/env_overrides.h"
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <string>
+#include <vector>
 
 using namespace godot;
 
@@ -61,6 +63,66 @@ static std::wstring quote_arg(const std::wstring &arg)
     return out;
 }
 
+// The inherited environment with `overrides` (UTF-8 name/value pairs)
+// replacing entries of the same name, compared without case as Windows
+// names are, or added: a Unicode block, each entry NUL-terminated and the
+// whole ending in an extra NUL. Entries starting with '=' (the per-drive
+// current directories) are kept as they are; the inherited order is kept
+// and new entries come last (CreateProcess does not need the block sorted).
+// False, building nothing, when two overrides name the same variable or the
+// inherited environment cannot be read.
+static bool build_environment_block(const std::vector<std::pair<std::string, std::string>> &overrides,
+        std::wstring &block)
+{
+    std::vector<std::pair<std::wstring, std::wstring>> wide;
+    for (const auto &entry : overrides) {
+        std::wstring name = to_wide(String::utf8(entry.first.c_str()));
+        for (const auto &earlier : wide)
+            if (CompareStringOrdinal(earlier.first.c_str(), -1, name.c_str(), -1, TRUE) == CSTR_EQUAL)
+                return false;
+        wide.emplace_back(name, to_wide(String::utf8(entry.second.c_str())));
+    }
+    std::vector<bool> placed(wide.size(), false);
+    block.clear();
+    LPWCH inherited = GetEnvironmentStringsW();
+    if (inherited == nullptr)
+        return false;
+    for (LPWCH entry = inherited; *entry != L'\0'; entry += wcslen(entry) + 1) {
+        std::wstring text(entry);
+        const size_t equals = text.find(L'=', 1);  // past a leading '=' of a drive entry
+        const std::wstring name = text.substr(0, equals);
+        bool replaced = false;
+        if (text[0] != L'=') {
+            // Every inherited entry of the name goes; the override is written
+            // once, where the first one was.
+            for (size_t i = 0; i < wide.size(); ++i) {
+                if (CompareStringOrdinal(wide[i].first.c_str(), -1, name.c_str(), -1, TRUE) == CSTR_EQUAL) {
+                    if (!placed[i]) {
+                        block += wide[i].first + L"=" + wide[i].second;
+                        block.push_back(L'\0');
+                        placed[i] = true;
+                    }
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+        if (!replaced) {
+            block += text;
+            block.push_back(L'\0');
+        }
+    }
+    FreeEnvironmentStringsW(inherited);
+    for (size_t i = 0; i < wide.size(); ++i) {
+        if (!placed[i]) {
+            block += wide[i].first + L"=" + wide[i].second;
+            block.push_back(L'\0');
+        }
+    }
+    block.push_back(L'\0');
+    return true;
+}
+
 static void close_handle(HANDLE &h)
 {
     if (h != nullptr && h != INVALID_HANDLE_VALUE) {
@@ -76,6 +138,8 @@ static void close_handle(HANDLE &h)
 void SubProcess::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("start", "command", "args"), &SubProcess::start, DEFVAL(PackedStringArray()));
+    ClassDB::bind_method(D_METHOD("start_with_env", "command", "args", "extra_env"), &SubProcess::start_with_env);
+    ClassDB::bind_static_method("SubProcess", D_METHOD("os_account_name"), &SubProcess::os_account_name);
     ClassDB::bind_method(D_METHOD("stop"), &SubProcess::stop);
     ClassDB::bind_method(D_METHOD("write_data", "data"), &SubProcess::write_data);
     ClassDB::bind_method(D_METHOD("has_io_overflow"), &SubProcess::has_io_overflow);
@@ -114,8 +178,32 @@ SubProcess::~SubProcess()
 
 bool SubProcess::start(const String &command, const PackedStringArray &args)
 {
+    return start_with_env(command, args, Dictionary());
+}
+
+String SubProcess::os_account_name()
+{
+    wchar_t name[257];  // UNLEN + 1
+    DWORD length = 257;
+    if (!GetUserNameW(name, &length) || length <= 1)
+        return String();
+    return String(std::wstring(name, length - 1).c_str());  // length counts the NUL
+}
+
+bool SubProcess::start_with_env(const String &command, const PackedStringArray &args, const Dictionary &extra_env)
+{
     if (_running)
         return false;
+    std::vector<std::pair<std::string, std::string>> overrides;
+    std::wstring environment;
+    if (!minerva_env_overrides(extra_env, overrides)) {
+        UtilityFunctions::push_error("SubProcess: an environment override has an invalid name or value");
+        return false;
+    }
+    if (!build_environment_block(overrides, environment)) {
+        UtilityFunctions::push_error("SubProcess: two environment overrides name the same variable, or the inherited environment could not be read");
+        return false;
+    }
 
     SECURITY_ATTRIBUTES sa = {};
     sa.nLength = sizeof(sa);
@@ -183,8 +271,10 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
         nullptr,            // process security
         nullptr,            // thread security
         TRUE,               // inherit handles (the child-side pipe ends)
-        CREATE_NO_WINDOW,   // no console window flashes for console subprocesses
-        nullptr,            // inherit environment
+        // No console window flashes for console subprocesses; the
+        // environment block is UTF-16.
+        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+        &environment[0],    // the inherited environment with the overrides
         nullptr,            // inherit working directory
         &si,
         &pi);
