@@ -11,7 +11,7 @@ var _ws: WebSocketPeer
 var _generation := 0
 var _connected := false
 var _configuration: Dictionary = {}
-const BuiltinVoice = preload("res://Scripts/Services/Voice/BuiltinVoicePlugin.gd")
+const VOICE_PLUGIN_ID := "voice"
 
 
 func start(configuration: Dictionary) -> void:
@@ -25,15 +25,15 @@ func _start_worker(generation: int) -> void:
 	if manager == null:
 		_terminal_failure(generation, "Voice Support is unavailable", false)
 		return
-	var connection = manager.get_connection(BuiltinVoice.ID)
+	var connection = manager.get_connection(VOICE_PLUGIN_ID)
 	if connection == null:
-		var started: Dictionary = await manager.start_plugin(BuiltinVoice.ID)
+		var started: Dictionary = await manager.start_plugin(VOICE_PLUGIN_ID)
 		if generation != _generation:
 			return
 		if started.has("error"):
 			_terminal_failure(generation, str(started.error), false)
 			return
-		connection = manager.get_connection(BuiltinVoice.ID)
+		connection = manager.get_connection(VOICE_PLUGIN_ID)
 	if connection == null:
 		_terminal_failure(generation, "Voice Support did not create a control connection")
 		return
@@ -68,7 +68,7 @@ func _connect_endpoint(endpoint: Dictionary, generation: int) -> void:
 
 func _reconnect_audio(generation: int) -> void:
 	var manager = _get_manager()
-	var connection = manager.get_connection(BuiltinVoice.ID) if manager != null else null
+	var connection = manager.get_connection(VOICE_PLUGIN_ID) if manager != null else null
 	if connection == null:
 		if generation == _generation:
 			_terminal_failure(generation, "Voice Support stopped unexpectedly")
@@ -95,14 +95,14 @@ func _stop_worker() -> void:
 	var manager = _get_manager()
 	if manager == null:
 		return
-	manager.stop_plugin(BuiltinVoice.ID)
+	manager.stop_plugin(VOICE_PLUGIN_ID)
 
 
 func update_config(configuration: Dictionary) -> void:
 	_configuration = configuration.duplicate(true)
 	var generation := _generation
 	var manager = _get_manager()
-	var connection = manager.get_connection(BuiltinVoice.ID) if manager != null else null
+	var connection = manager.get_connection(VOICE_PLUGIN_ID) if manager != null else null
 	if connection != null:
 		var configured: Dictionary = await connection.call_tool("minerva_voice_configure", _configuration)
 		if generation == _generation and configured.has("error"):

@@ -59,7 +59,6 @@ TURNROCK_TESTS=(
 	test/test_core_request_lifecycle.gd
 	test/test_core_binary_voice_routing.gd
 	test/test_voice_contracts.gd
-	test/test_builtin_voice_catalog.gd
 	test/test_bundled_voice_detector_adapter.gd
 	test/test_voice_deactivation_prompt.gd
 	test/test_voice_gateway_lifecycle.gd
@@ -116,8 +115,7 @@ HERMETIC_TESTS=(
 	test/test_worker_parent_chat.gd
 	test/test_core_action_catalog.gd
 	test/test_chat_groups_integration.gd
-	test/test_internal_plugin_catalog.gd
-	test/test_internal_plugin_autostart.gd
+	test/test_required_plugins.gd
 	test/test_plugin_manager_hot_reload.gd
 	test/test_marketplace_install_from_url.gd
 	test/test_plugin_downloader.gd

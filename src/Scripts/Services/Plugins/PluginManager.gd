@@ -241,8 +241,6 @@ func _ready() -> void:
 	install_queue = load("res://Scripts/Services/Plugins/PluginInstallQueue.gd").new()
 	install_queue.manager = self
 	add_child(install_queue)
-	for internal_id in _db.register_internal():
-		_ensure_runtime(internal_id)
 	# Chat-provider registry (W1). Drop a plugin's entries when it stops/crashes
 	# so dead providers vanish gracefully from the chooser.
 	if _chat_provider_registry == null:
@@ -257,57 +255,6 @@ func _ready() -> void:
 ## accessed before _ready().
 func get_chat_provider_registry():
 	return _chat_provider_registry
-
-
-## Bring every registered host-owned plugin to install-equivalent readiness:
-## data directories, first-install grants, and reconciled skills.
-##
-## Separate from _ready() because those three need the policy engine, the tool
-## registry and the docket manager, all of which SingletonObject wires AFTER
-## constructing this manager. Persisted grant decisions and customized skills
-## remain authoritative when this is called again.
-func prepare_internal_plugins() -> void:
-	for id in InternalPlugins.ids():
-		var def = _db.get_by_id(id)
-		if def == null:
-			continue
-		var create_result := _create_plugin_directories(def)
-		if create_result.has("error"):
-			push_warning("[PluginManager] Warning creating directories for '%s': %s" % [
-				id, create_result["error"]])
-		# A persisted empty grant list is an explicit user decision. Internal
-		# registration is reconstructed at each launch, but consent is not.
-		if _policy_ref != null and not _policy_ref._grants.has(def.id):
-			_auto_grant_declared_capabilities(def)
-		# Empty manifests still reconcile so a removed final skill is deprecated.
-		_seed_internal_skills(def)
-
-
-## Reconcile a host-owned plugin's skills through the normal update machinery.
-## Pristine records follow shipped updates; customized records remain untouched.
-func _seed_internal_skills(def, docket_override = null) -> void:
-	var docket_manager = docket_override if docket_override != null else _get_docket_manager()
-	if docket_manager == null:
-		push_warning("[PluginManager] No docket manager; skipping skill seed for '%s'" % def.id)
-		return
-	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	var available_tools := _build_available_tools()
-	# materialize owns brand-new records and receives the exact plugin id. The
-	# reconcile pass below then owns changed/deprecated records.
-	var resolved: Array = SeederClass.resolve_deps(def, available_tools)
-	var materialized: Dictionary = SeederClass.materialize(def.id, resolved, docket_manager)
-	if int(materialized.get("failed", 0)) > 0:
-		push_warning("[PluginManager] Internal skill seed failed for '%s'" % def.id)
-		return
-	var plan: Dictionary = SeederClass.plan_reconcile(def, available_tools, docket_manager)
-	var decisions: Dictionary = {}
-	for action in plan.get("actions", []):
-		if str(action.get("action", "")) == SeederClass.RECONCILE_PROMPT_REQUIRED:
-			var skill: Dictionary = action.get("skill", {})
-			decisions[str(skill.get("id", ""))] = false
-	var reconciled: Dictionary = SeederClass.apply_reconcile(plan, decisions, docket_manager)
-	if int(reconciled.get("failed", 0)) > 0:
-		push_warning("[PluginManager] Internal skill reconcile failed for '%s'" % def.id)
 
 
 func _process(delta: float) -> void:
@@ -367,8 +314,11 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 
 	# Default-grant declared capabilities (except privilege-escalation ones).
 	# Install is the trust act; per-capability opt-in is friction the user
-	# can reverse later by revoking specific caps.
-	_auto_grant_declared_capabilities(def)
+	# can reverse later by revoking specific caps. A required plugin's grants
+	# can predate its record (an older Minerva shipped it built in); those
+	# decisions, revocations included, are kept.
+	if not (RequiredPlugins.has(def.id) and _policy_ref != null and _policy_ref._grants.has(def.id)):
+		_auto_grant_declared_capabilities(def)
 
 	print("[PluginManager] Registered plugin manifest '%s' v%s" % [def.id, def.version])
 	_register_manifest_tools(def.id)
@@ -488,8 +438,6 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	var def = PluginDef.from_manifest(manifest_path, lane)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
-	if InternalPlugins.has(def.id):
-		return {"error": "Plugin '%s' is managed by Minerva" % def.id}
 	if not _db.has_plugin(def.id):
 		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
 	var previous_def = _db.get_by_id(def.id)
@@ -561,8 +509,8 @@ func collect_skill_consent(manifest_path: String, auto_confirm: bool, op = null)
 ## If delete_data is true, also remove the plugin's data directory.
 ## Returns {"ok": true} or {"error": "..."}.
 func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
-	if InternalPlugins.has(id):
-		return {"error": "Plugin '%s' is managed by Minerva" % id}
+	if RequiredPlugins.has(id):
+		return {"error": "%s is required by Minerva and cannot be removed; you can stop it, or turn its Auto-start off" % RequiredPlugins.display_name(id)}
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -705,6 +653,10 @@ func _get_docket_manager():
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
+	# Refused before PluginPendingUpgrade, which would take a refusal for a
+	# failed first start and roll a pending update back.
+	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
+		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
 	if in_transaction:
 		return await _start_plugin_now(id)
 	return await PendingUpgrade.start(self, id, _start_plugin_now.bind(id))
@@ -714,18 +666,13 @@ func _start_plugin_now(id: String) -> Dictionary:
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
 
-	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
-		return {"error": "Voice Support is disabled in Preferences"}
-
 	var def = _db.get_by_id(id)
 	if def == null:
-		return {"error": "Plugin '%s' not found" % id}
-	# Every host-owned member owns an actionable repair sentence; it is the
-	# error the caller sees, verbatim.
-	if InternalPlugins.has(id):
-		var runtime_issue: String = InternalPlugins.runtime_issue(id)
+		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
+	if RequiredPlugins.has(id):
+		var runtime_issue := RequiredPlugins.runtime_issue(def)
 		if not runtime_issue.is_empty():
-			return {"error": runtime_issue}
+			return {"error": RequiredPlugins.missing_message(id, runtime_issue)}
 
 	if def.state == S_RUNNING:
 		return {"error": "Plugin '%s' is already running" % id}
@@ -767,6 +714,8 @@ func _start_plugin_now(id: String) -> Dictionary:
 	# means the user explicitly revoked everything — leave it alone.
 	if _policy_ref != null and not _policy_ref._grants.has(def.id):
 		_auto_grant_declared_capabilities(def)
+
+	RequiredPlugins.prepare_launch(def)
 
 	# Clean up any leftover connection from a previous run.
 	_cleanup_connection(id)
@@ -966,10 +915,12 @@ func _register_manifest_tools(plugin_id: String) -> void:
 
 ## Stop a running plugin cleanly.
 ## Returns {"ok": true} or {"error": "..."}.
-func stop_plugin(id: String) -> Dictionary:
+func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
+	if by_person:
+		_person_stops[id] = person_stops(id) + 1
 
 	if def.state == S_STOPPED:
 		return {"ok": true}  # Already stopped, idempotent.
@@ -1023,8 +974,6 @@ func restart_plugin(id: String) -> Dictionary:
 ## pipeline rerun"). Returns immediately; the outcome arrives asynchronously
 ## via _on_setup_pipeline_finished, same as install_plugin()'s kickoff.
 func rebuild(id: String) -> Dictionary:
-	if InternalPlugins.has(id):
-		return {"error": "Plugin '%s' is shipped by Minerva and cannot be rebuilt here" % id}
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
@@ -1403,8 +1352,6 @@ func get_audit_log():  # -> PluginAuditLog
 ## When enabled, the plugin is restarted automatically when files in its
 ## data_directory change (2s poll, 500ms debounce).
 func set_auto_reload(id: String, enabled: bool) -> bool:
-	if InternalPlugins.has(id):
-		return false
 	return _db.set_auto_reload(id, enabled)
 
 
@@ -1417,11 +1364,32 @@ func set_auto_reload(id: String, enabled: bool) -> bool:
 ## process alive for minutes (the slow-app-close bug, 2026-07-03).
 var _shutting_down: bool = false
 
+## plugin_id -> how many times a person (the panel, an MCP call, turning a
+## feature off) has asked it to stop this session; stop_plugin's by_person.
+var _person_stops: Dictionary = {}
 
-## At launch: start the autostart plugins, then queue the opted-in updates
+
+func is_shutting_down() -> bool:
+	return _shutting_down
+
+
+## How many times a person has stopped `id` this session. A start Minerva
+## decided on earlier (RequiredPlugins) is dropped if this has changed since.
+func person_stops(id: String) -> int:
+	return _person_stops.get(id, 0)
+
+
+## At launch: queue installs of missing required plugins (RequiredPlugins,
+## alongside), start the autostart plugins, then queue the opted-in updates
 ## (PluginAutoUpdater), so an update of a plugin that just started must start
 ## again before it commits. Minerva does not wait on this.
 func start_plugins_at_launch() -> void:
+	# Not awaited: autostart does not wait on the network. An editor run (a
+	# developer's checkout, and the test harness) never fetches by itself; the
+	# plugin panel's "Install required plugins" does it on request.
+	RequiredPlugins.move_legacy_relay_state()
+	if not OS.has_feature("editor"):
+		RequiredPlugins.ensure(self)
 	await start_autostart_plugins()
 	if not _shutting_down:
 		await AutoUpdater.run(self)
@@ -1437,7 +1405,9 @@ func start_autostart_plugins() -> void:
 			SingletonObject.verbose_log("[PluginManager] Autostart aborted — shutting down")
 			return
 		var result := await start_plugin(def.id)
-		if result.get("error"):
+		if result.get("disabled", false):
+			SingletonObject.verbose_log("[PluginManager] Autostart skipped for '%s': %s" % [def.id, result.error])
+		elif result.get("error"):
 			push_error("[PluginManager] Autostart failed for '%s': %s" % [def.id, result.get("error")])
 
 
@@ -1571,9 +1541,6 @@ func _run_file_watch_checks() -> void:
 ##   .py/.js/.sh/.json → restart the plugin process after recording that boundary
 func _on_reload_debounce_expired(id: String) -> void:
 	_reload_pending.erase(id)
-	# Host-owned plugins are replaced by a Minerva build, never hot-reloaded.
-	if InternalPlugins.has(id):
-		return
 
 	# Collect and clear the accumulated changed paths for this plugin.
 	var changed_paths: Array = _pending_changed_paths.get(id, [])

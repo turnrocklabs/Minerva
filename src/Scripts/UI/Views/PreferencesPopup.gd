@@ -3736,7 +3736,7 @@ func _apply_staged_voice_enabled() -> void:
 	VoiceFeature.cancel_active()
 	var manager = SingletonObject.plugin_manager
 	if manager != null:
-		manager.stop_plugin("voice")
+		manager.stop_plugin("voice", true)
 
 
 func _on_voice_status_pressed() -> void:

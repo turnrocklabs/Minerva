@@ -719,11 +719,6 @@ func _wire_plugin_tools_to_mcp() -> void:
 			push_error("[Plugins] Initial tool sync failed for '%s': %s" % [
 				def.id, sync_result.get("error")])
 
-	# Host-owned plugins never ran an install, so their directories, capability
-	# grants and shipped skills are established here — the first point where
-	# the policy engine, tool registry and docket manager are all wired.
-	plugin_manager.prepare_internal_plugins()
-
 	# Autostart plugins (like SCM services with auto-start flag), then any
 	# opted-in plugin updates
 	plugin_manager.start_plugins_at_launch()

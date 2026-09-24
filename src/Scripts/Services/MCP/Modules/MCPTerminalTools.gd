@@ -1066,6 +1066,10 @@ func _call_relay_tool(tool_name: String, args: Dictionary):
 	var manager = SingletonObject.plugin_manager if "plugin_manager" in SingletonObject else null
 	var conn = manager.get_connection(AGENT_RELAY_PLUGIN_ID) if manager != null and manager.has_method("get_connection") else null
 	if conn == null:
+		var relay = manager.get_db().get_by_id(AGENT_RELAY_PLUGIN_ID) if manager != null and manager.has_method("get_db") else null
+		var issue := RequiredPlugins.runtime_issue(relay) if relay != null else ""
+		if manager != null and (relay == null or not issue.is_empty()):
+			return {"error": "%s Nothing was typed into that terminal." % RequiredPlugins.missing_message(AGENT_RELAY_PLUGIN_ID, issue)}
 		return {"error": "the agent-relay plugin is not running, so nothing can type into that terminal"}
 	return await conn.call_tool(tool_name, args)
 

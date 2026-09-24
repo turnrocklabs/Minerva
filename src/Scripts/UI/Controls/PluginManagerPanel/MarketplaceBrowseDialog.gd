@@ -66,7 +66,7 @@ func _refresh() -> void:
 	var target := MarketplaceClient.resolve_platform_target()
 	for entry in _plugins:
 		_list.add_item("%s — v%s" % [entry.get("name", entry.get("id", "?")), entry.get("version", "?")])
-		if not entry.get("downloads", {}).has(target):
+		if MarketplaceClient.download_target(entry.get("downloads", {})).is_empty():
 			var idx := _list.item_count - 1
 			_list.set_item_disabled(idx, true)
 			_list.set_item_tooltip(idx, "No build published for %s" % target)
@@ -98,8 +98,9 @@ func _describe(entry: Dictionary) -> String:
 	lines.append("")
 	lines.append("[b]Available for:[/b]")
 	for t in entry.get("downloads", {}).keys():
-		lines.append("  %s %s%s" % ["✓" if t == target else "·", _plain(t), "  (this computer)" if t == target else ""])
-	if not entry.get("downloads", {}).has(target):
+		var here: bool = t == MarketplaceClient.download_target(entry.get("downloads", {}))
+		lines.append("  %s %s%s" % ["✓" if here else "·", _plain(t), "  (this computer)" if here else ""])
+	if MarketplaceClient.download_target(entry.get("downloads", {})).is_empty():
 		lines.append("[i]No build for this computer (%s).[/i]" % target)
 	return "\n".join(lines)
 
@@ -107,14 +108,14 @@ func _describe(entry: Dictionary) -> String:
 ## Selected entries with a build for this computer, not already installed at
 ## that version, and not already being installed.
 func _installable_selection() -> Array:
-	var target := MarketplaceClient.resolve_platform_target()
 	var queue = _queue()
 	var picked := []
 	for idx in _list.get_selected_items():
 		var entry: Dictionary = _plugins[idx]
 		var id := str(entry.get("id", ""))
 		var job = queue.job_for(id) if queue != null else null
-		if entry.get("downloads", {}).has(target) and _installed_version(id) != str(entry.get("version", "")) \
+		if not MarketplaceClient.download_target(entry.get("downloads", {})).is_empty() \
+				and _installed_version(id) != str(entry.get("version", "")) \
 				and (job == null or job.state == job.State.DONE):
 			picked.append(entry)
 	return picked

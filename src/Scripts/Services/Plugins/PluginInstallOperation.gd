@@ -43,9 +43,18 @@ var staging_dir := ""
 ## asked, so a skill the user customised keeps their version and a skill the
 ## update adds is not seeded.
 var unattended := false
+## A required plugin's repair (RequiredPlugins.ensure): it replaces only a copy
+## that still needs repair when the install takes the staging lock.
+var repair_only := false
 ## Set by the caller that stopped the running plugin for the replacement, so
 ## the new version is started (and must start) before the install commits.
 var start_after_install := false
+
+
+## Whether the install may yet be skipped as no longer wanted (an unattended
+## update or a repair), so no one else's request should rely on it.
+func conditional() -> bool:
+	return unattended or repair_only
 
 
 func cancel() -> void:

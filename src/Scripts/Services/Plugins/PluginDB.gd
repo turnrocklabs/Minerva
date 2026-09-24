@@ -19,11 +19,10 @@ var _plugins: Dictionary = {}
 ## reported as failed.
 var _disk_signature := ""
 
-## plugin_id -> bool for host-owned plugins. Their definitions are rebuilt from
-## res:// on every launch and never persisted, but the user's "start with
-## Minerva" choice is a decision, not a definition, so it is stored here and
-## re-applied to each rebuilt definition in register_internal().
-var _internal_autostart: Dictionary = {}
+## plugin_id -> bool: the "start with Minerva" choices older Minervas stored
+## for plugins they shipped built in, kept until that plugin has a record of
+## its own (RequiredPlugins reads it when it installs one).
+var _legacy_autostart: Dictionary = {}
 
 ## class_name -> plugin_id for all installed plugins.
 ## Built lazily during install and loaded from DB at startup.
@@ -65,9 +64,6 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 	var def := PluginDefinition.from_manifest(manifest_path, lane)
 	if def == null:
 		push_error("[PluginDB] Failed to parse manifest: %s" % manifest_path)
-		return null
-	if _is_reserved(def.id):
-		push_error("[PluginDB] '%s' is a host-owned plugin identity" % def.id)
 		return null
 	def.install_lane = lane if lane in PluginDefinition.INSTALL_LANES else PluginDefinition.LANE_MANIFEST
 
@@ -123,8 +119,6 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 
 ## Remove a plugin by id. Returns true if it was found and removed.
 func remove(plugin_id: String) -> bool:
-	if _is_reserved(plugin_id):
-		return false
 	if not _plugins.has(plugin_id):
 		return false
 	var def: PluginDefinition = _plugins[plugin_id]
@@ -196,8 +190,6 @@ func update_state(plugin_id: String, new_state: PluginDefinition.State) -> bool:
 ## Replace the stored definition for an already-installed plugin.
 ## Use this to apply manifest changes after an upgrade.
 func update_definition(def: PluginDefinition) -> bool:
-	if _is_reserved(def.id):
-		return false
 	if not _plugins.has(def.id):
 		push_warning("[PluginDB] Cannot update unknown plugin '%s' — install it first" % def.id)
 		return false
@@ -223,8 +215,6 @@ func save() -> bool:
 ## changes it stays in memory either way, since it is what the recovery pass
 ## will write back too.
 func restore(def: PluginDefinition) -> bool:
-	if _is_reserved(def.id):
-		return false
 	if _plugins.has(def.id):
 		def.state = _plugins[def.id].state
 		_unregister_class_names(def.id)
@@ -235,30 +225,27 @@ func restore(def: PluginDefinition) -> bool:
 	return saved
 
 
-## Set the autostart flag for a plugin and persist the change.
-## Host-owned plugins take the same path; their flag rides in the separate
-## internal_autostart record because their definitions are not persisted.
+## Set the autostart flag for a plugin and persist the change. It replaces
+## any choice an older Minerva stored for the plugin (legacy_autostart).
 func set_autostart(plugin_id: String, enabled: bool) -> bool:
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
 	var was: bool = def.autostart
-	var internal_before := _internal_autostart.duplicate()
+	var legacy_before := _legacy_autostart.duplicate()
 	def.autostart = enabled
-	if _is_reserved(plugin_id):
-		_internal_autostart[plugin_id] = enabled
+	_legacy_autostart.erase(plugin_id)
 	if not _save():
 		def.autostart = was
-		_internal_autostart = internal_before
+		_legacy_autostart = legacy_before
 		return false
 	return true
 
 
-## Set the auto_update flag for a plugin and persist the change. Refused for
-## host-owned plugins, which are not installed from the marketplace.
+## Set the auto_update flag for a plugin and persist the change.
 func set_auto_update(plugin_id: String, enabled: bool) -> bool:
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
-	if def == null or _is_reserved(plugin_id):
+	if def == null:
 		return false
 	var was: bool = def.auto_update
 	def.auto_update = enabled
@@ -272,8 +259,6 @@ func set_auto_update(plugin_id: String, enabled: bool) -> bool:
 ## When true, PluginManager will restart this plugin automatically when
 ## its source files change (hot reload for development).
 func set_auto_reload(plugin_id: String, enabled: bool) -> bool:
-	if _is_reserved(plugin_id):
-		return false
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
@@ -309,12 +294,11 @@ func load_db() -> Error:
 	var root: Dictionary = json.data if json.data is Dictionary else {}
 	var records: Array = root.get("plugins", [])
 
-	_internal_autostart.clear()
-	var internal_record = root.get("internal_autostart", {})
-	if internal_record is Dictionary:
-		for plugin_id in internal_record:
-			if _is_reserved(str(plugin_id)):
-				_internal_autostart[str(plugin_id)] = bool(internal_record[plugin_id])
+	_legacy_autostart.clear()
+	var legacy_record = root.get("internal_autostart", {})
+	if legacy_record is Dictionary:
+		for plugin_id in legacy_record:
+			_legacy_autostart[str(plugin_id)] = bool(legacy_record[plugin_id])
 
 	_plugins.clear()
 	_class_name_registry.clear()
@@ -324,8 +308,6 @@ func load_db() -> Error:
 		var def := PluginDefinition.from_dict(record)
 		if def == null:
 			push_warning("[PluginDB] Skipping invalid plugin record: %s" % JSON.stringify(record))
-			continue
-		if _is_reserved(def.id):
 			continue
 		# Reject persisted records that fail validation. Same contract as
 		# from_manifest at install time: an invalid definition does not register.
@@ -346,28 +328,10 @@ func load_db() -> Error:
 	return OK
 
 
-## Host-owned plugins are reconstructed here from their trusted res:// sources
-## and never accept a caller-supplied definition — the parameter exists only so
-## a caller that passes one gets it ignored rather than honoured.
-##
-## Returns the ids that registered. A member whose runtime is unsupported on
-## this platform yields no definition and is simply absent from the result.
-func register_internal(_ignored_definition = null) -> Array[String]:
-	var registered: Array[String] = []
-	for plugin_id in InternalPlugins.ids():
-		var def = InternalPlugins.definition_for(plugin_id)
-		if def == null:
-			continue
-		def.autostart = bool(_internal_autostart.get(def.id, def.autostart))
-		_plugins[def.id] = def
-		registered.append(def.id)
-	if not registered.is_empty():
-		plugins_changed.emit()
-	return registered
-
-
-static func _is_reserved(plugin_id: String) -> bool:
-	return InternalPlugins.has(plugin_id)
+## The "start with Minerva" choice an older Minerva stored for `plugin_id`
+## when it shipped built in, or null when there is none.
+func legacy_autostart(plugin_id: String):
+	return _legacy_autostart.get(plugin_id)
 
 
 # ---------------------------------------------------------------------------
@@ -377,14 +341,12 @@ static func _is_reserved(plugin_id: String) -> bool:
 func _save() -> bool:
 	var records: Array = []
 	for def in _plugins.values():
-		if _is_reserved(def.id):
-			continue
 		records.append(def.to_dict())
 
 	var data := {
 		"version": DB_VERSION,
 		"plugins": records,
-		"internal_autostart": _internal_autostart,
+		"internal_autostart": _legacy_autostart,
 	}
 
 	# Written with AtomicFile, so a crash leaves the old complete file or the

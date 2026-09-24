@@ -125,6 +125,9 @@ var _tools_list: VBoxContainer = null
 
 var _install_button: Button = null
 var _browse_button: Button = null
+var _required_button: Button = null
+## Required plugins the last full check (every listed file) found broken.
+var _broken_required: Array[String] = []
 var _status_label: Label = null
 
 
@@ -136,6 +139,7 @@ func _ready() -> void:
 	_build_ui()
 	_ensure_plugin_system()
 	_connect_signals()
+	_check_required_plugins()
 	_refresh_plugin_list()
 
 
@@ -411,17 +415,6 @@ func _populate_setup_status(plugin_id: String) -> void:
 	var def = pm.get_db().get_by_id(plugin_id)
 	if def == null:
 		return
-	if InternalPlugins.has(plugin_id):
-		var issue: String = InternalPlugins.runtime_issue(plugin_id)
-		if not issue.is_empty():
-			_setup_status_container.visible = true
-			var runtime_error := Label.new()
-			runtime_error.text = issue
-			runtime_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			runtime_error.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
-			_setup_status_container.add_child(runtime_error)
-		return
-
 	if def.state == pm.S_BUILDING:
 		_setup_status_container.visible = true
 		var progress: Dictionary = pm.get_build_progress(plugin_id)
@@ -660,6 +653,13 @@ func _build_bottom_toolbar() -> HBoxContainer:
 	_browse_button.pressed.connect(_on_browse_marketplace_pressed)
 	hbox.add_child(_browse_button)
 
+	_required_button = Button.new()
+	_required_button.text = "Install required plugins"
+	_required_button.tooltip_text = "Fetch the plugins Minerva needs that are not installed, from their official releases"
+	_required_button.pressed.connect(_on_install_required_pressed)
+	_required_button.visible = false
+	hbox.add_child(_required_button)
+
 	# An unwrapped Label's minimum width is its full text width, and that
 	# minimum propagates through the layout regardless of clip_contents — a
 	# long status message would shove the whole panel wider than its pane.
@@ -772,6 +772,8 @@ func _disconnect_signals() -> void:
 func _refresh_plugin_list() -> void:
 	if not _plugin_list:
 		return
+
+	_update_required_button()
 
 	_plugin_list.clear()
 	_ensure_plugin_system()
@@ -898,25 +900,18 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_building := state == pm.S_BUILDING
 	var is_build_failed := state == pm.S_BUILD_FAILED
 	var is_needs_binary := state == pm.S_NEEDS_BINARY
-	var is_internal := InternalPlugins.has(plugin_id)
+	var is_required := RequiredPlugins.has(plugin_id)
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting) or is_building
-	_reload_button.visible = not is_internal
-	_remove_button.visible = not is_internal
-	# Auto-start is a user decision every plugin may make, host-owned or not.
-	# Auto-reload watches a source checkout, which a host-owned plugin has no
-	# equivalent of, so it stays hidden for internal plugins.
-	_auto_reload_check.visible = not is_internal
-	if is_internal:
-		_files_changed_label.visible = false
+	# A required plugin can be stopped and kept from starting, not removed.
+	_remove_button.visible = not is_required
 
 	# Show "Open Panel" button only if plugin declares UI panels and is running
 	var def = pm.get_db().get_by_id(plugin_id)
 	# Startup updates come from the marketplace; a developer (manifest-lane)
 	# checkout is never overwritten, so the toggle is offered only there.
-	_auto_update_check.visible = def != null and not is_internal \
-		and def.install_lane == PluginDefinition.LANE_MARKETPLACE
+	_auto_update_check.visible = def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE
 	if _panel_button != null and def != null:
 		_panel_button.visible = not def.ui_panels.is_empty()
 		_panel_button.disabled = not is_running
@@ -1212,6 +1207,8 @@ func _on_start_pressed() -> void:
 	_start_button.disabled = true
 	var result: Dictionary = await _pm().start_plugin(_selected_plugin_id)
 	_report_lifecycle_result("Start", _selected_plugin_id, result)
+	if result.has("error") and RequiredPlugins.has(_selected_plugin_id):
+		_check_required_plugins()
 	_refresh_plugin_list()
 
 
@@ -1220,7 +1217,7 @@ func _on_stop_pressed() -> void:
 		return
 	_show_status("Stopping %s..." % _selected_plugin_id)
 	_stop_button.disabled = true
-	var result: Dictionary = _pm().stop_plugin(_selected_plugin_id)
+	var result: Dictionary = _pm().stop_plugin(_selected_plugin_id, true)
 	_report_lifecycle_result("Stop", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
@@ -1372,6 +1369,40 @@ func _on_install_pressed() -> void:
 		add_child(_install_dialog)
 	_sync_dialog_scale(_install_dialog)
 	_install_dialog.popup_centered(Vector2i(Vector2(700, 500) * _install_dialog.content_scale_factor))
+
+
+## Shown while a required plugin is missing or broken. The list refreshes
+## often, so a refresh takes the cheap look (RequiredPlugins.missing_ids with
+## every_file false) plus what the last full check found.
+func _update_required_button() -> void:
+	if _required_button == null or _pm() == null:
+		return
+	_required_button.visible = not (_broken_required.is_empty()
+		and RequiredPlugins.missing_ids(_pm(), false).is_empty())
+
+
+## The full check, when the panel opens, after a required plugin fails to
+## start, and when the button is pressed or its installs end.
+func _check_required_plugins() -> void:
+	if _pm() != null:
+		_broken_required = RequiredPlugins.missing_ids(_pm())
+
+
+func _on_install_required_pressed() -> void:
+	_show_status("Looking for required plugin releases...")
+	_check_required_plugins()
+	var queued: Dictionary = await RequiredPlugins.ensure(_pm())
+	for job in queued.values():
+		job.finished.connect(func() -> void:
+			_check_required_plugins()
+			_refresh_plugin_list(), CONNECT_ONE_SHOT)
+	if not queued.is_empty():
+		_show_status("Installing %s" % ", ".join(queued.keys()))
+	elif _broken_required.is_empty():
+		_show_status("Every required plugin is installed")
+	else:
+		_show_status("No required plugin could be fetched now; check the network and try again")
+	_refresh_plugin_list()
 
 
 func _on_browse_marketplace_pressed() -> void:

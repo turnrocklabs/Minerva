@@ -440,7 +440,7 @@ static func _validate(record) -> String:
 	var id: String = record.id
 	if record.phase == PHASE_STAGED and id.is_empty():
 		return ""
-	if not PluginDefinition._is_valid_id(id) or id == "data" or InternalPlugins.has(id):
+	if not PluginDefinition._is_valid_id(id) or id == "data":
 		return "for an invalid plugin id '%s'" % id
 	var before = record.get("db_before")
 	if before != null and not (before is Dictionary and before.get("id") == id):

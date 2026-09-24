@@ -24,7 +24,9 @@ extends SceneTree
 ##     a dialog's queued install, returns its result, and does not change the
 ##     confirmation choice the dialog's request was made with;
 ##   - once a URL-only install reveals its plugin, a queued request for the
-##     same version joins it and one for another version ends as a conflict;
+##     same version joins it and one for another version ends as a conflict,
+##     while a queued repair stays its own job and is judged by its own
+##     guard;
 ##   - an MCP install that outlasts its wait answers running with a job id,
 ##     and minerva_plugin_marketplace_job follows that job to its result
 ##     without starting another; unknown ids, and ids from another queue,
@@ -295,6 +297,7 @@ func _test_url_install_absorbs_or_refuses_queued_duplicates() -> void:
 	var by_url = queue.request_url(_slow_url)  # its plugin is unknown until the archive is read
 	# The same plugin from the registry, under a different URL string.
 	var other_url := _slow_url.replace("127.0.0.1", "localhost")
+	var repair = queue.request(_entry(SLOW, _slow_url), true, false, true)
 	var same = queue.request(_entry(SLOW, other_url))
 	var entry := _entry(SLOW, other_url)
 	entry["version"] = "9.0.0"
@@ -319,6 +322,9 @@ func _test_url_install_absorbs_or_refuses_queued_duplicates() -> void:
 		"the same-version request joined the running install and ended with it: %s" % [same.summary()])
 	_check(conflicting.outcome == Job.OUTCOME_FAILED and conflicting.result.get("error") == "install_conflict",
 		"the other-version request ends as a conflict: %s" % [conflicting.summary()])
+	await _done(repair)
+	_check(repair.joined == null and repair.result.get("error") == "repair_not_needed",
+		"a queued repair is not absorbed; it runs alone and skips the copy just installed: %s" % [repair.summary()])
 
 
 # The install tool's wait stands in for the MCP request deadline: a short

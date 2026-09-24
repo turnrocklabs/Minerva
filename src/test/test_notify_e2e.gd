@@ -7,11 +7,10 @@ extends SceneTree
 ## Run: godot --headless --path src --script test/test_notify_e2e.gd
 ## SKIPs (exit 0) when the plugin, python3 or the PTY extension is missing.
 ##
-## agent_relay is an INTERNAL plugin: the host starts the binary staged by
-## `scripts/build-extensions.sh --agent-relay-only`, not a cargo target. The
-## run prints which directory it started the plugin from; a stale stage tests
-## a stale relay. MINERVA_AGENT_RELAY_PLUGIN_DIR only matters when no
-## definition exists at all.
+## The relay under test is the one in MINERVA_AGENT_RELAY_PLUGIN_DIR, which
+## must hold the reviewed release archive extracted (a build stage has no
+## manifest.json); unset, the run SKIPs. A profile whose agent_relay record points anywhere
+## else fails rather than testing some other relay.
 ##
 ## The mock is launched through a shim NAMED codex, so the PTY's foreground
 ## process is what the listing classifies as the codex harness — the same
@@ -33,7 +32,6 @@ const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalI
 const LAUNCH_DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const MOCK_PATH := "res://test/fixtures/passthrough_e2e/mock_codex.py"
 
-const AGENT_RELAY_DIR_REL := "/github/minerva-plugins/agent-relay"
 const AGENT_RELAY_MANIFEST := "/manifest.json"
 const PLUGIN_ID := "agent_relay"
 const S_RUNNING := 2
@@ -83,7 +81,8 @@ func _idle(session) -> bool:
 func _run() -> void:
 	var plugin_dir: String = OS.get_environment("MINERVA_AGENT_RELAY_PLUGIN_DIR")
 	if plugin_dir == "":
-		plugin_dir = OS.get_environment("HOME") + AGENT_RELAY_DIR_REL
+		print("SKIP: MINERVA_AGENT_RELAY_PLUGIN_DIR is unset; point it at the reviewed agent_relay release")
+		return
 	var manifest_path: String = plugin_dir + AGENT_RELAY_MANIFEST
 	var mock_path: String = ProjectSettings.globalize_path(MOCK_PATH)
 	if not FileAccess.file_exists(mock_path):
@@ -113,9 +112,13 @@ func _run() -> void:
 	if pm == null or pm._db == null:
 		return
 	var def = pm._db.get_by_id(PLUGIN_ID)
+	if def != null and ProjectSettings.globalize_path(def.data_directory).simplify_path() != plugin_dir.simplify_path():
+		check("agent_relay under test comes from MINERVA_AGENT_RELAY_PLUGIN_DIR", false,
+			"%s is installed from %s" % [PLUGIN_ID, def.data_directory])
+		return
 	if def == null:
 		if not FileAccess.file_exists(manifest_path):
-			print("SKIP: no agent_relay definition and no plugin under %s" % plugin_dir)
+			print("SKIP: no agent_relay plugin under %s" % plugin_dir)
 			return
 		var install_res = await pm.install_plugin(manifest_path, true)
 		check("install_plugin ok", install_res.get("ok", false), str(install_res))

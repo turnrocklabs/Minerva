@@ -74,29 +74,13 @@ func _work(archive_abs: String, dest_abs: String, op: Operation, outcome: Dictio
 ## Every "<hex>  <file>" (or "<hex> *<file>") line of SHA256SUMS must match
 ## the extracted file. Sizes are summed first so progress has a total.
 func _verify_sums(dir_abs: String, op: Operation) -> Dictionary:
-	var sums_path := dir_abs.path_join("SHA256SUMS")
-	if not FileAccess.file_exists(sums_path):
-		return _err("missing_sha256sums", {"extract_dir": dir_abs})
-	var entries: Array[PackedStringArray] = []
+	var listed := _listed_files(dir_abs)
+	if not listed.ok:
+		return listed
+	var entries: Array[PackedStringArray] = listed.entries
 	var total := 0
-	for raw_line in FileAccess.get_file_as_string(sums_path).split("\n"):
-		var line := raw_line.strip_edges()
-		if line.is_empty():
-			continue
-		var parts := line.split("  ", false, 1)
-		if parts.size() != 2:
-			parts = line.split(" *", false, 1)
-		if parts.size() != 2:
-			return _err("sha256_mismatch", {"reason": "unparseable_line", "line": line})
-		if not Scan._contained(parts[1].strip_edges()):
-			return _err("sha256_mismatch", {"reason": "path_outside_archive", "file": parts[1].strip_edges()})
-		var file_path := dir_abs.path_join(parts[1].strip_edges())
-		if not FileAccess.file_exists(file_path):
-			return _err("sha256_mismatch", {"reason": "missing_file", "file": parts[1].strip_edges()})
-		total += FileAccess.get_size(file_path)
-		entries.append(PackedStringArray([parts[0].strip_edges().to_lower(), parts[1].strip_edges(), file_path]))
-	if entries.is_empty():
-		return _err("sha256_mismatch", {"reason": "empty_sums_file"})
+	for entry in entries:
+		total += FileAccess.get_size(entry[2])
 	_verify_total = total
 
 	for entry in entries:
@@ -120,22 +104,79 @@ func _verify_sums(dir_abs: String, op: Operation) -> Dictionary:
 	return {"ok": true}
 
 
+## The files `dir_abs`/SHA256SUMS lists, as [hex, relative path, absolute
+## path] entries, each checked to be inside `dir_abs` and present; or the
+## first problem, as an error result.
+static func _listed_files(dir_abs: String) -> Dictionary:
+	var sums_path := dir_abs.path_join("SHA256SUMS")
+	if not FileAccess.file_exists(sums_path):
+		return _err("missing_sha256sums", {"extract_dir": dir_abs})
+	var entries: Array[PackedStringArray] = []
+	for raw_line in FileAccess.get_file_as_string(sums_path).split("\n"):
+		var line := raw_line.strip_edges()
+		if line.is_empty():
+			continue
+		var parts := line.split("  ", false, 1)
+		if parts.size() != 2:
+			parts = line.split(" *", false, 1)
+		if parts.size() != 2:
+			return _err("sha256_mismatch", {"reason": "unparseable_line", "line": line})
+		var relative := parts[1].strip_edges()
+		if not Scan._contained(relative):
+			return _err("sha256_mismatch", {"reason": "path_outside_archive", "file": relative})
+		var file_path := dir_abs.path_join(relative)
+		if not FileAccess.file_exists(file_path):
+			return _err("sha256_mismatch", {"reason": "missing_file", "file": relative})
+		entries.append(PackedStringArray([parts[0].strip_edges().to_lower(), relative, file_path]))
+	if entries.is_empty():
+		return _err("sha256_mismatch", {"reason": "empty_sums_file"})
+	return {"ok": true, "entries": entries}
+
+
+## Why the installed release in `dir_abs` cannot run here, or "" when it can:
+## a file its SHA256SUMS lists is gone (checked only with `every_file`; a
+## bundled runtime lists thousands), its "./" `entrypoint` is gone, or that
+## entrypoint is a native executable built for none of `targets`. Existence
+## and headers only, no hashing.
+static func installed_issue(dir_abs: String, entrypoint: String, targets: Array[String],
+		every_file: bool = true) -> String:
+	if not every_file and not FileAccess.file_exists(dir_abs.path_join("SHA256SUMS")):
+		return "its installed files are incomplete (SHA256SUMS)"
+	var listed := _listed_files(dir_abs) if every_file else {"ok": true}
+	if not listed.ok:
+		var detail: Dictionary = listed.get("detail", {})
+		return "its installed files are incomplete (%s)" % str(detail.get("file", detail.get("reason", "SHA256SUMS")))
+	if not entrypoint.begins_with("./"):
+		return ""
+	var path := dir_abs.path_join(entrypoint.substr(2))
+	if not FileAccess.file_exists(path) and FileAccess.file_exists(path + ".exe"):
+		path += ".exe"
+	if not FileAccess.file_exists(path):
+		return "its entrypoint %s is missing" % entrypoint
+	var built_for := _binary_target(path)
+	if built_for.is_empty() or built_for in targets:
+		return ""
+	return "it is built for %s, not this computer (%s)" % [built_for, ", ".join(targets)]
+
+
 ## Compare the archive's manifest with `expected` (the registry entry's id
 ## and version; either may be absent for a direct URL install) and with
-## `target` (this machine's registry target). Archives carry no platform
-## marker, and release_targets names every target a plugin supports, so the
-## evidence is the packaged "./" entrypoint's executable header, which must
-## run on `target`. An entrypoint that is not a native executable (a script,
+## `targets` (this machine's registry targets, MarketplaceClient.platform_targets;
+## a universal macOS build runs on either Mac architecture). Archives carry no
+## platform marker, and release_targets names every target a plugin supports,
+## so the evidence is the packaged "./" entrypoint's executable header, which
+## must name one of `targets`. An entrypoint that is not a native executable (a script,
 ## or a launcher named without "./") cannot be checked: the install goes
 ## ahead with platform_verified false. Returns {ok:true, platform_verified}
 ## or an identity_mismatch.
-static func check_identity(manifest: Dictionary, expected: Dictionary, target: String, dir_abs: String) -> Dictionary:
+static func check_identity(manifest: Dictionary, expected: Dictionary, targets: Array[String], dir_abs: String) -> Dictionary:
 	for field in ["id", "version"]:
 		if expected.has(field) and str(manifest.get(field, "")) != str(expected[field]):
 			return _mismatch(field, expected[field], manifest.get(field, ""))
-	var targets = manifest.get("release_targets", [])
-	if targets is Array and not targets.is_empty() and not target in targets:
-		return _mismatch("platform", target, targets)
+	var target: String = targets[0] if not targets.is_empty() else ""
+	var declared = manifest.get("release_targets", [])
+	if declared is Array and not declared.is_empty() and not targets.any(func(t) -> bool: return t in declared):
+		return _mismatch("platform", target, declared)
 	var entrypoint := str((manifest.get("backend", {}) as Dictionary).get("entrypoint", ""))
 	if not entrypoint.begins_with("./"):
 		return {"ok": true, "platform_verified": false}
@@ -151,7 +192,7 @@ static func check_identity(manifest: Dictionary, expected: Dictionary, target: S
 		return _mismatch("platform", target, "unreadable entrypoint " + entrypoint)
 	if built_for.is_empty():
 		return {"ok": true, "platform_verified": false}
-	if built_for != target:
+	if not built_for in targets:
 		return _mismatch("platform", target, built_for)
 	return {"ok": true, "platform_verified": true}
 
@@ -159,6 +200,7 @@ static func check_identity(manifest: Dictionary, expected: Dictionary, target: S
 ## The registry target an executable runs as, from its header:
 ##   ELF, 64-bit little-endian, x86-64 / AArch64 -> linux-x86_64 / linux-arm64;
 ##   Mach-O universal ("fat") holding both x86_64 and arm64 -> macos-universal;
+##   Mach-O single-architecture x86_64 / arm64  -> macos-amd64 / macos-arm64;
 ##   PE with a COFF machine of x86-64            -> windows-x86_64.
 ## Any other native binary is named by its format and machine (never a
 ## target), "unreadable" when the file cannot be read, and "" when it is not
@@ -184,8 +226,9 @@ static func _binary_target(path: String) -> String:
 		if 0x01000007 in cpus and 0x0100000C in cpus:
 			return "macos-universal"
 		return "macos fat binary without both x86_64 and arm64"
-	if head.size() >= 4 and head.decode_u32(0) in [0xFEEDFACF, 0xFEEDFACE]:
-		return "macos single-architecture binary"
+	if head.size() >= 8 and head.decode_u32(0) in [0xFEEDFACF, 0xFEEDFACE]:
+		return {0x01000007: "macos-amd64", 0x0100000C: "macos-arm64"}.get(
+			head.decode_u32(4), "macos single-architecture binary")
 	if head.size() >= 0x40 and head[0] == 0x4D and head[1] == 0x5A:
 		var pe := head.decode_u32(0x3C)
 		if pe + 6 > head.size():

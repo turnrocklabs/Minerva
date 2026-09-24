@@ -19,10 +19,22 @@ extends SceneTree
 const PluginDefinitionScript := preload("res://Scripts/Services/Plugins/PluginDefinition.gd")
 const PluginSkillSeederScript := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 const PluginSkillRecordScript := preload("res://Scripts/Services/Plugins/PluginSkillRecord.gd")
+const PluginSkillConsentScript := preload("res://Scripts/Services/Plugins/PluginSkillConsent.gd")
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 var _tmp_dir: String = ""
+
+
+## The one PluginDB question PluginSkillConsent asks: `plugin_id` is installed.
+class InstalledDB extends RefCounted:
+	var _id: String
+
+	func _init(plugin_id: String) -> void:
+		_id = plugin_id
+
+	func has_plugin(plugin_id: String) -> bool:
+		return plugin_id == _id
 
 
 class FailingUpdateDocket extends RefCounted:
@@ -38,15 +50,15 @@ class FailingUpdateDocket extends RefCounted:
 
 
 func _init() -> void:
-	# PluginManager is loaded by the internal lifecycle case below and references
-	# project autoloads; let those globals register before any test work begins.
+	# PluginSkillConsent references project autoloads; let those globals
+	# register before any test work begins.
 	await process_frame
 	print("=== Plugin-shipped skills T8 round-trip ===\n")
 	_tmp_dir = OS.get_cache_dir().path_join("minerva_dcr_019df57b_t8_%d" % randi())
 	DirAccess.make_dir_recursive_absolute(_tmp_dir)
 
 	test_full_lifecycle()
-	test_internal_prepare_reconcile()
+	await test_repair_keeps_customised_skills()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -78,8 +90,8 @@ func _cleanup_tmp() -> void:
 	DirAccess.remove_absolute(_tmp_dir)
 
 
-func _make_def(plugin_id: String, skills: Array) -> PluginDefinitionScript:
-	var manifest := {
+func _manifest(plugin_id: String, skills: Array) -> Dictionary:
+	return {
 		"id": plugin_id,
 		"name": "%s plugin" % plugin_id,
 		"version": "0.1.0",
@@ -88,7 +100,10 @@ func _make_def(plugin_id: String, skills: Array) -> PluginDefinitionScript:
 		"tools": [],
 		"skills": skills,
 	}
-	return PluginDefinitionScript.from_dict(manifest)
+
+
+func _make_def(plugin_id: String, skills: Array) -> PluginDefinitionScript:
+	return PluginDefinitionScript.from_dict(_manifest(plugin_id, skills))
 
 
 func _slide_deck_skill(plugin_id: String = "presentation_demo", version_marker: String = "v1") -> Dictionary:
@@ -265,8 +280,11 @@ func test_full_lifecycle() -> void:
 	ctx.db.close()
 
 
-func test_internal_prepare_reconcile() -> void:
-	print("test_internal_prepare_reconcile")
+## A required plugin's repair installs over its existing record with
+## auto_confirm, yet the skill questions it answers for itself must keep a
+## customised skill while shipped (pristine) ones follow the release.
+func test_repair_keeps_customised_skills() -> void:
+	print("test_repair_keeps_customised_skills")
 	var ctx := _new_docket()
 	var registry = ctx.registry
 	var plugin_id := "agent_relay"
@@ -286,24 +304,25 @@ func test_internal_prepare_reconcile() -> void:
 	var pristine_v2 := pristine_v1.duplicate(true)
 	pristine_v2.steps = "shipped pristine v2"
 	var def_v2 := _make_def(plugin_id, [custom_v2, pristine_v2])
-	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
-	manager._seed_internal_skills(def_v2, registry)
+	var manifest_path := _tmp_dir.path_join("repair_manifest.json")
+	var f := FileAccess.open(manifest_path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(_manifest(plugin_id, [custom_v2, pristine_v2])))
+	f.close()
+	var op = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
+	op.repair_only = true
+	var consent: Dictionary = await PluginSkillConsentScript.collect(
+		root, InstalledDB.new(plugin_id), {}, registry, manifest_path, true, op)
+	PluginSkillSeederScript.apply_reconcile(PluginSkillSeederScript.plan_reconcile(def_v2, {}, registry),
+		consent.get("update_decisions", {}), registry)
 	var custom_after := PluginSkillSeederScript.find_existing_record(plugin_id, custom_v1.id, registry)
 	var pristine_after := PluginSkillSeederScript.find_existing_record(plugin_id, pristine_v1.id, registry)
-	check("internal prepare preserves customized skill content",
+	check("a repair keeps the customised skill without asking",
 		str(custom_after.get("steps", "")) == "user-owned steps")
-	check("internal prepare updates pristine shipped skill",
+	check("a repair updates the pristine shipped skill",
 		str(pristine_after.get("steps", "")) == "shipped pristine v2")
-
-	manager._seed_internal_skills(_make_def(plugin_id, []), registry)
-	custom_after = PluginSkillSeederScript.find_existing_record(plugin_id, custom_v1.id, registry)
-	pristine_after = PluginSkillSeederScript.find_existing_record(plugin_id, pristine_v1.id, registry)
-	check("internal prepare deprecates removed final skills",
-		bool(custom_after.get("deprecated", false)) and bool(pristine_after.get("deprecated", false)))
 
 	var failure_plan := PluginSkillSeederScript.plan_reconcile(def_v2, {}, registry)
 	var failed: Dictionary = PluginSkillSeederScript.apply_reconcile(
 		failure_plan, {}, FailingUpdateDocket.new(registry))
 	check("reconcile reports failed store writes", int(failed.get("failed", 0)) > 0)
-	manager.free()
 	ctx.db.close()

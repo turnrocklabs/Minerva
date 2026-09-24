@@ -11,7 +11,6 @@ extends Node
 ##     - .tscn change with a live panel → preserve it and require restart
 ##     - multiple extensions changed in one debounce window → union;
 ##       process ext restarts its backend while scene changes remain deferred
-##     - a host-owned (InternalPlugins) id is skipped entirely — no stop+start
 ##
 ##   register_live_panel / unregister_live_panel / get_live_panels:
 ##     - basic registration and query
@@ -52,9 +51,6 @@ func _ready() -> void:
 	print("\n-- Decision tree: .tscn change --")
 	test_tscn_no_live_panels_is_noop()
 	test_tscn_with_live_panel_requires_restart()
-
-	print("\n-- Decision tree: host-owned plugins --")
-	test_internal_plugin_is_never_hot_reloaded()
 
 	print("\n-- Decision tree: multiple extensions --")
 	test_mixed_gd_tscn_both_handled()
@@ -437,24 +433,6 @@ func test_tscn_with_live_panel_requires_restart() -> void:
 # ===========================================================================
 # Decision tree: multiple extensions in one window
 # ===========================================================================
-
-## Host-owned plugins are replaced by a Minerva build, never hot-reloaded: the
-## file-watch path must drop them before it reaches the extension decision tree,
-## even for an extension that would otherwise force a stop+start.
-func test_internal_plugin_is_never_hot_reloaded() -> void:
-	print("test_internal_plugin_is_never_hot_reloaded:")
-	for internal_id in InternalPlugins.ids():
-		var mgr := _make_manager(internal_id)
-		_run_debounce_for_paths(mgr, internal_id, ["/tmp/%s/server.py" % internal_id])
-		check("no restart for host-owned '%s'" % internal_id, mgr.restart_call_count == 0)
-		check("auto_reload stays unsettable for '%s'" % internal_id,
-			not mgr.set_auto_reload(internal_id, true))
-		mgr.free()
-	var ordinary := _make_manager("ordinary")
-	_run_debounce_for_paths(ordinary, "ordinary", ["/tmp/ordinary/server.py"])
-	check("a non-member still restarts (control)", ordinary.restart_call_count == 1)
-	ordinary.free()
-
 
 func test_mixed_gd_tscn_both_handled() -> void:
 	print("test_mixed_gd_tscn_both_handled:")

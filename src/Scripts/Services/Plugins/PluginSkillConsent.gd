@@ -17,14 +17,17 @@ const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 ## install_plugin / update_plugin as `consent`. Cancelling `op` closes an
 ## open dialog as a decline and asks nothing more; an unattended `op` asks
 ## nothing, so every skill the user customised keeps their version, and
-## (seed_new false) skills the update adds are not seeded. `available_tools` and
+## (seed_new false) skills the update adds are not seeded. A repair `op`
+## (repair_only) likewise keeps every customised skill without asking, even
+## with auto_confirm, and seeds only what is new. `available_tools` and
 ## `docket_manager` are as PluginSkillSeeder takes them.
 static func collect(host: Node, db, available_tools: Dictionary, docket_manager, manifest_path: String,
 		auto_confirm: bool, op = null) -> Dictionary:
 	var consent := {"collected": true}
 	var unattended: bool = op != null and bool(op.get("unattended"))
+	var keep_customised: bool = unattended or (op != null and bool(op.get("repair_only")))
 	var def = PluginDefinition.from_manifest(manifest_path, PluginDefinition.LANE_MARKETPLACE)
-	if def == null or InternalPlugins.has(def.id):
+	if def == null:
 		return consent
 	if not db.has_plugin(def.id):
 		if not def.skills.is_empty() and not (op != null and op.cancelled):
@@ -36,7 +39,7 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_manager,
 	for action in plan.get("actions", []):
 		if str(action.get("action", "")) == Seeder.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
 			var skill: Dictionary = action.get("skill", {})
-			decisions[str(skill.get("id", ""))] = not unattended and (auto_confirm \
+			decisions[str(skill.get("id", ""))] = not keep_customised and (auto_confirm \
 				or await ask_update(host, def, action.get("existing", {}), skill, op))
 	consent["update_decisions"] = decisions
 	if unattended:

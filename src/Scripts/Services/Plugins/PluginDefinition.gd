@@ -643,12 +643,6 @@ static func resolve_install_lane(stored: String, dir: String) -> String:
 func warn_if_binary_has_no_producer() -> void:
 	if not setup.is_empty():
 		return
-	if InternalPlugins.has(id):
-		# Host-owned: the build-extensions target named by the member's repair
-		# hint IS the declared producer, so a `setup` stanza would be a second,
-		# never-run one. Its definition is rebuilt on every boot, which would
-		# otherwise make this advisory fire on every boot too.
-		return
 	if install_lane == LANE_MARKETPLACE:
 		# Release artifact: prebuilt by the publisher, no source to build from.
 		return

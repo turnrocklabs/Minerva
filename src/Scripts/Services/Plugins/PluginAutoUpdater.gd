@@ -1,14 +1,14 @@
 extends RefCounted
 ## At Minerva start, updates the plugins the user opted in to (auto_update)
-## to the marketplace's newer release, through the install queue: one at a
-## time, the queue's upgrade transaction (a running plugin must start before
-## the update commits, or it is rolled back), unattended consent (nothing is
-## asked; skills the user customised keep their version, and skills the
-## update adds are not seeded). Each update's
-## outcome is logged when it ends. Only marketplace-lane plugins are updated; a
-## manifest-lane (developer) plugin is never overwritten. Nothing is awaited
-## by startup, and a registry that cannot be read is logged and retried at
-## the next start.
+## to the newer release (the marketplace registry, or a required plugin's own
+## releases, RequiredPlugins), through the install queue: one at a time, the
+## queue's upgrade transaction (a running plugin must start before the update
+## commits, or it is rolled back), unattended consent (nothing is asked;
+## skills the user customised keep their version, and skills the update adds
+## are not seeded). Each update's outcome is logged when it ends. Only
+## marketplace-lane plugins are updated; a manifest-lane (developer) plugin is
+## never overwritten. Nothing is awaited by startup, and a registry or release
+## listing that cannot be read is logged and retried at the next start.
 
 ## Queue an update for every opted-in plugin whose registry entry is newer
 ## than the installed version. Returns the jobs queued, keyed by plugin id.
@@ -21,16 +21,21 @@ static func run(manager, registry_url: String = "") -> Dictionary:
 	manager.add_child(client)
 	var fetched: Dictionary = await client.fetch_registry(registry_url)
 	client.queue_free()
-	if manager.get("_shutting_down"):
-		return {}
-	if not fetched.get("ok", false):
-		push_warning("[PluginAutoUpdater] Registry unreadable; plugin updates wait for the next start: %s"
-			% MarketplaceClient.format_install_error(fetched))
+	if manager.is_shutting_down():
 		return {}
 	var entries := {}
-	for entry in fetched.registry.get("plugins", []):
-		if entry is Dictionary:
-			entries[str(entry.get("id", ""))] = entry
+	if fetched.get("ok", false):
+		for entry in fetched.registry.get("plugins", []):
+			if entry is Dictionary:
+				entries[str(entry.get("id", ""))] = entry
+	else:
+		push_warning("[PluginAutoUpdater] Registry unreadable; marketplace plugin updates wait for the next start: %s"
+			% MarketplaceClient.format_install_error(fetched))
+	# Required plugins are published as their own releases, not in the registry.
+	if candidates.any(func(def) -> bool: return RequiredPlugins.has(def.id)):
+		entries.merge(await RequiredPlugins.fetch_entries(manager), true)
+		if manager.is_shutting_down():
+			return {}
 	var queued := {}
 	for candidate in candidates:
 		# The fetch took time: judge the plugin as it is now (removed, opted
@@ -40,14 +45,10 @@ static func run(manager, registry_url: String = "") -> Dictionary:
 		var entry: Dictionary = entries.get(candidate.id, {})
 		if entry.is_empty() or not wants_update(def, str(entry.get("version", ""))):
 			continue
-		# A request the user already made stands, with its own choices.
-		var existing: Array = manager.install_queue.jobs()
-		var job = manager.install_queue.request(entry)
-		# Refused at once (it conflicts with the user's own request) or
-		# following it: the user's install does the work, not this one.
-		if job in existing or job.state == job.State.DONE or job.joined != null:
+		# An unfinished install of this plugin stands, with its own choices.
+		if manager.install_queue.pending_for(def.id) != null:
 			continue
-		job.op.unattended = true
+		var job = manager.install_queue.request(entry, false, true)
 		queued[def.id] = job
 		print("[PluginAutoUpdater] Updating '%s' %s -> %s" % [def.id, def.version, entry.version])
 		job.finished.connect(func() -> void:
@@ -57,11 +58,10 @@ static func run(manager, registry_url: String = "") -> Dictionary:
 
 
 ## Whether `def` (a PluginDefinition, or null) still wants an unattended
-## update to `version`: installed, opted in, on the marketplace lane, not
-## host-owned, and older than `version` ("" skips the version check).
+## update to `version`: installed, opted in, on the marketplace lane, and
+## older than `version` ("" skips the version check).
 static func wants_update(def, version: String) -> bool:
 	return def != null and def.auto_update and def.install_lane == PluginDefinition.LANE_MARKETPLACE \
-		and not InternalPlugins.has(def.id) \
 		and (version.is_empty() or compare_versions(version, def.version) > 0)
 
 

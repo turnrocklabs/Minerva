@@ -1,8 +1,8 @@
 extends Node
 ## Runs marketplace installs one at a time and keeps each plugin to one
-## outstanding install, however often and from wherever it is requested: a
-## request matching an unfinished install job by plugin id or download URL
-## returns that job. A URL-only job's plugin is known once its archive has
+## outstanding install for a person's requests, however often and from
+## wherever they come: a request matching an unfinished install job by plugin
+## id or download URL returns that job. A URL-only job's plugin is known once its archive has
 ## been read; then any queued request for the same plugin joins it when it
 ## expects that version, and ends as an install_conflict when it expects
 ## another. An attaching or joining request never changes the choices the
@@ -19,8 +19,9 @@ extends Node
 ## before it commits, so one that fails to start is rolled back to the
 ## working copy and its data (MarketplaceClient). Any other install is left
 ## stopped. Either way the job is Ready only once start_plugin has completed
-## its handshake. A request never attaches to an unattended update
-## (PluginAutoUpdater); it queues as its own install.
+## its handshake. An unattended update (PluginAutoUpdater) or a required
+## plugin's repair (RequiredPlugins) may yet be skipped, so it is always a job
+## of its own: it attaches to no other job, and no request attaches to it.
 ##
 ## Cancelling takes effect while queued, before registration, and while
 ## starting (an upgrade cancelled while starting is rolled back).
@@ -45,9 +46,19 @@ var _nonce := Crypto.new().generate_random_bytes(8).hex_encode()
 var _serial := 0
 
 
-## Install a registry entry for this platform.
-func request(entry: Dictionary, auto_confirm_skills: bool = false) -> Job:
-	var url := str(entry.get("downloads", {}).get(MarketplaceClient.resolve_platform_target(), ""))
+## Install a registry entry for this platform. `unattended` (a startup
+## auto-update) and `repair_only` (a required plugin's repair) are set on the
+## job's operation before anyone hears of it; such a conditional install is
+## always a job of its own, never another request's.
+func request(entry: Dictionary, auto_confirm_skills: bool = false, unattended: bool = false,
+		repair_only: bool = false) -> Job:
+	var downloads: Dictionary = entry.get("downloads", {})
+	var url := str(downloads.get(MarketplaceClient.download_target(downloads), ""))
+	if unattended or repair_only:
+		var job := _new_job(entry, url, auto_confirm_skills)
+		job.op.unattended = unattended
+		job.op.repair_only = repair_only
+		return _submit(job)
 	return _enqueue(entry, url, auto_confirm_skills)
 
 
@@ -60,6 +71,16 @@ func request_url(url: String, auto_confirm_skills: bool = false) -> Job:
 func job_by_id(id: String) -> Job:
 	for job in _jobs:
 		if job.id == id:
+			return job
+	return null
+
+
+## An unfinished job for `plugin_id`, or null; with `skip_unattended`, one
+## that is not a startup update.
+func pending_for(plugin_id: String, skip_unattended: bool = false) -> Job:
+	for job in _jobs:
+		if job.state != Job.State.DONE and job.plugin_id() == plugin_id \
+				and not (skip_unattended and job.op.unattended):
 			return job
 	return null
 
@@ -129,9 +150,9 @@ func _enqueue(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 	var wanted_id := str(entry.get("id", ""))
 	var wanted_version := str(entry.get("version", ""))
 	for job in _jobs:
-		# A person's request never rides on an unattended update, which may yet
-		# be skipped (update_not_wanted); it queues as its own install.
-		if job.state == Job.State.DONE or job.start_only or job.joined != null or job.op.unattended:
+		# A person's request never rides on an unattended update or a repair,
+		# which may yet be skipped (op.conditional); it queues as its own install.
+		if job.state == Job.State.DONE or job.start_only or job.joined != null or job.op.conditional():
 			continue
 		var same_url := not url.is_empty() and job.url == url
 		if not same_url and (wanted_id.is_empty() or job.plugin_id() != wanted_id):
@@ -149,7 +170,11 @@ func _enqueue(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 			_changed(follower)
 			return follower
 		return job
-	var job := _new_job(entry, url, auto_confirm_skills)
+	return _submit(_new_job(entry, url, auto_confirm_skills))
+
+
+## Queue a new install `job` and announce it.
+func _submit(job: Job) -> Job:
 	job.op.stage_changed.connect(_on_stage.bind(job))
 	job.op.identified.connect(_on_identified.bind(job))
 	_changed(job)
@@ -220,7 +245,7 @@ func _run(job: Job) -> void:
 			if restarted.has("error"):
 				message += "\n\nThe previous version is installed but did not restart: %s" % restarted.error
 		var outcome := Job.OUTCOME_FAILED if restored else Job.OUTCOME_RECOVERY_NEEDED
-		if str(r.get("error", "")) in ["cancelled", "update_not_wanted"]:
+		if str(r.get("error", "")) in ["cancelled", "update_not_wanted", "repair_not_needed"]:
 			outcome = Job.OUTCOME_CANCELLED
 		_finish(job, outcome, message)
 		return
@@ -256,13 +281,16 @@ func _start(job: Job) -> void:
 
 
 ## The archive of `job` holds `plugin_id` at `version`: its followers and
-## the queued requests for that plugin join it when their expectations agree,
-## and end as install_conflict when they do not.
+## a person's queued requests for that plugin join it when their expectations
+## agree, and end as install_conflict when they do not. A conditional job
+## (op.conditional) is never joined or refused here.
 func _on_identified(plugin_id: String, version: String, job: Job) -> void:
 	job.identified_version = version
-	if job.op.unattended:
+	if job.op.conditional():
 		return
 	for other in _jobs.duplicate():
+		if other.op.conditional():
+			continue  # an update or repair is always its own job
 		var follows: bool = other.joined == job and other.state != Job.State.DONE
 		var queued: bool = other != job and other.state == Job.State.QUEUED and not other.start_only \
 			and other.joined == null and other.plugin_id() == plugin_id

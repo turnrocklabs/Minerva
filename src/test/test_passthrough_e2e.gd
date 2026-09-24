@@ -9,7 +9,8 @@ extends SceneTree
 ## THE STACK UNDER TEST (all real, no stubs in the transport path):
 ##   real SingletonObject autoload
 ##   + real PluginManager / CapabilityBroker / PluginChatProviderRegistry
-##   + the REAL agent-relay plugin binary (minerva-plugins/agent-relay)
+##   + the REAL agent-relay plugin binary (source src/plugins/agent-relay, run
+##     from its extracted release archive)
 ##   + a background TerminalSession (T1 registry) running a mock codex CLI
 ##     (fixtures/passthrough_e2e/mock_codex.py) in a REAL PTY.
 ## Possible because the passthrough transport has NO LLM (DCR #479) — the mock
@@ -26,12 +27,15 @@ extends SceneTree
 ## the same logic ChatPane._passthrough_end_relay applies.
 ##
 ## CI: registered in scripts/run-functional-tests.sh PLUGIN_TESTS (the
-## machine-local --all tier). SKIPS cleanly (exit 0) when the plugin dir or its
-## binary is absent, so a CI checkout without minerva-plugins stays green.
+## machine-local --all tier). SKIPS cleanly (exit 0) when
+## MINERVA_AGENT_RELAY_PLUGIN_DIR is unset or its binary is absent; the
+## directory must hold the reviewed release archive extracted (a build stage
+## has no manifest.json). A profile whose agent_relay record points anywhere
+## else fails.
 ##
 ## NOTE: class_name globals are invisible to --script runs; load() + duck-type.
 ## SingletonObject autoload registers lazily; resolve at runtime via the `so`
-## node. Plugin-dir override: MINERVA_AGENT_RELAY_PLUGIN_DIR.
+## node.
 
 const PM_PATH := "res://Scripts/Services/Plugins/PluginManager.gd"
 const PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
@@ -39,7 +43,6 @@ const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
 const STATUS_PATH := "res://Scripts/Models/PassthroughTurnStatus.gd"
 
-const AGENT_RELAY_DIR_REL := "/github/minerva-plugins/agent-relay"
 const AGENT_RELAY_BINARY := "/agent-relay-plugin"
 const AGENT_RELAY_MANIFEST := "/manifest.json"
 const PLUGIN_ID := "agent_relay"
@@ -118,17 +121,13 @@ func _run() -> void:
 	# ── Locate the real plugin; SKIP (exit 0) cleanly if missing ────────────
 	var plugin_dir: String = OS.get_environment("MINERVA_AGENT_RELAY_PLUGIN_DIR")
 	if plugin_dir == "":
-		var home: String = OS.get_environment("HOME")
-		if home == "":
-			print("SKIP: $HOME unset and MINERVA_AGENT_RELAY_PLUGIN_DIR unset — cannot locate plugin.")
-			return
-		plugin_dir = home + AGENT_RELAY_DIR_REL
+		print("SKIP: MINERVA_AGENT_RELAY_PLUGIN_DIR is unset; point it at the reviewed agent_relay release")
+		return
 	var binary_path: String = plugin_dir + AGENT_RELAY_BINARY
 	var manifest_path: String = plugin_dir + AGENT_RELAY_MANIFEST
 
 	if not FileAccess.file_exists(binary_path):
 		print("SKIP: agent-relay binary not found at %s" % binary_path)
-		print("      Set MINERVA_AGENT_RELAY_PLUGIN_DIR or build the plugin.")
 		return
 	if not FileAccess.file_exists(manifest_path):
 		print("SKIP: agent-relay manifest not found at %s" % manifest_path)
@@ -184,6 +183,10 @@ func _run() -> void:
 
 	var db = pm._db
 	var def = db.get_by_id(PLUGIN_ID)
+	if def != null and ProjectSettings.globalize_path(def.data_directory).simplify_path() != plugin_dir.simplify_path():
+		check("agent_relay under test comes from MINERVA_AGENT_RELAY_PLUGIN_DIR", false,
+			"%s is installed from %s" % [PLUGIN_ID, def.data_directory])
+		return
 	if def == null:
 		var install_res = await pm.install_plugin(manifest_path, true)
 		check("install_plugin ok", install_res.get("ok", false), str(install_res))

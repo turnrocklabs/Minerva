@@ -634,7 +634,7 @@ func _handle_plugin_stop(args: Dictionary) -> Dictionary:
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 
-	var result = plugin_manager.stop_plugin(id)
+	var result = plugin_manager.stop_plugin(id, true)
 	return result
 
 
@@ -1040,8 +1040,7 @@ func _handle_plugin_build_status(args: Dictionary) -> Dictionary:
 	if lane_def != null:
 		result["install_lane"] = lane_def.install_lane
 		result["rebuildable"] = (
-			not InternalPlugins.has(id)
-			and lane_def.install_lane == PluginDefinition.LANE_MANIFEST
+			lane_def.install_lane == PluginDefinition.LANE_MANIFEST
 			and not lane_def.setup.is_empty()
 		)
 

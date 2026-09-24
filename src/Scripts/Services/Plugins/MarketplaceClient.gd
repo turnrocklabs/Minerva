@@ -51,14 +51,24 @@ const DOWNLOAD_STALL_TIMEOUT_SECONDS := 30.0
 func fetch_registry(url: String = "") -> Dictionary:
 	if url.is_empty():
 		url = REGISTRY_URL_DEFAULT
+	var fetched := await fetch_json(url)
+	if not fetched.ok:
+		return fetched
+	if not fetched.json is Dictionary:
+		return _err("invalid_json", {"url": url})
+	return {"ok": true, "registry": fetched.json}
 
+
+## GET `url` and parse its body as JSON, within the registry's time and size
+## bounds. Returns {ok:true, json} or {ok:false, error, detail}.
+func fetch_json(url: String, headers: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var http := HTTPRequest.new()
 	http.use_threads = true
 	http.timeout = REGISTRY_HTTP_TIMEOUT_SECONDS
 	http.body_size_limit = REGISTRY_MAX_BODY_BYTES
 	add_child(http)
 
-	var err := http.request(url)
+	var err := http.request(url, headers)
 	if err != OK:
 		http.queue_free()
 		return _err("request_failed", {"godot_err": err, "url": url})
@@ -76,10 +86,9 @@ func fetch_registry(url: String = "") -> Dictionary:
 		return _err("bad_response_code", {"code": response_code, "url": url})
 
 	var parsed = JSON.parse_string(body.get_string_from_utf8())
-	if not parsed is Dictionary:
+	if parsed == null:
 		return _err("invalid_json", {"url": url})
-
-	return {"ok": true, "registry": parsed}
+	return {"ok": true, "json": parsed}
 
 
 ## A registry entry as callers outside the marketplace see it: its listing
@@ -96,7 +105,7 @@ static func describe_entry(entry: Dictionary, installed_version: String) -> Dict
 		"description_missing": str(entry.get("description", "")).is_empty(),
 		"platforms": downloads.keys(),
 		"this_platform": target,
-		"available_here": downloads.has(target),
+		"available_here": not download_target(downloads).is_empty(),
 		"installed_version": installed_version,
 		"release_tag": entry.get("release_tag", ""),
 		"manifest_url": entry.get("manifest_url", ""),
@@ -111,19 +120,35 @@ static func describe_entry(entry: Dictionary, installed_version: String) -> Dict
 # Platform target resolution
 # ---------------------------------------------------------------------------
 
-## Return the canonical target string used in registry `downloads` keys,
-## e.g. "linux-x86_64", "linux-arm64", "macos-universal", "windows-x86_64".
-## Returns "" on an unsupported platform.
+## This machine's preferred target in registry `downloads` keys, e.g.
+## "linux-x86_64", "linux-arm64", "macos-arm64", "macos-amd64",
+## "windows-x86_64"; "" on an unsupported platform. See platform_targets.
 static func resolve_platform_target() -> String:
+	var targets := platform_targets()
+	return targets[0] if not targets.is_empty() else ""
+
+
+## Every registry target a build for this machine may be published under, in
+## order of preference: a Mac takes its own architecture first, then a
+## universal build.
+static func platform_targets() -> Array[String]:
 	var os_name := OS.get_name()
 	if os_name == "Linux" or os_name == "FreeBSD" or os_name == "BSD":
-		if OS.has_feature("arm64"):
-			return "linux-arm64"
-		return "linux-x86_64"
+		return ["linux-arm64" if OS.has_feature("arm64") else "linux-x86_64"]
 	if os_name == "macOS":
-		return "macos-universal"
+		var architecture := Engine.get_architecture_name()
+		return ["macos-arm64" if architecture in ["arm64", "aarch64"] else "macos-amd64", "macos-universal"]
 	if os_name == "Windows":
-		return "windows-x86_64"
+		return ["windows-x86_64"]
+	return []
+
+
+## The first of platform_targets that `downloads` (a registry entry's
+## target -> URL map) has a build for, or "".
+static func download_target(downloads: Dictionary) -> String:
+	for target in platform_targets():
+		if downloads.has(target):
+			return target
 	return ""
 
 
@@ -142,13 +167,12 @@ static func resolve_platform_target() -> String:
 ## download/extract/verify path). `op` is as for install_from_url.
 func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skills: bool = false,
 		op: PluginInstallOperation = null) -> Dictionary:
-	var target := resolve_platform_target()
-	if target.is_empty():
+	if platform_targets().is_empty():
 		return _err("unsupported_platform", {"os": OS.get_name()})
 	var downloads: Dictionary = entry.get("downloads", {})
-	var url: String = downloads.get(target, "")
+	var url: String = downloads.get(download_target(downloads), "")
 	if url.is_empty():
-		return _err("no_binary_for_target", {"target": target, "plugin": entry.get("id")})
+		return _err("no_binary_for_target", {"target": resolve_platform_target(), "plugin": entry.get("id")})
 	var expected := {}
 	for field in ["id", "version"]:
 		if not str(entry.get(field, "")).is_empty():
@@ -253,16 +277,9 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if not (raw_id is String) or not PluginDefCls._is_valid_id(raw_id) or raw_id == "data":
 		return _err("bad_manifest", {"path": manifest_path, "reason": "invalid_id"})
 
-	var identity := PluginArchive.check_identity(manifest, expected, resolve_platform_target(), extract_abs)
+	var identity := PluginArchive.check_identity(manifest, expected, platform_targets(), extract_abs)
 	if not identity.ok:
 		return identity
-
-	# Host-owned identities are refused HERE, before the replace, not by
-	# PluginDB.install() further downstream: by then user://plugins/<id>/
-	# would already hold the tarball's files. Anything already sitting at the
-	# reserved path is left untouched.
-	if InternalPlugins.has(raw_id):
-		return _err("reserved_id", {"id": raw_id})
 
 	var plugin_id: String = raw_id
 	op.identify(plugin_id, str(manifest.get("version", "")))
@@ -301,6 +318,10 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# developer lane or installed another version meanwhile is not overridden.
 	if op.unattended and not AutoUpdater.wants_update(previous_def, str(manifest.get("version", ""))):
 		return _err("update_not_wanted", {"id": plugin_id})
+	# Likewise a repair: a copy fixed, or a developer copy registered, while
+	# it was queued or downloading is left alone.
+	if op.repair_only and not RequiredPlugins.needs_repair(previous_def):
+		return _err("repair_not_needed", {"id": plugin_id})
 	txn.db_before = previous_def.to_dict() if previous_def != null else null
 	op.enter(PluginInstallOperation.STAGE_REGISTER)
 	_ensure_dir(PLUGINS_DIR)
@@ -688,6 +709,9 @@ static func format_install_error(result: Dictionary) -> String:
 			title = "The new version did not start"
 			cause = "'%s' failed to start: %s" % [str(detail_dict.get("id", "?")), str(detail_dict.get("reason", "?"))]
 			hint = "The update was not applied. Report the reason above to the plugin's author."
+		"repair_not_needed":
+			title = "Repair skipped"
+			cause = "'%s' was repaired, or replaced by a developer copy, before this repair could run, so it was left as it is." % str(detail_dict.get("id", "?"))
 		"update_not_wanted":
 			title = "Automatic update skipped"
 			cause = "'%s' is no longer set to update at startup, was removed or replaced, or is already at this version, so it was left as it is." % str(detail_dict.get("id", "?"))
