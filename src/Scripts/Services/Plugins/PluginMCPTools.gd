@@ -747,6 +747,7 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 			"args": def.args,
 			"working_dir": def.working_dir,
 			"autostart": def.autostart,
+			"auto_update": def.auto_update,
 			"network_mode": def.network_mode,
 			"filesystem_mode": def.filesystem_mode,
 			"tools": def.tools,

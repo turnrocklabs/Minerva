@@ -13,6 +13,8 @@ extends Node
 # Constants
 # ---------------------------------------------------------------------------
 
+const AutoUpdater := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
+
 ## How often (seconds) to poll running plugins for liveness.
 const HEALTH_CHECK_INTERVAL_SEC := 5.0
 
@@ -492,6 +494,7 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	var previous_def = _db.get_by_id(def.id)
 	def.autostart = previous_def.autostart
 	def.auto_reload = previous_def.auto_reload
+	def.auto_update = previous_def.auto_update
 	def.install_lane = lane
 
 	if not _db.update_definition(def):
@@ -1396,6 +1399,15 @@ func set_auto_reload(id: String, enabled: bool) -> bool:
 ## parented or stopped, and its live pipes/reader threads kept the dying
 ## process alive for minutes (the slow-app-close bug, 2026-07-03).
 var _shutting_down: bool = false
+
+
+## At launch: start the autostart plugins, then queue the opted-in updates
+## (PluginAutoUpdater), so an update of a plugin that just started must start
+## again before it commits. Minerva does not wait on this.
+func start_plugins_at_launch() -> void:
+	await start_autostart_plugins()
+	if not _shutting_down:
+		await AutoUpdater.run(self)
 
 
 ## Start all plugins whose autostart flag is true.

@@ -15,26 +15,29 @@ const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 ## then register without stopping: seed consent for a new plugin, or one
 ## decision per customised skill an update would change. Pass the result to
 ## install_plugin / update_plugin as `consent`. Cancelling `op` closes an
-## open dialog as a decline and asks nothing more. `available_tools` and
+## open dialog as a decline and asks nothing more; an unattended `op` asks
+## nothing, so every skill the user customised keeps their version (skills
+## the update adds are seeded as in any update). `available_tools` and
 ## `docket_manager` are as PluginSkillSeeder takes them.
 static func collect(host: Node, db, available_tools: Dictionary, docket_manager, manifest_path: String,
 		auto_confirm: bool, op = null) -> Dictionary:
 	var consent := {"collected": true}
+	var unattended: bool = op != null and bool(op.get("unattended"))
 	var def = PluginDefinition.from_manifest(manifest_path, PluginDefinition.LANE_MARKETPLACE)
 	if def == null or InternalPlugins.has(def.id):
 		return consent
 	if not db.has_plugin(def.id):
 		if not def.skills.is_empty() and not (op != null and op.cancelled):
 			var resolved: Array = Seeder.resolve_deps(def, available_tools)
-			consent["seed"] = auto_confirm or await ask_seed(host, def, resolved, op)
+			consent["seed"] = not unattended and (auto_confirm or await ask_seed(host, def, resolved, op))
 		return consent
 	var plan: Dictionary = Seeder.plan_reconcile(def, available_tools, docket_manager)
 	var decisions := {}
 	for action in plan.get("actions", []):
 		if str(action.get("action", "")) == Seeder.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
 			var skill: Dictionary = action.get("skill", {})
-			decisions[str(skill.get("id", ""))] = auto_confirm \
-				or await ask_update(host, def, action.get("existing", {}), skill, op)
+			decisions[str(skill.get("id", ""))] = not unattended and (auto_confirm \
+				or await ask_update(host, def, action.get("existing", {}), skill, op))
 	consent["update_decisions"] = decisions
 	return consent
 

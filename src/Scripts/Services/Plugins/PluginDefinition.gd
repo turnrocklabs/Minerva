@@ -156,6 +156,11 @@ var install_lane: String = LANE_MANIFEST
 ## Whether Minerva should start this plugin automatically on launch
 var autostart: bool = false
 
+## Whether Minerva should, when it starts, install a newer release of this
+## plugin from the marketplace (PluginAutoUpdater). Off unless the user turns
+## it on; independent of autostart. Only marketplace-lane plugins are updated.
+var auto_update: bool = false
+
 ## Whether Minerva should automatically reload this plugin when its files change.
 ## Separate from autostart — autostart means "start on boot", auto_reload means
 ## "restart when source files change" (hot reload during development).
@@ -388,6 +393,7 @@ func to_dict() -> Dictionary:
 		"install_lane": install_lane,
 		"autostart": autostart,
 		"auto_reload": auto_reload,
+		"auto_update": auto_update,
 	}
 	if not skills.is_empty():
 		result["skills"] = skills.duplicate(true)
@@ -429,6 +435,7 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.install_lane = resolve_install_lane(d.get("install_lane", ""), def.data_directory)
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
+	def.auto_update = bool(d.get("auto_update", false))
 	for cn in d.get("class_names", []):
 		def.class_names.append(str(cn))
 	# editor_items, events, capabilities, state_schema, project_file, and

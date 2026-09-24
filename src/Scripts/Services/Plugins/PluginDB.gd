@@ -254,6 +254,20 @@ func set_autostart(plugin_id: String, enabled: bool) -> bool:
 	return true
 
 
+## Set the auto_update flag for a plugin and persist the change. Refused for
+## host-owned plugins, which are not installed from the marketplace.
+func set_auto_update(plugin_id: String, enabled: bool) -> bool:
+	var def: PluginDefinition = _plugins.get(plugin_id, null)
+	if def == null or _is_reserved(plugin_id):
+		return false
+	var was: bool = def.auto_update
+	def.auto_update = enabled
+	if not _save():
+		def.auto_update = was
+		return false
+	return true
+
+
 ## Set the auto_reload flag for a plugin and persist the change.
 ## When true, PluginManager will restart this plugin automatically when
 ## its source files change (hot reload for development).

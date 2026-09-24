@@ -724,8 +724,9 @@ func _wire_plugin_tools_to_mcp() -> void:
 	# the policy engine, tool registry and docket manager are all wired.
 	plugin_manager.prepare_internal_plugins()
 
-	# Autostart plugins (like SCM services with auto-start flag)
-	plugin_manager.start_autostart_plugins()
+	# Autostart plugins (like SCM services with auto-start flag), then any
+	# opted-in plugin updates
+	plugin_manager.start_plugins_at_launch()
 
 
 ## Shutdown all running plugins. Call on application exit.

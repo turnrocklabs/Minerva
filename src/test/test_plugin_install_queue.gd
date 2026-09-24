@@ -28,7 +28,9 @@ extends SceneTree
 ##   - an MCP install that outlasts its wait answers running with a job id,
 ##     and minerva_plugin_marketplace_job follows that job to its result
 ##     without starting another; unknown ids, and ids from another queue,
-##     are errors there.
+##     are errors there;
+##   - at launch, an opted-in marketplace plugin is updated to a newer
+##     registry release, and one not opted in is left alone.
 ##
 ## A job outliving the dialog that started it is covered against the real
 ## dialog scene in test_marketplace_browse.gd.
@@ -78,6 +80,7 @@ func _init() -> void:
 		and _pack(READY, 0, PROBE, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
 		and _pack(READY, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}, {"version": "1.0.1"}, "ready_crashes") \
+		and _pack(FAST, 0, {"entrypoint": "./test-binary", "args": []}, {"version": "1.0.1"}, "fast_101") \
 		and await _h.start_http_server(_temp, port)
 	if ready:
 		# ~3 s per download of the slow archive.
@@ -98,6 +101,7 @@ func _init() -> void:
 	await _test_start_cancel_and_failed_restart(port)
 	await _test_mcp_attach_keeps_the_first_requests_choices()
 	await _test_url_install_absorbs_or_refuses_queued_duplicates()
+	await _test_startup_auto_update(port)
 	await _test_mcp_install_outlasting_its_wait_is_followed_by_job_id()
 	_finish(1 if _fail else 0)
 
@@ -371,6 +375,36 @@ func _test_mcp_install_outlasting_its_wait_is_followed_by_job_id() -> void:
 	_check(fast.get("done") == true and fast.get("outcome") == Job.OUTCOME_INSTALLED
 		and queue.job_by_id(str(fast.get("job_id", ""))) != null,
 		"an install inside the wait answers with its result and job id: %s" % [fast])
+
+
+## PluginAutoUpdater at launch: a marketplace plugin is updated to the
+## registry's newer release only when the user opted in, keeps that choice
+## across the update, and versions compare numerically.
+func _test_startup_auto_update(port: int) -> void:
+	await _scrub()
+	var AutoUpdater = load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
+	await _done(_pm.install_queue.request(_entry(FAST, _fast_url)))
+	var registry := _temp.path_join("registry.json")
+	var newer := _entry(FAST, "http://127.0.0.1:%d/fast_101.tar.gz" % port)
+	newer["version"] = "1.0.1"
+	var f := FileAccess.open(registry, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"registry_version": 2, "plugins": [newer]}))
+	f.close()
+	var registry_url := "http://127.0.0.1:%d/registry.json" % port
+	var off: Dictionary = await AutoUpdater.run(_pm, registry_url)
+	_check(off.is_empty() and _pm.get_db().get_by_id(FAST).version == "1.0.0",
+		"a plugin not opted in is left at its version: %s" % [off])
+	_check(_pm.get_db().set_auto_update(FAST, true), "the opt-in is saved")
+	var on: Dictionary = await AutoUpdater.run(_pm, registry_url)
+	if on.has(FAST):
+		await _done(on[FAST])
+	var def = _pm.get_db().get_by_id(FAST)
+	_check(on.has(FAST) and def.version == "1.0.1" and def.auto_update,
+		"an opted-in plugin is updated to the newer release and stays opted in: %s" % [on])
+	_check(AutoUpdater.compare_versions("1.10.0", "1.9.0") == 1 \
+		and AutoUpdater.compare_versions("1.2.0", "1.2.0-rc.1") == 1 \
+		and AutoUpdater.compare_versions("1.2", "1.2.0") == 0,
+		"versions compare numerically, and a release is newer than its pre-release")
 
 
 ## Wait for `job` to finish, at most 60 s (a finished signal already emitted

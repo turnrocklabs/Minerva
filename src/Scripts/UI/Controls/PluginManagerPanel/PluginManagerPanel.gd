@@ -80,6 +80,7 @@ var _restart_button: Button = null
 var _reload_button: Button = null
 var _autostart_check: CheckButton = null
 var _auto_reload_check: CheckButton = null
+var _auto_update_check: CheckButton = null
 var _files_changed_label: Label = null
 var _remove_button: Button = null
 var _panel_button: Button = null
@@ -367,6 +368,12 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_auto_reload_check.tooltip_text = "Automatically reload this plugin when its source files change (hot reload)"
 	_auto_reload_check.toggled.connect(_on_auto_reload_toggled)
 	toggle_row.add_child(_auto_reload_check)
+
+	_auto_update_check = CheckButton.new()
+	_auto_update_check.text = "Update at startup"
+	_auto_update_check.tooltip_text = "When Minerva starts, install this plugin's newer marketplace release if there is one"
+	_auto_update_check.toggled.connect(_on_auto_update_toggled)
+	toggle_row.add_child(_auto_update_check)
 
 	_files_changed_label = Label.new()
 	_files_changed_label.text = "● files changed"
@@ -906,6 +913,10 @@ func _populate_detail_panel(plugin_id: String) -> void:
 
 	# Show "Open Panel" button only if plugin declares UI panels and is running
 	var def = pm.get_db().get_by_id(plugin_id)
+	# Startup updates come from the marketplace; a developer (manifest-lane)
+	# checkout is never overwritten, so the toggle is offered only there.
+	_auto_update_check.visible = def != null and not is_internal \
+		and def.install_lane == PluginDefinition.LANE_MARKETPLACE
 	if _panel_button != null and def != null:
 		_panel_button.visible = not def.ui_panels.is_empty()
 		_panel_button.disabled = not is_running
@@ -916,6 +927,8 @@ func _populate_detail_panel(plugin_id: String) -> void:
 			_autostart_check.set_pressed_no_signal(def.autostart)
 		if _auto_reload_check != null:
 			_auto_reload_check.set_pressed_no_signal(def.auto_reload)
+		if _auto_update_check != null:
+			_auto_update_check.set_pressed_no_signal(def.auto_update)
 
 	# Setup-pipeline status (G4.1): Building…/failure detail/Rebuild.
 	_populate_setup_status(plugin_id)
@@ -1315,6 +1328,16 @@ func _on_autostart_toggled(enabled: bool) -> void:
 		return
 	_pm().get_db().set_autostart(_selected_plugin_id, enabled)
 	_show_status("Auto-start %s for %s" % ["enabled" if enabled else "disabled", _selected_plugin_id])
+
+
+func _on_auto_update_toggled(enabled: bool) -> void:
+	if _selected_plugin_id.is_empty():
+		return
+	if not _pm().get_db().set_auto_update(_selected_plugin_id, enabled):
+		_auto_update_check.set_pressed_no_signal(not enabled)
+		_show_status("Could not save Update at startup for %s" % _selected_plugin_id)
+		return
+	_show_status("Update at startup %s for %s" % ["enabled" if enabled else "disabled", _selected_plugin_id])
 
 
 func _on_auto_reload_toggled(enabled: bool) -> void:
