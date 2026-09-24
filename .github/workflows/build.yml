@@ -821,6 +821,8 @@ jobs:
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
     runs-on: macos-15
+    env:
+      BLUETOOTH_USAGE: Minerva connects to Bluetooth bench instruments such as multimeters through its plugins.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1225,6 +1227,20 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
+      - name: Declare Bluetooth usage in Info.plist
+        # macOS charges a child process's CoreBluetooth use to the app that
+        # started it, so a plugin driving a BLE instrument is aborted on its
+        # first Bluetooth call unless Minerva's own Info.plist carries a usage
+        # string. Godot 4.6's macOS export preset has no Bluetooth key, so the
+        # exported plist lacks it and it is inserted here, before signing seals
+        # the plist. The "Verify macOS build assets" step checks the exact
+        # string; should a later export write the key, the preset should carry
+        # it instead.
+        working-directory: src/build/macos
+        run: |
+          plutil -insert NSBluetoothAlwaysUsageDescription -string "$BLUETOOTH_USAGE" Minerva.app/Contents/Info.plist
+          plutil -lint Minerva.app/Contents/Info.plist
+
       - name: Ad-hoc sign app and seal bundled voice manifests
         # Codesign iteration history (in build.yml git log):
         #   - 913b18a1: `--force --deep --sign -` → per-library Gatekeeper
@@ -1349,6 +1365,11 @@ jobs:
                 fail=1
               fi
             done
+          fi
+          declared=$(plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$APP/Contents/Info.plist" || true)
+          if [ "$declared" != "$BLUETOOTH_USAGE" ]; then
+            echo "::error::Info.plist NSBluetoothAlwaysUsageDescription is '$declared', expected '$BLUETOOTH_USAGE'"
+            fail=1
           fi
           [ "$fail" -eq 0 ] || exit 1
           echo "All required macOS bundle entries present"
