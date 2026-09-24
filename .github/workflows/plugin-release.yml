@@ -86,13 +86,17 @@ jobs:
         with:
           python-version: '3.12'
       - name: Build the runtime
+        if: runner.os != 'Windows'
         shell: bash
+        run: scripts/build-extensions.sh --voice-only
+      # The app workflow's proven recipe: run from pwsh. Reached through bash
+      # (bash -> powershell -> Git Bash), GNU tar was given a drive-letter path.
+      - name: Build the runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          if [ "${{ runner.os }}" = Windows ]; then
-            powershell -ExecutionPolicy Bypass -File scripts/build-extensions.ps1 -VoiceOnly
-          else
-            scripts/build-extensions.sh --voice-only
-          fi
+          ./scripts/build-extensions.ps1 -VoiceOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test the runtime
         shell: bash
         run: src/plugins/voice/scripts/test-runtime.sh "${{ matrix.target }}"

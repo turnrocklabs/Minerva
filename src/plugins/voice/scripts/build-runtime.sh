@@ -27,6 +27,13 @@ case "$TARGET" in
   *) echo "unsupported target: $TARGET" >&2; exit 64 ;;
 esac
 
+# GNU tar reads an archive name with a drive colon (D:/...) as host:path;
+# --force-local keeps it a local file. bsdtar has neither the reading nor
+# the option.
+tar_local() {
+  if tar --version 2>/dev/null | grep -q "GNU tar"; then tar --force-local "$@"; else tar "$@"; fi
+}
+
 hash_file() {
   if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -58,7 +65,11 @@ if [ "$actual" != "$PBS_SHA256" ]; then
   echo "PBS checksum mismatch for $TARGET" >&2
   exit 66
 fi
-tar -xzf "$CACHE_DIR/$PBS_FILE" -C "$STAGE_DIR" --strip-components=1
+tar_local -xzf "$CACHE_DIR/$PBS_FILE" -C "$STAGE_DIR" --strip-components=1
+# The worker needs no terminal database, and ncurses ships names there that
+# differ only in case (a file beside a symlink), which the plugin installer
+# refuses.
+rm -rf "$STAGE_DIR/share/terminfo"
 touch "$STAGE_DIR/.gdignore"
 
 PY_MM="$(echo "$CPYTHON" | cut -d. -f1,2)"
@@ -139,6 +150,6 @@ EOF
   echo "$(hash_file "$STAGE_DIR/$file")  ${file#./}"
 done > manifest.sha256)
 
-tar -czf "$OUT_DIR/minerva-voice-$TARGET.tar.gz" -C "$STAGE_DIR" .
+tar_local -czf "$OUT_DIR/minerva-voice-$TARGET.tar.gz" -C "$STAGE_DIR" .
 hash_file "$OUT_DIR/minerva-voice-$TARGET.tar.gz" > "$OUT_DIR/minerva-voice-$TARGET.tar.gz.sha256"
 echo "built $OUT_DIR/minerva-voice-$TARGET.tar.gz"

@@ -1,7 +1,7 @@
 {
   "id": "voice",
   "name": "Voice Support",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "host_api_version": "1",
   "release_targets": [
     "linux-x86_64",
