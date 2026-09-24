@@ -31,7 +31,6 @@ compilation and handle these dependencies:
 | Zig 0.15.2 | Downloaded user-local; no sudo/admin |
 | SCons | Uses an existing install, or installs into ignored `.build-venv` |
 | MCP JSON Schema helper | Pinned, checksum-verified jsoncons + Minerva patch; C++17 build |
-| Built-in Voice runtime | Pinned CPython 3.12, wheels, detector models, and current worker source for the host architecture |
 | ghostty-vt shim | Zig build → `libminerva-vt` |
 | Terminal GDExtension | SCons build → `libterminal.*` |
 | EIRTeam.FFmpeg 1.1.4 | Prebuilt download; Unix script falls back to source build |
@@ -61,7 +60,7 @@ Unix Zig downloads live under `~/.local/share/minerva/`, with a launcher link in
 
 ```bash
 scripts/build-extensions.sh --helper-only          # Build/check only the MCP helper
-scripts/build-extensions.sh --voice-only           # Build/check only built-in Voice
+scripts/build-extensions.sh --voice-only           # Build/check the Voice plugin runtime
 scripts/build-extensions.sh --check                # Check installed native dependencies
 scripts/build-extensions.sh --check --helper-only  # Only probe the installed helper
 scripts/build-extensions.sh --check --voice-only   # Only probe Voice
@@ -79,10 +78,12 @@ Helper-only setup needs Python, SCons and a C++ compiler; it does not initialize
 submodules, install Zig, or rebuild loaded GDExtensions. It is the targeted repair
 for `MCP JSON Schema helper is missing at ...` during plugin startup.
 
-Voice-only setup needs Python, Git Bash on Windows, curl, and tar. It bypasses
-C++, SCons, Zig, Rust, and native GDExtension builds. It uses the same pinned
-runtime recipe as release CI and is the targeted repair command shown when the
-built-in Voice runtime is missing or stale.
+Voice Support and Agent Relay are required plugins that Minerva installs from
+their own GitHub releases (see `.github/workflows/plugin-release.yml`), so a
+normal setup builds neither. `--voice-only` (Python, Git Bash on Windows, curl
+and tar) and `--agent-relay-only` (Rust) build a plugin's runtime stage from the
+same recipe the release workflow uses, for work on that plugin;
+`scripts/package-plugin-release.py` turns a stage into a release archive.
 
 jsoncons archives are checksum-verified and cached in `.dependency-cache/`
 (`MINERVA_DEPENDENCY_CACHE` overrides that location). Verified extracted headers
@@ -184,9 +185,10 @@ The main scripts and check-only mode share `scripts/check-editor-ready.py`:
 
 - Start the actual helper, ping it, compile a schema, accept valid input, reject
   invalid input, compare numbers, release the handle, and require a clean EOF exit.
-- Verify the host Voice runtime's required files, manifest hashes, target and
-  interpreter architecture, and source-input fingerprint; then perform a bounded
-  MCP initialize and require a clean EOF exit without opening audio devices.
+- With `--voice-only`, verify the Voice plugin stage's required files, manifest
+  hashes, target and interpreter architecture, and source-input fingerprint;
+  then perform a bounded MCP initialize and require a clean EOF exit without
+  opening audio devices.
 - Load terminal, ghostty shim, SQLite and FFmpeg in isolated native loader processes.
   The OS checks host architecture and linked dependencies; GDExtension entry symbols
   must exist. Run with a Python interpreter matching your Godot architecture.

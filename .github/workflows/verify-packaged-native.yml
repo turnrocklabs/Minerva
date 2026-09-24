@@ -151,8 +151,6 @@ jobs:
           case "${{ matrix.platform }}" in
             linux)
               tar -xzf packaged/Minerva-Linux.tar.gz -C extracted
-              src/plugins/voice/scripts/test-runtime-root.sh linux-x86_64 extracted/builtin-plugins/voice
-              python3 src/plugins/agent-relay/scripts/package-runtime.py verify linux-x86_64 extracted/builtin-plugins/agent_relay
               scripts/test-packaged-mcp-helper.sh linux-x86_64 extracted/mcp-runtime/linux-x86_64
               xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
                 python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
@@ -163,18 +161,12 @@ jobs:
               ;;
             windows)
               unzip -q packaged/Minerva-Windows.zip -d extracted
-              src/plugins/voice/scripts/test-runtime-root.sh windows-x86_64 extracted/builtin-plugins/voice
-              python3 src/plugins/agent-relay/scripts/package-runtime.py verify windows-x86_64 extracted/builtin-plugins/agent_relay
               scripts/test-packaged-mcp-helper.sh windows-x86_64 extracted/mcp-runtime/windows-x86_64
               python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe
               python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe --bridge
               ;;
             macos)
               ditto -x -k packaged/Minerva-macOS.zip extracted
-              src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" \
-                "extracted/Minerva.app/Contents/Resources/builtin-plugins/voice/${{ matrix.target }}"
-              python3 src/plugins/agent-relay/scripts/package-runtime.py verify "${{ matrix.target }}" \
-                "extracted/Minerva.app/Contents/Resources/builtin-plugins/agent_relay/${{ matrix.target }}"
               scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
                 "extracted/Minerva.app/Contents/Resources/mcp-runtime/${{ matrix.target }}"
               python3 scripts/verify-packaged-mcp-app.py \
@@ -202,9 +194,6 @@ jobs:
           else
             tar -xzf packaged-debug/Minerva-Linux-Debug.tar.gz -C extracted-debug
           fi
-          src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" extracted-debug/builtin-plugins/voice
-          python3 src/plugins/agent-relay/scripts/package-runtime.py verify "${{ matrix.target }}" \
-            extracted-debug/builtin-plugins/agent_relay
           scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
             "extracted-debug/mcp-runtime/${{ matrix.target }}"
           executable=extracted-debug/Minerva.x86_64

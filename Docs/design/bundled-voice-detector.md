@@ -1,8 +1,9 @@
 # Voice Support runtime
 
-Minerva ships the wake-word and VAD worker as an immutable Python sidecar. It
-does not use the system Python, invoke pip, or download models at application
-startup. CI builds each sidecar from a pinned Python Build Standalone archive,
+The wake-word and VAD worker is the required Voice Support plugin (`voice`), an
+immutable Python sidecar published as its own release and installed by Minerva
+like any marketplace plugin. It does not use the system Python, invoke pip, or
+download models when it starts. CI builds each sidecar from a pinned Python Build Standalone archive,
 exact Python package versions, and the existing classifier assets. The build
 records all downloaded wheel hashes and a manifest of every shipped file.
 Every bundled launcher uses Python's `-B` mode so runtime imports cannot modify
@@ -32,14 +33,14 @@ features cannot leak between sessions.
 - `windows-x86_64`
 - `macos-arm64` or `macos-amd64`
 
-The two macOS bundles remain separate. A universal Minerva application selects
-the matching sidecar directory (`macos-arm64` or `macos-amd64`) for the process
-architecture; it must never silently run
-the Intel worker under translation on Apple Silicon. Release packaging places
-Linux and Windows sidecars beside the application. macOS staging places the
-sidecars under `Contents/Resources/builtin-plugins/voice/<target>` before the
-application's final signing pass. CI archive handoffs must preserve executable
-bits and symlinks.
+The two macOS builds remain separate release assets. Minerva installs the one
+for its process architecture (`macos-arm64` or `macos-amd64`); it must never
+silently run the Intel worker under translation on Apple Silicon. A tag
+`voice-v<version>` makes `.github/workflows/plugin-release.yml` build each
+target and publish `voice-<version>-<target>.tar.gz`, a marketplace archive
+(`scripts/package-plugin-release.py`) whose `manifest.json` comes from
+`src/plugins/voice/manifest.json` with the target's interpreter as entrypoint.
+Archives preserve executable bits and symlinks.
 
 Generated stages and archives are ignored. No executable runtime or wheel is
 checked into git. `runtime-bundle.lock` records the PBS URLs and hashes and
@@ -64,11 +65,11 @@ and stop. The artifact test runs with the bundled interpreter, verifies every
 manifest entry, blocks non-loopback network access while loading the real
 models, and exercises nonzero PCM through the packaged VAD path.
 
-The host now registers the immutable built-in catalog entry, launches the
-worker through `PluginManager`, and selects the architecture-specific sidecar.
+The host installs the release as the required `voice` plugin
+(`RequiredPlugins`) and launches the worker through `PluginManager`.
 `BundledVoiceDetectorAdapter` owns readiness, reconnect, and shutdown around
 the worker while `VoiceGatewayClient` continues to own microphone capture and
-speech-session state. CI validates both the standalone runtime archive and the
-runtime after it has been staged into each final desktop package; a focused
-opt-in bridge probe covers the production Godot-to-worker boundary without
-opening a microphone or contacting Core.
+speech-session state. The release workflow tests each runtime on its native
+target and probes the packaged archive's MCP tool list against its manifest; a
+focused opt-in bridge probe covers the production Godot-to-worker boundary
+without opening a microphone or contacting Core.

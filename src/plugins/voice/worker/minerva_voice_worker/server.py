@@ -1,4 +1,4 @@
-"""MCP stdio control plane for the bundled voice detector."""
+"""MCP stdio control plane for the Voice Support plugin's detector."""
 
 from __future__ import annotations
 

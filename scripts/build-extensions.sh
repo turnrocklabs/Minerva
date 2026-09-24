@@ -33,8 +33,8 @@ for arg in "$@"; do
             echo "Usage: $0 [linux|macos] [--check] [--helper-only|--voice-only|--agent-relay-only|--terminal-only|--addons-only]"
             echo "--check validates installed artifacts without building or launching Godot."
             echo "--helper-only builds/checks only the MCP schema helper."
-            echo "--voice-only builds/checks only the bundled Voice runtime."
-            echo "--agent-relay-only builds/checks only the bundled Agent Relay worker."
+            echo "--voice-only builds/checks the Voice Support plugin's runtime (plugin work and releases)."
+            echo "--agent-relay-only builds the Agent Relay plugin's worker (plugin work and releases)."
             echo "--terminal-only builds only the ghostty-vt shim and terminal extension."
             echo "--addons-only installs only the godot-sqlite and EIRTeam.FFmpeg addons."
             exit 0 ;;
@@ -45,8 +45,8 @@ if [ $((HELPER_ONLY + VOICE_ONLY + AGENT_RELAY_ONLY + TERMINAL_ONLY + ADDONS_ONL
     echo "The --*-only options are mutually exclusive." >&2
     exit 2
 fi
-# check-editor-ready.py has no Agent Relay probe; the host's runtime_issue()
-# is what reports a missing stage.
+# check-editor-ready.py has no Agent Relay probe; the build itself exercises
+# the worker, and a plugin release probes its archive (package-plugin-release.py).
 if [ "$CHECK_ONLY" = 1 ] && [ $((AGENT_RELAY_ONLY + TERMINAL_ONLY + ADDONS_ONLY)) -gt 0 ]; then
     echo "--agent-relay-only, --terminal-only and --addons-only have no --check probe." >&2
     exit 2
@@ -66,35 +66,35 @@ if [ -z "$PLATFORM" ]; then
 fi
 echo "Building for platform: $PLATFORM"
 
-# Target triple naming the per-target stage directory the host resolves at
-# runtime (InternalPlugins.target_triple must agree with this).
-internal_plugin_target_for_host() {
+# The release target a plugin stage is built for; it names the stage directory
+# and must be one of the plugin manifest's release_targets.
+plugin_target_for_host() {
     case "$(uname -s)-$(uname -m)" in
         Linux-x86_64|Linux-amd64) echo "linux-x86_64" ;;
         Darwin-arm64|Darwin-aarch64) echo "macos-arm64" ;;
         Darwin-x86_64|Darwin-amd64) echo "macos-amd64" ;;
-        *) echo "Bundled internal plugins are not supported on $(uname -s)/$(uname -m)." >&2; return 1 ;;
+        *) echo "Plugin runtimes are not built on $(uname -s)/$(uname -m)." >&2; return 1 ;;
     esac
 }
 
 build_voice_runtime() {
     local target
-    target="$(internal_plugin_target_for_host)"
+    target="$(plugin_target_for_host)"
     echo ""
-    echo "=== Building bundled Voice runtime ($target) ==="
+    echo "=== Building the Voice Support plugin runtime ($target) ==="
     src/plugins/voice/scripts/build-runtime.sh "$target"
 }
 
 # The Agent Relay worker is a single Rust binary. Staging it (rather than
 # pointing the host at target/release) keeps cargo's build tree out of the
-# plugin's runtime directory and gives packaged builds one directory to copy.
+# plugin's runtime directory and gives the release packager one directory.
 build_agent_relay_runtime() {
     local target source stage
-    target="$(internal_plugin_target_for_host)"
+    target="$(plugin_target_for_host)"
     source="src/plugins/agent-relay"
     stage="$source/runtime-build/stage/$target"
     echo ""
-    echo "=== Building bundled Agent Relay worker ($target) ==="
+    echo "=== Building the Agent Relay plugin worker ($target) ==="
     command -v cargo >/dev/null || { echo "Required tool missing: cargo. Install Rust via rustup. See Docs/Building.md."; exit 1; }
     cargo build --locked --release --manifest-path "$source/Cargo.toml"
     mkdir -p "$stage"
@@ -155,9 +155,6 @@ if [ $((TERMINAL_ONLY + ADDONS_ONLY)) = 0 ]; then
     if [ "$HELPER_ONLY" = 1 ]; then
         exec python3 scripts/check-editor-ready.py --helper-only
     fi
-
-    build_voice_runtime
-    build_agent_relay_runtime
 fi
 
 build_terminal_extension() {

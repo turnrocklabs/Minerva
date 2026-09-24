@@ -59,7 +59,6 @@ Close Minerva and its editor before a full native rebuild. Both scripts handle:
 - ghostty-vt shim build (Zig)
 - Godot C++ terminal extension build (SCons)
 - Library installation to `src/bin/`
-- Pinned built-in Voice runtime for the current host architecture
 - FFmpeg and SQLite installation, then native dependency checks
 
 The MCP helper is required for **all plugin startup**, including legacy plugins.
@@ -67,17 +66,15 @@ To repair just that dependency in an existing checkout:
 
 ```bash
 scripts/build-extensions.sh --helper-only                 # Linux/macOS
-scripts/build-extensions.sh --voice-only                  # Repair/check Voice only
 scripts/build-extensions.sh --check                       # Check without rebuilding
 ```
 
 ```powershell
 ./scripts/build-extensions.ps1 -HelperOnly                 # Windows
-./scripts/build-extensions.ps1 -VoiceOnly
 ./scripts/build-extensions.ps1 -Check
 ```
 
-The check starts short-lived schema and Voice workers and loads core libraries in
+The check starts a short-lived schema worker and loads core libraries in
 isolated processes. It does not launch Godot, the Minerva project, or the
 microphone. It must pass before testing plugin startup in the editor; CEF panels
 and PDF remain optional checks.

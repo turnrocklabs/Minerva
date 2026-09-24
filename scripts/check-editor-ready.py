@@ -31,7 +31,7 @@ def host_voice_target() -> str:
         return "linux-x86_64"
     if system == "windows" and machine in {"x86_64", "amd64"}:
         return "windows-x86_64"
-    raise RuntimeError(f"bundled Voice is not supported on {system}/{platform.machine()}")
+    raise RuntimeError(f"the Voice plugin runtime is not built on {system}/{platform.machine()}")
 
 
 def _sha256(path: Path) -> str:
@@ -293,7 +293,7 @@ def main() -> int:
     if not args.voice_only:
         check("MCP schema helper: start, validate, reject, release, exit",
               lambda: helper_probe(root / "src/bin" / ("minerva-json-schema-helper" + suffix)))
-    if not args.helper_only:
+    if args.voice_only:
         check("Voice runtime: files, architecture, freshness, MCP initialize, clean exit",
               lambda: voice_runtime_probe(root))
     if not args.helper_only and not args.voice_only:
@@ -334,7 +334,7 @@ def main() -> int:
     elif args.voice_only:
         print("Voice runtime ready.")
     else:
-        print("Native dependencies and Voice runtime passed. Open src/project.godot in Godot 4.6+ and verify plugin startup.")
+        print("Native dependencies passed. Open src/project.godot in Godot 4.6+ and verify plugin startup.")
     return 0
 
 

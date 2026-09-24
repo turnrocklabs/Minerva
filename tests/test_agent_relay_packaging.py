@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused packaging contract for the bundled Agent Relay worker."""
+"""Focused packaging contract for the Agent Relay plugin's worker."""
 
 from __future__ import annotations
 

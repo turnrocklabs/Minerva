@@ -35,8 +35,8 @@ Set-Location $RepoRoot
 if ((@($HelperOnly, $VoiceOnly, $AgentRelayOnly) | Where-Object { $_ }).Count -gt 1) {
     throw "-HelperOnly, -VoiceOnly and -AgentRelayOnly are mutually exclusive."
 }
-# check-editor-ready.py has no Agent Relay probe; the host's runtime_issue()
-# is what reports a missing stage.
+# check-editor-ready.py has no Agent Relay probe; the build itself exercises
+# the worker, and a plugin release probes its archive (package-plugin-release.py).
 if ($Check -and $AgentRelayOnly) {
     throw "-AgentRelayOnly has no -Check probe; run it without -Check."
 }
@@ -60,7 +60,7 @@ function Build-VoiceRuntime {
     $gitBash = Get-GitBash
     $voicePython = (Get-Command python -ErrorAction Stop).Source
     Write-Host ""
-    Write-Host "=== Building bundled Voice runtime (windows-x86_64) ===" -ForegroundColor Cyan
+    Write-Host "=== Building the Voice Support plugin runtime (windows-x86_64) ===" -ForegroundColor Cyan
     $previousVoicePython = $env:MINERVA_VOICE_BUILD_PYTHON
     try {
         $env:MINERVA_VOICE_BUILD_PYTHON = $voicePython
@@ -73,13 +73,13 @@ function Build-VoiceRuntime {
 
 # The Agent Relay worker is a single Rust binary. Staging it (rather than
 # pointing the host at target/release) keeps cargo's build tree out of the
-# plugin's runtime directory and gives packaged builds one directory to copy.
+# plugin's runtime directory and gives the release packager one directory.
 function Build-AgentRelayRuntime {
     $target = "windows-x86_64"
     $source = "src/plugins/agent-relay"
     $stage = Join-Path $source "runtime-build/stage/$target"
     Write-Host ""
-    Write-Host "=== Building bundled Agent Relay worker ($target) ===" -ForegroundColor Cyan
+    Write-Host "=== Building the Agent Relay plugin worker ($target) ===" -ForegroundColor Cyan
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         throw "cargo not found. Install Rust via https://rustup.rs (then 'rustup update stable')."
     }
@@ -153,9 +153,6 @@ if ($HelperOnly) {
     Assert-NativeSuccess "MCP schema helper readiness"
     exit 0
 }
-
-Build-VoiceRuntime
-Build-AgentRelayRuntime
 
 # ── Git submodules ────────────────────────────────────────────────────
 Write-Host "Initializing git submodules..."

@@ -109,100 +109,6 @@ jobs:
             src/native/json_schema_helper/artifacts/minerva-json-schema-helper-${{ matrix.target }}.tar.gz.sha256
           if-no-files-found: error
 
-  build-voice-runtimes:
-    name: Voice runtime (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-x86_64
-            runner: ubuntu-latest
-          - target: windows-x86_64
-            runner: windows-latest
-          - target: macos-arm64
-            runner: macos-15
-          - target: macos-amd64
-            runner: macos-15-intel
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Detect missing Voice runtime, repair through contributor path, and recheck (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          if scripts/build-extensions.sh --check --voice-only; then
-            echo "Voice readiness unexpectedly passed before the runtime was built" >&2
-            exit 1
-          fi
-          scripts/build-extensions.sh --voice-only
-          scripts/build-extensions.sh --check --voice-only
-      - name: Detect missing Voice runtime, repair through contributor path, and recheck (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $missingDetected = $false
-          try {
-            ./scripts/build-extensions.ps1 -Check -VoiceOnly
-          } catch {
-            $missingDetected = $true
-            Write-Host "Expected pre-repair readiness failure: $_"
-          }
-          if (-not $missingDetected) { throw "Voice readiness unexpectedly passed before the runtime was built" }
-          ./scripts/build-extensions.ps1 -VoiceOnly
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ./scripts/build-extensions.ps1 -Check -VoiceOnly
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test extracted voice runtime
-        shell: bash
-        run: src/plugins/voice/scripts/test-runtime.sh "${{ matrix.target }}"
-      - name: Upload immutable voice runtime
-        uses: actions/upload-artifact@v4
-        with:
-          name: minerva-voice-${{ matrix.target }}
-          path: |
-            src/plugins/voice/dist/minerva-voice-${{ matrix.target }}.tar.gz
-            src/plugins/voice/dist/minerva-voice-${{ matrix.target }}.tar.gz.sha256
-          if-no-files-found: error
-
-  build-agent-relay-runtimes:
-    name: Agent Relay runtime (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: linux-x86_64, runner: ubuntu-latest }
-          - { target: windows-x86_64, runner: windows-latest }
-          - { target: macos-arm64, runner: macos-15 }
-          - { target: macos-amd64, runner: macos-15-intel }
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build, stage, and exercise Agent Relay
-        shell: bash
-        run: |
-          if [ "${{ runner.os }}" = Windows ]; then
-            powershell -ExecutionPolicy Bypass -File scripts/build-extensions.ps1 -AgentRelayOnly
-          else
-            scripts/build-extensions.sh --agent-relay-only
-          fi
-      - name: Upload immutable Agent Relay runtime
-        uses: actions/upload-artifact@v4
-        with:
-          name: minerva-agent-relay-${{ matrix.target }}
-          path: |
-            src/plugins/agent-relay/dist/minerva-agent-relay-${{ matrix.target }}.tar.gz
-            src/plugins/agent-relay/dist/minerva-agent-relay-${{ matrix.target }}.tar.gz.sha256
-          if-no-files-found: error
-
   check-gdextension:
     runs-on: ubuntu-latest
     outputs:
@@ -687,7 +593,8 @@ jobs:
           tar -xzf downloads/Minerva-Linux-Build/Minerva-Linux.tar.gz \
             -C downloads/Minerva-Linux-Build/extracted
           test -x downloads/Minerva-Linux-Build/extracted/Minerva.x86_64
-          test -x downloads/Minerva-Linux-Build/extracted/builtin-plugins/voice/bin/python3
+          # Required plugins are fetched from their own releases, never shipped.
+          test ! -e downloads/Minerva-Linux-Build/extracted/builtin-plugins
           ls -la downloads/Minerva-Linux-Build/extracted/Minerva.x86_64
 
       - name: Run tarball smoke
@@ -816,7 +723,7 @@ jobs:
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
-    needs: [check-gdextension, build-macos, build-voice-runtimes, build-agent-relay-runtimes, build-mcp-schema-helpers]
+    needs: [check-gdextension, build-macos, build-mcp-schema-helpers]
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
@@ -829,16 +736,6 @@ jobs:
           submodules: 'true'
           lfs: true
 
-      - name: Download bundled voice runtimes
-        uses: actions/download-artifact@v4
-        with:
-          pattern: minerva-voice-macos-*
-          path: voice-runtimes
-      - name: Download bundled Agent Relay runtimes
-        uses: actions/download-artifact@v4
-        with:
-          pattern: minerva-agent-relay-macos-*
-          path: agent-relay-runtimes
       - name: Download MCP schema helpers
         uses: actions/download-artifact@v4
         with:
@@ -1156,33 +1053,6 @@ jobs:
           echo "--- Frameworks/$DST_REL/ ---"
           ls -la "$DST_REL/"
 
-      - name: Stage bundled voice runtimes
-        working-directory: src
-        run: |
-          ROOT=build/macos/Minerva.app/Contents/Resources/builtin-plugins/voice
-          for target in macos-arm64 macos-amd64; do
-            archive="${GITHUB_WORKSPACE}/voice-runtimes/minerva-voice-${target}/minerva-voice-${target}.tar.gz"
-            checksum="${archive}.sha256"
-            expected=$(cat "$checksum")
-            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
-            [ "$actual" = "$expected" ] || { echo "::error::Voice runtime checksum mismatch: $target"; exit 1; }
-            mkdir -p "$ROOT/$target"
-            tar -xzf "$archive" -C "$ROOT/$target"
-          done
-
-      - name: Stage bundled Agent Relay runtimes
-        working-directory: src
-        run: |
-          ROOT=build/macos/Minerva.app/Contents/Resources/builtin-plugins/agent_relay
-          for target in macos-arm64 macos-amd64; do
-            archive="${GITHUB_WORKSPACE}/agent-relay-runtimes/minerva-agent-relay-${target}/minerva-agent-relay-${target}.tar.gz"
-            expected=$(tr -d '\r\n' < "$archive.sha256")
-            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
-            [ "$actual" = "$expected" ] || { echo "::error::Agent Relay checksum mismatch: $target"; exit 1; }
-            mkdir -p "$ROOT/$target"
-            tar -xzf "$archive" -C "$ROOT/$target"
-          done
-
       - name: Stage source-built MCP schema helpers
         working-directory: src
         run: |
@@ -1241,7 +1111,7 @@ jobs:
           plutil -insert NSBluetoothAlwaysUsageDescription -string "$BLUETOOTH_USAGE" Minerva.app/Contents/Info.plist
           plutil -lint Minerva.app/Contents/Info.plist
 
-      - name: Ad-hoc sign app and seal bundled voice manifests
+      - name: Ad-hoc sign app
         # Codesign iteration history (in build.yml git log):
         #   - 913b18a1: `--force --deep --sign -` → per-library Gatekeeper
         #     prompts on first launch (CEF helper subprocess spawns, each
@@ -1268,37 +1138,13 @@ jobs:
         working-directory: src/build/macos
         run: |
           xattr -cr Minerva.app 2>/dev/null || true
-          VOICE_ROOT=Minerva.app/Contents/Resources/builtin-plugins/voice
-          while IFS= read -r -d '' candidate; do
-            if file "$candidate" | grep -q 'Mach-O'; then
-              codesign --force --sign - "$candidate"
-            fi
-          done < <(find "$VOICE_ROOT" -type f -print0)
-          RELAY_ROOT=Minerva.app/Contents/Resources/builtin-plugins/agent_relay
-          for target in macos-arm64 macos-amd64; do
-            codesign --force --sign - "$RELAY_ROOT/$target/agent-relay-plugin"
-          done
           MCP_ROOT=Minerva.app/Contents/Resources/mcp-runtime
           for target in macos-arm64 macos-amd64; do
             codesign --force --sign - "$MCP_ROOT/$target/minerva-json-schema-helper"
           done
-
-          # The existing deep pass may rewrite nested Mach-O signatures. Seal
-          # payload hashes only after that mutation, then reseal the outer app
-          # without another deep traversal.
           codesign --force --deep --sign - Minerva.app
-          for target in macos-arm64 macos-amd64; do
-            runtime="$VOICE_ROOT/$target"
-            (cd "$runtime" && find . -type f ! -name manifest.sha256 -print | LC_ALL=C sort | while read -r path; do
-              echo "$(shasum -a 256 "$path" | cut -d' ' -f1)  ${path#./}"
-            done > manifest.sha256)
-          done
-          codesign --force --sign - Minerva.app
           codesign --verify --deep --strict Minerva.app
-          for target in macos-arm64 macos-amd64; do
-            (cd "$VOICE_ROOT/$target" && shasum -a 256 -c manifest.sha256)
-          done
-          echo "✓ .app signatures and bundled voice payloads verified"
+          echo "✓ .app signatures verified"
 
       - name: Package macOS Build for upload
         # actions/upload-artifact@v4 treats a single directory path as
@@ -1328,8 +1174,6 @@ jobs:
           )
           required_dirs=(
             "$APP/Contents/Frameworks"
-            "$APP/Contents/Resources/builtin-plugins/voice/macos-arm64"
-            "$APP/Contents/Resources/builtin-plugins/voice/macos-amd64"
             "$APP/Contents/Resources/mcp-runtime/macos-arm64"
             "$APP/Contents/Resources/mcp-runtime/macos-amd64"
           )
@@ -1356,6 +1200,10 @@ jobs:
           for d in "${required_dirs[@]}"; do
             if [ ! -d "$d" ]; then echo "::error::Missing dir $d"; fail=1; fi
           done
+          # Required plugins are fetched from their own releases, never shipped.
+          if [ -e "$APP/Contents/Resources/builtin-plugins" ]; then
+            echo "::error::$APP/Contents/Resources/builtin-plugins must not be packaged"; fail=1
+          fi
           if [ -d "$APP/Contents/Frameworks" ]; then
             echo "Frameworks contents:"
             ls -la "$APP/Contents/Frameworks/"
@@ -1425,11 +1273,9 @@ jobs:
           if-no-files-found: warn
 
   build-godot:
-    needs: [check-gdextension, build-windows, build-linux, build-voice-runtimes, build-agent-relay-runtimes, build-mcp-schema-helpers, build-godot-cef]
+    needs: [check-gdextension, build-windows, build-linux, build-mcp-schema-helpers, build-godot-cef]
     if: >-
       always() &&
-      needs.build-voice-runtimes.result == 'success' &&
-      needs.build-agent-relay-runtimes.result == 'success' &&
       needs.build-mcp-schema-helpers.result == 'success' &&
       needs.build-godot-cef.result == 'success'
     runs-on: ubuntu-latest
@@ -1439,16 +1285,6 @@ jobs:
           submodules: 'true'
           lfs: true
 
-      - name: Download bundled voice runtimes
-        uses: actions/download-artifact@v4
-        with:
-          pattern: minerva-voice-*-x86_64
-          path: voice-runtimes
-      - name: Download bundled Agent Relay runtimes
-        uses: actions/download-artifact@v4
-        with:
-          pattern: minerva-agent-relay-*-x86_64
-          path: agent-relay-runtimes
       - name: Download MCP schema helpers
         uses: actions/download-artifact@v4
         with:
@@ -1574,42 +1410,6 @@ jobs:
             fi
           fi
 
-      - name: Stage bundled voice runtimes
-        working-directory: src
-        run: |
-          stage_voice() {
-            target="$1"
-            destination="$2/builtin-plugins/voice"
-            archive="${GITHUB_WORKSPACE}/voice-runtimes/minerva-voice-${target}/minerva-voice-${target}.tar.gz"
-            expected=$(cat "${archive}.sha256")
-            actual=$(sha256sum "$archive" | cut -d' ' -f1)
-            [ "$actual" = "$expected" ] || { echo "::error::Voice runtime checksum mismatch: $target"; exit 1; }
-            mkdir -p "$destination"
-            tar -xzf "$archive" -C "$destination"
-          }
-          [ ! -d build/linux ] || stage_voice linux-x86_64 build/linux
-          [ ! -d build/linux-debug ] || stage_voice linux-x86_64 build/linux-debug
-          [ ! -d build/windows ] || stage_voice windows-x86_64 build/windows
-          [ ! -d build/windows-debug ] || stage_voice windows-x86_64 build/windows-debug
-
-      - name: Stage bundled Agent Relay runtimes
-        working-directory: src
-        run: |
-          stage_relay() {
-            target="$1"
-            destination="$2/builtin-plugins/agent_relay"
-            archive="${GITHUB_WORKSPACE}/agent-relay-runtimes/minerva-agent-relay-${target}/minerva-agent-relay-${target}.tar.gz"
-            expected=$(tr -d '\r\n' < "$archive.sha256")
-            actual=$(sha256sum "$archive" | cut -d' ' -f1)
-            [ "$actual" = "$expected" ] || { echo "::error::Agent Relay checksum mismatch: $target"; exit 1; }
-            mkdir -p "$destination"
-            tar -xzf "$archive" -C "$destination"
-          }
-          [ ! -d build/linux ] || stage_relay linux-x86_64 build/linux
-          [ ! -d build/linux-debug ] || stage_relay linux-x86_64 build/linux-debug
-          [ ! -d build/windows ] || stage_relay windows-x86_64 build/windows
-          [ ! -d build/windows-debug ] || stage_relay windows-x86_64 build/windows-debug
-
       - name: Stage source-built MCP schema helpers
         working-directory: src
         run: |
@@ -1656,16 +1456,11 @@ jobs:
             resources.pak
             chrome_100_percent.pak
             chrome_200_percent.pak
-            builtin-plugins/voice/bin/python3
-            builtin-plugins/voice/manifest.sha256
-            builtin-plugins/agent_relay/agent-relay-plugin
-            builtin-plugins/agent_relay/target-triple.txt
             mcp-runtime/linux-x86_64/minerva-json-schema-helper
             mcp-runtime/linux-x86_64/SOURCE_PROVENANCE
             mcp-runtime/linux-x86_64/jsoncons-LICENSE
           )
           required_dirs=(locales)
-          required_dirs+=(builtin-plugins/voice)
           fail=0
           for f in "${required_files[@]}"; do
             if [ ! -f "$f" ]; then
@@ -1676,6 +1471,13 @@ jobs:
           for d in "${required_dirs[@]}"; do
             if [ ! -d "$d" ]; then
               echo "::error::Missing required directory: src/build/linux/$d"
+              fail=1
+            fi
+          done
+          # Required plugins are fetched from their own releases, never shipped.
+          for tree in . ../linux-debug; do
+            if [ -e "$tree/builtin-plugins" ]; then
+              echo "::error::src/build/linux/$tree/builtin-plugins must not be packaged"
               fail=1
             fi
           done
@@ -1720,10 +1522,6 @@ jobs:
             Minerva.exe
             libterminal.windows.template_release.x86_64.dll
             minerva-vt.dll
-            builtin-plugins/voice/python.exe
-            builtin-plugins/voice/manifest.sha256
-            builtin-plugins/agent_relay/agent-relay-plugin.exe
-            builtin-plugins/agent_relay/target-triple.txt
             mcp-runtime/windows-x86_64/minerva-json-schema-helper.exe
             mcp-runtime/windows-x86_64/SOURCE_PROVENANCE
             mcp-runtime/windows-x86_64/jsoncons-LICENSE
@@ -1732,6 +1530,13 @@ jobs:
           for f in "${required_files[@]}"; do
             if [ ! -f "$f" ]; then
               echo "::error::Missing required file: src/build/windows/$f"
+              fail=1
+            fi
+          done
+          # Required plugins are fetched from their own releases, never shipped.
+          for tree in . ../windows-debug; do
+            if [ -e "$tree/builtin-plugins" ]; then
+              echo "::error::src/build/windows/$tree/builtin-plugins must not be packaged"
               fail=1
             fi
           done
