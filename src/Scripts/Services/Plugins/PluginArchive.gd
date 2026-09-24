@@ -13,6 +13,7 @@ extends RefCounted
 
 const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
 const Scan := preload("res://Scripts/Services/Plugins/PluginArchiveScan.gd")
+const Workers := preload("res://Scripts/Services/Plugins/PluginInstallWorkers.gd")
 
 # tar has no progress to watch, so only a wedged process should hit this.
 const TAR_TIMEOUT_S := 3600
@@ -38,6 +39,8 @@ func unpack(archive_abs: String, dest_abs: String, op: Operation, tree: SceneTre
 	var outcome := {}
 	var worker := Thread.new()
 	worker.start(_work.bind(archive_abs, dest_abs, op, outcome))
+	# Stopped by setting op.cancelled, which the scan, tar and verify check.
+	Workers.track(worker, func() -> void: op.cancelled = true)
 	while worker.is_alive():
 		if _verify_total >= 0:
 			if op.stage != Operation.STAGE_VERIFY:
@@ -45,7 +48,9 @@ func unpack(archive_abs: String, dest_abs: String, op: Operation, tree: SceneTre
 				op.total = _verify_total
 			op.done = _hashed
 		await tree.process_frame
-	worker.wait_to_finish()
+	Workers.untrack(worker)
+	if worker.is_started():  # not already waited for by Workers.stop_all
+		worker.wait_to_finish()
 	return outcome
 
 

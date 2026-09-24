@@ -1549,8 +1549,9 @@ func _exit_tree() -> void:
 	# Stop all running plugins (best-effort synchronous cleanup)
 	if plugin_manager != null:
 		print("[SingletonObject] Stopping plugins...")
-		# shutdown_all is async but _exit_tree is sync — plugins will be
-		# force-killed when the process exits if they don't stop in time.
+		# Synchronous: it also waits for install worker threads, which must
+		# end before the engine tears down. Plugin processes that do not stop
+		# in time are force-killed when the process exits.
 		plugin_manager.shutdown_all()
 
 	# Save cost tracker state (ledger + budgets) before shutdown

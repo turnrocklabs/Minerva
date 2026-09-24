@@ -15,6 +15,7 @@ extends Node
 
 const AutoUpdater := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
 const PendingUpgrade := preload("res://Scripts/Services/Plugins/PluginPendingUpgrade.gd")
+const InstallWorkers := preload("res://Scripts/Services/Plugins/PluginInstallWorkers.gd")
 
 ## How often (seconds) to poll running plugins for liveness.
 const HEALTH_CHECK_INTERVAL_SEC := 5.0
@@ -1432,6 +1433,11 @@ func shutdown_all() -> void:
 	var starting = _db.get_by_status(S_STARTING)
 	for def in (running + starting):
 		stop_plugin(def.id)
+	# An install still downloading or unpacking (a required plugin's repair,
+	# a startup update) runs on a worker thread, which must end before exit.
+	var workers := InstallWorkers.stop_all()
+	if workers > 0:
+		print("[PluginManager] Stopped %d plugin install worker(s) before exit" % workers)
 	SingletonObject.verbose_log("[PluginManager] All plugins stopped")
 
 

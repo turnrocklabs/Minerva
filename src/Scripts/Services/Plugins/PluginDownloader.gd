@@ -22,6 +22,7 @@ extends RefCounted
 ## {ok:false, error, detail}.
 
 const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
+const Workers := preload("res://Scripts/Services/Plugins/PluginInstallWorkers.gd")
 
 const MAX_REDIRECTS := 10
 const MAX_FRUITLESS_ATTEMPTS := 3
@@ -63,15 +64,18 @@ func download(url: String, dest_path: String, tree: SceneTree) -> Dictionary:
 		DirAccess.remove_absolute(dest_path)
 		return {"ok": false, "error": "download_request_failed",
 			"detail": {"url": url, "reason": "the download thread could not start", "godot_err": started}}
+	Workers.track(_worker, _request_stop)
 	while _worker.is_alive():
 		if op != null:
 			_lock.lock()
-			_stop = op.cancelled
+			_stop = _stop or op.cancelled
 			op.done = _shared_done
 			op.total = _shared_total
 			_lock.unlock()
 		await tree.process_frame
-	_worker.wait_to_finish()
+	Workers.untrack(_worker)
+	if _worker.is_started():  # not already waited for by Workers.stop_all
+		_worker.wait_to_finish()
 	_worker = null
 	if op != null:
 		op.done = bytes_received
@@ -228,6 +232,13 @@ func _publish() -> void:
 	_lock.lock()
 	_shared_done = bytes_received
 	_shared_total = bytes_total
+	_lock.unlock()
+
+
+## Caller side: ask the worker to stop (as a cancel does).
+func _request_stop() -> void:
+	_lock.lock()
+	_stop = true
 	_lock.unlock()
 
 

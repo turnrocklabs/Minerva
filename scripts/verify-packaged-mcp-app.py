@@ -94,10 +94,16 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
         except subprocess.TimeoutExpired:
             pass
     else:
+        # macOS can refuse the group kill with EPERM (seen after the app had
+        # exited). Cleanup is best-effort either way: the probe's own result
+        # still decides the run.
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError as error:
+            print(f"exported native probe cleanup: killpg({process.pid}) refused: {error}",
+                  file=sys.stderr)
 
 
 def main() -> int:

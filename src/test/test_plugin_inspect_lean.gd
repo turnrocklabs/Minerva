@@ -33,6 +33,7 @@ class FakeDef extends RefCounted:
 	var args := []
 	var working_dir := "."
 	var autostart := true
+	var auto_update := false
 	var network_mode := "none"
 	var filesystem_mode := "sandbox"
 	var tools := [
@@ -125,7 +126,7 @@ func _init() -> void:
 	var manifest: Dictionary = with_manifest.get("manifest", {})
 	check("include manifest returns the manifest summary",
 		str(manifest.get("entrypoint", "")) == "pcb-plugin"
-		and str(manifest.get("network_mode", "")) == "none")
+		and str(manifest.get("network_mode", "")) == "none" and manifest.get("auto_update") == false)
 	check("...without dragging tools along", not with_manifest.has("tools"))
 
 	var with_all: Dictionary = mcp._handle_plugin_inspect(

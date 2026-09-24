@@ -198,7 +198,7 @@ static func _differs(wanted: String, theirs: String) -> bool:
 
 
 func _run_next() -> void:
-	if _busy:
+	if _busy or manager.is_shutting_down():
 		return
 	for job in _jobs:
 		if job.state == Job.State.QUEUED and job.joined == null:
