@@ -16,8 +16,8 @@ const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
 ## decision per customised skill an update would change. Pass the result to
 ## install_plugin / update_plugin as `consent`. Cancelling `op` closes an
 ## open dialog as a decline and asks nothing more; an unattended `op` asks
-## nothing, so every skill the user customised keeps their version (skills
-## the update adds are seeded as in any update). `available_tools` and
+## nothing, so every skill the user customised keeps their version, and
+## (seed_new false) skills the update adds are not seeded. `available_tools` and
 ## `docket_manager` are as PluginSkillSeeder takes them.
 static func collect(host: Node, db, available_tools: Dictionary, docket_manager, manifest_path: String,
 		auto_confirm: bool, op = null) -> Dictionary:
@@ -39,6 +39,8 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_manager,
 			decisions[str(skill.get("id", ""))] = not unattended and (auto_confirm \
 				or await ask_update(host, def, action.get("existing", {}), skill, op))
 	consent["update_decisions"] = decisions
+	if unattended:
+		consent["seed_new"] = false
 	return consent
 
 

@@ -531,6 +531,12 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 		var accepted: bool = await SkillConsent.ask_update(self, def, existing, skill)
 		decisions[skill_id] = accepted
 
+	# An unattended update (consent.seed_new false) adds no skill the user
+	# never saw; those wait for an update or reinstall made by hand.
+	if not consent.get("seed_new", true):
+		plan["actions"] = plan.get("actions", []).filter(func(action) -> bool:
+			return str(action.get("action", "")) != SeederClass.RECONCILE_SEED)
+
 	# Phase 3: commit.
 	var reconcile_result: Dictionary = SeederClass.apply_reconcile(plan, decisions, docket_manager)
 	result["reconcile"] = reconcile_result
@@ -695,8 +701,12 @@ func _get_docket_manager():
 ## State transitions: INSTALLED/STOPPED/ERROR → STARTING → RUNNING or ERROR.
 ## Returns {"ok": true} or {"error": "..."}. The first start after an update
 ## installed while the plugin was stopped commits that update, or rolls it
-## back and starts the previous version (PluginPendingUpgrade).
-func start_plugin(id: String) -> Dictionary:
+## back and starts the previous version, and an update left unfinished is
+## undone first (PluginPendingUpgrade). `in_transaction` is only for the
+## install that is replacing the plugin and holds the staging lock.
+func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
+	if in_transaction:
+		return await _start_plugin_now(id)
 	return await PendingUpgrade.start(self, id, _start_plugin_now.bind(id))
 
 

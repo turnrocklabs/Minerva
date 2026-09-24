@@ -378,6 +378,44 @@ static func pending_for(staging_root: String, plugin_id: String) -> RefCounted:
 	return null
 
 
+## Whether an operation for `plugin_id` was left mid-replacement (a rollback
+## that did not finish): its files, record or data may not be what the
+## plugin last ran with, so nothing may start it until it is recovered.
+static func has_unfinished(staging_root: String, plugin_id: String) -> bool:
+	var root := DirAccess.open(staging_root)
+	for name in root.get_directories() if root != null else PackedStringArray():
+		var record = _read_record(staging_root.path_join(name))
+		if name.begins_with("op_") and record is Dictionary and record.get("id") == plugin_id \
+				and record.get("phase") == PHASE_REPLACING:
+			return true
+	return false
+
+
+## With the staging lock held (try_enter), undo what is unfinished for
+## `plugin_id` (see _resolve_pending). Returns {} or recovery_pending.
+func recover_unfinished(staging_root: String, db) -> Dictionary:
+	return _resolve_pending(staging_root, db)
+
+
+## Make this process the owner of this operation, which another process may
+## have created, by renaming its directory into this session. With the
+## staging lock held, so no other process is touching it. Returns whether it
+## is now this session's.
+func adopt(staging_root: String) -> bool:
+	# This session's lifetime owner lock first: without it another process
+	# would take this process for exited and recover the operation under it.
+	if not _hold_owner_lock(staging_root):
+		return false
+	if _session_of(op_dir.get_file()) == _session:
+		return true
+	_serial += 1
+	var adopted := staging_root.path_join("op_%s_%d" % [_session, _serial])
+	if DirAccess.rename_absolute(op_dir, adopted) != OK:
+		return false
+	op_dir = adopted
+	return true
+
+
 ## Take the staging lock without waiting. Returns whether it is held (then
 ## call leave()); false while an install or recovery holds it.
 func try_enter(staging_root: String) -> bool:

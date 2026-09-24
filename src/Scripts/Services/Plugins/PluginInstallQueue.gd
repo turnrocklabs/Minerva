@@ -17,10 +17,10 @@ extends Node
 ## new version, or on the restored old one if the install fails. The new
 ## version of a plugin that was running is started inside the install,
 ## before it commits, so one that fails to start is rolled back to the
-## working copy and its data (MarketplaceClient). Any other install is
-## started after it commits when that is expected (it autostarts, or was
-## stopped for a replacement that had no previous files). Either way
-## the job is Ready only once start_plugin has completed its handshake.
+## working copy and its data (MarketplaceClient). Any other install is left
+## stopped. Either way the job is Ready only once start_plugin has completed
+## its handshake. A request never attaches to an unattended update
+## (PluginAutoUpdater); it queues as its own install.
 ##
 ## Cancelling takes effect while queued, before registration, and while
 ## starting (an upgrade cancelled while starting is rolled back).
@@ -129,7 +129,9 @@ func _enqueue(entry: Dictionary, url: String, auto_confirm_skills: bool) -> Job:
 	var wanted_id := str(entry.get("id", ""))
 	var wanted_version := str(entry.get("version", ""))
 	for job in _jobs:
-		if job.state == Job.State.DONE or job.start_only or job.joined != null:
+		# A person's request never rides on an unattended update, which may yet
+		# be skipped (update_not_wanted); it queues as its own install.
+		if job.state == Job.State.DONE or job.start_only or job.joined != null or job.op.unattended:
 			continue
 		var same_url := not url.is_empty() and job.url == url
 		if not same_url and (wanted_id.is_empty() or job.plugin_id() != wanted_id):
@@ -218,7 +220,7 @@ func _run(job: Job) -> void:
 			if restarted.has("error"):
 				message += "\n\nThe previous version is installed but did not restart: %s" % restarted.error
 		var outcome := Job.OUTCOME_FAILED if restored else Job.OUTCOME_RECOVERY_NEEDED
-		if str(r.get("error", "")) == "cancelled":
+		if str(r.get("error", "")) in ["cancelled", "update_not_wanted"]:
 			outcome = Job.OUTCOME_CANCELLED
 		_finish(job, outcome, message)
 		return
@@ -229,8 +231,10 @@ func _run(job: Job) -> void:
 	if registered.get("needs_binary", false):
 		_finish(job, Job.OUTCOME_START_FAILED, str(registered.get("envelope", {}).get("install_hint", "")))
 		return
-	var def = manager.get_db().get_by_id(job.plugin_id())
-	if job.stopped_for_replace or (def != null and def.autostart):
+	# Only a plugin the queue stopped is started again. Any other install is
+	# left stopped, whatever its Auto-start: that choice applies when Minerva
+	# launches, and an update waits for its first start.
+	if job.stopped_for_replace:
 		await _start(job)
 	else:
 		_finish(job, Job.OUTCOME_INSTALLED, "")
@@ -256,6 +260,8 @@ func _start(job: Job) -> void:
 ## and end as install_conflict when they do not.
 func _on_identified(plugin_id: String, version: String, job: Job) -> void:
 	job.identified_version = version
+	if job.op.unattended:
+		return
 	for other in _jobs.duplicate():
 		var follows: bool = other.joined == job and other.state != Job.State.DONE
 		var queued: bool = other != job and other.state == Job.State.QUEUED and not other.start_only \

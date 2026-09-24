@@ -40,7 +40,8 @@ var plugin_id := ""
 ## Absolute path of this operation's directory under the staging root.
 var staging_dir := ""
 ## Nobody is there to ask (a startup auto-update): no skill question is
-## asked, so a skill the user customised keeps their version.
+## asked, so a skill the user customised keeps their version and a skill the
+## update adds is not seeded.
 var unattended := false
 ## Set by the caller that stopped the running plugin for the replacement, so
 ## the new version is started (and must start) before the install commits.

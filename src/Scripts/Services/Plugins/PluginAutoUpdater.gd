@@ -3,7 +3,8 @@ extends RefCounted
 ## to the marketplace's newer release, through the install queue: one at a
 ## time, the queue's upgrade transaction (a running plugin must start before
 ## the update commits, or it is rolled back), unattended consent (nothing is
-## asked; skills the user customised keep their version). Each update's
+## asked; skills the user customised keep their version, and skills the
+## update adds are not seeded). Each update's
 ## outcome is logged when it ends. Only marketplace-lane plugins are updated; a
 ## manifest-lane (developer) plugin is never overwritten. Nothing is awaited
 ## by startup, and a registry that cannot be read is logged and retried at
@@ -13,8 +14,7 @@ extends RefCounted
 ## than the installed version. Returns the jobs queued, keyed by plugin id.
 static func run(manager, registry_url: String = "") -> Dictionary:
 	var candidates: Array = manager.get_db().get_all().filter(func(def) -> bool:
-		return def.auto_update and def.install_lane == PluginDefinition.LANE_MARKETPLACE \
-			and not InternalPlugins.has(def.id))
+		return wants_update(def, ""))
 	if candidates.is_empty() or manager.install_queue == null:
 		return {}
 	var client: Node = MarketplaceClient.new()
@@ -32,9 +32,13 @@ static func run(manager, registry_url: String = "") -> Dictionary:
 		if entry is Dictionary:
 			entries[str(entry.get("id", ""))] = entry
 	var queued := {}
-	for def in candidates:
-		var entry: Dictionary = entries.get(def.id, {})
-		if entry.is_empty() or compare_versions(str(entry.get("version", "")), def.version) <= 0:
+	for candidate in candidates:
+		# The fetch took time: judge the plugin as it is now (removed, opted
+		# out, moved to the developer lane, or updated by hand meanwhile). The
+		# install checks again under its lock before it replaces anything.
+		var def = manager.get_db().get_by_id(candidate.id)
+		var entry: Dictionary = entries.get(candidate.id, {})
+		if entry.is_empty() or not wants_update(def, str(entry.get("version", ""))):
 			continue
 		# A request the user already made stands, with its own choices.
 		var existing: Array = manager.install_queue.jobs()
@@ -52,11 +56,21 @@ static func run(manager, registry_url: String = "") -> Dictionary:
 	return queued
 
 
+## Whether `def` (a PluginDefinition, or null) still wants an unattended
+## update to `version`: installed, opted in, on the marketplace lane, not
+## host-owned, and older than `version` ("" skips the version check).
+static func wants_update(def, version: String) -> bool:
+	return def != null and def.auto_update and def.install_lane == PluginDefinition.LANE_MARKETPLACE \
+		and not InternalPlugins.has(def.id) \
+		and (version.is_empty() or compare_versions(version, def.version) > 0)
+
+
 ## -1, 0 or 1 as version `a` is older than, equal to or newer than `b`:
 ## dot-separated numeric parts compared as numbers (missing parts are 0), and
 ## a release is newer than the same version with a pre-release suffix
-## ("1.2.0" > "1.2.0-rc.1"). Suffixes themselves compare as text; build
-## metadata after "+" is ignored.
+## ("1.2.0" > "1.2.0-rc.1"). Pre-release suffixes compare part by part, dot
+## separated: numeric parts as numbers ("rc.10" > "rc.2"), others as text, a
+## numeric part below a text one. Build metadata after "+" is ignored.
 static func compare_versions(a: String, b: String) -> int:
 	var a_parts := a.get_slice("+", 0).split("-", true, 1)
 	var b_parts := b.get_slice("+", 0).split("-", true, 1)
@@ -75,4 +89,16 @@ static func compare_versions(a: String, b: String) -> int:
 		return 1
 	if b_pre.is_empty():
 		return -1
-	return 1 if a_pre > b_pre else -1
+	var a_ids := a_pre.split(".")
+	var b_ids := b_pre.split(".")
+	for i in mini(a_ids.size(), b_ids.size()):
+		var x := a_ids[i]
+		var y := b_ids[i]
+		if x == y:
+			continue
+		if x.is_valid_int() and y.is_valid_int():
+			return 1 if int(x) > int(y) else -1
+		if x.is_valid_int() != y.is_valid_int():
+			return -1 if x.is_valid_int() else 1
+		return 1 if x > y else -1
+	return signi(a_ids.size() - b_ids.size())

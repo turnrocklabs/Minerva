@@ -9,6 +9,7 @@ extends RefCounted
 ## only ever started because someone asked for it.
 
 const Txn := preload("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+const STALE_DB := "Plugin '%s' has an unfinished or pending update, but another Minerva changed the plugin database since this one read it; restart Minerva, then start the plugin"
 ## The per-plugin choices a user can change after an update, which a rollback
 ## to the previous record must not undo.
 const USER_CHOICES := ["autostart", "auto_update", "auto_reload"]
@@ -23,20 +24,50 @@ const USER_CHOICES := ["autostart", "auto_update", "auto_reload"]
 ## rolled_back: {version, reason, message} added, message being the sentence
 ## to show (or an error naming both failures).
 ## The start is refused, the update still pending, when the staging lock is
-## held (an install or recovery is in progress) or the data cannot be saved:
-## starting the new version then could not be undone. A new version that
+## held (an install or recovery is in progress), another Minerva changed the
+## plugin database since this one read it, the operation cannot be taken
+## over by this process, or the data cannot be saved: starting the new version
+## then could not be undone. An update left mid-replacement is recovered
+## first, and the start refused if it cannot be. A new version that
 ## starts but whose update cannot be recorded as done is rolled back at once,
 ## like one that fails to start.
 static func start(manager, plugin_id: String, start_now: Callable) -> Dictionary:
 	var staging_root := ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)
-	var txn = Txn.pending_for(staging_root, plugin_id)
 	var db = manager.get_db()
+	# An update that was left mid-replacement (its rollback did not finish) is
+	# undone before anything runs on its files.
+	if Txn.has_unfinished(staging_root, plugin_id):
+		var probe = Txn.new()
+		probe.plugin_id = plugin_id
+		if not probe.try_enter(staging_root):
+			return {"error": "Plugin '%s' has an unfinished update, and an install or recovery is in progress; start it again once that finishes" % plugin_id}
+		if _db_stale(db):
+			probe.leave()
+			return {"error": STALE_DB % plugin_id}
+		var unresolved: Dictionary = probe.recover_unfinished(staging_root, db)
+		probe.leave()
+		if not unresolved.is_empty():
+			return {"error": "Plugin '%s' has an unfinished update that could not be undone yet: %s" % [
+				plugin_id, str(unresolved.get("detail", {}).get("reason", ""))]}
+	var txn = Txn.pending_for(staging_root, plugin_id)
 	var current = db.get_by_id(plugin_id)
 	if txn == null or current == null or manager.get("_shutting_down") \
 			or not current.state in [manager.S_INSTALLED, manager.S_STOPPED, manager.S_ERROR]:
 		return await start_now.call()
 	if not txn.try_enter(staging_root):
 		return {"error": "Plugin '%s' has an update waiting for its first start, and an install or recovery is in progress; start it again once that finishes" % plugin_id}
+	# Under the lock, this process's view of the plugin database must be the
+	# file's: another Minerva may have changed the record this start would run.
+	if _db_stale(db):
+		txn.leave()
+		return {"error": STALE_DB % plugin_id}
+	# Under the lock: still waiting (another Minerva may have decided it), and
+	# owned by this process from here on, so a crash of this process is what
+	# recovery undoes.
+	var fresh = Txn.pending_for(staging_root, plugin_id)
+	if fresh == null or fresh.op_dir != txn.op_dir or not txn.adopt(staging_root):
+		txn.leave()
+		return {"error": "Plugin '%s' has an update waiting for its first start that another Minerva is handling; start it again in a moment" % plugin_id}
 	if txn.db_before is Dictionary:
 		for key in USER_CHOICES:
 			txn.db_before[key] = current.get(key)
@@ -79,3 +110,7 @@ static func start(manager, plugin_id: String, start_now: Callable) -> Dictionary
 		"message": "The update of '%s' to v%s %s, so v%s was put back and started." % [
 			plugin_id, new_version, failure, previous_version]}
 	return restarted
+
+
+static func _db_stale(db) -> bool:
+	return db != null and db.has_method("is_stale") and db.is_stale()

@@ -11,6 +11,7 @@ extends Node
 ##   {ok: bool, ...op-specific fields}, with ok=false carrying
 ##   `error` (short string code) and `detail` (free-form).
 
+const AutoUpdater := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
 const PluginDownloader := preload("res://Scripts/Services/Plugins/PluginDownloader.gd")
 const PluginArchive := preload("res://Scripts/Services/Plugins/PluginArchive.gd")
 const PluginInstallOperation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
@@ -295,6 +296,11 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		return entered
 	# Read under the lock: entering may have just recovered this record.
 	var previous_def = db.get_by_id(plugin_id) if db != null else null
+	# An unattended update stands only while the plugin still wants it, judged
+	# under the lock: a user who opted out, removed the plugin, moved it to the
+	# developer lane or installed another version meanwhile is not overridden.
+	if op.unattended and not AutoUpdater.wants_update(previous_def, str(manifest.get("version", ""))):
+		return _err("update_not_wanted", {"id": plugin_id})
 	txn.db_before = previous_def.to_dict() if previous_def != null else null
 	op.enter(PluginInstallOperation.STAGE_REGISTER)
 	_ensure_dir(PLUGINS_DIR)
@@ -372,7 +378,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 ## failure with the plugin stopped again.
 func _start_before_commit(installer, plugin_id: String, op: PluginInstallOperation) -> Dictionary:
 	op.enter(PluginInstallOperation.STAGE_START)
-	var started: Dictionary = await installer.start_plugin(plugin_id)
+	var started: Dictionary = await installer.start_plugin(plugin_id, true)
 	if op.cancelled or started.has("error"):
 		installer.stop_plugin(plugin_id)
 		if op.cancelled:
@@ -682,6 +688,9 @@ static func format_install_error(result: Dictionary) -> String:
 			title = "The new version did not start"
 			cause = "'%s' failed to start: %s" % [str(detail_dict.get("id", "?")), str(detail_dict.get("reason", "?"))]
 			hint = "The update was not applied. Report the reason above to the plugin's author."
+		"update_not_wanted":
+			title = "Automatic update skipped"
+			cause = "'%s' is no longer set to update at startup, was removed or replaced, or is already at this version, so it was left as it is." % str(detail_dict.get("id", "?"))
 		"data_backup_failed":
 			title = "Could not save the plugin's data before updating"
 			cause = "Minerva could not copy the data of '%s' aside, so it did not start the new version." % str(detail_dict.get("id", "?"))

@@ -11,15 +11,12 @@ extends SceneTree
 ##   - cancel is refused once registration begins, and the job then reports
 ##     the install that actually happened (id, version, outcome);
 ##   - a new install is not started (autostart is the user's persisted
-##     preference, off until set, never the manifest's); once the user sets
-##     it, an install ends Ready only once the plugin is running, and one
-##     that exits before its handshake ends start_failed, its retry runs in
-##     the queue without capturing a new install request, and after a fixed
-##     version is installed and started a retry reports that version as
-##     already running;
+##     preference, off until set, never the manifest's), and an update of a
+##     stopped plugin leaves it stopped even with Auto-start on;
 ##   - reinstalling a running plugin stops it before its files are replaced
-##     and ends Ready with it running again; an upgrade that fails to start
-##     is rolled back to the running copy, its data included;
+##     and ends Ready with it running again; an upgrade that fails to start,
+##     or is cancelled while starting, is rolled back to the running copy,
+##     its data included;
 ##   - an update of a stopped plugin stays stopped and keeps the working
 ##     copy until its first start, which rolls a failing version back and
 ##     starts the previous one, keeping the user's later choices;
@@ -48,7 +45,6 @@ const PROBE_PY := "res://test/fixtures/capability_probe/capability_probe.py"
 const SLOW := "test_queue_slow"
 const FAST := "test_queue_fast"
 const READY := "test_queue_ready"
-const CRASHES := "test_queue_crashes"
 const PENDING := "test_queue_pending"
 const SLOW_BYTES := 3 * 1024 * 1024
 # Bare interpreter names, which the host's SubProcess finds on PATH (Windows
@@ -79,8 +75,6 @@ func _init() -> void:
 	_pm = await _h.bootstrap_plugin_manager(true)
 	var ready: bool = _pm != null and _pack(FAST, 0) and _pack(SLOW, SLOW_BYTES) \
 		and _pack(READY, 0, PROBE) \
-		and _pack(CRASHES, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}) \
-		and _pack(CRASHES, 0, PROBE, {"version": "1.0.1"}, "crashes_fixed") \
 		and _pack(READY, 0, PROBE, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
 		and _pack(READY, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}, {"version": "1.0.1"}, "ready_crashes") \
@@ -101,7 +95,7 @@ func _init() -> void:
 	await _test_serial_order_and_duplicate_collapse()
 	await _test_cancel_queued_and_downloading()
 	await _test_cancel_refused_during_registration()
-	await _test_start_outcomes_and_retry(port)
+	await _test_update_of_stopped_plugin_leaves_it_stopped(port)
 	await _test_running_plugin_is_restarted_on_update(port)
 	await _test_failed_upgrade_rolls_back_to_the_running_copy(port)
 	await _test_stopped_upgrade_waits_for_its_first_start(port)
@@ -170,45 +164,17 @@ func _test_cancel_refused_during_registration() -> void:
 		"the job reports the install that happened: %s" % [job.summary()])
 
 
-func _test_start_outcomes_and_retry(port: int) -> void:
+func _test_update_of_stopped_plugin_leaves_it_stopped(port: int) -> void:
 	await _scrub()
 	var queue = _pm.install_queue
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
-	var crashes_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, CRASHES]
 	var first = await _installed_then_autostart(READY, ready_url)
 	_check(first.outcome == Job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(READY).state != _pm.S_RUNNING,
 		"a new install is installed, not started: %s" % [first.summary()])
-	var started = queue.request(_entry(READY, ready_url))
-	await _done(started)
-	_check(started.outcome == Job.OUTCOME_READY and _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING,
-		"a plugin set to autostart is Ready once it runs: %s" % [started.summary()])
-	_pm.stop_plugin(READY)
-
-	await _installed_then_autostart(CRASHES, crashes_url)
-	var failed = queue.request(_entry(CRASHES, crashes_url))
-	await _done(failed)
-	_check(failed.outcome == Job.OUTCOME_START_FAILED and not failed.message.is_empty(),
-		"an autostarting plugin that exits before its handshake ends start_failed with the reason: %s" % [failed.summary()])
-	# Two start failures only: a third within a minute would put the plugin
-	# in a crash loop by design. The fixed version is requested by id while
-	# the retry is queued, so it reaches the retry job, and is installed
-	# after it; its autostart setting survives the update, so it starts.
-	queue.retry_start(failed)
-	var fixed_entry := _entry(CRASHES, "http://127.0.0.1:%d/crashes_fixed.tar.gz" % port)
-	fixed_entry["version"] = "1.0.1"
-	var fixed = queue.request(fixed_entry)
-	# A conflict would also be a new job, but one that has already ended.
-	_check(fixed != failed and fixed.state != Job.State.DONE, "a new install request does not attach to a start retry")
-	await _done(failed)
-	_check(failed.outcome == Job.OUTCOME_START_FAILED, "the retry ran and reported again")
-	await _done(fixed)
-	_check(fixed.outcome == Job.OUTCOME_READY, "the fixed version starts: %s" % [fixed.summary()])
-	# Retrying the old failure reports what is installed and running now.
-	queue.retry_start(failed)
-	await _done(failed)
-	_check(failed.outcome == Job.OUTCOME_READY and failed.result.get("version") == "1.0.1" and "already running" in failed.message,
-		"a retry reports the version installed now, already running: %s" % [failed.summary()])
-	_pm.stop_plugin(CRASHES)
+	var again = queue.request(_entry(READY, ready_url))
+	await _done(again)
+	_check(again.outcome == Job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(READY).state != _pm.S_RUNNING,
+		"an update of a stopped plugin leaves it stopped, even with Auto-start on: %s" % [again.summary()])
 
 
 ## An upgrade of a running plugin is started before it commits. A new
@@ -260,23 +226,23 @@ func _test_stopped_upgrade_waits_for_its_first_start(port: int) -> void:
 	_pm.stop_plugin(PENDING)
 
 
-## Cancel while the plugin starts, and a rollback whose restart of the old
-## version fails, with the real probe plugin.
+## Cancel an update of a running plugin while its new version starts, and a
+## rollback whose restart of the old version fails, with the real probe
+## plugin.
 func _test_start_cancel_and_failed_restart(port: int) -> void:
 	var queue = _pm.install_queue
-	_check(_pm.get_db().set_autostart(READY, true), "READY (installed above) is set to autostart")
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
+	_pm.start_plugin(READY)
+	await _until(func() -> bool: return _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING)
 	var cancelled = queue.request(_entry(READY, ready_url))
 	cancelled.op.stage_changed.connect(func(stage: String) -> void:
 		if stage == "start":
 			queue.cancel(cancelled))
 	await _done(cancelled)
-	_check(cancelled.outcome == Job.OUTCOME_INSTALLED and "cancelled" in cancelled.message \
-		and _pm.get_db().get_by_id(READY).state != _pm.S_RUNNING,
-		"cancelling while it starts leaves it installed and not running: %s" % [cancelled.summary()])
+	_check(cancelled.outcome == Job.OUTCOME_CANCELLED and "while it started" in cancelled.message \
+		and _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING,
+		"cancelling an update of a running plugin while it starts puts the previous copy back, running: %s" % [cancelled.summary()])
 
-	_pm.start_plugin(READY)
-	await _until(func() -> bool: return _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING)
 	# The installed copy breaks, so putting it back cannot start it again.
 	var installed_probe := ProjectSettings.globalize_path("user://plugins/%s/capability_probe.py" % READY)
 	var f := FileAccess.open(installed_probe, FileAccess.WRITE)
@@ -291,10 +257,10 @@ func _test_start_cancel_and_failed_restart(port: int) -> void:
 
 func _test_running_plugin_is_restarted_on_update(port: int) -> void:
 	var queue = _pm.install_queue
-	_check(_pm.get_db().set_autostart(READY, true), "READY (installed above) is set to autostart")
 	var ready_url := "http://127.0.0.1:%d/%s.tar.gz" % [port, READY]
-	var first = queue.request(_entry(READY, ready_url))
-	await _done(first)
+	# This first start also settles the update the previous case left waiting.
+	_pm.start_plugin(READY)
+	await _until(func() -> bool: return _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING)
 	var second = queue.request(_entry(READY, ready_url))
 	await _done(second)
 	_check(second.stopped_for_replace and second.outcome == Job.OUTCOME_READY \
@@ -463,7 +429,7 @@ func _entry(id: String, url: String) -> Dictionary:
 
 
 func _scrub() -> void:
-	for id in [SLOW, FAST, READY, CRASHES, PENDING]:
+	for id in [SLOW, FAST, READY, PENDING]:
 		await _h.scrub_plugin(_pm, id)
 
 
@@ -525,7 +491,7 @@ func _check(ok: bool, what: String) -> void:
 
 func _finish(code: int) -> void:
 	if _pm != null:
-		for id in [SLOW, FAST, READY, CRASHES, PENDING]:
+		for id in [SLOW, FAST, READY, PENDING]:
 			if _pm.get_db().has_plugin(id):
 				_pm.stop_plugin(id)
 				_pm.get_db().remove(id)
