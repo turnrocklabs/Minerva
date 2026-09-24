@@ -11,6 +11,12 @@ var _is_open: bool = false
 ## skip the JSONL re-serialize for untouched DBs, so app close doesn't pay
 ## for dockets that were only read this session.
 var dirty: bool = false
+## Writes run so far, and the first write that failed since write_error was
+## last cleared: ToolRegistry clears it around each tool call and turns it
+## into the call's error (persist), so a change that was not stored is never
+## reported as made.
+var writes: int = 0
+var write_error: String = ""
 
 
 # -- Lifecycle ----------------------------------------------------------------
@@ -1168,18 +1174,20 @@ static func _has_column(col_rows: Array, col_name: String) -> bool:
 # -- Internal SQL helpers -----------------------------------------------------
 
 func _exec(sql: String, bindings: Array = []) -> void:
-	if not sql.begins_with("PRAGMA"):
-		dirty = true
-	if bindings.is_empty():
-		_db.query(sql)
-	else:
-		_db.query_with_bindings(sql, bindings)
+	_exec_checked(sql, bindings)
+
+
+## "" once every change is stored, else why not (DocketDBJsonl also checks
+## its file).
+func persist() -> String:
+	return write_error
 
 
 func _exec_checked(sql: String, bindings: Array = []) -> String:
 	## Like _exec but returns "" on success, error message on failure.
 	if not sql.begins_with("PRAGMA"):
 		dirty = true
+		writes += 1
 	var ok: bool
 	if bindings.is_empty():
 		ok = _db.query(sql)
@@ -1188,6 +1196,8 @@ func _exec_checked(sql: String, bindings: Array = []) -> String:
 	if not ok:
 		var msg: String = _db.error_message if _db.error_message else "SQL execution failed"
 		push_error("DocketDB: %s — %s" % [msg, sql.left(120)])
+		if write_error.is_empty():
+			write_error = msg
 		return msg
 	return ""
 

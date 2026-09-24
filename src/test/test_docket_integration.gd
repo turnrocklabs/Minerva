@@ -17,6 +17,7 @@ func _init():
 	test_docket_db_crud()
 	test_tool_registry_init()
 	test_tool_registry_call()
+	test_unsaved_change_is_an_error()
 	test_skill_list_and_get()
 	test_hint_set_and_get()
 	test_quality_scoring()
@@ -171,6 +172,39 @@ func test_tool_registry_call() -> void:
 	var t_result := registry.call_tool("docket_transition", {"id": item_id, "to": "triaged"})
 	check("docket_transition succeeds", not t_result.has("error"))
 
+	db.close()
+
+
+## A change Docket could not write to its file is reported as an error, not
+## as made, and a later call that finds it already in the cache saves it.
+func test_unsaved_change_is_an_error() -> void:
+	var path := _tmp_dir.path_join("unsaved.dct.jsonl")
+	var db := DocketDBJsonl.create_new_jsonl(path)
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	var registry := ToolRegistry.new()
+	registry.init(JSON.parse_string(sf.get_as_text()), db)
+	sf.close()
+	var item_id := str(registry.call_tool("docket_create", {"type": "bug", "title": "Saved"}).get("id", ""))
+	# A directory where the file goes: the atomic rename onto it fails.
+	DirAccess.remove_absolute(path)
+	DirAccess.make_dir_absolute(path)
+	var failed := registry.call_tool("docket_update", {"id": item_id, "title": "Unsaved"})
+	check("an update that could not be saved is an error", failed.has("error"))
+	DirAccess.remove_absolute(path)
+	var retried := registry.call_tool("docket_update", {"id": item_id, "title": "Unsaved"})
+	check("repeating it saves the change the cache already holds",
+		retried.get("status", "") == "unchanged" and FileAccess.get_file_as_string(path).contains("Unsaved"))
+	# A delete that could not be saved leaves nothing in the cache to retry;
+	# the save barrier reports it until the file holds the deletion.
+	DirAccess.remove_absolute(path)
+	DirAccess.make_dir_absolute(path)
+	var delete_failed := registry.call_tool("docket_delete", {"id": item_id})
+	var still_unsaved := registry.call_tool("docket_persist", {})
+	DirAccess.remove_absolute(path)
+	var saved := registry.call_tool("docket_persist", {})
+	check("an unsaved delete fails its barrier until the file is written",
+		delete_failed.has("error") and still_unsaved.has("error") and saved.get("status", "") == "saved"
+		and not FileAccess.get_file_as_string(path).contains("Unsaved"))
 	db.close()
 
 

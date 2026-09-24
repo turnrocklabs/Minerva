@@ -13,6 +13,7 @@ class_name DocketDBJsonl
 
 var _jsonl_path: String
 var _flush_depth: int = 0  # Reentrance guard to avoid redundant JSONL writes
+var _unsaved := false  # the last JSONL write failed; the file lags SQLite
 
 
 # -- Lifecycle ----------------------------------------------------------------
@@ -125,16 +126,26 @@ func _flush_jsonl() -> void:
 	if lock == null:
 		push_warning("DocketDBJsonl: could not acquire .lock for %s — writing anyway" % _jsonl_path)
 
-	_atomic_write(_jsonl_path, jsonl_text)
+	var saved := _atomic_write(_jsonl_path, jsonl_text)
 
 	if lock != null:
 		lock.release()
 
+	_unsaved = not saved
+	if not saved:
+		if write_error.is_empty():
+			write_error = "could not save %s" % _jsonl_path
+		return
+
 	# Update cache fingerprint so it stays valid
 	var fingerprint := _file_fingerprint(_jsonl_path)
 	if not fingerprint.is_empty():
-		# Use super to avoid triggering another flush
+		# Use super to avoid triggering another flush. The change is saved
+		# whether or not this lands (a stale fingerprint only rebuilds the
+		# cache), so its failure is not the change's.
+		var saved_error := write_error
 		super.set_meta_value("jsonl_hash", fingerprint)
+		write_error = saved_error
 
 
 static func _file_fingerprint(path: String) -> String:
@@ -146,17 +157,23 @@ static func _file_fingerprint(path: String) -> String:
 	return "%d:%d" % [size, mtime]
 
 
-static func _atomic_write(path: String, content: String) -> void:
+static func _atomic_write(path: String, content: String) -> bool:
 	## Write content to a file atomically: write to .tmp, then rename.
+	## Returns whether the file now holds `content`.
 	var tmp_path := path + ".tmp.%d" % OS.get_process_id()
 
 	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if f == null:
 		push_error("DocketDBJsonl: cannot open temp file %s for writing" % tmp_path)
-		return
-	f.store_string(content)
+		return false
+	var stored := f.store_string(content)
 	f.flush()
+	var write_err := f.get_error()
 	f.close()
+	if not stored or write_err != OK:
+		push_error("DocketDBJsonl: writing %s failed (error %d)" % [tmp_path, write_err])
+		DirAccess.remove_absolute(tmp_path)
+		return false
 
 	# Atomic rename
 	var err := DirAccess.rename_absolute(tmp_path, path)
@@ -164,6 +181,18 @@ static func _atomic_write(path: String, content: String) -> void:
 		push_error("DocketDBJsonl: rename %s → %s failed (error %d)" % [tmp_path, path, err])
 		# Clean up temp file on failure
 		DirAccess.remove_absolute(tmp_path)
+		return false
+	return true
+
+
+## "" once every change is in the JSONL file (a failed write is retried
+## here), else why not.
+func persist() -> String:
+	if _unsaved and _flush_depth == 0:
+		_flush_jsonl()
+	if not write_error.is_empty():
+		return write_error
+	return "could not save %s" % _jsonl_path if _unsaved else ""
 
 
 # -- Overridden mutating methods ----------------------------------------------

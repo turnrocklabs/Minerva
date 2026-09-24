@@ -11,6 +11,10 @@ var remove_project_fn: Callable  # func(name: String) -> Dictionary
 var gui_open_fn: Callable  # func(request: Dictionary) -> Dictionary
 
 
+## Reads that also bump a retrieval counter.
+const _COUNTING_READS := ["docket_hint_get", "docket_hint_query"]
+
+
 func _build_tools() -> Dictionary:
 	return {
 		"docket_create": DocketCreate.new(),
@@ -45,6 +49,7 @@ func _build_tools() -> Dictionary:
 		"docket_project_meta": DocketProjectMeta.new(),
 		"docket_skill_list": DocketSkillList.new(),
 		"docket_skill_get": DocketSkillGet.new(),
+		"docket_persist": DocketPersist.new(),
 	}
 
 
@@ -95,7 +100,15 @@ func call_tool(name: String, arguments: Dictionary) -> Dictionary:
 		result = _tools[name].execute(arguments, _schema, _db, _project_dbs, gui_open_fn)
 	else:
 		var db := _resolve_db(arguments)
+		db.write_error = ""
+		var writes := db.writes
 		result = _tools[name].execute(arguments, _schema, db)
+		# A change is reported made only once it is stored. A hint read's
+		# retrieval count is bookkeeping: failing to store it fails no read.
+		if not result.has("error") and db.writes != writes and not name in _COUNTING_READS:
+			var unsaved := db.persist()
+			if not unsaved.is_empty():
+				result = {"error": "Docket could not save the change: %s" % unsaved}
 	if result.has("error"):
 		_log_error(name, arguments, result)
 	return result

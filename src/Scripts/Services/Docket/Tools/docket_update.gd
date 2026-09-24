@@ -107,6 +107,10 @@ func execute(args: Dictionary, schema: Dictionary, db: DocketDB) -> Dictionary:
 		if not _values_equal(changes[key], item.get(key)):
 			effective[key] = changes[key]
 	if effective.is_empty():
+		# Already stored, unless an earlier write of it never reached the file.
+		var unsaved := db.persist()
+		if not unsaved.is_empty():
+			return {"error": "Docket could not save the change: %s" % unsaved}
 		return {"id": id, "status": "unchanged"}
 	changes = effective
 
