@@ -405,23 +405,32 @@ func _composer_markers() -> Array:
 
 
 ## Whether the harness's input box holds text a person typed and left
-## unsubmitted. The composer REGION is fixed, not inferred:
+## unsubmitted. The composer REGION:
 ##   TOP    — the nearest row AT OR ABOVE the cursor row (get_cursor()["y"],
 ##            a viewport row) whose text starts at column 0 with a marker glyph
 ##            followed by a space, or is that glyph alone. Both harnesses
 ##            INDENT every continuation row, so a marker at column 0 is never a
 ##            wrapped draft line and a marker typed inside a draft cannot be
 ##            mistaken for the composer row.
-##   BOTTOM — the bottom of the viewport. Nothing ends the region early: not a
-##            border, not a blank row, not a pasted rule.
-## A row whose visible characters are all box-drawing glyphs is skipped rather
-## than stopped at: it carries no text either way.
-##
-## CONSEQUENCE, by design: whatever the harness draws BELOW the composer — its
-## footer, model line or status row — is inside the region, so it is read by
-## the same cell rule as the box. Refusing loudly beats guessing where the box
-## ends, and the refusal quotes the row it tripped on, so a wrong hold is
-## readable off the receipt.
+##   BOTTOM — every row down to the cursor row is read: that is where the
+##            person is typing, so a blank row or a pasted rule there is inside
+##            the draft and is skipped, not stopped at. BELOW the cursor the
+##            rows that follow are read too (a draft the person moved the
+##            cursor up into), until one of two boundaries:
+##              - a rule drawn from column 0, which is how Claude Code closes
+##                its box; continuation rows are indented, so it is never
+##                draft text;
+##              - a blank row, but only once the rows read so far showed the
+##                faint placeholder. The placeholder is drawn only in an EMPTY
+##                box, which is how Codex's box looks above the blank row and
+##                footer it draws. Without it, a blank row may sit inside a
+##                draft whose first lines are empty and whose text lies below
+##                the cursor, so it is read past, to the foot of the viewport.
+##            A footer carries text the harness chose (model, path, session
+##            title), and is not always drawn in colour.
+## A row of box-drawing glyphs drawn from column 0 carries no text either way,
+## so inside the region it is skipped; the same glyphs on an indented row are
+## draft text.
 ##
 ## Row text alone cannot decide: both harnesses draw an EMPTY box with a
 ## placeholder inside it (codex's "Use /skills …", Claude Code's "Try …"), and
@@ -465,7 +474,7 @@ func _composer_verdict(markers: Array) -> Dictionary:
 		var marker: String = _marker_of(str(_session.extract_row_text(row)), markers)
 		if marker.is_empty():
 			continue
-		return _region_verdict(row, marker.length(), rows)
+		return _region_verdict(row, marker.length(), cursor_row, rows)
 	return {"readable": false, "holds": false}
 
 
@@ -484,17 +493,22 @@ func _marker_of(text: String, markers: Array) -> String:
 	return ""
 
 
-## Every row of the region, marker row first, down to the foot of the viewport.
-## Rows made only of box-drawing glyphs are skipped; the rest are read for a
-## plain cell, the marker glyph and the space after it excepted.
-func _region_verdict(marker_row: int, marker_length: int, rows: int) -> Dictionary:
+## Every row of the region, marker row first: through the cursor row, then on
+## until a column-0 rule or, once a placeholder has shown, a blank row. Inside
+## it, column-0 rows made only of box-drawing glyphs are skipped; the rest are
+## read for a plain cell, the marker glyph and the space after it excepted.
+func _region_verdict(marker_row: int, marker_length: int, cursor_row: int, rows: int) -> Dictionary:
+	var placeholder_seen := false
 	for row in range(marker_row, rows):
 		var text: String = str(_session.extract_row_text(row))
 		var stripped: String = text.strip_edges()
 		# A rule of box-drawing glyphs is chrome only when the harness drew it
 		# from column 0; the same glyphs on an INDENTED row are inside a draft
 		# (continuation rows are indented) and count as text like any other.
-		if stripped.is_empty() or (_is_rule_row(stripped) and not text.begins_with(" ")):
+		var border: bool = not stripped.is_empty() and _is_rule_row(stripped) and not text.begins_with(" ")
+		if row > cursor_row and (border or (stripped.is_empty() and placeholder_seen)):
+			break
+		if stripped.is_empty() or border:
 			continue
 		var verdict: Dictionary = _row_verdict(row, marker_length + 1 if row == marker_row else 0, text)
 		if not bool(verdict["readable"]):
@@ -502,14 +516,17 @@ func _region_verdict(marker_row: int, marker_length: int, rows: int) -> Dictiona
 		if bool(verdict["holds"]):
 			verdict["row"] = stripped.left(60)
 			return verdict
+		placeholder_seen = placeholder_seen or bool(verdict["faint"])
 	return {"readable": true, "holds": false}
 
 
 ## Whether any cell of *row* from *from_col* on is PLAIN text: a non-space
 ## glyph drawn neither faint nor in a colour — the mark of text a person typed
-## rather than of a placeholder or a status row. One cell per extracted
-## character, so the string index IS the column.
+## rather than of a placeholder or a status row. faint reports whether a
+## non-space faint glyph (a placeholder) was passed on the way. One cell per
+## extracted character, so the string index IS the column.
 func _row_verdict(row: int, from_col: int, text: String) -> Dictionary:
+	var faint := false
 	for col in range(from_col, text.length()):
 		var cell: Dictionary = _session.get_cell(col, row)
 		if not cell.has("faint"):
@@ -517,16 +534,20 @@ func _row_verdict(row: int, from_col: int, text: String) -> Dictionary:
 			# typed line are indistinguishable, so nothing is claimed.
 			return {"readable": false, "holds": false}
 		var code: int = int(cell.get("codepoint", 0))
-		if code <= 32 or code == NBSP or bool(cell["faint"]):
+		if code <= 32 or code == NBSP:
+			continue
+		if bool(cell["faint"]):
+			faint = true
 			continue
 		if cell.has("fg") or cell.has("fg_palette"):
 			continue
 		return {"readable": true, "holds": true}
-	return {"readable": true, "holds": false}
+	return {"readable": true, "holds": false, "faint": faint}
 
 
 ## A row carrying no text: every visible character is a box-drawing glyph, so
-## it is chrome or a pasted rule. Such a row is skipped, never stopped at.
+## it is chrome or a pasted rule. See _region_verdict for when one ends the
+## region and when it is skipped.
 func _is_rule_row(stripped: String) -> bool:
 	for index in range(stripped.length()):
 		var code: int = stripped.unicode_at(index)

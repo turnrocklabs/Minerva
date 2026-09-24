@@ -63,8 +63,10 @@ def _style_chrome(screen: str) -> str:
 
     The fixtures are captured cell TEXT, so every attribute was lost at capture
     time. The host's composer guard reads cell styles: the composer region runs
-    from the marker row to the foot of the viewport, and any PLAIN cell in it
-    (default foreground, not faint) is text a person typed and never submitted.
+    from the marker row through the cursor row, which this mock leaves below
+    its footer (the idle screen ends with a blank line), and any PLAIN cell in
+    it (default foreground, not faint) is text a person typed and never
+    submitted.
     The placeholder is drawn faint (SGR 2) and the footer in colour, as the
     real codex draws them - painted plain, either would make this mock's idle
     box read as occupied on every screen it shows. The text itself is

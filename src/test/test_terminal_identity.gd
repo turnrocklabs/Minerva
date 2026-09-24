@@ -35,11 +35,13 @@ extends SceneTree
 ##     a box whose first line is empty is judged on the rows below it, blank
 ##     rows included, the same way; no row shape is exempt, so a lone numbered
 ##     line, a numbered two-item draft and a chooser's plain option block all
-##     read as occupied; the region runs from the marker row above the cursor to
-##     the foot of the viewport, so a pasted box-drawing rule is read past, an
-##     indented marker glyph is draft text, and a footer below the box is empty
-##     when drawn in colour (as both real harnesses draw it) and holds the
-##     write when drawn plain — the refusal quoting the row it tripped on; a
+##     read as occupied; the region runs from the marker row above the cursor
+##     through the cursor row, so a pasted box-drawing rule is read past and an
+##     indented marker glyph is draft text; a row inside the region drawn faint
+##     or in colour is chrome; below the cursor a blank row ends the region
+##     once a faint placeholder has shown the box empty, so a plain footer
+##     under an empty box does not hold the write, while a draft below a blank
+##     row under the cursor still does; a
 ##     Claude-named harness is read with its own markers: the no-break space
 ##     after `❯` still opens an empty box, and a shell-mode `!` or memo-mode
 ##     `#` row is a draft; with no harness in front there is no marker row to
@@ -463,19 +465,27 @@ func _test_npm_harness_foreground(session) -> void:
 ## no text and is read past, so the plain row under it still holds. `quoted`
 ## puts the marker glyph itself inside the draft, indented — the region's top is
 ## the real marker row above it, at column 0. `footer_dim`, `footer_colour`
-## and `footer_plain` are an empty box with a status row two rows below it:
-## faint or in colour (the real codex draws its model line in truecolor and its
-## slash popup in a bold palette colour — `footer_palette` — and the real
-## Claude Code its status rows in truecolor) the box is empty; plain, the
-## guard holds and says which row it read, which is the by-design price of not
-## guessing where a box ends.
+## and `footer_palette` are an empty box with a status row two rows below it
+## and the cursor left under the block, so the row is inside the region and
+## its style decides: faint or in colour (the real codex draws its model line
+## in truecolor and its slash popup in a bold palette colour, and the real
+## Claude Code its status rows in truecolor) the box is empty. `footer_plain`
+## puts the cursor back in the box, where a real harness is assumed to keep
+## it (not measured), and draws the footer plain: the placeholder shows the box
+## is empty, so the blank row under the cursor ends the region and the footer
+## is not read. `cursor_above` is a
+## draft whose first line is empty, with the cursor moved up onto it and the
+## text below a blank row: no placeholder shows, so that blank row does not
+## end the region and the draft holds.
 ##
 ## `claude_dim`, `bang` and `memo` are the Claude Code shapes: `❯` followed by
 ## a NO-BREAK space and a faint placeholder is an empty box; a shell-mode row
 ## opens with a coloured `!` and a plain command; a memo row opens with `#`.
 ##
-## Every block ends with a blank row, so one scenario's rows are never read as
-## part of another's.
+## Every block ends with a blank row (`footer_plain` and `cursor_above` then
+## move the cursor back into the box) and is drawn from column 0 after erasing
+## what lies below the cursor, so one scenario's rows are never read as part
+## of another's.
 ##
 ## Input arrives in whatever chunks the PTY delivers, and one chunk can carry
 ## several newline-delimited commands, so stdin is buffered and split rather
@@ -495,7 +505,8 @@ const ROWS = {
   ruleonly: "\\u203a\\r\\n  \\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\r\\n\\r\\n",
   footer_dim: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n\\u001b[2m  gpt-5.5 faint-footer\\u001b[0m\\r\\n\\r\\n",
   footer_colour: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  \\u001b[38;2;246;226;183mgpt-5.5 colour-footer\\u001b[0m\\r\\n\\r\\n",
-  footer_plain: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  gpt-5.5 plain-footer\\r\\n\\r\\n",
+  footer_plain: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  gpt-5.5 plain-footer\\r\\n\\r\\n\\u001b[4A\\u001b[3G",
+  cursor_above: "\\u203a\\r\\n\\r\\n  a draft line below the cursor\\r\\n\\r\\n\\u001b[4A\\u001b[2G",
   footer_palette: "\\u001b[2m\\u203a Try \\"/status\\"\\u001b[0m\\r\\n\\r\\n  \\u001b[1m\\u001b[38;5;6m/status palette-footer\\u001b[0m\\r\\n\\r\\n",
   claude_dim: "\\u276f\\u00a0\\u001b[2mTry \\"fix typecheck errors\\"\\u001b[22m\\r\\n\\r\\n",
   bang: "\\u001b[38;2;253;93;177m!\\u00a0\\u001b[39mecho hi from shell mode\\r\\n\\r\\n",
@@ -514,7 +525,7 @@ process.stdin.on('data', (d) => {
     const key = pending.slice(0, cut).trim();
     pending = pending.slice(cut + 1);
     if (key === 'quit') { process.exit(0); }
-    if (ROWS[key]) { process.stdout.write(ROWS[key]); }
+    if (ROWS[key]) { process.stdout.write("\\r\\u001b[J" + ROWS[key]); }
     else if (key) { process.stdout.write("RECV:" + key + "\\r\\n"); }
   }
 });
@@ -526,10 +537,11 @@ setTimeout(() => process.exit(0), 120000);
 ## submit refuses the write, and the SAME row drawn faint does not. Row text is
 ## identical in shape either way — only the cell attribute separates them, so
 ## a guard that read text alone would fail one of these two legs. The region it
-## reads runs from the marker row nearest above the cursor to the foot of the
-## viewport, with nothing ending it early: a blank row inside a draft, a pasted
-## rule and a footer under the box are all inside it, and no row shape buys an
-## exemption.
+## reads runs from the marker row nearest above the cursor down through the
+## cursor row, so a blank row inside a draft and a pasted rule are inside it;
+## below the cursor a blank row ends it only after the placeholder has shown the
+## box empty, so a footer under an empty box is not read and a draft below the
+## cursor is. No row shape buys an exemption.
 func _test_composer_guard(session, tools) -> void:
 	var tid: String = str(session.terminal_id)
 	# With a bare shell in front there is no harness whose box to look for, and
@@ -668,8 +680,8 @@ func _test_composer_guard(session, tools) -> void:
 			and str(quoted.get("outcome", "")) == "refused_composer_not_empty"
 			and str(quoted.get("error", "")).contains("quoted line I pasted"), str(quoted))
 
-	# The region runs to the foot of the viewport, so the harness's own footer is
-	# inside it. Drawn faint — as both real harnesses draw it — the box is empty.
+	# With the cursor left under the block, the footer is inside the region and
+	# its style decides. Drawn faint, the box is empty.
 	session.write_input("footer_dim\r")
 	var footer_dim_up: bool = await _wait_until(func() -> bool:
 		return session.read_viewport_text().find("faint-footer") != -1)
@@ -707,8 +719,10 @@ func _test_composer_guard(session, tools) -> void:
 		footer_palette.get("success", false)
 			and str(footer_palette.get("composer_check", "")) == "checked", str(footer_palette))
 
-	# The same footer drawn PLAIN holds the write. That is by design — refusing
-	# loudly beats guessing where the box ends — and the receipt names the row.
+	# A real harness is assumed (not measured) to keep the cursor in its box.
+	# Its faint placeholder shows the box is empty, so the blank row below the
+	# cursor ends the region: a footer drawn PLAIN (a session title, say) is not
+	# read and the box takes the write.
 	session.write_input("footer_plain\r")
 	var footer_plain_up: bool = await _wait_until(func() -> bool:
 		return session.read_viewport_text().find("plain-footer") != -1)
@@ -716,10 +730,24 @@ func _test_composer_guard(session, tools) -> void:
 		session.read_viewport_text().right(300))
 	var footer_plain: Dictionary = tools._terminal_write({"terminal_id": tid,
 		"text": "COMPOSER-FOOTERPLAIN\r", "raw": true, "unless_composer_holds_text": true})
-	check("a plain footer holds the write and the refusal quotes it",
-		not footer_plain.get("success", true) and bool(footer_plain.get("held", false))
-			and str(footer_plain.get("outcome", "")) == "refused_composer_not_empty"
-			and str(footer_plain.get("error", "")).contains("plain-footer"), str(footer_plain))
+	check("a plain footer past a blank row under the cursor leaves the composer empty",
+		footer_plain.get("success", false)
+			and str(footer_plain.get("composer_check", "")) == "checked", str(footer_plain))
+
+	# With no placeholder, the same blank row may be inside a draft: its first
+	# line empty, the cursor moved up onto it, its text further down. The region
+	# reads past the blank row and holds.
+	session.write_input("cursor_above\r")
+	var cursor_above_up: bool = await _wait_until(func() -> bool:
+		return session.read_viewport_text().find("a draft line below the cursor") != -1)
+	check("the harness painted a draft below a blank row under the cursor", cursor_above_up,
+		session.read_viewport_text().right(300))
+	var cursor_above: Dictionary = tools._terminal_write({"terminal_id": tid,
+		"text": "COMPOSER-CURSORABOVE\r", "raw": true, "unless_composer_holds_text": true})
+	check("draft text below a blank row under the cursor is still unsent text",
+		not cursor_above.get("success", true) and bool(cursor_above.get("held", false))
+			and str(cursor_above.get("outcome", "")) == "refused_composer_not_empty"
+			and str(cursor_above.get("error", "")).contains("a draft line below the cursor"), str(cursor_above))
 
 	# A numbered line is what a person types as often as what a chooser draws.
 	# The guard exempts no shape, so it is held like any other plain row.
@@ -776,8 +804,9 @@ func _test_composer_guard(session, tools) -> void:
 			and after.find("COMPOSER-NUMBERED") == -1 and after.find("COMPOSER-DRAFT") == -1
 			and after.find("COMPOSER-CHOOSER") == -1 and after.find("COMPOSER-RULED") == -1
 			and after.find("COMPOSER-QUOTED") == -1
-			and after.find("COMPOSER-FOOTERPLAIN") == -1
+			and after.find("COMPOSER-CURSORABOVE") == -1
 			and after.find("COMPOSER-FAINTLINE") != -1
+			and after.find("COMPOSER-FOOTERPLAIN") != -1
 			and after.find("COMPOSER-FOOTERDIM") != -1
 			and after.find("COMPOSER-FOOTERCOLOUR") != -1
 			and after.find("COMPOSER-FOOTERPALETTE") != -1,
