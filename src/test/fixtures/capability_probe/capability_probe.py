@@ -3,6 +3,9 @@
 
 probe_echo: calls host.echo and returns the echoed payload.
 probe_denied: requests host.nonexistent to exercise the deny path.
+`--list-tools a,b` names further tools it lists (they answer nothing), so it
+can stand in for a plugin whose tools the host expects; other arguments are
+ignored.
 """
 import json, sys, uuid
 
@@ -20,7 +23,10 @@ TOOLS = [
          "payload": {"type": "object"}}, "required": []}},
     {"name": "probe_denied", "description": "Requests undeclared capability.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
-]
+] + [{"name": name, "description": "Listed only.",
+      "inputSchema": {"type": "object", "properties": {}, "required": []}}
+     for i, arg in enumerate(sys.argv[:-1]) if arg == "--list-tools"
+     for name in sys.argv[i + 1].split(",") if name]
 
 def call_capability(capability, args):
     """Send minerva/capability mid-tool-call and await the host response."""

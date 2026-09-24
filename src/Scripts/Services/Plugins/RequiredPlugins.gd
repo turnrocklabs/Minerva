@@ -25,9 +25,14 @@ const PluginArchive := preload("res://Scripts/Services/Plugins/PluginArchive.gd"
 const PluginInstallTransaction := preload("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
 const PluginAutoUpdaterScript := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
 const REPO := "turnrocklabs/Minerva"
+## Each plugin's display name and the tools Minerva itself calls on it (a
+## release that lacks one is refused at start: host_tools_missing). Keep them
+## in step with the callers: MCPTerminalTools, PassthroughLaunchDialog and
+## BundledVoiceDetectorAdapter.
 const PLUGINS := {
-	"agent_relay": {"name": "Agent Relay"},
-	"voice": {"name": "Voice Support"},
+	"agent_relay": {"name": "Agent Relay", "host_tools": [
+		"minerva_agent_relay_watch_start", "minerva_agent_relay_watch_status", "minerva_agent_relay_send"]},
+	"voice": {"name": "Voice Support", "host_tools": ["minerva_voice_configure", "minerva_voice_start"]},
 }
 ## The GitHub Releases API listing the pickup reads, newest first, a page at a
 ## time (tests point it at a local fixture).
@@ -61,6 +66,28 @@ static func missing_message(plugin_id: String, issue: String = "") -> String:
 	return ("The required %s plugin (%s) %s. Minerva installs it from its official release at startup "
 		+ "when it can reach GitHub; to try again now, open Plugins and press \"Install required plugins\".") % [
 		display_name(plugin_id), plugin_id, problem]
+
+
+## Why the started `def` cannot serve Minerva, or "": its tools/list, from
+## `conn` (an MCPServerConnection, whose list holds MCPToolDefinitions), lacks
+## a tool Minerva calls on it.
+static func host_tools_missing(def: PluginDefinition, conn) -> String:
+	var tools: Array = await conn.list_tools()
+	if tools.is_empty():
+		return "%s %s could not list its tools (%s); it was stopped." % [
+			display_name(def.id), def.version, conn.last_failure_reason if not conn.last_failure_reason.is_empty() else "tools/list failed"]
+	var listed: Array[String] = []
+	for tool in tools:
+		listed.append(str(tool.name))
+	var lacking: Array[String] = []
+	for name in PLUGINS.get(def.id, {}).get("host_tools", []):
+		if not name in listed:
+			lacking.append(name)
+	if lacking.is_empty():
+		return ""
+	return ("%s %s does not provide %s, which this Minerva needs; it was stopped. Update Minerva, "
+		+ "or install a %s release made for this Minerva.") % [
+		display_name(def.id), def.version, ", ".join(lacking), display_name(def.id)]
 
 
 ## Why an installed release of a required plugin cannot run here, or "" when

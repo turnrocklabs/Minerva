@@ -835,6 +835,19 @@ func _start_plugin_now(id: String) -> Dictionary:
 	await _discover_backend_tools(id, conn)
 	if not _owns_runtime_connection(id, conn):
 		return {"error": "Plugin '%s' start was cancelled" % id}
+	if RequiredPlugins.has(id):
+		# Untyped: a check that stops on a script error yields null, which must
+		# refuse the start rather than pass as "no issue".
+		var checked = await RequiredPlugins.host_tools_missing(def, conn)
+		if not _owns_runtime_connection(id, conn):
+			return {"error": "Plugin '%s' start was cancelled" % id}
+		var contract_issue: String = checked if checked is String \
+			else "%s %s's tool check failed; it was stopped." % [RequiredPlugins.display_name(id), def.version]
+		if not contract_issue.is_empty():
+			push_error("[PluginManager] %s" % contract_issue)
+			stop_plugin(id)
+			_transition_state(id, S_ERROR)
+			return {"error": contract_issue}
 
 	return {"ok": true}
 

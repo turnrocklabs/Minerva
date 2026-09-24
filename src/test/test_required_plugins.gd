@@ -4,6 +4,8 @@ extends SceneTree
 ##   - the pickup reads the newest published release of each required plugin
 ##     from a GitHub Releases listing: drafts and pre-releases are skipped,
 ##     and each "<id>-<version>-<target>.tar.gz" asset becomes a download;
+##   - a relay whose tools/list lacks a tool Minerva calls on it is refused at
+##     start and stopped;
 ##   - ensure() installs a missing required plugin from that release,
 ##     creates its record with Auto-start on and starts it, with the relay's
 ##     state file in its data directory; a plugin with no release is left
@@ -131,10 +133,22 @@ func _test_missing_plugin_is_installed_and_started() -> void:
 		"it is installed from the release with Auto-start on, and runs: %s" % [job.summary()])
 	_check(_pm._policy_ref.is_capability_granted(RELAY, CAPABILITY),
 		"a first install grants the capabilities it declares")
+
 	var state_at: int = def.args.find("--state-file") + 1 if def != null else 0
 	_check(state_at > 0 and state_at < def.args.size() and def.args[state_at] == ProjectSettings.globalize_path(
 		"user://plugins/data/%s/agent_relay_state.json" % RELAY),
 		"the relay is started with its state file in its data directory: %s" % [def.args if def != null else []])
+	if def == null:
+		return
+
+	# A relay that lacks a tool Minerva calls on it is refused and stopped.
+	await _pm.stop_plugin(RELAY)
+	var args_before: Array[String] = def.args.duplicate()
+	def.args.assign(_probe_args(false))
+	var refused: Dictionary = await _pm.start_plugin(RELAY)
+	_check("minerva_agent_relay_send" in str(refused.get("error", "")) and def.state == _pm.S_ERROR,
+		"a relay without the tools Minerva calls is refused, naming them: %s" % [refused])
+	def.args.assign(args_before)
 
 
 func _test_broken_plugin_is_reinstalled_keeping_choices() -> void:
@@ -249,7 +263,7 @@ func _pack_relay(version: String) -> bool:
 	var manifest := {
 		"id": RELAY, "name": "Agent Relay", "version": version, "host_api_version": "1",
 		"release_targets": MarketplaceClient.platform_targets(),
-		"backend": {"transport": "stdio", "entrypoint": _h.python_cmd(), "args": ["capability_probe.py"]},
+		"backend": {"transport": "stdio", "entrypoint": _h.python_cmd(), "args": _probe_args(true)},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
 		"permissions": {"host_capabilities": [CAPABILITY]}, "auto_reload": false,
 	}
@@ -259,6 +273,15 @@ func _pack_relay(version: String) -> bool:
 	DirAccess.copy_absolute(ProjectSettings.globalize_path(PROBE_PY), dir.path_join("capability_probe.py"))
 	return _h.pack_plugin_dir(dir, _temp.path_join("%s-%s-%s.tar.gz" % [RELAY, version,
 		MarketplaceClient.resolve_platform_target()]))
+
+
+## The relay stand-in's arguments: with `host_tools`, it also lists the tools
+## Minerva calls on the relay.
+func _probe_args(host_tools: bool) -> Array[String]:
+	var args: Array[String] = ["capability_probe.py"]
+	if host_tools:
+		args.append_array(["--list-tools", ",".join(RequiredPlugins.PLUGINS[RELAY].host_tools)])
+	return args
 
 
 func _write_releases(port: int) -> bool:
