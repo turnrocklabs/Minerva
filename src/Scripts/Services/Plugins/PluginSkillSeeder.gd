@@ -564,15 +564,18 @@ static func _arrays_equal_unordered(a: Array, b: Array) -> bool:
 ##     unsatisfied_deps as-is (T7 will recompute when uninstall settles).
 ##
 ## No modal interruptions — DoD specifies a single toast on the UI side.
-## Returns: {"deleted": int, "kept": int, "kept_skill_ids": Array[String]}.
+## Returns: {"deleted": int, "kept": int, "failed": int, "kept_skill_ids": Array[String]};
+##   failed counts records that could not be removed or converted, and a
+##   primary project whose changes could not be saved (docket_persist).
 ##   kept_skill_ids contains docket UUIDs of converted records, intended for
 ##   the UI's toast-click → "show me the orphans" filter affordance.
 static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 	var deleted := 0
 	var kept := 0
+	var failed := 0
 	var kept_ids: Array = []
 	if docket_caller == null:
-		return {"deleted": 0, "kept": 0, "kept_skill_ids": []}
+		return {"deleted": 0, "kept": 0, "failed": 0, "kept_skill_ids": []}
 
 	var query_result = docket_caller.call_tool("docket_query", {
 		"filter": {
@@ -580,8 +583,8 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 			"source": PluginSkillRecordScript.SOURCE_PLUGIN_PREFIX + plugin_id,
 		},
 	})
-	if not (query_result is Dictionary):
-		return {"deleted": 0, "kept": 0, "kept_skill_ids": []}
+	if not (query_result is Dictionary) or query_result.has("error"):
+		return {"deleted": 0, "kept": 0, "failed": 1, "kept_skill_ids": []}
 	var items: Array = query_result.get("items", [])
 
 	for item in items:
@@ -590,7 +593,8 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 			continue
 		# Re-fetch full record to read customised flag (lean query may omit it).
 		var full = docket_caller.call_tool("docket_get", {"id": record_id})
-		if not (full is Dictionary):
+		if not (full is Dictionary) or full.has("error"):
+			failed += 1
 			continue
 		var is_customised: bool = bool(full.get("customised", false))
 
@@ -605,6 +609,7 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 				kept += 1
 				kept_ids.append(record_id)
 			else:
+				failed += 1
 				push_warning("[PluginSkillSeeder] docket_update (unseed-convert) failed for record '%s': %s" %
 					[record_id, str(update_result)])
 		else:
@@ -612,7 +617,12 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 			if delete_result is Dictionary and not delete_result.has("error"):
 				deleted += 1
 			else:
+				failed += 1
 				push_warning("[PluginSkillSeeder] docket_delete failed for record '%s': %s" %
 					[record_id, str(delete_result)])
 
-	return {"deleted": deleted, "kept": kept, "kept_skill_ids": kept_ids}
+	# A retry that finds nothing left to do still needs its earlier changes
+	# saved.
+	if not _ok(docket_caller.call_tool("docket_persist", {})):
+		failed += 1
+	return {"deleted": deleted, "kept": kept, "failed": failed, "kept_skill_ids": kept_ids}

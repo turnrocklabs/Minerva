@@ -52,16 +52,14 @@ const AtomicFile := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
 const RECORD := "txn.json"
 const PREVIOUS := "previous"
 const PREVIOUS_DATA := "previous-data"
-## In an operation's directory: the definition the new version's
-## registration applied to Docket, and the records a person had customised
-## that it overwrote with their consent (PluginContentSeeding), so a rollback
-## can put the plugin's Docket content back.
-const DOCKET_JOURNAL := "docket-before.json"
-
-## Under the staging root: one {id, journal, committed} file per operation a
-## recovery finished whose Docket content has yet to follow (content_pending):
-## a replacement it undid, or one that had committed; kept on disk so a crash
-## before PluginManager handles it loses nothing.
+## Under the staging root: an operation's Docket journal, one
+## "<op dir name>.json" = {id, journal, committed, reason} per operation that wrote
+## a plugin's skills or knowledge (save_content). The journal holds the
+## definition applied and the records it overwrote as they were (customised
+## ones taken with consent, and pristine knowledge). The entry waits while the operation's
+## directory exists (under whatever name adopt gave it); once that goes
+## (committed, rolled back, or recovered),
+## PluginManager.reconcile_recovered brings Docket in line from it.
 const CONTENT_PENDING := "content-pending"
 const STAGING_LOCK := "staging.lock"
 const OWNERS := "owners"
@@ -76,6 +74,9 @@ var had_previous := false
 var db_before = null  # PluginDefinition.to_dict() of the record being replaced, or null
 var data_saved := false  # the plugin's data directory is saved at <op>/previous-data
 var had_data := false  # it existed when saved; if not, rolling back removes one
+# Its CONTENT_PENDING entry's name: the directory's first name, kept when
+# adopt renames the directory.
+var content_name := ""
 var _staging_lock = null  # ProcessFileLock while in the destructive section
 
 # This process's session: distinct from every earlier process, even one that
@@ -94,6 +95,7 @@ static func begin(staging_root: String) -> RefCounted:
 	_serial += 1
 	var txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").new()
 	txn.op_dir = staging_root.path_join("op_%s_%d" % [_session, _serial])
+	txn.content_name = txn.op_dir.get_file()
 	DirAccess.make_dir_recursive_absolute(txn.op_dir)
 	if not txn.publish(PHASE_STAGED):
 		_remove_tree(txn.op_dir)
@@ -104,7 +106,7 @@ static func begin(staging_root: String) -> RefCounted:
 func publish(phase: String) -> bool:
 	return _publish_json(op_dir, RECORD, {"format": 1, "phase": phase, "id": plugin_id,
 		"had_previous": had_previous, "db_before": db_before, "data_saved": data_saved,
-		"had_data": had_data})
+		"had_data": had_data, "content": content_name})
 
 
 ## Copy the plugin's data directory `data_abs` to <op>/previous-data, so a
@@ -200,8 +202,8 @@ static func sweep(staging_root: String, db) -> Array:
 
 ## With the staging lock held: undo every operation whose owner has exited
 ## and delete scratch older clients left. Returns [{dir, id, reason}] for
-## what cannot be undone. Each undone replacement is queued for Docket
-## repair (content_pending) before its directory goes.
+## what cannot be undone. A committed operation's Docket journal is marked
+## committed before its directory goes (see CONTENT_PENDING).
 static func recover_all(staging_root: String, db) -> Array:
 	var problems := []
 	var root := DirAccess.open(staging_root)
@@ -227,15 +229,15 @@ static func recover_all(staging_root: String, db) -> Array:
 			if db != null and not db.has_plugin(record.id):
 				_remove_tree(dir)
 			continue
-		var queued := _queue_recovered(staging_root, dir, record)
-		if not queued.ok:
-			problems.append({"dir": dir, "id": str(record.get("id", "")), "reason": queued.reason})
+		var committed: bool = _validate(record).is_empty() and record.phase == PHASE_COMMITTED
+		if committed and not mark_committed(dir):
+			problems.append({"dir": dir, "id": record.id, "reason": "the install of '%s' finished, but that could not be recorded for its skills and knowledge in %s; free disk space there" % [
+				record.id, staging_root.path_join(CONTENT_PENDING)]})
 			continue
 		var problem := _recover(dir, record, db)
 		if problem.is_empty():
 			_remove_tree(dir)
 		else:
-			content_done(queued.path)
 			problems.append(problem)
 	return problems
 
@@ -258,12 +260,8 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 		if _session_of(name) != _session:
 			return _pending({"dir": dir, "id": plugin_id, "reason":
 				"another running Minerva has not yet restored an earlier install of '%s'" % plugin_id})
-		var queued := _queue_recovered(staging_root, dir, record)
-		if not queued.ok:
-			return _pending({"dir": dir, "id": plugin_id, "reason": queued.reason})
 		var problem := _recover(dir, record, db)
 		if not problem.is_empty():
-			content_done(queued.path)
 			return _pending(problem)
 		_remove_tree(dir)
 	return {}
@@ -395,6 +393,7 @@ static func pending_for(staging_root: String, plugin_id: String) -> RefCounted:
 			txn.plugin_id = plugin_id
 			txn.had_previous = record.had_previous
 			txn.db_before = record.db_before
+			txn.content_name = _content_name(dir)
 			return txn
 	return null
 
@@ -569,34 +568,60 @@ static func _read_record(dir: String):
 	return _read_json(dir.path_join(RECORD))
 
 
-## The DOCKET_JOURNAL an operation in `op_dir` saved, or {}.
-static func docket_journal(op_dir: String) -> Dictionary:
-	var journal = _read_json(op_dir.path_join(DOCKET_JOURNAL))
-	return journal if journal is Dictionary else {}
+## The CONTENT_PENDING entry of the operation in `op_dir`.
+static func content_path(op_dir: String) -> String:
+	return op_dir.get_base_dir().path_join(CONTENT_PENDING).path_join(_content_name(op_dir) + ".json")
 
 
-## Write `journal` as `op_dir`'s DOCKET_JOURNAL. Returns whether it was saved.
-static func save_docket_journal(op_dir: String, journal: Dictionary) -> bool:
-	return AtomicFile.write(op_dir.path_join(DOCKET_JOURNAL), JSON.stringify(journal))
+## The name of `op_dir`'s CONTENT_PENDING entry, as its record gives it.
+static func _content_name(op_dir: String) -> String:
+	var record = _read_record(op_dir)
+	return str(record.get("content", op_dir.get_file())) if record is Dictionary else op_dir.get_file()
 
 
-## Every recovered operation whose Docket content awaits handling:
-## [{path, id, journal, committed}]. Remove each one's file with content_done
-## once it is, or narrow it with requeue_content. Another session's
-## operation whose directory is still there has not been recovered yet (it
-## may be mid-recovery or crashed before it), so it is left for later.
+## Save `journal` as the Docket journal of plugin `id`'s operation in
+## `op_dir`, before its first Docket write. Returns whether it was saved.
+static func save_content(op_dir: String, id: String, journal: Dictionary) -> bool:
+	DirAccess.make_dir_recursive_absolute(op_dir.get_base_dir().path_join(CONTENT_PENDING))
+	return requeue_content(content_path(op_dir), id, journal)
+
+
+## The journal save_content saved for `op_dir`, or {}.
+static func content_journal(op_dir: String) -> Dictionary:
+	var entry = _read_json(content_path(op_dir))
+	return entry.journal if entry is Dictionary and entry.get("journal") is Dictionary else {}
+
+
+## Record that the operation in `op_dir` committed, so its Docket content
+## stays (a no-op when it wrote none). Until this succeeds its directory must
+## stay, or the entry would be taken for a rollback. Returns whether it did.
+static func mark_committed(op_dir: String) -> bool:
+	var entry = _read_json(content_path(op_dir))
+	if not entry is Dictionary:
+		return not FileAccess.file_exists(content_path(op_dir))
+	return entry.get("committed", false) == true or requeue_content(content_path(op_dir),
+		str(entry.get("id", "")), entry.get("journal", {}) if entry.get("journal") is Dictionary else {}, true)
+
+
+## Every entry whose operation has ended (no operation directory's record
+## names it):
+## [{path, id, journal, committed, reason}]. Remove each one's file with content_done
+## once Docket follows it, or narrow it with requeue_content.
 static func content_pending(staging_root: String) -> Array:
+	var live := {}
+	for name in DirAccess.get_directories_at(staging_root):
+		if name.begins_with("op_"):
+			live[_content_name(staging_root.path_join(name))] = true
 	var pending := []
 	var dir := staging_root.path_join(CONTENT_PENDING)
 	for file in DirAccess.get_files_at(dir):
-		var op_name := file.get_basename()
-		if _session_of(op_name) != _session and DirAccess.dir_exists_absolute(staging_root.path_join(op_name)):
+		if live.has(file.get_basename()):
 			continue
 		var entry = _read_json(dir.path_join(file))
 		if entry is Dictionary and entry.get("id") is String:
 			pending.append({"path": dir.path_join(file), "id": entry.id,
 				"journal": entry.get("journal", {}) if entry.get("journal") is Dictionary else {},
-				"committed": entry.get("committed", false) == true})
+				"committed": entry.get("committed", false) == true, "reason": str(entry.get("reason", ""))})
 	return pending
 
 
@@ -605,39 +630,12 @@ static func content_done(path: String) -> void:
 		DirAccess.remove_absolute(path)
 
 
-## Before the operation in `dir` is recovered, queue it (with its journal)
-## for its Docket content to follow: a replacement about to be undone, or one
-## that had committed. Queued first, because the directory goes once
-## recovered and cannot be kept instead (recovering it again would undo files
-## already put back); if the queue cannot be written, the operation is left
-## as it is. A crash between the two leaves both, and the next recovery
-## writes the same entry again. Returns {ok, path} ("" when nothing needed
-## queueing) or {ok: false, reason}.
-static func _queue_recovered(staging_root: String, dir: String, record) -> Dictionary:
-	if not _validate(record).is_empty() or str(record.id).is_empty() \
-			or not record.phase in [PHASE_REPLACING, PHASE_COMMITTED]:
-		return {"ok": true, "path": ""}
-	var path := queue_content(staging_root, dir, str(record.id), record.phase == PHASE_COMMITTED)
-	if path.is_empty():
-		return {"ok": false, "reason": "an unfinished install of '%s' was not undone: the repair of its skills and knowledge could not be queued in %s; free disk space there" % [
-			record.id, staging_root.path_join(CONTENT_PENDING)]}
-	return {"ok": true, "path": path}
-
-
-## Queue plugin `id`'s operation in `dir` (with its journal) for its Docket
-## content to follow (content_pending): `committed` keeps it, otherwise it is
-## reconciled to what is installed. Returns the entry's path, or "" if it
-## could not be written.
-static func queue_content(staging_root: String, dir: String, id: String, committed := false) -> String:
-	var queue := staging_root.path_join(CONTENT_PENDING)
-	DirAccess.make_dir_recursive_absolute(queue)
-	var path := queue.path_join(dir.get_file() + ".json")
-	return path if requeue_content(path, id, docket_journal(dir), committed) else ""
-
-
-## Write the content_pending entry at `path`. Returns whether it was saved.
-static func requeue_content(path: String, id: String, journal: Dictionary, committed := false) -> bool:
-	return AtomicFile.write(path, JSON.stringify({"id": id, "journal": journal, "committed": committed}))
+## Write the CONTENT_PENDING entry at `path`, with why an earlier attempt
+## to follow it did not finish (`reason`). Returns whether it was saved.
+static func requeue_content(path: String, id: String, journal: Dictionary, committed := false,
+		reason := "") -> bool:
+	return AtomicFile.write(path, JSON.stringify({"id": id, "journal": journal, "committed": committed,
+		"reason": reason}))
 
 
 static func _read_json(path: String):

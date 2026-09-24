@@ -104,6 +104,8 @@ var skills: Array[Dictionary] = []
 ## PluginKnowledgeSeeder for the entry shape and rules.
 var knowledge: Array[Dictionary] = []
 var knowledge_project: String = PluginKnowledgeSeeder.DEFAULT_PROJECT
+# What parsing had to drop from the manifest's `knowledge`, for validate().
+var _knowledge_dropped := ""
 
 ## Declarative user-editable settings contributed to the host Preferences UI.
 ## Each entry: {key, type, label, default?, options? (enum only), help?}.
@@ -560,6 +562,8 @@ func validate() -> Array[String]:
 								"skill '%s' tool_deps entry must be non-empty" % s_id
 							)
 
+	if not _knowledge_dropped.is_empty():
+		errors.append(_knowledge_dropped)
 	if not id.is_empty():
 		errors.append_array(PluginKnowledgeSeeder.validate_manifest(knowledge, knowledge_project, id,
 			skills.map(func(skill) -> String: return str(skill.get("id", "")))))
@@ -790,10 +794,16 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	for skill_entry in data.get("skills", []):
 		if skill_entry is Dictionary:
 			def.skills.append(skill_entry.duplicate(true))
-	# Knowledge likewise; validate() reports malformed entries.
-	for knowledge_entry in data.get("knowledge", []):
-		if knowledge_entry is Dictionary:
-			def.knowledge.append(knowledge_entry.duplicate(true))
+	# Knowledge likewise; validate() reports what was dropped.
+	var raw_knowledge = data.get("knowledge", [])
+	if not raw_knowledge is Array:
+		def._knowledge_dropped = "knowledge must be an Array"
+	else:
+		for idx in raw_knowledge.size():
+			if raw_knowledge[idx] is Dictionary:
+				def.knowledge.append(raw_knowledge[idx].duplicate(true))
+			elif def._knowledge_dropped.is_empty():
+				def._knowledge_dropped = "knowledge[%d] must be a Dictionary" % idx
 	def.knowledge_project = str(data.get("knowledge_project", PluginKnowledgeSeeder.DEFAULT_PROJECT))
 
 	# Settings (declarative preferences shown in the host Preferences UI).

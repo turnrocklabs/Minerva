@@ -424,17 +424,17 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 
 ## Put the Docket content of `attempted_def`'s plugin back in line with what
 ## is installed after its update was rolled back, restoring the customised
-## records in `journal` (PluginInstallTransaction.docket_journal).
+## records in `journal` (PluginInstallTransaction.CONTENT_PENDING).
 func reconcile_after_rollback(attempted_def, journal: Dictionary = {}) -> Dictionary:
 	if _db.has_plugin(attempted_def.id):
 		_register_manifest_tools(attempted_def.id)
 	return await Seeding.reconcile_after_rollback(self, attempted_def, journal)
 
 
-## Bring Docket in line with every install a recovery finished
-## (PluginInstallTransaction.content_pending): one that had committed keeps
-## its content (content_committed); one that was undone is reconciled with
-## the definition it had applied, as saved in its journal. Each is dequeued
+## Bring Docket in line with every install that has ended
+## (PluginInstallTransaction.content_pending): one that committed keeps its
+## content (PluginContentSeeding.content_committed); one that was undone is
+## reconciled with the definition it had applied, as saved in its journal. Each is dequeued
 ## once its repair completed; one that did not keeps only the journal entries
 ## still to put back, so a retry never rewrites text put back before. Nothing
 ## is done while Docket is not available; a call during a drain makes that
@@ -456,31 +456,23 @@ func reconcile_recovered() -> void:
 			var attempted = PluginDefinition.from_dict(journal.attempted) if journal.get("attempted") is Dictionary \
 				else _db.get_by_id(recovered.id)
 			var done := true
+			var reason := ""
 			if recovered.committed:
 				done = Seeding.content_committed(journal)
-			elif attempted != null:
-				var result: Dictionary = await reconcile_after_rollback(attempted, journal)
-				done = Seeding.complete(result)
-				journal["entries"] = result.get("journal_left", [])
-				if not done and not Txn.requeue_content(recovered.path, recovered.id, journal):
-					push_error("[PluginManager] '%s''s unfinished Docket repair could not be narrowed in %s; its next retry puts back all its saved text again" % [
-						recovered.id, recovered.path])
+				reason = "Docket project '%s' is not open, or its changes could not be saved" % journal.get("retired_project", "")
 			else:
-				done = Seeding.unseed(self, recovered.id).get("knowledge", {}).get("failed", 0) == 0
+				var result: Dictionary = await reconcile_after_rollback(attempted, journal) if attempted != null \
+					else Seeding.unseed(self, recovered.id)
+				done = Seeding.complete(result)
+				journal["entries"] = result.get("journal_left", journal.get("entries", []))
+				reason = Seeding.unfinished_reason(result)
 			if done:
 				Txn.content_done(recovered.path)
+			elif not Txn.requeue_content(recovered.path, recovered.id, journal, recovered.committed, reason):
+				push_error("[PluginManager] '%s''s unfinished Docket repair could not be narrowed in %s; its next retry judges all its saved text again" % [
+					recovered.id, recovered.path])
 	_draining = false
 	content_drained.emit()
-
-
-## Plugin `plugin_id`'s install in `op_dir` committed, so its Docket changes
-## are final (PluginContentSeeding.content_committed); what does not finish
-## now is queued for reconcile_recovered to retry.
-func content_committed(op_dir: String, plugin_id: String) -> void:
-	var Txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
-	if not Seeding.content_committed(Txn.docket_journal(op_dir)) and Txn.queue_content(
-			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), op_dir, plugin_id, true).is_empty():
-		push_error("[PluginManager] '%s''s retired knowledge could not be unseeded, nor queued for later" % plugin_id)
 
 
 ## See PluginSkillConsent.collect.

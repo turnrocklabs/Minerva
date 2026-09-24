@@ -99,6 +99,7 @@ func _init() -> void:
 	test_knowledge_lifecycle()
 	await test_knowledge_consent()
 	await test_rollback_restores_content()
+	test_unsaved_knowledge_retry()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -372,6 +373,48 @@ func test_repair_keeps_customised_skills() -> void:
 	var failed: Dictionary = PluginSkillSeederScript.apply_reconcile(
 		failure_plan, {}, FailingUpdateDocket.new(registry))
 	check("reconcile reports failed store writes", int(failed.get("failed", 0)) > 0)
+	var Seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
+	Seeding.docket_override = FailingUpdateDocket.new(registry)
+	var unseeded: Dictionary = Seeding.unseed(RolledBackManager.new(def_v2), plugin_id)
+	Seeding.docket_override = null
+	check("an unseed that cannot hand a customised skill to the person is not complete",
+		unseeded.get("skills_failed", 0) > 0 and not Seeding.complete(unseeded))
+	ctx.db.close()
+
+
+## Knowledge written to another project whose file could not be saved is not
+## done until that file holds it, even when a retry finds nothing left to
+## change (the cache already has it).
+func test_unsaved_knowledge_retry() -> void:
+	print("test_unsaved_knowledge_retry")
+	var ctx := _new_docket()
+	var path := _tmp_dir.path_join("notes_%d.dct.jsonl" % randi())
+	var notes_db := DocketDBJsonl.create_new_jsonl(path)
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	ctx.registry.init(JSON.parse_string(sf.get_as_text()), ctx.db, {"master": ctx.db, "notes": notes_db})
+	sf.close()
+	var registry = ctx.registry
+	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
+	Knowledge.apply(Knowledge.plan(_knowledge_def("notes", [_kb("Red to red."), _hint("9600")]), registry), {}, registry)
+	# A version that drops both deprecates them, while a directory stands
+	# where the project's file goes.
+	var dropped := _knowledge_def("notes", [])
+	DirAccess.remove_absolute(path)
+	DirAccess.make_dir_absolute(path)
+	var failed: Dictionary = Knowledge.apply(Knowledge.plan(dropped, registry), {}, registry)
+	var retry_plan: Dictionary = Knowledge.plan(dropped, registry)
+	var retried: Dictionary = Knowledge.apply(retry_plan, {}, registry)
+	DirAccess.remove_absolute(path)
+	var saved: Dictionary = Knowledge.apply(Knowledge.plan(dropped, registry), {}, registry)
+	var stored_deprecated := 0
+	for line in FileAccess.get_file_as_string(path).split("\n", false):
+		var stored = JSON.parse_string(line)
+		if stored is Dictionary and stored.get("deprecated", 0) != 0:
+			stored_deprecated += 1
+	check("a retry with nothing left to change fails until the project's file holds the change",
+		failed.failed > 0 and retry_plan.actions.is_empty() and retry_plan.deprecate_record_ids.is_empty()
+		and retried.failed > 0 and saved.failed == 0 and stored_deprecated == 2)
+	notes_db.close()
 	ctx.db.close()
 
 
@@ -473,7 +516,8 @@ func test_knowledge_consent() -> void:
 
 	var fresh: Dictionary = await PluginSkillConsentScript.collect(
 		root, InstalledDB.new("another_plugin"), {}, registry, manifest_path, true)
-	check("a plugin that ships only knowledge is asked the seed question", fresh.get("seed") == true)
+	check("a plugin that ships only knowledge gets a seed decision (auto-confirmed here, no dialog)",
+		fresh.get("seed") == true)
 	var update: Dictionary = await PluginSkillConsentScript.collect(
 		root, InstalledDB.new("notes_demo"), {}, registry, manifest_path, true)
 	check("an update's decision about the customised kb is keyed by its manifest key",
@@ -506,18 +550,27 @@ func test_rollback_restores_content() -> void:
 	var original_id: String = found.items[0].id
 	registry.call_tool("docket_update", {"id": original_id, "article": "MY NOTES"})
 
+	# While its undo record cannot be saved, an update writes nothing.
+	var v2 := _knowledge_def("master", [_kb("Red to red, always.")])
+	var blocked_dir := _tmp_dir.path_join("blocked").path_join("op_blocked")
+	DirAccess.make_dir_recursive_absolute(blocked_dir)
+	FileAccess.open(_tmp_dir.path_join("blocked").path_join(Txn.CONTENT_PENDING), FileAccess.WRITE).close()
+	var skipped: Dictionary = await Seeding.reconcile(RolledBackManager.new(v2), v1, v2, {"collected": true,
+		"update_decisions": {"minerva_notes_demo_wiring": true}, "journal_dir": blocked_dir}, false)
+	check("an update whose undo record cannot be saved leaves the person's text alone",
+		skipped.has("content_skipped") and registry.call_tool("docket_get", {"id": original_id}).get("article") == "MY NOTES")
+
 	# The person accepts v2 over their text; v2 then fails and is rolled back.
 	var op_dir := _tmp_dir.path_join("op_rollback")
 	DirAccess.make_dir_recursive_absolute(op_dir)
-	var v2 := _knowledge_def("master", [_kb("Red to red, always.")])
 	await Seeding.reconcile(RolledBackManager.new(v2), v1, v2, {"collected": true,
 		"update_decisions": {"minerva_notes_demo_wiring": true}, "journal_dir": op_dir}, false)
 	check("the accepted update overwrote the person's text, saving it first",
 		registry.call_tool("docket_get", {"id": original_id}).get("article") == "Red to red, always."
-		and Txn.docket_journal(op_dir).get("entries", []).size() == 1)
+		and Txn.content_journal(op_dir).get("entries", []).size() == 1)
 	# Beside it, a journaled record the person has since deleted, and one in a
 	# project that is not loaded.
-	var rollback_journal: Dictionary = Txn.docket_journal(op_dir)
+	var rollback_journal: Dictionary = Txn.content_journal(op_dir)
 	var unloaded := {"id": "unloaded-record", "fields": {"article": "THEIRS"}, "project": "archive"}
 	rollback_journal.entries.append({"id": "deleted-record", "fields": {"article": "GONE"}, "project": "master"})
 	rollback_journal.entries.append(unloaded)
@@ -539,7 +592,7 @@ func test_rollback_restores_content() -> void:
 		{"collected": true, "update_decisions": {}, "journal_dir": move_dir}, false)
 	check("moving the knowledge retires the original record rather than deleting it",
 		registry.call_tool("docket_get", {"id": original_id}).get("deprecated") == true)
-	var journal: Dictionary = Txn.docket_journal(move_dir)
+	var journal: Dictionary = Txn.content_journal(move_dir)
 	var moved_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
 		PluginDefinition.from_dict(journal.attempted), journal)
 	var revived: Dictionary = registry.call_tool("docket_get", {"id": original_id})
@@ -552,16 +605,87 @@ func test_rollback_restores_content() -> void:
 		in_notes.get("items", []).size() == 1 and registry.call_tool("docket_get",
 			{"id": in_notes.items[0].id, "project": "notes"}).get("deprecated") == true)
 
+	# Rolling back an update that wrote knowledge in a project not loaded now
+	# repairs the rest, and stays unfinished until that project is loaded.
+	var archive_def := _knowledge_def("archive", [_kb("Red to red.")])
+	var unloaded_move: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
+		archive_def, {"knowledge_written": true})
+	check("a rollback that could not reach a project repairs the rest and is not complete",
+		unloaded_move.has("reconcile") and unloaded_move.has("knowledge")
+		and unloaded_move.get("knowledge_missing_project") == "archive" and not Seeding.complete(unloaded_move))
+	# One whose project was never loaded wrote nothing there to repair.
+	var never_written: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
+		archive_def, {"knowledge_written": false})
+	check("a rollback of knowledge that was never written does not wait for its project",
+		not never_written.has("knowledge_missing_project") and Seeding.complete(never_written))
+
 	# The same move, committed: the old project's customised record becomes
 	# the person's, live.
 	var commit_dir := _tmp_dir.path_join("op_commit")
 	DirAccess.make_dir_recursive_absolute(commit_dir)
 	await Seeding.reconcile(RolledBackManager.new(v3), v1, v3,
 		{"collected": true, "update_decisions": {}, "journal_dir": commit_dir}, false)
-	Seeding.content_committed(Txn.docket_journal(commit_dir))
+	Seeding.content_committed(Txn.content_journal(commit_dir))
 	var kept: Dictionary = registry.call_tool("docket_get", {"id": original_id})
 	check("once the move commits, the person's record in the old project is theirs and live",
 		kept.get("source") == "user" and kept.get("deprecated") == false and kept.get("article") == "MY NOTES")
+
+	# A silent update interrupted between writing its text and sealing it
+	# leaves the record looking customised; the rollback still puts it back
+	# exactly, sealed.
+	var h1 := _knowledge_def("master", [_hint("9600")])
+	Knowledge.apply(Knowledge.plan(h1, registry), {}, registry)
+	var seal_dir := _tmp_dir.path_join("op_seal")
+	DirAccess.make_dir_recursive_absolute(seal_dir)
+	var h2 := _knowledge_def("master", [_hint("115200")])
+	await Seeding.reconcile(RolledBackManager.new(h2), h1, h2,
+		{"collected": true, "update_decisions": {}, "journal_dir": seal_dir}, false)
+	var baud_id: String = registry.call_tool("docket_query",
+		{"filter": {"type": "hint", "key": "minerva_notes_demo_baud"}}).items[0].id
+	registry.call_tool("docket_update", {"id": baud_id, "pristine_hash": "unsealed"})
+	var unsealed_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(h1), h2,
+		Txn.content_journal(seal_dir))
+	var baud: Dictionary = registry.call_tool("docket_get", {"id": baud_id})
+	check("a rollback after an interrupted seal restores the pristine record, sealed",
+		baud.get("value") == "9600" and Knowledge.content_hash(baud) == str(baud.get("pristine_hash", ""))
+		and Seeding.complete(unsealed_back))
+
+	# The person's text is overwritten by an update they accepted; they change
+	# the record again before its rollback: their newer text stays, and the
+	# text from before the update is held for them to decide on.
+	registry.call_tool("docket_update", {"id": baud_id, "value": "4800"})
+	var edit_dir := _tmp_dir.path_join("op_edited")
+	DirAccess.make_dir_recursive_absolute(edit_dir)
+	var h3 := _knowledge_def("master", [_hint("57600")])
+	await Seeding.reconcile(RolledBackManager.new(h3), h1, h3, {"collected": true,
+		"update_decisions": {"minerva_notes_demo_baud": true}, "journal_dir": edit_dir}, false)
+	registry.call_tool("docket_update", {"id": baud_id, "value": "NEWER"})
+	var edited_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(h1), h3,
+		Txn.content_journal(edit_dir))
+	var held: Array = edited_back.get("journal_left", [])
+	check("a rollback keeps a change made after the update and holds the earlier text",
+		registry.call_tool("docket_get", {"id": baud_id}).get("value") == "NEWER"
+		and edited_back.get("journal_conflicts", []).size() == 1 and held.size() == 1
+		and held[0].get("fields", {}).get("value") == "4800" and not Seeding.complete(edited_back))
+
+	# An accepted skill update, rolled back: what the update wrote is
+	# recognised (not taken for a later edit), and the person's steps return.
+	var skill_v1 := _slide_deck_skill("notes_demo", "v1")
+	var s1 := _make_def("notes_demo", [skill_v1])
+	PluginSkillSeederScript.materialize("notes_demo", PluginSkillSeederScript.resolve_deps(s1, {}), registry)
+	var skill_id := str(PluginSkillSeederScript.find_existing_record("notes_demo", skill_v1.id, registry).get("id", ""))
+	PluginSkillRecordScript.apply_user_edit(skill_id, {"steps": "my own steps"}, registry)
+	var s2 := _make_def("notes_demo", [_slide_deck_skill("notes_demo", "v2")])
+	var skill_dir := _tmp_dir.path_join("op_skill")
+	DirAccess.make_dir_recursive_absolute(skill_dir)
+	await Seeding.reconcile(RolledBackManager.new(s2), s1, s2, {"collected": true,
+		"update_decisions": {skill_v1.id: true}, "journal_dir": skill_dir}, false)
+	var skill_took := str(registry.call_tool("docket_get", {"id": skill_id}).get("steps", ""))
+	var skill_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(s1), s2,
+		Txn.content_journal(skill_dir))
+	check("a rolled-back accepted skill update puts the person's steps back, with no conflict",
+		skill_took != "my own steps" and registry.call_tool("docket_get", {"id": skill_id}).get("steps") == "my own steps"
+		and not skill_back.has("journal_conflicts") and Seeding.complete(skill_back))
 	Seeding.docket_override = null
 	notes_db.close()
 	ctx.db.close()

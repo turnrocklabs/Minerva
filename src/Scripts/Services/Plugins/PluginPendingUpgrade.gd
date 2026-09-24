@@ -83,9 +83,12 @@ static func start(manager, plugin_id: String, start_now: Callable) -> Dictionary
 	var failure := ""
 	if not started.has("error"):
 		if txn.publish(Txn.PHASE_COMMITTED):
-			manager.content_committed(txn.op_dir, plugin_id)
 			txn.leave()
-			MarketplaceClient._rm_dir_recursive(txn.op_dir)
+			# Until its Docket journal says committed, the operation stays: gone,
+			# the journal would read as a rollback. The next recovery records it.
+			if Txn.mark_committed(txn.op_dir):
+				MarketplaceClient._rm_dir_recursive(txn.op_dir)
+				await manager.reconcile_recovered()
 			return started
 		# Not recorded as done, a later recovery would roll it back over
 		# whatever it wrote meanwhile; so it is undone now, like a failed start.
@@ -99,10 +102,8 @@ static func start(manager, plugin_id: String, start_now: Callable) -> Dictionary
 	if not MarketplaceClient.rollback_complete(rollback):
 		return {"error": "Plugin '%s' v%s %s, and its previous version could not be fully put back yet; it is kept at %s and Minerva restores it when it next starts." % [
 			plugin_id, new_version, failure, rollback.kept_at]}
-	# The new version seeded its skills and knowledge when it was installed;
-	# they are queued for repair before the operation (and its journal) goes.
-	if Txn.queue_content(staging_root, txn.op_dir, plugin_id).is_empty():
-		push_error("[PluginPendingUpgrade] '%s' was rolled back, but the repair of its skills and knowledge could not be queued" % plugin_id)
+	# With the operation gone, its Docket journal puts back the skills and
+	# knowledge the new version wrote when it was installed.
 	MarketplaceClient._rm_dir_recursive(txn.op_dir)
 	await manager.reconcile_recovered()
 	var previous = db.get_by_id(plugin_id)

@@ -292,6 +292,9 @@ func _test_recovery_after_a_crash() -> void:
 	var live_other := _op(staging, "live-1", {"phase": "replacing", "id": ID, "had_previous": true, "db_before": v1_record})
 	_extract("v1", live_other.path_join("previous"))
 	_write(live_other.path_join("previous/sentinel.txt"), "v1 install")
+	# Docket journals of operations that had written skills or knowledge.
+	for op_name in ["op_dead-1_1", "op_dead-3_1", "op_dead-4_1", "op_live-1_1"]:
+		load(TXN_GD).save_content(staging.path_join(op_name), FRESH_ID if op_name == "op_dead-3_1" else ID, {})
 	# An older client's scratch.
 	DirAccess.make_dir_recursive_absolute(staging.path_join("extract_123"))
 	_write(staging.path_join("dl_123.tar.gz"), "partial")
@@ -312,15 +315,15 @@ func _test_recovery_after_a_crash() -> void:
 		and not "op_dead-4_1" in left and not "extract_123" in left
 		and not FileAccess.file_exists(staging.path_join("dl_123.tar.gz")), "recovered and legacy staging is gone: %s" % [left])
 	_check("op_%s_99" % load(TXN_GD)._session in left and "op_live-1_1" in left, "live operations are left alone")
-	# Each recovered operation is queued for its Docket content to follow:
-	# undone replacements to be reconciled, the committed one to be kept.
+	# Docket follows each recovered operation's journal: undone replacements
+	# are reconciled, the committed one kept; a live operation's waits.
 	var queued := {}
 	for entry in load(TXN_GD).content_pending(staging):
 		queued[entry.path.get_file()] = [entry.id, entry.committed]
 		load(TXN_GD).content_done(entry.path)
-	_check(queued == {"op_dead-1_1.json": [ID, false], "op_dead-2_1.json": [ID, false],
-		"op_dead-3_1.json": [FRESH_ID, false], "op_dead-4_1.json": [ID, true]},
-		"every recovered operation is queued for its skills and knowledge, committed or undone: %s" % [queued])
+	_check(queued == {"op_dead-1_1.json": [ID, false], "op_dead-3_1.json": [FRESH_ID, false],
+		"op_dead-4_1.json": [ID, true]},
+		"every recovered operation's journal is released, committed or undone, and none of a live one: %s" % [queued])
 	_check(left.filter(func(n: String) -> bool: return n.begins_with("op_dead-bad")).size() == 4 and problems.size() == 4,
 		"every backup with an untrustworthy record is kept and reported: %s" % [problems])
 	# A person acts on those reports; until then they would hold back installs of ID.
@@ -342,9 +345,15 @@ func _test_recovery_after_a_crash() -> void:
 	_check(op.stage == "wait" and box[0] == null, "an install waits for the staging lock")
 	busy.unlock()
 	await _wait(func() -> bool: return box[0] != null)
-	_check(box[0] != null and box[0].get("ok", false) and box[0].get("version") == "2.0.0" and db.get_by_id(ID).version == "2.0.0"
+	# That operation had written skills or knowledge: until their repair is
+	# done (this installer, a bare PluginDB, cannot run it), installs of ID wait.
+	_check(box[0] != null and box[0].get("error", "") == "content_repair_pending" and db.get_by_id(ID).version == "1.0.0"
 		and not DirAccess.dir_exists_absolute(live_other),
-		"after the other process exits its operation is undone and v2 installs over v1: %s" % [box[0]])
+		"after the other process exits its operation is undone, and an install waits for its Docket repair: %s" % [box[0]])
+	load(TXN_GD).content_done(load(TXN_GD).content_path(live_other))
+	var resumed: Dictionary = await _client().install_from_url(_base_url + "v2.tar.gz", db)
+	_check(resumed.get("ok", false) and resumed.get("version") == "2.0.0" and db.get_by_id(ID).version == "2.0.0",
+		"once that repair is done, v2 installs over v1: %s" % [resumed])
 	for name in DirAccess.get_directories_at(staging):
 		if name != "owners":
 			_h.rm_dir_recursive(staging.path_join(name))

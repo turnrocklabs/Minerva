@@ -34,6 +34,10 @@ const CONTENT_FIELDS := {
 ## deprecated, has no pristine_hash (its seal was never written), or is a kb
 ## still in draft: it is revived without touching its text.
 const RESTORE := "restore"
+## A key whose entry moved between kb and hint: a record keeps its type, so
+## the change is refused (counted type_changed, with a warning) and the
+## record left as it is.
+const TYPE_CHANGED := "type_changed"
 
 
 ## Problems with a manifest's `knowledge` entries and `project`, as
@@ -96,7 +100,9 @@ static func content_hash(entry: Dictionary) -> String:
 			tags.sort()
 			value = tags
 		else:
-			value = str(value) if value != null else ""
+			# As Docket stores text (DocketDB._normalize_text), so an entry
+			# hashes like the record it becomes.
+			value = str(value).replace("\\n", "\n").replace("\\t", "\t") if value != null else ""
 		content[field] = value
 	return JSON.stringify(content, "", true).sha256_text()
 
@@ -134,14 +140,15 @@ static func plan(def, docket_caller) -> Dictionary:
 		var action := {"id": key, "entry": entry}
 		if existing.is_empty():
 			action["action"] = Seeder.RECONCILE_SEED
+		elif str(existing.get("type", "")) != str(entry.get("type", "")):
+			action["action"] = TYPE_CHANGED
 		else:
 			action["record_id"] = str(existing.get("id", ""))
+			action["existing"] = existing
 			var customised := content_hash(existing) != str(existing.get("pristine_hash", ""))
 			var pristine = existing.get("pristine_content", {})
 			if content_hash(pristine if pristine is Dictionary else {}) != content_hash(entry):
 				action["action"] = Seeder.RECONCILE_PROMPT_REQUIRED if customised else Seeder.RECONCILE_SILENT_UPDATE
-				if customised:
-					action["existing"] = existing
 			elif bool(existing.get("deprecated", false)) or _inactive_kb(existing) \
 					or str(existing.get("pristine_hash", "")).is_empty():
 				action["action"] = RESTORE
@@ -161,13 +168,21 @@ static func plan(def, docket_caller) -> Dictionary:
 ## (prompt_required) takes the new content; declined or absent keeps the
 ## person's text and records the new entry as pristine_content, so the same
 ## upstream version is not asked about again. Returns counts in
-## PluginSkillSeeder's apply_reconcile shape, plus `restored`.
+## PluginSkillSeeder's apply_reconcile shape, plus `restored`, and
+## missing_project when the plan's project is no longer loaded (it may close
+## while the person answers the consent questions): then nothing is written,
+## as Docket would put an unknown project's writes in the primary one.
 static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dictionary:
 	var counts := {"seeded": 0, "silent_updated": 0, "prompted_accepted": 0, "prompted_declined": 0,
-		"restored": 0, "deprecated": 0, "unchanged": 0, "failed": 0}
+		"restored": 0, "deprecated": 0, "unchanged": 0, "type_changed": 0, "failed": 0}
 	if docket_caller == null:
 		return counts
 	var project := str(plan.get("project", DEFAULT_PROJECT))
+	var has_work: bool = not (plan.get("actions", []).is_empty() and plan.get("deprecate_record_ids", []).is_empty())
+	var loaded := project_loaded(project, docket_caller)
+	if has_work and not loaded:
+		counts["missing_project"] = true
+		return counts
 	var plugin_id := str(plan.get("plugin_id", ""))
 	for action in plan.get("actions", []):
 		var entry: Dictionary = action.entry
@@ -187,12 +202,19 @@ static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dic
 			RESTORE:
 				outcome = "restored"
 				done = _write(action.record_id, project, entry, false, docket_caller, action.get("reseal", false))
+			TYPE_CHANGED:
+				outcome = "type_changed"
+				push_warning("[PluginKnowledgeSeeder] '%s' knowledge '%s' changed type; its existing record is kept as it is" % [
+					plugin_id, action.id])
 		counts[outcome if done else "failed"] += 1
 	for record_id in plan.get("deprecate_record_ids", []):
 		if _ok(docket_caller.call_tool("docket_update", {"id": record_id, "project": project, "deprecated": true})):
 			counts.deprecated += 1
 		else:
 			counts.failed += 1
+	# Even with nothing left to do (a retry), earlier writes must be saved.
+	if loaded and not _saved(project, docket_caller):
+		counts.failed += 1
 	return counts
 
 
@@ -212,17 +234,25 @@ static func unseed_everywhere(plugin_id: String, docket_caller) -> Dictionary:
 
 ## When a plugin's knowledge moves to another project: mark its records in
 ## `project` deprecated, keeping them and their ids (a rollback moves back
-## and revives them). Returns how many were retired.
-static func retire(plugin_id: String, project: String, docket_caller) -> int:
+## and revives them). Returns {retired, failed}, and missing_project when
+## `project` is not loaded (nothing was done).
+static func retire(plugin_id: String, project: String, docket_caller) -> Dictionary:
+	var result := {"retired": 0, "failed": 0}
 	if docket_caller == null or not project_loaded(project, docket_caller):
-		return 0
-	var retired := 0
+		result["missing_project"] = true
+		return result
 	var records := _seeded_records(plugin_id, project, docket_caller)
 	for key in records:
-		if not bool(records[key].get("deprecated", false)) and _ok(docket_caller.call_tool("docket_update",
+		if bool(records[key].get("deprecated", false)):
+			continue
+		if _ok(docket_caller.call_tool("docket_update",
 				{"id": str(records[key].get("id", "")), "project": project, "deprecated": true})):
-			retired += 1
-	return retired
+			result.retired += 1
+		else:
+			result.failed += 1
+	if not _saved(project, docket_caller):
+		result.failed += 1
+	return result
 
 
 ## Delete `plugin_id`'s knowledge records in `project` that nobody changed,
@@ -249,6 +279,8 @@ static func unseed(plugin_id: String, project: String, docket_caller) -> Diction
 			result.kept += 1
 		else:
 			result.failed += 1
+	if not _saved(project, docket_caller):
+		result.failed += 1
 	return result
 
 
@@ -322,6 +354,16 @@ static func _settle(record_id: String, project: String, sealed: bool, docket_cal
 static func _read_record(record_id: String, project: String, docket_caller) -> Dictionary:
 	var full = docket_caller.call_tool("docket_get", {"id": record_id, "project": project})
 	return full if full is Dictionary and not full.has("error") else {}
+
+
+## Whether every change to `project` ("" = the primary one) is saved
+## (docket_persist): a retry that finds nothing left to change must still
+## know its earlier writes stored. A project that is not loaded is not, as
+## Docket would answer for the primary one instead.
+static func _saved(project: String, docket_caller) -> bool:
+	if not project.is_empty() and not project_loaded(project, docket_caller):
+		return false
+	return _ok(docket_caller.call_tool("docket_persist", {"project": project}))
 
 
 static func _ok(result) -> bool:
