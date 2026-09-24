@@ -172,12 +172,18 @@ func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skil
 ##
 ## An installed plugin is replaced as a transaction: its directory is set
 ## aside, the new one moved in, and only a successful registration commits.
-## Any failure puts the old files and the old DB record back. All scratch
-## files live in this operation's own staging directory, removed at the end;
-## sweep_staging() recovers from a crash in between.
+## When the replaced plugin was running (the caller stopped it for the
+## replacement and set op.start_after_install), its data is saved and the new
+## version must start before the replacement commits. A plugin the user had
+## stopped stays stopped: it is replaced on the archive's checks alone (SHA256,
+## identity, platform, entrypoint header). Any failure puts the old files, the
+## old DB record and the saved data back. All scratch files live in this
+## operation's own staging directory, removed at the end; sweep_staging()
+## recovers from a crash in between.
 ##
 ## Returns:
-##   {ok:true, plugin_id, version, manifest_path, definition?, manager_result?}
+##   {ok:true, plugin_id, version, manifest_path, started, definition?, manager_result?}
+##   (started: the new version was started before the install committed)
 ##   {ok:false, error, detail}
 func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool = false,
 		op: PluginInstallOperation = null, expected: Dictionary = {}) -> Dictionary:
@@ -196,7 +202,7 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 	# An incomplete rollback keeps the operation (and its backup) for a later
 	# recovery pass.
 	var rollback: Dictionary = result.get("rollback", {})
-	if rollback.is_empty() or (rollback.files_restored and rollback.db_restored):
+	if rollback.is_empty() or rollback_complete(rollback):
 		_rm_dir_recursive(op.staging_dir)
 	return result
 
@@ -290,6 +296,14 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	txn.had_previous = DirAccess.dir_exists_absolute(final_abs)
 	if not txn.publish(PluginInstallTransaction.PHASE_REPLACING):
 		return _err("staging_failed", {"dir": op.staging_dir})
+	# A running plugin (stopped for this replacement at STAGE_REGISTER) is
+	# upgraded only if the new version starts (step 7). Its data is saved now,
+	# before anything of the new version is registered or run, so a rollback
+	# restores it as it was.
+	var verify_start: bool = txn.had_previous and op.start_after_install and installer != null \
+		and installer.has_method("start_plugin")
+	if verify_start and not txn.save_data(PluginInstallTransaction.data_directory(plugin_id)):
+		return _failed_replace(_err("data_backup_failed", {"id": plugin_id}), txn, final_abs, db, previous_def)
 	if txn.had_previous:
 		var aside_err := DirAccess.rename_absolute(final_abs, op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 		if aside_err != OK:
@@ -315,14 +329,46 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		registered = _err("register_not_saved", {"id": plugin_id})
 	if not registered.get("ok", false):
 		return _failed_replace(registered, txn, final_abs, db, previous_def)
+	# --- 7. An upgrade of a plugin that was running starts BEFORE it
+	# commits (its data was saved in step 5): a new version that fails to
+	# start, or is cancelled while starting, goes back to the working copy's
+	# files, record and data. Any other install commits here and its start,
+	# if any, is the caller's.
+	registered["started"] = false
+	if verify_start:
+		var started := await _start_before_commit(installer, plugin_id, op)
+		if not started.get("ok", false):
+			return _failed_replace(started, txn, final_abs, db, previous_def)
+		registered["started"] = true
 	# The install commits only once this record is saved too; until then a
-	# crash rolls back to the previous install and DB record together.
+	# crash rolls back to the previous install, DB record and data together.
 	if not txn.publish(PluginInstallTransaction.PHASE_COMMITTED):
+		if registered.started:
+			installer.stop_plugin(plugin_id)  # it runs on the files being rolled back
 		return _failed_replace(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db, previous_def)
 	_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 	registered["version"] = str(manifest.get("version", ""))
 	registered["platform_verified"] = identity.platform_verified
 	return registered
+
+
+## Start the just-registered version. Returns {ok:true} once it runs, or a
+## failure with the plugin stopped again.
+func _start_before_commit(installer, plugin_id: String, op: PluginInstallOperation) -> Dictionary:
+	op.enter(PluginInstallOperation.STAGE_START)
+	var started: Dictionary = await installer.start_plugin(plugin_id)
+	if op.cancelled or started.has("error"):
+		installer.stop_plugin(plugin_id)
+		if op.cancelled:
+			return _err("cancelled", {"while": "starting"})
+		return _err("start_failed", {"id": plugin_id, "reason": str(started.error)})
+	return {"ok": true}
+
+
+## Whether a rollback (PluginInstallTransaction.roll_back) put everything
+## back: files, the DB record and, when it was saved, the data.
+static func rollback_complete(rollback: Dictionary) -> bool:
+	return rollback.files_restored and rollback.db_restored and rollback.get("data_restored", true)
 
 
 ## `failure` plus what rolling the replacement back restored.
@@ -612,7 +658,18 @@ static func format_install_error(result: Dictionary) -> String:
 			hint = "Check free disk space and permissions under user://plugins/."
 		"cancelled":
 			title = "Install cancelled"
-			cause = "The install was cancelled before anything was changed."
+			if str(detail_dict.get("while", "")) == "starting":
+				cause = "The new version was cancelled while it started, so the update was not applied."
+			else:
+				cause = "The install was cancelled before anything was changed."
+		"start_failed":
+			title = "The new version did not start"
+			cause = "'%s' failed to start: %s" % [str(detail_dict.get("id", "?")), str(detail_dict.get("reason", "?"))]
+			hint = "The update was not applied. Report the reason above to the plugin's author."
+		"data_backup_failed":
+			title = "Could not save the plugin's data before updating"
+			cause = "Minerva could not copy the data of '%s' aside, so it did not start the new version." % str(detail_dict.get("id", "?"))
+			hint = "Check free disk space under user://plugins/."
 		"manager_install_failed":
 			title = "PluginManager refused the install"
 			cause = str(detail_dict.get("error", JSON.stringify(detail_dict)))
@@ -646,12 +703,16 @@ static func format_install_error(result: Dictionary) -> String:
 	var rollback: Dictionary = result.get("rollback", {})
 	if not rollback.is_empty():
 		lines.append("")
-		if rollback.files_restored and rollback.db_restored:
-			lines.append("The previously installed version was put back.")
+		if rollback_complete(rollback):
+			lines.append("The previously installed version was put back%s." % (
+				", with its data as it was" if rollback.get("data_saved", false) else ""))
 		elif not rollback.files_restored:
 			lines.append("The previous version could not be put back yet; it is kept at %s and Minerva will restore it when it next starts." % rollback.kept_at)
 		else:
-			lines.append("The previous files were put back, but the plugin database could not be restored; restart Minerva.")
+			if not rollback.get("data_restored", true):
+				lines.append("The previous version is back, but its data could not be put back yet; it is kept at %s and Minerva will restore it when it next starts." % rollback.kept_at)
+			if not rollback.db_restored:
+				lines.append("The previous files were put back, but the plugin database could not be restored; restart Minerva.")
 	lines.append("")
 	lines.append("(internal code: %s)" % code)
 	return "\n".join(lines)

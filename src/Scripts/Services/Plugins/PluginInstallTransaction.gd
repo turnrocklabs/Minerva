@@ -13,6 +13,11 @@ extends RefCounted
 ##              and restores the DB record saved in the record. A removal of
 ##              the plugin marks the record "removing" before it saves; then
 ##              the DB alone says whether the removal happened (_recover).
+##              When the replaced plugin's data directory was saved to
+##              <op>/previous-data before the new version was registered and
+##              started ("data_saved"),
+##              recovery puts that copy back too ("had_data" false: the plugin
+##              had no data directory, so any the new version made is removed).
 ##   committed  registration and this record were saved; recovery only
 ##              deletes scratch.
 ##
@@ -38,6 +43,7 @@ extends RefCounted
 const AtomicFile := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
 const RECORD := "txn.json"
 const PREVIOUS := "previous"
+const PREVIOUS_DATA := "previous-data"
 const STAGING_LOCK := "staging.lock"
 const OWNERS := "owners"
 const PHASE_STAGED := "staged"
@@ -48,6 +54,8 @@ var op_dir := ""
 var plugin_id := ""
 var had_previous := false
 var db_before = null  # PluginDefinition.to_dict() of the record being replaced, or null
+var data_saved := false  # the plugin's data directory is saved at <op>/previous-data
+var had_data := false  # it existed when saved; if not, rolling back removes one
 var _staging_lock = null  # ProcessFileLock while in the destructive section
 
 # This process's session: distinct from every earlier process, even one that
@@ -75,7 +83,25 @@ static func begin(staging_root: String) -> RefCounted:
 
 func publish(phase: String) -> bool:
 	return _publish_json(op_dir, RECORD, {"format": 1, "phase": phase, "id": plugin_id,
-		"had_previous": had_previous, "db_before": db_before})
+		"had_previous": had_previous, "db_before": db_before, "data_saved": data_saved,
+		"had_data": had_data})
+
+
+## Copy the plugin's data directory `data_abs` to <op>/previous-data, so a
+## rollback can undo what the new version did to it, and publish that it is
+## saved. Returns false, having published nothing new,
+## when it cannot.
+func save_data(data_abs: String) -> bool:
+	had_data = DirAccess.dir_exists_absolute(data_abs)
+	if had_data and not _copy_tree(data_abs, op_dir.path_join(PREVIOUS_DATA)):
+		_remove_tree(op_dir.path_join(PREVIOUS_DATA))
+		had_data = false
+		return false
+	data_saved = true
+	if publish(PHASE_REPLACING):
+		return true
+	data_saved = false
+	return false
 
 
 ## Wait for the staging lock (another process may be replacing a plugin),
@@ -115,12 +141,14 @@ func leave() -> void:
 
 
 ## Undo a replacement that did not commit. Returns what was restored; files
-## that could not be moved back stay in `previous` for a later pass.
+## or data that could not be moved back stay in the operation directory
+## (kept_at) for a later pass.
 func roll_back(final_abs: String, db, previous_def) -> Dictionary:
 	var files := _restore_files(final_abs, op_dir.path_join(PREVIOUS), had_previous)
+	var data := not data_saved or _restore_data(plugin_id, op_dir.path_join(PREVIOUS_DATA), had_data)
 	var record := restore_record(db, plugin_id, previous_def)
-	return {"files_restored": files, "db_restored": record,
-		"kept_at": "" if files else op_dir.path_join(PREVIOUS)}
+	return {"files_restored": files, "data_saved": data_saved, "data_restored": data,
+		"db_restored": record, "kept_at": "" if files and data else op_dir}
 
 
 ## Put back the DB record `before` (a PluginDefinition, its dictionary, or
@@ -304,6 +332,8 @@ static func _recover(dir: String, record, db) -> Dictionary:
 	var final_abs := ProjectSettings.globalize_path("user://plugins").path_join(record.id)
 	if not _restore_files(final_abs, backup, record.had_previous):
 		return {"dir": dir, "id": record.id, "reason": "could not move the previous version of '%s' back from %s" % [record.id, backup]}
+	if record.get("data_saved", false) and not _restore_data(record.id, dir.path_join(PREVIOUS_DATA), record.get("had_data", false)):
+		return {"dir": dir, "id": record.id, "reason": "restored the files of '%s' but could not move its saved data back from %s" % [record.id, dir.path_join(PREVIOUS_DATA)]}
 	if not restore_record(db, record.id, record.db_before):
 		return {"dir": dir, "id": record.id, "reason": "restored the files of '%s' but could not save its previous DB record" % record.id}
 	return {}
@@ -317,7 +347,8 @@ static func _validate(record) -> String:
 	if record.get("format") != 1 or not record.get("phase") in [PHASE_STAGED, PHASE_REPLACING, PHASE_COMMITTED]:
 		return "of an unknown format or phase"
 	if not record.get("id") is String or not record.get("had_previous") is bool \
-			or not record.get("removing", false) is bool:
+			or not record.get("removing", false) is bool or not record.get("data_saved", false) is bool \
+			or not record.get("had_data", false) is bool:
 		return "incomplete"
 	var id: String = record.id
 	if record.phase == PHASE_STAGED and id.is_empty():
@@ -340,6 +371,48 @@ static func _restore_files(final_abs: String, previous_abs: String, previous_exi
 	if not previous_exists:
 		return not DirAccess.dir_exists_absolute(final_abs)
 	return DirAccess.rename_absolute(previous_abs, final_abs) == OK
+
+
+## The data directory of `id` again holds what was saved at `saved_abs`
+## (nothing, when it had none). Returns whether it does.
+static func _restore_data(id: String, saved_abs: String, saved_existed: bool) -> bool:
+	var data_abs := data_directory(id)
+	if saved_existed and not DirAccess.dir_exists_absolute(saved_abs):
+		return DirAccess.dir_exists_absolute(data_abs)  # moved back by an earlier pass
+	_remove_tree(data_abs)
+	if not saved_existed:
+		return not DirAccess.dir_exists_absolute(data_abs)
+	return DirAccess.rename_absolute(saved_abs, data_abs) == OK
+
+
+## Where plugin `id` keeps its data (PluginManager creates it on install).
+static func data_directory(id: String) -> String:
+	return ProjectSettings.globalize_path("user://plugins/data").path_join(id)
+
+
+## Copy the tree at `from_abs` to `to_abs`: directories, hidden files, file
+## modes, and symlinks as links (never followed). Returns false on any error.
+static func _copy_tree(from_abs: String, to_abs: String) -> bool:
+	var src := DirAccess.open(from_abs)
+	if src == null or DirAccess.make_dir_recursive_absolute(to_abs) != OK:
+		return false
+	src.include_hidden = true
+	for name in src.get_directories() + src.get_files():
+		var from := from_abs.path_join(name)
+		var to := to_abs.path_join(name)
+		if src.is_link(name):
+			if src.create_link(src.read_link(name), to) != OK:
+				return false
+		elif src.dir_exists(name):
+			if not _copy_tree(from, to):
+				return false
+		else:
+			if DirAccess.copy_absolute(from, to) != OK:
+				return false
+			var mode := FileAccess.get_unix_permissions(from)
+			if mode != 0:
+				FileAccess.set_unix_permissions(to, mode)
+	return true
 
 
 ## Take this process's owner lock once; it is released only when the process

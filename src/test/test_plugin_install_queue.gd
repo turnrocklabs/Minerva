@@ -18,7 +18,8 @@ extends SceneTree
 ##     version is installed and started a retry reports that version as
 ##     already running;
 ##   - reinstalling a running plugin stops it before its files are replaced
-##     and ends Ready with it running again;
+##     and ends Ready with it running again; an upgrade that fails to start
+##     is rolled back to the running copy, its data included;
 ##   - minerva_plugin_marketplace_install (the real MCP handler) attaches to
 ##     a dialog's queued install, returns its result, and does not change the
 ##     confirmation choice the dialog's request was made with;
@@ -76,6 +77,7 @@ func _init() -> void:
 		and _pack(CRASHES, 0, PROBE, {"version": "1.0.1"}, "crashes_fixed") \
 		and _pack(READY, 0, PROBE, {"version": "1.0.1", "ui": {"panels": ["not-a-panel"], "ipc_messages": []}},
 			"ready_unregistrable") \
+		and _pack(READY, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}, {"version": "1.0.1"}, "ready_crashes") \
 		and await _h.start_http_server(_temp, port)
 	if ready:
 		# ~3 s per download of the slow archive.
@@ -92,6 +94,7 @@ func _init() -> void:
 	await _test_cancel_refused_during_registration()
 	await _test_start_outcomes_and_retry(port)
 	await _test_running_plugin_is_restarted_on_update(port)
+	await _test_failed_upgrade_rolls_back_to_the_running_copy(port)
 	await _test_start_cancel_and_failed_restart(port)
 	await _test_mcp_attach_keeps_the_first_requests_choices()
 	await _test_url_install_absorbs_or_refuses_queued_duplicates()
@@ -195,6 +198,34 @@ func _test_start_outcomes_and_retry(port: int) -> void:
 	_check(failed.outcome == Job.OUTCOME_READY and failed.result.get("version") == "1.0.1" and "already running" in failed.message,
 		"a retry reports the version installed now, already running: %s" % [failed.summary()])
 	_pm.stop_plugin(CRASHES)
+
+
+## An upgrade of a running plugin is started before it commits. A new
+## version that exits before its handshake is rolled back: the previous
+## version is installed and running again, and what its start did to the
+## plugin's data (written here when the start stage begins, standing in for
+## a migration) is undone.
+func _test_failed_upgrade_rolls_back_to_the_running_copy(port: int) -> void:
+	var queue = _pm.install_queue
+	_pm.start_plugin(READY)
+	await _until(func() -> bool: return _pm.get_db().get_by_id(READY).state == _pm.S_RUNNING)
+	var data := ProjectSettings.globalize_path("user://plugins/data").path_join(READY)
+	DirAccess.make_dir_recursive_absolute(data)
+	_write_text(data.path_join("state.txt"), "before")
+	var job = queue.request_url("http://127.0.0.1:%d/ready_crashes.tar.gz" % port)
+	job.op.stage_changed.connect(func(stage: String) -> void:
+		if stage == "start":
+			_write_text(data.path_join("state.txt"), "migrated")
+			_write_text(data.path_join("added.txt"), "new"))
+	await _done(job)
+	var def = _pm.get_db().get_by_id(READY)
+	_check(job.stopped_for_replace and job.outcome == Job.OUTCOME_FAILED and "did not start" in job.message \
+		and def.version == "1.0.0" and def.state == _pm.S_RUNNING,
+		"a new version that fails to start leaves the previous one installed and running: %s" % [job.summary()])
+	_check(FileAccess.get_file_as_string(data.path_join("state.txt")) == "before" \
+		and not FileAccess.file_exists(data.path_join("added.txt")),
+		"and the data its start changed is put back")
+	_pm.stop_plugin(READY)
 
 
 ## Cancel while the plugin starts, and a rollback whose restart of the old
@@ -416,6 +447,12 @@ func _pack(id: String, payload_bytes: int,
 		f.store_buffer(Crypto.new().generate_random_bytes(payload_bytes))
 		f.close()
 	return _h.pack_plugin_dir(dir, dir.get_base_dir().path_join(archive + ".tar.gz"))
+
+
+func _write_text(path: String, text: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(text)
+	f.close()
 
 
 func _check(ok: bool, what: String) -> void:

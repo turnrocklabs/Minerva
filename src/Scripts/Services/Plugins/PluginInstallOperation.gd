@@ -6,8 +6,9 @@ extends RefCounted
 ## MarketplaceClient.install_from_url; otherwise the client makes its own.
 ## `done`/`total` count the current stage's units (bytes while downloading
 ## and verifying); `total` is -1 while the size is unknown (extracting).
-## Cancellation is honored until registration begins; from then on the
-## install commits or rolls back. STAGE_REGISTER is entered immediately
+## Cancellation is honored until registration begins, and again while an
+## upgrade is starting (which rolls it back); otherwise from registration on
+## the install commits or rolls back. STAGE_REGISTER is entered immediately
 ## before the installed files are replaced, after every user decision. Main-thread only; a worker
 ## thread may read `cancelled`.
 
@@ -25,7 +26,9 @@ const STAGE_CONFIRM := "confirm"
 ## Waiting for another Minerva process to finish replacing a plugin.
 const STAGE_WAIT := "wait"
 const STAGE_REGISTER := "register"
-## Entered by PluginInstallQueue after a successful install that should run.
+## Starting the plugin: an upgrade of a running plugin is started by the
+## install before it commits (a failure rolls it back); any other install
+## that is to run is started by PluginInstallQueue after it commits.
 const STAGE_START := "start"
 
 var stage := ""
@@ -36,6 +39,9 @@ var cancelled := false
 var plugin_id := ""
 ## Absolute path of this operation's directory under the staging root.
 var staging_dir := ""
+## Set by the caller that stopped the running plugin for the replacement, so
+## the new version is started (and must start) before the install commits.
+var start_after_install := false
 
 
 func cancel() -> void:

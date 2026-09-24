@@ -14,14 +14,18 @@ extends Node
 ##
 ## A plugin that is running when its install reaches registration is
 ## stopped just before its files are replaced, then started again: on the
-## new version, or on the restored old one if the install fails. After a
-## successful install the plugin is started when that is expected (it was
-## running, or it autostarts), and the job is Ready only once start_plugin
-## has completed its handshake.
+## new version, or on the restored old one if the install fails. The new
+## version of a plugin that was running is started inside the install,
+## before it commits, so one that fails to start is rolled back to the
+## working copy and its data (MarketplaceClient). Any other install is
+## started after it commits when that is expected (it autostarts, or was
+## stopped for a replacement that had no previous files). Either way
+## the job is Ready only once start_plugin has completed its handshake.
 ##
 ## Cancelling takes effect while queued, before registration, and while
-## starting. Registration cannot be interrupted (it completes or rolls
-## back), so cancel() refuses it and the job's outcome says what happened.
+## starting (an upgrade cancelled while starting is rolled back).
+## Registration cannot be interrupted (it completes or rolls back), so
+## cancel() refuses it and the job's outcome says what happened.
 
 signal job_changed(job: Job)
 
@@ -93,7 +97,10 @@ func cancel(job: Job) -> bool:
 		Operation.STAGE_REGISTER:
 			return false
 		Operation.STAGE_START:
+			# An upgrade starting inside the install sees op.cancelled and rolls
+			# back; a first install's start (the queue's) sees start_cancelled.
 			job.start_cancelled = true
+			job.op.cancel()
 			manager.stop_plugin(job.plugin_id())
 		_:
 			job.op.cancel()
@@ -202,15 +209,21 @@ func _run(job: Job) -> void:
 	if not r.get("ok", false):
 		var message := MarketplaceClient.format_install_error(r)
 		var rollback: Dictionary = r.get("rollback", {})
-		var restored: bool = rollback.is_empty() or (rollback.files_restored and rollback.db_restored)
-		if job.stopped_for_replace and (rollback.is_empty() or rollback.files_restored):
-			var restarted: Dictionary = await manager.start_plugin(job.plugin_id())  # the old files are back
+		var restored: bool = rollback.is_empty() or MarketplaceClient.rollback_complete(rollback)
+		# The old copy restarts only on its own files and data; with either still
+		# in staging it waits for the next start's recovery.
+		if job.stopped_for_replace and (rollback.is_empty() \
+				or (rollback.files_restored and rollback.get("data_restored", true))):
+			var restarted: Dictionary = await manager.start_plugin(job.plugin_id())
 			if restarted.has("error"):
 				message += "\n\nThe previous version is installed but did not restart: %s" % restarted.error
 		var outcome := Job.OUTCOME_FAILED if restored else Job.OUTCOME_RECOVERY_NEEDED
 		if str(r.get("error", "")) == "cancelled":
 			outcome = Job.OUTCOME_CANCELLED
 		_finish(job, outcome, message)
+		return
+	if r.get("started", false):
+		_finish(job, Job.OUTCOME_READY, "")  # the upgrade was started before it committed
 		return
 	var registered: Dictionary = r.get("manager_result", {})
 	if registered.get("needs_binary", false):
@@ -281,6 +294,7 @@ func _on_stage(stage: String, job: Job) -> void:
 		if def != null and def.state in [manager.S_RUNNING, manager.S_STARTING]:
 			manager.stop_plugin(def.id)
 			job.stopped_for_replace = true
+			job.op.start_after_install = true
 	_changed(job)
 
 
