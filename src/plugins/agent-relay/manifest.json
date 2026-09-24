@@ -1,12 +1,12 @@
 {
   "id": "agent_relay",
   "name": "Agent Relay",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "host_api_version": "1",
   "release_targets": [
     "linux-x86_64",
-    "linux-arm64",
-    "macos-universal",
+    "macos-arm64",
+    "macos-amd64",
     "windows-x86_64"
   ],
   "backend": {

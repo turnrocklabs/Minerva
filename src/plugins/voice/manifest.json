@@ -1,0 +1,97 @@
+{
+  "id": "voice",
+  "name": "Voice Support",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "release_targets": [
+    "linux-x86_64",
+    "macos-arm64",
+    "macos-amd64",
+    "windows-x86_64"
+  ],
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "./bin/python3",
+    "args": [
+      "-B",
+      "-I",
+      "-m",
+      "minerva_voice_worker"
+    ]
+  },
+  "tools": [
+    {
+      "name": "minerva_voice_start",
+      "description": "Load the detector and open an authenticated local audio session.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "minerva_voice_status",
+      "description": "Return detector readiness and local audio endpoint metadata.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "minerva_voice_reset",
+      "description": "Clear detector state for a new utterance.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "minerva_voice_stop",
+      "description": "Close the audio endpoint and release detector state.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "minerva_voice_configure",
+      "description": "Set wake-word and silence thresholds.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "wake_word_threshold": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "vad_silence_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 30000
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [],
+    "network": {
+      "mode": "localhost"
+    }
+  },
+  "autostart": false,
+  "auto_reload": false
+}

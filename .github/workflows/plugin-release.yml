@@ -1,0 +1,140 @@
+name: Plugin Release
+
+# Builds the plugins Minerva requires (agent_relay, voice) from this
+# repository and publishes each as its own GitHub release, independent of app
+# builds. Pushing a tag "<id>-v<version>" (the version in that plugin's
+# manifest.json) builds every target and publishes the release Minerva's
+# installer picks up; a push to development that touches a plugin builds and
+# packages it without publishing.
+
+on:
+  push:
+    tags:
+      - 'agent_relay-v*'
+      - 'voice-v*'
+    branches:
+      - development
+    paths:
+      - 'src/plugins/agent-relay/**'
+      - 'src/plugins/voice/**'
+      - 'src/Containers/voice-gateway/app/minerva_wakeword.onnx*'
+      - 'scripts/build-extensions.sh'
+      - 'scripts/build-extensions.ps1'
+      - 'scripts/package-plugin-release.py'
+      - '.github/workflows/plugin-release.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  agent-relay:
+    name: Agent Relay (${{ matrix.target }})
+    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'agent_relay-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-latest }
+          - { target: windows-x86_64, runner: windows-latest }
+          - { target: macos-arm64, runner: macos-15 }
+          - { target: macos-amd64, runner: macos-15-intel }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and exercise the worker
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = Windows ]; then
+            powershell -ExecutionPolicy Bypass -File scripts/build-extensions.ps1 -AgentRelayOnly
+          else
+            scripts/build-extensions.sh --agent-relay-only
+          fi
+      - name: Package the release archive
+        shell: bash
+        run: |
+          version=""
+          if [ "${{ github.ref_type }}" = tag ]; then version="--version=${GITHUB_REF_NAME#agent_relay-v}"; fi
+          python scripts/package-plugin-release.py $version \
+            --manifest src/plugins/agent-relay/manifest.json \
+            --stage "src/plugins/agent-relay/runtime-build/stage/${{ matrix.target }}" \
+            --target "${{ matrix.target }}" --out plugin-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release-agent_relay-${{ matrix.target }}
+          path: plugin-release/*
+          if-no-files-found: error
+
+  voice:
+    name: Voice Support (${{ matrix.target }})
+    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'voice-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-latest, python: ./bin/python3 }
+          - { target: windows-x86_64, runner: windows-latest, python: ./python.exe }
+          - { target: macos-arm64, runner: macos-15, python: ./bin/python3 }
+          - { target: macos-amd64, runner: macos-15-intel, python: ./bin/python3 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build the runtime
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = Windows ]; then
+            powershell -ExecutionPolicy Bypass -File scripts/build-extensions.ps1 -VoiceOnly
+          else
+            scripts/build-extensions.sh --voice-only
+          fi
+      - name: Test the runtime
+        shell: bash
+        run: src/plugins/voice/scripts/test-runtime.sh "${{ matrix.target }}"
+      - name: Package the release archive
+        shell: bash
+        run: |
+          version=""
+          if [ "${{ github.ref_type }}" = tag ]; then version="--version=${GITHUB_REF_NAME#voice-v}"; fi
+          python scripts/package-plugin-release.py $version \
+            --manifest src/plugins/voice/manifest.json \
+            --stage "src/plugins/voice/runtime-build/stage/${{ matrix.target }}" \
+            --target "${{ matrix.target }}" --entrypoint "${{ matrix.python }}" --out plugin-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release-voice-${{ matrix.target }}
+          path: plugin-release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish ${{ github.ref_name }}
+    needs: [agent-relay, voice]
+    # A tag builds only its own plugin; the other job is skipped, not failed.
+    if: >-
+      always() && github.ref_type == 'tag'
+      && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-release-*
+          path: plugin-release
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          plugin="${GITHUB_REF_NAME%-v*}"
+          ls plugin-release/"$plugin"-* >/dev/null
+          # --latest=false: the repository's Latest release stays the app's.
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --latest=false \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Minerva's $plugin plugin. Minerva installs it from this release; the archives are not meant to be unpacked by hand." \
+            plugin-release/"$plugin"-*
