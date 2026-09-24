@@ -66,6 +66,20 @@ var args: Array[String] = []
 ## Working directory for the process. Empty = plugin's own directory.
 var working_dir: String = ""
 
+## The one private panel channel the host speaks with a backend (see
+## PluginPanelAuthority.gd), exactly as a manifest's "panel_authority" must
+## declare it. It names where the host hands the backend its per-launch
+## secret; it never holds one.
+const PANEL_AUTHORITY_V1 := {
+	"protocol": "docket_panel_v1",
+	"method_prefix": "docket/panel/",
+	"secret_env": "DOCKET_PANEL_SECRET",
+}
+## PANEL_AUTHORITY_V1 when the manifest declares it, else {}.
+var panel_authority: Dictionary = {}
+# The manifest's "panel_authority" as given, when present, for validate().
+var _panel_authority_given: Variant = null
+
 # ---------------------------------------------------------------------------
 # UI / IPC configuration
 # ---------------------------------------------------------------------------
@@ -403,6 +417,8 @@ func to_dict() -> Dictionary:
 		"auto_reload": auto_reload,
 		"auto_update": auto_update,
 	}
+	if not panel_authority.is_empty():
+		result["panel_authority"] = panel_authority.duplicate()
 	if not skills.is_empty():
 		result["skills"] = skills.duplicate(true)
 	if not knowledge.is_empty():
@@ -564,6 +580,12 @@ func validate() -> Array[String]:
 
 	if not _knowledge_dropped.is_empty():
 		errors.append(_knowledge_dropped)
+
+	if _panel_authority_given != null:
+		if panel_authority.is_empty():
+			errors.append("'panel_authority' must be exactly %s" % JSON.stringify(PANEL_AUTHORITY_V1))
+		elif not ui_panels.any(func(panel: Dictionary) -> bool: return panel.get("kind", "") == "godot_scene"):
+			errors.append("'panel_authority' needs a godot_scene panel to serve")
 	if not id.is_empty():
 		errors.append_array(PluginKnowledgeSeeder.validate_manifest(knowledge, knowledge_project, id,
 			skills.map(func(skill) -> String: return str(skill.get("id", "")))))
@@ -752,6 +774,10 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	def.working_dir = backend.get("working_dir", "")
 	for arg in backend.get("args", []):
 		def.args.append(str(arg))
+	if data.has("panel_authority"):
+		def._panel_authority_given = data.panel_authority
+		if data.panel_authority is Dictionary and data.panel_authority == PANEL_AUTHORITY_V1:
+			def.panel_authority = PANEL_AUTHORITY_V1.duplicate()
 
 	# UI
 	var ui: Dictionary = data.get("ui", {})
