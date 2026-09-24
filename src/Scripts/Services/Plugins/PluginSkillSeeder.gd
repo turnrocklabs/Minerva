@@ -266,10 +266,12 @@ static func plan_reconcile(def, available_tools: Dictionary, docket_caller) -> D
 		var existing_hash := str(existing.get("pristine_hash", ""))
 		var record_id := str(existing.get("id", ""))
 		if existing_hash == new_hash:
+			# A skill this manifest ships again is un-deprecated, its text kept.
 			actions.append({
 				"action": RECONCILE_NO_CHANGE,
 				"skill": skill,
 				"record_id": record_id,
+				"revive": bool(existing.get("deprecated", false)),
 			})
 			continue
 
@@ -344,6 +346,9 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 		match action:
 			RECONCILE_NO_CHANGE:
 				unchanged += 1
+				if entry.get("revive", false) and not _ok(docket_caller.call_tool("docket_update",
+						{"id": str(entry.get("record_id", "")), "deprecated": false})):
+					failed += 1
 			RECONCILE_SEED:
 				# Defer to materialize-style create.
 				var unsatisfied = entry.get("unsatisfied", [])
@@ -372,6 +377,7 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 					var decline_result = docket_caller.call_tool("docket_update", {
 						"id": str(entry.get("record_id", "")),
 						"pristine_content": (skill as Dictionary).duplicate(true),
+						"deprecated": false,
 					})
 					if decline_result is Dictionary and not decline_result.has("error"):
 						prompted_declined += 1
@@ -429,10 +435,15 @@ static func _apply_overwrite(action_entry: Dictionary, docket_caller) -> bool:
 		"pristine_hash": PluginSkillRecordScript.compute_hash(skill),
 		"pristine_content": skill.duplicate(true),
 		"unsatisfied_deps": unsatisfied.duplicate(),
+		"deprecated": false,
 		# Caller passes customised=true unchanged in the prompted-accept case;
 		# reconciler doesn't touch the customised flag here.
 	})
 	return update_result is Dictionary and not update_result.has("error")
+
+
+static func _ok(result) -> bool:
+	return result is Dictionary and not result.has("error")
 
 
 ## Best-effort plugin-id recovery for SEED actions inside apply_reconcile.

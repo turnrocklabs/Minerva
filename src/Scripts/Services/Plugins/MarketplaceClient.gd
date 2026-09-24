@@ -311,6 +311,9 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	var entered: Dictionary = await txn.enter(ProjectSettings.globalize_path(STAGING_DIR), db, op, get_tree())
 	if not entered.is_empty():
 		return entered
+	# Entering may have undone other installs; their Docket content follows.
+	if installer != null and installer.has_method("reconcile_recovered"):
+		await installer.reconcile_recovered()
 	# Read under the lock: entering may have just recovered this record.
 	var previous_def = db.get_by_id(plugin_id) if db != null else null
 	# An unattended update stands only while the plugin still wants it, judged
@@ -356,11 +359,12 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 			_chmod_executable(entrypoint_abs)
 
 	# --- 6. Register; commit only once the DB is saved ---
+	consent["journal_dir"] = op.staging_dir
 	var registered := await _register(plugin_id, "%s/manifest.json" % final_dir, installer, auto_confirm_skills, consent)
 	if registered.get("ok", false) and db != null and not db.save():
 		registered = _err("register_not_saved", {"id": plugin_id})
 	if not registered.get("ok", false):
-		return _failed_replace(registered, txn, final_abs, db, previous_def)
+		return await _failed_after_register(registered, txn, final_abs, db, previous_def, installer, plugin_id)
 	# --- 7. An upgrade of a plugin that was running starts BEFORE it
 	# commits (its data was saved in step 5): a new version that fails to
 	# start, or is cancelled while starting, goes back to the working copy's
@@ -370,7 +374,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if verify_start:
 		var started := await _start_before_commit(installer, plugin_id, op)
 		if not started.get("ok", false):
-			return _failed_replace(started, txn, final_abs, db, previous_def)
+			return await _failed_after_register(started, txn, final_abs, db, previous_def, installer, plugin_id)
 		registered["started"] = true
 	# An update of a plugin the user had stopped is not started to test it.
 	# Its working copy is kept (pending_first_start) until the new version's
@@ -386,7 +390,10 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if not txn.publish(phase):
 		if registered.started:
 			installer.stop_plugin(plugin_id)  # it runs on the files being rolled back
-		return _failed_replace(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db, previous_def)
+		return await _failed_after_register(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db,
+			previous_def, installer, plugin_id)
+	if not awaits_first_start and installer != null and installer.has_method("content_committed"):
+		installer.content_committed(op.staging_dir, plugin_id)
 	registered["awaits_first_start"] = awaits_first_start
 	if not awaits_first_start:
 		_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
@@ -417,6 +424,25 @@ static func rollback_complete(rollback: Dictionary) -> bool:
 ## `failure` plus what rolling the replacement back restored.
 func _failed_replace(failure: Dictionary, txn, final_abs: String, db, previous_def) -> Dictionary:
 	failure["rollback"] = txn.roll_back(final_abs, db, previous_def)
+	return failure
+
+
+## _failed_replace once registration may have seeded the new version's skills
+## and knowledge: after the rollback, that Docket content is queued for repair
+## and `installer` (a PluginManager) puts it back in line with what is
+## installed again (a repair that does not finish is retried later).
+func _failed_after_register(failure: Dictionary, txn, final_abs: String, db, previous_def, installer,
+		plugin_id: String) -> Dictionary:
+	var attempted = db.get_by_id(plugin_id) if db != null else null
+	var registered_new: bool = attempted != null and attempted != previous_def
+	_failed_replace(failure, txn, final_abs, db, previous_def)
+	if registered_new and failure.rollback.db_restored and installer != null \
+			and installer.has_method("reconcile_recovered"):
+		if PluginInstallTransaction.queue_content(ProjectSettings.globalize_path(STAGING_DIR), txn.op_dir,
+				plugin_id).is_empty():
+			push_error("[MarketplaceClient] '%s' was rolled back, but the repair of its skills and knowledge could not be queued" % plugin_id)
+		else:
+			await installer.reconcile_recovered()
 	return failure
 
 
@@ -496,7 +522,8 @@ static func _installer_db(installer):
 
 ## Run once at startup, before this process begins any install: undoes
 ## every install another (exited) process left half-done. Returns the
-## operations that need a person ({dir, id, reason}).
+## operations that need a person ({dir, id, reason}); what it rolled back is
+## queued for Docket repair (PluginInstallTransaction.content_pending).
 static func sweep_staging(db) -> Array:
 	return PluginInstallTransaction.sweep(ProjectSettings.globalize_path(STAGING_DIR), db)
 

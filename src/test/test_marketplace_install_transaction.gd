@@ -312,6 +312,15 @@ func _test_recovery_after_a_crash() -> void:
 		and not "op_dead-4_1" in left and not "extract_123" in left
 		and not FileAccess.file_exists(staging.path_join("dl_123.tar.gz")), "recovered and legacy staging is gone: %s" % [left])
 	_check("op_%s_99" % load(TXN_GD)._session in left and "op_live-1_1" in left, "live operations are left alone")
+	# Each recovered operation is queued for its Docket content to follow:
+	# undone replacements to be reconciled, the committed one to be kept.
+	var queued := {}
+	for entry in load(TXN_GD).content_pending(staging):
+		queued[entry.path.get_file()] = [entry.id, entry.committed]
+		load(TXN_GD).content_done(entry.path)
+	_check(queued == {"op_dead-1_1.json": [ID, false], "op_dead-2_1.json": [ID, false],
+		"op_dead-3_1.json": [FRESH_ID, false], "op_dead-4_1.json": [ID, true]},
+		"every recovered operation is queued for its skills and knowledge, committed or undone: %s" % [queued])
 	_check(left.filter(func(n: String) -> bool: return n.begins_with("op_dead-bad")).size() == 4 and problems.size() == 4,
 		"every backup with an untrustworthy record is kept and reported: %s" % [problems])
 	# A person acts on those reports; until then they would hold back installs of ID.

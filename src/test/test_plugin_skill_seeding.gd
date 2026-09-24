@@ -19,7 +19,13 @@ extends SceneTree
 ## deprecated, uninstall keeping only what a person changed, and a project
 ## that is not loaded left untouched. PluginSkillConsent asks one seed
 ## question for a plugin that ships only knowledge, and keys an update's
-## decision about a customised record by its manifest key.
+## decision about a customised record by its manifest key. When an update the
+## person accepted over their customised text is rolled back,
+## PluginContentSeeding puts their text back; when an update that moved the
+## knowledge to another project is rolled back (from its journal, as crash
+## recovery does), the original record, same id, is live again in its
+## original project; once such a move commits, the person's record left in
+## the old project becomes theirs, live.
 ##
 ## Hits every component: PluginDefinition (T1), PluginSkillRecord (T2),
 ## PluginSkillSeeder.materialize (T3), reconcile plan + apply (T4), unseed (T6),
@@ -50,6 +56,24 @@ class InstalledDB extends RefCounted:
 		return PluginDefinition.new(plugin_id) if plugin_id == _id else null
 
 
+## A PluginManager as PluginContentSeeding sees it after a rollback: a plugin
+## DB holding the restored definition.
+class RolledBackManager extends RefCounted:
+	var restored: PluginDefinition
+
+	func _init(p_restored: PluginDefinition) -> void:
+		restored = p_restored
+
+	func get_db():
+		return self
+
+	func get_by_id(_id: String) -> PluginDefinition:
+		return restored
+
+	func get_all() -> Array:
+		return [restored]
+
+
 class FailingUpdateDocket extends RefCounted:
 	var inner
 
@@ -74,6 +98,7 @@ func _init() -> void:
 	await test_repair_keeps_customised_skills()
 	test_knowledge_lifecycle()
 	await test_knowledge_consent()
+	await test_rollback_restores_content()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -256,6 +281,13 @@ func test_full_lifecycle() -> void:
 	check("record still exists (deprecated, not deleted)",
 		not after_deprecate.is_empty())
 	check("deprecated flag is true", after_deprecate.get("deprecated") == true)
+	# Shipped again unchanged (as after a rolled-back update): revived, text kept.
+	PluginSkillSeederScript.apply_reconcile(PluginSkillSeederScript.plan_reconcile(def_v3, {}, registry), {}, registry)
+	var revived := PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	check("a deprecated skill shipped again is revived with its text kept",
+		revived.get("deprecated") == false and str(revived.get("steps", "")) == str(after_deprecate.get("steps", "")))
+	PluginSkillSeederScript.apply_reconcile(plan_v4, {}, registry)
 
 	# ---- Phase 6: uninstall ----
 	print("  -- phase 6: uninstall --")
@@ -452,4 +484,84 @@ func test_knowledge_consent() -> void:
 		root, InstalledDB.new("notes_demo"), {}, registry, manifest_path, true, op)
 	check("a repair keeps the customised kb without asking",
 		repair.get("update_decisions", {}) == {"minerva_notes_demo_wiring": false})
+	ctx.db.close()
+
+
+func test_rollback_restores_content() -> void:
+	print("test_rollback_restores_content")
+	var ctx := _new_docket()
+	var notes_db := DocketDB.create_new(_tmp_dir.path_join("t8_notes_%d.db" % randi()))
+	var registry = ctx.registry
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	registry.init(JSON.parse_string(sf.get_as_text()), ctx.db, {"master": ctx.db, "notes": notes_db})
+	sf.close()
+	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
+	var Seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
+	var Txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+	Seeding.docket_override = registry
+
+	var v1 := _knowledge_def("master", [_kb("Red to red.")])
+	Knowledge.apply(Knowledge.plan(v1, registry), {}, registry)
+	var found: Dictionary = registry.call_tool("docket_query", {"filter": {"type": "kb", "key": "minerva_notes_demo_wiring"}})
+	var original_id: String = found.items[0].id
+	registry.call_tool("docket_update", {"id": original_id, "article": "MY NOTES"})
+
+	# The person accepts v2 over their text; v2 then fails and is rolled back.
+	var op_dir := _tmp_dir.path_join("op_rollback")
+	DirAccess.make_dir_recursive_absolute(op_dir)
+	var v2 := _knowledge_def("master", [_kb("Red to red, always.")])
+	await Seeding.reconcile(RolledBackManager.new(v2), v1, v2, {"collected": true,
+		"update_decisions": {"minerva_notes_demo_wiring": true}, "journal_dir": op_dir}, false)
+	check("the accepted update overwrote the person's text, saving it first",
+		registry.call_tool("docket_get", {"id": original_id}).get("article") == "Red to red, always."
+		and Txn.docket_journal(op_dir).get("entries", []).size() == 1)
+	# Beside it, a journaled record the person has since deleted, and one in a
+	# project that is not loaded.
+	var rollback_journal: Dictionary = Txn.docket_journal(op_dir)
+	var unloaded := {"id": "unloaded-record", "fields": {"article": "THEIRS"}, "project": "archive"}
+	rollback_journal.entries.append({"id": "deleted-record", "fields": {"article": "GONE"}, "project": "master"})
+	rollback_journal.entries.append(unloaded)
+	var put_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1), v2,
+		rollback_journal)
+	var restored: Dictionary = registry.call_tool("docket_get", {"id": original_id})
+	check("after the rollback the person's text is back, and it still counts as customised",
+		put_back.get("customised_put_back") == 1 and restored.get("article") == "MY NOTES"
+		and Knowledge.content_hash(restored) != str(restored.get("pristine_hash", "")))
+	check("only the unloaded project's record is left to put back; a deleted one is done",
+		put_back.get("journal_left") == [unloaded] and not Seeding.complete(put_back))
+
+	# An update that moves the knowledge to another project, then rolled back
+	# as crash recovery does: from the definition its journal saved.
+	var move_dir := _tmp_dir.path_join("op_move")
+	DirAccess.make_dir_recursive_absolute(move_dir)
+	var v3 := _knowledge_def("notes", [_kb("Red to red.")])
+	await Seeding.reconcile(RolledBackManager.new(v3), v1, v3,
+		{"collected": true, "update_decisions": {}, "journal_dir": move_dir}, false)
+	check("moving the knowledge retires the original record rather than deleting it",
+		registry.call_tool("docket_get", {"id": original_id}).get("deprecated") == true)
+	var journal: Dictionary = Txn.docket_journal(move_dir)
+	var moved_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
+		PluginDefinition.from_dict(journal.attempted), journal)
+	var revived: Dictionary = registry.call_tool("docket_get", {"id": original_id})
+	var in_notes: Dictionary = registry.call_tool("docket_query", {"project": "notes",
+		"filter": {"type": "kb", "key": "minerva_notes_demo_wiring"}})
+	check("after its rollback the original record, same id, is live again with the person's text",
+		moved_back.get("knowledge", {}).get("restored", 0) == 1
+		and revived.get("deprecated") == false and revived.get("article") == "MY NOTES")
+	check("the rolled-back version's copy in the other project is retired",
+		in_notes.get("items", []).size() == 1 and registry.call_tool("docket_get",
+			{"id": in_notes.items[0].id, "project": "notes"}).get("deprecated") == true)
+
+	# The same move, committed: the old project's customised record becomes
+	# the person's, live.
+	var commit_dir := _tmp_dir.path_join("op_commit")
+	DirAccess.make_dir_recursive_absolute(commit_dir)
+	await Seeding.reconcile(RolledBackManager.new(v3), v1, v3,
+		{"collected": true, "update_decisions": {}, "journal_dir": commit_dir}, false)
+	Seeding.content_committed(Txn.docket_journal(commit_dir))
+	var kept: Dictionary = registry.call_tool("docket_get", {"id": original_id})
+	check("once the move commits, the person's record in the old project is theirs and live",
+		kept.get("source") == "user" and kept.get("deprecated") == false and kept.get("article") == "MY NOTES")
+	Seeding.docket_override = null
+	notes_db.close()
 	ctx.db.close()

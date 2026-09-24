@@ -196,12 +196,44 @@ static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dic
 	return counts
 
 
-## At uninstall: delete `plugin_id`'s knowledge records nobody changed, and
-## hand customised ones to the user (source "user", provenance cleared).
-## Returns {deleted, kept}.
-static func unseed(plugin_id: String, project: String, docket_caller) -> Dictionary:
-	var result := {"deleted": 0, "kept": 0}
+## At uninstall: unseed `plugin_id`'s knowledge in every loaded project (a
+## moved project leaves retired records behind). Returns summed {deleted, kept,
+## failed}.
+static func unseed_everywhere(plugin_id: String, docket_caller) -> Dictionary:
+	var result := {"deleted": 0, "kept": 0, "failed": 0}
+	var listed = docket_caller.call_tool("docket_project_list", {}) if docket_caller != null else null
+	for project in (listed.get("projects", []) if listed is Dictionary else []):
+		var one := unseed(plugin_id, str(project.get("name", "")), docket_caller)
+		result.deleted += one.deleted
+		result.kept += one.kept
+		result.failed += one.failed
+	return result
+
+
+## When a plugin's knowledge moves to another project: mark its records in
+## `project` deprecated, keeping them and their ids (a rollback moves back
+## and revives them). Returns how many were retired.
+static func retire(plugin_id: String, project: String, docket_caller) -> int:
 	if docket_caller == null or not project_loaded(project, docket_caller):
+		return 0
+	var retired := 0
+	var records := _seeded_records(plugin_id, project, docket_caller)
+	for key in records:
+		if not bool(records[key].get("deprecated", false)) and _ok(docket_caller.call_tool("docket_update",
+				{"id": str(records[key].get("id", "")), "project": project, "deprecated": true})):
+			retired += 1
+	return retired
+
+
+## Delete `plugin_id`'s knowledge records in `project` that nobody changed,
+## and hand customised ones to the user, live (source "user", provenance
+## cleared, not deprecated, even one the plugin had dropped: the text is the
+## person's now). Returns {deleted, kept, failed}, and missing_project when
+## `project` is not loaded (nothing was done).
+static func unseed(plugin_id: String, project: String, docket_caller) -> Dictionary:
+	var result := {"deleted": 0, "kept": 0, "failed": 0}
+	if docket_caller == null or not project_loaded(project, docket_caller):
+		result["missing_project"] = true
 		return result
 	var records := _seeded_records(plugin_id, project, docket_caller)
 	for key in records:
@@ -210,9 +242,13 @@ static func unseed(plugin_id: String, project: String, docket_caller) -> Diction
 		if content_hash(record) == str(record.get("pristine_hash", "")):
 			if _ok(docket_caller.call_tool("docket_delete", {"id": id, "project": project})):
 				result.deleted += 1
+			else:
+				result.failed += 1
 		elif _ok(docket_caller.call_tool("docket_update", {"id": id, "project": project,
-				"source": Record.SOURCE_USER, "pristine_hash": "", "pristine_content": {}})):
+				"source": Record.SOURCE_USER, "pristine_hash": "", "pristine_content": {}, "deprecated": false})):
 			result.kept += 1
+		else:
+			result.failed += 1
 	return result
 
 

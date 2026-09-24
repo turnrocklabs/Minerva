@@ -62,7 +62,7 @@ const S_BUILD_FAILED := 7
 const S_NEEDS_BINARY := 8
 
 const SkillConsent := preload("res://Scripts/Services/Plugins/PluginSkillConsent.gd")
-const Knowledge := preload("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
+const Seeding := preload("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,8 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
 signal plugin_file_changed(id: String)
+## A reconcile_recovered drain finished.
+signal content_drained
 ## Emitted when live GDScript instances make an in-process update unsafe.
 signal plugin_restart_required(id: String, reason: String)
 
@@ -225,6 +227,9 @@ var install_queue: Node = null
 ## What the startup recovery of unfinished installs could not undo:
 ## [{dir, id, reason}] (PluginInstallTransaction.recover_all).
 var install_recovery_problems: Array = []
+## reconcile_recovered is running, and was called again meanwhile.
+var _draining := false
+var _drain_again := false
 
 
 # ---------------------------------------------------------------------------
@@ -349,56 +354,13 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 
 	# Skill and knowledge seeding (DCR 019df57b T3).
 	if not def.skills.is_empty() or not def.knowledge.is_empty():
-		var seed_result := await _seed_plugin_skills(def, auto_confirm_skills, consent)
-		result.merge(seed_result)
+		result.merge(await Seeding.seed_install(self, def, auto_confirm_skills, consent))
 
 	# Cross-plugin reactivity (DCR 019df57b T7).  This plugin's declared tools
 	# are now part of the "available" set; any pre-existing skill whose
 	# unsatisfied_deps included one of those tools should re-resolve.
-	var reactivity := _recompute_skill_reactivity()
-	if reactivity.get("updated", 0) > 0:
-		result["reactivity_updated"] = reactivity.get("updated", 0)
-		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
-		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
-
+	result.merge(Seeding.recompute_reactivity(self))
 	return result
-
-
-## Resolve tool_deps + (optionally) confirm with user + materialise skill and
-## knowledge records (one consent covers both). Internal helper for
-## install_plugin's seeding path.
-func _seed_plugin_skills(def, auto_confirm: bool, consent: Dictionary = {}) -> Dictionary:
-	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	var available_tools: Dictionary = _build_available_tools()
-	var docket_manager = _get_docket_manager()
-
-	var resolved: Array = SeederClass.resolve_deps(def, available_tools)
-
-	# Consent collected before the install began is final: nothing is asked
-	# now, and a question it did not cover counts as declined.
-	var accepted: bool = bool(consent.get("seed", false)) if consent.get("collected", false) else auto_confirm
-	if not auto_confirm and not consent.get("collected", false):
-		accepted = await SkillConsent.ask_seed(self, def, resolved)
-
-	if not accepted:
-		return {
-			"skills_seeded": 0,
-			"skills_skipped": 0,
-			"skills_deferred_to_update": 0,
-			"skills_declined": true,
-		}
-
-	var materialise_result: Dictionary = SeederClass.materialize(def.id, resolved, docket_manager)
-	var seeded := {
-		"skills_seeded": materialise_result.get("seeded", 0),
-		"skills_skipped": materialise_result.get("skipped", 0),
-		"skills_deferred_to_update": materialise_result.get("deferred_to_update", 0),
-	}
-	if not def.knowledge.is_empty():
-		var knowledge_plan: Dictionary = Knowledge.plan(def, docket_manager)
-		seeded["knowledge"] = Knowledge.apply(knowledge_plan, {}, docket_manager)
-		_note_missing_project(def, knowledge_plan, seeded)
-	return seeded
 
 
 ## Create plugin data directories. Called on successful install.
@@ -428,14 +390,10 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 	return {"ok": true}
 
 
-## Re-install (upgrade) an already-installed plugin from a new manifest version.
-##
-## DCR 019df57b T4: reconciles skill records against the new manifest:
-##   - new skills → seeded fresh
-##   - pristine record (customised=false) with content changed → silent overwrite
-##   - customised record with content changed → diff dialog (auto-confirm bypass
-##     available for headless/MCP flows via auto_confirm_updates=true)
-##   - record absent from new manifest → marked deprecated (NOT deleted)
+## Re-install (upgrade) an already-installed plugin from a new manifest version,
+## reconciling its skills and knowledge (PluginContentSeeding.reconcile; a
+## customised record asks, or takes auto_confirm_updates for headless/MCP
+## flows).
 ##
 ## Returns:
 ##   {"ok": true, "id": "...", "reconcile": {...counts...}, ...}
@@ -460,79 +418,74 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	_register_manifest_tools(def.id)
 
 	var result: Dictionary = {"ok": true, "id": def.id}
-
-	var docket_manager = _get_docket_manager()
-	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	var available_tools := _build_available_tools()
-
-	# Phase 1: classify each skill and knowledge action (no docket writes yet).
-	var plan: Dictionary = SeederClass.plan_reconcile(def, available_tools, docket_manager)
-	var has_knowledge: bool = not (def.knowledge.is_empty() and previous_def.knowledge.is_empty())
-	var knowledge_plan: Dictionary = Knowledge.plan(def, docket_manager) if has_knowledge else {}
-
-	# Phase 2: collect user decisions for prompt_required actions.
-	var decisions: Dictionary = await _update_decisions(def,
-		plan.get("actions", []) + knowledge_plan.get("actions", []), consent, auto_confirm_updates)
-
-	# An unattended update (consent.seed_new false) adds no skill or knowledge
-	# the user never saw; those wait for an update or reinstall made by hand.
-	if not consent.get("seed_new", true):
-		for p in [plan, knowledge_plan]:
-			p["actions"] = p.get("actions", []).filter(func(action) -> bool:
-				return str(action.get("action", "")) != SeederClass.RECONCILE_SEED)
-
-	# Phase 3: commit.
-	var reconcile_result: Dictionary = SeederClass.apply_reconcile(plan, decisions, docket_manager)
-	result["reconcile"] = reconcile_result
-	# Knowledge moved to another project: the old project's records are
-	# unseeded there (edited ones stay, as the user's) once the new project
-	# can take the knowledge, which an unattended update does not seed.
-	if previous_def.knowledge_project != def.knowledge_project and has_knowledge \
-			and not knowledge_plan.get("missing_project", false) and consent.get("seed_new", true):
-		result["knowledge_moved_from"] = Knowledge.unseed(def.id, previous_def.knowledge_project, docket_manager)
-	if has_knowledge:
-		result["knowledge"] = Knowledge.apply(knowledge_plan, decisions, docket_manager)
-		_note_missing_project(def, knowledge_plan, result)
-
-	# T7 reactivity — tool_deps may have shifted in silent updates / accepted prompts.
-	var reactivity := _recompute_skill_reactivity()
-	if reactivity.get("updated", 0) > 0:
-		result["reactivity_updated"] = reactivity.get("updated", 0)
-		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
-		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
-
+	result.merge(await Seeding.reconcile(self, previous_def, def, consent, auto_confirm_updates))
 	return result
 
 
-## Whether each customised skill or knowledge record among `actions` (from
-## plan_reconcile / PluginKnowledgeSeeder.plan) takes the update, keyed by its
-## manifest id: from consent collected before the install began (an item not
-## asked about then keeps its customisation), from auto_confirm, or by asking.
-func _update_decisions(def, actions: Array, consent: Dictionary, auto_confirm: bool) -> Dictionary:
-	var decisions := {}
-	for action in actions:
-		if str(action.get("action", "")) != PluginSkillSeeder.RECONCILE_PROMPT_REQUIRED:
-			continue
-		var item: Dictionary = action.get("entry", action.get("skill", {}))
-		var item_id := str(action.get("id", item.get("id", "")))
-		if consent.get("collected", false):
-			decisions[item_id] = bool(consent.get("update_decisions", {}).get(item_id, false))
-		else:
-			decisions[item_id] = auto_confirm or await SkillConsent.ask_update(self, def, action.get("existing", {}), item)
-	return decisions
+## Put the Docket content of `attempted_def`'s plugin back in line with what
+## is installed after its update was rolled back, restoring the customised
+## records in `journal` (PluginInstallTransaction.docket_journal).
+func reconcile_after_rollback(attempted_def, journal: Dictionary = {}) -> Dictionary:
+	if _db.has_plugin(attempted_def.id):
+		_register_manifest_tools(attempted_def.id)
+	return await Seeding.reconcile_after_rollback(self, attempted_def, journal)
 
 
-## Record in `result`, and log, that `def`'s knowledge project is not loaded.
-func _note_missing_project(def, knowledge_plan: Dictionary, result: Dictionary) -> void:
-	if knowledge_plan.get("missing_project", false):
-		result["knowledge_missing_project"] = def.knowledge_project
-		push_warning("[PluginManager] '%s' knowledge was not seeded: Docket project '%s' is not open" % [
-			def.id, def.knowledge_project])
+## Bring Docket in line with every install a recovery finished
+## (PluginInstallTransaction.content_pending): one that had committed keeps
+## its content (content_committed); one that was undone is reconciled with
+## the definition it had applied, as saved in its journal. Each is dequeued
+## once its repair completed; one that did not keeps only the journal entries
+## still to put back, so a retry never rewrites text put back before. Nothing
+## is done while Docket is not available; a call during a drain makes that
+## drain pass again and returns when it ends.
+func reconcile_recovered() -> void:
+	if Seeding.docket() == null:
+		return
+	if _draining:
+		_drain_again = true
+		await content_drained
+		return
+	_draining = true
+	var Txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+	_drain_again = true
+	while _drain_again:
+		_drain_again = false
+		for recovered in Txn.content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)):
+			var journal: Dictionary = recovered.journal
+			var attempted = PluginDefinition.from_dict(journal.attempted) if journal.get("attempted") is Dictionary \
+				else _db.get_by_id(recovered.id)
+			var done := true
+			if recovered.committed:
+				done = Seeding.content_committed(journal)
+			elif attempted != null:
+				var result: Dictionary = await reconcile_after_rollback(attempted, journal)
+				done = Seeding.complete(result)
+				journal["entries"] = result.get("journal_left", [])
+				if not done and not Txn.requeue_content(recovered.path, recovered.id, journal):
+					push_error("[PluginManager] '%s''s unfinished Docket repair could not be narrowed in %s; its next retry puts back all its saved text again" % [
+						recovered.id, recovered.path])
+			else:
+				done = Seeding.unseed(self, recovered.id).get("knowledge", {}).get("failed", 0) == 0
+			if done:
+				Txn.content_done(recovered.path)
+	_draining = false
+	content_drained.emit()
+
+
+## Plugin `plugin_id`'s install in `op_dir` committed, so its Docket changes
+## are final (PluginContentSeeding.content_committed); what does not finish
+## now is queued for reconcile_recovered to retry.
+func content_committed(op_dir: String, plugin_id: String) -> void:
+	var Txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+	if not Seeding.content_committed(Txn.docket_journal(op_dir)) and Txn.queue_content(
+			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), op_dir, plugin_id, true).is_empty():
+		push_error("[PluginManager] '%s''s retired knowledge could not be unseeded, nor queued for later" % plugin_id)
 
 
 ## See PluginSkillConsent.collect.
 func collect_skill_consent(manifest_path: String, auto_confirm: bool, op = null) -> Dictionary:
-	return await SkillConsent.collect(self, _db, _build_available_tools(), _get_docket_manager(),
+	return await SkillConsent.collect(self, _db, Seeding.available_tools(self), Seeding.docket(),
 		manifest_path, auto_confirm, op)
 
 
@@ -580,10 +533,6 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	if not removed:
 		return {"error": "Failed to remove plugin '%s' from DB" % id}
 
-	# Unseed plugin-shipped skills and knowledge.  Pristine records hard-delete;
-	# customised records auto-convert to source="user" so user edits are kept.
-	var unseed_result: Dictionary = _unseed_plugin_skills(id)
-	var knowledge_unseeded: Dictionary = Knowledge.unseed(id, def.knowledge_project, _get_docket_manager())
 
 	_runtime.erase(id)
 	_setup_pipelines.erase(id)
@@ -604,75 +553,13 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 
 	print("[PluginManager] Removed plugin '%s'" % id)
 
-	# Cross-plugin reactivity (DCR 019df57b T7).  Plugin's declared tools are
-	# no longer "available"; any remaining skill (any source) whose tool_deps
-	# referenced them now has them in unsatisfied_deps.  Runs AFTER _db.remove
-	# so the uninstalled plugin's tools fall out of _build_available_tools.
-	var reactivity := _recompute_skill_reactivity()
-
+	# Unseed plugin-shipped skills and knowledge (pristine records deleted,
+	# customised ones kept as the user's), then recompute skill reactivity.
+	# Runs AFTER _db.remove so the uninstalled plugin's tools are no longer
+	# counted as available.
 	var result: Dictionary = {"ok": true}
-	if unseed_result.get("deleted", 0) > 0 or unseed_result.get("kept", 0) > 0:
-		result["skills_deleted"] = unseed_result.get("deleted", 0)
-		result["skills_kept"] = unseed_result.get("kept", 0)
-		result["skills_kept_ids"] = unseed_result.get("kept_skill_ids", [])
-	if knowledge_unseeded.get("deleted", 0) > 0 or knowledge_unseeded.get("kept", 0) > 0:
-		result["knowledge"] = knowledge_unseeded
-	if reactivity.get("updated", 0) > 0:
-		result["reactivity_updated"] = reactivity.get("updated", 0)
-		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
-		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
+	result.merge(Seeding.unseed(self, id))
 	return result
-
-
-## Remove plugin-seeded skill records on uninstall.  Pristine records get
-## hard-deleted; customised records get their source flipped to "user" with
-## pristine_hash / pristine_content cleared (no longer reconcilable).
-func _unseed_plugin_skills(plugin_id: String) -> Dictionary:
-	var docket_manager = _get_docket_manager()
-	if docket_manager == null:
-		return {"deleted": 0, "kept": 0, "kept_skill_ids": []}
-	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	return SeederClass.unseed(plugin_id, docket_manager)
-
-
-## Recompute unsatisfied_deps for every skill record after a plugin lifecycle
-## change (DCR 019df57b T7).  Called from install_plugin and remove_plugin
-## after their main work commits.
-func _recompute_skill_reactivity() -> Dictionary:
-	var docket_manager = _get_docket_manager()
-	if docket_manager == null:
-		return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
-	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	return SeederClass.recompute_unsatisfied(_build_available_tools(), docket_manager)
-
-
-## Build the union of (1) MCP-registered tools and (2) all installed plugins'
-## declared tools.  This is the "available_tools" set used by skill-deps
-## resolution: a tool counts as available if it's currently in the MCP
-## registry OR known to be declared by an installed plugin (regardless of
-## whether that plugin is currently running — invocation time enforces that).
-func _build_available_tools() -> Dictionary:
-	var available: Dictionary = {}
-	if typeof(SingletonObject) != TYPE_NIL and "mcp_manager" in SingletonObject \
-			and SingletonObject.mcp_manager != null \
-			and "tool_registry" in SingletonObject.mcp_manager:
-		for tool_name in (SingletonObject.mcp_manager.tool_registry as Dictionary):
-			available[tool_name] = true
-	if _db != null:
-		for def in _db.get_all():
-			for tool_entry in def.tools:
-				var tname := str(tool_entry.get("name", ""))
-				if not tname.is_empty():
-					available[tname] = true
-	return available
-
-
-## Resolve the docket manager via SingletonObject if available, else null.
-## Used by skill-seeding helpers; tests bypass this and pass a ToolRegistry directly.
-func _get_docket_manager():
-	if typeof(SingletonObject) != TYPE_NIL and "docket_manager" in SingletonObject:
-		return SingletonObject.docket_manager
-	return null
 
 
 # ---------------------------------------------------------------------------
@@ -1435,6 +1322,9 @@ func start_plugins_at_launch() -> void:
 	# developer's checkout, and the test harness) never fetches by itself; the
 	# plugin panel's "Install required plugins" does it on request.
 	RequiredPlugins.move_legacy_relay_state()
+	# Installs a crash left half-done were rolled back before Docket was
+	# loaded; their seeded skills and knowledge follow now.
+	await reconcile_recovered()
 	if not OS.has_feature("editor"):
 		RequiredPlugins.ensure(self)
 	await start_autostart_plugins()

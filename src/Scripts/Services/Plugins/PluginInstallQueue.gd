@@ -249,10 +249,12 @@ func _run(job: Job) -> void:
 			outcome = Job.OUTCOME_CANCELLED
 		_finish(job, outcome, message)
 		return
-	if r.get("started", false):
-		_finish(job, Job.OUTCOME_READY, "")  # the upgrade was started before it committed
-		return
 	var registered: Dictionary = r.get("manager_result", {})
+	# Installed, but its skills and knowledge were left as they were.
+	var content_note := str(registered.get("content_skipped", ""))
+	if r.get("started", false):
+		_finish(job, Job.OUTCOME_READY, content_note)  # the upgrade was started before it committed
+		return
 	if registered.get("needs_binary", false):
 		_finish(job, Job.OUTCOME_START_FAILED, str(registered.get("envelope", {}).get("install_hint", "")))
 		return
@@ -262,7 +264,7 @@ func _run(job: Job) -> void:
 	if job.stopped_for_replace:
 		await _start(job)
 	else:
-		_finish(job, Job.OUTCOME_INSTALLED, "")
+		_finish(job, Job.OUTCOME_INSTALLED, content_note)
 
 
 func _start(job: Job) -> void:
