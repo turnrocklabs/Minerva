@@ -20,6 +20,9 @@ extends SceneTree
 ##   - reinstalling a running plugin stops it before its files are replaced
 ##     and ends Ready with it running again; an upgrade that fails to start
 ##     is rolled back to the running copy, its data included;
+##   - an update of a stopped plugin stays stopped and keeps the working
+##     copy until its first start, which rolls a failing version back and
+##     starts the previous one, keeping the user's later choices;
 ##   - minerva_plugin_marketplace_install (the real MCP handler) attaches to
 ##     a dialog's queued install, returns its result, and does not change the
 ##     confirmation choice the dialog's request was made with;
@@ -46,6 +49,7 @@ const SLOW := "test_queue_slow"
 const FAST := "test_queue_fast"
 const READY := "test_queue_ready"
 const CRASHES := "test_queue_crashes"
+const PENDING := "test_queue_pending"
 const SLOW_BYTES := 3 * 1024 * 1024
 # Bare interpreter names, which the host's SubProcess finds on PATH (Windows
 # installs `python`, not `python3`).
@@ -81,6 +85,8 @@ func _init() -> void:
 			"ready_unregistrable") \
 		and _pack(READY, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}, {"version": "1.0.1"}, "ready_crashes") \
 		and _pack(FAST, 0, {"entrypoint": "./test-binary", "args": []}, {"version": "1.0.1"}, "fast_101") \
+		and _pack(PENDING, 0, PROBE) \
+		and _pack(PENDING, 0, {"entrypoint": PYTHON, "args": ["crash.py"]}, {"version": "1.0.1"}, "pending_bad") \
 		and await _h.start_http_server(_temp, port)
 	if ready:
 		# ~3 s per download of the slow archive.
@@ -98,6 +104,7 @@ func _init() -> void:
 	await _test_start_outcomes_and_retry(port)
 	await _test_running_plugin_is_restarted_on_update(port)
 	await _test_failed_upgrade_rolls_back_to_the_running_copy(port)
+	await _test_stopped_upgrade_waits_for_its_first_start(port)
 	await _test_start_cancel_and_failed_restart(port)
 	await _test_mcp_attach_keeps_the_first_requests_choices()
 	await _test_url_install_absorbs_or_refuses_queued_duplicates()
@@ -230,6 +237,27 @@ func _test_failed_upgrade_rolls_back_to_the_running_copy(port: int) -> void:
 		and not FileAccess.file_exists(data.path_join("added.txt")),
 		"and the data its start changed is put back")
 	_pm.stop_plugin(READY)
+
+
+## An update of a plugin the user left stopped keeps it stopped and keeps
+## the working copy it replaced. The first start then decides: here the new
+## version exits before its handshake, so the previous version is put back
+## and started, and a choice the user made after the update (autostart)
+## survives the rollback.
+func _test_stopped_upgrade_waits_for_its_first_start(port: int) -> void:
+	var queue = _pm.install_queue
+	await _done(queue.request(_entry(PENDING, "http://127.0.0.1:%d/%s.tar.gz" % [port, PENDING])))
+	var update = queue.request_url("http://127.0.0.1:%d/pending_bad.tar.gz" % port)
+	await _done(update)
+	_check(update.outcome == Job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(PENDING).state != _pm.S_RUNNING,
+		"an update of a stopped plugin installs without starting it: %s" % [update.summary()])
+	_check(_pm.get_db().set_autostart(PENDING, true), "the user turns autostart on after the update")
+	var started: Dictionary = await _pm.start_plugin(PENDING)
+	var def = _pm.get_db().get_by_id(PENDING)
+	_check(not started.has("error") and str(started.get("rolled_back", {}).get("version", "")) == "1.0.1" \
+		and def.version == "1.0.0" and def.state == _pm.S_RUNNING and def.autostart,
+		"its first start fails, so the previous version is put back and started, autostart kept: %s" % [started])
+	_pm.stop_plugin(PENDING)
 
 
 ## Cancel while the plugin starts, and a rollback whose restart of the old
@@ -435,7 +463,7 @@ func _entry(id: String, url: String) -> Dictionary:
 
 
 func _scrub() -> void:
-	for id in [SLOW, FAST, READY, CRASHES]:
+	for id in [SLOW, FAST, READY, CRASHES, PENDING]:
 		await _h.scrub_plugin(_pm, id)
 
 
@@ -497,7 +525,7 @@ func _check(ok: bool, what: String) -> void:
 
 func _finish(code: int) -> void:
 	if _pm != null:
-		for id in [SLOW, FAST, READY, CRASHES]:
+		for id in [SLOW, FAST, READY, CRASHES, PENDING]:
 			if _pm.get_db().has_plugin(id):
 				_pm.stop_plugin(id)
 				_pm.get_db().remove(id)

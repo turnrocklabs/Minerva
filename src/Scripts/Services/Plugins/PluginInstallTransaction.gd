@@ -20,6 +20,14 @@ extends RefCounted
 ##              had no data directory, so any the new version made is removed).
 ##   committed  registration and this record were saved; recovery only
 ##              deletes scratch.
+##   pending_first_start
+##              an update of a STOPPED plugin: registered and saved like a
+##              commit, but <op>/previous and db_before are kept until the new
+##              version's first successful start (PluginPendingUpgrade), since
+##              only a start shows it works. Recovery keeps such an operation,
+##              unless its plugin is no longer installed. The first start
+##              saves the data and republishes the operation as `replacing`,
+##              so a crash during it is rolled back like any replacement.
 ##
 ## Exclusion comes from OS file locks (ProcessFileLock: flock / LockFileEx),
 ## which the OS releases however a process ends:
@@ -49,6 +57,7 @@ const OWNERS := "owners"
 const PHASE_STAGED := "staged"
 const PHASE_REPLACING := "replacing"
 const PHASE_COMMITTED := "committed"
+const PHASE_PENDING := "pending_first_start"
 
 var op_dir := ""
 var plugin_id := ""
@@ -199,7 +208,14 @@ static func recover_all(staging_root: String, db) -> Array:
 			continue
 		if _owner_alive(staging_root, _session_of(name)):
 			continue
-		var problem := _recover(dir, _read_record(dir), db)
+		var record = _read_record(dir)
+		if _awaiting_first_start(record):
+			# Kept until the plugin's first start decides it, unless the plugin
+			# was removed (a crash between saving a removal and end_removal).
+			if db != null and not db.has_plugin(record.id):
+				_remove_tree(dir)
+			continue
+		var problem := _recover(dir, record, db)
 		if problem.is_empty():
 			_remove_tree(dir)
 		else:
@@ -339,12 +355,45 @@ static func _recover(dir: String, record, db) -> Dictionary:
 	return {}
 
 
+## Whether `record` is a valid update still waiting for its first start.
+static func _awaiting_first_start(record) -> bool:
+	return _validate(record).is_empty() and record.phase == PHASE_PENDING
+
+
+## The update of `plugin_id` waiting for its first start, as a transaction to
+## finish or roll back, or null. Its operation directory may belong to an
+## earlier Minerva process.
+static func pending_for(staging_root: String, plugin_id: String) -> RefCounted:
+	var root := DirAccess.open(staging_root)
+	for name in root.get_directories() if root != null else PackedStringArray():
+		var dir := staging_root.path_join(name)
+		var record = _read_record(dir)
+		if name.begins_with("op_") and _awaiting_first_start(record) and record.id == plugin_id:
+			var txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").new()
+			txn.op_dir = dir
+			txn.plugin_id = plugin_id
+			txn.had_previous = record.had_previous
+			txn.db_before = record.db_before
+			return txn
+	return null
+
+
+## Take the staging lock without waiting. Returns whether it is held (then
+## call leave()); false while an install or recovery holds it.
+func try_enter(staging_root: String) -> bool:
+	_staging_lock = ClassDB.instantiate("ProcessFileLock")
+	if _staging_lock != null and _staging_lock.try_lock_status(staging_root.path_join(STAGING_LOCK)) == OK:
+		return true
+	_staging_lock = null
+	return false
+
+
 ## Why `record` cannot be trusted, or "" when it is a complete record of a
 ## known phase whose plugin id and saved DB record agree.
 static func _validate(record) -> String:
 	if not record is Dictionary:
 		return "missing or unreadable"
-	if record.get("format") != 1 or not record.get("phase") in [PHASE_STAGED, PHASE_REPLACING, PHASE_COMMITTED]:
+	if record.get("format") != 1 or not record.get("phase") in [PHASE_STAGED, PHASE_REPLACING, PHASE_COMMITTED, PHASE_PENDING]:
 		return "of an unknown format or phase"
 	if not record.get("id") is String or not record.get("had_previous") is bool \
 			or not record.get("removing", false) is bool or not record.get("data_saved", false) is bool \

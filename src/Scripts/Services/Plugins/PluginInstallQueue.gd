@@ -244,7 +244,7 @@ func _start(job: Job) -> void:
 		manager.stop_plugin(job.plugin_id())
 		started = {"error": "cancelled"}
 	if not started.has("error"):
-		_finish(job, Job.OUTCOME_READY, "")
+		_finish(job, Job.OUTCOME_READY, str(started.get("rolled_back", {}).get("message", "")))
 	elif job.start_cancelled:
 		_finish(job, Job.OUTCOME_INSTALLED, "Installed; starting it was cancelled.")
 	else:

@@ -175,15 +175,18 @@ func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skil
 ## When the replaced plugin was running (the caller stopped it for the
 ## replacement and set op.start_after_install), its data is saved and the new
 ## version must start before the replacement commits. A plugin the user had
-## stopped stays stopped: it is replaced on the archive's checks alone (SHA256,
-## identity, platform, entrypoint header). Any failure puts the old files, the
-## old DB record and the saved data back. All scratch files live in this
+## stopped stays stopped: its working copy is kept (awaits_first_start) until
+## the new version's first start, which commits the update or rolls it back
+## (PluginPendingUpgrade). Any failure puts the old files, the old DB record
+## and the saved data back. All scratch files live in this
 ## operation's own staging directory, removed at the end; sweep_staging()
 ## recovers from a crash in between.
 ##
 ## Returns:
-##   {ok:true, plugin_id, version, manifest_path, started, definition?, manager_result?}
-##   (started: the new version was started before the install committed)
+##   {ok:true, plugin_id, version, manifest_path, started, awaits_first_start,
+##    definition?, manager_result?} (started: the new version was started
+##    before the install committed; awaits_first_start: the working copy is
+##    kept until its first start)
 ##   {ok:false, error, detail}
 func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool = false,
 		op: PluginInstallOperation = null, expected: Dictionary = {}) -> Dictionary:
@@ -202,7 +205,9 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 	# An incomplete rollback keeps the operation (and its backup) for a later
 	# recovery pass.
 	var rollback: Dictionary = result.get("rollback", {})
-	if rollback.is_empty() or rollback_complete(rollback):
+	if result.get("awaits_first_start", false):
+		pass  # the operation directory holds the kept working copy
+	elif rollback.is_empty() or rollback_complete(rollback):
 		_rm_dir_recursive(op.staging_dir)
 	return result
 
@@ -340,13 +345,24 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		if not started.get("ok", false):
 			return _failed_replace(started, txn, final_abs, db, previous_def)
 		registered["started"] = true
+	# An update of a plugin the user had stopped is not started to test it.
+	# Its working copy is kept (pending_first_start) until the new version's
+	# first start shows it runs (PluginPendingUpgrade); if an earlier update
+	# is already waiting, that one holds the last known-good copy and this
+	# one's previous files, which never ran, are not kept.
+	var awaits_first_start: bool = txn.had_previous and not verify_start and installer != null \
+		and installer.has_method("start_plugin") \
+		and PluginInstallTransaction.pending_for(ProjectSettings.globalize_path(STAGING_DIR), plugin_id) == null
 	# The install commits only once this record is saved too; until then a
 	# crash rolls back to the previous install, DB record and data together.
-	if not txn.publish(PluginInstallTransaction.PHASE_COMMITTED):
+	var phase := PluginInstallTransaction.PHASE_PENDING if awaits_first_start else PluginInstallTransaction.PHASE_COMMITTED
+	if not txn.publish(phase):
 		if registered.started:
 			installer.stop_plugin(plugin_id)  # it runs on the files being rolled back
 		return _failed_replace(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db, previous_def)
-	_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
+	registered["awaits_first_start"] = awaits_first_start
+	if not awaits_first_start:
+		_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 	registered["version"] = str(manifest.get("version", ""))
 	registered["platform_verified"] = identity.platform_verified
 	return registered

@@ -1262,6 +1262,11 @@ func _report_lifecycle_result(action: String, plugin_id: String, result) -> void
 			"Plugin: %s\n\n%s" % [plugin_id, msg]
 		)
 		return
+	var rolled_back: String = str(result.get("rolled_back", {}).get("message", "")) if result is Dictionary else ""
+	if not rolled_back.is_empty():
+		_show_status(rolled_back)
+		SingletonObject.create_toast_notification(rolled_back, ToastNotification.Type.WARNING)
+		return
 	_show_status("%s %s succeeded" % [action.to_lower(), plugin_id])
 	SingletonObject.create_toast_notification(
 		"%s: %s" % [action, plugin_id],

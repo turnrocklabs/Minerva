@@ -14,6 +14,7 @@ extends Node
 # ---------------------------------------------------------------------------
 
 const AutoUpdater := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
+const PendingUpgrade := preload("res://Scripts/Services/Plugins/PluginPendingUpgrade.gd")
 
 ## How often (seconds) to poll running plugins for liveness.
 const HEALTH_CHECK_INTERVAL_SEC := 5.0
@@ -692,8 +693,14 @@ func _get_docket_manager():
 
 ## Start a plugin: create MCPServerConnection, configure stdio, connect.
 ## State transitions: INSTALLED/STOPPED/ERROR → STARTING → RUNNING or ERROR.
-## Returns {"ok": true} or {"error": "..."}.
+## Returns {"ok": true} or {"error": "..."}. The first start after an update
+## installed while the plugin was stopped commits that update, or rolls it
+## back and starts the previous version (PluginPendingUpgrade).
 func start_plugin(id: String) -> Dictionary:
+	return await PendingUpgrade.start(self, id, _start_plugin_now.bind(id))
+
+
+func _start_plugin_now(id: String) -> Dictionary:
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
 
