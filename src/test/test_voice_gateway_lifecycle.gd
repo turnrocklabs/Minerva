@@ -5,6 +5,11 @@ var failed := 0
 
 func _init() -> void:
 	await process_frame
+	# The gateway only starts while Voice Support is enabled; the saved setting
+	# is whatever the profile holds, so it is set here and restored at the end.
+	var VoiceFeature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
+	var voice_was_enabled: bool = VoiceFeature.is_enabled()
+	VoiceFeature.set_enabled(true)
 	var base_gateway = load("res://Scripts/Services/Voice/VoiceGatewayClient.gd").new()
 	var bundled_adapter = base_gateway._create_detector_adapter()
 	check("Voice Support defaults to the bundled detector adapter", bundled_adapter.get_script() == load("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd"))
@@ -63,6 +68,7 @@ func _init() -> void:
 	adapter._handle_health_result(adapter._generation, HTTPRequest.RESULT_CANT_CONNECT, 0)
 	check("final health failure is terminal once and audio remains unavailable", failures.size() == 1 and not adapter._should_connect and adapter.send_audio(PackedByteArray([1, 2])) == ERR_CONNECTION_ERROR)
 	adapter.free()
+	VoiceFeature.set_enabled(voice_was_enabled)
 	print("Voice gateway lifecycle: %d passed, %d failed" % [passed, failed])
 	quit(0 if failed == 0 else 1)
 
