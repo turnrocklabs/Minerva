@@ -86,6 +86,7 @@ HERMETIC_TESTS=(
 	test/test_mcp_plugin_result_boundaries.gd
 	test/test_mcp_diagnostics.gd
 	test/test_preferences_verbose_logging.gd
+	test/test_bounded_process.gd
 	test/test_mcp_loop_tracker.gd
 	test/test_mcp_manager_lifecycle.gd
 	test/test_self_scene_resource_lifecycle.gd

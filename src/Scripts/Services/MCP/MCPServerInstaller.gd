@@ -37,6 +37,11 @@ static var SERVER_DESCRIPTIONS: Dictionary:
 				descs[sname] = "%s - %s" % [server.display_name, server.description]
 		return descs
 
+## How long each Python-environment probe may run before it is killed:
+## `conda info --envs` reads every environment, the others just print a line.
+const CONDA_TIMEOUT_S := 10.0
+const PROBE_TIMEOUT_S := 5.0
+
 var _is_installing := false
 
 
@@ -386,15 +391,17 @@ func _get_python_in_venv(server_dir: String) -> String:
 			return venv_path.path_join("bin").path_join("python")
 
 
-## Detect available Python environments on the system.
+## Detect available Python environments on the system: conda environments
+## (`conda info --envs`) and the system python. Each probe runs an external
+## tool, which can hang (an app-execution alias, a slow conda), so each is
+## bounded (BoundedProcess.run) and none blocks a frame; await the result.
 ## Returns Array of {name: String, path: String, type: String ("conda"|"system"|"venv")}
 static func detect_python_environments() -> Array[Dictionary]:
 	var envs: Array[Dictionary] = []
 
 	# Detect conda environments
 	# Try bare "conda" first, then common absolute paths (Godot may not have full PATH)
-	var conda_output: Array = []
-	var conda_exit := -1
+	var conda: Dictionary = {}
 	var conda_candidates: Array[String] = ["conda"]
 	match OS.get_name():
 		"Linux":
@@ -412,12 +419,11 @@ static func detect_python_environments() -> Array[Dictionary]:
 				"/opt/homebrew/bin/conda",
 			])
 	for conda_cmd in conda_candidates:
-		conda_output = []
-		conda_exit = OS.execute(conda_cmd, ["info", "--envs"], conda_output, true)
-		if conda_exit == 0 and conda_output.size() > 0:
+		conda = await BoundedProcess.run(conda_cmd, ["info", "--envs"], CONDA_TIMEOUT_S)
+		if conda.exit_code == 0 and not conda.output.is_empty():
 			break
-	if conda_exit == 0 and conda_output.size() > 0:
-		var lines: PackedStringArray = conda_output[0].split("\n")
+	if conda.get("exit_code", -1) == 0 and not conda.output.is_empty():
+		var lines: PackedStringArray = conda.output.split("\n")
 		for line in lines:
 			var stripped := line.strip_edges()
 			if stripped.is_empty() or stripped.begins_with("#"):
@@ -441,7 +447,7 @@ static func detect_python_environments() -> Array[Dictionary]:
 					})
 
 	# Detect system python
-	var sys_python := _find_system_python()
+	var sys_python: String = await _find_system_python()
 	if not sys_python.is_empty():
 		envs.append({
 			"name": "System python",
@@ -452,7 +458,7 @@ static func detect_python_environments() -> Array[Dictionary]:
 	return envs
 
 
-## Find system python (not in a venv/conda) — static version of _get_python_executable
+## Find system python (not in a venv/conda), bounded like detect_python_environments.
 static func _find_system_python() -> String:
 	var candidates: Array[String] = []
 	match OS.get_name():
@@ -465,16 +471,15 @@ static func _find_system_python() -> String:
 			candidates = ["python3.13", "python3.12", "python3.11", "python3"]
 
 	for python_cmd in candidates:
-		var output: Array = []
-		var exit_code := OS.execute(python_cmd, ["--version"], output, true)
-		if exit_code == 0 and output.size() > 0:
-			var version_str: String = output[0].strip_edges()
+		var version: Dictionary = await BoundedProcess.run(python_cmd, ["--version"], PROBE_TIMEOUT_S)
+		if version.exit_code == 0 and not version.output.is_empty():
+			var version_str: String = version.output.strip_edges()
 			if version_str.begins_with("Python 3."):
 				# Get full path via which/where
-				var which_output: Array = []
 				var which_cmd := "where" if OS.get_name() == "Windows" else "which"
-				if OS.execute(which_cmd, [python_cmd], which_output, true) == 0 and which_output.size() > 0:
-					return which_output[0].strip_edges()
+				var located: Dictionary = await BoundedProcess.run(which_cmd, [python_cmd], PROBE_TIMEOUT_S)
+				if located.exit_code == 0 and not located.output.is_empty():
+					return located.output.strip_edges()
 				return python_cmd
 	return ""
 

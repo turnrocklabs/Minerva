@@ -1686,6 +1686,10 @@ const MCPServerInstallerScript := preload("res://Scripts/Services/MCP/MCPServerI
 var _tools_tab: VBoxContainer
 var _python_env_option: OptionButton
 var _python_envs_cache: Array[Dictionary] = []
+## Whether a scan is running, and whether one has been started at all (the
+## first starts when the Tools tab is first shown, never at startup).
+var _python_scan_running := false
+var _python_scanned := false
 var _server_path_edits: Dictionary = {}  # server_name -> LineEdit
 var _server_port_spins: Dictionary = {}  # server_name -> SpinBox
 var _server_auto_connect_checks: Dictionary = {}  # server_name -> CheckButton
@@ -1857,10 +1861,11 @@ func _create_tools_tab() -> void:
 	vbox.add_child(_profile_checks_container)
 
 	tab_container.add_child(_tools_tab)
+	_tools_tab.visibility_changed.connect(_on_tools_tab_visibility_changed)
 
-	# Load current values
+	# Load current values; the Python scan waits until the tab is shown.
 	_load_tools_settings()
-	_refresh_python_envs()
+	_show_python_envs()
 
 
 ## Load tools settings from MCPConfig
@@ -2204,12 +2209,37 @@ func _on_profile_toggled(enabled: bool, skill_id: String) -> void:
 		skill_manager.deactivate_skill(skill_id, mcp)
 
 
-## Refresh the Python environment dropdown
+func _on_tools_tab_visibility_changed() -> void:
+	if not _python_scanned and _tools_tab.is_visible_in_tree():
+		_refresh_python_envs()
+
+
+## Re-scan for Python environments. The scan runs external tools, each
+## bounded, without blocking frames (MCPServerInstaller.detect_python_environments);
+## the dropdown is disabled and says so meanwhile.
 func _refresh_python_envs() -> void:
+	if _python_scan_running:
+		return
+	_python_scan_running = true
+	_python_scanned = true
+	_python_env_option.clear()
+	_python_env_option.add_item("Detecting Python environments…", 0)
+	_python_env_option.disabled = true
+	var found: Array[Dictionary] = await MCPServerInstallerScript.detect_python_environments()
+	_python_scan_running = false
+	if not is_instance_valid(_python_env_option):
+		return
+	_python_envs_cache = found
+	_python_env_option.disabled = false
+	_show_python_envs()
+
+
+## Fill the dropdown from the last scan (none yet: just Auto and the saved
+## choice) and select the saved choice.
+func _show_python_envs() -> void:
 	_python_env_option.clear()
 	_python_env_option.add_item("Auto (recommended)", 0)
 
-	_python_envs_cache = MCPServerInstallerScript.detect_python_environments()
 	for i in range(_python_envs_cache.size()):
 		var env: Dictionary = _python_envs_cache[i]
 		_python_env_option.add_item("%s — %s" % [env["name"], env["path"]], i + 1)
