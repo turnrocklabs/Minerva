@@ -118,11 +118,11 @@ var _db = null  # PluginDB — initialized in _ready to avoid parse-order issues
 
 ## id -> runtime Dictionary (see comment above)
 var _runtime: Dictionary = {}
-## Plugin id → Callable(tool: String, arguments: Dictionary) -> String,
-## awaited before an agent's call of one of that plugin's backend tools
-## through the tool registry, or a panel's through its broker or private
-## channel (never the host's own calls): a non-empty answer refuses the call
-## with that message.
+## Plugin id → Callable(tool: String, arguments: Dictionary, caller: String)
+## -> String, awaited before an agent's call of one of that plugin's backend
+## tools through the tool registry (caller "agent"), or a panel's through its
+## broker or private channel (caller "panel"), never the host's own calls: a
+## non-empty answer refuses the call with that message.
 var _backend_tool_guards: Dictionary = {}
 
 ## Accumulated time since last health-check sweep.
@@ -722,7 +722,7 @@ func _start_plugin_now(id: String) -> Dictionary:
 	if not def.panel_authority.is_empty():
 		var authority := PluginPanelAuthority.new(id, conn, def.panel_authority)
 		authority.tool_guard = func(tool: String, arguments: Dictionary) -> String:
-			return await check_backend_tool(id, tool, arguments)
+			return await check_backend_tool(id, tool, arguments, "panel")
 		authority.tool_called = func(tool: String) -> void: backend_tool_called.emit(id, tool)
 		conn.stdio_env_for_generation = authority.env_for_generation
 		rt["panel_authority"] = authority
@@ -797,13 +797,13 @@ func set_backend_tool_guard(id: String, guard: Callable) -> void:
 		_backend_tool_guards.erase(id)
 
 
-## "" when an agent's or a panel's call of backend tool `tool` of plugin `id`
-## with `arguments` may go, else why it may not.
-func check_backend_tool(id: String, tool: String, arguments: Dictionary) -> String:
+## "" when a call of backend tool `tool` of plugin `id` with `arguments` by
+## `caller` ("agent" or "panel") may go, else why it may not.
+func check_backend_tool(id: String, tool: String, arguments: Dictionary, caller: String = "agent") -> String:
 	var guard: Callable = _backend_tool_guards.get(id, Callable())
 	if not guard.is_valid():
 		return ""
-	var answer = await guard.call(tool, arguments)
+	var answer = await guard.call(tool, arguments, caller)
 	return answer if answer is String else "the host could not check the call of %s" % tool
 
 

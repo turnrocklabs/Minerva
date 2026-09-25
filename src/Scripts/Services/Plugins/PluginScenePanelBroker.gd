@@ -1706,7 +1706,7 @@ func _dispatch_to_plugin_backend(
 	if conn == null:
 		return PluginErrors.plugin_not_running(plugin_id)
 	if plugin_manager.has_method("check_backend_tool"):
-		var refused: String = await plugin_manager.check_backend_tool(plugin_id, channel, payload)
+		var refused: String = await plugin_manager.check_backend_tool(plugin_id, channel, payload, "panel")
 		if plugin_manager.get_connection(plugin_id) != conn:
 			return PluginErrors.plugin_not_running(plugin_id)
 		if not refused.is_empty():

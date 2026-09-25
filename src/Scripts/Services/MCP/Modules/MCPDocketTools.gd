@@ -91,107 +91,37 @@ func _maybe_reload_policy(tool_name: String, arguments: Dictionary, result: Dict
 		server.policy_engine.reload()
 
 
-## Check if this operation requires human approval.
-## Policy items have asymmetric gating: increasing enforcement is free,
-## decreasing enforcement (suspend, archive, delete, edit rules) requires human approval.
+## Check if this operation requires human approval (PolicyApproval): it
+## would lower the enforcement of a policy item. An item that cannot be looked
+## up is taken as not a policy.
 func _requires_policy_approval(docket_name: String, arguments: Dictionary, dm: DocketManager) -> bool:
-	# Only these operations can decrease enforcement
-	if docket_name not in ["docket_transition", "docket_update", "docket_delete"]:
+	if not docket_name in PolicyApproval.TOOLS:
 		return false
-
-	# Look up the item to check if it's a policy
 	var item_id: String = str(arguments.get("id", ""))
 	if item_id.is_empty():
 		return false
-	var project: String = str(arguments.get("project", ""))
-	var get_args := {"id": item_id, "include": []}
-	if not project.is_empty():
-		get_args["project"] = project
-	var item_result: Dictionary = dm.call_tool("docket_get", get_args)
+	var item_result: Dictionary = dm.call_tool("docket_get", _get_args(arguments))
 	if item_result.has("error"):
 		return false
-	if str(item_result.get("type", "")) != "policy":
-		return false
-
-	# For transitions: only downgrade transitions need approval
-	if docket_name == "docket_transition":
-		var target_status: String = str(arguments.get("to", ""))
-		# Increasing enforcement: draft → proposed → active (no approval needed)
-		if target_status in ["proposed", "active"]:
-			return false
-		# Decreasing enforcement: → suspended, → archived (approval needed)
-		return true
-
-	# docket_update on a policy: approval needed if description is being changed
-	if docket_name == "docket_update":
-		return arguments.has("description")
-
-	# docket_delete on a policy: always needs approval
-	if docket_name == "docket_delete":
-		return true
-
-	return false
+	return PolicyApproval.lowers_enforcement(docket_name, arguments, item_result)
 
 
-## Show a Godot ConfirmationDialog and await the human's response.
-## The dialog runs in the UI thread; the agent cannot bypass it.
+## Asks a person to approve the change (PolicyApproval.request), naming the
+## policy by its title when it can be read.
 func _request_human_approval(docket_name: String, arguments: Dictionary, dm: DocketManager) -> bool:
-	var item_id: String = str(arguments.get("id", ""))
-	var item_title := item_id
+	var item_title: String = str(arguments.get("id", ""))
+	var item_result: Dictionary = dm.call_tool("docket_get", _get_args(arguments))
+	if not item_result.has("error"):
+		item_title = str(item_result.get("title", item_title))
+	return await PolicyApproval.request(docket_name, arguments, item_title)
 
-	# Try to get the policy title for a friendlier message
-	var get_args := {"id": item_id, "include": []}
+
+static func _get_args(arguments: Dictionary) -> Dictionary:
+	var get_args := {"id": str(arguments.get("id", "")), "include": []}
 	var project: String = str(arguments.get("project", ""))
 	if not project.is_empty():
 		get_args["project"] = project
-	var item_result: Dictionary = dm.call_tool("docket_get", get_args)
-	if not item_result.has("error"):
-		item_title = str(item_result.get("title", item_id))
-
-	# Build the dialog message
-	var action_desc: String
-	match docket_name:
-		"docket_transition":
-			action_desc = "transition policy to '%s'" % str(arguments.get("to", "?"))
-		"docket_update":
-			action_desc = "modify policy rule content"
-		"docket_delete":
-			action_desc = "permanently delete policy"
-		_:
-			action_desc = "modify policy"
-
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Policy Modification — Human Approval Required"
-	dialog.dialog_text = "An agent is requesting to %s:\n\n\"%s\"\n\nThis will decrease policy enforcement.\nOnly approve if you intended this change." % [action_desc, item_title]
-	dialog.ok_button_text = "Approve"
-	dialog.cancel_button_text = "Deny"
-	dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
-	dialog.size = Vector2i(500, 200)
-
-	# Add to scene tree and show
-	var tree := Engine.get_main_loop()
-	if tree == null or not tree is SceneTree:
-		# Headless mode — deny by default (no UI to approve)
-		return false
-	(tree as SceneTree).root.add_child(dialog)
-	dialog.popup_centered()
-
-	# Await human response using Minerva's standard dialog pattern
-	var result := [false]
-	var done := [false]
-	dialog.confirmed.connect(func():
-		result[0] = true
-		done[0] = true
-	)
-	dialog.canceled.connect(func():
-		result[0] = false
-		done[0] = true
-	)
-	while not done[0]:
-		await (tree as SceneTree).process_frame
-
-	dialog.queue_free()
-	return result[0]
+	return get_args
 
 
 static func _categorize(tool_name: String) -> String:

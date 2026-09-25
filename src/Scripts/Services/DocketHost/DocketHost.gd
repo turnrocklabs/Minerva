@@ -569,12 +569,16 @@ func _refresh(connection, generation: int) -> String:
 
 
 # Waits for the current process to be set up, then allows `tool` (with
-# `arguments`) unless Docket is unavailable, or it would close the master.
-func _guard(tool: String, arguments: Dictionary) -> String:
+# `arguments`, called by `caller`) unless Docket is unavailable, it would
+# close the master, or it is an agent's change that would lower a policy's
+# enforcement and a person does not approve it (_approved).
+func _guard(tool: String, arguments: Dictionary, caller: String = "agent") -> String:
 	while state == "starting":
 		await state_changed
 	if state in ["inactive", "unavailable", "failed"]:
 		return "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)
+	if caller == "agent" and tool in PolicyApproval.TOOLS:
+		return await _approved(tool, arguments)
 	if tool == "docket_project_remove" and not master_path.is_empty():
 		# Only a fresh list tells which project the name resolves to now.
 		var listed := await _refresh(_connection, _generation)
@@ -584,6 +588,51 @@ func _guard(tool: String, arguments: Dictionary) -> String:
 		if str(closing.get("path", "")) == master_path:
 			return "the master project stays open; it is Minerva's"
 	return ""
+
+
+# An agent's `tool` call with `arguments`, as PolicyApproval judges it: ""
+# when it lowers no policy's enforcement, or a person approved it and the
+# plugin's process, its open projects, the item and the arguments are still
+# what the person was shown; else why not. A call that names no item, or an
+# item that cannot be looked up, is refused, since it cannot be told not to
+# be a policy.
+func _approved(tool: String, arguments: Dictionary) -> String:
+	var item_id := str(arguments.get("id", ""))
+	if item_id.is_empty():
+		return "the call names no item, so it cannot be checked for a policy"
+	var connection = _connection
+	var generation := _generation
+	var shown := arguments.duplicate(true)
+	var get_args := {"id": item_id, "include": []}
+	if arguments.has("project"):
+		get_args["project"] = arguments.project
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return "the item could not be checked for a policy: %s" % listed
+	var openings := _layer_openings(projects)
+	var before := await _call(connection, "docket_get", get_args)
+	if _stale(connection, generation):
+		return "the Docket plugin's process changed while the item was checked for a policy"
+	if before.has("error"):
+		return "the item could not be checked for a policy: %s" % before.error
+	if not PolicyApproval.lowers_enforcement(tool, arguments, before.value):
+		return ""
+	if not await _request_policy_approval(tool, arguments, str(before.value.get("title", item_id))):
+		return "Policy modification denied — human approval required"
+	# The item is read last, after the projects, so nothing is awaited between
+	# its check and the call's dispatch.
+	listed = await _refresh(connection, generation)
+	var after := await _call(connection, "docket_get", get_args)
+	if _stale(connection, generation) or after.has("error") or not listed.is_empty() or after.value != before.value \
+			or _layer_openings(projects) != openings or arguments != shown:
+		return "the policy, its project or the requested change changed while a person decided, so nothing was changed"
+	return ""
+
+
+# Asks a person to approve an agent's `tool` call with `arguments` on the
+# policy titled `title` (PolicyApproval.request): whether they did.
+func _request_policy_approval(tool: String, arguments: Dictionary, title: String) -> bool:
+	return await PolicyApproval.request(tool, arguments, title)
 
 
 # The open project `project_name` names, as the plugin resolves a project

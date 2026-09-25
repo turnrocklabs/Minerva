@@ -379,7 +379,7 @@ func _dispatch_to_plugin_backend(
 	var conn: MCPServerConnection = plugin_manager.get_connection(plugin_id)
 	if conn == null:
 		return PluginErrors.plugin_not_running(plugin_id)
-	var refused: String = await plugin_manager.check_backend_tool(plugin_id, message_type, payload)
+	var refused: String = await plugin_manager.check_backend_tool(plugin_id, message_type, payload, "panel")
 	if plugin_manager.get_connection(plugin_id) != conn:
 		return PluginErrors.plugin_not_running(plugin_id)
 	if not refused.is_empty():
