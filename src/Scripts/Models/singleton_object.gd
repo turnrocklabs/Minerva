@@ -719,6 +719,13 @@ func _wire_plugin_tools_to_mcp() -> void:
 			push_error("[Plugins] Initial tool sync failed for '%s': %s" % [
 				def.id, sync_result.get("error")])
 
+	# Before any plugin starts, so the Docket plugin's first ready process is
+	# set up; inactive while the embedded DocketManager owns Docket's files.
+	docket_host = DocketHost.new()
+	docket_host.name = "DocketHost"
+	add_child(docket_host)
+	docket_host.start(plugin_manager, docket_manager != null)
+
 	# Autostart plugins (like SCM services with auto-start flag), then any
 	# opted-in plugin updates
 	plugin_manager.start_plugins_at_launch()
@@ -986,6 +993,8 @@ var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
 
 #region Docket
 var docket_manager: DocketManager = null
+## Minerva's side of the Docket plugin, set up with the plugins.
+var docket_host: DocketHost = null
 
 func _init_docket() -> void:
 	docket_manager = DocketManager.new()
