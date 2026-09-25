@@ -16,6 +16,13 @@ extends SceneTree
 ##   7. ServiceHistory round-trip: PluginProvider restored when entry present;
 ##      exact unavailable plugin identity retained when entry absent.
 ##
+## A provider's generate call is a governed plugin tool call: the stub cases
+## go through the real MinervaMCPServer (policy admission) to a StubRegistry
+## standing in for the plugin tool registry, which sends to a StubConnection;
+## the integration case goes through the real registry to the live fixture.
+## The real registry's marking of the send (begin_dispatch) is exercised only
+## there, where a call not marked would still have its usual 120 s.
+##
 ## NOTE: class_name globals are invisible to --script runs; load() + duck-type.
 ## SingletonObject autoload registers lazily; resolve at runtime.
 
@@ -36,6 +43,10 @@ const S_STOPPED := 3
 var _pass := 0
 var _fail := 0
 var _completed := false
+## The host's plugin tool registry, put back for the live-plugin cases.
+var _real_tool_registry = null
+## The StubRegistry the stub cases' provider calls go through.
+var _registry = null
 
 
 func _init() -> void:
@@ -99,6 +110,45 @@ class StubConnection extends RefCounted:
 		return scripted_result
 
 
+## The plugin tool registry as a governed generate call reaches it, after
+## MinervaMCPServer's policy admission: every tool maps to itself, and a call
+## goes on to the StubConnection once its context allows. A call can be held
+## before it is sent (`hold`, or `hold_resumes` for resume calls only), as one
+## still being admitted or checked is; `sent_budgets` records the transport
+## time left at each send.
+class StubRegistry extends RefCounted:
+	var conn = null
+	var tree: SceneTree = null
+	var hold := false
+	var hold_resumes := false
+	var holding := 0
+	var sent_budgets: Array = []
+
+	func tool_for(_plugin_id: String, backend_name: String) -> String:
+		return backend_name
+
+	func is_plugin_tool(_tool_name: String) -> bool:
+		return true
+
+	# A plugin started while this stands in learns no tools here.
+	func register_backend_tools(_plugin_id: String, _conn) -> Dictionary:
+		return {"ok": true, "registered": []}
+
+	func handle_tool_call_outcome(tool_name: String, args: Dictionary, context):
+		holding += 1
+		while (hold or (hold_resumes and args.get("resume") == true)) and not context.is_stopped():
+			await tree.process_frame
+		holding -= 1
+		var outcome = load("res://Scripts/Services/MCP/MCPToolCallOutcome.gd").new()
+		if context.is_stopped():
+			outcome.application = context.stopped_result()
+			return outcome
+		context.begin_dispatch()
+		sent_budgets.append(context.remaining_seconds(0.0))
+		outcome.application = await conn.call_tool(tool_name, args, context.remaining_seconds(0.0))
+		return outcome
+
+
 ## Stub PluginManager exposing get_connection(id).
 class StubManager extends RefCounted:
 	var conn = null
@@ -116,9 +166,28 @@ func _make_provider(entry: Dictionary, conn, manager) -> Object:
 	prov.configure_from_entry(registered)
 	prov._test_plugin_manager = manager
 	manager.conn = conn
+	_registry = _use_stub_registry(conn)
 	# Add to tree so _ready() wires the stop signal (cancellation path).
 	root.add_child(prov)
 	return prov
+
+
+## Routes governed plugin tool calls to a new StubRegistry sending to `conn`.
+func _use_stub_registry(conn):
+	var registry := StubRegistry.new()
+	registry.conn = conn
+	registry.tree = self
+	root.get_node("SingletonObject").plugin_tool_registry = registry
+	return registry
+
+
+## Waits until `ready` holds, at most `frames` frames: whether it held.
+func _until(ready: Callable, frames: int = 600) -> bool:
+	for i in frames:
+		if ready.call():
+			return true
+		await process_frame
+	return ready.call()
 
 
 func _answer_envelope(text: String) -> Dictionary:
@@ -137,6 +206,14 @@ func _run() -> void:
 	check("SingletonObject autoload present", so != null)
 	if so == null:
 		return
+	# The real registry is wired late; the stub cases stand in for it only
+	# once it exists, so wiring cannot replace a stub mid-case.
+	var deadline := Time.get_ticks_msec() + 10000
+	while so.get("plugin_tool_registry") == null and Time.get_ticks_msec() < deadline:
+		await create_timer(0.1).timeout
+	_real_tool_registry = so.plugin_tool_registry
+	check("the host's plugin tool registry and tool server are up",
+		_real_tool_registry != null and so.get_mcp_manager().minerva_server != null)
 
 	_test_registry_unit()
 	await _test_provider_generate(so)
@@ -148,10 +225,13 @@ func _run() -> void:
 	await _test_in_place_interrupt(so)
 	await _test_long_turn_resume(so)
 	await _test_stale_reply_after_regenerate(so)
+	await _test_governed_admission(so)
 	await _test_saved_selection_key_restore(so)
 	_test_service_history_roundtrip(so)
+	so.plugin_tool_registry = _real_tool_registry
 	await _test_integration_capability_path(so)
 	await _test_mcp_plugin_lifecycle(so)
+	so.plugin_tool_registry = _real_tool_registry
 	_completed = true
 
 
@@ -618,6 +698,109 @@ func _test_stale_reply_after_regenerate(_so) -> void:
 	prov.queue_free()
 
 
+# --- Governed generate: a call not yet sent is stopped, replaced or kept -----
+func _test_governed_admission(so) -> void:
+	print("\n-- Governed generate: stop, supersession, interrupt and budget before a send --")
+	var entry = {"key": "plugin:chatprovider:gov", "plugin_id": PLUGIN_ID, "entry_id": "gov",
+		"display_name": "Governed Probe", "generate_tool": "minerva_chatprovider_generate",
+		"history_mode": "newest_only", "timeout_sec": 600, "cancel_tool": "minerva_chatprovider_cancel",
+		"metadata": {"interrupt_in_place": true, "resumable": true}}
+	var completions := [0]
+	var count := func(_bot): completions[0] += 1
+	so.chat_completed.connect(count)
+
+	# A stop while the first call is held before sending ends the turn as
+	# cancelled, once, and the call is never sent.
+	var conn = StubConnection.new()
+	conn.scripted_result = _answer_envelope("never sent")
+	var prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-gov-stop"
+	_registry.hold = true
+	var stopped: Array = []
+	(func(): stopped.append(await prov.generate_content([{"text": "held"}]))).call()
+	check("stop before send: the call is held before sending", await _until(func(): return _registry.holding == 1))
+	prov.cancel_active_resquests()
+	_registry.hold = false
+	await _until(func(): return _registry.holding == 0)
+	await process_frame
+	check("stop before send: the turn ends as cancelled, once",
+		stopped.size() == 1 and stopped[0].error == "Request cancelled." and completions[0] == 1,
+		"%s / completions=%d" % [str(stopped), completions[0]])
+	check("stop before send: nothing reached the plugin", conn.generate_calls == 0, str(conn.generate_args))
+	prov.queue_free()
+
+	# A newer turn replaces one still held before sending: the older call is
+	# never sent and its turn is dropped without a completion; the newer one
+	# is sent and answered.
+	completions[0] = 0
+	conn = StubConnection.new()
+	conn.scripted_queue = [func(args): return _answer_envelope("reply to " + str(args.get("text", "")))]
+	prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-gov-supersede"
+	_registry.hold = true
+	var older: Array = []
+	var newer: Array = []
+	(func(): older.append(await prov.generate_content([{"text": "A"}]))).call()
+	check("supersession: the older call is held before sending", await _until(func(): return _registry.holding == 1))
+	(func(): newer.append(await prov.generate_content([{"text": "B"}]))).call()
+	_registry.hold = false
+	await _until(func(): return newer.size() == 1)
+	await process_frame
+	check("supersession: the newer turn is sent and answered",
+		newer.size() == 1 and newer[0].text == "reply to B", str(newer))
+	check("supersession: the older call is never sent",
+		conn.generate_calls == 1 and conn.generate_args[0].get("text") == "B", str(conn.generate_args))
+	check("supersession: only the newer turn completes",
+		older.is_empty() and completions[0] == 1, "older=%s completions=%d" % [str(older), completions[0]])
+	prov.queue_free()
+
+	# An interrupt while a resume is held before sending goes to the operation
+	# already sent, which is then resumed and completes once.
+	completions[0] = 0
+	conn = StubConnection.new()
+	conn.scripted_queue = [_pending_for, _answer_envelope("after the interrupt")]
+	prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-gov-interrupt"
+	_registry.hold_resumes = true
+	var turn: Array = []
+	(func(): turn.append(await prov.generate_content([{"text": "long"}]))).call()
+	check("resume held: the first call was sent and its resume is held",
+		await _until(func(): return _registry.holding == 1 and conn.generate_calls == 1))
+	var token := str(conn.generate_args[0].get("operation_token", "")) if conn.generate_calls > 0 else ""
+	check("resume held: the interrupt is accepted", prov.interrupt_active_request())
+	await process_frame
+	check("resume held: the interrupt names the operation already sent",
+		not token.is_empty() and conn.cancel_calls.size() == 1
+		and str(conn.cancel_calls[0].get("operation_token", "")) == token, str(conn.cancel_calls))
+	_registry.hold_resumes = false
+	await _until(func(): return turn.size() == 1)
+	check("resume held: the same operation is resumed and the turn completes once",
+		turn.size() == 1 and turn[0].text == "after the interrupt" and conn.generate_calls == 2
+		and conn.generate_args[1].get("resume") == true
+		and str(conn.generate_args[1].get("operation_token", "")) == token and completions[0] == 1,
+		"%s / %s / completions=%d" % [str(turn), str(conn.generate_args), completions[0]])
+	prov.queue_free()
+
+	# Time spent before the send does not shorten the call: each send has the
+	# whole timeout left.
+	conn = StubConnection.new()
+	conn.scripted_queue = [_pending_for, _answer_envelope("done")]
+	prov = _make_provider(entry, conn, StubManager.new())
+	prov.owner_history_id = "hist-gov-budget"
+	_registry.hold = true
+	var budgeted: Array = []
+	(func(): budgeted.append(await prov.generate_content([{"text": "slow admission"}]))).call()
+	await create_timer(0.5).timeout
+	check("budget: the call was held for 0.5 s before sending", _registry.holding == 1 and conn.generate_calls == 0)
+	_registry.hold = false
+	await _until(func(): return budgeted.size() == 1)
+	var budgets: Array = _registry.sent_budgets
+	check("budget: after 0.5 s held, each send still has the whole 600 s",
+		budgets.size() == 2 and budgets.all(func(left): return left > 599.9), str(budgets))
+	prov.queue_free()
+	so.chat_completed.disconnect(count)
+
+
 # --- FIX 2: saved-selection key restore survives reorder ------------------
 func _test_saved_selection_key_restore(so) -> void:
 	print("\n-- Saved selection: key restore survives registration reorder --")
@@ -801,7 +984,9 @@ func _test_integration_capability_path(so) -> void:
 	check("registry now has the entry (via capability path)",
 		registry != null and registry.has_entry("plugin:chatprovider:main"))
 
-	# Generate round-trip through the live fixture.
+	# Generate round-trip through the live fixture, as a governed call: the
+	# host's registry (which learned the fixture's tools when it started)
+	# dispatches through this test's plugin manager while it runs.
 	var entry = registry.get_entry("plugin:chatprovider:main")
 	var P = load(PROVIDER_PATH)
 	var prov = P.new()
@@ -809,9 +994,13 @@ func _test_integration_capability_path(so) -> void:
 	prov._test_plugin_manager = pm
 	root.add_child(prov)
 	prov.owner_history_id = "hist-int"
+	var tool_registry = so.plugin_tool_registry
+	var host_manager = tool_registry.plugin_manager
+	tool_registry.plugin_manager = pm
 	var bot = await prov.generate_content([{"text": "pong"}])
 	check("live generate → pong-7", bot.text == "pong-7", "%s / err=%s" % [bot.text, bot.error])
 	prov.queue_free()
+	await _test_live_held_check(so, pm, entry)
 
 	# Acceptance 6: stop plugin mid-chat → entry vanishes via lifecycle signal.
 	await pm.stop_plugin(PLUGIN_ID)
@@ -827,6 +1016,68 @@ func _test_integration_capability_path(so) -> void:
 	var bot2 = await prov2.generate_content([{"text": "pong"}])
 	check("generate after stop → BotResponse.error (no crash)", not bot2.error.is_empty(), bot2.error)
 	prov2.queue_free()
+	tool_registry.plugin_manager = host_manager
+
+
+# Through the real registry and the live fixture, with the host's backend
+# tool guard holding the call before it is sent: the call's deadline starts
+# when it is sent, so the time held does not shorten it; and a call stopped
+# while held is never sent.
+func _test_live_held_check(_so, pm, entry: Dictionary) -> void:
+	print("\n-- Integration: a call held by the host's check before it is sent --")
+	var P = load(PROVIDER_PATH)
+	var prov = P.new()
+	prov.configure_from_entry(entry)
+	prov._test_plugin_manager = pm
+	root.add_child(prov)
+	prov.owner_history_id = "hist-int-held"
+	var holding := [true]
+	var held_context := [null]
+	var released_at := [0]
+	var guard := func(_tool: String, _arguments: Dictionary, _caller: String) -> String:
+		held_context[0] = prov._active_context
+		while holding[0]:
+			await process_frame
+		released_at[0] = Time.get_ticks_msec()
+		return ""
+	var sent := [0]
+	var on_sent := func(id: String, tool: String) -> void:
+		if id == PLUGIN_ID and tool == "minerva_chatprovider_generate":
+			sent[0] += 1
+	pm.backend_tool_called.connect(on_sent)
+	pm.set_backend_tool_guard(PLUGIN_ID, guard)
+
+	var turn: Array = []
+	(func(): turn.append(await prov.generate_content([{"text": "pong"}]))).call()
+	var held := await _until(func(): return held_context[0] != null)
+	await create_timer(0.5).timeout
+	holding[0] = false
+	await _until(func(): return turn.size() == 1)
+	var context = held_context[0]
+	var margin: int = context.lifetime.deadline_ms - released_at[0] if context != null else 0
+	check("live held: after 0.5 s held by the host's check, the sent call has its whole timeout",
+		held and turn.size() == 1 and turn[0].text == "pong-7" and sent[0] == 1
+		and margin >= int(entry.timeout_sec) * 1000 - 100,
+		"held=%s turn=%s sent=%d margin=%dms" % [held, str(turn), sent[0], margin])
+
+	held_context[0] = null
+	holding[0] = true
+	var sent_before: int = sent[0]
+	turn.clear()
+	(func(): turn.append(await prov.generate_content([{"text": "pong"}]))).call()
+	held = await _until(func(): return held_context[0] != null)
+	prov.cancel_active_resquests()
+	holding[0] = false
+	await _until(func(): return turn.size() == 1)
+	for frame in 30:
+		await process_frame
+	check("live held: a call stopped while held is cancelled and never sent",
+		held and turn.size() == 1 and turn[0].error == "Request cancelled." and sent[0] == sent_before,
+		"held=%s turn=%s sent=%d/%d" % [held, str(turn), sent[0], sent_before])
+
+	pm.set_backend_tool_guard(PLUGIN_ID, Callable())
+	pm.backend_tool_called.disconnect(on_sent)
+	prov.queue_free()
 
 
 func _test_mcp_plugin_lifecycle(so) -> void:
@@ -875,6 +1126,7 @@ func _test_mcp_plugin_lifecycle(so) -> void:
 	conn.scripted_result = _answer_envelope("old")
 	var manager = StubManager.new()
 	manager.conn = conn
+	_use_stub_registry(conn)
 	provider._test_plugin_manager = manager
 	var initial = await provider.generate_content([{"text": "hello"}])
 	check("MCP-created provider dispatches its registered tool", initial.text == "old" and conn.last_tool == "generate_old" and not conn.last_args.has("messages"))

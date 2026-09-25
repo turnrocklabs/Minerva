@@ -9,6 +9,8 @@ extends SceneTree
 ## THE STACK UNDER TEST (all real, no stubs in the transport path):
 ##   real SingletonObject autoload
 ##   + real PluginManager / CapabilityBroker / PluginChatProviderRegistry
+##   + real MinervaMCPServer and PluginToolRegistry, which each generate call
+##     passes through as a governed plugin tool call
 ##   + the REAL agent-relay plugin binary (source src/plugins/agent-relay, run
 ##     from its extracted release archive)
 ##   + a background TerminalSession (T1 registry) running a mock codex CLI
@@ -167,6 +169,9 @@ func _run() -> void:
 	var reg_deadline := Time.get_ticks_msec() + 12000
 	while so.get("plugin_tool_registry") == null and Time.get_ticks_msec() < reg_deadline:
 		await create_timer(0.1).timeout
+	# The provider's generate calls are governed plugin tool calls, made
+	# through the host's tool server.
+	check("host tool server available", so.get_mcp_manager().minerva_server != null)
 
 	# ── (a) install + start the REAL agent-relay plugin ─────────────────────
 	# Use the SINGLETON's PluginManager so the plugin's def, the policy that
