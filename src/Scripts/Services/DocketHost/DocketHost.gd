@@ -48,6 +48,11 @@ const LEGACY_PREFS_PATH := "user://docket_prefs.json"
 const LEGACY_SESSION_KEY := "session_paths"
 ## The backend tools that open or close projects.
 const PROJECT_TOOLS := ["docket_project_add", "docket_project_remove"]
+## The backend tools that can change what policy_items reads: items, their
+## types, and which projects are open.
+const CHANGING_TOOLS := ["docket_create", "docket_update", "docket_transition", "docket_delete",
+	"docket_move", "docket_type_define", "docket_type_evolve", "docket_type_activate", "docket_reload",
+	"docket_project_add", "docket_project_remove"]
 
 ## "inactive" (the embedded DocketManager owns Docket's files), "unavailable"
 ## (the plugin is not running, or not ready), "starting" (its process is
@@ -97,6 +102,9 @@ var _changing := false
 # Session path → why the last try to open it failed.
 var _open_errors := {}
 var _reconcile_again := false
+# How many CHANGING_TOOLS calls by agents and panels have completed: a
+# policy read that overlaps one is not trusted (policy_items).
+var _changes := 0
 
 
 ## Takes up the Docket plugin through `plugin_manager`, unless the embedded
@@ -203,6 +211,45 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 		if prompts.has(candidate):
 			return {"prompt": prompts[candidate]}
 	return {"prompt": ""}
+
+
+## The master's policies, read from the plugin afresh: {items} (its items
+## of type policy whose status is proposed or active, in full), or {error}
+## when Docket is unavailable, the master is not open, its policy type is not
+## as Minerva declares it, the read fails, or the master or the plugin's
+## process changed while it was read. An agent's or a panel's change to
+## Docket that completed while it was read makes it {error, changed: true}:
+## read again. The master is checked against a fresh list before the read,
+## so nothing is awaited after it. Policies are the master's only; the
+## session's projects never count. No items is a successful read.
+func policy_items() -> Dictionary:
+	while state == "starting":
+		await state_changed
+	if not state in ["ready", "degraded"]:
+		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
+	var connection = _connection
+	var generation := _generation
+	for gap in master_report.get("capability_gaps", []):
+		if gap is Dictionary and (gap.has("error") or str(gap.get("slug", "")) == "policy"):
+			return {"error": "the master's policy type is not as Minerva declares it: %s" % str(gap)}
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return {"error": listed}
+	var master := master_project()
+	if master.is_empty():
+		return {"error": "the master project is not open"}
+	var changes := _changes
+	var read := await _call(connection, "docket_query", {"project": str(master.get("name", "")), "detail": "full",
+		"filter": {"conditions": [
+			{"field": "type", "op": "eq", "value": "policy"},
+			{"conj": "and", "field": "status", "op": "in", "value": ["proposed", "active"]}]}})
+	if _stale(connection, generation):
+		return {"error": "the Docket plugin's process changed while the policies were read"}
+	if read.has("error") or not read.value.get("items") is Array:
+		return {"error": "the master's policies could not be read: %s" % read.get("error", "no items")}
+	if _changes != changes or _layer_openings([master_project()]) != _layer_openings([master]):
+		return {"error": "Docket changed while the master's policies were read", "changed": true}
+	return {"items": read.value.items}
 
 
 # Why some prompt could be missing from what the open projects give, or "":
@@ -555,6 +602,8 @@ func _resolve(project_name: String) -> Dictionary:
 
 
 func _on_backend_tool_called(id: String, tool: String) -> void:
+	if id == PLUGIN_ID and tool in CHANGING_TOOLS:
+		_changes += 1
 	if id == PLUGIN_ID and tool in PROJECT_TOOLS and state in ["ready", "degraded"]:
 		_reconcile()
 

@@ -323,13 +323,19 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	# Policy reload tool — handled before policy check
 	if tool_name == "minerva_policy_reload":
 		policy_engine.reload()
+		var unread := await policy_engine.refresh()
+		if not unread.is_empty():
+			return {"success": false, "error": "Policy unavailable: %s" % unread,
+				"error_code": "policy_unavailable"}
 		return {"success": true, "rules_loaded": policy_engine.rule_count()}
 
 	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks
 	var pending_observations: Array = []
 	var pending_injections: Array = []
 	if policy_engine:
-		var policy_result := policy_engine.evaluate(tool_name, arguments, context.caller_chat_id)
+		var policy_result: Dictionary = await policy_engine.admit(tool_name, arguments, context.caller_chat_id)
+		if context.is_stopped():
+			return context.stopped_result()
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
 			_activate_policy_tools(policy_result)
@@ -820,7 +826,7 @@ func _activate_policy_tools(policy_result: Dictionary) -> void:
 
 
 ## Resolve policy injections into concrete knowledge content.
-## Takes the injections array from PolicyEngine.evaluate() and fetches each
+## Takes the injections array from PolicyEngine.admit() and fetches each
 ## knowledge_ref from the docket.  Returns an array of compact content dicts.
 func _resolve_policy_injections(injections: Array) -> Array:
 	if injections.is_empty():

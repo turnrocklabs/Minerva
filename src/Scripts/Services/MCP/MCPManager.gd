@@ -564,7 +564,9 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 		# Policy check for skill tools (same enforcement as all other tools)
 		var skill_injections: Array = []
 		if minerva_server and minerva_server.policy_engine:
-			var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments, caller_chat_id)
+			var policy_result: Dictionary = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
+			if context.is_stopped():
+				return context.stopped_result()
 			if not policy_result["allowed"]:
 				minerva_server._activate_policy_tools(policy_result)
 				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
@@ -633,7 +635,9 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 	# Policy evaluation for external tools — same enforcement as minerva tools
 	var ext_injections: Array = []
 	if minerva_server and minerva_server.policy_engine:
-		var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments, caller_chat_id)
+		var policy_result: Dictionary = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
+		if context.is_stopped():
+			return context.stopped_result()
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
 			minerva_server._activate_policy_tools(policy_result)
@@ -644,6 +648,8 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 		if not pending_observations.is_empty():
 			minerva_server._write_observation_telemetry(pending_observations)
 		ext_injections = policy_result.get("injections", [])
+		if not servers.has(server_name):
+			return {"error": "Server not connected: %s" % server_name, "success": false}
 
 	var connection = servers[server_name]
 	if _tool_connection_owners.get(tool_name) != connection:

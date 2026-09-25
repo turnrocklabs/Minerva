@@ -4,10 +4,16 @@ extends RefCounted
 ##
 ## Usage:
 ##   var engine := PolicyEngine.new()
-##   engine.reload()                         # fetch rules from Docket
-##   var result := engine.evaluate("minerva_bash", {"command": "git push --force"})
+##   engine.reload()                         # fetch rules from the embedded Docket
+##   var result := await engine.admit("minerva_bash", {"command": "git push --force"})
 ##   if not result["allowed"]:
 ##       print(result["error"])
+##
+## The rules belong to whichever Docket owns Minerva's projects: the embedded
+## DocketManager (rules as last reloaded), else the Docket plugin through
+## DocketHost (the master's policies, read afresh for each admission). A
+## governed call is admitted only against rules that were read: when there is
+## no owner or the read fails, admit() refuses it.
 
 # ── Dependencies ───────────────────────────────────────────────────────────────
 
@@ -18,6 +24,20 @@ var _scope_state: RiskScopeState
 
 ## Compiled rules sorted by priority descending.
 var _rules: Array[Dictionary] = []
+
+## The plugin-read policy items the rules were compiled from (JSON), so
+## unchanged items are not compiled again.
+var _compiled_from := ""
+
+## Plugin policy reads started, and the latest of them whose items were taken
+## (refresh()): a read that finishes after a later one was taken is older
+## than the rules in force, so it is not taken.
+var _reads_started := 0
+var _read_taken := 0
+
+## How many times refresh() reads again when a read overlapped a change to
+## Docket or a newer read.
+const READ_ATTEMPTS := 3
 
 ## Rule IDs bypassed for the current session.
 var _session_overrides: Dictionary = {}   # rule_id -> true
@@ -33,10 +53,12 @@ func _init() -> void:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-## Clear and recompile all rules from Docket.
-## Silently results in zero rules if docket_manager is null.
+## Clear and recompile all rules from the embedded Docket.
+## Results in zero rules if docket_manager is null; with the Docket plugin
+## as owner, admit() and refresh() read the rules instead.
 func reload() -> void:
 	_rules.clear()
+	_compiled_from = ""
 
 	var dm = _get_docket_manager()
 	if dm == null:
@@ -44,27 +66,64 @@ func reload() -> void:
 
 	# Query proposed and active policy items separately
 	# (flat dict filter doesn't support __in suffix)
-	var compiled: Array[Dictionary] = []
+	var items: Array = []
 	for status in ["proposed", "active"]:
 		var result: Dictionary = dm.call_tool(
 			"docket_query",
 			{"filter": {"type": "policy", "status": status}}
 		)
-		var items = result.get("items", [])
-		if not items is Array:
-			continue
-		for item in items:
-			if not item is Dictionary:
-				continue
-			var rule: Dictionary = _compile_rule(item)
-			if not rule.is_empty():
-				compiled.append(rule)
+		var found = result.get("items", [])
+		if found is Array:
+			items.append_array(found)
+	_rules = _compile_all(items)
 
-	# Sort by priority descending (higher priority = evaluated first).
-	compiled.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a["priority"] > b["priority"]
-	)
-	_rules = compiled
+
+## Brings the rules up to date with their owner: "" when they are, else why
+## they could not be read. The embedded Docket's rules are current as
+## reloaded; the plugin's are read now (again when the read overlapped a
+## change to Docket, or a newer read was taken first), and compiled again
+## only when the items changed. Nothing is awaited between taking the items
+## and returning, so the caller evaluates the rules just read.
+func refresh() -> String:
+	if _get_docket_manager() != null:
+		return ""
+	var host = _get_docket_host()
+	if host == null:
+		return "no Docket owns Minerva's projects"
+	for attempt in READ_ATTEMPTS:
+		_reads_started += 1
+		var started := _reads_started
+		var read: Dictionary = await host.policy_items()
+		if read.get("changed", false) or started < _read_taken:
+			continue
+		if read.has("error"):
+			return str(read.error)
+		_read_taken = started
+		var fingerprint := JSON.stringify(read.items)
+		if fingerprint != _compiled_from:
+			_rules = _compile_all(read.items)
+			_compiled_from = fingerprint
+		return ""
+	return "Docket kept changing while the policies were read"
+
+
+## The policy decision for a governed call, taken on the rules as they stand
+## now (see refresh()). When they could not be read, a refusal whose
+## error_code is "policy_unavailable" and whose error says why; rules read
+## successfully with none among them allow the call.
+func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> Dictionary:
+	var why := await refresh()
+	if not why.is_empty():
+		return {
+			"allowed": false,
+			"effect": "unavailable",
+			"reason": why,
+			"allowed_next_actions": [],
+			"success": false,
+			"error": "Policy unavailable, so the call was not made: %s" % why,
+			"error_code": "policy_unavailable",
+		}
+	return evaluate(tool_name, arguments, caller_id)
 
 
 ## Evaluate a tool call against all loaded rules.
@@ -182,6 +241,23 @@ func get_observation_log() -> Array[Dictionary]:
 
 
 # ── Private: Rule compilation ──────────────────────────────────────────────────
+
+## The rules compiled from policy `items`, highest priority first; items
+## that do not compile are skipped.
+func _compile_all(items: Array) -> Array[Dictionary]:
+	var compiled: Array[Dictionary] = []
+	for item in items:
+		if not item is Dictionary:
+			continue
+		var rule: Dictionary = _compile_rule(item)
+		if not rule.is_empty():
+			compiled.append(rule)
+	# Sort by priority descending (higher priority = evaluated first).
+	compiled.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["priority"] > b["priority"]
+	)
+	return compiled
+
 
 ## Parse one Docket item into a compiled rule Dictionary.
 ## Returns an empty Dictionary on failure (rule is skipped).
@@ -428,16 +504,21 @@ func _make_scope_key(scope_name: String, caller_id: String) -> String:
 
 
 func _get_docket_manager() -> Variant:
+	return _singleton_member("docket_manager")
+
+
+func _get_docket_host() -> Variant:
+	return _singleton_member("docket_host")
+
+
+func _singleton_member(member: String) -> Variant:
 	var root := Engine.get_main_loop()
 	if root == null or not root is SceneTree:
 		return null
 	var singleton_node = (root as SceneTree).root.get_node_or_null("/root/SingletonObject")
 	if singleton_node == null:
 		return null
-	var dm = singleton_node.get("docket_manager")
-	if dm == null:
-		return null
-	return dm
+	return singleton_node.get(member)
 
 
 ## Coerce a value to a plain Array, returning an empty Array on failure.
