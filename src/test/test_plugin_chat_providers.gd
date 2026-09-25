@@ -935,6 +935,13 @@ func _test_integration_capability_path(so) -> void:
 	var pm = PM.new()
 	root.add_child(pm)
 	await process_frame
+	# The host's plugin tool registry syncs the fixture's manifest at install,
+	# learns its tools when it starts, and dispatches them, all through this
+	# test's plugin manager; the host's own manager is put back on every way
+	# out.
+	var tool_registry = so.plugin_tool_registry
+	var host_manager = tool_registry.plugin_manager
+	tool_registry.plugin_manager = pm
 
 	var db = pm._db
 	var def = db.get_by_id(PLUGIN_ID)
@@ -944,6 +951,7 @@ func _test_integration_capability_path(so) -> void:
 		def = db.get_by_id(PLUGIN_ID)
 	check("fixture definition loaded", def != null)
 	if def == null:
+		tool_registry.plugin_manager = host_manager
 		return
 
 	# Wire the real registry on the broker so the capability handler reaches it.
@@ -968,6 +976,7 @@ func _test_integration_capability_path(so) -> void:
 	var conn = pm.get_connection(PLUGIN_ID)
 	check("connection exists", conn != null)
 	if conn == null:
+		tool_registry.plugin_manager = host_manager
 		return
 
 	# Drive register_self → plugin calls host.chat_providers.register.
@@ -984,9 +993,8 @@ func _test_integration_capability_path(so) -> void:
 	check("registry now has the entry (via capability path)",
 		registry != null and registry.has_entry("plugin:chatprovider:main"))
 
-	# Generate round-trip through the live fixture, as a governed call: the
-	# host's registry (which learned the fixture's tools when it started)
-	# dispatches through this test's plugin manager while it runs.
+	# Generate round-trip through the live fixture, as a governed call through
+	# the host's registry.
 	var entry = registry.get_entry("plugin:chatprovider:main")
 	var P = load(PROVIDER_PATH)
 	var prov = P.new()
@@ -994,9 +1002,6 @@ func _test_integration_capability_path(so) -> void:
 	prov._test_plugin_manager = pm
 	root.add_child(prov)
 	prov.owner_history_id = "hist-int"
-	var tool_registry = so.plugin_tool_registry
-	var host_manager = tool_registry.plugin_manager
-	tool_registry.plugin_manager = pm
 	var bot = await prov.generate_content([{"text": "pong"}])
 	check("live generate → pong-7", bot.text == "pong-7", "%s / err=%s" % [bot.text, bot.error])
 	prov.queue_free()
