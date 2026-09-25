@@ -48,8 +48,8 @@ const LEGACY_PREFS_PATH := "user://docket_prefs.json"
 const LEGACY_SESSION_KEY := "session_paths"
 ## The backend tools that open or close projects.
 const PROJECT_TOOLS := ["docket_project_add", "docket_project_remove"]
-## The backend tools that can change what policy_items reads: items, their
-## types, and which projects are open.
+## The backend tools that can change what policy_items and the skill reads
+## read: items, their types, and which projects are open.
 const CHANGING_TOOLS := ["docket_create", "docket_update", "docket_transition", "docket_delete",
 	"docket_move", "docket_type_define", "docket_type_evolve", "docket_type_activate", "docket_reload",
 	"docket_project_add", "docket_project_remove"]
@@ -99,11 +99,15 @@ var _reconciling := false
 var _reconciled_ok := false
 # A person's change to the session (retry, locate, forget) is under way.
 var _changing := false
+# How many such changes have begun: one may open and close projects without
+# leaving a trace in the open set, so a skill read overlapping one is not
+# trusted.
+var _session_changes := 0
 # Session path → why the last try to open it failed.
 var _open_errors := {}
 var _reconcile_again := false
 # How many CHANGING_TOOLS calls by agents and panels have completed: a
-# policy read that overlaps one is not trusted (policy_items).
+# policy or skill read that overlaps one is not trusted.
 var _changes := 0
 
 
@@ -311,6 +315,226 @@ func write_policy_observation(rule_id: String, text: String) -> String:
 	return str(written.error) if written.has("error") else ""
 
 
+## The active skills of every open project (the master, personal.dct and the
+## session's), read afresh in full: {status: "ok", skills: [skill records,
+## see _skill_record]} (none is a successful empty read) or {status: "error",
+## code, message, project?}.
+func skill_catalog() -> Dictionary:
+	var read := await _read_skills(true)
+	if read.status != "ok":
+		return read
+	var skills := []
+	for found in read.found:
+		skills.append_array(found.skills)
+	return {"status": "ok", "skills": skills}
+
+
+## The one skill `selector` names, read afresh in full, in any status:
+## - a qualified Docket reference (SkillRef) names a skill of that open
+##   project only;
+## - any other string is matched against every open project's skills by
+##   exact id, then id prefix (four or more hex digits), then exact title
+##   (any case), then a title containing it; the first tier with a match
+##   decides, and more than one match there is ambiguous.
+## {status: "found", item: skill record, ref}, {status: "missing", selector},
+## or {status: "error", code ("bad_ref", "not_docket", "unavailable",
+## "unknown_project", "ambiguous", "read_failed", "changed", ...), message,
+## project?, candidates?}.
+func skill_lookup(selector: String) -> Dictionary:
+	if selector.strip_edges().is_empty():
+		return {"status": "error", "code": "bad_ref", "message": "no skill was named"}
+	var qualified := SkillRef.parse(selector)
+	if qualified.is_empty() and SkillRef.is_qualified(selector):
+		return {"status": "error", "code": "bad_ref", "message": "%s is not a valid skill reference" % selector}
+	if qualified.get("origin", "") == SkillRef.LOCAL:
+		return {"status": "error", "code": "not_docket", "message": "%s is a local skill" % selector}
+	var only := str(qualified.get("project_path", ""))
+	var read := await _read_skills(false, only)
+	if read.status != "ok":
+		return read
+	var skills := []
+	for found in read.found:
+		skills.append_array(found.skills)
+	var tiers: Array[Callable] = []
+	if not qualified.is_empty():
+		var id := str(qualified.id)
+		tiers.append(func(skill: Dictionary) -> bool: return skill.id == id)
+	else:
+		var wanted := selector.strip_edges()
+		var lower := wanted.to_lower()
+		var hex := wanted.length() >= 4 and wanted.is_valid_hex_number(false)
+		tiers.append(func(skill: Dictionary) -> bool: return skill.id == wanted)
+		tiers.append(func(skill: Dictionary) -> bool: return hex and skill.id.to_lower().begins_with(lower))
+		tiers.append(func(skill: Dictionary) -> bool: return skill.title.to_lower() == lower)
+		tiers.append(func(skill: Dictionary) -> bool: return not lower.is_empty() and skill.title.to_lower().contains(lower))
+	for tier in tiers:
+		var matched := skills.filter(tier)
+		if matched.size() == 1:
+			return {"status": "found", "item": matched[0], "ref": matched[0].ref}
+		if matched.size() > 1:
+			var candidates := []
+			for skill in matched:
+				candidates.append({"ref": skill.ref, "title": skill.title, "project": skill.project})
+			return {"status": "error", "code": "ambiguous", "candidates": candidates,
+				"message": "%s names %d skills; name one by its reference" % [selector, matched.size()]}
+	return {"status": "missing", "selector": selector}
+
+
+## The hints and insights of the open project at `project_path` for each of
+## `components` (at most `limit` of each type per component; the caller
+## picks those targeted at its model), read afresh in full: {status: "ok", items} (none is a
+## successful empty read) or {status: "error", code, message, project?}.
+func skill_knowledge(project_path: String, components: PackedStringArray, limit: int = 10) -> Dictionary:
+	var begun := await _begin_read()
+	if begun.has("status"):
+		return begun
+	var project := _descriptor_of(project_path)
+	if project.is_empty():
+		return {"status": "error", "code": "unknown_project", "message": "%s is not open" % project_path}
+	var changes := _changes
+	var items := []
+	for component in components:
+		for item_type in ["hint", "insight"]:
+			var read := await _call(begun.connection, "docket_query", {"project": str(project.get("name", "")),
+				"detail": "full", "limit": limit, "filter": {"conditions": [
+					{"field": "type", "op": "eq", "value": item_type},
+					{"conj": "and", "field": "component", "op": "eq", "value": component}]}})
+			var failed := _read_failure(read, begun, project)
+			if not failed.is_empty():
+				return failed
+			items.append_array(read.value.items)
+	var unsettled := await _unsettled(begun, changes, [project], false)
+	if not unsettled.is_empty():
+		return unsettled
+	return {"status": "ok", "items": items}
+
+
+# Waits while Docket starts and while a person's change to the session is
+# under way, then lists the open projects afresh: {connection, generation,
+# session_changes}, or a {status: "error"} result.
+func _begin_read() -> Dictionary:
+	while state == "starting" or _changing:
+		await get_tree().process_frame
+	if not state in ["ready", "degraded"]:
+		return {"status": "error", "code": "unavailable",
+			"message": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
+	var connection = _connection
+	var generation := _generation
+	var session_changes := _session_changes
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return {"status": "error", "code": "unavailable", "message": listed}
+	return {"connection": connection, "generation": generation, "session_changes": session_changes}
+
+
+# Every skill of each open project (only the one at `only_path`, when
+# given), active ones only when `active_only`: {status: "ok", found:
+# [{project, skills}]} or a {status: "error"} result. A change to Docket, to
+# any project read or (when reading them all) to which projects are open,
+# while reading is an error (_unsettled).
+func _read_skills(active_only: bool, only_path: String = "") -> Dictionary:
+	var begun := await _begin_read()
+	if begun.has("status"):
+		return begun
+	var read_projects := projects.duplicate()
+	if not only_path.is_empty():
+		var project := _descriptor_of(only_path)
+		if project.is_empty():
+			return {"status": "error", "code": "unknown_project", "message": "%s is not open" % only_path}
+		read_projects = [project]
+	var changes := _changes
+	var conditions := [{"field": "type", "op": "eq", "value": "skill"}]
+	if active_only:
+		conditions.append({"conj": "and", "field": "status", "op": "eq", "value": "active"})
+	var found := []
+	for project in read_projects:
+		var read := await _call(begun.connection, "docket_query", {"project": str(project.get("name", "")),
+			"detail": "full", "filter": {"conditions": conditions}})
+		var failed := _read_failure(read, begun, project)
+		if not failed.is_empty():
+			return failed
+		var skills := []
+		for item in read.value.items:
+			if item is Dictionary:
+				skills.append(_skill_record(item, project))
+		found.append({"project": project, "skills": skills})
+	var unsettled := await _unsettled(begun, changes, read_projects, only_path.is_empty())
+	if not unsettled.is_empty():
+		return unsettled
+	return {"status": "ok", "found": found}
+
+
+# Whether a read of `read_projects` that began with `begun` and `changes`
+# still holds: {} when it does, else a {status: "error"} result. The open
+# projects are listed afresh (a project the host opened or replaced during
+# the read shows there even though no agent or panel call counted); each
+# project read must still be open with the same opening and, when the read
+# covered `every` open project, the open set must be exactly the one read.
+# A person's change to the session that began meanwhile, or is still under
+# way, fails it too, even when it left the open set as it was.
+func _unsettled(begun: Dictionary, changes: int, read_projects: Array, every: bool) -> Dictionary:
+	var listed := await _refresh(begun.connection, begun.generation)
+	if not listed.is_empty():
+		return {"status": "error", "code": "unavailable", "message": listed}
+	var now := []
+	for project in read_projects:
+		now.append(_descriptor_of(str(project.get("path", ""))))
+	var before := _layer_openings(read_projects)
+	var after := _layer_openings(projects if every else now)
+	before.sort()
+	after.sort()
+	if _changes != changes or before != after or _changing or _session_changes != begun.session_changes:
+		return _changed(read_projects[0] if read_projects.size() == 1 and not every else {})
+	return {}
+
+
+# The {status: "error"} result for a query `read` of `project` that failed,
+# answered malformed, or saw the process change; {} when it is good.
+func _read_failure(read: Dictionary, begun: Dictionary, project: Dictionary) -> Dictionary:
+	var name := str(project.get("display_name", project.get("name", "")))
+	if _stale(begun.connection, begun.generation):
+		return {"status": "error", "code": "changed", "project": name,
+			"message": "the Docket plugin's process changed while %s was read" % name}
+	if read.has("error"):
+		return {"status": "error", "code": "read_failed", "project": name,
+			"message": "%s could not be read: %s" % [name, read.error]}
+	if not read.value.get("items") is Array:
+		return {"status": "error", "code": "malformed", "project": name,
+			"message": "%s answered without items" % name}
+	return {}
+
+
+func _changed(project: Dictionary) -> Dictionary:
+	var result := {"status": "error", "code": "changed",
+		"message": "Docket changed while its skills were read; read again"}
+	if not project.is_empty():
+		result["project"] = str(project.get("display_name", project.get("name", "")))
+	return result
+
+
+# A skill item of `project` as its consumers use it: its fields (strings,
+# tool_deps and tags as arrays of strings, optimization as a dictionary),
+# where it is (project name, display name, path) and its reference.
+static func _skill_record(item: Dictionary, project: Dictionary) -> Dictionary:
+	var record := {}
+	for field in ["id", "title", "description", "status", "prompt_text", "steps", "preconditions",
+			"outcome", "component", "topic", "source"]:
+		record[field] = str(item.get(field, ""))
+	for field in ["tool_deps", "tags", "unsatisfied_deps"]:
+		var value = item.get(field, [])
+		if value is String:
+			value = Array(value.split(",", false)).map(func(part: String) -> String: return part.strip_edges())
+		record[field] = (value as Array).map(func(part) -> String: return str(part)) if value is Array else []
+	var optimization = item.get("optimization", {})
+	record["optimization"] = optimization if optimization is Dictionary else {}
+	record["deprecated"] = item.get("deprecated", false) == true
+	record["project"] = str(project.get("name", ""))
+	record["project_display_name"] = str(project.get("display_name", project.get("name", "")))
+	record["project_path"] = str(project.get("path", ""))
+	record["ref"] = SkillRef.docket(record.project_path, record.id)
+	return record
+
+
 # Why some prompt could be missing from what the open projects give, or "":
 # the saved session unread, a project of the session not open (its
 # overrides would be missed), or the master's prompt type not as declared.
@@ -407,6 +631,7 @@ func _change_session(path: String, replacement: String) -> String:
 	while _changing or _reconciling:
 		await get_tree().process_frame
 	_changing = true
+	_session_changes += 1
 	var why := await _changed_session(path, replacement)
 	_changing = false
 	if state in ["ready", "degraded"]:
