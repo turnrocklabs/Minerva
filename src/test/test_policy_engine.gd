@@ -494,8 +494,11 @@ func test_evaluate_scope_rule_activates_scope():
 	}))
 	var result := engine.evaluate("minerva_bash", {"command": "git status"})
 	check("scope rule: allowed is true", result.get("allowed", false) == true)
-	# The scope_state is accessible for verification
-	check("scope rule: git-elevated scope is now active", engine._scope_state.is_active("git-elevated"))
+	# The scope is staged by the evaluation and opens only once the call succeeded.
+	check("scope rule: git-elevated scope is not active before the call succeeds",
+		not engine._scope_state.is_active("git-elevated"))
+	engine.commit_scopes(result)
+	check("scope rule: git-elevated scope is active once committed", engine._scope_state.is_active("git-elevated"))
 
 
 func test_evaluate_proposed_rule_always_observes():
@@ -696,6 +699,7 @@ func test_scope_custom_duration():
 	# Activate scope by triggering the scope rule
 	var r2 := engine.evaluate("minerva_docket_get", {"id": "some-article"})
 	check("custom scope: docket_get allowed", r2.get("allowed", false) == true)
+	engine.commit_scopes(r2)
 	check("custom scope: scope is now active", engine._scope_state.is_active("short-scope"))
 
 	# Navigate should now pass (scope active, 2 actions remaining after tick+is_active)
@@ -748,6 +752,7 @@ func test_scope_per_chat():
 	# Chat A reads the KB article → activates scope for chat A only.
 	var r_a_read := engine.evaluate("cobrowser_read", {"selector": "body"}, "chat-A")
 	check("per-chat scope: chat A read is allowed", r_a_read.get("allowed", false) == true)
+	engine.commit_scopes(r_a_read)
 	check("per-chat scope: scope active for chat A after read", \
 		engine._scope_state.is_active("amazon-kb-read:chat-A"))
 
@@ -800,9 +805,10 @@ func test_inject_with_scope_prevents_reinjection():
 		"scope_ttl_ms": 300000,
 		"context_predicates": {"scope_not_active": "amazon-injected"},
 	}))
-	# First call: inject fires, scope activates
+	# First call: inject fires; its scope opens once the call succeeded
 	var r1 := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"})
 	check("inject+scope: first call has injections", r1.get("injections", []).size() == 1)
+	engine.commit_scopes(r1)
 	check("inject+scope: scope activated", engine._scope_state.is_active("amazon-injected"))
 	# Second call: scope active, inject rule skipped via context_predicate
 	var r2 := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com/dp/123"})
