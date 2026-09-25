@@ -242,6 +242,9 @@ var install_recovery_problems: Array = []
 ## reconcile_recovered is running, and was called again meanwhile.
 var _draining := false
 var _drain_again := false
+## Plugins whose Docket content a removal is changing now: their cleanup
+## journals wait for it (reconcile_recovered skips them).
+var _content_busy: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +467,8 @@ func reconcile_recovered() -> void:
 	while _drain_again:
 		_drain_again = false
 		for recovered in Txn.content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)):
+			if _content_busy.has(recovered.id):
+				continue
 			var journal: Dictionary = recovered.journal
 			var attempted = PluginDefinition.from_dict(journal.attempted) if journal.get("attempted") is Dictionary \
 				else _db.get_by_id(recovered.id)
@@ -567,22 +572,52 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	# Runs AFTER _db.remove so the uninstalled plugin's tools are no longer
 	# counted as available.
 	var result: Dictionary = {"ok": true}
-	# The plugin's knowledge project is reached by its name now, and recorded
-	# for a retry even while it is not open.
+	# Before anything is removed, the projects the removal will reach (the
+	# master and the knowledge project by name, which are recorded even
+	# while not open, and every open project by its file) are saved as a
+	# cleanup journal; a removal that does not finish leaves it for
+	# reconcile_recovered, whose retry reaches exactly those, no other.
+	_content_busy[id] = true
 	var removal_docket := Seeding.docket()
-	if def != null and not def.knowledge.is_empty():
-		await removal_docket.has_project(def.knowledge_project)
+	var names: Array = [""]
+	if def != null and not def.knowledge.is_empty() and not def.knowledge_project in ["", "master"]:
+		names.append(def.knowledge_project)
+	for name in names:
+		await removal_docket.has_project(name)
+	# Each open project once: one already reached by its name is not added
+	# again by its file.
+	var named_paths: Array = removal_docket.bound_paths().values()
+	var scope: Array = names.duplicate()
+	for project in await removal_docket.project_names():
+		if project is String and ("" if project == "master" else project) in names:
+			continue
+		if not project is String and project.path in named_paths:
+			continue
+		scope.append(project)
+	removal_docket.scope_to(scope)
+	# Which projects are open is unknown when they could not be listed (the
+	# operation stopped): the journal says so (enumerated null), and its
+	# retry waits to be repaired by hand rather than miss one.
+	var cleanup := {"paths": removal_docket.bound_paths(), "enumerated":
+		removal_docket.enumerated_paths() if removal_docket.incomplete().is_empty() else null}
+	for name in names:
+		if not cleanup.paths.has(name):
+			cleanup.paths[name] = ""
+	var cleanup_path: String = Transaction.queue_cleanup(staging_root, id, cleanup,
+		"its Docket content was being removed")
+	if cleanup_path.is_empty():
+		# Without a record of its scope, a removal that stopped part-way could
+		# not be finished: nothing is removed, and the result says so.
+		result["content_skipped"] = "%s's skills and knowledge were not removed: the record of what to remove could not be saved in %s" % [
+			id, staging_root]
+		_content_busy.erase(id)
+		return result
 	result.merge(await Seeding.unseed(self, id, removal_docket))
-	# Content that could not all be removed is cleaned up by reconcile_recovered.
-	# It records where it reached them, and at least the names of the master and
-	# the knowledge project, so its retry reaches no other project.
-	var cleanup_paths: Dictionary = result.get("content_paths", {}).duplicate()
-	for name in ["" if def == null or def.knowledge.is_empty() else def.knowledge_project, ""]:
-		if not cleanup_paths.has("" if name == "master" else name):
-			cleanup_paths["" if name == "master" else name] = ""
-	if not Seeding.complete(result) and not Transaction.queue_cleanup(staging_root, id,
-			{"paths": cleanup_paths}, Seeding.unfinished_reason(result)):
+	if Seeding.complete(result):
+		Transaction.content_done(cleanup_path)
+	elif not Transaction.requeue_content(cleanup_path, id, cleanup, false, Seeding.unfinished_reason(result)):
 		push_error("[PluginManager] '%s''s leftover Docket content could not be queued for cleanup" % id)
+	_content_busy.erase(id)
 	return result
 
 

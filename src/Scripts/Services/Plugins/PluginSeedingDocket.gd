@@ -92,10 +92,43 @@ func bound_paths() -> Dictionary:
 	return paths
 
 
-## The project names a journal pinned (pin), or [] when none drives the
-## operation.
+## The project names (and OpenProject) a journal pinned (pin), or the
+## operation was scoped to (scope_to), or [] when neither drives it.
 func pinned_names() -> Array:
 	return _pinned
+
+
+## Limits the projects an enumeration reaches (Knowledge.unseed_everywhere)
+## to `projects` (names and OpenProject), as found before anything is
+## changed, so a retry can be given exactly the same (enumerated_paths).
+func scope_to(projects: Array) -> void:
+	_pinned = projects.duplicate()
+
+
+## The paths of the projects the operation reaches by path (OpenProject),
+## whether bound, missing or only named in its scope: what a journal records
+## beside bound_paths, so a retry reaches exactly those files.
+func enumerated_paths() -> Array:
+	var paths: Array = []
+	for project in _pinned + _bound.keys() + _missing.keys():
+		if project is OpenProject and not project.path in paths:
+			paths.append(project.path)
+	return paths
+
+
+## What identifies the binding `project` (a name) got in this operation: its
+## canonical path and, under the plugin, its opening, the plugin's process
+## generation and the session. "" when it was not bound. Equal keys from two
+## operations mean the same project file, opened the same way.
+func binding_key(project: String) -> String:
+	var key := "" if project == MASTER else project
+	if not _plugin_owner:
+		return str(bound_paths().get(key, ""))
+	if not _bound.has(key):
+		return ""
+	var found: Dictionary = _bound[key]
+	return "%s|%s|%s|%s" % [found.project.get("path", ""), found.project.get("open_generation", ""),
+		found.process[1], found.session_changes]
 
 
 ## Under the plugin, a recovery reaches only the files its journal recorded:
@@ -111,6 +144,7 @@ func pin(journal: Dictionary, required: Array) -> void:
 		return
 	var recorded = journal.get("paths")
 	var paths: Dictionary = recorded if recorded is Dictionary else {}
+	var enumerated = journal.get("enumerated", [])
 	var names := {}
 	for name in required + paths.keys():
 		names["" if str(name) == MASTER else str(name)] = true
@@ -119,9 +153,14 @@ func pin(journal: Dictionary, required: Array) -> void:
 			_stopped = "its Docket record does not say which file project '%s' is, so it is not repaired automatically" % [
 				MASTER if key.is_empty() else key]
 			return
+	if not enumerated is Array or enumerated.any(func(path) -> bool: return str(path).is_empty()):
+		_stopped = "its Docket record does not say which project files it was to reach, so it is not repaired automatically"
+		return
 	_recovery = true
 	for key in names:
 		_pinned.append(key)
+	for path in enumerated:
+		_pinned.append(OpenProject.new(str(path)))
 	var why := unavailable()
 	if not why.is_empty():
 		_stopped = why
@@ -132,6 +171,9 @@ func pin(journal: Dictionary, required: Array) -> void:
 			_missing[key] = found
 		else:
 			_bound[key] = found
+	for project in _pinned:
+		if project is OpenProject:
+			await _target_of(project)
 
 
 ## Whether this serves the Docket plugin (rather than the embedded owner).
@@ -169,10 +211,17 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	if answered.get("stale", false):
 		_stopped = "Docket changed while plugin content was being written (%s)" % answered.error
 		if answered.get("sent", false) and tool in CHANGING:
-			_uncertain.append({"tool": tool, "arguments": arguments.duplicate(true),
+			_uncertain.append({"tool": tool, "arguments": _portable(arguments),
 				"project_path": str(found.project.get("path", ""))})
 		return {"error": _stopped}
 	if answered.has("error"):
+		# A change sent but not confirmed (a timeout, a lost connection) may
+		# have been made: the operation stops, and it is uncertain.
+		if answered.get("unconfirmed", false) and (tool in CHANGING or tool == "docket_flush"):
+			_stopped = "Docket did not confirm a change it was sent (%s)" % answered.error
+			_uncertain.append({"tool": tool, "arguments": _portable(arguments),
+				"project_path": str(found.project.get("path", ""))})
+			return {"error": _stopped}
 		return _read_checked(tool, {"error": str(answered.error)})
 	return answered.value if answered.get("value") is Dictionary \
 		else _read_checked(tool, {"error": "%s answered %s" % [tool, str(answered)]})
@@ -196,12 +245,17 @@ func has_project(project) -> bool:
 
 
 ## The open projects, as project arguments name them (under the plugin, as
-## OpenProject, by their paths).
+## OpenProject, by their paths, listed afresh by the plugin: a list that
+## cannot be had stops the operation, rather than leave a project out).
 func project_names() -> Array:
 	if not unavailable().is_empty():
 		return []
 	if _plugin_owner:
-		return _target.projects.map(func(p: Dictionary) -> OpenProject: return OpenProject.new(str(p.get("path", ""))))
+		var listed: Dictionary = await _target.open_projects()
+		if not listed.get("projects") is Array:
+			_stopped = "Docket's open projects could not be listed (%s)" % listed.get("message", "no list")
+			return []
+		return listed.projects.map(func(p: Dictionary) -> OpenProject: return OpenProject.new(str(p.get("path", ""))))
 	var listed := await call_tool("docket_project_list", {})
 	return listed.get("projects", []).map(func(p) -> String: return str(p.get("name", ""))) \
 		if listed.get("projects") is Array else []
@@ -214,6 +268,14 @@ func project_names() -> Array:
 func settle(project) -> bool:
 	var tool := "docket_flush" if _plugin_owner else "docket_persist"
 	return not (await call_tool(tool, {"project": project})).has("error")
+
+
+# `arguments` as a journal can keep them (an OpenProject as its path).
+static func _portable(arguments: Dictionary) -> Dictionary:
+	var kept := arguments.duplicate(true)
+	if kept.get("project") is OpenProject:
+		kept["project"] = kept.project.path
+	return kept
 
 
 # `result` of `tool`; a failed read (but for an item that is not there)

@@ -62,6 +62,12 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) 
 		"skills_skipped": materialised.get("skipped", 0),
 		"skills_deferred_to_update": materialised.get("deferred_to_update", 0),
 	}
+	# The master's new skills are settled in its file (a failed save shows).
+	var failed: int = materialised.get("failed", 0)
+	if (materialised.get("seeded", 0) > 0 or failed > 0) and not await docket_caller.settle(""):
+		failed += 1
+	if failed > 0:
+		seeded["skills_failed"] = failed
 	if not knowledge_plan.is_empty():
 		seeded["knowledge"] = await Knowledge.apply(knowledge_plan, {}, docket_caller)
 		_note_missing_project(def, knowledge_plan, seeded)
@@ -108,7 +114,7 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 	# Phase 2: collect user decisions for prompt_required actions.
 	var changed: Array = []
 	var decisions: Dictionary = await update_decisions(manager, def,
-		plan.get("actions", []) + knowledge_plan.get("actions", []), consent, auto_confirm, changed)
+		plan.get("actions", []) + knowledge_plan.get("actions", []), consent, auto_confirm, changed, docket_caller)
 	if not changed.is_empty():
 		# Left as they are this time: neither taken nor recorded as declined,
 		# so the person is asked about this version again.
@@ -290,12 +296,13 @@ static func _journal_state(before: Dictionary, docket_caller) -> String:
 ## Whether each customised skill or knowledge record among `actions` (from
 ## plan_reconcile / PluginKnowledgeSeeder.plan) takes the update, keyed by its
 ## manifest id: from consent collected before the install began (an item not
-## asked about then keeps its customisation; one accepted whose record has
-## changed since it was shown is not taken, and its id is added to `changed`
-## for the caller to leave that record as it is), from auto_confirm, or by
-## asking.
+## asked about then keeps its customisation; one accepted whose record is not
+## the one shown, in the same project file opened the same way (`docket_caller`'s
+## binding), with the same content, is not taken, and its id is added to
+## `changed` for the caller to leave that record as it is), from
+## auto_confirm, or by asking.
 static func update_decisions(manager, def, actions: Array, consent: Dictionary, auto_confirm: bool,
-		changed: Array = []) -> Dictionary:
+		changed: Array = [], docket_caller: SeedingDocket = null) -> Dictionary:
 	var decisions := {}
 	for action in actions:
 		if str(action.get("action", "")) != SkillSeeder.RECONCILE_PROMPT_REQUIRED:
@@ -304,15 +311,22 @@ static func update_decisions(manager, def, actions: Array, consent: Dictionary, 
 		var item_id := str(action.get("id", item.get("id", "")))
 		if consent.get("collected", false):
 			var accepted := bool(consent.get("update_decisions", {}).get(item_id, false))
-			var seen: Dictionary = consent.get("update_seen", {})
-			if accepted and seen.get(item_id, "") != Knowledge.record_digest(
-					str(item.get("type", "skill")) if action.has("entry") else "skill", action.get("existing", {})):
+			if accepted and not _consent_holds(consent.get("update_seen", {}).get(item_id, {}), action,
+					def.knowledge_project, docket_caller):
 				accepted = false
 				changed.append(item_id)
 			decisions[item_id] = accepted
 		else:
 			decisions[item_id] = auto_confirm or await SkillConsent.ask_update(manager, def, action.get("existing", {}), item)
 	return decisions
+
+
+# Whether what consent saw of `action` (`seen`, from consent_seen) is what
+# it is about to take: the same record, in the same project file opened the
+# same way, with the same content.
+static func _consent_holds(seen: Dictionary, action: Dictionary, knowledge_project: String,
+		docket_caller: SeedingDocket) -> bool:
+	return not seen.is_empty() and seen == SkillConsent.consent_seen(action, knowledge_project, docket_caller)
 
 
 ## Whether a reconcile_after_rollback or unseed `result` finished: no Docket
@@ -359,9 +373,10 @@ static func unfinished_reason(result: Dictionary) -> String:
 ## asked about; "" when there is nothing to tell.
 static func content_note(result: Dictionary) -> String:
 	var notes: Array[String] = []
-	for key in ["content_skipped", "content_incomplete"]:
-		if result.has(key):
-			notes.append(str(result[key]))
+	# Anything that left the content unfinished: not written, written in
+	# part, a write or save Docket refused, a project not open.
+	if not complete(result):
+		notes.append(unfinished_reason(result))
 	if not result.get("content_consent_changed", []).is_empty():
 		notes.append("%d customised item(s) changed after you were asked, so they kept their text" %
 			result.content_consent_changed.size())
@@ -430,8 +445,6 @@ static func unseed(manager, plugin_id: String, operation: SeedingDocket = null) 
 	if not missing.is_empty():
 		result["knowledge_missing_project"] = ", ".join(missing)
 	result.merge(await recompute_reactivity(manager, docket_caller))
-	# Where a retry of an unfinished removal is to look (PluginManager.remove_plugin).
-	result["content_paths"] = docket_caller.bound_paths()
 	return _finish(result, docket_caller, plugin_id, "removed")
 
 

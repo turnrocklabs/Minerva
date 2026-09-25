@@ -626,12 +626,14 @@ static func content_pending(staging_root: String) -> Array:
 
 
 ## Queue, for reconcile_recovered, the cleanup of the Docket content of plugin
-## `id`, removed while its content could not all be removed (`reason`), with
-## `journal` (the paths it reached them at). Returns whether it was saved.
-static func queue_cleanup(staging_root: String, id: String, journal: Dictionary, reason: String) -> bool:
+## `id`, being removed (`reason` says why it is pending), with `journal`
+## (where it reaches that content). Returns its path, "" when it could not be
+## saved; content_done removes it once the content is gone.
+static func queue_cleanup(staging_root: String, id: String, journal: Dictionary, reason: String) -> String:
 	var dir := staging_root.path_join(CONTENT_PENDING)
 	DirAccess.make_dir_recursive_absolute(dir)
-	return requeue_content(dir.path_join("removed_%s_%d.json" % [id, Time.get_ticks_usec()]), id, journal, false, reason)
+	var path := dir.path_join("removed_%s_%d.json" % [id, Time.get_ticks_usec()])
+	return path if requeue_content(path, id, journal, false, reason) else ""
 
 
 static func content_done(path: String) -> void:

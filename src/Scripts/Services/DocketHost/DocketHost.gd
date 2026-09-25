@@ -434,6 +434,16 @@ func skill_target(project_name: String) -> Dictionary:
 		"session_changes": begun.session_changes}
 
 
+## The open projects as the plugin lists them now (after waiting out a
+## start or a person's session change): {projects} (descriptors), or
+## {status: "error", code, message}.
+func open_projects() -> Dictionary:
+	var begun := await _begin_read()
+	if begun.has("status"):
+		return begun
+	return {"projects": projects.duplicate(true)}
+
+
 ## Where plugin content is written, listed afresh: the master for "" or
 ## "master", else the one open project whose stored name is exactly
 ## `project_name` (case-sensitive; none is missing, more than one is
@@ -877,23 +887,37 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 
 
 ## Tool `tool` with `arguments`, sent to the project `target` (from
-## skill_target) was chosen in, under its selector, on the process it was
-## chosen on: {value}, or {error}; with `stale` when the target no longer
-## held (target_problem) before it was sent, or after (then also `sent`: a
-## change it asked for may or may not have been made).
+## skill_target or seeding_target) was chosen in, under its selector, on the
+## process it was chosen on: {value}, or {error}; with `stale` when the
+## target no longer held (target_problem, against the open projects listed
+## afresh on that process just before) when it was to be sent, or after
+## (then also `sent`: a change it asked for may or may not have been made).
+## An open-project list that cannot be had counts as the target not holding.
 func call_bound(target: Dictionary, tool: String, arguments: Dictionary) -> Dictionary:
-	var problem := target_problem(target)
+	var problem := await _fresh_problem(target)
 	if not problem.is_empty():
 		return {"error": problem, "stale": true}
+	# Nothing awaits between that check and the send.
 	var bound := arguments.duplicate(true)
 	bound["project"] = str(target.project.get("name", ""))
 	var answered := await _call(target.process[0], tool, bound)
 	if tool in CHANGING_TOOLS:
 		_changes += 1
-	problem = target_problem(target)
+	problem = await _fresh_problem(target)
 	if not problem.is_empty():
 		return {"error": problem, "stale": true, "sent": true}
 	return answered
+
+
+# target_problem against the open projects listed afresh on `target`'s
+# process (the list cannot be had: a problem too).
+func _fresh_problem(target: Dictionary) -> String:
+	if _stale(target.process[0], target.process[1]):
+		return "the Docket plugin's process changed"
+	var listed := await _refresh(target.process[0], target.process[1])
+	if not listed.is_empty():
+		return listed
+	return target_problem(target)
 
 
 ## Why a call aimed at `target` (from skill_target) may not be sent now, or
@@ -917,7 +941,10 @@ func _call(connection, tool: String, arguments: Dictionary) -> Dictionary:
 		return {"error": "the Docket plugin is not running"}
 	var answered: Dictionary = await connection.call_tool(tool, arguments)
 	if answered.has("error") or answered.get("success", true) == false:
-		return {"error": str(answered.get("error", answered.get("error_message", "%s failed" % tool)))}
+		# A request that timed out or lost its connection (local_error) may
+		# have been carried out: `unconfirmed`, unlike Docket's own refusal.
+		return {"error": str(answered.get("error", answered.get("error_message", "%s failed" % tool))),
+			"unconfirmed": answered.get("local_error", false)}
 	return {"value": answered}
 
 

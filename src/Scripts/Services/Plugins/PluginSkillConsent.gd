@@ -53,8 +53,7 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_caller, 
 		if str(action.get("action", "")) == Seeder.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
 			var item: Dictionary = action.get("entry", action.get("skill", {}))
 			var item_id := str(action.get("id", item.get("id", "")))
-			seen[item_id] = Knowledge.record_digest(str(item.get("type", "skill")) if action.has("entry") else "skill",
-				action.get("existing", {}))
+			seen[item_id] = consent_seen(action, def.knowledge_project, docket_caller)
 			decisions[item_id] = not keep_customised and (auto_confirm \
 				or await ask_update(host, def, action.get("existing", {}), item, op))
 	consent["update_decisions"] = decisions
@@ -62,6 +61,19 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_caller, 
 	if unattended:
 		consent["seed_new"] = false
 	return consent
+
+
+## What consent records of `action` (a prompt_required one, planned against
+## `docket_caller`'s binding of its project, the master for a skill or
+## `knowledge_project`) when the person is asked: the record, its project
+## binding and its content (collect); an acceptance applies only while it
+## still holds (PluginContentSeeding.update_decisions).
+static func consent_seen(action: Dictionary, knowledge_project: String, docket_caller) -> Dictionary:
+	var knowledge := action.has("entry")
+	var existing: Dictionary = action.get("existing", {})
+	return {"record_id": str(existing.get("id", "")),
+		"binding": docket_caller.binding_key(knowledge_project if knowledge else "") if docket_caller != null else "",
+		"digest": Knowledge.record_digest(str(action.entry.get("type", "")) if knowledge else "skill", existing)}
 
 
 ## Whether the user accepts seeding `resolved` (PluginSkillSeeder.resolve_deps)
