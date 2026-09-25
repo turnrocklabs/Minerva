@@ -6,6 +6,9 @@ const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const ToolCallOutcome = preload("res://Scripts/Services/MCP/MCPToolCallOutcome.gd")
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 const NativeWireAdapter = preload("res://Scripts/Services/MCP/MCPNativeWireAdapter.gd")
+## The Docket plugin, whose own tools keep the names Minerva's policies,
+## skills and prompts use for them (see _apply_prefix).
+const DOCKET_PLUGIN_ID := "docket"
 ## Bridges plugin tools into Minerva's MCP tool system.
 ##
 ## Maintains a registry of tools contributed by installed plugins and handles
@@ -139,6 +142,7 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 
 	# Validate all tools before registering any (atomic).
 	var validated: Array[Dictionary] = []
+	var seen := {}
 	for tool_entry in tools:
 		if not tool_entry is Dictionary:
 			return {"error": "Tool entry is not a Dictionary for plugin '%s'" % plugin_id}
@@ -146,6 +150,11 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 		var tool_name: String = tool_entry.get("name", "")
 		if tool_name.is_empty():
 			return {"error": "Tool entry is missing 'name' field for plugin '%s'" % plugin_id}
+		# One tool per public name: two entries (backend or panel) that would
+		# answer to the same name are refused together.
+		if seen.has(tool_name):
+			return {"error": "Tool '%s' is declared twice by plugin '%s'" % [tool_name, plugin_id]}
+		seen[tool_name] = true
 
 		# Enforce naming convention.
 		if not tool_name.begins_with(expected_prefix):
@@ -1055,6 +1064,11 @@ func _register_running_manifest_tools(plugin_id: String,
 #   - If a name ALREADY starts with "minerva_<plugin_id>_" it is used as-is
 #     (no double-prefix). This lets conformant backends opt in without
 #     breakage.
+#   - The Docket plugin's own tools ("docket_get", …) become "minerva_" + name
+#     ("minerva_docket_get"): the names the embedded Docket gave them, which
+#     policies, skills' tool_deps and prompts name. A built-in tool of the
+#     same name (the embedded Docket's) is a conflict, so the two never
+#     register together.
 #   - Names that start with "minerva_" but belong to a DIFFERENT plugin's
 #     prefix are rejected as they could shadow another plugin's tools.
 #
@@ -1074,6 +1088,8 @@ static func _sanitize_tool_name(raw_name: String) -> String:
 ## Returns the conformant "minerva_<plugin_id>_<name>" string.
 ## Does NOT double-prefix if the name already conforms.
 static func _apply_prefix(plugin_id: String, raw_name: String) -> String:
+	if plugin_id == DOCKET_PLUGIN_ID and raw_name.begins_with("docket_"):
+		return "minerva_" + _sanitize_tool_name(raw_name)
 	var expected_prefix := "minerva_%s_" % plugin_id
 	if raw_name.begins_with(expected_prefix):
 		return raw_name  # Already conformant — use as-is.
@@ -1160,12 +1176,8 @@ func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dict
 			# Backend-discovered tools are by definition served by the plugin
 			# subprocess — they are always executor "backend".
 			"executor": "backend",
-			# Preserve the original backend name for dispatch — _call_tool_stdio
-			# uses the namespaced name and the plugin receives it via tools/call.
-			# The backend must handle the namespaced name OR we strip the prefix
-			# before forwarding. For now we forward as-is (the backend echoes its
-			# own name from tools/list, so it will recognise the prefixed name if
-			# it declared it, or the stripped name if it declared the short form).
+			# The name the backend listed: dispatch sends this one, not the
+			# registered name.
 			"_backend_name": raw_name,
 			"_mcp_definition": _namespaced_definition(tool_def, namespaced_name),
 		}

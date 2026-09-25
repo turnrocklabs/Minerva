@@ -804,13 +804,18 @@ func _write_observation_telemetry(observations: Array) -> void:
 ## Pre-activate tools referenced in a policy block response so the agent can comply.
 ## Parses tool names from knowledge_ref (activates minerva_docket_get) and alternatives.
 func _activate_policy_tools(policy_result: Dictionary) -> void:
-	# Always activate minerva_docket_get so the agent can read the KB
+	# minerva_docket_get, as registered, so the agent can read the knowledge
+	# the rule names; when no Docket serves it, the result says so.
 	var knowledge_ref: String = str(policy_result.get("knowledge_ref", ""))
 	if not knowledge_ref.is_empty():
-		var schema := {"name": "minerva_docket_get", "description": "Get a docket item by ID.", "input_schema": {
-			"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]
-		}}
-		tool_budget_manager.activate_tool("minerva_docket_get", schema)
+		if mcp_manager.tool_registry.has("minerva_docket_get"):
+			var docket_get = mcp_manager.tool_registry["minerva_docket_get"]
+			tool_budget_manager.activate_tool("minerva_docket_get", {"name": "minerva_docket_get",
+				"description": docket_get.description, "input_schema": docket_get.input_schema})
+		else:
+			policy_result["knowledge_unavailable"] = \
+				"minerva_docket_get is not available, so the knowledge this rule names (%s) cannot be read now" % knowledge_ref
+			push_warning("[MinervaMCPServer] %s" % policy_result.knowledge_unavailable)
 
 	# Parse tool names from alternatives (match any word_word pattern, then check registry)
 	var re := RegEx.new()
