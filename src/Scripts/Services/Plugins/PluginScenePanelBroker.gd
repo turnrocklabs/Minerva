@@ -356,8 +356,14 @@ func register_panel(
 	entry.panel_name  = panel_name
 	entry.channels    = declared_channels
 	entry.ipc_helper  = ipc_helper
+	entry.registration = ipc_helper.get_instance_id()
 	entry.editor_ref  = weakref(editor) if editor != null else null
 	_panel_registry[panel_key] = entry
+	# Each document the editor is given ends at once what the private channel
+	# bound for the one before, even when it is the same path again.
+	if editor != null and editor.has_signal("attachment_changed"):
+		entry.attachment_handler = _on_attachment_changed.bind(entry)
+		editor.attachment_changed.connect(entry.attachment_handler)
 
 	# Wire the scene's outbound `request` signal to the broker.
 	# We use call_deferred so any `request` emitted during _ready() is
@@ -1842,6 +1848,90 @@ func _deliver_error(panel_name: String, reply_id: String, error: Dictionary,
 
 
 # ---------------------------------------------------------------------------
+# Private panel channel (MinervaIPC.request_private)
+# ---------------------------------------------------------------------------
+
+## The sole route to a plugin's private panel channel (PluginPanelAuthority):
+## `action` for the panel registered as `panel_key` in registration
+## `generation`, answered to `reply_id`. The panel is known only by that
+## registration, never by anything in `params`; a plugin that declares no
+## such channel, or is not running, gets a refusal.
+func handle_private_request(panel_key: String, action: String, params: Dictionary,
+		reply_id: String, generation: int) -> void:
+	var entry: _PanelEntry = _panel_registry.get(panel_key, null)
+	if entry == null or _entry_generation(entry) != generation:
+		return  # closed or re-registered meanwhile: nobody to answer
+	var size_error := PluginPayloadLimits.check(params, entry.plugin_id, PluginPayloadLimits.BULK_BYTES)
+	if not size_error.is_empty():
+		_audit(entry.plugin_id, EVENT_SCENE_DENIED, {"panel_key": panel_key, "channel": "private:%s" % action,
+			"reason": "payload_too_large"})
+		_deliver_error(panel_key, reply_id, size_error, generation)
+		return
+	# A tool the panel calls privately is one it may call at all.
+	var tool := str(params.get("name", "")) if action == "call" else ""
+	if action == "call" and (not tool in entry.channels or not _validate_channel_declared(entry.plugin_id, tool)):
+		_audit(entry.plugin_id, EVENT_SCENE_DENIED, {"panel_key": panel_key, "channel": tool,
+			"reason": "private_call_not_declared"})
+		_deliver_error(panel_key, reply_id, PluginErrors.permission_denied(entry.plugin_id,
+			"Channel '%s' is not declared for panel '%s'" % [tool, entry.panel_name]), generation)
+		return
+	var authority = _panel_authority_of(entry.plugin_id)
+	if authority == null:
+		_audit(entry.plugin_id, EVENT_SCENE_DENIED, {"panel_key": panel_key, "channel": "private:%s" % action,
+			"reason": "no_private_channel"})
+		_deliver_error(panel_key, reply_id, {"success": false, "error_code": "no_private_channel",
+			"error_message": "plugin '%s' has no private panel channel running" % entry.plugin_id,
+			"plugin_id": entry.plugin_id}, generation)
+		return
+	authority.panel_opened(panel_key, generation)
+	# The attachment is read afresh at every step, so a panel given another
+	# document meanwhile is caught.
+	var answered: Dictionary = await authority.handle(panel_key, generation, action, params,
+		_attachment.bind(entry))
+	_audit(entry.plugin_id, EVENT_SCENE_DISPATCHED, {"panel_key": panel_key,
+		"channel": "private:%s" % action, "tool": tool, "scene_success": not answered.has("error_code")})
+	if answered.has("error_code"):
+		answered.erase("rpc_code")
+		answered["success"] = false
+		answered["plugin_id"] = entry.plugin_id
+		_deliver_error(panel_key, reply_id, answered, generation)
+	else:
+		_deliver_reply(panel_key, reply_id, {"success": true, "result": answered.result}, generation,
+			PluginPayloadLimits.BULK_BYTES)
+
+
+## The origin a plugin's backend gives changes made through panel
+## `panel_key`'s private channel, or "" when it has none.
+func panel_origin(panel_key: String) -> String:
+	var entry: _PanelEntry = _panel_registry.get(panel_key, null)
+	if entry == null or _panel_authority_of(entry.plugin_id) == null:
+		return ""
+	return PluginPanelAuthority.origin_of(panel_key)
+
+
+# The panel's attachment, as its editor has it: {file ("" for none), revision
+# (-1 when there is no editor to count them)}.
+func _attachment(entry: _PanelEntry) -> Dictionary:
+	var editor: Object = entry.editor_ref.get_ref() if entry.editor_ref != null else null
+	if editor == null or not is_instance_valid(editor) or not "file" in editor or not "attachment_revision" in editor:
+		return {"file": "", "revision": -1}
+	var file = editor.get("file")
+	return {"file": str(file) if file is String else "", "revision": int(editor.get("attachment_revision"))}
+
+
+func _on_attachment_changed(entry: _PanelEntry) -> void:
+	var authority = _panel_authority_of(entry.plugin_id)
+	if authority != null:
+		authority.attachment_changed(entry.panel_key, entry.registration)
+
+
+func _panel_authority_of(plugin_id: String):
+	if plugin_manager == null or not plugin_manager.has_method("get_panel_authority"):
+		return null
+	return plugin_manager.get_panel_authority(plugin_id)
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle helpers
 # ---------------------------------------------------------------------------
 
@@ -1861,8 +1951,16 @@ func _entry_generation(entry: _PanelEntry) -> int:
 	return helper.get_instance_id()
 
 
-## Detach and free the MinervaIPC helper attached to an entry, if still valid.
+## Detach and free the MinervaIPC helper attached to an entry, if still valid;
+## what the plugin's private channel gave the panel is revoked with it.
 func _detach_ipc_helper(entry: _PanelEntry) -> void:
+	var authority = _panel_authority_of(entry.plugin_id)
+	if authority != null:
+		authority.panel_closed(entry.panel_key, entry.registration)
+	var editor: Object = entry.editor_ref.get_ref() if entry.editor_ref != null else null
+	if editor != null and entry.attachment_handler.is_valid() and editor.attachment_changed.is_connected(entry.attachment_handler):
+		editor.attachment_changed.disconnect(entry.attachment_handler)
+	entry.attachment_handler = Callable()  # it binds the entry, which holds it
 	var helper: MinervaIPC = entry.ipc_helper
 	if helper != null and is_instance_valid(helper):
 		helper.close_registration()
@@ -2354,6 +2452,9 @@ class _PanelEntry extends RefCounted:
 	var channels: PackedStringArray = PackedStringArray()
 	## The MinervaIPC helper node attached to panel_root.
 	var ipc_helper: MinervaIPC = null
+	## The registration's generation (its helper's instance id), kept after
+	## the helper is gone, for ending the registration's private channel.
+	var registration: int = 0
 	## DocumentBuffer this panel is currently subscribed to via attach_buffer_to_panel.
 	## null when no buffer is attached. Cleared on detach_buffer_from_panel and
 	## on unregister_panel.
@@ -2366,3 +2467,5 @@ class _PanelEntry extends RefCounted:
 	## supply one. Read (never written) to answer "which document is this
 	## panel showing" at lookup time, so a tab rename cannot go stale.
 	var editor_ref: WeakRef = null
+	## Connected to the editor's attachment_changed while registered.
+	var attachment_handler: Callable = Callable()

@@ -42,6 +42,8 @@ static var spreadsheet_editor_scene: PackedScene:
 
 signal content_changed()
 signal activity_changed()
+## The editor was given a document (attachment_revision counts them).
+signal attachment_changed()
 
 var activity_status: String = ""
 
@@ -185,12 +187,28 @@ var tab_title: String = "":
 
 var file: String:
 	set(value):
+		var replaced := value != file
 		file = value
+		if replaced:
+			replace_attachment()
 		if code_edit != null:
 			if code_syntax_enabled:
 				code_edit.syntax_highlighter = update_code_hightlighter(file)
 		if reload_button != null:
 			reload_button.disabled = false
+
+## How many documents the editor has been given: every change of `file` (so
+## another path and back counts twice) and every document loaded into its
+## plugin scene, even from the path it had; saving in place counts none.
+## Something bound to what the editor showed holds only while it is unchanged.
+var attachment_revision := 0
+
+
+## Count a new document given to the editor, before anything reads it.
+func replace_attachment() -> void:
+	attachment_revision += 1
+	attachment_changed.emit()
+
 
 #var file_path: String
 var type: Type
@@ -1288,6 +1306,7 @@ func _load_plugin_scene_file(path: String) -> void:
 			("[Editor] _load_plugin_scene_file: plugin_scene_root is null for '%s'") % path
 		)
 		return
+	replace_attachment()
 	var doc: Dictionary = {"file_path": path}
 	var content: String = FileAccess.get_file_as_string(path)
 	if not content.is_empty():

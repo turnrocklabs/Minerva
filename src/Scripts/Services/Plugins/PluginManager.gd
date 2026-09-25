@@ -704,6 +704,13 @@ func _start_plugin_now(id: String) -> Dictionary:
 
 	var rt := _ensure_runtime(id)
 	rt["connection"] = conn
+	# A backend that serves its panel's edits privately gets a secret of its
+	# own for each process it runs.
+	rt["panel_authority"] = null
+	if not def.panel_authority.is_empty():
+		var authority := PluginPanelAuthority.new(id, conn, def.panel_authority)
+		conn.stdio_env_for_generation = authority.env_for_generation
+		rt["panel_authority"] = authority
 	rt["start_time"] = Time.get_unix_time_from_system()
 	rt["stopping"] = false
 
@@ -1234,6 +1241,13 @@ func get_connection(id: String) -> MCPServerConnection:
 	return rt.get("connection", null) as MCPServerConnection
 
 
+## The private panel channel of plugin `id`'s running process
+## (PluginPanelAuthority), or null when it declares none or is not running.
+func get_panel_authority(id: String) -> PluginPanelAuthority:
+	var rt: Dictionary = _runtime.get(id, {})
+	return rt.get("panel_authority", null) as PluginPanelAuthority if rt.get("connection", null) != null else null
+
+
 ## Return the PluginPolicy instance (used by PluginMCPTools).
 var _policy_ref = null  # PluginPolicy
 func get_policy():  # -> PluginPolicy
@@ -1754,6 +1768,7 @@ func _cleanup_connection(id: String) -> void:
 
 	if conn.server_connected or is_instance_valid(conn._subprocess):
 		conn.disconnect_from_server()
+	rt["panel_authority"] = null
 
 	rt["connection"] = null
 

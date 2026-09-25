@@ -565,6 +565,7 @@ func _doc_write(args: Dictionary) -> Dictionary:
 				doc = parsed as Dictionary
 			else:
 				doc = {"source": text}
+			editor2.replace_attachment()
 			var ok2: bool = PluginScenePanelHost.invoke_load(editor2.plugin_scene_root, doc)
 			if not ok2:
 				return _err("plugin_scene_load_request_failed: scene did not implement _on_panel_load_request")

@@ -70,6 +70,35 @@ func request_bulk(channel: String, payload: Dictionary,
 	return await await_reply(reply_id, timeout_ms)
 
 
+## Action `action` ("call", "select_item" or "update_item", see
+## PluginPanelAuthority) with
+## `params` on the plugin's private panel channel, as this panel: the
+## {success, result} or {success: false, error_code, error_message} reply.
+## A plugin that declares no such channel refuses it. Like request_bulk, a
+## timeout does not undo a change the backend still makes; pass the
+## backend's own time budget.
+func request_private(action: String, params: Dictionary,
+		timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
+	if not is_inside_tree() or _bulk_broker == null or _bulk_broker.get_ref() == null:
+		return _panel_closed_error()
+	var size := PluginPayloadLimits.size_bytes(params)
+	if size > get_bulk_payload_limit():
+		return PluginErrors.payload_too_large("", get_bulk_payload_limit(), size)
+	_bulk_sequence += 1
+	var reply_id := "private:%d:%d" % [get_instance_id(), _bulk_sequence]
+	_bulk_broker.get_ref().call_deferred("handle_private_request",
+		_bulk_panel_key, action, params, reply_id, get_instance_id())
+	return await await_reply(reply_id, timeout_ms)
+
+
+## The origin the plugin's backend gives this panel's private-channel
+## changes, or "" when it has no such channel.
+func panel_origin() -> String:
+	if _bulk_broker == null or _bulk_broker.get_ref() == null:
+		return ""
+	return _bulk_broker.get_ref().panel_origin(_bulk_panel_key)
+
+
 ## Broker-only binding; weak ownership avoids a broker/helper reference cycle.
 func configure_bulk(broker: RefCounted, panel_key: String) -> void:
 	_bulk_broker = weakref(broker)
