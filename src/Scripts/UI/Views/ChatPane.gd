@@ -1814,6 +1814,8 @@ func regenerate_response(chi: ChatHistoryItem):
 		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
 	var history_list = await create_prompt(chi, false, history.provider, predicate, history)
+	if _turn_stopped(history, turn_token):
+		return
 
 	# Ensure rendered_node exists (may have been freed if message was deleted)
 	if not is_instance_valid(existing_response.rendered_node):
@@ -2109,6 +2111,12 @@ func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
 	_drain_outgoing_queue(history)
 
 
+## Whether turn `turn_token` of `history` was stopped (and maybe replaced)
+## while it waited: it must then change nothing more and send nothing.
+func _turn_stopped(history: ChatHistory, turn_token: int) -> bool:
+	return history == null or turn_token != history.request_turn_token
+
+
 ## Stop the chat's current turn: bump the token FIRST, so the coroutine still
 ## unwinding this turn is refused when it reaches _release_chat_turn, then
 ## apply the cancel rule to the queue.
@@ -2278,6 +2286,8 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+	if _turn_stopped(history, turn_token):
+		return
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
@@ -3004,6 +3014,12 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# instead of calling the initializer again, which can cause issues with graphics composition
 	# Pass history explicitly to avoid current_tab race with concurrent sub-agent chats
 	var continuation_list = await create_prompt(null, false, null, Callable(), history)
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
+		history.termination_reason = "cancelled"
+		history.termination_message = "Cancelled by user before continuation"
+		finish_with_signal.call()
+		return
 
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
 
@@ -3179,6 +3195,8 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		
 		# make a chat request
 		var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+		if _turn_stopped(history, turn_token):
+			return
 		# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 		history.HistoryItemList.append(user_history_item)
 		user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
@@ -3353,6 +3371,8 @@ func create_message_new(inputs_idx: int) -> void:
 
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+	if _turn_stopped(history, run.turn_token):
+		return
 	
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	

@@ -16,11 +16,13 @@ extends Node
 ##
 ## The plugin is authoritative for which projects are open (its
 ## docket_project_list); the host remembers only their paths, in the order
-## they were opened (the "session_paths" of user://docket_prefs.json).
-## After an agent or a panel adds or removes a project the list is read
-## again and the session updated: a path that was open and no longer is
-## leaves it, a newly open one joins it, and one that never opened (a failed
-## reopen) stays.
+## they were opened, in its own file (SESSION_PATH; the first time, taken
+## from the embedded Docket's preferences, which it never writes). After an
+## agent or a panel adds or removes a project the list is read again and the
+## session updated: a path that was open and no longer is leaves it, a newly
+## open one joins it, and one that never opened (a failed reopen) stays. A
+## saved session that cannot be read is reported, kept as it is and never
+## overwritten.
 ##
 ## Every step belongs to one process of the plugin: its connection (a new
 ## one for each start) and that connection's process generation. A result
@@ -36,8 +38,14 @@ const MASTER_RES := "res://Data/master.dct"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"
 const SCHEMA_RES := "res://Scripts/Services/Docket/Core/data/schema.json"
-const PREFS_PATH := "user://docket_prefs.json"
-const SESSION_KEY := "session_paths"
+## Where DocketHost keeps the session: {"version": SESSION_VERSION,
+## "paths": [...]}.
+const SESSION_PATH := "user://docket_host_session.json"
+const SESSION_VERSION := 1
+## Where the embedded Docket kept it; read (once, when there is no session
+## file yet), never written, as it holds a person's other preferences too.
+const LEGACY_PREFS_PATH := "user://docket_prefs.json"
+const LEGACY_SESSION_KEY := "session_paths"
 ## The backend tools that open or close projects.
 const PROJECT_TOOLS := ["docket_project_add", "docket_project_remove"]
 
@@ -73,6 +81,12 @@ var _setup_problems: Array[String] = []
 # session as last saved.
 var _session := PackedStringArray()
 var _saved_session := PackedStringArray()
+# Why the saved session could not be read ("" when it was): then it is
+# neither restored nor overwritten, and prompts cannot be read.
+var _session_error := ""
+# The session was taken from the embedded Docket's preferences and is not in
+# DocketHost's own file yet.
+var _migrating := false
 # The open paths the session was last brought up to date with.
 var _reconciled_paths := PackedStringArray()
 var _reconciling := false
@@ -119,7 +133,8 @@ func master_project() -> Dictionary:
 ## session's projects in order (personal.dct's never count), looked up as
 ## "key:model_id", then "key:<model family>", then "key". {prompt} ("" when
 ## none is defined: the caller's own default applies), or {error} when
-## Docket could not be read, which is never to be taken for "none".
+## Docket could not be read, or some of the prompts could be missing (see
+## _prompts_unknown), which is never to be taken for "none".
 func system_prompt(key: String, model_id: String = "") -> Dictionary:
 	while state == "starting":
 		await state_changed
@@ -134,6 +149,9 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 	var master := master_project()
 	if master.is_empty():
 		return {"error": "the master project is not open"}
+	var unmet := _prompts_unknown()
+	if not unmet.is_empty():
+		return {"error": unmet}
 	var prompts := {}
 	for project in [master] + session_projects():
 		var read := await _call(connection, "docket_query", {"project": str(project.get("name", "")), "detail": "full",
@@ -155,6 +173,21 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 		if prompts.has(candidate):
 			return {"prompt": prompts[candidate]}
 	return {"prompt": ""}
+
+
+# Why some prompt could be missing from what the open projects give, or "":
+# the saved session unread, a project of the session not open (its
+# overrides would be missed), or the master's prompt type not as declared.
+func _prompts_unknown() -> String:
+	if not _session_error.is_empty():
+		return "the saved session could not be read, so its projects' prompts are unknown"
+	for path in _session:
+		if _descriptor_of(path).is_empty():
+			return "%s, a project of the session, is not open, so its prompts are unknown" % path
+	for gap in master_report.get("capability_gaps", []):
+		if gap is Dictionary and (gap.has("error") or str(gap.get("slug", "")) == "prompt"):
+			return "the master's prompt type is not as Minerva declares it: %s" % str(gap)
+	return ""
 
 
 ## The keys prompt `key` is looked up by for `model_id`, most specific
@@ -276,9 +309,16 @@ func _prepare() -> void:
 		personal_path = str(personal.get("path", ""))
 	# Each reopened path is kept as the plugin names the file (canonical);
 	# one that failed is kept as it was.
+	var loaded := _load_session()
+	_session_error = str(loaded.get("error", ""))
+	_migrating = bool(loaded.get("legacy", false))
+	if _session_error.is_empty() and not _migrating:
+		_saved_session = loaded.paths
+	if not _session_error.is_empty():
+		_setup_problems.append("the saved session could not be read: %s" % _session_error)
 	var session := PackedStringArray()
 	var personal_file := ProjectSettings.globalize_path(PERSONAL_USER)
-	for path in _load_session():
+	for path in loaded.get("paths", PackedStringArray()):
 		if path == personal_file:
 			continue  # opened above, or not at all
 		var opened := {}
@@ -411,11 +451,14 @@ func _publish(more: Array = []) -> void:
 # Writes the session when it differs from the one last saved: "" or why it
 # could not (it is tried again at the next change).
 func _save_if_changed() -> String:
-	if _session == _saved_session:
+	if not _session_error.is_empty():
+		return ""  # an unreadable saved session is kept as it is
+	if _session == _saved_session and not _migrating:
 		return ""
 	var saved := _save_session(_session)
 	if saved.is_empty():
 		_saved_session = _session.duplicate()
+		_migrating = false
 	return saved
 
 
@@ -463,69 +506,70 @@ func _set_state(new_state: String) -> void:
 	state_changed.emit(state)
 
 
-# The session as last saved, each path absolute, in order, once.
-static func _load_session() -> PackedStringArray:
+# The saved session: {paths} (absolute, in order, once, with `legacy` when
+# they come from the embedded Docket) or {error}. DocketHost's own file is
+# authoritative; while it is absent, a whole ".new" (left by a move that
+# failed) stands for it, and without either the session the embedded Docket
+# kept in docket_prefs.json is read, never written. None of them is an empty
+# session; one that is there but cannot be read is an error, not empty.
+static func _load_session() -> Dictionary:
+	for path in [SESSION_PATH, SESSION_PATH + ".new"]:
+		if FileAccess.file_exists(path):
+			var own = _read_json(path)
+			if own is Dictionary and int(own.get("version", 0)) == SESSION_VERSION and own.get("paths") is Array:
+				return {"paths": _paths(own.paths)}
+			return {"error": "%s cannot be read as a version %d session" % [path, SESSION_VERSION]}
+	if not FileAccess.file_exists(LEGACY_PREFS_PATH):
+		return {"paths": PackedStringArray()}
+	var legacy = _read_json(LEGACY_PREFS_PATH)
+	if not legacy is Dictionary:
+		return {"error": "%s cannot be read" % LEGACY_PREFS_PATH}
+	var entries = legacy.get(LEGACY_SESSION_KEY, [])
+	if not entries is Array:
+		return {"error": "%s has no readable %s" % [LEGACY_PREFS_PATH, LEGACY_SESSION_KEY]}
+	return {"paths": _paths(entries), "legacy": true}
+
+
+# A JSON file's contents, {} when it is empty, or null when it cannot be
+# read or parsed.
+static func _read_json(path: String):
+	var text := FileAccess.get_file_as_string(path)
+	if text.is_empty() and FileAccess.get_open_error() != OK:
+		return null
+	if text.strip_edges().is_empty():
+		return {}
+	return JSON.parse_string(text)
+
+
+# `entries` as absolute paths, in order, once.
+static func _paths(entries: Array) -> PackedStringArray:
 	var paths := PackedStringArray()
-	var data = _read_prefs()
-	if data is Dictionary and data.get(SESSION_KEY) is Array:
-		for entry in data[SESSION_KEY]:
-			var path := str(entry)
-			if path.begins_with("user://") or path.begins_with("res://"):
-				path = ProjectSettings.globalize_path(path)
-			# Older sessions also listed the embedded Docket's cache files.
-			if not path.ends_with(".cache") and not path in paths:
-				paths.append(path)
+	for entry in entries:
+		var path := str(entry)
+		if path.begins_with("user://") or path.begins_with("res://"):
+			path = ProjectSettings.globalize_path(path)
+		# Older sessions also listed the embedded Docket's cache files.
+		if not path.ends_with(".cache") and not path in paths:
+			paths.append(path)
 	return paths
 
 
-# The preferences file's contents: a Dictionary ({} when it is absent or
-# empty), or null when it cannot be read as one. Absent, its ".new" copy is
-# read instead if it is whole: a save whose final move failed after the old
-# file was removed (Windows) left it there.
-static func _read_prefs():
-	var fallback := not FileAccess.file_exists(PREFS_PATH)
-	var path := PREFS_PATH + ".new" if fallback else PREFS_PATH
-	if not FileAccess.file_exists(path):
-		return {}
-	var text := FileAccess.get_file_as_string(path)
-	if text.strip_edges().is_empty():
-		return {}
-	var data = JSON.parse_string(text)
-	if data is Dictionary:
-		return data
-	return {} if fallback else null
-
-
-# Writes `session` as the session's paths, keeping the file's other
-# preferences: written whole beside it (".new"), then moved over it, so a
-# failed write leaves the file as it was. The move replaces the file in one
-# step on Linux and macOS, not on Windows, where Godot removes the old file
-# first. If the move fails, the new file is copied into place instead, and
-# if that fails too it stays whole beside it (_read_prefs falls back to it
-# while the file itself is missing). "" or why it could not.
+# Writes `session` to DocketHost's own file: whole beside it (".new"), then
+# moved over it. The move replaces the file in one step on Linux and macOS,
+# not on Windows, where Godot removes the old file first; a move that fails
+# there leaves the ".new", which _load_session reads. "" or why it could not.
 func _save_session(session: PackedStringArray) -> String:
-	var data = _read_prefs()
-	if data == null:
-		return "%s is not readable, so the session was not saved" % PREFS_PATH
-	data[SESSION_KEY] = Array(session)
-	var written := PREFS_PATH + ".new"
+	var written := SESSION_PATH + ".new"
 	var file := FileAccess.open(written, FileAccess.WRITE)
 	if file == null:
-		return "the session could not be saved to %s: %s" % [PREFS_PATH, error_string(FileAccess.get_open_error())]
-	file.store_string(JSON.stringify(data))
+		return "the session could not be saved to %s: %s" % [SESSION_PATH, error_string(FileAccess.get_open_error())]
+	file.store_string(JSON.stringify({"version": SESSION_VERSION, "paths": Array(session)}))
 	var failed := file.get_error()
 	file.close()
 	if failed != OK:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(written))
-		return "the session could not be saved to %s: %s" % [PREFS_PATH, error_string(failed)]
-	var from := ProjectSettings.globalize_path(written)
-	var to := ProjectSettings.globalize_path(PREFS_PATH)
-	var moved := DirAccess.rename_absolute(from, to)
+		return "the session could not be saved to %s: %s" % [SESSION_PATH, error_string(failed)]
+	var moved := DirAccess.rename_absolute(ProjectSettings.globalize_path(written), ProjectSettings.globalize_path(SESSION_PATH))
 	if moved != OK:
-		moved = DirAccess.copy_absolute(from, to)
-		if moved == OK:
-			DirAccess.remove_absolute(from)
-	if moved != OK:
-		return "the session could not be saved to %s (%s); the preferences are whole in %s" \
-			% [PREFS_PATH, error_string(moved), written]
+		return "the session could not be moved into %s (%s); it is whole in %s" % [SESSION_PATH, error_string(moved), written]
 	return ""

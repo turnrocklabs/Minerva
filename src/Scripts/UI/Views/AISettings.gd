@@ -31,6 +31,8 @@ var _loading_values: bool = false
 # The agentic prompt box's own placeholder, while it shows why Docket's
 # prompt could not be read.
 var _agentic_prompt_placeholder := ""
+# Counts the default-prompt reads: only the latest one shows its result.
+var _agentic_prompt_reads := 0
 
 ## Returns the script of the provider thats selected.
 ## `get_selected_provider().new()` to instantiate it
@@ -249,15 +251,17 @@ func _on_cancel_button_pressed() -> void:
 
 
 # Shows the chat's default agentic prompt (ChatPane's); when Docket's could
-# not be read it shows none, and why in its place. A chat changed meanwhile
-# keeps what it shows.
+# not be read it shows none, and why in its place. A chat changed, or a
+# newer read started, meanwhile keeps what it shows.
 func _show_default_agentic_prompt() -> void:
 	var chat := current_chat_tab_ref
 	var edit: TextEdit = %AgenticSystemPromptTextEdit
 	_restore_agentic_placeholder()
 	edit.text = ""
+	_agentic_prompt_reads += 1
+	var read := _agentic_prompt_reads
 	var built: Dictionary = await SingletonObject.Chats._build_agent_system_prompt()
-	if chat != current_chat_tab_ref or not chat.AgenticSystemPrompt.is_empty():
+	if read != _agentic_prompt_reads or chat != current_chat_tab_ref or not chat.AgenticSystemPrompt.is_empty():
 		return
 	# Shown, not chosen: the chat keeps no custom prompt.
 	var loading := _loading_values
