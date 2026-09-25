@@ -153,6 +153,48 @@ func configure_stdio(command: String, args: PackedStringArray = []) -> void:
 	transport = TransportType.STDIO
 
 
+## Called with each new process generation as the STDIO child starts, to
+## give that child environment entries of its own ({name: value}; none when
+## invalid): SubProcess.start_with_env passes them to it alone, never to
+## this process's environment. A child that needs them is not started
+## without that native support.
+var stdio_env_for_generation: Callable = Callable()
+
+
+## The generation of the process this connection runs (a new one each start).
+func process_generation() -> int:
+	return _process_generation
+
+
+## JSON-RPC request `method` with `params` on the STDIO process, for the
+## owner of a backend's private methods (PluginPanelAuthority), never
+## MCP's own: tools/, resources/, prompts/, notifications/, completion/ and
+## logging/ methods, initialize, ping and any name without a "/" are
+## refused. The response, as _stdio_request gives it ({result}
+## or {error, rpc_error | local_error}), and an error when the process
+## changed while it was outstanding.
+func request_method(method: String, params: Dictionary, timeout_sec: float = 120.0) -> Dictionary:
+	if transport != TransportType.STDIO or _subprocess == null or not _subprocess.is_running():
+		return _conn_error("STDIO transport not connected")
+	for mcp_prefix in ["tools/", "resources/", "prompts/", "notifications/", "completion/", "logging/"]:
+		if method.begins_with(mcp_prefix):
+			return _conn_error("%s is an MCP method" % method)
+	if method in ["initialize", "ping"] or not method.contains("/"):
+		return _conn_error("%s is not a private method" % method)
+	var request := _stdio_method_request(method, params)
+	var generation := _process_generation
+	var response := await _stdio_request(request, timeout_sec, method, null, generation)
+	var wire = _take_completed_wire(request.id)
+	if wire != null:
+		var numeric: Dictionary = await WireAdapter.validate_for_application(wire)
+		if generation == _process_generation:
+			response = _stdio_finalize(wire.parsed) if numeric.get("ok", false) \
+				else _conn_error(_wire_validation_message(numeric))
+	if generation != _process_generation:
+		return _conn_error("MCP process changed during %s" % method)
+	return response
+
+
 ## Connect to the MCP server
 func connect_to_server() -> Error:
 	last_failure_reason = ""
@@ -919,9 +961,26 @@ func _connect_stdio() -> Error:
 		_subprocess = null
 		return ERR_CANT_CREATE
 
-	# Start the subprocess
+	# Start the subprocess, with environment entries of its own when its
+	# owner gives some for this generation.
 	SingletonObject.verbose_log("[MCP STDIO] Starting subprocess...")
-	if not created_process.start(stdio_command, stdio_args):
+	var extra_env: Dictionary = {}
+	if stdio_env_for_generation.is_valid():
+		var given = stdio_env_for_generation.call(connection_generation)
+		extra_env = given if given is Dictionary else {}
+		if extra_env.is_empty():
+			push_error("MCP server '%s' needs environment entries for its start, and has none" % server_name)
+			_subprocess.queue_free()
+			_subprocess = null
+			return ERR_CANT_CREATE
+	if not extra_env.is_empty() and not created_process.has_method("start_with_env"):
+		push_error("MCP server '%s' needs an environment of its own, which this terminal extension cannot give; rebuild it" % server_name)
+		_subprocess.queue_free()
+		_subprocess = null
+		return ERR_CANT_CREATE
+	var started: bool = created_process.start_with_env(stdio_command, stdio_args, extra_env) \
+		if not extra_env.is_empty() else created_process.start(stdio_command, stdio_args)
+	if not started:
 		push_error("Failed to start MCP server subprocess for '%s'" % server_name)
 		_subprocess.queue_free()
 		_subprocess = null
