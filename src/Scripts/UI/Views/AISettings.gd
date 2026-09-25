@@ -28,6 +28,9 @@ var current_chat_tab_ref: ChatHistory = null
 
 ## Flag to prevent saving when programmatically setting text fields
 var _loading_values: bool = false
+# The agentic prompt box's own placeholder, while it shows why Docket's
+# prompt could not be read.
+var _agentic_prompt_placeholder := ""
 
 ## Returns the script of the provider thats selected.
 ## `get_selected_provider().new()` to instantiate it
@@ -118,8 +121,9 @@ func load_current_chat_settings() -> void:
 
 	# Load agentic system prompt - show effective prompt (custom or default)
 	if current_chat_tab_ref.AgenticSystemPrompt.is_empty():
-		%AgenticSystemPromptTextEdit.text = SingletonObject.Chats._build_agent_system_prompt()
+		_show_default_agentic_prompt()
 	else:
+		_restore_agentic_placeholder()
 		%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
 	%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
@@ -244,6 +248,32 @@ func _on_cancel_button_pressed() -> void:
 	hide()
 
 
+# Shows the chat's default agentic prompt (ChatPane's); when Docket's could
+# not be read it shows none, and why in its place. A chat changed meanwhile
+# keeps what it shows.
+func _show_default_agentic_prompt() -> void:
+	var chat := current_chat_tab_ref
+	var edit: TextEdit = %AgenticSystemPromptTextEdit
+	_restore_agentic_placeholder()
+	edit.text = ""
+	var built: Dictionary = await SingletonObject.Chats._build_agent_system_prompt()
+	if chat != current_chat_tab_ref or not chat.AgenticSystemPrompt.is_empty():
+		return
+	# Shown, not chosen: the chat keeps no custom prompt.
+	var loading := _loading_values
+	_loading_values = true
+	edit.text = str(built.get("prompt", ""))
+	_loading_values = loading
+	edit.placeholder_text = "Docket's system prompt could not be read: %s" % built.error \
+		if built.has("error") else _agentic_prompt_placeholder
+
+
+func _restore_agentic_placeholder() -> void:
+	if _agentic_prompt_placeholder.is_empty():
+		_agentic_prompt_placeholder = %AgenticSystemPromptTextEdit.placeholder_text
+	%AgenticSystemPromptTextEdit.placeholder_text = _agentic_prompt_placeholder
+
+
 func _on_about_to_popup() -> void:
 	_loading_values = true
 	if SingletonObject.ChatList.size() > 0:
@@ -281,8 +311,9 @@ func _on_about_to_popup() -> void:
 
 		# Load agentic system prompt - show effective prompt (custom or default)
 		if current_chat_tab_ref.AgenticSystemPrompt.is_empty():
-			%AgenticSystemPromptTextEdit.text = SingletonObject.Chats._build_agent_system_prompt()
+			_show_default_agentic_prompt()
 		else:
+			_restore_agentic_placeholder()
 			%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
 		%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 

@@ -114,6 +114,76 @@ func master_project() -> Dictionary:
 	return _descriptor_of(master_path) if not master_path.is_empty() else {}
 
 
+## The active system prompt `key` for `model_id` ("" for none), read from
+## the plugin afresh: the master's prompts, overridden by those of the
+## session's projects in order (personal.dct's never count), looked up as
+## "key:model_id", then "key:<model family>", then "key". {prompt} ("" when
+## none is defined: the caller's own default applies), or {error} when
+## Docket could not be read, which is never to be taken for "none".
+func system_prompt(key: String, model_id: String = "") -> Dictionary:
+	while state == "starting":
+		await state_changed
+	if not state in ["ready", "degraded"]:
+		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
+	var connection = _connection
+	var generation := _generation
+	# Selectors as they are now, not as a pending reconcile last saw them.
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return {"error": listed}
+	var master := master_project()
+	if master.is_empty():
+		return {"error": "the master project is not open"}
+	var prompts := {}
+	for project in [master] + session_projects():
+		var read := await _call(connection, "docket_query", {"project": str(project.get("name", "")), "detail": "full",
+			"filter": {"conditions": [
+				{"field": "type", "op": "eq", "value": "prompt"},
+				{"conj": "and", "field": "status", "op": "eq", "value": "active"},
+				{"conj": "and", "field": "component", "op": "eq", "value": "system-prompt"}]}})
+		if _stale(connection, generation):
+			return {"error": "the Docket plugin's process changed while its prompts were read"}
+		if read.has("error") or not read.value.get("items") is Array:
+			return {"error": "the prompts of %s could not be read: %s"
+				% [project.get("display_name", project.get("name", "")), read.get("error", "no items")]}
+		for item in read.value.items:
+			var item_key := str(item.get("key", "")) if item is Dictionary else ""
+			var text := str(item.get("prompt_text", "")) if item is Dictionary else ""
+			if not item_key.is_empty() and not text.is_empty():
+				prompts[item_key] = text
+	for candidate in prompt_keys(key, model_id):
+		if prompts.has(candidate):
+			return {"prompt": prompts[candidate]}
+	return {"prompt": ""}
+
+
+## The keys prompt `key` is looked up by for `model_id`, most specific
+## first: "key:claude-sonnet-4-6", "key:claude-sonnet", "key".
+static func prompt_keys(key: String, model_id: String) -> PackedStringArray:
+	var keys := PackedStringArray()
+	if not model_id.is_empty():
+		keys.append("%s:%s" % [key, model_id])
+		var family := model_family(model_id)
+		if not family.is_empty() and family != model_id:
+			keys.append("%s:%s" % [key, family])
+	keys.append(key)
+	return keys
+
+
+## A model id's family: its "-"-separated parts before the first that starts
+## with a digit ("claude-sonnet-4-6" → "claude-sonnet", "gemini-2.5-pro" →
+## "gemini").
+static func model_family(model_id: String) -> String:
+	var family := ""
+	for part in model_id.split("-"):
+		if not part.is_empty() and part[0] >= "0" and part[0] <= "9":
+			break
+		if not family.is_empty():
+			family += "-"
+		family += part
+	return family
+
+
 ## Backend tool `tool` of the plugin with `arguments`, called by the host
 ## itself on the current process: {value} (its result) or {error}.
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:

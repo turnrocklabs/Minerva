@@ -72,20 +72,22 @@ const AGENT_TOOL_WINDOW_LENGTH: int = 4000
 const AGENT_FLOATING_SUMMARY_PROMPT_LENGTH: int = 1200
 
 ## Base agent system prompt - tool-specific sections added dynamically
-## Hardcoded fallback — only used if docket master prompt is unavailable.
+## Built-in fallback — used when Docket defines no "agentic-base" prompt.
 const AGENT_SYSTEM_PROMPT_FALLBACK: String = "You are an AI assistant with access to tools.\n\nPhase 1 — SET UP (do this first):\n1. Call minerva_list_skills to see available guides.\n2. Call minerva_get_skill for each relevant skill. This auto-activates the tools you need — do NOT call minerva_tool_search for tools that a skill already activated.\n3. Only use minerva_tool_search for tools not covered by a skill.\n\nPhase 2 — EXECUTE:\nOnce your tools are ready, do the task. Do not search for more tools during execution."
 
-## Build the agent system prompt.
-## Loads from docket master (key: agentic-base), falls back to hardcoded.
+## Set on a chat while Docket's system prompt for it could not be read: why.
+## generate_content_from_provider then sends nothing and reports it.
+const DOCKET_PROMPT_ERROR_META := &"docket_prompt_error"
+
+## Build the agent system prompt: {prompt}, or {error} when Docket's could
+## not be read. Loads "agentic-base" from Docket (the master's, overridden by
+## the session's projects'), falls back to hardcoded when Docket defines none.
 ## Skills provide all domain-specific guidance — the base prompt just bootstraps.
-func _build_agent_system_prompt(history = null) -> String:
-	# Load base prompt from docket (project override → master → fallback)
-	var dm: DocketManager = SingletonObject.docket_manager
-	var prompt: String = ""
-	if dm:
-		prompt = dm.get_system_prompt("agentic-base")
-	if prompt.is_empty():
-		prompt = AGENT_SYSTEM_PROMPT_FALLBACK
+func _build_agent_system_prompt(history = null) -> Dictionary:
+	var base := await _docket_base_prompt()
+	if base.has("error"):
+		return base
+	var prompt: String = base.prompt if not str(base.prompt).is_empty() else AGENT_SYSTEM_PROMPT_FALLBACK
 
 	# Inject skill instructions from active Minerva skills (note-based)
 	var skill_manager = SingletonObject.get_skill_manager()
@@ -108,7 +110,18 @@ func _build_agent_system_prompt(history = null) -> String:
 		for frag in fragments:
 			prompt += "\n\n" + frag
 
-	return prompt
+	return {"prompt": prompt}
+
+
+# "agentic-base" from whichever owns Docket's files: the Docket plugin
+# (DocketHost) once it is active, else the embedded DocketManager. {prompt}
+# ("" for none) or {error}.
+func _docket_base_prompt() -> Dictionary:
+	var host: DocketHost = SingletonObject.docket_host
+	if host != null and host.state != "inactive":
+		return await host.system_prompt("agentic-base")
+	var dm: DocketManager = SingletonObject.docket_manager
+	return {"prompt": dm.get_system_prompt("agentic-base") if dm else ""}
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
@@ -818,7 +831,14 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if "request_reasoning_summary" in provider:
 		provider.request_reasoning_summary = history.ReasoningSummary
 
-	if not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
+	if history.has_meta(DOCKET_PROMPT_ERROR_META):
+		bot_response = BotResponse.new()
+		bot_response.provider = provider
+		bot_response.error = ("Nothing was sent: Minerva's system prompt could not be read from Docket (%s). "
+			+ "Check that the Docket plugin is running in the Plugin Manager, then send again.") \
+			% history.get_meta(DOCKET_PROMPT_ERROR_META)
+		bot_response.set_meta("error_code", "system_prompt_unavailable")
+	elif not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
 		bot_response = BotResponse.new()
 		bot_response.provider = provider
 		bot_response.error = "%s is disabled" % SingletonObject.get_provider_display_name(provider.PROVIDER)
@@ -1514,13 +1534,19 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 	if history:
 		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
 		var effective_system_prompt: String = ""
+		if history.has_meta(DOCKET_PROMPT_ERROR_META):
+			history.remove_meta(DOCKET_PROMPT_ERROR_META)
 		if history.AgentModeEnabled:
 			# In agent mode: use custom agentic prompt if enabled, or fall back to dynamically built agent prompt
 			if history.AgenticSystemPromptEnabled:
 				if not history.AgenticSystemPrompt.is_empty():
 					effective_system_prompt = history.AgenticSystemPrompt
 				else:
-					effective_system_prompt = _build_agent_system_prompt(history)
+					var built := await _build_agent_system_prompt(history)
+					if built.has("error"):
+						history.set_meta(DOCKET_PROMPT_ERROR_META, str(built.error))
+					else:
+						effective_system_prompt = built.prompt
 			# Append any existing regular system prompt to give additional context (if enabled)
 			if history.SystemPromptEnabled and history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
 				if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
