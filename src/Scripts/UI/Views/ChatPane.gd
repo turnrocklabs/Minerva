@@ -1815,6 +1815,10 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	var history_list = await create_prompt(chi, false, history.provider, predicate, history)
 	if _turn_stopped(history, turn_token):
+		# Stopped before anything was sent: the empty response goes too.
+		history.HistoryItemList.erase(existing_response)
+		if is_instance_valid(existing_response.rendered_node):
+			existing_response.rendered_node.queue_free()
 		return
 
 	# Ensure rendered_node exists (may have been freed if message was deleted)

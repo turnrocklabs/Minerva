@@ -510,8 +510,9 @@ func _set_state(new_state: String) -> void:
 # they come from the embedded Docket) or {error}. DocketHost's own file is
 # authoritative; while it is absent, a whole ".new" (left by a move that
 # failed) stands for it, and without either the session the embedded Docket
-# kept in docket_prefs.json is read, never written. None of them is an empty
-# session; one that is there but cannot be read is an error, not empty.
+# kept in docket_prefs.json is read, never written; with none of them the
+# session is empty. One that is there but cannot be read is an error, not an
+# empty session.
 static func _load_session() -> Dictionary:
 	for path in [SESSION_PATH, SESSION_PATH + ".new"]:
 		if FileAccess.file_exists(path):
@@ -560,6 +561,13 @@ static func _paths(entries: Array) -> PackedStringArray:
 # there leaves the ".new", which _load_session reads. "" or why it could not.
 func _save_session(session: PackedStringArray) -> String:
 	var written := SESSION_PATH + ".new"
+	# A ".new" standing in for an absent file goes into place first: writing
+	# the next one would otherwise empty the only whole copy.
+	if not FileAccess.file_exists(SESSION_PATH) and FileAccess.file_exists(written):
+		var recovered := DirAccess.rename_absolute(ProjectSettings.globalize_path(written), ProjectSettings.globalize_path(SESSION_PATH))
+		if recovered != OK:
+			return "the session in %s could not be moved into %s (%s), so no new one was saved" \
+				% [written, SESSION_PATH, error_string(recovered)]
 	var file := FileAccess.open(written, FileAccess.WRITE)
 	if file == null:
 		return "the session could not be saved to %s: %s" % [SESSION_PATH, error_string(FileAccess.get_open_error())]
