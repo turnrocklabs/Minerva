@@ -1450,7 +1450,11 @@ func _on_manifest_selected(path: String) -> void:
 			msg += " Seeded %d skill(s)." % seeded
 		elif declined:
 			msg += " Skills skipped (user declined)."
-		_show_status(msg)
+		# Content Docket could not (all) be written to says so.
+		var content_note: String = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd").content_note(result)
+		if not content_note.is_empty():
+			msg += " %s." % content_note
+		_show_status(msg, not content_note.is_empty())
 		_refresh_plugin_list()
 
 
@@ -1499,10 +1503,11 @@ func _on_remove_confirmed() -> void:
 			if kept > 0:
 				msg += ", kept %d customised skill(s)" % kept
 			msg += "."
-		# Content Docket could not be reached for stays as it was, and says so.
-		if result.has("content_skipped"):
-			msg += " %s." % str(result.content_skipped)
-		_show_status(msg, result.has("content_skipped"))
+		# Content Docket could not (all) be removed from says so.
+		var content_note: String = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd").content_note(result)
+		if not content_note.is_empty():
+			msg += " %s." % content_note
+		_show_status(msg, not content_note.is_empty())
 		_selected_plugin_id = ""
 		_detail_placeholder.visible = true
 		_detail_panel.visible = false

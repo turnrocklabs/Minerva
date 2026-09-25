@@ -46,12 +46,19 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_caller, 
 		var knowledge_plan: Dictionary = await Knowledge.plan(def, docket_caller)
 		actions += knowledge_plan.get("actions", [])
 	var decisions := {}
+	# What each item asked about held when it was shown: an acceptance applies
+	# only while the record still holds it (PluginContentSeeding.update_decisions).
+	var seen := {}
 	for action in actions:
 		if str(action.get("action", "")) == Seeder.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):
 			var item: Dictionary = action.get("entry", action.get("skill", {}))
-			decisions[str(action.get("id", item.get("id", "")))] = not keep_customised and (auto_confirm \
+			var item_id := str(action.get("id", item.get("id", "")))
+			seen[item_id] = Knowledge.record_digest(str(item.get("type", "skill")) if action.has("entry") else "skill",
+				action.get("existing", {}))
+			decisions[item_id] = not keep_customised and (auto_confirm \
 				or await ask_update(host, def, action.get("existing", {}), item, op))
 	consent["update_decisions"] = decisions
+	consent["update_seen"] = seen
 	if unattended:
 		consent["seed_new"] = false
 	return consent

@@ -32,6 +32,7 @@ signal job_changed(job: Job)
 
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
+const Seeding := preload("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
 const MAX_FINISHED := 16
 
 ## The PluginManager that installs, registers, and starts plugins.
@@ -250,8 +251,8 @@ func _run(job: Job) -> void:
 		_finish(job, outcome, message)
 		return
 	var registered: Dictionary = r.get("manager_result", {})
-	# Installed, but its skills and knowledge were left as they were.
-	var content_note := str(registered.get("content_skipped", ""))
+	# Installed, but its skills and knowledge were not (all) written.
+	var content_note := Seeding.content_note(registered)
 	if r.get("started", false):
 		_finish(job, Job.OUTCOME_READY, content_note)  # the upgrade was started before it committed
 		return

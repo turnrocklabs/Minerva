@@ -27,8 +27,7 @@ const SKILL_FIELDS := ["title", "summary", "prompt_text", "outcome", "preconditi
 ## A knowledge record's provenance, put back with its content.
 const KNOWLEDGE_SEAL := ["pristine_hash", "pristine_content"]
 ## The skill fields a person or an update changes (compared, not provenance).
-const SKILL_CONTENT := ["title", "summary", "prompt_text", "outcome", "preconditions", "steps",
-	"tool_deps", "target", "optimization"]
+const SKILL_CONTENT := Knowledge.SKILL_CONTENT
 
 
 ## Resolve tool_deps + (optionally) confirm with the user + materialise skill
@@ -62,7 +61,7 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) 
 	if not knowledge_plan.is_empty():
 		seeded["knowledge"] = await Knowledge.apply(knowledge_plan, {}, docket_caller)
 		_note_missing_project(def, knowledge_plan, seeded)
-	return seeded
+	return _finish(seeded, docket_caller, def.id, "seeded")
 
 
 ## Bring the Docket content of `previous_def`'s plugin in line with `def`:
@@ -83,9 +82,11 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) 
 ## nothing is written to Docket. A rollback
 ## itself (consent.rollback) seeds nothing and moves back, retiring the
 ## attempted project's records only if it wrote any (consent.previous_written).
-## Returns the counts to merge into the caller's result.
-static func reconcile(manager, previous_def, def, consent: Dictionary, auto_confirm: bool) -> Dictionary:
-	var docket_caller := docket()
+## Returns the counts to merge into the caller's result. `operation`, when
+## given, is the Docket binding of an operation this reconcile is part of.
+static func reconcile(manager, previous_def, def, consent: Dictionary, auto_confirm: bool,
+		operation: SeedingDocket = null) -> Dictionary:
+	var docket_caller := operation if operation != null else docket()
 	var result := {}
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
@@ -95,10 +96,24 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 	var plan: Dictionary = await SkillSeeder.plan_reconcile(def, available_tools(manager), docket_caller)
 	var has_knowledge: bool = not (def.knowledge.is_empty() and previous_def.knowledge.is_empty())
 	var knowledge_plan: Dictionary = await Knowledge.plan(def, docket_caller) if has_knowledge else {}
+	# A plan Docket stopped (a failed read, a changed project) is not asked
+	# about, nor applied.
+	if not docket_caller.incomplete().is_empty():
+		return _finish(result, docket_caller, def.id, "updated")
 
 	# Phase 2: collect user decisions for prompt_required actions.
+	var changed: Array = []
 	var decisions: Dictionary = await update_decisions(manager, def,
-		plan.get("actions", []) + knowledge_plan.get("actions", []), consent, auto_confirm)
+		plan.get("actions", []) + knowledge_plan.get("actions", []), consent, auto_confirm, changed)
+	if not changed.is_empty():
+		# Left as they are this time: neither taken nor recorded as declined,
+		# so the person is asked about this version again.
+		for p in [plan, knowledge_plan]:
+			p["actions"] = p.get("actions", []).filter(func(action) -> bool:
+				return not str(action.get("id", action.get("entry", action.get("skill", {})).get("id", ""))) in changed)
+		result["content_consent_changed"] = changed
+		push_warning("[PluginContentSeeding] '%s': %s changed after the person was asked, so were left as they are" % [
+			def.id, ", ".join(changed)])
 	var rollback: bool = consent.get("rollback", false)
 	if rollback or not consent.get("seed_new", true):
 		for p in [plan, knowledge_plan]:
@@ -122,8 +137,8 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 		result["knowledge"] = await Knowledge.apply(knowledge_plan, decisions, docket_caller)
 		_note_missing_project(def, knowledge_plan, result)
 	await _record_written(consent, def, journal, docket_caller)
-	result.merge(await recompute_reactivity(manager))
-	return result
+	result.merge(await recompute_reactivity(manager, docket_caller))
+	return _finish(result, docket_caller, def.id, "updated")
 
 
 ## Replace each journal entry's planned `after` with the record as Docket
@@ -178,7 +193,7 @@ static func reconcile_after_rollback(manager, attempted_def, journal: Dictionary
 	var result := {}
 	if restored != null:
 		result = await reconcile(manager, attempted_def, restored, {"collected": true, "update_decisions": {},
-			"rollback": true, "previous_written": written}, false)
+			"rollback": true, "previous_written": written}, false, docket_caller)
 	# The person's text goes back before an unseed, which then keeps it as
 	# theirs; but only over what the update wrote (_journal_state, judged
 	# before the reconcile above changed anything).
@@ -215,14 +230,14 @@ static func reconcile_after_rollback(manager, attempted_def, journal: Dictionary
 			JOURNAL_UNREACHABLE:
 				left.append(before)
 	if restored == null:
-		result.merge(await unseed(manager, attempted_def.id))
+		result.merge(await unseed(manager, attempted_def.id, docket_caller))
 	if unreachable:
 		result["knowledge_missing_project"] = attempted_def.knowledge_project
 	result["customised_put_back"] = put_back
 	result["journal_left"] = left
 	if not conflicts.is_empty():
 		result["journal_conflicts"] = conflicts
-	return result
+	return _finish(result, docket_caller, attempted_def.id, "put back")
 
 
 ## Where a journaled record stands: still as the update wrote it
@@ -244,34 +259,21 @@ static func _journal_state(before: Dictionary, docket_caller) -> String:
 	if not before.get("after") is Dictionary:
 		return JOURNAL_WRITTEN
 	var type := str(before.get("type", "skill"))
-	var now := _digest(type, current)
-	if now == _digest(type, before.after):
+	var now := Knowledge.record_digest(type, current)
+	if now == Knowledge.record_digest(type, before.after):
 		return JOURNAL_WRITTEN
-	return JOURNAL_RESTORED if now == _digest(type, before.get("fields", {})) else JOURNAL_EDITED
-
-
-## A comparable digest of the content in `values` of a record of `type`.
-static func _digest(type: String, values: Dictionary) -> String:
-	if type != "skill":
-		var entry := values.duplicate()
-		entry["type"] = type
-		return Knowledge.content_hash(entry)
-	var content := {}
-	for field in SKILL_CONTENT:
-		var value = values.get(field, "")
-		# Docket drops empty fields from what it returns.
-		if value == null or ((value is String or value is Array or value is Dictionary) and value.is_empty()):
-			value = ""
-		content[field] = value.replace("\\n", "\n").replace("\\t", "\t") if value is String else value
-	# A JSON round trip gives numbers and collections one form either way.
-	return JSON.stringify(JSON.parse_string(JSON.stringify(content)), "", true)
+	return JOURNAL_RESTORED if now == Knowledge.record_digest(type, before.get("fields", {})) else JOURNAL_EDITED
 
 
 ## Whether each customised skill or knowledge record among `actions` (from
 ## plan_reconcile / PluginKnowledgeSeeder.plan) takes the update, keyed by its
 ## manifest id: from consent collected before the install began (an item not
-## asked about then keeps its customisation), from auto_confirm, or by asking.
-static func update_decisions(manager, def, actions: Array, consent: Dictionary, auto_confirm: bool) -> Dictionary:
+## asked about then keeps its customisation; one accepted whose record has
+## changed since it was shown is not taken, and its id is added to `changed`
+## for the caller to leave that record as it is), from auto_confirm, or by
+## asking.
+static func update_decisions(manager, def, actions: Array, consent: Dictionary, auto_confirm: bool,
+		changed: Array = []) -> Dictionary:
 	var decisions := {}
 	for action in actions:
 		if str(action.get("action", "")) != SkillSeeder.RECONCILE_PROMPT_REQUIRED:
@@ -279,7 +281,13 @@ static func update_decisions(manager, def, actions: Array, consent: Dictionary, 
 		var item: Dictionary = action.get("entry", action.get("skill", {}))
 		var item_id := str(action.get("id", item.get("id", "")))
 		if consent.get("collected", false):
-			decisions[item_id] = bool(consent.get("update_decisions", {}).get(item_id, false))
+			var accepted := bool(consent.get("update_decisions", {}).get(item_id, false))
+			var seen: Dictionary = consent.get("update_seen", {})
+			if accepted and seen.get(item_id, "") != Knowledge.record_digest(
+					str(item.get("type", "skill")) if action.has("entry") else "skill", action.get("existing", {})):
+				accepted = false
+				changed.append(item_id)
+			decisions[item_id] = accepted
 		else:
 			decisions[item_id] = auto_confirm or await SkillConsent.ask_update(manager, def, action.get("existing", {}), item)
 	return decisions
@@ -291,7 +299,8 @@ static func update_decisions(manager, def, actions: Array, consent: Dictionary, 
 static func complete(result: Dictionary) -> bool:
 	var knowledge: Dictionary = result.get("knowledge", {})
 	var retired: Dictionary = result.get("knowledge_retired", {})
-	return not result.has("content_skipped") and result.get("reconcile", {}).get("failed", 0) == 0 \
+	return not result.has("content_skipped") and not result.has("content_incomplete") \
+		and result.get("reconcile", {}).get("failed", 0) == 0 \
 		and knowledge.get("failed", 0) == 0 and not knowledge.has("missing_project") \
 		and not result.has("knowledge_missing_project") \
 		and retired.get("failed", 0) == 0 and not retired.has("missing_project") \
@@ -303,6 +312,8 @@ static func unfinished_reason(result: Dictionary) -> String:
 	var reasons: Array[String] = []
 	if result.has("content_skipped"):
 		reasons.append(str(result.content_skipped))
+	if result.has("content_incomplete"):
+		reasons.append(str(result.content_incomplete))
 	for held in result.get("journal_conflicts", []):
 		reasons.append("'%s' (%s) was changed since its update, so the text it had before that update, held in the file below, was not put back over the change" % [
 			str(held.get("fields", {}).get("title", "")), str(held.get("id", ""))])
@@ -320,6 +331,21 @@ static func unfinished_reason(result: Dictionary) -> String:
 	return ", and ".join(reasons) if not reasons.is_empty() else "Docket could not save some of its changes"
 
 
+## What a person is told about `result`'s content beyond its counts: that it
+## was not written (content_skipped), was written only in part
+## (content_incomplete), or kept the text of items changed after they were
+## asked about; "" when there is nothing to tell.
+static func content_note(result: Dictionary) -> String:
+	var notes: Array[String] = []
+	for key in ["content_skipped", "content_incomplete"]:
+		if result.has(key):
+			notes.append(str(result[key]))
+	if not result.get("content_consent_changed", []).is_empty():
+		notes.append("%d customised item(s) changed after you were asked, so they kept their text" %
+			result.content_consent_changed.size())
+	return "; ".join(notes)
+
+
 ## An update's install committed: the records its knowledge_project move
 ## retired (journal.retired_project) are unseeded there. Returns whether
 ## that finished (false while the project is not loaded or a write failed).
@@ -327,15 +353,18 @@ static func content_committed(journal: Dictionary) -> bool:
 	var retired := str(journal.get("retired_project", ""))
 	if retired.is_empty() or not journal.get("attempted") is Dictionary:
 		return true
-	var unseeded: Dictionary = await Knowledge.unseed(str(journal.attempted.get("id", "")), retired, docket())
-	return unseeded.failed == 0 and not unseeded.has("missing_project")
+	var docket_caller := docket()
+	var unseeded: Dictionary = await Knowledge.unseed(str(journal.attempted.get("id", "")), retired, docket_caller)
+	return unseeded.failed == 0 and not unseeded.has("missing_project") and docket_caller.incomplete().is_empty()
 
 
 ## Remove `plugin_id`'s skills and knowledge (in every loaded project):
 ## pristine records are deleted, customised ones become the user's
 ## (source "user", provenance cleared). Returns the result fields.
-static func unseed(manager, plugin_id: String) -> Dictionary:
-	var docket_caller := docket()
+## `operation`, when given, is the Docket binding of an operation this is part
+## of.
+static func unseed(manager, plugin_id: String, operation: SeedingDocket = null) -> Dictionary:
+	var docket_caller := operation if operation != null else docket()
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
 		var note := "%s's skills and knowledge were not removed: %s" % [plugin_id, why]
@@ -352,14 +381,16 @@ static func unseed(manager, plugin_id: String) -> Dictionary:
 	var knowledge: Dictionary = await Knowledge.unseed_everywhere(plugin_id, docket_caller)
 	if knowledge.get("deleted", 0) > 0 or knowledge.get("kept", 0) > 0 or knowledge.get("failed", 0) > 0:
 		result["knowledge"] = knowledge
-	result.merge(await recompute_reactivity(manager))
-	return result
+	result.merge(await recompute_reactivity(manager, docket_caller))
+	return _finish(result, docket_caller, plugin_id, "removed")
 
 
 ## Recompute unsatisfied_deps for every skill record after a plugin lifecycle
 ## change; returns the reactivity_* result fields when anything changed.
-static func recompute_reactivity(manager) -> Dictionary:
-	var docket_caller := docket()
+## `operation`, when given, is the Docket binding of an operation this is
+## part of (a stopped one writes nothing more).
+static func recompute_reactivity(manager, operation: SeedingDocket = null) -> Dictionary:
+	var docket_caller := operation if operation != null else docket()
 	if not docket_caller.unavailable().is_empty():
 		return {}
 	var reactivity: Dictionary = await SkillSeeder.recompute_unsatisfied(available_tools(manager), docket_caller)
@@ -461,6 +492,25 @@ static func _journal(def, plan: Dictionary, knowledge_plan: Dictionary, decision
 static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool:
 	var journal_dir := str(consent.get("journal_dir", ""))
 	return journal_dir.is_empty() or Txn.save_content(journal_dir, def.id, journal)
+
+
+## `result`, noting when the operation `docket_caller` served stopped before
+## it finished: `plugin_id`'s content was only partly `done`
+## (content_incomplete), with the changes that may or may not have been made
+## (content_uncertain).
+static func _finish(result: Dictionary, docket_caller: SeedingDocket, plugin_id: String, done: String) -> Dictionary:
+	var why := docket_caller.incomplete()
+	if why.is_empty():
+		return result
+	result["content_incomplete"] = "%s's skills and knowledge were only partly %s: %s" % [plugin_id, done, why]
+	# Why it stopped is the reason: a project it could not bind (ambiguous,
+	# unreachable) is not reported missing too.
+	if not docket_caller.was_missing(str(result.get("knowledge_missing_project", ""))):
+		result.erase("knowledge_missing_project")
+	push_warning("[PluginContentSeeding] " + result.content_incomplete)
+	if not docket_caller.uncertain().is_empty():
+		result["content_uncertain"] = docket_caller.uncertain()
+	return result
 
 
 ## Log and return that `def`'s skills and knowledge were not `done` because

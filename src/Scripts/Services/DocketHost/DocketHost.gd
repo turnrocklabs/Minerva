@@ -434,10 +434,31 @@ func skill_target(project_name: String) -> Dictionary:
 		"session_changes": begun.session_changes}
 
 
-## The open project `project_name` names (a selector, or a stored or display
-## name in any case when only one project has it), or {}.
-func project_named(project_name: String) -> Dictionary:
-	return _resolve(project_name)
+## Where plugin content is written, listed afresh: the master for "" or
+## "master", else the one open project whose stored name is exactly
+## `project_name` (case-sensitive; none is missing, more than one is
+## ambiguous, never guessed), or, with `path`, the project open at that
+## path. {status: "ok", project, process, session_changes} (the shape
+## skill_target gives, for call_bound and target_problem) or {status:
+## "error", code, message}.
+func seeding_target(project_name: String, path: String = "") -> Dictionary:
+	var begun := await _begin_read()
+	if begun.has("status"):
+		return begun
+	var matches: Array = []
+	if not path.is_empty():
+		matches = projects.filter(func(p: Dictionary) -> bool: return str(p.get("path", "")) == path)
+	elif project_name.is_empty() or project_name == "master":
+		matches = [master_project()] if not master_project().is_empty() else []
+	else:
+		matches = projects.filter(func(p: Dictionary) -> bool: return str(p.get("display_name", "")) == project_name)
+	var named := path if not path.is_empty() else ("master" if project_name.is_empty() else project_name)
+	if matches.size() != 1:
+		return {"status": "error", "code": "missing_project" if matches.is_empty() else "ambiguous_project",
+			"message": "Docket project '%s' is %s" % [named, "not open" if matches.is_empty()
+				else "open %d times; it is not written to until only one is" % matches.size()]}
+	return {"status": "ok", "project": matches[0], "process": [begun.connection, begun.generation],
+		"session_changes": begun.session_changes}
 
 
 ## Whether the plugin's process is still the one `process` (from
@@ -846,9 +867,49 @@ func _unopened(connection, generation: int, opened: Dictionary, why: String) -> 
 
 
 ## Backend tool `tool` of the plugin with `arguments`, called by the host
-## itself on the current process: {value} (its result) or {error}.
+## itself on the current process: {value} (its result) or {error}. A change
+## it makes counts, for reads under way, as a change to Docket (_changes).
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
-	return await _call(_connection, tool, arguments)
+	var answered := await _call(_connection, tool, arguments)
+	if tool in CHANGING_TOOLS:
+		_changes += 1
+	return answered
+
+
+## Tool `tool` with `arguments`, sent to the project `target` (from
+## skill_target) was chosen in, under its selector, on the process it was
+## chosen on: {value}, or {error}; with `stale` when the target no longer
+## held (target_problem) before it was sent, or after (then also `sent`: a
+## change it asked for may or may not have been made).
+func call_bound(target: Dictionary, tool: String, arguments: Dictionary) -> Dictionary:
+	var problem := target_problem(target)
+	if not problem.is_empty():
+		return {"error": problem, "stale": true}
+	var bound := arguments.duplicate(true)
+	bound["project"] = str(target.project.get("name", ""))
+	var answered := await _call(target.process[0], tool, bound)
+	if tool in CHANGING_TOOLS:
+		_changes += 1
+	problem = target_problem(target)
+	if not problem.is_empty():
+		return {"error": problem, "stale": true, "sent": true}
+	return answered
+
+
+## Why a call aimed at `target` (from skill_target) may not be sent now, or
+## "": the plugin's process and the session must be those it was chosen
+## in, and the project open at its path the same opening under the same
+## selector. Nothing here awaits.
+func target_problem(target: Dictionary) -> String:
+	if _stale(target.process[0], target.process[1]):
+		return "the Docket plugin's process changed"
+	if _changing or _session_changes != target.session_changes:
+		return "the Docket session changed"
+	var project: Dictionary = target.project
+	var now := _descriptor_of(str(project.get("path", "")))
+	if _layer_openings([now]) != _layer_openings([project]) or str(now.get("name", "")) != str(project.get("name", "")):
+		return "Docket project %s changed" % project.get("name", "")
+	return ""
 
 
 func _call(connection, tool: String, arguments: Dictionary) -> Dictionary:

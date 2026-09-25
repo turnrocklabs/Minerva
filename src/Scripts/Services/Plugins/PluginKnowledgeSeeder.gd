@@ -107,8 +107,32 @@ static func content_hash(entry: Dictionary) -> String:
 	return JSON.stringify(content, "", true).sha256_text()
 
 
-## Whether `project` is loaded.
-static func project_loaded(project: String, docket_caller) -> bool:
+## The skill record fields a person or an update changes (compared, not
+## provenance).
+const SKILL_CONTENT := ["title", "summary", "prompt_text", "outcome", "preconditions", "steps",
+	"tool_deps", "target", "optimization"]
+
+
+## A comparable digest of the content in `values` of a record of `type`
+## ("skill", or a knowledge type).
+static func record_digest(type: String, values: Dictionary) -> String:
+	if type != "skill":
+		var entry := values.duplicate()
+		entry["type"] = type
+		return content_hash(entry)
+	var content := {}
+	for field in SKILL_CONTENT:
+		var value = values.get(field, "")
+		# Docket drops empty fields from what it returns.
+		if value == null or ((value is String or value is Array or value is Dictionary) and value.is_empty()):
+			value = ""
+		content[field] = value.replace("\\n", "\n").replace("\\t", "\t") if value is String else value
+	# A JSON round trip gives numbers and collections one form either way.
+	return JSON.stringify(JSON.parse_string(JSON.stringify(content)), "", true)
+
+
+## Whether `project` is loaded (a name, or a PluginSeedingDocket.OpenProject).
+static func project_loaded(project, docket_caller) -> bool:
 	return await docket_caller.has_project(project)
 
 
@@ -222,7 +246,7 @@ static func unseed_everywhere(plugin_id: String, docket_caller) -> Dictionary:
 	var result := {"deleted": 0, "kept": 0, "failed": 0}
 	var projects: Array = await docket_caller.project_names() if docket_caller != null else []
 	for project in projects:
-		var one: Dictionary = await unseed(plugin_id, str(project), docket_caller)
+		var one: Dictionary = await unseed(plugin_id, project, docket_caller)
 		result.deleted += one.deleted
 		result.kept += one.kept
 		result.failed += one.failed
@@ -257,7 +281,7 @@ static func retire(plugin_id: String, project: String, docket_caller) -> Diction
 ## cleared, not deprecated, even one the plugin had dropped: the text is the
 ## person's now). Returns {deleted, kept, failed}, and missing_project when
 ## `project` is not loaded (nothing was done).
-static func unseed(plugin_id: String, project: String, docket_caller) -> Dictionary:
+static func unseed(plugin_id: String, project, docket_caller) -> Dictionary:
 	var result := {"deleted": 0, "kept": 0, "failed": 0}
 	if docket_caller == null or not await project_loaded(project, docket_caller):
 		result["missing_project"] = true
@@ -282,7 +306,7 @@ static func unseed(plugin_id: String, project: String, docket_caller) -> Diction
 
 
 ## key -> full record for `plugin_id`'s kb and hint records in `project`.
-static func _seeded_records(plugin_id: String, project: String, docket_caller) -> Dictionary:
+static func _seeded_records(plugin_id: String, project, docket_caller) -> Dictionary:
 	var records := {}
 	for type in CONTENT_FIELDS:
 		var found: Dictionary = await docket_caller.call_tool("docket_query", {"project": project,
@@ -349,7 +373,7 @@ static func _settle(record_id: String, project: String, sealed: bool, docket_cal
 	return true
 
 
-static func _read_record(record_id: String, project: String, docket_caller) -> Dictionary:
+static func _read_record(record_id: String, project, docket_caller) -> Dictionary:
 	var full: Dictionary = await docket_caller.call_tool("docket_get", {"id": record_id, "project": project})
 	return full if not full.has("error") else {}
 
@@ -358,8 +382,8 @@ static func _read_record(record_id: String, project: String, docket_caller) -> D
 ## file (PluginSeedingDocket.settle): a retry that finds nothing left to change
 ## must still know its earlier writes stored. A project that is not loaded is
 ## not, as Docket would answer for the primary one instead.
-static func _saved(project: String, docket_caller) -> bool:
-	if not project.is_empty() and not await project_loaded(project, docket_caller):
+static func _saved(project, docket_caller) -> bool:
+	if not str(project).is_empty() and not await project_loaded(project, docket_caller):
 		return false
 	return await docket_caller.settle(project)
 
