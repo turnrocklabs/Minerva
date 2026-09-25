@@ -50,7 +50,11 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) 
 		return {"skills_seeded": 0, "skills_skipped": 0, "skills_deferred_to_update": 0, "skills_declined": true}
 
 	var knowledge_plan: Dictionary = await Knowledge.plan(def, docket_caller) if not def.knowledge.is_empty() else {}
-	if not _save_journal(consent, def, _journal(def, {}, knowledge_plan, {}, "")):
+	var journal := _journal(def, {}, knowledge_plan, {}, "")
+	await _record_paths(docket_caller, journal, ["", def.knowledge_project] if not def.knowledge.is_empty() else [""])
+	if not docket_caller.incomplete().is_empty():
+		return _finish({}, docket_caller, def.id, "seeded")
+	if not _save_journal(consent, def, journal):
 		return {"content_skipped": _skipped(def, consent)}
 	var materialised: Dictionary = await SkillSeeder.materialize(def.id, resolved, docket_caller)
 	var seeded := {
@@ -126,6 +130,10 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 		and not knowledge_plan.get("missing_project", false) and (rollback or consent.get("seed_new", true)) \
 		and consent.get("previous_written", true)
 	var journal := _journal(def, plan, knowledge_plan, decisions, previous_def.knowledge_project if moving else "")
+	await _record_paths(docket_caller, journal, [""] + ([def.knowledge_project] if has_knowledge else [])
+		+ ([previous_def.knowledge_project] if moving else []))
+	if not docket_caller.incomplete().is_empty():
+		return _finish(result, docket_caller, def.id, "updated")
 	if not _save_journal(consent, def, journal):
 		return {"content_skipped": _skipped(def, consent)}
 	result["reconcile"] = await SkillSeeder.apply_reconcile(plan, decisions, docket_caller)
@@ -181,15 +189,29 @@ static func _record_written(consent: Dictionary, def, journal: Dictionary, docke
 ## journal_conflicts; one since deleted is done).
 static func reconcile_after_rollback(manager, attempted_def, journal: Dictionary) -> Dictionary:
 	var docket_caller := docket()
+	var restored = manager.get_db().get_by_id(attempted_def.id)
+	var written: bool = journal.get("knowledge_written", not attempted_def.knowledge.is_empty())
+	# The files the rolled-back operation wrote, never others their names
+	# have come to name since: every project this repair can reach (the
+	# master, the entries', the attempted and restored knowledge projects,
+	# a retired one) must be among them.
+	var required: Array = [""]
+	for before in journal.get("entries", []):
+		required.append(str(before.get("project", "")))
+	if written or not attempted_def.knowledge.is_empty():
+		required.append(attempted_def.knowledge_project)
+	if restored != null and not restored.knowledge.is_empty():
+		required.append(restored.knowledge_project)
+	if not str(journal.get("retired_project", "")).is_empty():
+		required.append(str(journal.retired_project))
+	await docket_caller.pin(journal, required)
 	# Knowledge the attempted version wrote in a project that is not loaded
 	# now is out of reach: the rest is repaired, and the repair stays
 	# unfinished (complete() is false) until that project is loaded again.
-	var written: bool = journal.get("knowledge_written", not attempted_def.knowledge.is_empty())
 	var unreachable: bool = written and not await Knowledge.project_loaded(attempted_def.knowledge_project, docket_caller)
 	var states: Array = []
 	for before in journal.get("entries", []):
 		states.append(await _journal_state(before, docket_caller))
-	var restored = manager.get_db().get_by_id(attempted_def.id)
 	var result := {}
 	if restored != null:
 		result = await reconcile(manager, attempted_def, restored, {"collected": true, "update_decisions": {},
@@ -350,12 +372,28 @@ static func content_note(result: Dictionary) -> String:
 ## retired (journal.retired_project) are unseeded there. Returns whether
 ## that finished (false while the project is not loaded or a write failed).
 static func content_committed(journal: Dictionary) -> bool:
-	var retired := str(journal.get("retired_project", ""))
-	if retired.is_empty() or not journal.get("attempted") is Dictionary:
-		return true
+	return (await content_committed_problem(journal)).is_empty()
+
+
+## content_committed, saying why it did not finish ("" when it did). A
+## journal that names what the install applied and retired nothing needs no
+## Docket; one that does not say (absent or unreadable) is only taken for
+## that by the embedded owner, as before: under the plugin it waits.
+static func content_committed_problem(journal: Dictionary) -> String:
 	var docket_caller := docket()
+	var retired := str(journal.get("retired_project", ""))
+	if not journal.get("attempted") is Dictionary:
+		return "its Docket record cannot be read, so it is not repaired automatically" \
+			if docket_caller.plugin_owner() else ""
+	if retired.is_empty():
+		return ""
+	await docket_caller.pin(journal, [retired])
 	var unseeded: Dictionary = await Knowledge.unseed(str(journal.attempted.get("id", "")), retired, docket_caller)
-	return unseeded.failed == 0 and not unseeded.has("missing_project") and docket_caller.incomplete().is_empty()
+	if not docket_caller.incomplete().is_empty():
+		return docket_caller.incomplete()
+	if unseeded.has("missing_project"):
+		return "Docket project '%s' is not open" % retired
+	return "" if unseeded.failed == 0 else "Docket could not save its changes to project '%s'" % retired
 
 
 ## Remove `plugin_id`'s skills and knowledge (in every loaded project):
@@ -379,9 +417,21 @@ static func unseed(manager, plugin_id: String, operation: SeedingDocket = null) 
 	if skills.get("failed", 0) > 0:
 		result["skills_failed"] = skills.failed
 	var knowledge: Dictionary = await Knowledge.unseed_everywhere(plugin_id, docket_caller)
-	if knowledge.get("deleted", 0) > 0 or knowledge.get("kept", 0) > 0 or knowledge.get("failed", 0) > 0:
+	if knowledge.get("deleted", 0) > 0 or knowledge.get("kept", 0) > 0 or knowledge.get("failed", 0) > 0 \
+			or knowledge.has("missing_project"):
 		result["knowledge"] = knowledge
+	# A project the operation was to reach but found not open (the plugin's
+	# knowledge project, closed): its records are still to remove.
+	var paths := docket_caller.bound_paths()
+	var missing: Array = []
+	for name in paths:
+		if str(paths[name]).is_empty():
+			missing.append("master" if str(name).is_empty() else str(name))
+	if not missing.is_empty():
+		result["knowledge_missing_project"] = ", ".join(missing)
 	result.merge(await recompute_reactivity(manager, docket_caller))
+	# Where a retry of an unfinished removal is to look (PluginManager.remove_plugin).
+	result["content_paths"] = docket_caller.bound_paths()
 	return _finish(result, docket_caller, plugin_id, "removed")
 
 
@@ -449,7 +499,8 @@ static func docket() -> SeedingDocket:
 ## The Docket journal for applying `def`: the definition, the project a move
 ## retires (or ""), and the current content of every record the update is
 ## about to overwrite: customised ones taking it with consent, and pristine
-## knowledge (with its seal).
+## knowledge (with its seal). Where its projects are open is added before it
+## is saved (paths, _record_paths).
 static func _journal(def, plan: Dictionary, knowledge_plan: Dictionary, decisions: Dictionary,
 		retired_project: String) -> Dictionary:
 	var entries := []
@@ -492,6 +543,16 @@ static func _journal(def, plan: Dictionary, knowledge_plan: Dictionary, decision
 static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool:
 	var journal_dir := str(consent.get("journal_dir", ""))
 	return journal_dir.is_empty() or Txn.save_content(journal_dir, def.id, journal)
+
+
+## Binds each of `projects` (names; "" the master) for the operation
+## `docket_caller` serves, and records where each is open in `journal`
+## (paths), before the journal is saved: recovery goes back to those files
+## (PluginSeedingDocket.pin), whatever the names have come to name since.
+static func _record_paths(docket_caller: SeedingDocket, journal: Dictionary, projects: Array) -> void:
+	for project in projects:
+		await docket_caller.has_project(str(project))
+	journal["paths"] = docket_caller.bound_paths()
 
 
 ## `result`, noting when the operation `docket_caller` served stopped before

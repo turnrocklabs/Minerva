@@ -470,14 +470,16 @@ func reconcile_recovered() -> void:
 			var done := true
 			var reason := ""
 			if recovered.committed:
-				done = await Seeding.content_committed(journal)
-				reason = "Docket project '%s' is not open, or its changes could not be saved" % journal.get("retired_project", "")
+				reason = await Seeding.content_committed_problem(journal)
+				done = reason.is_empty()
 			else:
 				var result: Dictionary
 				if attempted != null:
 					result = await reconcile_after_rollback(attempted, journal)
 				else:
-					result = await Seeding.unseed(self, recovered.id)
+					var operation := Seeding.docket()
+					await operation.pin(journal, [""])
+					result = await Seeding.unseed(self, recovered.id, operation)
 				done = Seeding.complete(result)
 				journal["entries"] = result.get("journal_left", journal.get("entries", []))
 				reason = Seeding.unfinished_reason(result)
@@ -565,7 +567,22 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	# Runs AFTER _db.remove so the uninstalled plugin's tools are no longer
 	# counted as available.
 	var result: Dictionary = {"ok": true}
-	result.merge(await Seeding.unseed(self, id))
+	# The plugin's knowledge project is reached by its name now, and recorded
+	# for a retry even while it is not open.
+	var removal_docket := Seeding.docket()
+	if def != null and not def.knowledge.is_empty():
+		await removal_docket.has_project(def.knowledge_project)
+	result.merge(await Seeding.unseed(self, id, removal_docket))
+	# Content that could not all be removed is cleaned up by reconcile_recovered.
+	# It records where it reached them, and at least the names of the master and
+	# the knowledge project, so its retry reaches no other project.
+	var cleanup_paths: Dictionary = result.get("content_paths", {}).duplicate()
+	for name in ["" if def == null or def.knowledge.is_empty() else def.knowledge_project, ""]:
+		if not cleanup_paths.has("" if name == "master" else name):
+			cleanup_paths["" if name == "master" else name] = ""
+	if not Seeding.complete(result) and not Transaction.queue_cleanup(staging_root, id,
+			{"paths": cleanup_paths}, Seeding.unfinished_reason(result)):
+		push_error("[PluginManager] '%s''s leftover Docket content could not be queued for cleanup" % id)
 	return result
 
 

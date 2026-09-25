@@ -240,16 +240,23 @@ static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dic
 
 
 ## At uninstall: unseed `plugin_id`'s knowledge in every loaded project (a
-## moved project leaves retired records behind). Returns summed {deleted, kept,
-## failed}.
+## moved project leaves retired records behind), or, when a journal drives
+## the operation, in the projects it pinned only (PluginSeedingDocket.pin).
+## Returns summed {deleted, kept, failed}, with missing_project when one it
+## was to reach is not open.
 static func unseed_everywhere(plugin_id: String, docket_caller) -> Dictionary:
 	var result := {"deleted": 0, "kept": 0, "failed": 0}
-	var projects: Array = await docket_caller.project_names() if docket_caller != null else []
+	var projects: Array = []
+	if docket_caller != null:
+		projects = docket_caller.pinned_names() if not docket_caller.pinned_names().is_empty() \
+			else await docket_caller.project_names()
 	for project in projects:
 		var one: Dictionary = await unseed(plugin_id, project, docket_caller)
 		result.deleted += one.deleted
 		result.kept += one.kept
 		result.failed += one.failed
+		if one.has("missing_project"):
+			result["missing_project"] = true
 	return result
 
 

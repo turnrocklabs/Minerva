@@ -725,6 +725,11 @@ func _wire_plugin_tools_to_mcp() -> void:
 	docket_host.name = "DocketHost"
 	add_child(docket_host)
 	docket_host.start(plugin_manager, docket_manager != null)
+	# Plugin content repairs wait for Docket (PluginManager.reconcile_recovered
+	# does nothing while it cannot be reached); they run when it is ready.
+	docket_host.state_changed.connect(func(state: String) -> void:
+		if state in ["ready", "degraded"]:
+			plugin_manager.reconcile_recovered())
 
 	# Autostart plugins (like SCM services with auto-start flag), then any
 	# opted-in plugin updates
