@@ -94,12 +94,12 @@ func _init() -> void:
 	_tmp_dir = OS.get_cache_dir().path_join("minerva_dcr_019df57b_t8_%d" % randi())
 	DirAccess.make_dir_recursive_absolute(_tmp_dir)
 
-	test_full_lifecycle()
+	await test_full_lifecycle()
 	await test_repair_keeps_customised_skills()
-	test_knowledge_lifecycle()
+	await test_knowledge_lifecycle()
 	await test_knowledge_consent()
 	await test_rollback_restores_content()
-	test_unsaved_knowledge_retry()
+	await test_unsaved_knowledge_retry()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -172,7 +172,7 @@ func _new_docket() -> Dictionary:
 	sf.close()
 	var registry := ToolRegistry.new()
 	registry.init(schema, db, {"master": db})  # loaded as "master", as in Minerva
-	return {"db": db, "registry": registry}
+	return {"db": db, "registry": registry, "docket": PluginSeedingDocket.new(registry, false)}
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +183,7 @@ func test_full_lifecycle() -> void:
 	print("test_full_lifecycle (DCR 019df57b T8 round-trip)")
 	var ctx := _new_docket()
 	var registry = ctx.registry
+	var docket = ctx.docket
 	var plugin_id := "presentation_demo"
 
 	# ---- Phase 1: install plugin v1 ----
@@ -191,13 +192,13 @@ func test_full_lifecycle() -> void:
 	var def_v1 := _make_def(plugin_id, [skill_v1])
 	var resolved := PluginSkillSeederScript.resolve_deps(def_v1,
 		{"presentation_create_deck": true, "presentation_add_slide": true})
-	var install_result: Dictionary = PluginSkillSeederScript.materialize(plugin_id, resolved, registry)
+	var install_result: Dictionary = await PluginSkillSeederScript.materialize(plugin_id, resolved, docket)
 	check("v1 seeded 1 record", install_result.get("seeded", 0) == 1)
 	check("v1 nothing skipped or deferred",
 		install_result.get("skipped", 0) == 0 and install_result.get("deferred_to_update", 0) == 0)
 
-	var record := PluginSkillSeederScript.find_existing_record(
-		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	var record := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, docket)
 	check("record exists", not record.is_empty())
 	check("source is 'plugin:<id>'", str(record.get("source", "")) == "plugin:%s" % plugin_id)
 	check("customised is false on fresh install", record.get("customised") == false)
@@ -214,8 +215,8 @@ func test_full_lifecycle() -> void:
 		registry)
 	check("user edit succeeded", not edit_result.has("error"))
 
-	var after_edit := PluginSkillSeederScript.find_existing_record(
-		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	var after_edit := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, docket)
 	check("steps reflect user edit", str(after_edit.get("steps", "")) == "USER-EDITED 1. Read 2. Make")
 	check("customised auto-flipped to true", after_edit.get("customised") == true)
 	check("source preserved as plugin:<id>",
@@ -225,7 +226,7 @@ func test_full_lifecycle() -> void:
 
 	# ---- Phase 3: re-install identical version → no prompt, no change ----
 	print("  -- phase 3: re-install identical version --")
-	var plan_v1_again := PluginSkillSeederScript.plan_reconcile(def_v1, {}, registry)
+	var plan_v1_again := await PluginSkillSeederScript.plan_reconcile(def_v1, {}, docket)
 	var actions_v1_again: Array = plan_v1_again.get("actions", [])
 	check("v1 re-install has 1 action", actions_v1_again.size() == 1)
 	check("action is no_change (hash matches even though customised)",
@@ -235,34 +236,34 @@ func test_full_lifecycle() -> void:
 	print("  -- phase 4: update v3 with changed content --")
 	var skill_v3 := _slide_deck_skill(plugin_id, "v3")  # different version_marker → hash shift
 	var def_v3 := _make_def(plugin_id, [skill_v3])
-	var plan_v3 := PluginSkillSeederScript.plan_reconcile(def_v3, {}, registry)
+	var plan_v3 := await PluginSkillSeederScript.plan_reconcile(def_v3, {}, docket)
 	var actions_v3: Array = plan_v3.get("actions", [])
 	check("v3 plan has 1 action", actions_v3.size() == 1)
 	check("v3 action is prompt_required (customised + hash differs)",
 		str(actions_v3[0].get("action", "")) == PluginSkillSeederScript.RECONCILE_PROMPT_REQUIRED)
 
 	# 4a: decline → user edits preserved, pristine_content refreshed.
-	var decline_result := PluginSkillSeederScript.apply_reconcile(
-		plan_v3, {("minerva_%s_make_slide_deck" % plugin_id): false}, registry)
+	var decline_result := await PluginSkillSeederScript.apply_reconcile(
+		plan_v3, {("minerva_%s_make_slide_deck" % plugin_id): false}, docket)
 	check("v3 decline counted", decline_result.get("prompted_declined", 0) == 1)
-	var after_decline := PluginSkillSeederScript.find_existing_record(
-		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	var after_decline := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, docket)
 	check("user edit STILL intact after decline",
 		str(after_decline.get("steps", "")) == "USER-EDITED 1. Read 2. Make")
 	check("pristine_content refreshed to v3 (so user can diff later)",
 		str((after_decline.get("pristine_content", {}) as Dictionary).get("steps", "")).contains("v3"))
 
 	# 4b: accept the SAME prompt → user edits get overwritten.
-	var plan_v3_again := PluginSkillSeederScript.plan_reconcile(def_v3, {}, registry)
+	var plan_v3_again := await PluginSkillSeederScript.plan_reconcile(def_v3, {}, docket)
 	# Note: pristine_content was refreshed but pristine_hash wasn't (decline doesn't
 	# touch hash).  So plan still classifies as prompt_required.
 	check("v3 still classified as prompt_required after decline",
 		str((plan_v3_again.actions as Array)[0].get("action", "")) == PluginSkillSeederScript.RECONCILE_PROMPT_REQUIRED)
-	var accept_result := PluginSkillSeederScript.apply_reconcile(
-		plan_v3_again, {("minerva_%s_make_slide_deck" % plugin_id): true}, registry)
+	var accept_result := await PluginSkillSeederScript.apply_reconcile(
+		plan_v3_again, {("minerva_%s_make_slide_deck" % plugin_id): true}, docket)
 	check("v3 accept counted", accept_result.get("prompted_accepted", 0) == 1)
-	var after_accept := PluginSkillSeederScript.find_existing_record(
-		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	var after_accept := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, docket)
 	check("upstream v3 content now in record",
 		str(after_accept.get("steps", "")).contains("v3"))
 	check("customised stays true after accept (user lineage preserved)",
@@ -272,27 +273,27 @@ func test_full_lifecycle() -> void:
 	# ---- Phase 5: v4 manifest drops the skill → mark deprecated ----
 	print("  -- phase 5: v4 removes the skill --")
 	var def_v4 := _make_def(plugin_id, [])  # no skills
-	var plan_v4 := PluginSkillSeederScript.plan_reconcile(def_v4, {}, registry)
+	var plan_v4 := await PluginSkillSeederScript.plan_reconcile(def_v4, {}, docket)
 	var deprecate_ids: Array = plan_v4.get("deprecate_record_ids", [])
 	check("v4 has 1 record to deprecate", deprecate_ids.size() == 1)
-	var v4_apply := PluginSkillSeederScript.apply_reconcile(plan_v4, {}, registry)
+	var v4_apply := await PluginSkillSeederScript.apply_reconcile(plan_v4, {}, docket)
 	check("v4 marked 1 record deprecated", v4_apply.get("deprecated", 0) == 1)
-	var after_deprecate := PluginSkillSeederScript.find_existing_record(
-		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	var after_deprecate := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, docket)
 	check("record still exists (deprecated, not deleted)",
 		not after_deprecate.is_empty())
 	check("deprecated flag is true", after_deprecate.get("deprecated") == true)
 	# Shipped again unchanged (as after a rolled-back update): revived, text kept.
-	PluginSkillSeederScript.apply_reconcile(PluginSkillSeederScript.plan_reconcile(def_v3, {}, registry), {}, registry)
-	var revived := PluginSkillSeederScript.find_existing_record(
-		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, registry)
+	await PluginSkillSeederScript.apply_reconcile(await PluginSkillSeederScript.plan_reconcile(def_v3, {}, docket), {}, docket)
+	var revived := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, "minerva_%s_make_slide_deck" % plugin_id, docket)
 	check("a deprecated skill shipped again is revived with its text kept",
 		revived.get("deprecated") == false and str(revived.get("steps", "")) == str(after_deprecate.get("steps", "")))
-	PluginSkillSeederScript.apply_reconcile(plan_v4, {}, registry)
+	await PluginSkillSeederScript.apply_reconcile(plan_v4, {}, docket)
 
 	# ---- Phase 6: uninstall ----
 	print("  -- phase 6: uninstall --")
-	var unseed_result := PluginSkillSeederScript.unseed(plugin_id, registry)
+	var unseed_result := await PluginSkillSeederScript.unseed(plugin_id, docket)
 	check("uninstall kept 1 customised record",
 		unseed_result.get("kept", 0) == 1)
 	check("uninstall deleted 0 (only one was customised)",
@@ -317,7 +318,7 @@ func test_full_lifecycle() -> void:
 		"id": str(after_deprecate.get("id", "")),
 		"unsatisfied_deps": [],
 	})
-	var reactivity := PluginSkillSeederScript.recompute_unsatisfied({}, registry)
+	var reactivity := await PluginSkillSeederScript.recompute_unsatisfied({}, docket)
 	check("reactivity catches orphan's now-broken tool_deps",
 		reactivity.get("now_unsatisfied", 0) >= 1)
 	var after_react: Dictionary = registry.call_tool("docket_get",
@@ -335,15 +336,16 @@ func test_repair_keeps_customised_skills() -> void:
 	print("test_repair_keeps_customised_skills")
 	var ctx := _new_docket()
 	var registry = ctx.registry
+	var docket = ctx.docket
 	var plugin_id := "agent_relay"
 	var custom_v1 := _slide_deck_skill(plugin_id, "custom-v1")
 	var pristine_v1 := _slide_deck_skill(plugin_id, "pristine-v1")
 	pristine_v1.id = "minerva_agent_relay_pristine"
 	var def_v1 := _make_def(plugin_id, [custom_v1, pristine_v1])
-	PluginSkillSeederScript.materialize(
-		plugin_id, PluginSkillSeederScript.resolve_deps(def_v1, {}), registry)
-	var custom_record := PluginSkillSeederScript.find_existing_record(
-		plugin_id, custom_v1.id, registry)
+	await PluginSkillSeederScript.materialize(
+		plugin_id, PluginSkillSeederScript.resolve_deps(def_v1, {}), docket)
+	var custom_record := await PluginSkillSeederScript.find_existing_record(
+		plugin_id, custom_v1.id, docket)
 	PluginSkillRecordScript.apply_user_edit(
 		str(custom_record.get("id", "")), {"steps": "user-owned steps"}, registry)
 
@@ -359,23 +361,23 @@ func test_repair_keeps_customised_skills() -> void:
 	var op = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
 	op.repair_only = true
 	var consent: Dictionary = await PluginSkillConsentScript.collect(
-		root, InstalledDB.new(plugin_id), {}, registry, manifest_path, true, op)
-	PluginSkillSeederScript.apply_reconcile(PluginSkillSeederScript.plan_reconcile(def_v2, {}, registry),
-		consent.get("update_decisions", {}), registry)
-	var custom_after := PluginSkillSeederScript.find_existing_record(plugin_id, custom_v1.id, registry)
-	var pristine_after := PluginSkillSeederScript.find_existing_record(plugin_id, pristine_v1.id, registry)
+		root, InstalledDB.new(plugin_id), {}, docket, manifest_path, true, op)
+	await PluginSkillSeederScript.apply_reconcile(await PluginSkillSeederScript.plan_reconcile(def_v2, {}, docket),
+		consent.get("update_decisions", {}), docket)
+	var custom_after := await PluginSkillSeederScript.find_existing_record(plugin_id, custom_v1.id, docket)
+	var pristine_after := await PluginSkillSeederScript.find_existing_record(plugin_id, pristine_v1.id, docket)
 	check("a repair keeps the customised skill without asking",
 		str(custom_after.get("steps", "")) == "user-owned steps")
 	check("a repair updates the pristine shipped skill",
 		str(pristine_after.get("steps", "")) == "shipped pristine v2")
 
-	var failure_plan := PluginSkillSeederScript.plan_reconcile(def_v2, {}, registry)
-	var failed: Dictionary = PluginSkillSeederScript.apply_reconcile(
-		failure_plan, {}, FailingUpdateDocket.new(registry))
+	var failure_plan := await PluginSkillSeederScript.plan_reconcile(def_v2, {}, docket)
+	var failed: Dictionary = await PluginSkillSeederScript.apply_reconcile(
+		failure_plan, {}, PluginSeedingDocket.new(FailingUpdateDocket.new(registry), false))
 	check("reconcile reports failed store writes", int(failed.get("failed", 0)) > 0)
 	var Seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
 	Seeding.docket_override = FailingUpdateDocket.new(registry)
-	var unseeded: Dictionary = Seeding.unseed(RolledBackManager.new(def_v2), plugin_id)
+	var unseeded: Dictionary = await Seeding.unseed(RolledBackManager.new(def_v2), plugin_id)
 	Seeding.docket_override = null
 	check("an unseed that cannot hand a customised skill to the person is not complete",
 		unseeded.get("skills_failed", 0) > 0 and not Seeding.complete(unseeded))
@@ -394,18 +396,19 @@ func test_unsaved_knowledge_retry() -> void:
 	ctx.registry.init(JSON.parse_string(sf.get_as_text()), ctx.db, {"master": ctx.db, "notes": notes_db})
 	sf.close()
 	var registry = ctx.registry
+	var docket = ctx.docket
 	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
-	Knowledge.apply(Knowledge.plan(_knowledge_def("notes", [_kb("Red to red."), _hint("9600")]), registry), {}, registry)
+	await Knowledge.apply(await Knowledge.plan(_knowledge_def("notes", [_kb("Red to red."), _hint("9600")]), docket), {}, docket)
 	# A version that drops both deprecates them, while a directory stands
 	# where the project's file goes.
 	var dropped := _knowledge_def("notes", [])
 	DirAccess.remove_absolute(path)
 	DirAccess.make_dir_absolute(path)
-	var failed: Dictionary = Knowledge.apply(Knowledge.plan(dropped, registry), {}, registry)
-	var retry_plan: Dictionary = Knowledge.plan(dropped, registry)
-	var retried: Dictionary = Knowledge.apply(retry_plan, {}, registry)
+	var failed: Dictionary = await Knowledge.apply(await Knowledge.plan(dropped, docket), {}, docket)
+	var retry_plan: Dictionary = await Knowledge.plan(dropped, docket)
+	var retried: Dictionary = await Knowledge.apply(retry_plan, {}, docket)
 	DirAccess.remove_absolute(path)
-	var saved: Dictionary = Knowledge.apply(Knowledge.plan(dropped, registry), {}, registry)
+	var saved: Dictionary = await Knowledge.apply(await Knowledge.plan(dropped, docket), {}, docket)
 	var stored_deprecated := 0
 	for line in FileAccess.get_file_as_string(path).split("\n", false):
 		var stored = JSON.parse_string(line)
@@ -441,6 +444,7 @@ func test_knowledge_lifecycle() -> void:
 	print("test_knowledge_lifecycle")
 	var ctx := _new_docket()
 	var registry = ctx.registry
+	var docket = ctx.docket
 	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
 	var find := func(key: String) -> Dictionary:
 		for type in ["kb", "hint"]:
@@ -449,12 +453,12 @@ func test_knowledge_lifecycle() -> void:
 				return registry.call_tool("docket_get", {"id": item.id})
 		return {}
 
-	var missing = Knowledge.plan(_knowledge_def("not_loaded", [_kb("Red to red.")]), registry)
+	var missing = await Knowledge.plan(_knowledge_def("not_loaded", [_kb("Red to red.")]), docket)
 	check("a project that is not loaded is reported and nothing is planned",
 		missing.get("missing_project", false) and missing.actions.is_empty())
 
 	var v1 := _knowledge_def("master", [_kb("Red to red."), _hint("115200", "serial")])
-	var seeded: Dictionary = Knowledge.apply(Knowledge.plan(v1, registry), {}, registry)
+	var seeded: Dictionary = await Knowledge.apply(await Knowledge.plan(v1, docket), {}, docket)
 	var kb: Dictionary = find.call("minerva_notes_demo_wiring")
 	var hint: Dictionary = find.call("minerva_notes_demo_baud")
 	check("kb and hint are seeded with key, source and pristine provenance",
@@ -464,33 +468,33 @@ func test_knowledge_lifecycle() -> void:
 	check("the kb article is active; the hint stays a draft",
 		kb.get("status") == "active" and hint.get("status") == "draft")
 	check("seeded records read back unchanged, tags included",
-		Knowledge.plan(v1, registry).actions.all(func(a) -> bool: return a.action == "no_change"))
+		(await Knowledge.plan(v1, docket)).actions.all(func(a) -> bool: return a.action == "no_change"))
 
 	registry.call_tool("docket_update", {"id": kb.id, "article": "Red to red; black to COM."})
 	var v2 := _knowledge_def("master", [_kb("Red to red, always."), _hint("9600")])
-	var plan2: Dictionary = Knowledge.plan(v2, registry)
+	var plan2: Dictionary = await Knowledge.plan(v2, docket)
 	var asked: Array = plan2.actions.filter(func(a) -> bool: return a.action == "prompt_required")
 	check("an update asks only about the customised kb article",
 		asked.size() == 1 and asked[0].id == "minerva_notes_demo_wiring")
-	var applied: Dictionary = Knowledge.apply(plan2, {}, registry)
+	var applied: Dictionary = await Knowledge.apply(plan2, {}, docket)
 	check("declining keeps the person's article; the pristine hint is updated silently, its dropped field cleared",
 		applied.prompted_declined == 1 and applied.silent_updated == 1
 		and find.call("minerva_notes_demo_wiring").get("article") == "Red to red; black to COM."
 		and find.call("minerva_notes_demo_baud").get("value") == "9600"
 		and str(find.call("minerva_notes_demo_baud").get("component", "")).is_empty())
 	check("the same upstream version is not asked about again",
-		Knowledge.plan(v2, registry).actions.all(func(a) -> bool: return a.action == "no_change"))
+		(await Knowledge.plan(v2, docket)).actions.all(func(a) -> bool: return a.action == "no_change"))
 
 	var v3 := _knowledge_def("master", [_kb("Red to red, always.")])
-	var dropped: Dictionary = Knowledge.apply(Knowledge.plan(v3, registry), {}, registry)
+	var dropped: Dictionary = await Knowledge.apply(await Knowledge.plan(v3, docket), {}, docket)
 	check("a key the manifest drops is deprecated, not deleted",
 		dropped.deprecated == 1 and find.call("minerva_notes_demo_baud").get("deprecated") == true)
-	var back: Dictionary = Knowledge.apply(Knowledge.plan(v2, registry), {}, registry)
+	var back: Dictionary = await Knowledge.apply(await Knowledge.plan(v2, docket), {}, docket)
 	check("a dropped key that comes back unchanged is revived",
 		back.restored == 1 and find.call("minerva_notes_demo_baud").get("deprecated") == false
 		and find.call("minerva_notes_demo_baud").get("value") == "9600")
 
-	var removed: Dictionary = Knowledge.unseed("notes_demo", "master", registry)
+	var removed: Dictionary = await Knowledge.unseed("notes_demo", "master", docket)
 	var kept: Dictionary = find.call("minerva_notes_demo_wiring")
 	check("uninstall deletes the unchanged hint and hands the edited article to the user",
 		removed.deleted == 1 and removed.kept == 1 and find.call("minerva_notes_demo_baud").is_empty()
@@ -502,8 +506,9 @@ func test_knowledge_consent() -> void:
 	print("test_knowledge_consent")
 	var ctx := _new_docket()
 	var registry = ctx.registry
+	var docket = ctx.docket
 	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
-	Knowledge.apply(Knowledge.plan(_knowledge_def("master", [_kb("Red to red.")]), registry), {}, registry)
+	await Knowledge.apply(await Knowledge.plan(_knowledge_def("master", [_kb("Red to red.")]), docket), {}, docket)
 	var found: Dictionary = registry.call_tool("docket_query", {"filter": {"type": "kb", "key": "minerva_notes_demo_wiring"}})
 	registry.call_tool("docket_update", {"id": found.items[0].id, "article": "My own wiring notes."})
 
@@ -515,17 +520,17 @@ func test_knowledge_consent() -> void:
 	f.close()
 
 	var fresh: Dictionary = await PluginSkillConsentScript.collect(
-		root, InstalledDB.new("another_plugin"), {}, registry, manifest_path, true)
+		root, InstalledDB.new("another_plugin"), {}, docket, manifest_path, true)
 	check("a plugin that ships only knowledge gets a seed decision (auto-confirmed here, no dialog)",
 		fresh.get("seed") == true)
 	var update: Dictionary = await PluginSkillConsentScript.collect(
-		root, InstalledDB.new("notes_demo"), {}, registry, manifest_path, true)
+		root, InstalledDB.new("notes_demo"), {}, docket, manifest_path, true)
 	check("an update's decision about the customised kb is keyed by its manifest key",
 		update.get("update_decisions", {}) == {"minerva_notes_demo_wiring": true})
 	var op = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
 	op.repair_only = true
 	var repair: Dictionary = await PluginSkillConsentScript.collect(
-		root, InstalledDB.new("notes_demo"), {}, registry, manifest_path, true, op)
+		root, InstalledDB.new("notes_demo"), {}, docket, manifest_path, true, op)
 	check("a repair keeps the customised kb without asking",
 		repair.get("update_decisions", {}) == {"minerva_notes_demo_wiring": false})
 	ctx.db.close()
@@ -536,6 +541,7 @@ func test_rollback_restores_content() -> void:
 	var ctx := _new_docket()
 	var notes_db := DocketDB.create_new(_tmp_dir.path_join("t8_notes_%d.db" % randi()))
 	var registry = ctx.registry
+	var docket = ctx.docket
 	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
 	registry.init(JSON.parse_string(sf.get_as_text()), ctx.db, {"master": ctx.db, "notes": notes_db})
 	sf.close()
@@ -545,7 +551,7 @@ func test_rollback_restores_content() -> void:
 	Seeding.docket_override = registry
 
 	var v1 := _knowledge_def("master", [_kb("Red to red.")])
-	Knowledge.apply(Knowledge.plan(v1, registry), {}, registry)
+	await Knowledge.apply(await Knowledge.plan(v1, docket), {}, docket)
 	var found: Dictionary = registry.call_tool("docket_query", {"filter": {"type": "kb", "key": "minerva_notes_demo_wiring"}})
 	var original_id: String = found.items[0].id
 	registry.call_tool("docket_update", {"id": original_id, "article": "MY NOTES"})
@@ -625,7 +631,7 @@ func test_rollback_restores_content() -> void:
 	DirAccess.make_dir_recursive_absolute(commit_dir)
 	await Seeding.reconcile(RolledBackManager.new(v3), v1, v3,
 		{"collected": true, "update_decisions": {}, "journal_dir": commit_dir}, false)
-	Seeding.content_committed(Txn.content_journal(commit_dir))
+	await Seeding.content_committed(Txn.content_journal(commit_dir))
 	var kept: Dictionary = registry.call_tool("docket_get", {"id": original_id})
 	check("once the move commits, the person's record in the old project is theirs and live",
 		kept.get("source") == "user" and kept.get("deprecated") == false and kept.get("article") == "MY NOTES")
@@ -634,7 +640,7 @@ func test_rollback_restores_content() -> void:
 	# leaves the record looking customised; the rollback still puts it back
 	# exactly, sealed.
 	var h1 := _knowledge_def("master", [_hint("9600")])
-	Knowledge.apply(Knowledge.plan(h1, registry), {}, registry)
+	await Knowledge.apply(await Knowledge.plan(h1, docket), {}, docket)
 	var seal_dir := _tmp_dir.path_join("op_seal")
 	DirAccess.make_dir_recursive_absolute(seal_dir)
 	var h2 := _knowledge_def("master", [_hint("115200")])
@@ -672,8 +678,8 @@ func test_rollback_restores_content() -> void:
 	# recognised (not taken for a later edit), and the person's steps return.
 	var skill_v1 := _slide_deck_skill("notes_demo", "v1")
 	var s1 := _make_def("notes_demo", [skill_v1])
-	PluginSkillSeederScript.materialize("notes_demo", PluginSkillSeederScript.resolve_deps(s1, {}), registry)
-	var skill_id := str(PluginSkillSeederScript.find_existing_record("notes_demo", skill_v1.id, registry).get("id", ""))
+	await PluginSkillSeederScript.materialize("notes_demo", PluginSkillSeederScript.resolve_deps(s1, {}), docket)
+	var skill_id := str((await PluginSkillSeederScript.find_existing_record("notes_demo", skill_v1.id, docket)).get("id", ""))
 	PluginSkillRecordScript.apply_user_edit(skill_id, {"steps": "my own steps"}, registry)
 	var s2 := _make_def("notes_demo", [_slide_deck_skill("notes_demo", "v2")])
 	var skill_dir := _tmp_dir.path_join("op_skill")

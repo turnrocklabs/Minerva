@@ -23,8 +23,9 @@ const Knowledge := preload("res://Scripts/Services/Plugins/PluginKnowledgeSeeder
 ## (seed_new false) skills the update adds are not seeded. A repair `op`
 ## (repair_only) likewise keeps every customised skill without asking, even
 ## with auto_confirm, and seeds only what is new. `available_tools` and
-## `docket_manager` are as PluginSkillSeeder takes them.
-static func collect(host: Node, db, available_tools: Dictionary, docket_manager, manifest_path: String,
+## `docket_caller` are as PluginSkillSeeder takes them; when Docket cannot be
+## reached, nothing is asked about an update (it will not be applied).
+static func collect(host: Node, db, available_tools: Dictionary, docket_caller, manifest_path: String,
 		auto_confirm: bool, op = null) -> Dictionary:
 	var consent := {"collected": true}
 	var unattended: bool = op != null and bool(op.get("unattended"))
@@ -37,9 +38,13 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_manager,
 			var resolved: Array = Seeder.resolve_deps(def, available_tools)
 			consent["seed"] = not unattended and (auto_confirm or await ask_seed(host, def, resolved, op))
 		return consent
-	var actions: Array = Seeder.plan_reconcile(def, available_tools, docket_manager).get("actions", [])
+	if not docket_caller.unavailable().is_empty():
+		return consent
+	var skill_plan: Dictionary = await Seeder.plan_reconcile(def, available_tools, docket_caller)
+	var actions: Array = skill_plan.get("actions", [])
 	if not (def.knowledge.is_empty() and db.get_by_id(def.id).knowledge.is_empty()):
-		actions += Knowledge.plan(def, docket_manager).get("actions", [])
+		var knowledge_plan: Dictionary = await Knowledge.plan(def, docket_caller)
+		actions += knowledge_plan.get("actions", [])
 	var decisions := {}
 	for action in actions:
 		if str(action.get("action", "")) == Seeder.RECONCILE_PROMPT_REQUIRED and not (op != null and op.cancelled):

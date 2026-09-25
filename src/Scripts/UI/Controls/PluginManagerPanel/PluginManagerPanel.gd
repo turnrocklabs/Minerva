@@ -1499,7 +1499,10 @@ func _on_remove_confirmed() -> void:
 			if kept > 0:
 				msg += ", kept %d customised skill(s)" % kept
 			msg += "."
-		_show_status(msg)
+		# Content Docket could not be reached for stays as it was, and says so.
+		if result.has("content_skipped"):
+			msg += " %s." % str(result.content_skipped)
+		_show_status(msg, result.has("content_skipped"))
 		_selected_plugin_id = ""
 		_detail_placeholder.visible = true
 		_detail_panel.visible = false

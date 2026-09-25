@@ -371,7 +371,7 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 	# Cross-plugin reactivity (DCR 019df57b T7).  This plugin's declared tools
 	# are now part of the "available" set; any pre-existing skill whose
 	# unsatisfied_deps included one of those tools should re-resolve.
-	result.merge(Seeding.recompute_reactivity(self))
+	result.merge(await Seeding.recompute_reactivity(self))
 	return result
 
 
@@ -452,7 +452,7 @@ func reconcile_after_rollback(attempted_def, journal: Dictionary = {}) -> Dictio
 ## is done while Docket is not available; a call during a drain makes that
 ## drain pass again and returns when it ends.
 func reconcile_recovered() -> void:
-	if Seeding.docket() == null:
+	if not Seeding.docket().unavailable().is_empty():
 		return
 	if _draining:
 		_drain_again = true
@@ -470,11 +470,14 @@ func reconcile_recovered() -> void:
 			var done := true
 			var reason := ""
 			if recovered.committed:
-				done = Seeding.content_committed(journal)
+				done = await Seeding.content_committed(journal)
 				reason = "Docket project '%s' is not open, or its changes could not be saved" % journal.get("retired_project", "")
 			else:
-				var result: Dictionary = await reconcile_after_rollback(attempted, journal) if attempted != null \
-					else Seeding.unseed(self, recovered.id)
+				var result: Dictionary
+				if attempted != null:
+					result = await reconcile_after_rollback(attempted, journal)
+				else:
+					result = await Seeding.unseed(self, recovered.id)
 				done = Seeding.complete(result)
 				journal["entries"] = result.get("journal_left", journal.get("entries", []))
 				reason = Seeding.unfinished_reason(result)
@@ -562,7 +565,7 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	# Runs AFTER _db.remove so the uninstalled plugin's tools are no longer
 	# counted as available.
 	var result: Dictionary = {"ok": true}
-	result.merge(Seeding.unseed(self, id))
+	result.merge(await Seeding.unseed(self, id))
 	return result
 
 

@@ -93,15 +93,14 @@ static func build_install_record(plugin_id: String, skill_entry: Dictionary, uns
 
 ## Look up an existing plugin-seeded skill record by (plugin_id, manifest skill id).
 ##
-## docket_caller: any object exposing a `call_tool(name, args)` method.  In
-## production this is SingletonObject.docket_manager; in tests pass a
-## ToolRegistry directly (call_tool is the same shape).
+## docket_caller: a PluginSeedingDocket (over the DocketManager, the Docket
+## plugin, or a ToolRegistry in tests); every call to it is awaited.
 ##
 ## Returns the full record dict, or {} if none found.
 static func find_existing_record(plugin_id: String, manifest_skill_id: String, docket_caller) -> Dictionary:
 	if docket_caller == null:
 		return {}
-	var query_result = docket_caller.call_tool("docket_query", {
+	var query_result = await docket_caller.call_tool("docket_query", {
 		"filter": {
 			"type": "skill",
 			"source": PluginSkillRecordScript.SOURCE_PLUGIN_PREFIX + plugin_id,
@@ -117,7 +116,7 @@ static func find_existing_record(plugin_id: String, manifest_skill_id: String, d
 	var first_id := str(items[0].get("id", ""))
 	if first_id.is_empty():
 		return {}
-	var full = docket_caller.call_tool("docket_get", {"id": first_id})
+	var full = await docket_caller.call_tool("docket_get", {"id": first_id})
 	if full is Dictionary and not full.has("error"):
 		return full
 	return {}
@@ -150,7 +149,7 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 			continue
 
 		var pristine_hash := PluginSkillRecordScript.compute_hash(skill)
-		var existing := find_existing_record(plugin_id, manifest_skill_id, docket_caller)
+		var existing := await find_existing_record(plugin_id, manifest_skill_id, docket_caller)
 
 		if not existing.is_empty():
 			var existing_hash := str(existing.get("pristine_hash", ""))
@@ -164,7 +163,7 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 				continue
 
 		var record := build_install_record(plugin_id, skill, unsatisfied)
-		var create_result = _create_and_activate_skill(record, docket_caller)
+		var create_result = await _create_and_activate_skill(record, docket_caller)
 		if create_result is Dictionary and not create_result.has("error"):
 			seeded += 1
 		else:
@@ -184,13 +183,13 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 ## Returns the create_result dict (with the new record id) on full success, or
 ## the first failing call's error dict.
 static func _create_and_activate_skill(record: Dictionary, docket_caller) -> Dictionary:
-	var create_result = docket_caller.call_tool("docket_create", record)
+	var create_result = await docket_caller.call_tool("docket_create", record)
 	if not (create_result is Dictionary) or create_result.has("error"):
 		return create_result
 	var new_id := str(create_result.get("id", ""))
 	if new_id.is_empty():
 		return create_result
-	var trans_result = docket_caller.call_tool("docket_transition", {
+	var trans_result = await docket_caller.call_tool("docket_transition", {
 		"id": new_id,
 		"to": "active",
 		"note": "auto-activated by plugin skill seeder",
@@ -252,7 +251,7 @@ static func plan_reconcile(def, available_tools: Dictionary, docket_caller) -> D
 		if manifest_skill_id.is_empty():
 			continue
 
-		var existing := find_existing_record(def.id, manifest_skill_id, docket_caller)
+		var existing := await find_existing_record(def.id, manifest_skill_id, docket_caller)
 		var new_hash := PluginSkillRecordScript.compute_hash(skill)
 
 		if existing.is_empty():
@@ -293,7 +292,7 @@ static func plan_reconcile(def, available_tools: Dictionary, docket_caller) -> D
 			})
 
 	# Phase 1b: identify previously-installed records absent from the new manifest.
-	var existing_query = docket_caller.call_tool("docket_query", {
+	var existing_query = await docket_caller.call_tool("docket_query", {
 		"filter": {
 			"type": "skill",
 			"source": PluginSkillRecordScript.SOURCE_PLUGIN_PREFIX + def.id,
@@ -305,7 +304,7 @@ static func plan_reconcile(def, available_tools: Dictionary, docket_caller) -> D
 			var record_id := str(item.get("id", ""))
 			if record_id.is_empty():
 				continue
-			var full = docket_caller.call_tool("docket_get", {"id": record_id})
+			var full = await docket_caller.call_tool("docket_get", {"id": record_id})
 			if not (full is Dictionary):
 				continue
 			var rec_key := str(full.get("key", ""))
@@ -346,27 +345,29 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 		match action:
 			RECONCILE_NO_CHANGE:
 				unchanged += 1
-				if entry.get("revive", false) and not _ok(docket_caller.call_tool("docket_update",
-						{"id": str(entry.get("record_id", "")), "deprecated": false})):
-					failed += 1
+				if entry.get("revive", false):
+					var revived = await docket_caller.call_tool("docket_update",
+						{"id": str(entry.get("record_id", "")), "deprecated": false})
+					if not _ok(revived):
+						failed += 1
 			RECONCILE_SEED:
 				# Defer to materialize-style create.
 				var unsatisfied = entry.get("unsatisfied", [])
 				var record := build_install_record(_extract_plugin_id(skill), skill, unsatisfied)
-				var create_result = _create_and_activate_skill(record, docket_caller)
+				var create_result = await _create_and_activate_skill(record, docket_caller)
 				if create_result is Dictionary and not create_result.has("error"):
 					seeded += 1
 				else:
 					failed += 1
 			RECONCILE_SILENT_UPDATE:
-				if _apply_overwrite(entry, docket_caller):
+				if await _apply_overwrite(entry, docket_caller):
 					silent_updated += 1
 				else:
 					failed += 1
 			RECONCILE_PROMPT_REQUIRED:
 				var accepted: bool = bool(decisions.get(manifest_skill_id, false))
 				if accepted:
-					if _apply_overwrite(entry, docket_caller):
+					if await _apply_overwrite(entry, docket_caller):
 						prompted_accepted += 1
 					else:
 						failed += 1
@@ -374,7 +375,7 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 					# Decline: keep user edits, but refresh pristine_content
 					# so a later "show me what upstream changed" view has the
 					# latest snapshot to diff against.
-					var decline_result = docket_caller.call_tool("docket_update", {
+					var decline_result = await docket_caller.call_tool("docket_update", {
 						"id": str(entry.get("record_id", "")),
 						"pristine_content": (skill as Dictionary).duplicate(true),
 						"deprecated": false,
@@ -386,7 +387,7 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 
 	# Mark deprecated.
 	for record_id in plan.get("deprecate_record_ids", []):
-		var update_result = docket_caller.call_tool("docket_update", {
+		var update_result = await docket_caller.call_tool("docket_update", {
 			"id": str(record_id),
 			"deprecated": true,
 		})
@@ -420,7 +421,7 @@ static func _apply_overwrite(action_entry: Dictionary, docket_caller) -> bool:
 	var optimization_copy: Dictionary = {}
 	if skill.get("optimization", {}) is Dictionary:
 		optimization_copy = (skill.get("optimization", {}) as Dictionary).duplicate(true)
-	var update_result = docket_caller.call_tool("docket_update", {
+	var update_result = await docket_caller.call_tool("docket_update", {
 		"id": record_id,
 		"title": str(skill.get("title", "")),
 		"summary": str(skill.get("summary", "")),
@@ -489,7 +490,7 @@ static func recompute_unsatisfied(available_tools: Dictionary, docket_caller) ->
 	if docket_caller == null:
 		return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
 
-	var query_result = docket_caller.call_tool("docket_query", {
+	var query_result = await docket_caller.call_tool("docket_query", {
 		"filter": {"type": "skill"},
 	})
 	if not (query_result is Dictionary):
@@ -500,7 +501,7 @@ static func recompute_unsatisfied(available_tools: Dictionary, docket_caller) ->
 		var record_id := str(item.get("id", ""))
 		if record_id.is_empty():
 			continue
-		var full = docket_caller.call_tool("docket_get", {"id": record_id})
+		var full = await docket_caller.call_tool("docket_get", {"id": record_id})
 		if not (full is Dictionary):
 			continue
 
@@ -523,7 +524,7 @@ static func recompute_unsatisfied(available_tools: Dictionary, docket_caller) ->
 		if _arrays_equal_unordered(new_unsat, current_unsat):
 			continue
 
-		var update_result = docket_caller.call_tool("docket_update", {
+		var update_result = await docket_caller.call_tool("docket_update", {
 			"id": record_id,
 			"unsatisfied_deps": new_unsat,
 		})
@@ -566,7 +567,7 @@ static func _arrays_equal_unordered(a: Array, b: Array) -> bool:
 ## No modal interruptions — DoD specifies a single toast on the UI side.
 ## Returns: {"deleted": int, "kept": int, "failed": int, "kept_skill_ids": Array[String]};
 ##   failed counts records that could not be removed or converted, and a
-##   primary project whose changes could not be saved (docket_persist).
+##   primary project whose changes could not be settled in its file.
 ##   kept_skill_ids contains docket UUIDs of converted records, intended for
 ##   the UI's toast-click → "show me the orphans" filter affordance.
 static func unseed(plugin_id: String, docket_caller) -> Dictionary:
@@ -577,7 +578,7 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 	if docket_caller == null:
 		return {"deleted": 0, "kept": 0, "failed": 0, "kept_skill_ids": []}
 
-	var query_result = docket_caller.call_tool("docket_query", {
+	var query_result = await docket_caller.call_tool("docket_query", {
 		"filter": {
 			"type": "skill",
 			"source": PluginSkillRecordScript.SOURCE_PLUGIN_PREFIX + plugin_id,
@@ -592,14 +593,14 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 		if record_id.is_empty():
 			continue
 		# Re-fetch full record to read customised flag (lean query may omit it).
-		var full = docket_caller.call_tool("docket_get", {"id": record_id})
+		var full = await docket_caller.call_tool("docket_get", {"id": record_id})
 		if not (full is Dictionary) or full.has("error"):
 			failed += 1
 			continue
 		var is_customised: bool = bool(full.get("customised", false))
 
 		if is_customised:
-			var update_result = docket_caller.call_tool("docket_update", {
+			var update_result = await docket_caller.call_tool("docket_update", {
 				"id": record_id,
 				"source": PluginSkillRecordScript.SOURCE_USER,
 				"pristine_hash": "",
@@ -613,7 +614,7 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 				push_warning("[PluginSkillSeeder] docket_update (unseed-convert) failed for record '%s': %s" %
 					[record_id, str(update_result)])
 		else:
-			var delete_result = docket_caller.call_tool("docket_delete", {"id": record_id})
+			var delete_result = await docket_caller.call_tool("docket_delete", {"id": record_id})
 			if delete_result is Dictionary and not delete_result.has("error"):
 				deleted += 1
 			else:
@@ -623,6 +624,6 @@ static func unseed(plugin_id: String, docket_caller) -> Dictionary:
 
 	# A retry that finds nothing left to do still needs its earlier changes
 	# saved.
-	if not _ok(docket_caller.call_tool("docket_persist", {})):
+	if not await docket_caller.settle(""):
 		failed += 1
 	return {"deleted": deleted, "kept": kept, "failed": failed, "kept_skill_ids": kept_ids}

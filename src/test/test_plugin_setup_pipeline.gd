@@ -611,7 +611,7 @@ func test_pm_remove_refused_while_building() -> void:
 			def != null and def.state == _pm_script.S_BUILDING,
 			"got %s" % (str(def.state) if def != null else "<null>"))
 
-	var remove_result: Dictionary = pm.remove_plugin(id, true)
+	var remove_result: Dictionary = await pm.remove_plugin(id, true)
 	check("remove_plugin(delete_data=true) is REFUSED while S_BUILDING",
 			remove_result.has("error"), str(remove_result))
 	check("refusal message names the build", str(remove_result.get("error", "")).contains("building"), str(remove_result))
@@ -624,7 +624,7 @@ func test_pm_remove_refused_while_building() -> void:
 	check("pipeline completes cleanly after the refused removal (slow.sh exits 0 -> S_INSTALLED)",
 			def.state == _pm_script.S_INSTALLED, "got %d" % def.state)
 
-	var remove_after: Dictionary = pm.remove_plugin(id, true)
+	var remove_after: Dictionary = await pm.remove_plugin(id, true)
 	check("remove_plugin succeeds once the build is terminal", remove_after.get("ok", false) == true, str(remove_after))
 	check("plugin gone from db after the successful removal", not db.has_plugin(id))
 

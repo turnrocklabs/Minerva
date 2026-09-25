@@ -245,7 +245,7 @@ func _test_first_install_keeps_old_choices() -> void:
 
 
 func _test_required_plugin_is_kept() -> void:
-	var removed: Dictionary = _pm.remove_plugin(RELAY)
+	var removed: Dictionary = await _pm.remove_plugin(RELAY)
 	_check(removed.has("error") and "cannot be removed" in str(removed.error) and _pm.get_db().has_plugin(RELAY),
 		"a required plugin cannot be removed: %s" % [removed])
 	await _h.scrub_plugin(_pm, RELAY)

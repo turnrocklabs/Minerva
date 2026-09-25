@@ -16,8 +16,8 @@
 ## hashes to pristine_hash has been customised by someone; nothing sets a
 ## flag for that, so it is always derived.
 ##
-## All Docket access is through `docket_caller.call_tool(name, args)` (the
-## DocketManager, or a ToolRegistry in tests).
+## All Docket access is awaited through `docket_caller`, a PluginSeedingDocket
+## (over the DocketManager, the Docket plugin, or a ToolRegistry in tests).
 class_name PluginKnowledgeSeeder extends RefCounted
 
 const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
@@ -107,12 +107,9 @@ static func content_hash(entry: Dictionary) -> String:
 	return JSON.stringify(content, "", true).sha256_text()
 
 
-## Whether `project` is loaded (docket_project_list).
+## Whether `project` is loaded.
 static func project_loaded(project: String, docket_caller) -> bool:
-	var listed = docket_caller.call_tool("docket_project_list", {})
-	if not listed is Dictionary:
-		return false
-	return listed.get("projects", []).any(func(p) -> bool: return str(p.get("name", "")) == project)
+	return await docket_caller.has_project(project)
 
 
 ## What seeding `def`'s knowledge would do, with no Docket writes, in the
@@ -127,11 +124,11 @@ static func plan(def, docket_caller) -> Dictionary:
 	var result := {"plugin_id": def.id, "project": project, "actions": [], "deprecate_record_ids": []}
 	if docket_caller == null:
 		return result
-	if not project_loaded(project, docket_caller):
+	if not await project_loaded(project, docket_caller):
 		if not def.knowledge.is_empty():
 			result["missing_project"] = true
 		return result
-	var records := _seeded_records(def.id, project, docket_caller)
+	var records := await _seeded_records(def.id, project, docket_caller)
 	var keys := {}
 	for entry in def.knowledge:
 		var key := str(entry.get("key", ""))
@@ -179,7 +176,7 @@ static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dic
 		return counts
 	var project := str(plan.get("project", DEFAULT_PROJECT))
 	var has_work: bool = not (plan.get("actions", []).is_empty() and plan.get("deprecate_record_ids", []).is_empty())
-	var loaded := project_loaded(project, docket_caller)
+	var loaded: bool = await project_loaded(project, docket_caller)
 	if has_work and not loaded:
 		counts["missing_project"] = true
 		return counts
@@ -191,29 +188,29 @@ static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dic
 		match str(action.action):
 			Seeder.RECONCILE_SEED:
 				outcome = "seeded"
-				done = _create(plugin_id, entry, project, docket_caller)
+				done = await _create(plugin_id, entry, project, docket_caller)
 			Seeder.RECONCILE_SILENT_UPDATE:
 				outcome = "silent_updated"
-				done = _write(action.record_id, project, entry, true, docket_caller)
+				done = await _write(action.record_id, project, entry, true, docket_caller)
 			Seeder.RECONCILE_PROMPT_REQUIRED:
 				var accepted := bool(decisions.get(action.id, false))
 				outcome = "prompted_accepted" if accepted else "prompted_declined"
-				done = _write(action.record_id, project, entry, accepted, docket_caller)
+				done = await _write(action.record_id, project, entry, accepted, docket_caller)
 			RESTORE:
 				outcome = "restored"
-				done = _write(action.record_id, project, entry, false, docket_caller, action.get("reseal", false))
+				done = await _write(action.record_id, project, entry, false, docket_caller, action.get("reseal", false))
 			TYPE_CHANGED:
 				outcome = "type_changed"
 				push_warning("[PluginKnowledgeSeeder] '%s' knowledge '%s' changed type; its existing record is kept as it is" % [
 					plugin_id, action.id])
 		counts[outcome if done else "failed"] += 1
 	for record_id in plan.get("deprecate_record_ids", []):
-		if _ok(docket_caller.call_tool("docket_update", {"id": record_id, "project": project, "deprecated": true})):
+		if _ok(await docket_caller.call_tool("docket_update", {"id": record_id, "project": project, "deprecated": true})):
 			counts.deprecated += 1
 		else:
 			counts.failed += 1
 	# Even with nothing left to do (a retry), earlier writes must be saved.
-	if loaded and not _saved(project, docket_caller):
+	if loaded and not await _saved(project, docket_caller):
 		counts.failed += 1
 	return counts
 
@@ -223,9 +220,9 @@ static func apply(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dic
 ## failed}.
 static func unseed_everywhere(plugin_id: String, docket_caller) -> Dictionary:
 	var result := {"deleted": 0, "kept": 0, "failed": 0}
-	var listed = docket_caller.call_tool("docket_project_list", {}) if docket_caller != null else null
-	for project in (listed.get("projects", []) if listed is Dictionary else []):
-		var one := unseed(plugin_id, str(project.get("name", "")), docket_caller)
+	var projects: Array = await docket_caller.project_names() if docket_caller != null else []
+	for project in projects:
+		var one: Dictionary = await unseed(plugin_id, str(project), docket_caller)
 		result.deleted += one.deleted
 		result.kept += one.kept
 		result.failed += one.failed
@@ -238,19 +235,19 @@ static func unseed_everywhere(plugin_id: String, docket_caller) -> Dictionary:
 ## `project` is not loaded (nothing was done).
 static func retire(plugin_id: String, project: String, docket_caller) -> Dictionary:
 	var result := {"retired": 0, "failed": 0}
-	if docket_caller == null or not project_loaded(project, docket_caller):
+	if docket_caller == null or not await project_loaded(project, docket_caller):
 		result["missing_project"] = true
 		return result
-	var records := _seeded_records(plugin_id, project, docket_caller)
+	var records := await _seeded_records(plugin_id, project, docket_caller)
 	for key in records:
 		if bool(records[key].get("deprecated", false)):
 			continue
-		if _ok(docket_caller.call_tool("docket_update",
+		if _ok(await docket_caller.call_tool("docket_update",
 				{"id": str(records[key].get("id", "")), "project": project, "deprecated": true})):
 			result.retired += 1
 		else:
 			result.failed += 1
-	if not _saved(project, docket_caller):
+	if not await _saved(project, docket_caller):
 		result.failed += 1
 	return result
 
@@ -262,24 +259,24 @@ static func retire(plugin_id: String, project: String, docket_caller) -> Diction
 ## `project` is not loaded (nothing was done).
 static func unseed(plugin_id: String, project: String, docket_caller) -> Dictionary:
 	var result := {"deleted": 0, "kept": 0, "failed": 0}
-	if docket_caller == null or not project_loaded(project, docket_caller):
+	if docket_caller == null or not await project_loaded(project, docket_caller):
 		result["missing_project"] = true
 		return result
-	var records := _seeded_records(plugin_id, project, docket_caller)
+	var records := await _seeded_records(plugin_id, project, docket_caller)
 	for key in records:
 		var record: Dictionary = records[key]
 		var id := str(record.get("id", ""))
 		if content_hash(record) == str(record.get("pristine_hash", "")):
-			if _ok(docket_caller.call_tool("docket_delete", {"id": id, "project": project})):
+			if _ok(await docket_caller.call_tool("docket_delete", {"id": id, "project": project})):
 				result.deleted += 1
 			else:
 				result.failed += 1
-		elif _ok(docket_caller.call_tool("docket_update", {"id": id, "project": project,
+		elif _ok(await docket_caller.call_tool("docket_update", {"id": id, "project": project,
 				"source": Record.SOURCE_USER, "pristine_hash": "", "pristine_content": {}, "deprecated": false})):
 			result.kept += 1
 		else:
 			result.failed += 1
-	if not _saved(project, docket_caller):
+	if not await _saved(project, docket_caller):
 		result.failed += 1
 	return result
 
@@ -288,10 +285,10 @@ static func unseed(plugin_id: String, project: String, docket_caller) -> Diction
 static func _seeded_records(plugin_id: String, project: String, docket_caller) -> Dictionary:
 	var records := {}
 	for type in CONTENT_FIELDS:
-		var found = docket_caller.call_tool("docket_query", {"project": project,
+		var found: Dictionary = await docket_caller.call_tool("docket_query", {"project": project,
 			"filter": {"type": type, "source": Record.SOURCE_PLUGIN_PREFIX + plugin_id}})
-		for item in (found.get("items", []) if found is Dictionary else []):
-			var full = _read_record(str(item.get("id", "")), project, docket_caller)
+		for item in (found.get("items", []) if found.get("items") is Array else []):
+			var full: Dictionary = await _read_record(str(item.get("id", "")), project, docket_caller)
 			if not full.is_empty():
 				records[str(full.get("key", ""))] = full
 	return records
@@ -316,11 +313,11 @@ static func _create(plugin_id: String, entry: Dictionary, project: String, docke
 	record.merge({"type": entry.type, "key": entry.key, "project": project,
 		"source": Record.SOURCE_PLUGIN_PREFIX + plugin_id, "pristine_content": entry.duplicate(true),
 		"deprecated": false})
-	var created = docket_caller.call_tool("docket_create", record)
+	var created: Dictionary = await docket_caller.call_tool("docket_create", record)
 	if not _ok(created):
 		push_warning("[PluginKnowledgeSeeder] could not seed '%s': %s" % [entry.key, str(created)])
 		return false
-	return _settle(str(created.get("id", "")), project, true, docket_caller)
+	return await _settle(str(created.get("id", "")), project, true, docket_caller)
 
 
 ## Update a record from `entry`: its content too when `take_content`, else
@@ -331,39 +328,40 @@ static func _write(record_id: String, project: String, entry: Dictionary, take_c
 	var changes := _content(entry) if take_content else {}
 	changes.merge({"id": record_id, "project": project, "pristine_content": entry.duplicate(true),
 		"deprecated": false})
-	return _ok(docket_caller.call_tool("docket_update", changes)) \
-		and _settle(record_id, project, take_content or reseal, docket_caller)
+	if not _ok(await docket_caller.call_tool("docket_update", changes)):
+		return false
+	return await _settle(record_id, project, take_content or reseal, docket_caller)
 
 
 ## After a write: when the plugin's content was stored, take pristine_hash
 ## from the record as Docket now holds it; and make a kb article active, since
 ## only active ones are listed (a hint is usable as a draft).
 static func _settle(record_id: String, project: String, sealed: bool, docket_caller) -> bool:
-	var stored := _read_record(record_id, project, docket_caller)
+	var stored: Dictionary = await _read_record(record_id, project, docket_caller)
 	if stored.is_empty():
 		return false
-	if sealed and not _ok(docket_caller.call_tool("docket_update", {"id": record_id, "project": project,
+	if sealed and not _ok(await docket_caller.call_tool("docket_update", {"id": record_id, "project": project,
 			"pristine_hash": content_hash(stored)})):
 		return false
 	if _inactive_kb(stored):
-		return _ok(docket_caller.call_tool("docket_transition", {"id": record_id, "project": project,
+		return _ok(await docket_caller.call_tool("docket_transition", {"id": record_id, "project": project,
 			"to": "active", "note": "plugin knowledge"}))
 	return true
 
 
 static func _read_record(record_id: String, project: String, docket_caller) -> Dictionary:
-	var full = docket_caller.call_tool("docket_get", {"id": record_id, "project": project})
-	return full if full is Dictionary and not full.has("error") else {}
+	var full: Dictionary = await docket_caller.call_tool("docket_get", {"id": record_id, "project": project})
+	return full if not full.has("error") else {}
 
 
-## Whether every change to `project` ("" = the primary one) is saved
-## (docket_persist): a retry that finds nothing left to change must still
-## know its earlier writes stored. A project that is not loaded is not, as
-## Docket would answer for the primary one instead.
+## Whether every change to `project` ("" = the primary one) is settled in its
+## file (PluginSeedingDocket.settle): a retry that finds nothing left to change
+## must still know its earlier writes stored. A project that is not loaded is
+## not, as Docket would answer for the primary one instead.
 static func _saved(project: String, docket_caller) -> bool:
-	if not project.is_empty() and not project_loaded(project, docket_caller):
+	if not project.is_empty() and not await project_loaded(project, docket_caller):
 		return false
-	return _ok(docket_caller.call_tool("docket_persist", {"project": project}))
+	return await docket_caller.settle(project)
 
 
 static func _ok(result) -> bool:

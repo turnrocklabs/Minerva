@@ -434,6 +434,12 @@ func skill_target(project_name: String) -> Dictionary:
 		"session_changes": begun.session_changes}
 
 
+## The open project `project_name` names (a selector, or a stored or display
+## name in any case when only one project has it), or {}.
+func project_named(project_name: String) -> Dictionary:
+	return _resolve(project_name)
+
+
 ## Whether the plugin's process is still the one `process` (from
 ## skill_target or skill_lookup) names: when it is not, a write sent
 ## meanwhile may or may not have been made.

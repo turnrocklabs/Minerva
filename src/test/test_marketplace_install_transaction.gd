@@ -374,7 +374,7 @@ func _test_removal_is_never_undone_by_recovery() -> void:
 	var failing = FlakyDB.new()
 	failing.outcomes = [false]
 	pm._db = failing
-	var refused: Dictionary = pm.remove_plugin(ID)
+	var refused: Dictionary = await pm.remove_plugin(ID)
 	_check(refused.has("error") and load(PLUGINDB_GD).new().has_plugin(ID) and DirAccess.dir_exists_absolute(crashed.path_join("previous")),
 		"a removal that cannot be saved keeps the plugin and the backup: %s" % refused)
 	db = load(PLUGINDB_GD).new()
@@ -392,7 +392,7 @@ func _test_removal_is_never_undone_by_recovery() -> void:
 	removing.staging = staging
 	removing.snapshot = snapshot
 	pm._db = removing
-	var removed: Dictionary = pm.remove_plugin(ID)
+	var removed: Dictionary = await pm.remove_plugin(ID)
 	_check(removed.get("ok", false) and not DirAccess.dir_exists_absolute(crashed), "a saved removal drops the unfinished update: %s" % removed)
 	if not _check(removing.copied and _holds_half_done_update(snapped),
 			"the staging was captured, journal and backup included, as the removal was saved"):
