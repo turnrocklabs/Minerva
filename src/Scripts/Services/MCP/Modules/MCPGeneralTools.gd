@@ -4,6 +4,7 @@ extends MCPToolModule
 ##
 ## Tools:
 ##   minerva_open_file — open an absolute file path in the appropriate editor.
+##   minerva_open_docket — open Docket's panel (SingletonObject.open_docket_panel).
 ##
 ## Implements the MCPToolModule duck-typed interface (get_tool_names, can_handle,
 ## register_tools, handle).  Calls SingletonObject.open_file_at_path() which
@@ -17,10 +18,23 @@ func get_tool_names() -> Array[String]:
 	return [
 		"minerva_open_file",
 		"minerva_create_plugin_editor",
+		"minerva_open_docket",
 	]
 
 
 func register_tools() -> void:
+	server._register_tool("minerva_open_docket",
+		"Open Docket's panel (from the Docket plugin) in Minerva. Optionally open a specific project docket (.dct) by path. "
+		+ "Returns {success, message, editor_name}, or an error such as docket_plugin_unavailable, "
+		+ "plugin_not_running:<id>, not_a_docket_project:<path> or file_not_found:<path>.",
+		{
+			"type": "object",
+			"properties": {
+				"dct_path": {"type": "string", "description": "Optional: absolute path to a .dct project file to open."},
+			},
+		},
+		"docket")
+
 	server._register_tool(
 		"minerva_open_file",
 		"Open a file at an absolute path in the appropriate Minerva editor tab. "
@@ -81,10 +95,21 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _open_file(arguments)
 		"minerva_create_plugin_editor":
 			return _create_plugin_editor(arguments)
+		"minerva_open_docket":
+			return _open_docket(arguments)
 	return MCPToolUtils.error("Unknown general tool: %s" % tool_name)
 
 
 # ── Tool implementation ───────────────────────────────────────────────────────
+
+# The Docket plugin's panel, on `dct_path` when given; its refusal is the
+# tool's error.
+func _open_docket(args: Dictionary) -> Dictionary:
+	var opened := SingletonObject.open_docket_panel(str(args.get("dct_path", "")).strip_edges())
+	if not opened.ok:
+		return MCPToolUtils.error(", ".join(PackedStringArray(opened.errors)))
+	return {"success": true, "message": "Docket panel opened.", "editor_name": opened.get("editor_name", "")}
+
 
 func _open_file(args: Dictionary) -> Dictionary:
 	var err: Variant = MCPToolUtils.check_required(args, ["path"])

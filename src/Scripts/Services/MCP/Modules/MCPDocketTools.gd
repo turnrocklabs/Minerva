@@ -38,25 +38,9 @@ func register_tools() -> void:
 		var category := _categorize(docket_name)
 		server._register_tool(minerva_name, desc, schema, category)
 
-	# Register Minerva-specific docket UI tools (discoverable via search)
-	if "minerva_open_docket" not in _tool_names:
-		_tool_names.append("minerva_open_docket")
-	server._register_tool("minerva_open_docket",
-		"Open a docket editor tab in Minerva. Optionally open a specific project docket by path.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {"type": "string", "description": "Tab name for the docket editor. Default: 'Docket'"},
-				"dct_path": {"type": "string", "description": "Optional: path to a .dct file to open."}
-			},
-		}
-	, "docket")
-
 
 ## Strip the minerva_ prefix and delegate to DocketManager.
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
-	if tool_name == "minerva_open_docket":
-		return _open_docket_editor(arguments)
 	var dm: DocketManager = SingletonObject.docket_manager
 	if not dm:
 		return MCPToolUtils.error("DocketManager not available")
@@ -78,21 +62,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		_maybe_reload_policy(docket_name, arguments, result, dm)
 
 	return result
-
-
-func _open_docket_editor(args: Dictionary) -> Dictionary:
-	var dct_path: String = args.get("dct_path", "")
-
-	# Open project docket if path provided
-	if not dct_path.is_empty():
-		var dm: DocketManager = SingletonObject.docket_manager
-		if dm:
-			var open_result := dm.open_project(dct_path)
-			if open_result.has("error"):
-				return MCPToolUtils.error(str(open_result["error"]))
-
-	SingletonObject.open_docket_tab()
-	return {"success": true, "message": "Docket tab opened."}
 
 
 ## Reload the policy engine if the mutated item is a policy item.

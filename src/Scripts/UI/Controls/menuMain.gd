@@ -341,7 +341,7 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 		108:
 			_open_plugin_manager()
 		109:
-			SingletonObject.open_docket_tab()
+			SingletonObject.open_docket_panel_for_user()
 
 
 func _open_plugin_manager() -> void:
