@@ -11,6 +11,11 @@ var triggers: Array[TriggerDefinition] = []
 
 ## Anti-flood: maps trigger_id -> history_id of active (in-progress) chat
 var _active_trigger_chats: Dictionary = {}
+# Triggers whose agent is being spawned (its skills are read first), each
+# with the token of that attempt: the anti-flood check counts them as
+# active, and an attempt clears only its own mark.
+var _spawning: Dictionary = {}
+var _spawn_tokens := 0
 
 ## Timer node references keyed by trigger_id
 var _timer_nodes: Dictionary = {}
@@ -157,6 +162,7 @@ func clear_all() -> void:
 	triggers.clear()
 	_revisions.clear()
 	_active_trigger_chats.clear()
+	_spawning.clear()
 	_active_batches.clear()
 	_pending_single_chains.clear()
 	_connections.clear()
@@ -426,7 +432,11 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: 
 		print("[TriggerManager] Skipping trigger '%s' - batch still running" % trigger_id)
 		return false
 
-	# Anti-flood: don't fire if same trigger already has an active chat
+	# Anti-flood: don't fire if same trigger already has an active chat, or
+	# one being spawned
+	if _spawning.has(trigger_id):
+		print("[TriggerManager] Skipping trigger '%s' - agent still being spawned" % trigger_id)
+		return false
 	if _active_trigger_chats.has(trigger_id):
 		var active_history_id: String = _active_trigger_chats[trigger_id]
 		for chat in SingletonObject.ChatList:
@@ -471,11 +481,55 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: 
 	return true
 
 
+# The still_wanted check (AgentSpawner.spawn_agent) of a spawn for trigger
+# `trigger_id` (and its running `batch`, when given): the spawn is dropped
+# when the trigger was changed or removed, the triggers cleared, or the batch
+# ended or replaced, while its agent's skills were read.
+func _unchanged(trigger_id: String, batch = null) -> Callable:
+	var at := revision(trigger_id)
+	return func() -> String:
+		if revision(trigger_id) != at:
+			return "trigger '%s' changed or was removed while its agent's skills were read" % trigger_id
+		if batch != null and _active_batches.get(trigger_id) != batch:
+			return "the batch of trigger '%s' ended while its agent's skills were read" % trigger_id
+		return ""
+
+
+func _mark_spawning(trigger_id: String) -> int:
+	_spawn_tokens += 1
+	_spawning[trigger_id] = _spawn_tokens
+	return _spawn_tokens
+
+
+func _unmark_spawning(trigger_id: String, token: int) -> void:
+	if _spawning.get(trigger_id, -1) == token:
+		_spawning.erase(trigger_id)
+
+
+# Whether a batch step of trigger `trigger_id` that awaited a spawn with the
+# trigger at revision `at` may go on: not when its batch ended or was
+# replaced, and not when the trigger was changed or removed meanwhile (then
+# its batch ends here, neither advanced nor chained).
+func _batch_goes_on(trigger_id: String, batch, at: int) -> bool:
+	if _active_batches.get(trigger_id) != batch:
+		return false
+	if revision(trigger_id) != at:
+		_active_batches.erase(trigger_id)
+		print("[TriggerManager] Batch '%s' stopped: its trigger changed while an agent's skills were read" % trigger_id)
+		return false
+	return true
+
+
 func _action_spawn_new(_trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
-	var history = AgentSpawner.spawn_agent(agent_def, message, trigger_id)
-	if history:
-		_active_trigger_chats[trigger_id] = history.HistoryId
+	var token := _mark_spawning(trigger_id)
+	var spawned: Dictionary = await AgentSpawner.spawn_agent(agent_def, message, trigger_id,
+		_unchanged(trigger_id))
+	_unmark_spawning(trigger_id, token)
+	if spawned.has("history"):
+		_active_trigger_chats[trigger_id] = spawned.history.HistoryId
 		print("[TriggerManager] Fired trigger '%s' -> spawned agent '%s'" % [trigger_id, agent_def.name])
+	else:
+		push_error("[TriggerManager] Trigger '%s' could not spawn agent '%s': %s" % [trigger_id, agent_def.name, spawned.error])
 
 
 func _action_message_existing(_trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
@@ -495,10 +549,14 @@ func _action_message_existing(_trig: TriggerDefinition, agent_def: AgentDefiniti
 
 	# If no existing chat found, spawn a new one (without message) then send message
 	if not target_history:
-		target_history = AgentSpawner.spawn_agent(agent_def, "", trigger_id)
-		if not target_history:
-			push_error("[TriggerManager] MESSAGE_EXISTING: Could not spawn fallback agent '%s'" % agent_def.name)
+		var token := _mark_spawning(trigger_id)
+		var spawned: Dictionary = await AgentSpawner.spawn_agent(agent_def, "", trigger_id,
+			_unchanged(trigger_id))
+		_unmark_spawning(trigger_id, token)
+		if not spawned.has("history"):
+			push_error("[TriggerManager] MESSAGE_EXISTING: Could not spawn fallback agent '%s': %s" % [agent_def.name, spawned.error])
 			return
+		target_history = spawned.history
 		target_idx = SingletonObject.ChatList.find(target_history)
 
 	# Track as active
@@ -780,11 +838,15 @@ func _fire_batch_next(trigger_id: String) -> void:
 
 	match trig.action_type:
 		TriggerDefinition.ActionType.SPAWN_NEW:
-			var history = AgentSpawner.spawn_agent(agent_def, message, trigger_id)
-			if history:
-				batch.active_history_id = history.HistoryId
+			var at := revision(trigger_id)
+			var spawned: Dictionary = await AgentSpawner.spawn_agent(agent_def, message, trigger_id,
+				_unchanged(trigger_id, batch))
+			if not _batch_goes_on(trigger_id, batch, at):
+				return
+			if spawned.has("history"):
+				batch.active_history_id = spawned.history.HistoryId
 			else:
-				push_warning("[TriggerManager] Batch spawn failed for param '%s', skipping" % param)
+				push_warning("[TriggerManager] Batch spawn failed for param '%s', skipping: %s" % [param, spawned.error])
 				call_deferred("_fire_batch_next", trigger_id)
 		TriggerDefinition.ActionType.MESSAGE_EXISTING:
 			var target_history: ChatHistory = null
@@ -796,11 +858,16 @@ func _fire_batch_next(trigger_id: String) -> void:
 					target_idx = i
 					break
 			if not target_history:
-				target_history = AgentSpawner.spawn_agent(agent_def, "", trigger_id)
-				if not target_history:
-					push_warning("[TriggerManager] Batch MESSAGE_EXISTING: fallback spawn failed for param '%s'" % param)
+				var at := revision(trigger_id)
+				var spawned: Dictionary = await AgentSpawner.spawn_agent(agent_def, "", trigger_id,
+					_unchanged(trigger_id, batch))
+				if not _batch_goes_on(trigger_id, batch, at):
+					return
+				if not spawned.has("history"):
+					push_warning("[TriggerManager] Batch MESSAGE_EXISTING: fallback spawn failed for param '%s': %s" % [param, spawned.error])
 					call_deferred("_fire_batch_next", trigger_id)
 					return
+				target_history = spawned.history
 				target_idx = SingletonObject.ChatList.find(target_history)
 			batch.active_history_id = target_history.HistoryId
 			var chats = SingletonObject.Chats

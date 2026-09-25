@@ -6,8 +6,13 @@ extends PersistentWindow
 
 signal focused_chat_requested(config: Dictionary)
 
-# Skill data: id → {title, description, tool_deps, project}
+# Skill data: skill reference (SkillRef) → {title, description, tool_deps,
+# project, source, deprecated, unsatisfied_deps}. For browsing and preview
+# only: Create resolves the selected skills afresh.
 var _skills: Dictionary = {}
+# Which skill load is current: a later refresh() makes an earlier load's
+# answer stale.
+var _load_number := 0
 # All available tool names (excluding discovery tools)
 var _all_tool_names: Array[String] = []
 # tool_name → description (used for search)
@@ -16,7 +21,7 @@ var _tool_descriptions: Dictionary = {}
 var _extra_tools: Dictionary = {}  # tool_name → bool
 # Tools contributed by selected skills
 var _skill_tools: Dictionary = {}  # tool_name → Array[skill_id]
-# Selected skill IDs (ordered)
+# Selected skill references (ordered)
 var _selected_skill_ids: Array[String] = []
 
 # UI refs — skill lists
@@ -31,6 +36,14 @@ var _tool_list: VBoxContainer
 # UI refs — bottom
 var _summary_label: Label
 var _create_btn: Button
+# Skill loading and creation state: loading, empty, or why skills or the
+# chat could not be had; hidden when the skills are ready.
+var _skills_status: Label
+var _skills_retry: Button
+var _creating := false
+# Counts edits to the selection and the chosen tools: a Create that read the
+# skills while one happened does not use what it read.
+var _edits := 0
 
 
 func _ready() -> void:
@@ -62,10 +75,22 @@ func _build_ui() -> void:
 	skill_panel.custom_minimum_size.y = 200
 	vsplit.add_child(skill_panel)
 
+	var skill_header_row := HBoxContainer.new()
+	skill_panel.add_child(skill_header_row)
 	var skill_header := Label.new()
 	skill_header.text = "Skills"
 	skill_header.add_theme_font_size_override("font_size", 15)
-	skill_panel.add_child(skill_header)
+	skill_header_row.add_child(skill_header)
+	_skills_status = Label.new()
+	_skills_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skills_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_skills_status.add_theme_color_override("font_color", Color(0.85, 0.6, 0.4))
+	skill_header_row.add_child(_skills_status)
+	_skills_retry = Button.new()
+	_skills_retry.text = "Retry"
+	_skills_retry.visible = false
+	_skills_retry.pressed.connect(_reload_skills)
+	skill_header_row.add_child(_skills_retry)
 
 	var transfer := HBoxContainer.new()
 	transfer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -193,79 +218,76 @@ func refresh() -> void:
 	_extra_tools.clear()
 	_skill_tools.clear()
 	_selected_skill_ids.clear()
-	_load_skills()
 	_load_tools()
 	_render_available_list("")
 	_render_selected_list()
 	_render_tool_list("")
 	_update_summary()
+	_reload_skills()
 
 
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
-func _load_skills() -> void:
-	var dm: DocketManager = SingletonObject.docket_manager
-	if not dm:
-		print("[FocusedChatPopup] DocketManager not available")
+# Loads the Docket skills to choose from (MCPSkillTools.docket_skill_catalog),
+# showing that they are loading, that there are none, or why they could not
+# be read (with Retry). A skill already selected keeps its place.
+func _reload_skills() -> void:
+	_load_number += 1
+	var number := _load_number
+	_show_skills_status("Loading skills…", false)
+	var module = _skill_module()
+	if module == null:
+		_show_skills_status("Skills cannot be listed: the skill tools are not available", true)
 		return
-
-	var projects := dm.get_loaded_projects()
-
-	for proj_name in projects:
-		# Get skill catalog (IDs + titles)
-		var list_result := dm.call_tool("docket_skill_list", {"project": proj_name})
-		if list_result.has("error"):
-			continue
-		var skills_arr: Array = list_result.get("skills", [])
-
-		# Fetch each skill individually to get tool_deps (not in list response)
-		for skill_entry in skills_arr:
-			var id: String = str(skill_entry.get("id", ""))
-			if id.is_empty() or _skills.has(id):
-				continue
-			var full := dm.call_tool("docket_skill_get", {"id": id, "project": proj_name})
-			if full.has("error"):
-				# Still add with no tool_deps — skill is browsable
-				_skills[id] = {
-					"title": str(skill_entry.get("title", "")),
-					"description": str(skill_entry.get("description", "")),
-					"tool_deps": [] as Array[String],
-					"project": proj_name,
-				}
-				continue
-			_add_skill_from_item(full, proj_name)
-
-
-func _add_skill_from_item(item: Dictionary, proj_name: String) -> void:
-	var id: String = str(item.get("id", ""))
-	if id.is_empty() or _skills.has(id):
+	var catalog: Dictionary = await module.docket_skill_catalog()
+	if number != _load_number or not is_instance_valid(self):
 		return
-	var tool_deps_raw = item.get("tool_deps", [])
-	var deps_str: Array[String] = []
-	if tool_deps_raw is Array:
-		for dep in tool_deps_raw:
-			deps_str.append(str(dep))
-	elif tool_deps_raw is String and not tool_deps_raw.is_empty():
-		# Might be JSON string
-		var parsed = JSON.parse_string(tool_deps_raw)
-		if parsed is Array:
-			for dep in parsed:
-				deps_str.append(str(dep))
-	# Plugin-shipped skills metadata (DCR 019df57b T5).
+	if catalog.status != "ok":
+		_show_skills_status("Docket skills could not be listed: %s" % catalog.message, true)
+		return
+	_skills.clear()
+	for record in catalog.skills:
+		_add_skill_from_record(record)
+	_recompute_skill_tools()
+	_render_available_list(_available_search.text)
+	_render_selected_list()
+	_render_tool_list(_tool_search.text)
+	_update_summary()
+	_show_skills_status("" if not _skills.is_empty() else "No skills in the open projects", false)
+
+
+func _show_skills_status(text: String, retry: bool) -> void:
+	_skills_status.text = text
+	_skills_status.visible = not text.is_empty()
+	_skills_retry.visible = retry
+
+
+func _skill_module():
+	var mcp = SingletonObject.get_mcp_manager()
+	if mcp and mcp.minerva_server:
+		for module in mcp.minerva_server._modules:
+			if module is MCPSkillTools:
+				return module
+	return null
+
+
+func _add_skill_from_record(record: Dictionary) -> void:
+	var ref: String = str(record.get("ref", ""))
+	if ref.is_empty() or _skills.has(ref):
+		return
+	var deps: Array[String] = []
+	deps.assign(record.get("tool_deps", []))
 	var unsatisfied: Array[String] = []
-	var unsat_raw = item.get("unsatisfied_deps", [])
-	if unsat_raw is Array:
-		for dep in unsat_raw:
-			unsatisfied.append(str(dep))
-	_skills[id] = {
-		"title": str(item.get("title", "")),
-		"description": str(item.get("description", "")),
-		"tool_deps": deps_str,
-		"project": proj_name,
-		"source": str(item.get("source", "")),
-		"deprecated": bool(item.get("deprecated", false)),
+	unsatisfied.assign(record.get("unsatisfied_deps", []))
+	_skills[ref] = {
+		"title": str(record.get("title", "")),
+		"description": str(record.get("description", "")),
+		"tool_deps": deps,
+		"project": str(record.get("project_display_name", record.get("project", ""))),
+		"source": str(record.get("source", "")),
+		"deprecated": bool(record.get("deprecated", false)),
 		"unsatisfied_deps": unsatisfied,
 	}
 
@@ -321,10 +343,10 @@ func _render_available_list(filter: String) -> void:
 		var deprecated: bool = bool(skill.get("deprecated", false))
 
 		# Build display string with plugin badge and deprecation tag.
-		var display: String = skill_title
+		var display: String = _skill_name(id)
 		if source.begins_with("plugin:"):
 			var plugin_id := source.substr(7)
-			display = "%s  [from %s]" % [skill_title, plugin_id]
+			display = "%s  [from %s]" % [display, plugin_id]
 		if deprecated:
 			display = "%s  [deprecated]" % display
 		if deps_count > 0:
@@ -342,6 +364,14 @@ func _render_available_list(filter: String) -> void:
 			_available_list.set_item_tooltip(idx, tooltip)
 
 
+# The skill's title, with its project when a skill of another project has the
+# same title.
+func _skill_name(ref: String) -> String:
+	var skill: Dictionary = _skills[ref]
+	var same := _skills.values().filter(func(other: Dictionary) -> bool: return other.title == skill.title)
+	return "%s  (%s)" % [skill.title, skill.project] if same.size() > 1 else str(skill.title)
+
+
 func _render_selected_list() -> void:
 	_selected_list.clear()
 	for id in _selected_skill_ids:
@@ -349,7 +379,7 @@ func _render_selected_list() -> void:
 			continue
 		var skill: Dictionary = _skills[id]
 		var deps_count: int = skill["tool_deps"].size()
-		var display: String = "%s  (%d tools)" % [skill["title"], deps_count] if deps_count > 0 else skill["title"]
+		var display: String = "%s  (%d tools)" % [_skill_name(id), deps_count] if deps_count > 0 else _skill_name(id)
 		var idx := _selected_list.add_item(display)
 		_selected_list.set_item_metadata(idx, id)
 
@@ -443,6 +473,7 @@ func _on_remove_pressed() -> void:
 func _add_skill_to_selected(id: String) -> void:
 	if id in _selected_skill_ids:
 		return
+	_edits += 1
 	_selected_skill_ids.append(id)
 	_recompute_skill_tools()
 	_render_available_list(_available_search.text)
@@ -452,6 +483,7 @@ func _add_skill_to_selected(id: String) -> void:
 
 
 func _remove_skill_from_selected(id: String) -> void:
+	_edits += 1
 	_selected_skill_ids.erase(id)
 	_recompute_skill_tools()
 	_render_available_list(_available_search.text)
@@ -465,6 +497,7 @@ func _remove_skill_from_selected(id: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _on_tool_toggled(toggled: bool, tool_name: String) -> void:
+	_edits += 1
 	_extra_tools[tool_name] = toggled
 	_update_summary()
 
@@ -494,14 +527,6 @@ func _recompute_skill_tools() -> void:
 			_skill_tools[dep_str].append(id)
 
 
-func _get_selected_skill_names() -> Array[String]:
-	var names: Array[String] = []
-	for id in _selected_skill_ids:
-		if _skills.has(id):
-			names.append(_skills[id]["title"])
-	return names
-
-
 func _get_resolved_tools() -> Array[String]:
 	var tools: Array[String] = []
 	for tool_name in _skill_tools:
@@ -520,27 +545,58 @@ func _update_summary() -> void:
 		skill_count, "" if skill_count == 1 else "s",
 		tool_count, "" if tool_count == 1 else "s",
 	]
-	_create_btn.disabled = tool_count == 0
+	_create_btn.disabled = tool_count == 0 or _creating
 
 
+# Creates the chat from the selected skills, resolved afresh
+# (MCPSkillTools.resolve_skills): their tools, recomputed from what was just
+# read, with the tools chosen by hand, and their instructions. When a
+# selected skill cannot be resolved the popup stays open and says why.
+# Without selected skills the chat has the chosen tools only.
 func _on_create_pressed() -> void:
-	var selected_skills := _get_selected_skill_names()
-	var resolved_tools := _get_resolved_tools()
-
-	# Resolve skill instructions via MCPSkillTools
-	var instructions := ""
-	if not selected_skills.is_empty():
-		var mcp = SingletonObject.get_mcp_manager()
-		if mcp and mcp.minerva_server:
-			for module in mcp.minerva_server._modules:
-				if module is MCPSkillTools:
-					var resolved: Dictionary = module.resolve_skills(selected_skills)
-					instructions = resolved.get("instructions", "")
-					break
-
-	focused_chat_requested.emit({
-		"skills": selected_skills,
-		"resolved_tools": resolved_tools,
-		"instructions": instructions,
-	})
+	var extra: Array[String] = []
+	for tool_name in _extra_tools:
+		if _extra_tools[tool_name]:
+			extra.append(tool_name)
+	var config := {"skills": [] as Array[String], "skill_refs": [] as Array[String],
+		"resolved_tools": extra, "instructions": ""}
+	if not _selected_skill_ids.is_empty():
+		var module = _skill_module()
+		if module == null:
+			_show_skills_status("The chat was not created: the skill tools are not available", false)
+			return
+		_creating = true
+		_update_summary()
+		_show_skills_status("Reading the selected skills…", false)
+		var number := _load_number
+		var edits := _edits
+		var selection: Array[String] = []
+		selection.assign(_selected_skill_ids)
+		var resolved: Dictionary = await module.resolve_skills(selection)
+		_creating = false
+		_update_summary()
+		# Refreshed or closed while the skills were read: what was read is
+		# not what the popup now shows.
+		if number != _load_number or not visible:
+			return
+		if edits != _edits:
+			_show_skills_status("The selection changed while the skills were read; press Create again", false)
+			return
+		if resolved.status != "ok":
+			_show_skills_status("The chat was not created: %s" % resolved.message, false)
+			return
+		_show_skills_status("", false)
+		var tools: Array[String] = []
+		tools.assign(resolved.tools)
+		for tool_name in extra:
+			if tool_name not in tools:
+				tools.append(tool_name)
+		var titles: Array[String] = []
+		var refs: Array[String] = []
+		for skill in resolved.skills:
+			titles.append(str(skill.title))
+			refs.append(str(skill.ref))
+		config = {"skills": titles, "skill_refs": refs, "resolved_tools": tools,
+			"instructions": resolved.instructions}
+	focused_chat_requested.emit(config)
 	hide()

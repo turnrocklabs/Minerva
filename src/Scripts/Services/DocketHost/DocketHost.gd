@@ -317,7 +317,7 @@ func write_policy_observation(rule_id: String, text: String) -> String:
 
 ## The active skills of every open project (the master, personal.dct and the
 ## session's), read afresh in full: {status: "ok", skills: [skill records,
-## see _skill_record]} (none is a successful empty read) or {status: "error",
+## see skill_record]} (none is a successful empty read) or {status: "error",
 ## code, message, project?}.
 func skill_catalog() -> Dictionary:
 	var read := await _read_skills(true)
@@ -456,7 +456,7 @@ func _read_skills(active_only: bool, only_path: String = "") -> Dictionary:
 		var skills := []
 		for item in read.value.items:
 			if item is Dictionary:
-				skills.append(_skill_record(item, project))
+				skills.append(skill_record(item, project))
 		found.append({"project": project, "skills": skills})
 	var unsettled := await _unsettled(begun, changes, read_projects, only_path.is_empty())
 	if not unsettled.is_empty():
@@ -512,10 +512,10 @@ func _changed(project: Dictionary) -> Dictionary:
 	return result
 
 
-# A skill item of `project` as its consumers use it: its fields (strings,
-# tool_deps and tags as arrays of strings, optimization as a dictionary),
-# where it is (project name, display name, path) and its reference.
-static func _skill_record(item: Dictionary, project: Dictionary) -> Dictionary:
+## A skill item of `project` as its consumers use it: its fields (strings,
+## tool_deps and tags as arrays of strings, optimization as a dictionary),
+## where it is (project name, display name, path) and its reference.
+static func skill_record(item: Dictionary, project: Dictionary) -> Dictionary:
 	var record := {}
 	for field in ["id", "title", "description", "status", "prompt_text", "steps", "preconditions",
 			"outcome", "component", "topic", "source"]:

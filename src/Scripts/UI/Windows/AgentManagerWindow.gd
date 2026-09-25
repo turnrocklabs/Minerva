@@ -1072,8 +1072,9 @@ func _on_agent_test_spawn() -> void:
 	_spawn_selected_agent(agent, "Hello, I'm testing your agent configuration.")
 
 func _spawn_selected_agent(agent: AgentDefinition, prompt: String) -> void:
-	if AgentSpawner.spawn_agent(agent, prompt) == null:
-		SingletonObject.create_toast_notification("Agent could not start. Check its model and provider settings.", ToastNotification.Type.WARNING)
+	var spawned: Dictionary = await AgentSpawner.spawn_agent(agent, prompt)
+	if not spawned.has("history"):
+		SingletonObject.create_toast_notification("Agent could not start: %s" % spawned.error, ToastNotification.Type.WARNING)
 		return
 	hide()
 

@@ -64,7 +64,7 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 		"minerva_delete_agent":
 			return _delete_agent(arguments)
 		"minerva_spawn_agent":
-			return _spawn_agent(arguments)
+			return await _spawn_agent(arguments, context)
 		# Worker tools
 		"minerva_spawn_worker":
 			return await _spawn_worker(arguments, context)
@@ -817,7 +817,7 @@ func _delete_agent(args: Dictionary) -> Dictionary:
 	}
 
 
-func _spawn_agent(args: Dictionary) -> Dictionary:
+func _spawn_agent(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	var registry = SingletonObject.agent_registry
 	if not registry:
 		return MCPToolUtils.error("Agent registry not available")
@@ -837,9 +837,13 @@ func _spawn_agent(args: Dictionary) -> Dictionary:
 
 	var initial_message: String = args.get("initial_message", "")
 
-	var history = AgentSpawner.spawn_agent(agent_def, initial_message)
-	if not history:
-		return MCPToolUtils.error("Failed to spawn agent '%s'" % agent_def.name)
+	var spawned: Dictionary = await AgentSpawner.spawn_agent(agent_def, initial_message, "",
+		func() -> String: return "the call was %s" % context.lifetime.reason if context.is_stopped() else "")
+	if not spawned.has("history") and context.is_stopped():
+		return context.stopped_result()
+	if not spawned.has("history"):
+		return MCPToolUtils.error("Failed to spawn agent '%s': %s" % [agent_def.name, spawned.error])
+	var history: ChatHistory = spawned.history
 
 	return {
 		"success": true,
@@ -852,6 +856,25 @@ func _spawn_agent(args: Dictionary) -> Dictionary:
 
 
 #region Worker Handler Implementations
+
+# The refusal of a worker whose parent chat `parent_chat_id` has no spawn
+# budget left, or {} when it may spawn (or has no parent).
+func _worker_budget_refusal(parent_chat_id: String) -> Dictionary:
+	var registry_check = SingletonObject.worker_registry
+	if parent_chat_id.is_empty() or not registry_check:
+		return {}
+	var budget_check = registry_check.check_budget(parent_chat_id)
+	if budget_check.allowed:
+		return {}
+	var result: Dictionary = {
+		"success": false,
+		"error": "Budget exceeded: %s" % budget_check.reason,
+		"budget": budget_check.budget_summary,
+	}
+	if budget_check.get("requires_approval", false):
+		result["requires_approval"] = true
+	return result
+
 
 func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	# 1. Validate required fields
@@ -882,19 +905,50 @@ func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	var parent_chat_id: String = parent_resolution["parent_chat_id"]
 
 	# 2b. Check budget before spawning
-	if not parent_chat_id.is_empty():
-		var registry_check = SingletonObject.worker_registry
-		if registry_check:
-			var budget_check = registry_check.check_budget(parent_chat_id)
-			if not budget_check.allowed:
-				var result: Dictionary = {
-					"success": false,
-					"error": "Budget exceeded: %s" % budget_check.reason,
-					"budget": budget_check.budget_summary,
-				}
-				if budget_check.get("requires_approval", false):
-					result["requires_approval"] = true
-				return result
+	var over_budget := _worker_budget_refusal(parent_chat_id)
+	if not over_budget.is_empty():
+		return over_budget
+
+	# 2c. Resolve skills (optional), all or none, before anything is created:
+	# their instructions are prepended to system_prompt and their tools lock
+	# the worker's tool set.
+	var requested_skills_raw = args.get("skills", [])
+	var requested_skills: Array = []
+	if requested_skills_raw is Array:
+		requested_skills = requested_skills_raw
+	elif requested_skills_raw is String and not requested_skills_raw.is_empty():
+		requested_skills = [requested_skills_raw]
+	var resolved_tools: Array[String] = []
+	var static_tool_mode: bool = false
+	if not requested_skills.is_empty():
+		var skill_tools_module = null
+		for module in server._modules:
+			if module is MCPSkillTools:
+				skill_tools_module = module
+				break
+		if not skill_tools_module:
+			return MCPToolUtils.error("The worker's skills cannot be resolved: the skill tools are not available")
+		var skill_names_typed: Array[String] = []
+		for sn in requested_skills:
+			skill_names_typed.append(str(sn))
+		var resolved: Dictionary = await skill_tools_module.resolve_skills(skill_names_typed)
+		if context.is_stopped():
+			return context.stopped_result()
+		if resolved.status != "ok":
+			var refused := MCPToolUtils.error(str(resolved.message))
+			for key in ["code", "skill", "candidates"]:
+				if resolved.has(key):
+					refused[key] = resolved[key]
+			return refused
+		var skill_instructions: String = resolved.instructions
+		resolved_tools.assign(resolved.tools)
+		if not skill_instructions.is_empty():
+			system_prompt = skill_instructions + "\n\n---\n\n" + system_prompt
+		static_tool_mode = true
+		# The budget again, as it may have been spent while the skills were read.
+		over_budget = _worker_budget_refusal(parent_chat_id)
+		if not over_budget.is_empty():
+			return over_budget
 
 	# 3. Resolve provider (reuse _create_chat logic via server)
 	var provider_name: String = args.get("provider", "current")
@@ -914,35 +968,7 @@ func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	if not history:
 		return MCPToolUtils.error("Failed to find newly created chat")
 
-	# 4. Resolve skills (optional) — prepend instructions to system_prompt and compute tool lock
-	var requested_skills_raw = args.get("skills", [])
-	var requested_skills: Array = []
-	if requested_skills_raw is Array:
-		requested_skills = requested_skills_raw
-	elif requested_skills_raw is String and not requested_skills_raw.is_empty():
-		requested_skills = [requested_skills_raw]
-	var resolved_tools: Array[String] = []
-	var static_tool_mode: bool = false
-	if not requested_skills.is_empty():
-		# Find the skill tools module to call resolve_skills()
-		var skill_tools_module = null
-		for module in server._modules:
-			if module is MCPSkillTools:
-				skill_tools_module = module
-				break
-		if skill_tools_module:
-			var skill_names_typed: Array[String] = []
-			for sn in requested_skills:
-				skill_names_typed.append(str(sn))
-			var resolved: Dictionary = skill_tools_module.resolve_skills(skill_names_typed)
-			var skill_instructions: String = resolved.get("instructions", "")
-			resolved_tools.assign(resolved.get("tools", []))
-			# Prepend skill instructions to system_prompt
-			if not skill_instructions.is_empty():
-				system_prompt = skill_instructions + "\n\n---\n\n" + system_prompt
-			static_tool_mode = true
-
-	# 4b. Set system prompt (potentially with skill instructions prepended)
+	# 4. Set system prompt (potentially with skill instructions prepended)
 	var prompt_result: Dictionary = await server.call_tool("minerva_set_system_prompt", {"chat_id": chat_id, "prompt": system_prompt}, context)
 	if not prompt_result.get("success", false):
 		return prompt_result

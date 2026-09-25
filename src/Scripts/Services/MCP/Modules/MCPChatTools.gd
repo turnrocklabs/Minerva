@@ -4,6 +4,8 @@ extends MCPToolModule
 ## Handles create/send/read/close chat operations, system prompts,
 ## agent mode configuration, and ledger/compact tools.
 
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
+
 
 func get_tool_names() -> Array[String]:
 	return [
@@ -453,12 +455,18 @@ func register_tools() -> void:
 	, "compaction")
 
 
+func handle_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
+	if tool_name == "minerva_create_focused_chat":
+		return await _create_focused_chat(arguments, context)
+	return await handle(tool_name, arguments)
+
+
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_create_chat":
 			return _create_chat(arguments)
 		"minerva_create_focused_chat":
-			return _create_focused_chat(arguments)
+			return await _create_focused_chat(arguments, ExecutionContext.create("module"))
 		"minerva_set_chat_model":
 			return _set_chat_model(arguments)
 		"minerva_set_system_prompt":
@@ -648,18 +656,10 @@ func _set_chat_model(args: Dictionary) -> Dictionary:
 	}
 
 
-func _create_focused_chat(args: Dictionary) -> Dictionary:
-	# 1. Create the chat via the normal path (handles provider resolution)
-	var create_result := _create_chat(args)
-	if create_result.has("error") or not create_result.get("success", false):
-		return create_result
-
-	var chat_id: String = create_result.get("chat_id", "")
-	var history = MCPToolUtils.find_chat_by_id(chat_id)
-	if not history:
-		return MCPToolUtils.error("Chat created but not found: %s" % chat_id)
-
-	# 2. Resolve skills
+func _create_focused_chat(args: Dictionary, context: ExecutionContext) -> Dictionary:
+	# 1. Resolve skills, all or none, and the whole tool set before the chat
+	# is created: a requested skill that cannot be resolved creates nothing,
+	# whatever extra_tools were given.
 	var skill_names_raw: Array = args.get("skills", [])
 	var extra_tools_raw: Array = args.get("extra_tools", [])
 	var system_prompt: String = args.get("system_prompt", "")
@@ -670,15 +670,26 @@ func _create_focused_chat(args: Dictionary) -> Dictionary:
 		var skill_names: Array[String] = []
 		for sn in skill_names_raw:
 			skill_names.append(str(sn))
-		# Find MCPSkillTools module
+		var skill_module = null
 		for module in server._modules:
 			if module is MCPSkillTools:
-				var resolved: Dictionary = module.resolve_skills(skill_names)
-				instructions = resolved.get("instructions", "")
-				resolved_tools.assign(resolved.get("tools", []))
+				skill_module = module
 				break
+		if not skill_module:
+			return MCPToolUtils.error("The chat's skills cannot be resolved: the skill tools are not available")
+		var resolved: Dictionary = await skill_module.resolve_skills(skill_names)
+		if context.is_stopped():
+			return context.stopped_result()
+		if resolved.status != "ok":
+			var refused := MCPToolUtils.error(str(resolved.message))
+			for key in ["code", "skill", "candidates"]:
+				if resolved.has(key):
+					refused[key] = resolved[key]
+			return refused
+		instructions = resolved.instructions
+		resolved_tools.assign(resolved.tools)
 
-	# 3. Union with extra_tools
+	# 2. Union with extra_tools
 	for et in extra_tools_raw:
 		var tool_name: String = str(et)
 		if tool_name not in resolved_tools:
@@ -687,11 +698,21 @@ func _create_focused_chat(args: Dictionary) -> Dictionary:
 	if resolved_tools.is_empty():
 		return MCPToolUtils.error("No tools resolved — provide skills or extra_tools")
 
-	# 4. Compute disabled set
 	var mcp = SingletonObject.get_mcp_manager()
 	if not mcp:
 		return MCPToolUtils.error("MCP manager not available")
 
+	# 3. Create the chat via the normal path (handles provider resolution)
+	var create_result := _create_chat(args)
+	if create_result.has("error") or not create_result.get("success", false):
+		return create_result
+
+	var chat_id: String = create_result.get("chat_id", "")
+	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	if not history:
+		return MCPToolUtils.error("Chat created but not found: %s" % chat_id)
+
+	# 4. Compute disabled set
 	var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 	var disabled: Array[String] = []
 	for tool_def in mcp.get_available_tools():

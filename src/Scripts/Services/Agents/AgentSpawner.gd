@@ -6,16 +6,37 @@ extends RefCounted
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 
 
-static func spawn_agent(agent_def: AgentDefinition, initial_message: String = "", _trigger_id: String = "") -> ChatHistory:
+## Spawns an agent from `agent_def`: {history} or {error} (why it was not
+## spawned). The agent's skill_names are resolved first, all or none
+## (MCPSkillTools.resolve_skills), so an agent whose skills cannot be read
+## is never created: nothing is added, rendered or sent. `still_wanted`, when
+## given, is asked once they are read, before anything is created: "" to go
+## on, else why the spawn is no longer wanted (its caller was stopped, its
+## trigger changed), which is then the error.
+static func spawn_agent(agent_def: AgentDefinition, initial_message: String = "", _trigger_id: String = "",
+		still_wanted: Callable = Callable()) -> Dictionary:
 	if not agent_def:
 		push_error("[AgentSpawner] null AgentDefinition")
-		return null
+		return {"error": "no agent definition"}
+
+	# 0. Resolve skills before anything is created
+	var resolved := {}
+	if not agent_def.skill_names.is_empty():
+		var skill_module = _find_skill_tools_module()
+		if not skill_module:
+			return {"error": "its skills cannot be resolved: the skill tools are not available"}
+		resolved = await skill_module.resolve_skills(agent_def.skill_names)
+		if resolved.status != "ok":
+			return {"error": str(resolved.message)}
+		var unwanted: String = still_wanted.call() if still_wanted.is_valid() else ""
+		if not unwanted.is_empty():
+			return {"error": unwanted}
 
 	# 1. Create provider
 	var provider: BaseProvider = _create_provider(agent_def)
 	if not provider:
 		push_error("[AgentSpawner] Could not create provider for enum_id %d" % agent_def.provider_enum_id)
-		return null
+		return {"error": "no provider could be created for model %d" % agent_def.provider_enum_id}
 
 	# 2. Create ChatHistory
 	var history = ChatHistory.new(provider)
@@ -49,8 +70,6 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 
 	# 3b. Apply static tool mode from skill_names (overrides enabled_tools if both set)
 	if not agent_def.skill_names.is_empty():
-		var skill_module = _find_skill_tools_module()
-		var resolved: Dictionary = skill_module.resolve_skills(agent_def.skill_names) if skill_module else {"tools": [], "instructions": ""}
 		var resolved_tools: Array[String] = []
 		resolved_tools.assign(resolved.get("tools", []))
 		var skill_instructions: String = resolved.get("instructions", "")
@@ -93,7 +112,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 		chats.call_deferred("execute_regular_chat", initial_message)
 
 	print("[AgentSpawner] Spawned agent '%s' (history_id=%s)" % [agent_def.name, history.HistoryId])
-	return history
+	return {"history": history}
 
 
 static func _create_provider(agent_def: AgentDefinition) -> BaseProvider:

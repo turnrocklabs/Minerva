@@ -212,76 +212,127 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
-## Resolve a list of skill names/IDs into their tool dependencies and instructions.
-## Searches both SkillManager (minerva) and DocketManager (docket) for each skill.
-## Returns: {"tools": Array[String], "instructions": String}
-## - tools: deduplicated union of tool_deps from all matched skills
-## - instructions: concatenated skill instructions separated by headers
+## Resolves requested skills, all or none, before anything is created for
+## them: {status: "ok", tools (the union of their tool_deps), instructions
+## (each skill's under a "## Skill:" header), skills: [{ref, title, origin}]},
+## or {status: "error", code, message, skill, candidates?} for the first that
+## cannot be resolved (missing, ambiguous, or its owner unreadable). No
+## requested skill is an empty success. Each name is resolved by
+## _resolve_skill.
 func resolve_skills(skill_names: Array[String]) -> Dictionary:
 	var all_tools: Array[String] = []
 	var all_instructions: Array[String] = []
-
-	var skill_manager = SingletonObject.get_skill_manager()
-	var dm: DocketManager = SingletonObject.docket_manager
-
+	var skills: Array = []
 	for skill_name in skill_names:
-		var skill_name_str: String = str(skill_name)
-		var found: bool = false
+		var resolved := await _resolve_skill(str(skill_name))
+		if resolved.status != "found":
+			return resolved
+		for dep in resolved.tools:
+			if dep not in all_tools:
+				all_tools.append(dep)
+		if not str(resolved.instructions).is_empty():
+			all_instructions.append("## Skill: %s\n\n%s" % [resolved.title, resolved.instructions])
+		skills.append({"ref": resolved.ref, "title": resolved.title, "origin": resolved.origin})
+	return {"status": "ok", "tools": all_tools, "instructions": "\n\n".join(all_instructions), "skills": skills}
 
-		# Try docket first (search all loaded projects by ID then title)
-		if dm:
-			for proj_name in dm.get_loaded_projects():
-				# Try by id
-				var by_id := dm.call_tool("docket_skill_get", {"project": proj_name, "id": skill_name_str})
-				if not by_id.has("error"):
-					var deps: Array = by_id.get("tool_deps", [])
-					for dep in deps:
-						var dep_str: String = str(dep)
-						if dep_str not in all_tools:
-							all_tools.append(dep_str)
-					var body := _compose_skill_instructions(by_id)
-					var title: String = str(by_id.get("title", skill_name_str))
-					if not body.is_empty():
-						all_instructions.append("## Skill: %s\n\n%s" % [title, body])
-					found = true
-					break
-				# Try by title
-				var by_title := dm.call_tool("docket_skill_get", {"project": proj_name, "title": skill_name_str})
-				if not by_title.has("error"):
-					var deps: Array = by_title.get("tool_deps", [])
-					for dep in deps:
-						var dep_str: String = str(dep)
-						if dep_str not in all_tools:
-							all_tools.append(dep_str)
-					var body := _compose_skill_instructions(by_title)
-					var title: String = str(by_title.get("title", skill_name_str))
-					if not body.is_empty():
-						all_instructions.append("## Skill: %s\n\n%s" % [title, body])
-					found = true
-					break
-			if found:
+
+## One requested skill: {status: "found", ref, title, origin, tools,
+## instructions} or {status: "error", code, message, skill, candidates?}.
+## A qualified reference (SkillRef) names its origin; a legacy name that is a
+## SkillManager id is that local skill (so local skills work while Docket is
+## unavailable); any other legacy name is looked up in Docket, through the
+## embedded DocketManager while it exists, else through DocketHost. A Docket
+## failure is never answered from SkillManager.
+func _resolve_skill(skill_name: String) -> Dictionary:
+	var failed := func(code: String, why: String) -> Dictionary:
+		return {"status": "error", "code": code, "skill": skill_name,
+			"message": "Skill '%s' could not be resolved: %s" % [skill_name, why]}
+	var qualified := SkillRef.parse(skill_name)
+	if qualified.is_empty() and SkillRef.is_qualified(skill_name):
+		return failed.call("bad_ref", "it is not a valid skill reference")
+	var skill_manager = SingletonObject.get_skill_manager()
+	var local_id := ""
+	if qualified.get("origin", "") == SkillRef.LOCAL:
+		local_id = str(qualified.id)
+	elif qualified.is_empty() and skill_manager and skill_manager.get_skill(skill_name):
+		local_id = skill_name
+	if not local_id.is_empty():
+		var skill = skill_manager.get_skill(local_id) if skill_manager else null
+		if skill == null:
+			return failed.call("missing", "no such local skill")
+		var deps: Array[String] = []
+		for dep in (skill.tool_deps if "tool_deps" in skill else []):
+			deps.append(str(dep))
+		return {"status": "found", "ref": SkillRef.local(skill.id), "title": skill.name, "origin": SkillRef.LOCAL,
+			"tools": deps, "instructions": skill.instructions}
+
+	var found := await docket_skill(skill_name)
+	match found.status:
+		"found":
+			var record: Dictionary = found.item
+			var tools: Array[String] = []
+			tools.assign(record.tool_deps)
+			return {"status": "found", "ref": record.ref, "title": record.title, "origin": SkillRef.DOCKET,
+				"tools": tools, "instructions": _compose_skill_instructions(record)}
+		"missing":
+			return failed.call("missing", "no skill has that id or title")
+	var refused: Dictionary = failed.call(str(found.get("code", "error")), str(found.get("message", "")))
+	if found.has("candidates"):
+		refused["candidates"] = found.candidates
+	return refused
+
+
+## The Docket skill `selector` names (as DocketHost.skill_lookup: a
+## qualified reference, else id then title), through the embedded
+## DocketManager while it exists (the first loaded project holding it by id,
+## else by title), else through DocketHost: {status: "found", item: skill
+## record (DocketHost.skill_record), ref}, {status: "missing"}, or {status:
+## "error", code, message, candidates?}.
+func docket_skill(selector: String) -> Dictionary:
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm != null:
+		var qualified := SkillRef.parse(selector)
+		var only := str(qualified.get("project_path", ""))
+		for proj_name in dm.get_loaded_projects():
+			var path := dm.get_project_path(proj_name)
+			if not only.is_empty() and path != only:
 				continue
+			var project := {"name": proj_name, "display_name": proj_name, "path": path}
+			var tries: Array = [{"id": qualified.id}] if not qualified.is_empty() \
+				else [{"id": selector}, {"title": selector}]
+			for args in tries:
+				var got: Dictionary = dm.call_tool("docket_skill_get", args.merged({"project": proj_name}))
+				if not got.has("error"):
+					var record := DocketHost.skill_record(got, project)
+					return {"status": "found", "item": record, "ref": record.ref}
+		return {"status": "missing", "selector": selector}
+	var host: DocketHost = SingletonObject.docket_host
+	if host == null:
+		return {"status": "error", "code": "unavailable", "message": "no Docket owns Minerva's projects"}
+	return await host.skill_lookup(selector)
 
-		# Fall back to SkillManager (note-based skills)
-		if skill_manager:
-			var skill = skill_manager.get_skill(skill_name_str)
-			if skill:
-				var deps: Array = skill.tool_deps if "tool_deps" in skill else []
-				for dep in deps:
-					var dep_str: String = str(dep)
-					if dep_str not in all_tools:
-						all_tools.append(dep_str)
-				if not skill.instructions.is_empty():
-					all_instructions.append("## Skill: %s\n\n%s" % [skill.name, skill.instructions])
-				found = true
 
-		if not found:
-			push_warning("[MCPSkillTools] resolve_skills: skill not found: %s" % skill_name_str)
-
-	return {
-		"tools": all_tools,
-		"instructions": "\n\n".join(all_instructions),
-	}
+## The active Docket skills of every open project, for choosing among them:
+## {status: "ok", skills: [skill records]} or {status: "error", code,
+## message}. Through the embedded DocketManager while it exists (a skill
+## whose full record cannot be read is left out, never listed without its
+## tool_deps), else through DocketHost.
+func docket_skill_catalog() -> Dictionary:
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm != null:
+		var skills := []
+		for proj_name in dm.get_loaded_projects():
+			var project := {"name": proj_name, "display_name": proj_name, "path": dm.get_project_path(proj_name)}
+			var listed: Dictionary = dm.call_tool("docket_skill_list", {"project": proj_name})
+			for entry in listed.get("skills", []):
+				var got: Dictionary = dm.call_tool("docket_skill_get", {"id": str(entry.get("id", "")), "project": proj_name})
+				if not got.has("error"):
+					skills.append(DocketHost.skill_record(got, project))
+		return {"status": "ok", "skills": skills}
+	var host: DocketHost = SingletonObject.docket_host
+	if host == null:
+		return {"status": "error", "code": "unavailable", "message": "no Docket owns Minerva's projects"}
+	return await host.skill_catalog()
 
 
 ## Concat a docket skill record's prompt_text + steps into a single instructions
