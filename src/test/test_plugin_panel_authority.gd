@@ -18,15 +18,19 @@ extends SceneTree
 ##     after unbinding, with an outdated binding, or naming another item is
 ##     refused unsent, as is one after the panel's file changed; the save
 ##     goes with a grant registered for exactly the bound item (its full id
-##     and the project's opening), the one action and the host's person; a
-##     second panel gets a session and grants of its own;
+##     and the project's opening), its save and move actions and the host's
+##     person; a move goes the same way; a new item is made only in the
+##     attached file's project, under a grant registered for creating one
+##     item of its type alone; a second panel gets a session and grants of
+##     its own;
 ##   - names only the host gives, a tool outside the panel's channels, and a
 ##     plugin that declares no channel are refused without reaching the
 ##     backend; an ordinary request never uses the channel;
 ##   - a grant the backend no longer honours is registered anew once, not
 ##     again, and not at all once the project was opened again;
 ##   - binding another item while a save waits ends that save (unsent before
-##     it goes, its answer refused after), and a grant it got is revoked,
+##     it goes; answered after, it is refused but said to have been applied),
+##     and a grant it got is revoked,
 ##     never handed to the panel; so does the panel being given another file
 ##     and then its own again (its binding and grant go too), and a failure
 ##     answered after the selection changed is reported as that;
@@ -102,6 +106,10 @@ class FixtureConnection extends RefCounted:
 					refuse_updates -= 1
 					return {"error": "no such grant", "rpc_error": {"code": -32001, "message": "no such grant"}}
 				return {"result": {"id": params.id, "item_token": "t", "stream": "s", "event_watermark": 1}}
+			"transition_item":
+				return {"result": {"id": params.id, "status": params.target, "item_token": "t"}}
+			"create_item":
+				return {"result": {"id": "new-1", "item_token": "t"}}
 			"call":
 				if fail_calls:
 					return {"error": "backend unavailable", "rpc_error": {"code": -32603, "message": "backend unavailable"}}
@@ -245,9 +253,9 @@ func _run() -> void:
 	var saved := await a.request_private("update_item", {"binding": epoch, "changes": {"title": "t"}, "operation_id": "op2"})
 	var registered: Array = backend.of("register")
 	var update: Dictionary = backend.of("update_item")[0].params
-	check("the save goes with a grant for exactly the bound item, the one action and the host's person",
+	check("the save goes with a grant for exactly the bound item, its save and move actions and the host's person",
 		saved.get("success", false) and registered.size() == 1 and registered[0].params == {"panel_secret": secret,
-			"panel": "main#1", "person": PERSON, "project": "p", "item": "full-i1", "actions": ["update_item"],
+			"panel": "main#1", "person": PERSON, "project": "p", "item": "full-i1", "actions": ["update_item", "transition_item"],
 			"open_generation": "open-1"}
 		and update.panel_grant == "grant-1" and update.project == "p" and update.id == "full-i1" and not update.has("binding"),
 		str(backend.requests))
@@ -286,6 +294,26 @@ func _run() -> void:
 	check("an ordinary request does not use the private channel",
 		ordinary.get("error_code") == PluginErrors.CODE_PLUGIN_NOT_RUNNING and backend.requests.size() == before,
 		str(ordinary))
+
+	# A move of the bound item goes like a save; a new item is made in the
+	# attached file's project only, under a grant for creating one alone.
+	var transitioned := await a.request_private("transition_item", {"binding": epoch, "target": "triaged", "note": "",
+		"changes": {"title": "t"}})
+	var move: Dictionary = backend.of("transition_item")[-1].params
+	check("a move goes for exactly the bound item, with its grant",
+		transitioned.get("success", false) and move.project == "p" and move.id == "full-i1" and move.target == "triaged"
+		and move.panel_grant == "grant-%d" % backend.grants and not move.has("binding"), str(move))
+	var creates := backend.of("register").size()
+	var elsewhere_new := await a.request_private("create_item", {"project": "q", "fields": {"type": "bug", "title": "n"}})
+	var created := await a.request_private("create_item", {"project": "p", "fields": {"type": "bug", "title": "n"},
+		"operation_id": "op3"})
+	check("a new item is made in the attached file's project only, under a grant for creating one of its type",
+		elsewhere_new.get("error_code") == "wrong_project" and created.get("success", false) and created.result.id == "new-1"
+		and backend.of("register").size() == creates + 1
+		and backend.of("register")[-1].params == {"panel_secret": secret, "panel": "main#1", "person": PERSON,
+			"project": "p", "type": "bug", "actions": ["create_item"], "open_generation": "open-1"}
+		and backend.of("create_item")[-1].params == {"panel_grant": "grant-%d" % backend.grants, "project": "p",
+			"fields": {"type": "bug", "title": "n"}, "operation_id": "op3"}, "%s %s" % [elsewhere_new, created])
 
 	# A grant the backend dropped is registered anew, once, and only for the
 	# same opening of the project.
@@ -352,8 +380,9 @@ func _run() -> void:
 	backend.hold = ""
 	backend.released.emit()
 	await process_frame
-	check("a save answered after another item was bound is refused as superseded, not reported done",
-		answered_late.get("error_code") == "superseded", str(answered_late))
+	check("a save answered after another item was bound is refused as superseded, and said to have been applied",
+		answered_late.get("error_code") == "superseded" and str(answered_late.get("error_message", "")).contains("was applied"),
+		str(answered_late))
 
 	# The panel is given another file and then its own again while a save
 	# waits for its grant.

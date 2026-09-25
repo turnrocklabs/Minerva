@@ -9,7 +9,9 @@ extends RefCounted
 ## (env_for_generation, through SubProcess.start_with_env); with it this
 ## host opens a session per live panel registration and registers grants,
 ## each naming the person (the OS account this host runs as, never anything
-## the panel says), the one item the panel has shown and the one action.
+## the panel says), the one item the panel has shown and what may be done to
+## it (saved, moved to another status), or, to create one new item, a type
+## and no item.
 ##
 ## A panel saves only the item it is bound to, in the project of the file
 ## the host attached it to: it binds an item when it shows it (select_item);
@@ -17,11 +19,16 @@ extends RefCounted
 ## the opening, open_generation) and whether the item is one of it (its
 ## canonical id), and numbers the binding (its epoch). A save names that
 ## epoch, and the host fills in the bound project and item itself, refusing
-## any other. Showing another item, or none, ends the binding and revokes
-## its grant, as does the host giving the panel a file (another, or the same
-## path again: the attachment revision it counts them by); a grant is only
-## registered while the file is still that same opening of the project,
-## which the backend checks again as it registers (open_generation).
+## any other; a move to another status (transition_item) goes the same way.
+## A new item (create_item) is made only in the attached file's project,
+## under a grant registered for it alone, which the backend ends once it has
+## made the item; the backend chooses its id, and the panel then shows and
+## binds it like any other. Showing another item, or none, ends the binding
+## and revokes its grant, as does the host giving the panel a file (another,
+## or the same path again: the attachment revision it counts them by); a
+## grant is only registered while the file is still that same opening of
+## the project, which the backend checks again as it registers
+## (open_generation).
 ##
 ## Only the broker's private branch calls handle(), with the panel key and
 ## registration generation it made, and the panel's attachment; a
@@ -36,8 +43,12 @@ extends RefCounted
 ## The secret, sessions and grants never leave this object.
 
 ## What a panel may ask: its tool calls (method_prefix + "call"), binding the
-## item it shows, and a save of that item (method_prefix + "update_item").
-const ACTIONS := ["call", "select_item", "update_item"]
+## item it shows, a save of that item or a move to another status (the
+## backend's method_prefix + "update_item" / "transition_item"), and a new
+## item (method_prefix + "create_item").
+const ACTIONS := ["call", "select_item", "update_item", "transition_item", "create_item"]
+## What a bound item's grant allows.
+const ITEM_ACTIONS := ["update_item", "transition_item"]
 ## Argument names only the host puts on the channel; a panel may not send them.
 const HOST_ARGUMENTS := ["panel_secret", "panel_grant", "panel_session", "panel", "person", "actions"]
 ## A grant is registered again this long (ms) before it expires.
@@ -167,7 +178,9 @@ func handle(panel_key: String, generation: int, action: String, params: Dictiona
 		"select_item":
 			return await _select(state, str(params.get("project", "")), str(params.get("id", "")),
 				_Guard.new(state, attached, attached_of))
-	return await _update(state, params, attached, attached_of)
+		"create_item":
+			return await _create(state, params, _Guard.new(state, attached, attached_of))
+	return await _update(state, action, params, attached, attached_of)
 
 
 ## What a step waits on still holding: the panel's attachment (its revision
@@ -260,11 +273,11 @@ func _tool(state: _Panel, name: String, arguments: Dictionary, guard: _Guard = n
 	return {"value": parsed} if parsed is Dictionary else _refusal("tool_error", "%s gave no result" % name)
 
 
-# A save of the bound item, for the binding the panel names: the project and
-# item are the binding's; a grant the backend no longer honours is
-# registered anew, once. A panel with another attachment than the binding's
-# loses the binding and its grant.
-func _update(state: _Panel, params: Dictionary, attached: Dictionary, attached_of: Callable) -> Dictionary:
+# Method `method` (one of ITEM_ACTIONS) for the bound item, for the binding
+# the panel names: the project and item are the binding's; a grant the
+# backend no longer honours is registered anew, once. A panel with another
+# attachment than the binding's loses the binding and its grant.
+func _update(state: _Panel, method: String, params: Dictionary, attached: Dictionary, attached_of: Callable) -> Dictionary:
 	var binding := state.binding
 	if binding.is_empty() or int(params.get("binding", -1)) != int(binding.epoch):
 		return _refusal("not_bound", "the panel's item is not bound for editing, or it has changed")
@@ -273,26 +286,56 @@ func _update(state: _Panel, params: Dictionary, attached: Dictionary, attached_o
 		return _refusal("not_bound", "the panel shows another file now; show the item again to edit it")
 	if (params.has("project") and str(params.project) != binding.project) \
 			or (params.has("id") and str(params.id) != binding.item):
-		return _refusal("binding_mismatch", "a save names only the bound item")
+		return _refusal("binding_mismatch", "a change names only the bound item")
 	var saved := params.duplicate(true)
 	saved.erase("binding")
 	saved["project"] = binding.project
 	saved["id"] = binding.item
 	var guard := _Guard.new(state, attached, attached_of)
-	var answered := await _save(state, saved, guard)
+	var answered := await _save(state, method, saved, guard)
 	if int(answered.get("rpc_code", 0)) == GRANT_REFUSED and guard.broken().is_empty():
 		_drop_grant(state)
-		answered = await _save(state, saved, guard)
+		answered = await _save(state, method, saved, guard)
 	return answered
 
 
-func _save(state: _Panel, saved: Dictionary, guard: _Guard) -> Dictionary:
+func _save(state: _Panel, method: String, saved: Dictionary, guard: _Guard) -> Dictionary:
 	var grant := await _grant_for(state, guard)
 	if grant.has("error_code"):
 		return grant
 	var granted := saved.duplicate()
 	granted["panel_grant"] = grant.grant
-	return await _request(state, "update_item", granted, guard)
+	return await _request(state, method, granted, guard)
+
+
+# A new item in `params.project`, which must be the attached file's open
+# project, from `params.fields` (its type among them): a grant for creating
+# one item of that type is registered for it, and revoked if it made none.
+func _create(state: _Panel, params: Dictionary, guard: _Guard) -> Dictionary:
+	var fields = params.get("fields", {})
+	if not fields is Dictionary or str(fields.get("type", "")).is_empty():
+		return _refusal("invalid_request", "a new item is sent as its fields, its type among them")
+	var person := _host_person()
+	if person.is_empty():
+		return _refusal("no_person", "this host cannot tell which account it runs as, so it makes no edit")
+	var opening := await _opening_of(state, guard)
+	if opening.has("error_code"):
+		return opening
+	if str(params.get("project", "")) != opening.project:
+		return _refusal("wrong_project", "items are created here only in %s, the file this panel shows" % opening.project)
+	var registered := await _request(state, "register", {"panel_secret": _secret, "panel": state.key,
+		"person": person, "project": opening.project, "type": str(fields.type), "actions": ["create_item"],
+		"open_generation": opening.open_generation}, guard)
+	if registered.has("error_code"):
+		return registered
+	var grant := str(registered.result.get("panel_grant", "")) if registered.result is Dictionary else ""
+	if grant.is_empty():
+		return _refusal("backend_error", "the backend registered no grant")
+	var created := await _request(state, "create_item", {"panel_grant": grant, "project": opening.project,
+		"fields": fields, "operation_id": str(params.get("operation_id", ""))}, guard)
+	if created.has("error_code"):
+		_revoke_grant(grant)
+	return created
 
 
 # The guarded binding's grant, registered when there is none still good:
@@ -314,7 +357,7 @@ func _grant_for(state: _Panel, guard: _Guard) -> Dictionary:
 		_unbind(state)
 		return _refusal("stale_binding", "the project was closed or opened again; show the item again to edit it")
 	var registered := await _request(state, "register", {"panel_secret": _secret, "panel": state.key,
-		"person": person, "project": binding.project, "item": binding.item, "actions": ["update_item"],
+		"person": person, "project": binding.project, "item": binding.item, "actions": ITEM_ACTIONS,
 		"open_generation": binding.open_generation}, guard)
 	if registered.has("error_code"):
 		return registered
@@ -391,8 +434,13 @@ func _request(state: _Panel, name: String, params: Dictionary, guard: _Guard = n
 		var late := _broken(state, guard)
 		if not answered.has("error"):
 			_settle_late(state, name, answered.get("result"))
-			if name == "update_item":
-				late.error_message += "; what was sent may have been applied"
+			# A change the backend made is reported as made, even when refused
+			# as superseded.
+			var made = answered.get("result")
+			if name == "create_item":
+				late.error_message += "; the item was made all the same: %s" % (str(made.get("id", "")) if made is Dictionary else "")
+			elif name in ITEM_ACTIONS:
+				late.error_message += "; what was sent was applied"
 		return late
 	if answered.has("error"):
 		var refused := _refusal("backend_error", str(answered.error))

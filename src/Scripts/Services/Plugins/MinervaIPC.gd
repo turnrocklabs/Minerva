@@ -70,10 +70,9 @@ func request_bulk(channel: String, payload: Dictionary,
 	return await await_reply(reply_id, timeout_ms)
 
 
-## Action `action` ("call", "select_item" or "update_item", see
-## PluginPanelAuthority) with
-## `params` on the plugin's private panel channel, as this panel: the
-## {success, result} or {success: false, error_code, error_message} reply.
+## Action `action` (one of PluginPanelAuthority.ACTIONS) with `params` on
+## the plugin's private panel channel, as this panel: the {success, result}
+## or {success: false, error_code, error_message} reply.
 ## A plugin that declares no such channel refuses it. Like request_bulk, a
 ## timeout does not undo a change the backend still makes; pass the
 ## backend's own time budget.
