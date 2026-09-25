@@ -10,8 +10,8 @@ extends RefCounted
 ## host opens a session per live panel registration and registers grants,
 ## each naming the person (the OS account this host runs as, never anything
 ## the panel says), the one item the panel has shown and what may be done to
-## it (saved, moved to another status), or, to create one new item, a type
-## and no item.
+## it (saved, moved to another status, given a file), or, to create one new
+## item, a type and no item.
 ##
 ## A panel saves only the item it is bound to, in the project of the file
 ## the host attached it to: it binds an item when it shows it (select_item);
@@ -19,7 +19,8 @@ extends RefCounted
 ## the opening, open_generation) and whether the item is one of it (its
 ## canonical id), and numbers the binding (its epoch). A save names that
 ## epoch, and the host fills in the bound project and item itself, refusing
-## any other; a move to another status (transition_item) goes the same way.
+## any other; a move to another status (transition_item) and a file
+## attached to it (attach_file, its bytes as base64) go the same way.
 ## A new item (create_item) is made only in the attached file's project,
 ## under a grant registered for it alone, which the backend ends once it has
 ## made the item; the backend chooses its id, and the panel then shows and
@@ -43,12 +44,13 @@ extends RefCounted
 ## The secret, sessions and grants never leave this object.
 
 ## What a panel may ask: its tool calls (method_prefix + "call"), binding the
-## item it shows, a save of that item or a move to another status (the
-## backend's method_prefix + "update_item" / "transition_item"), and a new
-## item (method_prefix + "create_item").
-const ACTIONS := ["call", "select_item", "update_item", "transition_item", "create_item"]
+## item it shows, a save of that item, a move to another status or a file
+## attached to it (the backend's method_prefix + "update_item" /
+## "transition_item" / "attach_file"), and a new item (method_prefix +
+## "create_item").
+const ACTIONS := ["call", "select_item", "update_item", "transition_item", "attach_file", "create_item"]
 ## What a bound item's grant allows.
-const ITEM_ACTIONS := ["update_item", "transition_item"]
+const ITEM_ACTIONS := ["update_item", "transition_item", "attach_file"]
 ## Argument names only the host puts on the channel; a panel may not send them.
 const HOST_ARGUMENTS := ["panel_secret", "panel_grant", "panel_session", "panel", "person", "actions"]
 ## A grant is registered again this long (ms) before it expires.

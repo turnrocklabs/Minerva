@@ -18,11 +18,11 @@ extends SceneTree
 ##     after unbinding, with an outdated binding, or naming another item is
 ##     refused unsent, as is one after the panel's file changed; the save
 ##     goes with a grant registered for exactly the bound item (its full id
-##     and the project's opening), its save and move actions and the host's
-##     person; a move goes the same way; a new item is made only in the
-##     attached file's project, under a grant registered for creating one
-##     item of its type alone; a second panel gets a session and grants of
-##     its own;
+##     and the project's opening), its save, move and attach actions and
+##     the host's person; a move and an attached file go the same way; a new
+##     item is made only in the attached file's project, under a grant
+##     registered for creating one item of its type alone; a second panel
+##     gets a session and grants of its own;
 ##   - names only the host gives, a tool outside the panel's channels, and a
 ##     plugin that declares no channel are refused without reaching the
 ##     backend; an ordinary request never uses the channel;
@@ -108,6 +108,8 @@ class FixtureConnection extends RefCounted:
 				return {"result": {"id": params.id, "item_token": "t", "stream": "s", "event_watermark": 1}}
 			"transition_item":
 				return {"result": {"id": params.id, "status": params.target, "item_token": "t"}}
+			"attach_file":
+				return {"result": {"id": 1, "item_id": params.id, "filename": params.filename, "item_token": "t"}}
 			"create_item":
 				return {"result": {"id": "new-1", "item_token": "t"}}
 			"call":
@@ -253,9 +255,10 @@ func _run() -> void:
 	var saved := await a.request_private("update_item", {"binding": epoch, "changes": {"title": "t"}, "operation_id": "op2"})
 	var registered: Array = backend.of("register")
 	var update: Dictionary = backend.of("update_item")[0].params
-	check("the save goes with a grant for exactly the bound item, its save and move actions and the host's person",
+	check("the save goes with a grant for exactly the bound item, its save, move and attach actions and the host's person",
 		saved.get("success", false) and registered.size() == 1 and registered[0].params == {"panel_secret": secret,
-			"panel": "main#1", "person": PERSON, "project": "p", "item": "full-i1", "actions": ["update_item", "transition_item"],
+			"panel": "main#1", "person": PERSON, "project": "p", "item": "full-i1",
+			"actions": ["update_item", "transition_item", "attach_file"],
 			"open_generation": "open-1"}
 		and update.panel_grant == "grant-1" and update.project == "p" and update.id == "full-i1" and not update.has("binding"),
 		str(backend.requests))
@@ -303,6 +306,12 @@ func _run() -> void:
 	check("a move goes for exactly the bound item, with its grant",
 		transitioned.get("success", false) and move.project == "p" and move.id == "full-i1" and move.target == "triaged"
 		and move.panel_grant == "grant-%d" % backend.grants and not move.has("binding"), str(move))
+	var attached := await a.request_private("attach_file", {"binding": epoch, "filename": "scan.bin", "data": "AAEC",
+		"mime_type": "application/octet-stream", "description": ""})
+	var attach: Dictionary = backend.of("attach_file")[-1].params
+	check("a file is attached to exactly the bound item, with its grant, its bytes passed on as sent",
+		attached.get("success", false) and attach.project == "p" and attach.id == "full-i1" and attach.data == "AAEC"
+		and attach.panel_grant == move.panel_grant and not attach.has("binding"), str(attach))
 	var creates := backend.of("register").size()
 	var elsewhere_new := await a.request_private("create_item", {"project": "q", "fields": {"type": "bug", "title": "n"}})
 	var created := await a.request_private("create_item", {"project": "p", "fields": {"type": "bug", "title": "n"},
