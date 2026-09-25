@@ -146,10 +146,12 @@ PLATFORM_GATE_TESTS=(
 	test/test_marketplace_install_from_url.gd
 	test/test_plugin_downloader.gd
 	test/test_subprocess_bounded_io.gd
+	test/test_subprocess_env.gd
 )
 PCB_GUARD_TESTS=(
 	test/test_cad_plugin_smoke.gd
 	test/test_plugin_scene_panel_broker.gd
+	test/test_plugin_panel_authority.gd
 	test/test_plugin_scene_panel_broker_host_fs.gd
 	test/test_plugin_scene_panel_broker_progress.gd
 	test/test_plugin_scene_panel_keying.gd
