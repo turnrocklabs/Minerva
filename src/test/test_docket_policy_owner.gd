@@ -99,7 +99,8 @@ func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": true}
 func get_connection(_id: String) -> MCPServerConnection:
 	return connection
-func check_backend_tool(_id: String, _tool: String, _arguments: Dictionary, _caller: String = "agent") -> String:
+func check_backend_tool(_id: String, _tool: String, _arguments: Dictionary, _caller: String = "agent",
+		_write_binding: Dictionary = {}) -> String:
 	return ""
 """
 

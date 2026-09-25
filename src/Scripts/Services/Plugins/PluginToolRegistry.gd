@@ -405,21 +405,21 @@ func handle_tool_call(tool_name: String, args: Dictionary, context: ExecutionCon
 
 
 func handle_tool_call_outcome(tool_name: String, args: Dictionary,
-		context: ExecutionContext = null):
+		context: ExecutionContext = null, write_binding: Dictionary = {}):
 	if context == null:
 		context = ExecutionContext.create("plugin_tool")
 	context = context.for_provider(str(_plugin_by_tool.get(tool_name, "")))
 	var holder := {}
 	var gate: Dictionary = await context.run(
-		_capture_outcome.bind(tool_name, args, context, holder))
+		_capture_outcome.bind(tool_name, args, context, holder, write_binding))
 	if holder.has("outcome"):
 		return holder.outcome
 	return ToolCallOutcome.from_error(gate)
 
 
 func _capture_outcome(tool_name: String, args: Dictionary, context: ExecutionContext,
-		holder: Dictionary) -> Dictionary:
-	holder["outcome"] = await _handle_tool_outcome_with_context(tool_name, args, context)
+		holder: Dictionary, write_binding: Dictionary = {}) -> Dictionary:
+	holder["outcome"] = await _handle_tool_outcome_with_context(tool_name, args, context, write_binding)
 	return {"ok": true}
 
 
@@ -428,8 +428,10 @@ func _handle_tool_with_context(tool_name: String, args: Dictionary, context: Exe
 	return outcome.application
 
 
+# `write_binding` (MinervaMCPServer.call_tool) goes to the backend tool guard
+# with this call only.
 func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
-		context: ExecutionContext):
+		context: ExecutionContext, write_binding: Dictionary = {}):
 	# --- Step 1: resolve owning plugin ---
 	var plugin_id: String = _plugin_by_tool.get(tool_name, "")
 	if plugin_id.is_empty():
@@ -498,7 +500,11 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	if not input_check.get("ok", false):
 		return ToolCallOutcome.failure("Plugin tool arguments do not match its native MCP schema",
 			str(input_check.get("error", {}).get("code", "invalid_arguments")))
-	var refused: String = await plugin_manager.check_backend_tool(plugin_id, dispatch_name, args, "agent")
+	var refused: String
+	if write_binding.is_empty():
+		refused = await plugin_manager.check_backend_tool(plugin_id, dispatch_name, args, "agent")
+	else:
+		refused = await plugin_manager.check_backend_tool(plugin_id, dispatch_name, args, "agent", write_binding)
 	if plugin_manager.get_connection(plugin_id) != conn:
 		return ToolCallOutcome.failure("Plugin connection changed while the host checked the call")
 	if context.is_stopped():

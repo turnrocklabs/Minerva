@@ -798,12 +798,19 @@ func set_backend_tool_guard(id: String, guard: Callable) -> void:
 
 
 ## "" when a call of backend tool `tool` of plugin `id` with `arguments` by
-## `caller` ("agent" or "panel") may go, else why it may not.
-func check_backend_tool(id: String, tool: String, arguments: Dictionary, caller: String = "agent") -> String:
+## `caller` ("agent" or "panel") may go, else why it may not. A
+## `write_binding` (MinervaMCPServer.call_tool) is handed to the guard with
+## this call only.
+func check_backend_tool(id: String, tool: String, arguments: Dictionary, caller: String = "agent",
+		write_binding: Dictionary = {}) -> String:
 	var guard: Callable = _backend_tool_guards.get(id, Callable())
 	if not guard.is_valid():
-		return ""
-	var answer = await guard.call(tool, arguments, caller)
+		return "" if write_binding.is_empty() else "no guard holds this write to its target, so it is not sent"
+	var answer
+	if write_binding.is_empty():
+		answer = await guard.call(tool, arguments, caller)
+	else:
+		answer = await guard.call(tool, arguments, caller, write_binding)
 	return answer if answer is String else "the host could not check the call of %s" % tool
 
 

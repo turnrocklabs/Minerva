@@ -202,16 +202,8 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 	match tool_name:
 		"minerva_list_skills": return await _skill_list(arguments)
 		"minerva_get_skill": return await _skill_get(arguments, context)
-		"minerva_skill_create", "minerva_skill_update":
-			# A write's recovery details (lifetime.recovery) matter only while
-			# it runs: a caller stopped meanwhile is answered with them.
-			var written: Dictionary
-			if tool_name == "minerva_skill_create":
-				written = await _skill_create(arguments, context)
-			else:
-				written = await _skill_update(arguments, context)
-			context.lifetime.recovery = {}
-			return written
+		"minerva_skill_create": return await _skill_create(arguments, context)
+		"minerva_skill_update": return await _skill_update(arguments, context)
 		"minerva_activate_skill": return await _skill_activate(arguments, context)
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
@@ -670,8 +662,8 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 		if arguments.has(key):
 			create_args[key] = arguments[key]
 
-	context.lifetime.recovery = {"tool": "minerva_skill_create", "project": project, "title": title, "outcome": "unknown"}
-	var created := await _docket_write("create", create_args, context, target.target)
+	var created := await _docket_write("create", create_args, context, target.target,
+		{"tool": "minerva_skill_create", "project": project, "title": title, "outcome": "unknown"})
 	var create_result: Dictionary = created.result
 	if created.get("unknown", false):
 		return _outcome_unknown("created", created.why, str(create_result.get("id", "")), project)
@@ -689,15 +681,16 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	var final_status: String = "draft"
 	var transition_warning := ""
 	var activation_outcome_unknown := false
-	context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project, "title": title, "status": "draft"}
+	# Created: a caller stopped from now on is told its id (lifetime.recovery).
+	context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project, "title": title,
+		"status": "draft"}
 	if requested_status == "active":
-		context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project,
-			"title": title, "status": "unknown", "outcome": "unknown"}
 		var moved := await _docket_write("transition", {
 			"project": project,
 			"id": skill_id,
 			"to": "active",
-		}, context, target.target)
+		}, context, target.target, {"tool": "minerva_skill_create", "id": skill_id, "project": project,
+			"title": title, "status": "unknown", "outcome": "unknown"})
 		if moved.get("unknown", false):
 			transition_warning = "Skill created; whether it became active is unknown (%s)" % moved.why
 			final_status = "unknown"
@@ -707,12 +700,13 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 		else:
 			final_status = "active"
 
-	# A call stopped by now activates nothing; the skill exists all the same,
-	# and its caller was answered with its id (lifetime.recovery).
-	context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project, "title": title,
+	var known := {"tool": "minerva_skill_create", "id": skill_id, "project": project, "title": title,
 		"status": final_status}
 	if activation_outcome_unknown:
-		context.lifetime.recovery["outcome"] = "unknown"
+		known["outcome"] = "unknown"
+	context.lifetime.recovery = known
+	# A call stopped by now activates nothing; the skill exists all the same,
+	# and its caller was answered with its id (lifetime.recovery).
 	if context.is_stopped():
 		return context.stopped_result()
 
@@ -775,15 +769,20 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	if not named_by_id:
 		return MCPToolUtils.error("No skill has the id %s" % id)
 
-	var target := await _skill_write_target(str(record.project), str(record.get("project_path", "")))
-	if target.has("error"):
-		return target
-	var project: String = target.project
+	# Through the Docket plugin the update is held to where the skill was
+	# read (the lookup's target), never to whatever holds that name now.
+	var project := str(record.project)
+	var target := {}
+	if SingletonObject.docket_manager == null:
+		target = found.get("target", {})
+		if target.is_empty():
+			return MCPToolUtils.error("Skill %s cannot be updated: where it was read is not known" % id)
+		project = str(target.project.get("name", ""))
 	update_args["project"] = project
 	update_args["id"] = record.id
 
-	context.lifetime.recovery = {"tool": "minerva_skill_update", "id": record.id, "project": project, "outcome": "unknown"}
-	var updated := await _docket_write("update", update_args, context, target.target)
+	var updated := await _docket_write("update", update_args, context, target,
+		{"tool": "minerva_skill_update", "id": record.id, "project": project, "outcome": "unknown"})
 	if updated.get("unknown", false):
 		return _outcome_unknown("updated", updated.why, str(record.id), project)
 	if not MinervaMCPServer.policy_call_succeeded(updated.result):
@@ -810,18 +809,18 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	return result
 
 
-# Where a skill is written: {project (its name), target} or an error result.
-# With the embedded DocketManager, `project_name` or "master"; through the
-# Docket plugin, the open project at `project_path`, else the one
-# `project_name` names, else the master (DocketHost.skill_target, whose
-# answer is the `target` each write is held to).
-func _skill_write_target(project_name: String, project_path: String = "") -> Dictionary:
+# Where a new skill is written: {project (its name), target} or an error
+# result. With the embedded DocketManager, `project_name` or "master";
+# through the Docket plugin, the open project `project_name` names, else the
+# master (DocketHost.skill_target, whose answer is the `target` its writes
+# are held to).
+func _skill_write_target(project_name: String) -> Dictionary:
 	if SingletonObject.docket_manager != null:
 		return {"project": project_name if not project_name.is_empty() else "master", "target": {}}
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
 		return MCPToolUtils.error("no Docket owns Minerva's projects")
-	var target := await host.skill_target(project_name, project_path)
+	var target := await host.skill_target(project_name)
 	if target.status != "ok":
 		return MCPToolUtils.error("The skill cannot be written: %s" % target.message)
 	return {"project": str(target.project.get("name", "")), "target": target}
@@ -830,27 +829,35 @@ func _skill_write_target(project_name: String, project_path: String = "") -> Dic
 # Sends Docket write `tool` ("create", "update" or "transition") with
 # `arguments`: to the embedded DocketManager while it exists, else as the
 # agent tool minerva_docket_<tool> through the governed dispatch with the
-# caller's `context`, held (DocketHost.bind_write) to `target` from
-# _skill_write_target, so it is refused rather than sent to another project
-# that took its project's name meanwhile. {result}, plus, when the write was
-# sent but its success was not confirmed (the reply was a failure, the
-# plugin restarted, or the call was stopped), unknown: true and why: it may
-# or may not have been made. A write refused before it was sent is simply
-# its failure.
-func _docket_write(tool: String, arguments: Dictionary, context: ExecutionContext, target: Dictionary) -> Dictionary:
+# caller's `context`, bound (a write_binding for this call only) to `target`
+# (DocketHost.skill_target or skill_lookup), so it is refused rather than
+# sent to another project that took its project's name meanwhile. Once it is
+# sent, a caller stopped is told `sent` (lifetime.dispatch_recovery).
+# {result}, plus, when the write was sent but its success was not confirmed
+# (the reply was a failure, the plugin restarted, or the call was stopped),
+# unknown: true and why: it may or may not have been made. A write refused
+# before it was sent is simply its failure.
+func _docket_write(tool: String, arguments: Dictionary, context: ExecutionContext, target: Dictionary,
+		sent: Dictionary) -> Dictionary:
 	var dm: DocketManager = SingletonObject.docket_manager
 	if dm != null:
 		return {"result": dm.call_tool("docket_" + tool, arguments)}
 	var host: DocketHost = SingletonObject.docket_host
-	var binding := host.bind_write("docket_" + tool, arguments, target)
+	# Coerced now as the dispatch will coerce them (a caller's JSON-string
+	# object, say), so the bound arguments are the ones the guard is shown.
+	var definition = server.mcp_manager.tool_registry.get("minerva_docket_" + tool)
+	if definition != null:
+		arguments = MCPToolUtils.coerce_args_to_schema(arguments, definition.input_schema)
+	var binding := {"tool": "docket_" + tool, "arguments": arguments.duplicate(true), "target": target}
 	# lifetime.dispatched tells whether this write reached the backend; it is
 	# set again afterwards as it was, or as this write left it.
 	var was_dispatched: bool = context.lifetime.dispatched
 	context.lifetime.dispatched = false
-	var result: Dictionary = await server.call_tool("minerva_docket_" + tool, arguments, context)
+	context.lifetime.dispatch_recovery = sent
+	var result: Dictionary = await server.call_tool("minerva_docket_" + tool, arguments, context, binding)
+	context.lifetime.dispatch_recovery = {}
 	var dispatched: bool = context.lifetime.dispatched
 	context.lifetime.dispatched = was_dispatched or dispatched
-	host.unbind_write(binding)
 	if MinervaMCPServer.policy_call_succeeded(result) or not dispatched:
 		return {"result": result}
 	var why := "Docket restarted" if not host.same_process(target.process) \

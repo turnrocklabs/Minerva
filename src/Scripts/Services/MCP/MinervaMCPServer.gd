@@ -301,15 +301,19 @@ func execute_tool_for_http_outcome(tool_name: String, arguments: Dictionary, age
 
 
 ## Nested native calls retain their explicit parent lifetime and identity.
-func call_tool(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
+## `write_binding`, when given, belongs to this one call only: a plugin tool
+## hands it to its plugin's backend tool guard (DocketHost._guard holds a
+## skill write to its target with it). Nothing it calls inherits it.
+func call_tool(tool_name: String, arguments: Dictionary, context: ExecutionContext = null,
+		write_binding: Dictionary = {}) -> Dictionary:
 	if context == null:
 		context = ExecutionContext.create("module")
-	return await context.run(_execute_tool_impl.bind(tool_name, arguments, context))
+	return await context.run(_execute_tool_impl.bind(tool_name, arguments, context, {}, true, write_binding))
 
 
 ## Internal tool execution — routes to modules, plugins, or tool search
 func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: ExecutionContext = null,
-		outcome_holder: Dictionary = {}, coerce_arguments := true) -> Dictionary:
+		outcome_holder: Dictionary = {}, coerce_arguments := true, write_binding: Dictionary = {}) -> Dictionary:
 	if context == null:
 		context = ExecutionContext.create("module")
 	if context.is_stopped():
@@ -411,8 +415,13 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
 	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.
 	if not dispatched and SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
-		var plugin_outcome = await SingletonObject.plugin_tool_registry.handle_tool_call_outcome(
-			tool_name, arguments, context)
+		var plugin_outcome
+		if write_binding.is_empty():
+			plugin_outcome = await SingletonObject.plugin_tool_registry.handle_tool_call_outcome(
+				tool_name, arguments, context)
+		else:
+			plugin_outcome = await SingletonObject.plugin_tool_registry.handle_tool_call_outcome(
+				tool_name, arguments, context, write_binding)
 		outcome_holder["outcome"] = plugin_outcome
 		dispatch_result = plugin_outcome.application
 		dispatched = true

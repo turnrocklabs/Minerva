@@ -14,12 +14,20 @@ class Lifetime extends RefCounted:
 	var dispatch_seconds := 0.0
 	## What a caller stopped part-way needs to recover from the effects so far
 	## (such as the id of an item already created), with the tool that made
-	## them: stopped_result() gives it as its "recovery".
+	## them: stopped_result() gives it, as it was when the call stopped, as
+	## its "recovery". `dispatch_recovery`, when set, becomes `recovery` once
+	## the next backend call is sent (begin_dispatch()), so a call stopped
+	## before that is not told of an effect never attempted.
 	var recovery := {}
+	var dispatch_recovery := {}
+	var _stopped_recovery := {}
 
 	func stop(value: String) -> void:
 		if reason.is_empty():
 			reason = value
+			# Frozen before anyone hears of the stop, so every stopped result
+			# tells the same.
+			_stopped_recovery = recovery.duplicate(true)
 			cancelled.emit()
 
 class Completion extends RefCounted:
@@ -77,6 +85,8 @@ func for_provider(owner: String) -> MCPExecutionContext:
 ## checks) does not shorten the call.
 func begin_dispatch() -> void:
 	lifetime.dispatched = true
+	if not lifetime.dispatch_recovery.is_empty():
+		lifetime.recovery = lifetime.dispatch_recovery.duplicate(true)
 	if lifetime.dispatch_seconds > 0.0:
 		lifetime.deadline_ms = Time.get_ticks_msec() + ceili(lifetime.dispatch_seconds * 1000.0)
 
@@ -94,8 +104,8 @@ func is_stopped() -> bool:
 func stopped_result() -> Dictionary:
 	var result := {"success": false, "error": "MCP call %s" % lifetime.reason,
 		"error_code": lifetime.reason}
-	if not lifetime.recovery.is_empty():
-		result["recovery"] = lifetime.recovery.duplicate(true)
+	if not lifetime._stopped_recovery.is_empty():
+		result["recovery"] = lifetime._stopped_recovery.duplicate(true)
 	return result
 
 
