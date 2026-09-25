@@ -531,14 +531,12 @@ static func _load_session() -> Dictionary:
 	return {"paths": _paths(entries), "legacy": true}
 
 
-# A JSON file's contents, {} when it is empty, or null when it cannot be
-# read or parsed.
+# A JSON file's contents, or null when it cannot be read or parsed (an
+# empty or blank file included: a file that is there says something).
 static func _read_json(path: String):
 	var text := FileAccess.get_file_as_string(path)
-	if text.is_empty() and FileAccess.get_open_error() != OK:
-		return null
 	if text.strip_edges().is_empty():
-		return {}
+		return null
 	return JSON.parse_string(text)
 
 

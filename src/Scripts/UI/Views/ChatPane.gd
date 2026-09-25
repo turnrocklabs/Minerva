@@ -1510,7 +1510,10 @@ func _create_visible_chat() -> void:
 ## If [param refresh_detached] is `true`, [method NotesContainer.to_prompt] will regenerate the editor notes.[br]
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.to_prompt` for explanation on `predicate`.
-func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
+## `turn_token`, when given, is the turn the prompt is for: a turn stopped
+## while the prompt is built (Docket's system prompt, the notes) gets [] and
+## nothing more is changed.
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null, turn_token: int = -1) -> Array[Variant]:
 
 	# if we don't have any chats history_list will be empty
 	var history_list: Array[Variant] = []
@@ -1543,6 +1546,8 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 					effective_system_prompt = history.AgenticSystemPrompt
 				else:
 					var built := await _build_agent_system_prompt(history)
+					if turn_token >= 0 and _turn_stopped(history, turn_token):
+						return []
 					if built.has("error"):
 						history.set_meta(DOCKET_PROMPT_ERROR_META, str(built.error))
 					else:
@@ -1572,6 +1577,8 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 	# any notes container `to_prompt` will go over both standard and drawer notes
 	var history_id_for_filter: String = history.HistoryId if history else ""
 	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached, history_id_for_filter)
+	if turn_token >= 0 and _turn_stopped(history, turn_token):
+		return []
 
 	# Immediately consume proxies after collection to prevent leaking into
 	# other chats that may run during this turn (e.g., sub-agents).
@@ -1813,7 +1820,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		history.provider.set_tools(filtered_tools)
 		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
-	var history_list = await create_prompt(chi, false, history.provider, predicate, history)
+	var history_list = await create_prompt(chi, false, history.provider, predicate, history, turn_token)
 	if _turn_stopped(history, turn_token):
 		# Stopped before anything was sent: the empty response goes too.
 		history.HistoryItemList.erase(existing_response)
@@ -1865,7 +1872,7 @@ func regenerate_response(chi: ChatHistoryItem):
 			existing_response.rendered_node.loading = false
 
 		# Reuse the same tool call handling as execute_regular_chat
-		await handle_tool_calls(history, bot_response.tool_calls, 0, existing_response, chi)
+		await handle_tool_calls(history, bot_response.tool_calls, 0, existing_response, chi, null, turn_token)
 	else:
 		if not is_instance_valid(existing_response.rendered_node):
 			existing_response.rendered_node = history.VBox.add_history_item(existing_response)
@@ -1903,10 +1910,7 @@ func _on_send_message_button_item_selected(index: int) -> void:
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
-
-	# Clear any leftover cancelled flag from previous requests
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	SingletonObject.clear_cancelled(history.HistoryId)
 
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
@@ -2086,10 +2090,12 @@ func _on_pending_bubble_removal_requested(bubble: PendingMessageBubble,
 
 ## Claim the chat for a new turn and return that turn's token. The caller MUST
 ## keep the token and hand it back to _release_chat_turn: it is what tells this
-## turn apart from the one that replaces it after a stop.
+## turn apart from the one that replaces it after a stop. A stop of an earlier
+## turn (its cancel flag) does not carry over to the new one.
 func _begin_chat_turn(history: ChatHistory) -> int:
 	if history == null:
 		return -1
+	SingletonObject.clear_cancelled(history.HistoryId)
 	history.request_turn_token += 1
 	history.is_request_active = true
 	_update_stop_button()
@@ -2289,7 +2295,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 					history.VBox.render_history(history)
 
 	# make a chat request
-	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history, turn_token)
 	if _turn_stopped(history, turn_token):
 		return
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
@@ -2364,7 +2370,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 
 		# Handle tool execution and continue conversation
 		# Pass the initial model CHI as accumulator and user_history_item for final signal
-		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item)
+		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item, null, turn_token)
 	else:
 		print("[ChatPane] NOT entering tool call branch - skipping tool execution")
 		if history.AgentModeEnabled and bot_response != null and str(bot_response.error).is_empty():
@@ -2685,6 +2691,29 @@ func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reaso
 		print("[Agent] Added unexecuted tool_result for: %s (reason: %s)" % [tool_name, reason])
 
 
+## Gives every tool call made since the chat's last user message that has no
+## result yet a "not executed" result saying `reason` (see
+## _add_unexecuted_tool_results).
+func _close_open_tool_calls(history: ChatHistory, reason: String) -> void:
+	var start := 0
+	for i in range(history.HistoryItemList.size() - 1, -1, -1):
+		if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.USER:
+			start = i + 1
+			break
+	var turn := history.HistoryItemList.slice(start)
+	var answered := {}
+	for item: ChatHistoryItem in turn:
+		if item.Role == ChatHistoryItem.ChatRole.TOOL:
+			answered[item.ToolCallId] = true
+	var open: Array = []
+	for item: ChatHistoryItem in turn:
+		for call in item.ToolCalls:
+			if not answered.has(str(call.get("id", ""))):
+				open.append(call)
+	if not open.is_empty():
+		_add_unexecuted_tool_results(history, open, reason)
+
+
 ## Clean up UI state after agent mode finishes (success or error).
 ## Re-enables notes and cleans up detached proxies.
 ## Note: Does NOT touch is_request_active — that is managed by the request lifecycle
@@ -2793,13 +2822,20 @@ static func _execute_with_document_recovery(mcp_manager, unsupported_guard,
 ## @param current_round: Current round number (for recursion)
 ## @param accumulator_chi: The first MODEL ChatHistoryItem that accumulates all display content
 ## @param user_history_item: The user's message, for emitting response_arrived at the end
+## `turn_token`, when given, is the turn the tool calls belong to: once it
+## is stopped, the continuation changes nothing more and sends nothing.
 func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
 					   accumulator_chi: ChatHistoryItem = null,
 					   user_history_item: ChatHistoryItem = null,
-					   unsupported_guard = null) -> void:
+					   unsupported_guard = null, turn_token: int = -1) -> void:
 	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
 	if unsupported_guard == null:
 		unsupported_guard = UnsupportedOperationGuard.new()
+
+	# The turn was stopped (and maybe replaced): nothing more is done for it.
+	var stopped := func() -> bool: return turn_token >= 0 and _turn_stopped(history, turn_token)
+	if stopped.call():
+		return
 
 	# Helper to finish with signal emission
 	var finish_with_signal = func():
@@ -2894,6 +2930,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				result = await _execute_with_document_recovery(mcp_manager,
 					unsupported_guard, tool_name, tool_args, live_document_identity,
 					current_round, history.HistoryId, history)
+				if stopped.call():
+					return
 				_batch_cache[call_hash] = result
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
@@ -2954,11 +2992,15 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = true
 		await history.tool_memory_manager.fold_tool_result(history)
+		if stopped.call():
+			return
 
 		# Yield one frame so Godot can render/process input between tool calls.
 		# Most tool handlers are synchronous, so `await execute_tool()` completes
 		# instantly — without this, the entire for-loop runs in one frame and walls the CPU.
 		await get_tree().process_frame
+		if stopped.call():
+			return
 
 		if bool(result.get("terminate_tool_loop", false)):
 			if i + 1 < tool_calls.size():
@@ -2995,6 +3037,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# Warning threshold - try to summarize
 		if context_status.estimated_tokens >= context_status.summarize_threshold:
 			await summarize_agent_history(history)
+			if stopped.call():
+				return
 			var new_size = estimate_agent_context_size(history)
 			print("[Agent] Context reduced to ~%d tokens" % new_size)
 
@@ -3017,7 +3061,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# NOTE: Use refresh_detached=false to use cached notes (created when tool enabled "Send to LLM")
 	# instead of calling the initializer again, which can cause issues with graphics composition
 	# Pass history explicitly to avoid current_tab race with concurrent sub-agent chats
-	var continuation_list = await create_prompt(null, false, null, Callable(), history)
+	var continuation_list = await create_prompt(null, false, null, Callable(), history, turn_token)
+	if stopped.call():
+		return
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
 		history.termination_reason = "cancelled"
@@ -3033,6 +3079,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 	# Get LLM's response to tool results
 	var continuation_response = await generate_content_from_provider(history, continuation_list)
+	if stopped.call():
+		return
 
 	if not continuation_response:
 		print("[Agent] ERROR: No continuation response received")
@@ -3050,7 +3098,11 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		if current_round > 0 and "empty response" in continuation_response.error.to_lower():
 			print("[Agent] Retrying continuation after empty response (round %d)..." % current_round)
 			await get_tree().create_timer(1.0).timeout
+			if stopped.call():
+				return
 			continuation_response = await generate_content_from_provider(history, continuation_list)
+			if stopped.call():
+				return
 			if continuation_response and not continuation_response.error:
 				# Retry succeeded — continue processing below
 				pass
@@ -3112,6 +3164,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.rendered_node.loading_append = false
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
+			if stopped.call():
+				return
 			# Use bottom scroll to follow the growing content (tool calls)
 			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
@@ -3127,7 +3181,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		# Recursively handle more tool calls (keep same accumulator)
 		await handle_tool_calls(history, continuation_response.tool_calls, current_round + 1,
-							   model_chi, user_history_item, unsupported_guard)
+							   model_chi, user_history_item, unsupported_guard, turn_token)
 	else:
 		# No more tool calls, finalize the response
 		print("[Agent] Final response (no more tool calls)")
@@ -3146,6 +3200,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.rendered_node.first_time_message = true
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
+			if stopped.call():
+				return
 			# Use bottom scroll to show the final response at the end
 			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
@@ -3173,6 +3229,8 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 	_inputs = get_separated_messages(text_input)
 	
 	for i in _inputs:
+		if _turn_stopped(history, turn_token):
+			return
 		if SingletonObject.is_cancelled(history.HistoryId):
 			SingletonObject.clear_cancelled(history.HistoryId)
 			_release_chat_turn(history, turn_token)
@@ -3198,7 +3256,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 			return
 		
 		# make a chat request
-		var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+		var history_list: = await create_prompt(user_history_item, true, null, Callable(), history, turn_token)
 		if _turn_stopped(history, turn_token):
 			return
 		# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
@@ -3218,6 +3276,8 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
 		var bot_response = await generate_content_from_provider(history, history_list)
+		if _turn_stopped(history, turn_token):
+			return
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
@@ -3374,7 +3434,7 @@ func create_message_new(inputs_idx: int) -> void:
 		return
 
 	# make a chat request
-	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history, run.turn_token)
 	if _turn_stopped(history, run.turn_token):
 		return
 	
@@ -5772,6 +5832,12 @@ func _on_audio_stop_1_pressed() -> void:
 		# the agent_chat_finished emit at line 1036, so we emit it here)
 		if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
 			SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
+
+		# The stopped turn's coroutine returns at its next step without
+		# answering the tool calls it had in hand; each call the model made
+		# that has no result gets one now, before any other turn can start, so
+		# the chat's next request is well-formed.
+		_close_open_tool_calls(history, "Cancelled by user")
 
 		# Mark request as stopped, and apply the cancel rule: the chat's queued
 		# messages are discarded rather than promoted (see _cancel_chat_turn).

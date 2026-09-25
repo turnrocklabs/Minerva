@@ -7,6 +7,6 @@ func execute_regular_chat(_text: String, generation_options: Dictionary = {}, _p
 
 var prompt_history: ChatHistory
 
-func create_prompt(append_item: ChatHistoryItem = null, _refresh_detached: bool = true, _provider_fallback: BaseProvider = null, _predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
+func create_prompt(append_item: ChatHistoryItem = null, _refresh_detached: bool = true, _provider_fallback: BaseProvider = null, _predicate: Callable = Callable(), history_override: ChatHistory = null, _turn_token: int = -1) -> Array[Variant]:
 	prompt_history = history_override
 	return [{"role": "user", "content": append_item.Message}]
