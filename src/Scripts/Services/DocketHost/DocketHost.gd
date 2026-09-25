@@ -441,6 +441,81 @@ func same_process(process: Array) -> bool:
 	return not _stale(process[0], process[1])
 
 
+## Why an item_changed `event` (its project selector, project_path and
+## open_generation) is no longer of a project open now as it was then, or ""
+## when it is: Docket is ready on the same process, and the project open at
+## that path is that opening under that selector. Nothing here awaits.
+func opening_problem(event: Dictionary) -> String:
+	if not state in ["ready", "degraded"]:
+		return "Docket is %s" % state
+	if _stale(_connection, _generation):
+		return "the Docket plugin's process changed"
+	if not _is_opening(_descriptor_of(str(event.get("project_path", ""))), event):
+		return "project %s is no longer open as it was when %s changed" % [event.get("project", ""), event.get("id", "")]
+	return ""
+
+
+## Why `event`'s opening cannot be confirmed as the one open now, or "":
+## opening_problem, then the plugin's own list of open projects, asked
+## afresh on the same process, must give the event's selector to that
+## opening (the cached list can lag behind a selector the plugin reassigned).
+## A list that fails, or a process that changes meanwhile, is a problem.
+func confirm_opening(event: Dictionary) -> String:
+	var problem := opening_problem(event)
+	if not problem.is_empty():
+		return problem
+	return await _listed_opening(_connection, _generation, event)
+
+
+## Item `id` as it is now, read for a Docket trigger in the opening an
+## item_changed `event` names: {item}, or {error} when that opening is not
+## the one open before the read or, by the plugin's own list afterwards
+## (confirm_opening), after it (so the item read may be another project's),
+## the item could not be read (a missing item included), or the reply is
+## another item.
+func item_for_trigger(event: Dictionary, id: String) -> Dictionary:
+	var problem := opening_problem(event)
+	if not problem.is_empty():
+		return {"error": problem}
+	var connection = _connection
+	var generation := _generation
+	var read := await _call(connection, "docket_get", {"id": id, "project": str(event.get("project", "")), "include": []})
+	problem = await _listed_opening(connection, generation, event)
+	if not problem.is_empty():
+		return {"error": "%s (while %s was read)" % [problem, id]}
+	if read.has("error"):
+		return {"error": "%s could not be read: %s" % [id, read.error]}
+	if not read.value is Dictionary or str(read.value.get("id", "")) != id:
+		return {"error": "Docket answered for %s with another item" % id}
+	return {"item": read.value}
+
+
+# Why the plugin's list of open projects, asked now on `connection` (the
+# process of `generation`), does not give `event`'s selector to its opening,
+# or why the list could not be had; then opening_problem again. "" when it
+# does.
+func _listed_opening(connection, generation: int, event: Dictionary) -> String:
+	var listed := await _call(connection, "docket_project_list", {}) if not _stale(connection, generation) else {}
+	if _stale(connection, generation):
+		return "the Docket plugin's process changed"
+	if listed.has("error") or not listed.value.get("projects") is Array:
+		return "the open projects could not be listed: %s" % listed.get("error", "no list")
+	var named: Dictionary = {}
+	for project in listed.value.projects:
+		if project is Dictionary and str(project.get("name", "")) == str(event.get("project", "")):
+			named = project
+	if not _is_opening(named, event):
+		return "%s no longer names the project %s changed in" % [event.get("project", ""), event.get("id", "")]
+	return opening_problem(event)
+
+
+# Whether the open project `project` (a descriptor, or {}) is the opening
+# `event` names: its selector, path and open_generation.
+static func _is_opening(project: Dictionary, event: Dictionary) -> bool:
+	return not project.is_empty() and str(project.get("name", "")) == str(event.get("project", "")) \
+		and _layer_openings([project]) == [[str(event.get("project_path", "")), str(event.get("open_generation", ""))]]
+
+
 # Why an agent's skill write, bound (write_binding: {tool, arguments,
 # target}) to the target it was aimed at, may not be sent now, or "". The
 # target (from skill_target or skill_lookup) is the project opening, plugin

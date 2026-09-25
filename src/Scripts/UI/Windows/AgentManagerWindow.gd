@@ -1410,9 +1410,11 @@ func _on_trigger_save() -> void:
 		SingletonObject.create_toast_notification("That trigger was changed, enabled/disabled or deleted meanwhile; nothing was saved", ToastNotification.Type.WARNING)
 		return
 	if existing != null:
-		# Times the manager records as it runs are taken as they stand now.
+		# Times the manager records as it runs, and the project a Docket
+		# trigger was bound to, are taken as they stand now.
 		trig.last_fired_at = existing.last_fired_at
 		trig.docket_last_poll_at = existing.docket_last_poll_at
+		trig.keep_docket_binding(existing)
 	var problem: String = trig.target_problem()
 	if not problem.is_empty():
 		SingletonObject.create_toast_notification(problem, ToastNotification.Type.WARNING)
@@ -1571,6 +1573,10 @@ func _refresh_trigger_list() -> void:
 		var batch_str = " [%d params]" % trig.batch_params.size() if not trig.batch_params.is_empty() else ""
 		var chain_str = " -> chain" if not trig.chain_trigger_id.is_empty() else ""
 		var pending_str = " [PENDING]" if trig.pending_approval else ""
+		if trig.trigger_type == TriggerDefinition.TriggerType.DOCKET_POLL and SingletonObject.docket_manager == null:
+			var docket_problem := str(tm.docket_feed.status(trig.id).problem)
+			if not docket_problem.is_empty():
+				pending_str += " [Docket: %s]" % docket_problem
 		var display_name = trig.name if not trig.name.is_empty() else agent_name
 		trigger_list.add_item("%s%s: %s%s%s%s%s" % [type_str, action_str, display_name, batch_str, chain_str, pending_str, enabled_str])
 

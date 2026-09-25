@@ -55,6 +55,9 @@ var _revision_counter: int = 0
 ## Delivery to triggers' harness destinations (TriggerDestination).
 var harness_delivery := TriggerHarnessDelivery.new()
 
+## DOCKET_POLL triggers' events under the Docket plugin (no DocketManager).
+var docket_feed := DocketTriggerFeed.new(self)
+
 
 class BatchState:
 	var trigger_id: String
@@ -82,6 +85,7 @@ func _ready() -> void:
 	SingletonObject.mcp_tool_about_to_execute.connect(_on_hook_tool_about_to_execute)
 	# PLUGIN_EVENT triggers: connect to plugin_event_broker if available
 	_connect_plugin_event_broker()
+	docket_feed.connect_sources()
 
 	# Wall-clock schedule poll timer (checks every 60 seconds)
 	_schedule_check_timer = Timer.new()
@@ -1099,11 +1103,12 @@ func _is_leap_year(year: int) -> bool:
 #region Docket Signals
 
 func _activate_docket_poll(trig: TriggerDefinition) -> void:
-	## Connect to DocketManager signals for real-time event-driven triggers.
+	## Connect to DocketManager signals for real-time event-driven triggers;
+	## under the Docket plugin, docket_feed serves them instead.
 	_deactivate_docket_poll(trig)
 	var dm: DocketManager = SingletonObject.docket_manager
 	if not dm:
-		push_warning("[TriggerManager] DocketManager not available for trigger '%s'" % trig.id)
+		docket_feed.activate(trig.id)
 		return
 	_connect_for(trig.id, dm.item_created, _on_docket_event_created)
 	_connect_for(trig.id, dm.item_transitioned, _on_docket_event_transitioned)
@@ -1114,6 +1119,7 @@ func _activate_docket_poll(trig: TriggerDefinition) -> void:
 
 func _deactivate_docket_poll(trig: TriggerDefinition) -> void:
 	_disconnect_all_for(trig.id)
+	docket_feed.forget(trig.id)
 
 
 func _on_docket_event_created(item_id: String, item_type: String, project: String, trigger_id: String) -> void:
@@ -1132,96 +1138,91 @@ func _on_docket_event_comment(item_id: String, project: String, trigger_id: Stri
 	_handle_docket_event(trigger_id, project, item_id, "comment_added")
 
 
+# A DocketManager signal for trigger `trigger_id`: its project must be the
+# one the trigger names (any when it names none), and the item is read from
+# that project as it is now.
 func _handle_docket_event(trigger_id: String, project: String, item_id: String, event_type: String, item_type: String = "", old_status: String = "", new_status: String = "") -> void:
 	var trig := get_trigger(trigger_id)
 	if not trig or not trig.enabled:
 		return
-
-	# Project filter
 	if not trig.docket_project.is_empty() and trig.docket_project != project:
 		return
+	var dm: DocketManager = SingletonObject.docket_manager
+	var db = dm.get_db(project) if dm else null
+	fire_docket_event(trig, project, item_id, event_type, item_type, old_status, new_status,
+		db.get_item(item_id) if db else null)
 
-	# Item ID filter
+
+## Whether a Docket change of item `item_id` (of type `item_type`, "" when
+## the change does not say) passes `trig`'s item id and type filters. The
+## type filter applies only to a change that names its item's type.
+static func docket_ids_and_type_pass(trig: TriggerDefinition, item_id: String, item_type: String) -> bool:
 	if not trig.docket_filter_item_ids.is_empty():
-		var ids := trig.docket_filter_item_ids.split(",")
 		var matched := false
-		for id_str in ids:
+		for id_str in trig.docket_filter_item_ids.split(","):
 			if id_str.strip_edges() == item_id:
 				matched = true
 				break
 		if not matched:
-			return
-
-	# Type filter
+			return false
 	if not trig.docket_filter_types.is_empty() and not item_type.is_empty():
-		var types := trig.docket_filter_types.split(",")
 		var matched := false
-		for t in types:
+		for t in trig.docket_filter_types.split(","):
 			if t.strip_edges() == item_type:
 				matched = true
 				break
 		if not matched:
-			return
+			return false
+	return true
 
-	# Parent filter — requires DB lookup
-	if not trig.docket_filter_parent.is_empty():
-		var dm: DocketManager = SingletonObject.docket_manager
-		if dm:
-			var db := dm.get_db(project)
-			if db:
-				var item := db.get_item(item_id)
-				if item.is_empty() or str(item.get("parent", "")) != trig.docket_filter_parent:
-					return
 
-	# Tag filter — requires DB lookup
-	if not trig.docket_filter_tags.is_empty():
-		var dm: DocketManager = SingletonObject.docket_manager
-		if dm:
-			var db := dm.get_db(project)
-			if db:
-				var item := db.get_item(item_id)
-				var item_tags: Array = item.get("tags", [])
-				var filter_tags := trig.docket_filter_tags.split(",")
-				for ftag in filter_tags:
-					if not ftag.strip_edges().is_empty() and ftag.strip_edges() not in item_tags:
-						return
+## Fires `trig` for a Docket change (`event_type`: created, transitioned,
+## updated or comment_added) of item `item_id` in `project`, which its
+## project filter has already matched, when its other filters pass and it
+## has no chat of its own under way. `item` is the item as it is now ({} when
+## it no longer exists, so parent and tag filters fail; null when it could
+## not be looked for, so they are not applied); it also gives the message its
+## title, type and status.
+func fire_docket_event(trig: TriggerDefinition, project: String, item_id: String, event_type: String,
+		item_type: String, old_status: String, new_status: String, item) -> void:
+	if not docket_ids_and_type_pass(trig, item_id, item_type):
+		return
+	if item != null and not trig.docket_filter_parent.is_empty() \
+			and (item.is_empty() or str(item.get("parent", "")) != trig.docket_filter_parent):
+		return
+	if item != null and not trig.docket_filter_tags.is_empty():
+		var item_tags: Array = item.get("tags", [])
+		for ftag in trig.docket_filter_tags.split(","):
+			if not ftag.strip_edges().is_empty() and ftag.strip_edges() not in item_tags:
+				return
 
 	# Anti-flood: don't fire if trigger already has active chat
-	if _active_trigger_chats.has(trigger_id):
-		var active_hid: String = _active_trigger_chats[trigger_id]
+	if _active_trigger_chats.has(trig.id):
+		var active_hid: String = _active_trigger_chats[trig.id]
 		for chat in SingletonObject.ChatList:
 			if chat.HistoryId == active_hid:
 				return
-		_active_trigger_chats.erase(trigger_id)
-
-	# Build synthetic message
-	var synthetic := _build_docket_signal_message(project, item_id, event_type, old_status, new_status)
+		_active_trigger_chats.erase(trig.id)
 
 	# Fire trigger with synthetic message
 	var original_message := trig.initial_message
-	trig.initial_message = synthetic
-	_fire_trigger(trigger_id)
+	trig.initial_message = _build_docket_signal_message(project, item_id, event_type, old_status, new_status, item)
+	_fire_trigger(trig.id)
 	trig.initial_message = original_message
 
 
-func _build_docket_signal_message(project: String, item_id: String, event_type: String, old_status: String = "", new_status: String = "") -> String:
+func _build_docket_signal_message(project: String, item_id: String, event_type: String, old_status: String = "", new_status: String = "", item = null) -> String:
 	var lines: PackedStringArray = []
 	lines.append("Docket event in project '%s':" % project)
 	lines.append("")
 
-	# Try to fetch item details for a richer message
-	var dm: DocketManager = SingletonObject.docket_manager
 	var title := item_id
 	var item_type := ""
 	var status := ""
-	if dm:
-		var db := dm.get_db(project)
-		if db:
-			var item := db.get_item(item_id)
-			if not item.is_empty():
-				title = str(item.get("title", item_id))
-				item_type = str(item.get("type", ""))
-				status = str(item.get("status", ""))
+	if item != null and not item.is_empty():
+		title = str(item.get("title", item_id))
+		item_type = str(item.get("type", ""))
+		status = str(item.get("status", ""))
 
 	match event_type:
 		"created":

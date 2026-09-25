@@ -9,6 +9,10 @@ extends RefCounted
 ## Emitted when any plugin sends an event notification.
 signal plugin_event(plugin_id: String, event_name: String, payload: Dictionary)
 
+## Emitted when an event a plugin sent was not delivered (`reason` says why):
+## a consumer that follows a plugin's event stream then knows it missed one.
+signal plugin_event_dropped(plugin_id: String, reason: String)
+
 ## Emitted when any plugin sends a state update.
 signal plugin_state_changed(plugin_id: String, state: Dictionary)
 
@@ -40,6 +44,7 @@ func handle_plugin_event(plugin_id: String, event_name: String, payload: Diction
 		push_warning("[PluginEventBroker] %s" % size_error.error_message)
 		if _audit_log != null:
 			_audit_log.log_event(plugin_id, "payload_too_large", size_error)
+		plugin_event_dropped.emit(plugin_id, str(size_error.get("error_message", "the event was too large")))
 		return size_error
 
 	# Validate plugin exists
@@ -69,6 +74,15 @@ func handle_plugin_event(plugin_id: String, event_name: String, payload: Diction
 	plugin_event.emit(plugin_id, event_name, payload)
 
 	return {"ok": true}
+
+
+## Reports that an event `plugin_id` sent was dropped before it could be
+## handled (plugin_event_dropped).
+func report_dropped_event(plugin_id: String, reason: String) -> void:
+	push_warning("[PluginEventBroker] An event from plugin '%s' was dropped: %s" % [plugin_id, reason])
+	if _audit_log != null:
+		_audit_log.log_event(plugin_id, "plugin_event_dropped", {"reason": reason})
+	plugin_event_dropped.emit(plugin_id, reason)
 
 
 ## Handle a plugin state update (minerva/plugin_state).

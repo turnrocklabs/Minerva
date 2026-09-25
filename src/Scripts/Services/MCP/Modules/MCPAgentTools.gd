@@ -535,7 +535,7 @@ func _register_trigger_tools() -> void:
 				},
 				"docket_project": {
 					"type": "string",
-					"description": "For DOCKET_POLL: docket project name to poll (e.g. 'cad', 'minerva')"
+					"description": "For DOCKET_POLL: docket project name to watch (e.g. 'cad', 'minerva'; empty = all). Under the Docket plugin it is bound to one project file the first time it names exactly one open project ('master' = the master); trigger_list shows docket_status when it cannot be relied on."
 				},
 				"docket_filter_parent": {
 					"type": "string",
@@ -1425,6 +1425,16 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 			elif trig.schedule_type == TriggerDefinition.ScheduleType.YEARLY:
 				entry["schedule_day_of_month"] = trig.schedule_day_of_month
 				entry["schedule_month"] = trig.schedule_month
+		elif trig.trigger_type == TriggerDefinition.TriggerType.DOCKET_POLL:
+			entry["docket_project"] = trig.docket_project
+			entry["docket_project_path"] = trig.docket_project_path
+			entry["docket_filter_tags"] = trig.docket_filter_tags
+			entry["docket_filter_parent"] = trig.docket_filter_parent
+			entry["docket_filter_item_ids"] = trig.docket_filter_item_ids
+			entry["docket_filter_types"] = trig.docket_filter_types
+			# Under the Docket plugin: why it cannot be relied on now, if it cannot.
+			if SingletonObject.docket_manager == null and tm.docket_feed != null:
+				entry["docket_status"] = tm.docket_feed.status(trig.id)
 		elif trig.trigger_type == TriggerDefinition.TriggerType.PLUGIN_EVENT:
 			entry["plugin_id"] = trig.plugin_id
 			entry["plugin_event_name"] = trig.plugin_event_name
@@ -1605,9 +1615,11 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error("Trigger %s was deleted while this update was being prepared; nothing was changed" % trigger_id)
 	if tm.revision(trigger_id) != read_revision:
 		return MCPToolUtils.error("Trigger %s changed while this update was being prepared (edited or enabled/disabled); nothing was changed — read it again and retry" % trigger_id)
-	# Times the manager records as it runs are taken as they stand now.
+	# Times the manager records as it runs, and the project a Docket trigger
+	# was bound to, are taken as they stand now.
 	trig.last_fired_at = existing.last_fired_at
 	trig.docket_last_poll_at = existing.docket_last_poll_at
+	trig.keep_docket_binding(existing)
 	tm.update_trigger(trigger_id, trig)
 
 	return {"success": true, "trigger_id": trigger_id}

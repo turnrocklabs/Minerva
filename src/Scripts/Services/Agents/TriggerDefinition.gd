@@ -43,6 +43,10 @@ var last_fired_at: String = ""
 var fire_if_missed: bool = true
 ## Docket project name to poll (e.g., "cad", "minerva")
 var docket_project: String = ""
+## Under the Docket plugin: the canonical path of the project docket_project
+## was found to name, the first time it named exactly one open project ("" until
+## then). The trigger watches that file from then on, whatever it is named.
+var docket_project_path: String = ""
 ## Optional tag filter for docket poll (comma-separated tags)
 var docket_filter_tags: String = ""
 ## Optional parent item ID — only watch children of this item
@@ -99,6 +103,13 @@ func target_problem() -> String:
 	return ""
 
 
+## Keeps the project `existing` (the definition this one edits, or null) was
+## bound to, while the project it names is unchanged.
+func keep_docket_binding(existing: TriggerDefinition) -> void:
+	if existing != null and docket_project == existing.docket_project:
+		docket_project_path = existing.docket_project_path
+
+
 func serialize() -> Dictionary:
 	var data := {
 		"id": id,
@@ -122,6 +133,7 @@ func serialize() -> Dictionary:
 		"last_fired_at": last_fired_at,
 		"fire_if_missed": fire_if_missed,
 		"docket_project": docket_project,
+		"docket_project_path": docket_project_path,
 		"docket_filter_tags": docket_filter_tags,
 		"docket_filter_parent": docket_filter_parent,
 		"docket_filter_item_ids": docket_filter_item_ids,
@@ -168,6 +180,7 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	trig.last_fired_at = data.get("last_fired_at", "")
 	trig.fire_if_missed = data.get("fire_if_missed", true)
 	trig.docket_project = data.get("docket_project", "")
+	trig.docket_project_path = str(data.get("docket_project_path", ""))
 	trig.docket_filter_tags = data.get("docket_filter_tags", "")
 	trig.docket_filter_parent = data.get("docket_filter_parent", "")
 	trig.docket_filter_item_ids = data.get("docket_filter_item_ids", "")

@@ -1685,6 +1685,7 @@ func _validate_legacy_message_then_dispatch(raw_line: String, message: Dictionar
 	var shape_error := Protocol.validate_request(message)
 	if not shape_error.is_empty():
 		push_warning("[MCP STDIO] Rejected malformed legacy callback: %s" % shape_error)
+		_report_dropped_event(message, "malformed: %s" % shape_error)
 		return
 	var wire = WireValue.create(raw_line, message)
 	var numeric_check: Dictionary = await WireAdapter.validate_for_application(wire)
@@ -1693,9 +1694,19 @@ func _validate_legacy_message_then_dispatch(raw_line: String, message: Dictionar
 	if not numeric_check.get("ok", false):
 		push_warning("[MCP STDIO] Rejected legacy callback: %s" %
 			_wire_validation_message(numeric_check))
+		_report_dropped_event(message, _wire_validation_message(numeric_check))
 		return
 	message = wire.parsed
 	handler.call(message)
+
+
+# A plugin event rejected before it reached the event broker is reported to
+# it (PluginEventBroker.report_dropped_event), so its consumers learn of the
+# gap even when no later event shows one. A dropped event of a process that
+# has since changed is not reported: the change itself is the interruption.
+func _report_dropped_event(message: Dictionary, reason: String) -> void:
+	if str(message.get("method", "")) == "minerva/plugin_event" and event_broker != null:
+		event_broker.report_dropped_event(plugin_id, reason)
 
 
 func _reject_modern_server_request(message: Dictionary, generation: int) -> void:
@@ -1735,6 +1746,7 @@ func _handle_async_plugin_event(msg: Dictionary) -> void:
 
 	if event_name.is_empty():
 		push_warning("[MCP STDIO Async] Plugin '%s' sent event with empty name" % plugin_id)
+		_report_dropped_event(msg, "an event with no name")
 		return
 
 	SingletonObject.verbose_log("[MCP STDIO Async] Plugin '%s' event: %s" % [plugin_id, event_name])
