@@ -58,7 +58,7 @@ func register_tools() -> void:
 			},
 			"project": {
 				"type": "string",
-				"description": "Docket project name hint (optional — searches all projects if omitted)"
+				"description": "Docket project name (optional — when given, only that project is searched; all open projects otherwise)"
 			}
 		},
 	}
@@ -66,7 +66,7 @@ func register_tools() -> void:
 	server.tool_budget_manager.activate_tool("minerva_get_skill", {"name": "minerva_get_skill", "description": get_desc, "input_schema": get_schema})
 
 	server._register_tool("minerva_activate_skill",
-		"Activate a skill globally. Active skills inject their instructions into the system prompt and register any executable tools.",
+		"Activate a skill globally. Active local skills inject their instructions into the system prompt and register any executable tools; a Docket skill is loaded as minerva_get_skill loads it (its instructions returned, its tools activated).",
 		{
 			"type": "object",
 			"properties": {
@@ -93,7 +93,7 @@ func register_tools() -> void:
 		}
 	, "utility")
 
-	var create_desc := "Create a new skill in the docket with tool_deps for auto-activation. Use this to author skills at runtime — it handles insertion, active-status transition, and tool activation in one call. Writes to user://master.dct (the runtime docket). Do NOT use minerva_docket_create for skills — its schema omits tool_deps so auto-activation stays empty."
+	var create_desc := "Create a new skill in the docket with tool_deps for auto-activation. Use this to author skills at runtime — it handles insertion, active-status transition, and tool activation in one call. Writes to the master, or to `project` when given. Use this rather than minerva_docket_create for skills, so the skill becomes active and its tools are activated."
 	var create_schema := {
 		"type": "object",
 		"properties": {
@@ -110,7 +110,7 @@ func register_tools() -> void:
 			"tags": {"type": "array", "items": {"type": "string"}, "description": "Category filters (e.g. 'editor', 'notes', 'tool-suite')."},
 			"optimization": {"type": "object", "description": "Optional runtime profile: {context_window: int, summary_mode: 'deterministic'|'llm', tool_idle_turns: int, tool_budget: int (TOKENS), max_tool_call_rounds: int (raises the per-message tool-call ROUND cap for this skill's workflow)}"},
 			"status": {"type": "string", "enum": ["active", "draft"], "description": "Initial status (default 'active')."},
-			"project": {"type": "string", "description": "Target docket project (default 'master')."},
+			"project": {"type": "string", "description": "Target docket project (default: the master)."},
 		},
 		"required": ["title"],
 	}
@@ -133,7 +133,7 @@ func register_tools() -> void:
 			},
 			"tags": {"type": "array", "items": {"type": "string"}},
 			"optimization": {"type": "object"},
-			"project": {"type": "string", "description": "Target docket project (default 'master')."},
+			"project": {"type": "string", "description": "Docket project holding the skill (optional — all open projects are searched when omitted)."},
 		},
 		"required": ["id"],
 	}
@@ -200,10 +200,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 func handle_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	match tool_name:
-		"minerva_list_skills": return _skill_list(arguments)
-		"minerva_get_skill": return _skill_get(arguments, context)
-		"minerva_skill_create": return _skill_create(arguments)
-		"minerva_skill_update": return _skill_update(arguments)
+		"minerva_list_skills": return await _skill_list(arguments)
+		"minerva_get_skill": return await _skill_get(arguments, context)
+		"minerva_skill_create": return await _skill_create(arguments, context)
+		"minerva_skill_update": return await _skill_update(arguments, context)
 		"minerva_activate_skill": return await _skill_activate(arguments, context)
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
@@ -287,15 +287,18 @@ func _resolve_skill(skill_name: String) -> Dictionary:
 ## DocketManager while it exists (the first loaded project holding it by id,
 ## else by title), else through DocketHost: {status: "found", item: skill
 ## record (DocketHost.skill_record), ref}, {status: "missing"}, or {status:
-## "error", code, message, candidates?}.
-func docket_skill(selector: String) -> Dictionary:
+## "error", code, message, candidates?}. A `project_name` limits the search
+## to that project.
+func docket_skill(selector: String, project_name: String = "") -> Dictionary:
 	var dm: DocketManager = SingletonObject.docket_manager
 	if dm != null:
+		if not project_name.is_empty() and not dm.is_project_loaded(project_name):
+			return {"status": "error", "code": "unknown_project", "message": "%s is not open" % project_name}
 		var qualified := SkillRef.parse(selector)
 		var only := str(qualified.get("project_path", ""))
 		for proj_name in dm.get_loaded_projects():
 			var path := dm.get_project_path(proj_name)
-			if not only.is_empty() and path != only:
+			if (not only.is_empty() and path != only) or (not project_name.is_empty() and proj_name != project_name):
 				continue
 			var project := {"name": proj_name, "display_name": proj_name, "path": path}
 			var tries: Array = [{"id": qualified.id}] if not qualified.is_empty() \
@@ -309,7 +312,7 @@ func docket_skill(selector: String) -> Dictionary:
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
 		return {"status": "error", "code": "unavailable", "message": "no Docket owns Minerva's projects"}
-	return await host.skill_lookup(selector)
+	return await host.skill_lookup(selector, project_name)
 
 
 ## The active Docket skills of every open project, for choosing among them:
@@ -352,51 +355,51 @@ static func _compose_skill_instructions(record: Dictionary) -> String:
 
 #region Skill Handlers
 
+## Local skills (SkillManager; profiles only when asked) and the Docket
+## skills of every open project, filtered by query and tags (all of them when
+## the filter matches none). When the Docket skills cannot be listed the
+## local ones are still given, marked incomplete with the reason.
 func _skill_list(arguments: Dictionary) -> Dictionary:
 	var query_text: String = str(arguments.get("query", "")).to_lower()
 	var filter_tags: Array = arguments.get("tags", [])
-	var result: Array[Dictionary] = []
+	var entries: Array[Dictionary] = []
 
-	# Minerva SkillManager skills (note-based)
 	var skill_manager = SingletonObject.get_skill_manager()
 	if skill_manager:
 		var include_profiles: bool = arguments.get("include_profiles", false)
 		for skill in skill_manager.skills:
 			if not include_profiles and skill.is_profile():
 				continue
-			var entry := {
+			entries.append({
 				"id": skill.id,
+				"ref": SkillRef.local(skill.id),
 				"name": skill.name,
 				"description": skill.description,
 				"origin": "minerva",
-			}
-			if _matches_filters(entry, query_text, filter_tags):
-				result.append(entry)
+			})
 
-	# Docket skills — search ALL loaded projects
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm:
-		for proj_name in dm.get_loaded_projects():
-			# Don't pass query/tags to docket — let it return all skills so we
-			# can filter once locally via _matches_filters() for consistency.
-			var docket_args := {"project": proj_name}
-			var docket_result := dm.call_tool("docket_skill_list", docket_args)
-			if not docket_result.has("error") and docket_result.has("skills"):
-				for dskill in docket_result["skills"]:
-					var entry := {
-						"id": str(dskill.get("id", "")),
-						"name": str(dskill.get("title", "")),
-						"description": str(dskill.get("description", "")),
-						"origin": "docket",
-						"project": proj_name,
-					}
-					if _matches_filters(entry, query_text, filter_tags):
-						result.append(entry)
+	var catalog := await docket_skill_catalog()
+	if catalog.status == "ok":
+		for record in catalog.skills:
+			entries.append({
+				"id": record.id,
+				"ref": record.ref,
+				"name": record.title,
+				"description": record.description,
+				"origin": "docket",
+				"project": record.project,
+			})
 
-	# If filtered search returned nothing, fall back to full catalog
-	if result.is_empty() and (not query_text.is_empty() or not filter_tags.is_empty()):
-		return _skill_list({})  # Recurse with no filters — return everything
-
+	var result: Array[Dictionary] = []
+	for entry in entries:
+		if _matches_filters(entry, query_text, filter_tags):
+			result.append(entry)
+	# A filter that matches nothing gives the whole catalog.
+	if result.is_empty():
+		result = entries
+	if catalog.status != "ok":
+		return {"success": false, "incomplete": true, "skills": result, "count": result.size(),
+			"error": "Docket skills could not be listed: %s" % catalog.message}
 	return {"success": true, "skills": result, "count": result.size()}
 
 
@@ -456,88 +459,106 @@ static func _activation_message(activation: Dictionary) -> String:
 	return message
 
 
+## One skill's full details. A local reference, or a skill_id that is a
+## SkillManager id (with no project given), is that local skill. Otherwise
+## the Docket skill skill_id (or title) names is read afresh (only in
+## `project` when given) before anything is applied: its optimization, its
+## tool_deps activated as one group, and its targeted hints and insights
+## (_targeted_knowledge; when those cannot be read the skill is still given,
+## with knowledge_status "error" and a warning). A Docket skill that cannot
+## be read is an error saying why, never "not found".
 func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
-	var skill_id: String = arguments.get("skill_id", "")
-	var title: String = arguments.get("title", "")
-	var project_hint: String = arguments.get("project", "")
+	var skill_id: String = str(arguments.get("skill_id", ""))
+	var title: String = str(arguments.get("title", ""))
+	var project_name: String = str(arguments.get("project", ""))
 
 	if skill_id.is_empty() and title.is_empty():
 		return MCPToolUtils.error("skill_id or title is required")
 
-	# Search docket projects for the skill
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm and (not title.is_empty() or (not skill_id.is_empty() and skill_id.length() >= 7)):
-		# If project hint given, search that project first
-		var projects_to_search: Array[String] = []
-		if not project_hint.is_empty():
-			projects_to_search.append(project_hint)
-		# Then search all loaded projects
-		for pname in dm.get_loaded_projects():
-			if pname not in projects_to_search:
-				projects_to_search.append(pname)
-
-		for proj_name in projects_to_search:
-			var docket_args := {"project": proj_name}
-			if not title.is_empty():
-				docket_args["title"] = title
-			elif not skill_id.is_empty():
-				docket_args["id"] = skill_id
-			var docket_result := dm.call_tool("docket_skill_get", docket_args)
-			if not docket_result.has("error"):
-				var result := {
-					"success": true,
-					"id": str(docket_result.get("id", "")),
-					"name": str(docket_result.get("title", "")),
-					"description": str(docket_result.get("description", "")),
-					"origin": "docket",
-					"project": proj_name,
-					"type": "skill",
-					"instructions": _compose_skill_instructions(docket_result),
-					"preconditions": str(docket_result.get("preconditions", "")),
-					"outcome": str(docket_result.get("outcome", "")),
-				}
-				# Apply the skill's budget before admitting its dependency group.
-				var optimization: Dictionary = docket_result.get("optimization", {})
-				if not optimization.is_empty():
-					var optimization_result := _apply_skill_optimization(
-						optimization, context)
-					if not (optimization_result.applied as Dictionary).is_empty():
-						result["optimization_applied"] = optimization_result.applied
-					if not (optimization_result.failures as Array).is_empty():
-						result["optimization_failures"] = optimization_result.failures
-
-				# Auto-activate tools listed in tool_deps as one protected group.
-				var tool_deps: Array = docket_result.get("tool_deps", [])
-				if not tool_deps.is_empty():
-					result["tool_deps"] = tool_deps
-					var activation := _activate_dependencies(tool_deps)
-					for key: String in activation:
-						if not (activation[key] as Array).is_empty():
-							result[key] = activation[key]
-					result["message"] = _activation_message(activation)
-
-				# Surface model-targeted insights/hints for this skill's domain
-				var targeted := _query_targeted_knowledge(dm, proj_name, docket_result, context.caller_chat_id)
-				if not targeted.is_empty():
-					result["insights"] = targeted
-					var msg: String = result.get("message", "")
-					var sep := " " if not msg.is_empty() else ""
-					result["message"] = msg + sep + "%d targeted insights — review before starting." % targeted.size()
-
-				return result
-
-	# Fall back to SkillManager (note-based skills)
 	var skill_manager = SingletonObject.get_skill_manager()
-	if not skill_manager:
-		return MCPToolUtils.error("Skill not found")
+	var qualified := SkillRef.parse(skill_id)
+	if qualified.is_empty() and SkillRef.is_qualified(skill_id):
+		return MCPToolUtils.error("%s is not a valid skill reference" % skill_id)
+	var local_id := ""
+	if qualified.get("origin", "") == SkillRef.LOCAL:
+		local_id = str(qualified.id)
+	elif qualified.is_empty() and project_name.is_empty() and not skill_id.is_empty() \
+			and skill_manager and skill_manager.get_skill(skill_id):
+		local_id = skill_id
+	if not local_id.is_empty():
+		return _local_skill(local_id)
 
-	var skill = skill_manager.get_skill(skill_id)
+	var selector := skill_id if not skill_id.is_empty() else title
+	var found := await docket_skill(selector, project_name)
+	if context.is_stopped():
+		return context.stopped_result()
+	if found.status == "missing":
+		return MCPToolUtils.error("Skill not found: %s" % selector)
+	if found.status != "found":
+		var refused := MCPToolUtils.error("Skill %s could not be read: %s" % [selector, found.message])
+		for key in ["code", "candidates"]:
+			if found.has(key):
+				refused[key] = found[key]
+		return refused
+
+	var record: Dictionary = found.item
+	var result := {
+		"success": true,
+		"id": record.id,
+		"ref": record.ref,
+		"name": record.title,
+		"description": record.description,
+		"origin": "docket",
+		"project": record.project,
+		"type": "skill",
+		"instructions": _compose_skill_instructions(record),
+		"preconditions": record.preconditions,
+		"outcome": record.outcome,
+	}
+	# Apply the skill's budget before admitting its dependency group.
+	var optimization: Dictionary = record.optimization
+	if not optimization.is_empty():
+		var optimization_result := _apply_skill_optimization(optimization, context)
+		if not (optimization_result.applied as Dictionary).is_empty():
+			result["optimization_applied"] = optimization_result.applied
+		if not (optimization_result.failures as Array).is_empty():
+			result["optimization_failures"] = optimization_result.failures
+
+	# Auto-activate tools listed in tool_deps as one protected group.
+	var tool_deps: Array = record.tool_deps
+	if not tool_deps.is_empty():
+		result["tool_deps"] = tool_deps
+		var activation := _activate_dependencies(tool_deps)
+		for key: String in activation:
+			if not (activation[key] as Array).is_empty():
+				result[key] = activation[key]
+		result["message"] = _activation_message(activation)
+
+	# Surface model-targeted insights/hints for this skill's domain
+	var knowledge := await _targeted_knowledge(record, context.caller_chat_id)
+	var msg: String = result.get("message", "")
+	var sep := " " if not msg.is_empty() else ""
+	if knowledge.status != "ok":
+		result["knowledge_status"] = "error"
+		result["knowledge_error"] = knowledge.message
+		result["warning"] = "Targeted hints and insights could not be read: %s" % knowledge.message
+	elif not (knowledge.items as Array).is_empty():
+		result["insights"] = knowledge.items
+		result["message"] = msg + sep + "%d targeted insights — review before starting." % knowledge.items.size()
+	return result
+
+
+# A local (SkillManager) skill's details, as minerva_get_skill gives them.
+func _local_skill(skill_id: String) -> Dictionary:
+	var skill_manager = SingletonObject.get_skill_manager()
+	var skill = skill_manager.get_skill(skill_id) if skill_manager else null
 	if not skill:
-		return MCPToolUtils.error("Skill not found: %s" % [skill_id if not skill_id.is_empty() else title])
+		return MCPToolUtils.error("Skill not found: %s" % skill_id)
 
 	var data := {
 		"success": true,
 		"id": skill.id,
+		"ref": SkillRef.local(skill.id),
 		"name": skill.name,
 		"description": skill.description,
 		"origin": skill.origin,
@@ -569,14 +590,15 @@ func _skill_activate(arguments: Dictionary, context: ExecutionContext) -> Dictio
 	var skill_id: String = arguments.get("skill_id", "")
 	if skill_id.is_empty():
 		return MCPToolUtils.error("skill_id is required")
+	var qualified := SkillRef.parse(skill_id)
+	if qualified.get("origin", "") == SkillRef.LOCAL:
+		skill_id = str(qualified.id)
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
-		# Fall through to docket — activate_skill should work for docket skills too
-		var docket_result := _skill_get(arguments, context)
-		if docket_result.get("success", false):
-			return docket_result
-		return MCPToolUtils.error("Skill not found: %s" % skill_id)
+		# A Docket skill is activated as minerva_get_skill loads it (its
+		# tool_deps admitted); why it could not be is its answer.
+		return await _skill_get(arguments, context)
 
 	if skill_manager.is_active(skill_id):
 		return {"success": true, "skill_id": skill_id, "message": "Already active"}
@@ -605,19 +627,25 @@ func _skill_deactivate(arguments: Dictionary) -> Dictionary:
 	return {"success": true, "skill_id": skill_id, "message": "Skill deactivated: %s" % skill.name}
 
 
-## Create a new docket-backed skill, including tool_deps (which docket_create's
-## MCP schema omits). Defaults to status=active and auto-activates the tools
-## in the caller's budget manager so the skill is immediately usable.
-func _skill_create(arguments: Dictionary) -> Dictionary:
+## Create a new docket-backed skill, including tool_deps (which the embedded
+## docket_create's MCP schema omits), in `project` or, when none is given, the master.
+## Created as a draft, then moved to active unless status "draft" is asked
+## for; when that move fails the skill stays a draft, and the result says so
+## with its id. Its tools are activated once it exists. Through the Docket
+## plugin, the writes are the agent tools minerva_docket_create and
+## minerva_docket_transition, dispatched with the caller's context (its
+## policies and approvals apply); when the plugin's process changed while
+## one was sent, the result is outcome "unknown" (with the id when known),
+## never a retry.
+func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var title: String = str(arguments.get("title", "")).strip_edges()
 	if title.is_empty():
 		return MCPToolUtils.error("title is required")
 
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm == null:
-		return MCPToolUtils.error("DocketManager not available")
-
-	var project: String = str(arguments.get("project", "master"))
+	var target := await _skill_write_target(str(arguments.get("project", "")))
+	if target.has("error"):
+		return target
+	var project: String = target.project
 
 	# Forward skill fields to docket_create. DataModel.create_item copies any
 	# field listed in the skill type's optional_fields (including tool_deps and
@@ -634,8 +662,11 @@ func _skill_create(arguments: Dictionary) -> Dictionary:
 		if arguments.has(key):
 			create_args[key] = arguments[key]
 
-	var create_result := dm.call_tool("docket_create", create_args)
-	if create_result.has("error"):
+	var created := await _docket_write("create", create_args, context, target.target)
+	var create_result: Dictionary = created.result
+	if created.get("unknown", false):
+		return _outcome_unknown("created", created.why, str(create_result.get("id", "")), project)
+	if not MinervaMCPServer.policy_call_succeeded(create_result):
 		return create_result
 
 	var skill_id: String = str(create_result.get("id", ""))
@@ -648,16 +679,31 @@ func _skill_create(arguments: Dictionary) -> Dictionary:
 	var requested_status: String = str(arguments.get("status", "active"))
 	var final_status: String = "draft"
 	var transition_warning := ""
+	var activation_outcome_unknown := false
 	if requested_status == "active":
-		var transition_result := dm.call_tool("docket_transition", {
+		var moved := await _docket_write("transition", {
 			"project": project,
 			"id": skill_id,
 			"to": "active",
-		})
-		if transition_result.has("error"):
-			transition_warning = "Skill created in draft; transition to active failed: %s" % str(transition_result.get("error", ""))
+		}, context, target.target)
+		if moved.get("unknown", false):
+			transition_warning = "Skill created; whether it became active is unknown (%s)" % moved.why
+			final_status = "unknown"
+			activation_outcome_unknown = true
+		elif not MinervaMCPServer.policy_call_succeeded(moved.result):
+			transition_warning = "Skill created in draft; transition to active failed: %s" % str(moved.result.get("error", ""))
 		else:
 			final_status = "active"
+
+	# A call stopped by now activates nothing; the skill exists all the same.
+	if context.is_stopped():
+		var stopped := context.stopped_result()
+		stopped["id"] = skill_id
+		stopped["project"] = project
+		stopped["status"] = final_status
+		if activation_outcome_unknown:
+			stopped["outcome"] = "unknown"
+		return stopped
 
 	# Auto-activate declared tools in the caller's budget manager so the
 	# skill is immediately usable without a second minerva_activate_skill call.
@@ -679,42 +725,61 @@ func _skill_create(arguments: Dictionary) -> Dictionary:
 	result["message"] = "Skill created. " + _activation_message(activation)
 	if not transition_warning.is_empty():
 		result["warning"] = transition_warning
+	if activation_outcome_unknown:
+		result["outcome"] = "unknown"
 	return result
 
 
 ## Update fields on an existing docket-backed skill, including tool_deps
-## (which minerva_docket_update's MCP schema omits). Re-runs auto-activation
-## for tool_deps when they change.
-func _skill_update(arguments: Dictionary) -> Dictionary:
+## (which the embedded minerva_docket_update's MCP schema omits). `id` (full, a prefix, or
+## a qualified reference) must name one skill, in `project` when given;
+## anything else, a non-skill item included, is refused. Its status is not
+## changed. Written as minerva_skill_create writes (the agent tool
+## minerva_docket_update through the Docket plugin; outcome "unknown" when
+## the plugin restarted meanwhile). Re-runs auto-activation for tool_deps
+## when they change.
+func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var id: String = str(arguments.get("id", "")).strip_edges()
 	if id.is_empty():
 		return MCPToolUtils.error("id is required")
 
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm == null:
-		return MCPToolUtils.error("DocketManager not available")
-
-	var project: String = str(arguments.get("project", "master"))
-
-	var update_args := {"project": project, "id": id}
+	var update_args := {}
 	var forwarded := ["title", "description", "steps", "preconditions", "outcome",
 		"tool_deps", "optimization", "tags", "component", "topic", "subtopic", "target"]
-	var has_changes := false
 	for key in forwarded:
 		if arguments.has(key):
 			update_args[key] = arguments[key]
-			has_changes = true
-
-	if not has_changes:
+	if update_args.is_empty():
 		return MCPToolUtils.error("No updatable fields provided")
 
-	var update_result := dm.call_tool("docket_update", update_args)
-	if update_result.has("error"):
-		return update_result
+	var found := await docket_skill(id, str(arguments.get("project", "")))
+	if found.status == "error":
+		return MCPToolUtils.error("Skill %s could not be read: %s" % [id, found.message])
+	var record: Dictionary = found.get("item", {})
+	var qualified := SkillRef.parse(id)
+	# Named by its id: the full id, a qualified reference, or a prefix of four
+	# or more hex digits (never by a title that happens to start the same).
+	var named_by_id: bool = not record.is_empty() and (not qualified.is_empty() or record.id == id
+		or (id.length() >= 4 and id.is_valid_hex_number(false) and str(record.id).to_lower().begins_with(id.to_lower())))
+	if not named_by_id:
+		return MCPToolUtils.error("No skill has the id %s" % id)
+
+	var target := await _skill_write_target(str(record.project), str(record.get("project_path", "")))
+	if target.has("error"):
+		return target
+	var project: String = target.project
+	update_args["project"] = project
+	update_args["id"] = record.id
+
+	var updated := await _docket_write("update", update_args, context, target.target)
+	if updated.get("unknown", false):
+		return _outcome_unknown("updated", updated.why, str(record.id), project)
+	if not MinervaMCPServer.policy_call_succeeded(updated.result):
+		return updated.result
 
 	var result := {
 		"success": true,
-		"id": id,
+		"id": record.id,
 		"project": project,
 		"updated_fields": update_args.keys().filter(func(k): return k != "id" and k != "project"),
 	}
@@ -730,6 +795,64 @@ func _skill_update(arguments: Dictionary) -> Dictionary:
 			if not (activation[key] as Array).is_empty():
 				result[key] = activation[key]
 
+	return result
+
+
+# Where a skill is written: {project (its name), target} or an error result.
+# With the embedded DocketManager, `project_name` or "master"; through the
+# Docket plugin, the open project at `project_path`, else the one
+# `project_name` names, else the master (DocketHost.skill_target, whose
+# answer is the `target` each write is held to).
+func _skill_write_target(project_name: String, project_path: String = "") -> Dictionary:
+	if SingletonObject.docket_manager != null:
+		return {"project": project_name if not project_name.is_empty() else "master", "target": {}}
+	var host: DocketHost = SingletonObject.docket_host
+	if host == null:
+		return MCPToolUtils.error("no Docket owns Minerva's projects")
+	var target := await host.skill_target(project_name, project_path)
+	if target.status != "ok":
+		return MCPToolUtils.error("The skill cannot be written: %s" % target.message)
+	return {"project": str(target.project.get("name", "")), "target": target}
+
+
+# Sends Docket write `tool` ("create", "update" or "transition") with
+# `arguments`: to the embedded DocketManager while it exists, else as the
+# agent tool minerva_docket_<tool> through the governed dispatch with the
+# caller's `context`, held (DocketHost.bind_write) to `target` from
+# _skill_write_target, so it is refused rather than sent to another project
+# that took its project's name meanwhile. {result}, plus, when the write was
+# sent but its success was not confirmed (the reply was a failure, the
+# plugin restarted, or the call was stopped), unknown: true and why: it may
+# or may not have been made. A write refused before it was sent is simply
+# its failure.
+func _docket_write(tool: String, arguments: Dictionary, context: ExecutionContext, target: Dictionary) -> Dictionary:
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm != null:
+		return {"result": dm.call_tool("docket_" + tool, arguments)}
+	var host: DocketHost = SingletonObject.docket_host
+	var binding := host.bind_write("docket_" + tool, arguments, target)
+	# lifetime.dispatched tells whether this write reached the backend; it is
+	# set again afterwards as it was, or as this write left it.
+	var was_dispatched: bool = context.lifetime.dispatched
+	context.lifetime.dispatched = false
+	var result: Dictionary = await server.call_tool("minerva_docket_" + tool, arguments, context)
+	var dispatched: bool = context.lifetime.dispatched
+	context.lifetime.dispatched = was_dispatched or dispatched
+	host.unbind_write(binding)
+	if MinervaMCPServer.policy_call_succeeded(result) or not dispatched:
+		return {"result": result}
+	var why := "Docket restarted" if not host.same_process(target.process) \
+		else "the call was stopped" if context.is_stopped() \
+		else "Docket's reply did not confirm it: %s" % str(result.get("error", "no reply"))
+	return {"result": result, "unknown": true, "why": why}
+
+
+static func _outcome_unknown(what: String, why: String, id: String, project: String) -> Dictionary:
+	var result := MCPToolUtils.error("The skill may or may not have been %s (%s); it was not tried again" % [what, why])
+	result["outcome"] = "unknown"
+	result["project"] = project
+	if not id.is_empty():
+		result["id"] = id
 	return result
 
 
@@ -815,42 +938,56 @@ func _list_voices(arguments: Dictionary) -> Dictionary:
 	return await SingletonObject.get_voice_client().list_voices_result(backend)
 
 
-## Query docket for hints/insights relevant to a skill, filtered by model targeting.
-## Derives search components from the skill's tags and tool_deps prefixes.
-func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data: Dictionary, caller_chat_id: String) -> Array:
+## The hints and insights targeted at the calling chat's model for skill
+## `record`'s domain: {status: "ok", items: [compact entries]} or {status:
+## "error", message}. Components come from the skill's tags and the prefixes
+## of its tool_deps; each is queried in the skill's project (at most 10 of
+## each type). None, when the chat's model is unknown or the skill has no
+## components, is a successful empty result. Through the embedded
+## DocketManager a failed query counts as no items, as before; through the
+## Docket plugin it is an error.
+func _targeted_knowledge(record: Dictionary, caller_chat_id: String) -> Dictionary:
 	var identity := ModelTargeting.identify_from_chat(caller_chat_id)
 	if identity.is_empty():
-		return []
+		return {"status": "ok", "items": []}
 
 	# Derive hint components from skill tags and tool_deps prefixes
-	var components: Array[String] = []
-	var skill_tags = skill_data.get("tags", [])
-	if skill_tags is String:
-		skill_tags = skill_tags.split(",")
-	for tag in skill_tags:
+	var components := PackedStringArray()
+	for tag in record.tags:
 		var t := str(tag).strip_edges().to_lower()
 		if not t.is_empty() and t not in components:
 			components.append(t)
-	for dep in skill_data.get("tool_deps", []):
+	for dep in record.tool_deps:
 		var prefix: String = str(dep).split("_")[0]
 		if not prefix.is_empty() and prefix not in components:
 			components.append(prefix)
-
 	if components.is_empty():
-		return []
+		return {"status": "ok", "items": []}
 
 	# Query hints and insights for each component
 	var raw_items: Array[Dictionary] = []
-	for component in components:
-		for item_type in ["hint", "insight"]:
-			var query_result: Dictionary = dm.call_tool("docket_query", {
-				"project": proj_name,
-				"filter": {"type": item_type, "component": component},
-				"limit": 10,
-			})
-			for item in query_result.get("items", []):
-				if item is Dictionary and not item.get("target", "").is_empty():
-					raw_items.append(item)
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm != null:
+		for component in components:
+			for item_type in ["hint", "insight"]:
+				var query_result: Dictionary = dm.call_tool("docket_query", {
+					"project": record.project,
+					"filter": {"type": item_type, "component": component},
+					"limit": 10,
+				})
+				for item in query_result.get("items", []):
+					if item is Dictionary and not item.get("target", "").is_empty():
+						raw_items.append(item)
+	else:
+		var host: DocketHost = SingletonObject.docket_host
+		if host == null:
+			return {"status": "error", "message": "no Docket owns Minerva's projects"}
+		var read := await host.skill_knowledge(record.project_path, components)
+		if read.status != "ok":
+			return {"status": "error", "message": read.message}
+		for item in read.items:
+			if item is Dictionary and not str(item.get("target", "")).is_empty():
+				raw_items.append(item)
 
 	# Filter by model target
 	var targeted := ModelTargeting.filter_items(raw_items, identity)
@@ -869,7 +1006,7 @@ func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data:
 			entry["assumed"] = str(item.get("assumed", ""))
 			entry["corrected"] = str(item.get("corrected", ""))
 		result.append(entry)
-	return result
+	return {"status": "ok", "items": result}
 
 
 ## Apply optimization knobs from a skill's "optimization" dict and report any

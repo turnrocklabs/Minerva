@@ -366,7 +366,8 @@ func _build_tool_summary(tool_name: String, result: Dictionary, note_id: String)
 	match tool_name:
 		"minerva_list_skills":
 			var skills: Array = result.get("skills", [])
-			return "[list_skills: %d skills]%s" % [skills.size(), ref_suffix]
+			var incomplete := " (incomplete)" if result.get("incomplete", false) else ""
+			return "[list_skills: %d skills%s]%s" % [skills.size(), incomplete, ref_suffix]
 		"minerva_tool_search":
 			var activated: Array = result.get("activated", [])
 			return "[tool_search: %d activated]%s" % [activated.size(), ref_suffix]

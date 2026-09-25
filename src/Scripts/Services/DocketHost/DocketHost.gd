@@ -103,6 +103,11 @@ var _changing := false
 # leaving a trace in the open set, so a skill read overlapping one is not
 # trusted.
 var _session_changes := 0
+# The skill writes under way (bind_write), by _write_key, each by its own
+# token (writes alike in tool, project and item can overlap): the project
+# each must still reach when it is sent.
+var _write_bindings := {}
+var _write_tokens := 0
 # Session path → why the last try to open it failed.
 var _open_errors := {}
 var _reconcile_again := false
@@ -336,11 +341,14 @@ func skill_catalog() -> Dictionary:
 ##   exact id, then id prefix (four or more hex digits), then exact title
 ##   (any case), then a title containing it; the first tier with a match
 ##   decides, and more than one match there is ambiguous.
+## A `project_name` (a project's name or display name, as tools give it)
+## limits the search to that open project; one not open, or naming more than
+## one, is an error rather than a wider search.
 ## {status: "found", item: skill record, ref}, {status: "missing", selector},
 ## or {status: "error", code ("bad_ref", "not_docket", "unavailable",
 ## "unknown_project", "ambiguous", "read_failed", "changed", ...), message,
 ## project?, candidates?}.
-func skill_lookup(selector: String) -> Dictionary:
+func skill_lookup(selector: String, project_name: String = "") -> Dictionary:
 	if selector.strip_edges().is_empty():
 		return {"status": "error", "code": "bad_ref", "message": "no skill was named"}
 	var qualified := SkillRef.parse(selector)
@@ -349,7 +357,7 @@ func skill_lookup(selector: String) -> Dictionary:
 	if qualified.get("origin", "") == SkillRef.LOCAL:
 		return {"status": "error", "code": "not_docket", "message": "%s is a local skill" % selector}
 	var only := str(qualified.get("project_path", ""))
-	var read := await _read_skills(false, only)
+	var read := await _read_skills(false, only, project_name)
 	if read.status != "ok":
 		return read
 	var skills := []
@@ -409,6 +417,84 @@ func skill_knowledge(project_path: String, components: PackedStringArray, limit:
 	return {"status": "ok", "items": items}
 
 
+## Where a skill is created or updated, listed afresh: the open project at
+## `project_path` when given, else the one `project_name` names (a name or
+## display name), else the master. {status: "ok", project (its descriptor),
+## process, session_changes} or {status: "error", code, message}. The
+## result is what bind_write() holds a write to, and `process` is for
+## same_process().
+func skill_target(project_name: String, project_path: String = "") -> Dictionary:
+	var begun := await _begin_read()
+	if begun.has("status"):
+		return begun
+	var project: Dictionary
+	if not project_path.is_empty():
+		project = _descriptor_of(project_path)
+	elif project_name.is_empty():
+		project = master_project()
+	else:
+		project = _resolve(project_name)
+	if project.is_empty():
+		return {"status": "error", "code": "unknown_project", "message": "%s is not open" % project_path
+			if not project_path.is_empty() else "the master project is not open" if project_name.is_empty()
+			else "%s names no one open project" % project_name}
+	return {"status": "ok", "project": project, "process": [begun.connection, begun.generation],
+		"session_changes": begun.session_changes}
+
+
+## Holds an agent's skill write `tool` (docket_create, docket_update or
+## docket_transition) with `arguments` to `target` (from skill_target): when
+## the call reaches the backend tool guard, just before it is sent, it is
+## refused unless the plugin's process, the session and the project its
+## arguments name are still those of `target` (a project closed and another
+## opened under its name is not the same). Returns what unbind_write takes.
+func bind_write(tool: String, arguments: Dictionary, target: Dictionary) -> Array:
+	var key := _write_key(tool, arguments)
+	_write_tokens += 1
+	if not _write_bindings.has(key):
+		_write_bindings[key] = {}
+	_write_bindings[key][_write_tokens] = target
+	return [key, _write_tokens]
+
+
+func unbind_write(binding: Array) -> void:
+	var held: Dictionary = _write_bindings.get(binding[0], {})
+	held.erase(binding[1])
+	if held.is_empty():
+		_write_bindings.erase(binding[0])
+
+
+static func _write_key(tool: String, arguments: Dictionary) -> String:
+	return "%s|%s|%s" % [tool, arguments.get("project", ""), arguments.get("id", arguments.get("title", ""))]
+
+
+# Why an agent's `tool` call with `arguments`, if bound by bind_write, no
+# longer reaches its target, or "". The open projects are listed afresh, the
+# last thing awaited before the call is sent.
+func _bound_write_refusal(tool: String, arguments: Dictionary) -> String:
+	var key := _write_key(tool, arguments)
+	if not _write_bindings.has(key):
+		return ""
+	var listed := await _refresh(_connection, _generation)
+	if not listed.is_empty():
+		return "the skill was not written: %s" % listed
+	var now := _resolve(str(arguments.get("project", "")))
+	# Every write held under this key must still reach its project.
+	for target: Dictionary in _write_bindings.get(key, {}).values():
+		if _stale(target.process[0], target.process[1]) or _changing \
+				or _session_changes != target.session_changes \
+				or _layer_openings([now]) != _layer_openings([target.project]):
+			return "the skill was not written: project %s changed since it was chosen" % arguments.get("project", "")
+	return ""
+
+
+## Whether the plugin's process is still the one `process` (from
+## skill_target) names: when it is not, a write sent meanwhile may or may not
+## have been made.
+func same_process(process: Array) -> bool:
+	return not _stale(process[0], process[1])
+
+
 # Waits while Docket starts and while a person's change to the session is
 # under way, then lists the open projects afresh: {connection, generation,
 # session_changes}, or a {status: "error"} result.
@@ -427,16 +513,25 @@ func _begin_read() -> Dictionary:
 	return {"connection": connection, "generation": generation, "session_changes": session_changes}
 
 
-# Every skill of each open project (only the one at `only_path`, when
-# given), active ones only when `active_only`: {status: "ok", found:
+# Every skill of each open project (only the one at `only_path`, or the
+# one `only_name` names, when given), active ones only when `active_only`: {status: "ok", found:
 # [{project, skills}]} or a {status: "error"} result. A change to Docket, to
 # any project read or (when reading them all) to which projects are open,
 # while reading is an error (_unsettled).
-func _read_skills(active_only: bool, only_path: String = "") -> Dictionary:
+func _read_skills(active_only: bool, only_path: String = "", only_name: String = "") -> Dictionary:
 	var begun := await _begin_read()
 	if begun.has("status"):
 		return begun
 	var read_projects := projects.duplicate()
+	if not only_name.is_empty():
+		var named := _resolve(only_name)
+		if named.is_empty():
+			return {"status": "error", "code": "unknown_project",
+				"message": "%s names no one open project" % only_name}
+		if not only_path.is_empty() and str(named.get("path", "")) != only_path:
+			return {"status": "error", "code": "unknown_project",
+				"message": "the reference is to another project than %s" % only_name}
+		only_path = str(named.get("path", ""))
 	if not only_path.is_empty():
 		var project := _descriptor_of(only_path)
 		if project.is_empty():
@@ -854,9 +949,18 @@ func _refresh(connection, generation: int) -> String:
 
 # Waits for the current process to be set up, then allows `tool` (with
 # `arguments`, called by `caller`) unless Docket is unavailable, it would
-# close the master, or it is an agent's change that would lower a policy's
-# enforcement and a person does not approve it (_approved).
+# close the master, it is an agent's change that would lower a policy's
+# enforcement and a person does not approve it (_approved), or it is an
+# agent's skill write whose project changed since it was chosen
+# (_bound_write_refusal, checked last).
 func _guard(tool: String, arguments: Dictionary, caller: String = "agent") -> String:
+	var refused := await _guard_checks(tool, arguments, caller)
+	if not refused.is_empty() or caller != "agent":
+		return refused
+	return await _bound_write_refusal(tool, arguments)
+
+
+func _guard_checks(tool: String, arguments: Dictionary, caller: String) -> String:
 	while state == "starting":
 		await state_changed
 	if state in ["inactive", "unavailable", "failed"]:
