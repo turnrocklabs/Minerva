@@ -12,6 +12,10 @@ class Lifetime extends RefCounted:
 	## Seconds a backend call may take from when it is sent; 0 for no such
 	## budget.
 	var dispatch_seconds := 0.0
+	## What a caller stopped part-way needs to recover from the effects so far
+	## (such as the id of an item already created), with the tool that made
+	## them: stopped_result() gives it as its "recovery".
+	var recovery := {}
 
 	func stop(value: String) -> void:
 		if reason.is_empty():
@@ -88,8 +92,11 @@ func is_stopped() -> bool:
 
 
 func stopped_result() -> Dictionary:
-	return {"success": false, "error": "MCP call %s" % lifetime.reason,
+	var result := {"success": false, "error": "MCP call %s" % lifetime.reason,
 		"error_code": lifetime.reason}
+	if not lifetime.recovery.is_empty():
+		result["recovery"] = lifetime.recovery.duplicate(true)
+	return result
 
 
 func remaining_seconds(default_seconds: float = 120.0) -> float:

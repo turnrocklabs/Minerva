@@ -202,8 +202,16 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 	match tool_name:
 		"minerva_list_skills": return await _skill_list(arguments)
 		"minerva_get_skill": return await _skill_get(arguments, context)
-		"minerva_skill_create": return await _skill_create(arguments, context)
-		"minerva_skill_update": return await _skill_update(arguments, context)
+		"minerva_skill_create", "minerva_skill_update":
+			# A write's recovery details (lifetime.recovery) matter only while
+			# it runs: a caller stopped meanwhile is answered with them.
+			var written: Dictionary
+			if tool_name == "minerva_skill_create":
+				written = await _skill_create(arguments, context)
+			else:
+				written = await _skill_update(arguments, context)
+			context.lifetime.recovery = {}
+			return written
 		"minerva_activate_skill": return await _skill_activate(arguments, context)
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
@@ -662,6 +670,7 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 		if arguments.has(key):
 			create_args[key] = arguments[key]
 
+	context.lifetime.recovery = {"tool": "minerva_skill_create", "project": project, "title": title, "outcome": "unknown"}
 	var created := await _docket_write("create", create_args, context, target.target)
 	var create_result: Dictionary = created.result
 	if created.get("unknown", false):
@@ -680,7 +689,10 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	var final_status: String = "draft"
 	var transition_warning := ""
 	var activation_outcome_unknown := false
+	context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project, "title": title, "status": "draft"}
 	if requested_status == "active":
+		context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project,
+			"title": title, "status": "unknown", "outcome": "unknown"}
 		var moved := await _docket_write("transition", {
 			"project": project,
 			"id": skill_id,
@@ -695,15 +707,14 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 		else:
 			final_status = "active"
 
-	# A call stopped by now activates nothing; the skill exists all the same.
+	# A call stopped by now activates nothing; the skill exists all the same,
+	# and its caller was answered with its id (lifetime.recovery).
+	context.lifetime.recovery = {"tool": "minerva_skill_create", "id": skill_id, "project": project, "title": title,
+		"status": final_status}
+	if activation_outcome_unknown:
+		context.lifetime.recovery["outcome"] = "unknown"
 	if context.is_stopped():
-		var stopped := context.stopped_result()
-		stopped["id"] = skill_id
-		stopped["project"] = project
-		stopped["status"] = final_status
-		if activation_outcome_unknown:
-			stopped["outcome"] = "unknown"
-		return stopped
+		return context.stopped_result()
 
 	# Auto-activate declared tools in the caller's budget manager so the
 	# skill is immediately usable without a second minerva_activate_skill call.
@@ -771,6 +782,7 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	update_args["project"] = project
 	update_args["id"] = record.id
 
+	context.lifetime.recovery = {"tool": "minerva_skill_update", "id": record.id, "project": project, "outcome": "unknown"}
 	var updated := await _docket_write("update", update_args, context, target.target)
 	if updated.get("unknown", false):
 		return _outcome_unknown("updated", updated.why, str(record.id), project)
