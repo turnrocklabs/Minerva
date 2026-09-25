@@ -307,7 +307,11 @@ func _changed_session(path: String, replacement: String) -> String:
 	_session = session
 	_saved_session = session.duplicate()
 	_migrating = false
-	_reconciled_paths = _open_paths()
+	# Only this change joins the baseline the session is reconciled against:
+	# a project closed or opened meanwhile by an agent or panel is still seen
+	# as that, at the next reconcile.
+	if not kept.is_empty() and not kept in _reconciled_paths:
+		_reconciled_paths.append(kept)
 	return ""
 
 
@@ -320,7 +324,6 @@ func _unopened(connection, generation: int, opened: Dictionary, why: String) -> 
 	var closed := await _call(connection, "docket_project_remove", {"name": str(opened.get("name", ""))})
 	if not _stale(connection, generation):
 		await _refresh(connection, generation)
-		_reconciled_paths = _open_paths()
 	return why if not closed.has("error") else "%s; %s stays open: %s" % [why, opened.get("path", ""), closed.error]
 
 

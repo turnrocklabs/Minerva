@@ -128,6 +128,8 @@ var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS
 
 var latest_msg: Control
 var latest_usr_msg: MessageMarkdown
+# Chat history id → the tool call id whose tool is running for it now.
+var _tools_in_flight: Dictionary = {}
 
 ## Check if a path is within the allowed directories for a chat.
 ## Returns true if allowed (or no restrictions), false if blocked.
@@ -508,7 +510,11 @@ func check_agent_context_limits(history: ChatHistory) -> Dictionary:
 ## Compact a chat history by summarizing older messages and keeping recent ones.
 ## Works for both agent mode and regular chats. Returns true if compaction occurred.
 ## Tries LLM summarization first if a provider is available, falls back to naive.
-func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MESSAGES) -> bool:
+## `still_current`, when given, answers whether the turn compacting is still
+## the chat's: once it is not, or the history changed while the summary was
+## written, nothing is compacted.
+func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MESSAGES,
+		still_current: Callable = Callable()) -> bool:
 	var item_count = history.HistoryItemList.size()
 	if item_count <= keep_recent + 1:  # +1 for potential system prompt
 		return false  # Not enough messages to compact
@@ -579,6 +585,8 @@ func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MES
 
 	# Try LLM summarization, fall back to naive
 	var summary_text := await _try_llm_summarize(conversation_text, summarize_end - summarize_start)
+	if (still_current.is_valid() and not still_current.call()) or history.HistoryItemList.size() != item_count:
+		return false
 	if summary_text.is_empty():
 		# Naive fallback
 		summary_text = """### Conversation Summary ###
@@ -658,8 +666,8 @@ Key points from earlier conversation:
 
 
 ## Legacy wrapper: calls compact_chat for agent mode.
-func summarize_agent_history(history: ChatHistory) -> void:
-	await compact_chat(history)
+func summarize_agent_history(history: ChatHistory, still_current: Callable = Callable()) -> void:
+	await compact_chat(history, AGENT_KEEP_RECENT_MESSAGES, still_current)
 
 
 ## Attempt LLM-powered summarization. Returns empty string on failure (triggers naive fallback).
@@ -807,7 +815,10 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 	return model_msg_node
 
 # Generate content from provider
-func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+## `turn_token`, when given, is the turn the request is for: an answer that
+## arrives after the turn was stopped changes nothing of the chat's state
+## (its cost is still recorded).
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, turn_token: int = -1) -> Variant:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
 	print("[ChatPane] generate_content_from_provider called, provider: %s" % provider.provider_name)
 	var bot_response
@@ -846,7 +857,8 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 		bot_response.set_meta("error_code", "provider_disabled")
 	else:
 		bot_response = await provider.generate_content(history_list, optional_params)
-	if bot_response and not str(bot_response.error).is_empty():
+	var stopped := turn_token >= 0 and _turn_stopped(history, turn_token)
+	if bot_response and not str(bot_response.error).is_empty() and not stopped:
 		if provider_override == null or provider_override == history.provider:
 			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
 		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
@@ -1823,10 +1835,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	var history_list = await create_prompt(chi, false, history.provider, predicate, history, turn_token)
 	if _turn_stopped(history, turn_token):
-		# Stopped before anything was sent: the empty response goes too.
-		history.HistoryItemList.erase(existing_response)
-		if is_instance_valid(existing_response.rendered_node):
-			existing_response.rendered_node.queue_free()
+		_drop_item(history, existing_response)
 		return
 
 	# Ensure rendered_node exists (may have been freed if message was deleted)
@@ -1835,7 +1844,10 @@ func regenerate_response(chi: ChatHistoryItem):
 	if existing_response.rendered_node:
 		existing_response.rendered_node.loading = true
 
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response = await generate_content_from_provider(history, history_list, null, null, turn_token)
+	if _turn_stopped(history, turn_token):
+		_drop_item(history, existing_response)
+		return
 
 	# if there was an error with the request
 	if not bot_response:
@@ -2122,6 +2134,13 @@ func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
 	_drain_outgoing_queue(history)
 
 
+# A regeneration's placeholder response, dropped when its turn was stopped.
+func _drop_item(history: ChatHistory, item: ChatHistoryItem) -> void:
+	history.HistoryItemList.erase(item)
+	if is_instance_valid(item.rendered_node):
+		item.rendered_node.queue_free()
+
+
 ## Whether turn `turn_token` of `history` was stopped (and maybe replaced)
 ## while it waited: it must then change nothing more and send nothing.
 func _turn_stopped(history: ChatHistory, turn_token: int) -> bool:
@@ -2291,7 +2310,10 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 			await dialog.visibility_changed  # Wait for dialog to close
 			dialog.queue_free()
 			if compacted["value"]:
-				await compact_chat(history)
+				await compact_chat(history, AGENT_KEEP_RECENT_MESSAGES,
+					func() -> bool: return not _turn_stopped(history, turn_token))
+				if _turn_stopped(history, turn_token):
+					return
 				if history.VBox:
 					history.VBox.render_history(history)
 
@@ -2330,11 +2352,16 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response = await generate_content_from_provider(history, history_list, null, null, turn_token)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
 
 	# Stop the status relay the instant the generate resolves (success/error/cancel).
 	_passthrough_end_relay(_pt_status, bot_response, model_msg_node, dummy_item)
+	if _turn_stopped(history, turn_token):
+		# Its response is not in the history; neither is its bubble, then.
+		if is_instance_valid(model_msg_node):
+			model_msg_node.queue_free()
+		return
 
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
@@ -2657,9 +2684,10 @@ func _get_last_model_history_item(history: ChatHistory) -> ChatHistoryItem:
 
 ## Add tool_result blocks for tools that were not executed (due to cancellation, limits, etc.)
 ## This ensures the conversation can continue without API errors about missing tool_results.
-func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String) -> void:
+func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String,
+		outcome: String = "Tool not executed") -> void:
 	var model_chi = _get_last_model_history_item(history)
-	var error_result = JSON.stringify({"error": "Tool not executed: %s" % reason})
+	var error_result = JSON.stringify({"error": "%s: %s" % [outcome, reason]})
 
 	for tool_call in tool_calls:
 		var tool_id: String = tool_call.get("id", "")
@@ -2693,8 +2721,8 @@ func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reaso
 
 
 ## Gives every tool call made since the chat's last user message that has no
-## result yet a "not executed" result saying `reason` (see
-## _add_unexecuted_tool_results).
+## result yet one saying `reason`: "not executed", or TOOL_OUTCOME_UNKNOWN for
+## the call whose tool is running (see _add_unexecuted_tool_results).
 func _close_open_tool_calls(history: ChatHistory, reason: String) -> void:
 	var start := 0
 	for i in range(history.HistoryItemList.size() - 1, -1, -1):
@@ -2707,12 +2735,47 @@ func _close_open_tool_calls(history: ChatHistory, reason: String) -> void:
 		if item.Role == ChatHistoryItem.ChatRole.TOOL:
 			answered[item.ToolCallId] = true
 	var open: Array = []
+	var running: Array = []
 	for item: ChatHistoryItem in turn:
 		for call in item.ToolCalls:
-			if not answered.has(str(call.get("id", ""))):
+			var id := str(call.get("id", ""))
+			if answered.has(id):
+				continue
+			if id == str(_tools_in_flight.get(history.HistoryId, "")):
+				running.append(call)
+			else:
 				open.append(call)
 	if not open.is_empty():
 		_add_unexecuted_tool_results(history, open, reason)
+	# A call already sent to its tool may have done its work: its outcome is
+	# unknown until (unless) the tool answers (_record_late_tool_result).
+	if not running.is_empty():
+		_add_unexecuted_tool_results(history, running, reason, TOOL_OUTCOME_UNKNOWN)
+
+
+## What a tool call that was running when its turn was stopped is answered:
+## it may have completed.
+const TOOL_OUTCOME_UNKNOWN := "Tool outcome unknown (it was running and may have completed)"
+
+
+## The result of tool call `tool_id` that arrived after its turn was stopped
+## replaces, in place, the TOOL_OUTCOME_UNKNOWN answer Stop gave it, so what
+## the tool did is kept and the history keeps its order.
+func _record_late_tool_result(history: ChatHistory, tool_id: String, result: Dictionary) -> void:
+	var text := truncate_tool_result(_filter_tool_result_text(JSON.stringify(result)),
+		history.AgentMaxToolResultLength)
+	var is_error = result.get("error") != null
+	for item: ChatHistoryItem in history.HistoryItemList:
+		if item.Role == ChatHistoryItem.ChatRole.TOOL and item.ToolCallId == tool_id \
+				and item.Message.contains(TOOL_OUTCOME_UNKNOWN):
+			item.Message = text
+		# What the person sees of the call: its execution entries and node.
+		for entry in item.ToolExecutions:
+			if str(entry.get("call_id", "")) == tool_id:
+				entry["result"] = text
+				entry["status"] = "error" if is_error else "done"
+				if is_instance_valid(item.rendered_node):
+					item.rendered_node.update_tool_execution(tool_id, text, is_error)
 
 
 ## Clean up UI state after agent mode finishes (success or error).
@@ -2835,6 +2898,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 	# The turn was stopped (and maybe replaced): nothing more is done for it.
 	var stopped := func() -> bool: return turn_token >= 0 and _turn_stopped(history, turn_token)
+	var still_current := func() -> bool: return not stopped.call()
 	if stopped.call():
 		return
 
@@ -2928,10 +2992,14 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				result["_deduped"] = true
 				print("[Agent] Dedup: reusing result for %s" % tool_name)
 			else:
+				_tools_in_flight[history.HistoryId] = tool_id
 				result = await _execute_with_document_recovery(mcp_manager,
 					unsupported_guard, tool_name, tool_args, live_document_identity,
 					current_round, history.HistoryId, history)
+				if _tools_in_flight.get(history.HistoryId) == tool_id:
+					_tools_in_flight.erase(history.HistoryId)
 				if stopped.call():
+					_record_late_tool_result(history, tool_id, result)
 					return
 				_batch_cache[call_hash] = result
 
@@ -2992,7 +3060,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# floating-summary generation so blocked parent chats still show work.
 		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = true
-		await history.tool_memory_manager.fold_tool_result(history)
+		await history.tool_memory_manager.fold_tool_result(history, still_current)
 		if stopped.call():
 			return
 
@@ -3037,7 +3105,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	elif context_status.warning:
 		# Warning threshold - try to summarize
 		if context_status.estimated_tokens >= context_status.summarize_threshold:
-			await summarize_agent_history(history)
+			await summarize_agent_history(history, still_current)
 			if stopped.call():
 				return
 			var new_size = estimate_agent_context_size(history)
@@ -3079,7 +3147,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		model_chi.rendered_node.loading_append = true
 
 	# Get LLM's response to tool results
-	var continuation_response = await generate_content_from_provider(history, continuation_list)
+	var continuation_response = await generate_content_from_provider(history, continuation_list, null, null, turn_token)
 	if stopped.call():
 		return
 
@@ -3101,7 +3169,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			await get_tree().create_timer(1.0).timeout
 			if stopped.call():
 				return
-			continuation_response = await generate_content_from_provider(history, continuation_list)
+			continuation_response = await generate_content_from_provider(history, continuation_list, null, null, turn_token)
 			if stopped.call():
 				return
 			if continuation_response and not continuation_response.error:
@@ -3276,7 +3344,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		dummy_item.provider = history.provider
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
-		var bot_response = await generate_content_from_provider(history, history_list)
+		var bot_response = await generate_content_from_provider(history, history_list, null, null, turn_token)
 		if _turn_stopped(history, turn_token):
 			return
 		
@@ -3442,7 +3510,9 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	
 	
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response = await generate_content_from_provider(history, history_list, null, null, run.turn_token)
+	if _turn_stopped(history, run.turn_token):
+		return
 	
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
