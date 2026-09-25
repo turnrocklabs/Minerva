@@ -7,6 +7,11 @@ class Lifetime extends RefCounted:
 	signal cancelled
 	var reason := ""
 	var deadline_ms: int = 0
+	## Set when a plugin backend call is sent (begin_dispatch()).
+	var dispatched := false
+	## Seconds a backend call may take from when it is sent; 0 for no such
+	## budget.
+	var dispatch_seconds := 0.0
 
 	func stop(value: String) -> void:
 		if reason.is_empty():
@@ -61,6 +66,15 @@ func for_provider(owner: String) -> MCPExecutionContext:
 	var child := for_plugin(plugin_id)
 	child.provider_plugin_id = owner
 	return child
+
+
+## Marks the backend call as sent. A lifetime with dispatch_seconds gets its
+## deadline now, so the time spent before (policy admission, the host's
+## checks) does not shorten the call.
+func begin_dispatch() -> void:
+	lifetime.dispatched = true
+	if lifetime.dispatch_seconds > 0.0:
+		lifetime.deadline_ms = Time.get_ticks_msec() + ceili(lifetime.dispatch_seconds * 1000.0)
 
 
 func cancel() -> void:

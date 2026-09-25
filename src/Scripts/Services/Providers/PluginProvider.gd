@@ -10,6 +10,15 @@ extends BaseProvider
 ## {kind:"pending"} means the turn outlived one call; the same operation is
 ## resumed until it ends (see _dispatch_call).
 ##
+## A plugin's generate tool may act (type into a terminal, run an agent), so
+## each call of it, a resume included, is a governed plugin tool call: admitted
+## by the policy in MinervaMCPServer, then checked and dispatched by
+## PluginToolRegistry, in an execution context owned by this provider's chat
+## whose timeout starts when the call is sent (see _generate). A stop, or a
+## newer call, cancels that context, so a call still being admitted is never
+## sent; the cancel and interrupt tools are called directly, so a stop always
+## reaches an operation that was sent.
+##
 ## This path is a DETERMINISTIC transport — there is NO LLM in it, ever. Token
 ## counts come from the plugin's reply if present, else 0.
 ##
@@ -52,7 +61,15 @@ var _active_plugin_id: String = ""
 var _interrupt_requested: bool = false
 var interrupt_error: String = ""
 
-## Fired by the async call_tool helper when a dispatch completes (success or
+## The execution context of the governed call in flight (see _generate):
+## cancelled by a stop and when a newer call starts.
+var _active_context: MCPExecutionContext = null
+## The latest generation whose operation was sent to the plugin.
+var _sent_generation: int = 0
+## A generation interrupted before its operation was sent.
+var _interrupted_unsent: int = 0
+
+## Fired by the async dispatch helper when a dispatch completes (success or
 ## transport error). generate_content awaits EITHER this or the cancel hook.
 signal _call_settled(generation: int)
 
@@ -91,9 +108,15 @@ func configure_from_entry(entry: Dictionary) -> PluginProvider:
 
 func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {}) -> BotResponse:
 	# New call → new generation token. Any prior in-flight call's late reply now
-	# has a stale token and will be discarded silently by its helper.
+	# has a stale token and will be discarded silently by its helper, and a
+	# prior call not yet sent never is (its context is cancelled once the new
+	# generation is in place, so it completes as superseded).
+	var superseded := _active_context
+	_active_context = null
 	_call_generation += 1
 	var generation: int = _call_generation
+	if superseded != null:
+		superseded.cancel()
 	_clear_active_operation(generation)
 	var bot := BotResponse.new()
 	bot.provider = self
@@ -151,7 +174,7 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 	# EITHER that completion OR the cancel hook, whichever comes first — so a
 	# cancel returns promptly even when the plugin has no cancel_tool and the
 	# underlying call_tool would otherwise block until its (long) timeout.
-	_dispatch_call(conn, args, timeout_sec, generation)
+	_dispatch_call(args, timeout_sec, generation)
 
 	# If a stop already arrived for this generation (cancel raced ahead of the
 	# await), short-circuit. Otherwise wait for settle-or-cancel.
@@ -209,8 +232,10 @@ func _clear_pending(generation: int) -> void:
 ## generation, then signal. If the generation has been superseded by the time
 ## the call resolves (a newer generate_content started), the late reply is
 ## dropped silently — no stored result, no second chat_completed.
-func _dispatch_call(conn, args: Dictionary, timeout_sec: float, generation: int) -> void:
-	var raw = await conn.call_tool(generate_tool, args, timeout_sec)
+func _dispatch_call(args: Dictionary, timeout_sec: float, generation: int) -> void:
+	var raw = await _generate(args, timeout_sec, generation)
+	if _interrupted_unsent == generation:
+		raw = {"error": "Interrupted before the message was sent to the plugin; nothing was sent."}
 	# A turn longer than one call comes back "pending" under this call's own
 	# operation token: keep waiting on that same operation (nothing is re-sent)
 	# until it ends, while this generation is still the live, uncancelled one.
@@ -218,14 +243,14 @@ func _dispatch_call(conn, args: Dictionary, timeout_sec: float, generation: int)
 	# is still waiting.
 	var token := str(args.get("operation_token", ""))
 	while _resumable() and _is_resumable_pending(raw, token) and _generation_live(generation):
-		raw = await conn.call_tool(generate_tool, {
+		raw = await _generate({
 			"chat_id": args.get("chat_id", ""),
 			"entry_id": args.get("entry_id", ""),
 			"operation_token": token,
 			"text": "",
 			"resume": true,
 			"wait_budget_ms": args.get("wait_budget_ms", 0),
-		}, timeout_sec)
+		}, timeout_sec, generation)
 	if generation != _call_generation or generation <= _consumed_generation:
 		# Stale: a newer call superseded us, OR this generation's turn already
 		# resolved (e.g. via cancel). Discard silently — no stored result, no
@@ -233,6 +258,42 @@ func _dispatch_call(conn, args: Dictionary, timeout_sec: float, generation: int)
 		return
 	_pending_results[generation] = raw
 	_call_settled.emit(generation)
+
+
+## One call of the plugin's generate tool with `args` for `generation`, as a
+## governed plugin tool call (see the class comment), which may take
+## `timeout_sec` once sent: its result, or {error} when it was not admitted,
+## was stopped before it was sent, or cannot be governed because the plugin
+## registers no such tool or the host's tool server is not running.
+func _generate(args: Dictionary, timeout_sec: float, generation: int) -> Dictionary:
+	var registry = SingletonObject.get("plugin_tool_registry")
+	var tool_name: String = registry.tool_for(plugin_id, generate_tool) if registry != null else ""
+	if tool_name.is_empty():
+		return {"error": "Plugin '%s' registers no tool '%s', so its reply cannot be requested as a governed call." % [plugin_id, generate_tool]}
+	var manager = SingletonObject.get("mcp_manager")
+	var server = manager.get("minerva_server") if manager != null else null
+	if server == null:
+		return {"error": "The host's tool server is not running, so plugin '%s' cannot be asked for a reply." % plugin_id}
+	if generation != _call_generation or _cancelled_generation == generation:
+		return {"error": "Request cancelled."}
+	var context := MCPExecutionContext.create("provider", owner_history_id)
+	context.lifetime.dispatch_seconds = timeout_sec
+	_active_context = context
+	var result: Dictionary = await server.call_tool(tool_name, args, context)
+	if context.lifetime.dispatched and generation > _sent_generation:
+		_sent_generation = generation
+	if _active_context == context:
+		_active_context = null
+	return result
+
+
+# Cancelling completes the call synchronously, so the context is detached
+# first and callers set the cancelled or superseded state before this.
+func _cancel_active_context() -> void:
+	var context := _active_context
+	_active_context = null
+	if context != null:
+		context.cancel()
 
 
 ## The entry registered {metadata: {resumable: true}}: it answers "pending"
@@ -351,6 +412,8 @@ func cancel_active_resquests() -> void:
 		args["operation_token"] = _active_operation_token
 	if _call_generation > 0:
 		_cancelled_generation = _call_generation
+	_cancel_active_context()
+	if _call_generation > 0:
 		_call_settled.emit(_call_generation)
 	if cancel_tool.is_empty():
 		return
@@ -380,6 +443,12 @@ func interrupt_active_request() -> bool:
 	_interrupt_requested = true
 	var generation := _call_generation
 	var operation_token := _active_operation_token
+	# Not sent yet (still being admitted): the plugin does not know the
+	# operation, so it is stopped here and never sent.
+	if _sent_generation != generation and _active_context != null and not _active_context.lifetime.dispatched:
+		_interrupted_unsent = generation
+		_cancel_active_context()
+		return true
 	var pm = _get_plugin_manager()
 	if pm == null:
 		_set_interrupt_error(generation, "Plugin manager unavailable; terminal interrupt was not sent.")
@@ -480,5 +549,8 @@ func _get_plugin_manager():
 	return null
 
 
-## Test-only injection of a stub plugin manager exposing get_connection().
+## Test-only injection of a stub plugin manager exposing get_connection(),
+## used for the running check and the cancel and interrupt tools; the generate
+## call itself goes through the registry and the host's tool server
+## (_generate).
 var _test_plugin_manager = null

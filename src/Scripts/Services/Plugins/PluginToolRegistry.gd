@@ -343,6 +343,16 @@ func find_tool(tool_name: String) -> Dictionary:
 	return {}
 
 
+## The registered name of plugin `plugin_id`'s tool that its backend calls
+## `backend_name` (a discovered tool's name may carry a prefix the backend's
+## does not), or "" when the plugin registers no such tool.
+func tool_for(plugin_id: String, backend_name: String) -> String:
+	for entry: Dictionary in _tools_by_plugin.get(plugin_id, []):
+		if str(entry.get("_backend_name", entry.get("name", ""))) == backend_name:
+			return str(entry.get("name", ""))
+	return ""
+
+
 ## Return true if tool_name is a plugin-registered tool (not a built-in).
 func is_plugin_tool(tool_name: String) -> bool:
 	return _plugin_by_tool.has(tool_name)
@@ -487,6 +497,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	if not refused.is_empty():
 		return ToolCallOutcome.failure(refused, "refused_by_host")
 
+	context.begin_dispatch()
 	var outcome = await conn.call_tool_outcome_with_context(dispatch_name, args, context)
 	plugin_manager.backend_tool_called.emit(plugin_id, dispatch_name)
 	if context.is_stopped():

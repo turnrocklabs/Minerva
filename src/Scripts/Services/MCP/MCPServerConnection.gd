@@ -460,7 +460,7 @@ func call_tool_outcome_with_context(tool_name: String, arguments: Dictionary,
 			return await _call_tool_http_outcome(tool_name, arguments, context)
 		TransportType.STDIO:
 			return await _call_tool_stdio_outcome(tool_name, arguments,
-				context.remaining_seconds(), context)
+				_stdio_budget(context), context)
 		TransportType.WEBSOCKET:
 			var websocket_outcome = ToolCallOutcome.new()
 			websocket_outcome.application = await _call_tool_websocket(tool_name, arguments, context)
@@ -468,10 +468,17 @@ func call_tool_outcome_with_context(tool_name: String, arguments: Dictionary,
 	return ToolCallOutcome.failure("Result-aware transport is unavailable")
 
 
+# How long a stdio call in `context` may wait: until the context's own
+# deadline when it has one (which may be longer than the usual 120 s, as a
+# plugin chat provider's turn is), else 120 s.
+static func _stdio_budget(context: ExecutionContext) -> float:
+	return context.remaining_seconds(0.0) if context.lifetime.deadline_ms > 0 else 120.0
+
+
 func _call_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	match transport:
 		TransportType.STDIO:
-			return await _call_tool_stdio(tool_name, arguments, context.remaining_seconds(), context)
+			return await _call_tool_stdio(tool_name, arguments, _stdio_budget(context), context)
 		TransportType.HTTP:
 			return await _call_tool_http(tool_name, arguments, context)
 		TransportType.WEBSOCKET:
