@@ -379,6 +379,11 @@ func _dispatch_to_plugin_backend(
 	var conn: MCPServerConnection = plugin_manager.get_connection(plugin_id)
 	if conn == null:
 		return PluginErrors.plugin_not_running(plugin_id)
+	var refused: String = await plugin_manager.check_backend_tool(plugin_id, message_type, payload)
+	if plugin_manager.get_connection(plugin_id) != conn:
+		return PluginErrors.plugin_not_running(plugin_id)
+	if not refused.is_empty():
+		return PluginErrors.refused_by_host(plugin_id, refused)
 
 	# Keep the caller's execution context attached through the backend await.
 	var plugin_context = context.for_plugin(plugin_id) if context != null else null
@@ -387,6 +392,7 @@ func _dispatch_to_plugin_backend(
 		call_result = await conn.call_tool_with_context(message_type, payload, plugin_context)
 	else:
 		call_result = await conn.call_tool(message_type, payload)
+	plugin_manager.backend_tool_called.emit(plugin_id, message_type)
 	if plugin_manager.get_connection(plugin_id) != conn:
 		return PluginErrors.plugin_not_running(plugin_id)
 	if plugin_context != null and plugin_context.is_stopped():

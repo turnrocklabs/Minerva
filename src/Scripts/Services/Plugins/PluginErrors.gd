@@ -63,6 +63,16 @@ static func permission_denied(plugin_id: String, detail: String = "") -> Diction
 	}
 
 
+## The host refused a panel's call of its plugin's backend, saying why.
+static func refused_by_host(plugin_id: String, reason: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PERMISSION_DENIED,
+		"error_message": reason,
+		"plugin_id": plugin_id,
+	}
+
+
 ## Plugin requested a capability that hasn't been granted.
 static func capability_not_granted(plugin_id: String, capability: String) -> Dictionary:
 	return {

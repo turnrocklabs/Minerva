@@ -41,7 +41,8 @@ extends RefCounted
 ## answer is refused (a save already sent is not undone, only not reported
 ## as the current item's; a late grant is revoked) and nothing is kept for
 ## it; a panel found with another attachment loses its binding and grant.
-## The secret, sessions and grants never leave this object.
+## The secret, sessions and grants never leave this object; the host's own
+## methods of the channel go through host_request, which adds the secret.
 
 ## What a panel may ask: its tool calls (method_prefix + "call"), binding the
 ## item it shows, a save of that item, a move to another status or a file
@@ -71,6 +72,12 @@ class _Panel extends RefCounted:
 	var grant: Dictionary = {}
 
 var plugin_id: String
+## Awaited before a panel's tool call goes, with (tool, arguments): a
+## non-empty String refuses it with that message (PluginManager's guard).
+var tool_guard: Callable
+## Called with (tool) once a panel's tool call has ended, answered or not
+## (it may have changed something).
+var tool_called: Callable
 var _connection  # MCPServerConnection
 var _prefix: String
 var _secret_env: String
@@ -102,6 +109,26 @@ func env_for_generation(generation: int) -> Dictionary:
 ## session or grants (the panel name this host registers it by).
 static func origin_of(panel_key: String) -> String:
 	return "panel:%s" % panel_key
+
+
+## The host's own method `name` of the channel (never a panel's), with
+## `params` and the process's secret: {result}, or a refusal when it failed
+## or the plugin's process changed before it was answered.
+func host_request(name: String, params: Dictionary) -> Dictionary:
+	for argument in HOST_ARGUMENTS:
+		if params.has(argument):
+			return _refusal("host_argument", "%s is added here" % argument)
+	if not _is_current():
+		return _refusal("backend_restarted", "the plugin's process is not running")
+	var generation := _generation
+	var sent := params.duplicate()
+	sent["panel_secret"] = _secret
+	var answered: Dictionary = await _connection.request_method(_prefix + name, sent)
+	if generation != _generation or not _is_current():
+		return _refusal("backend_restarted", "the plugin's process changed while the host waited")
+	if answered.has("error"):
+		return _refusal("backend_error", str(answered.error))
+	return {"result": answered.get("result", {})}
 
 
 ## The broker registered panel `panel_key` as `generation`: a different
@@ -171,12 +198,22 @@ func handle(panel_key: String, generation: int, action: String, params: Dictiona
 		_unbind(state)
 	match action:
 		"call":
+			var tool := str(params.get("name", ""))
+			var arguments = params.get("arguments", {})
+			if not arguments is Dictionary:
+				return _refusal("invalid_request", "a tool's arguments are an object")
+			if tool_guard.is_valid():
+				var refused := str(await tool_guard.call(tool, arguments))
+				if not refused.is_empty():
+					return _refusal("refused_by_host", refused)
 			var session := await _session_for(state)
 			if session.has("error_code"):
 				return session
-			return await _request(state, "call", {"panel_session": session.session,
-				"name": str(params.get("name", "")), "arguments": params.get("arguments", {}),
-				"operation_id": str(params.get("operation_id", ""))})
+			var answered := await _request(state, "call", {"panel_session": session.session,
+				"name": tool, "arguments": arguments, "operation_id": str(params.get("operation_id", ""))})
+			if tool_called.is_valid():
+				tool_called.call(tool)
+			return answered
 		"select_item":
 			return await _select(state, str(params.get("project", "")), str(params.get("id", "")),
 				_Guard.new(state, attached, attached_of))

@@ -70,6 +70,12 @@ const Seeding := preload("res://Scripts/Services/Plugins/PluginContentSeeding.gd
 # ---------------------------------------------------------------------------
 
 signal plugin_started(id: String)
+## Plugin `id`'s process has started and its backend tools are discovered
+## (start_plugin succeeded): from now on they can be called.
+signal plugin_ready(id: String)
+## An agent's or a panel's call of backend tool `tool` of plugin `id` has
+## ended, answered or not (so it may have changed something there).
+signal backend_tool_called(id: String, tool: String)
 signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
@@ -112,6 +118,12 @@ var _db = null  # PluginDB — initialized in _ready to avoid parse-order issues
 
 ## id -> runtime Dictionary (see comment above)
 var _runtime: Dictionary = {}
+## Plugin id → Callable(tool: String, arguments: Dictionary) -> String,
+## awaited before an agent's call of one of that plugin's backend tools
+## through the tool registry, or a panel's through its broker or private
+## channel (never the host's own calls): a non-empty answer refuses the call
+## with that message.
+var _backend_tool_guards: Dictionary = {}
 
 ## Accumulated time since last health-check sweep.
 var _health_timer_acc: float = 0.0
@@ -709,6 +721,9 @@ func _start_plugin_now(id: String) -> Dictionary:
 	rt["panel_authority"] = null
 	if not def.panel_authority.is_empty():
 		var authority := PluginPanelAuthority.new(id, conn, def.panel_authority)
+		authority.tool_guard = func(tool: String, arguments: Dictionary) -> String:
+			return await check_backend_tool(id, tool, arguments)
+		authority.tool_called = func(tool: String) -> void: backend_tool_called.emit(id, tool)
 		conn.stdio_env_for_generation = authority.env_for_generation
 		rt["panel_authority"] = authority
 	rt["start_time"] = Time.get_unix_time_from_system()
@@ -769,7 +784,27 @@ func _start_plugin_now(id: String) -> Dictionary:
 			_transition_state(id, S_ERROR)
 			return {"error": contract_issue}
 
+	plugin_ready.emit(id)
 	return {"ok": true}
+
+
+## Sets (or, given an invalid Callable, clears) plugin `id`'s guard of its
+## backend tools (see _backend_tool_guards).
+func set_backend_tool_guard(id: String, guard: Callable) -> void:
+	if guard.is_valid():
+		_backend_tool_guards[id] = guard
+	else:
+		_backend_tool_guards.erase(id)
+
+
+## "" when an agent's or a panel's call of backend tool `tool` of plugin `id`
+## with `arguments` may go, else why it may not.
+func check_backend_tool(id: String, tool: String, arguments: Dictionary) -> String:
+	var guard: Callable = _backend_tool_guards.get(id, Callable())
+	if not guard.is_valid():
+		return ""
+	var answer = await guard.call(tool, arguments)
+	return answer if answer is String else "the host could not check the call of %s" % tool
 
 
 func _owns_runtime_connection(id: String, connection) -> bool:

@@ -1705,11 +1705,19 @@ func _dispatch_to_plugin_backend(
 	var conn: MCPServerConnection = plugin_manager.get_connection(plugin_id)
 	if conn == null:
 		return PluginErrors.plugin_not_running(plugin_id)
+	if plugin_manager.has_method("check_backend_tool"):
+		var refused: String = await plugin_manager.check_backend_tool(plugin_id, channel, payload)
+		if plugin_manager.get_connection(plugin_id) != conn:
+			return PluginErrors.plugin_not_running(plugin_id)
+		if not refused.is_empty():
+			return PluginErrors.refused_by_host(plugin_id, refused)
 
 	# MCP tools/call: tool name = channel, arguments = payload. Use the generous
 	# scene-backend budget — the default 120s strands long backend jobs.
 	var outcome = await conn.call_tool_outcome(
 		channel, payload, SCENE_BACKEND_CALL_TIMEOUT_SEC)
+	if plugin_manager.has_signal("backend_tool_called"):
+		plugin_manager.backend_tool_called.emit(plugin_id, channel)
 
 	if outcome == null:
 		return PluginErrors.schema_validation_failed(plugin_id,

@@ -479,8 +479,16 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	if not input_check.get("ok", false):
 		return ToolCallOutcome.failure("Plugin tool arguments do not match its native MCP schema",
 			str(input_check.get("error", {}).get("code", "invalid_arguments")))
+	var refused: String = await plugin_manager.check_backend_tool(plugin_id, dispatch_name, args)
+	if plugin_manager.get_connection(plugin_id) != conn:
+		return ToolCallOutcome.failure("Plugin connection changed while the host checked the call")
+	if context.is_stopped():
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if not refused.is_empty():
+		return ToolCallOutcome.failure(refused, "refused_by_host")
 
 	var outcome = await conn.call_tool_outcome_with_context(dispatch_name, args, context)
+	plugin_manager.backend_tool_called.emit(plugin_id, dispatch_name)
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if plugin_manager.get_connection(plugin_id) != conn:
