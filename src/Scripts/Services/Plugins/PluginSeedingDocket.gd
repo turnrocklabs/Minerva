@@ -137,14 +137,16 @@ func binding_key(project: String) -> String:
 ## Docket access, its journal left pending to be repaired by hand (a name
 ## never goes to whatever project it names now). Each is then bound to the
 ## project open at its path (one not open is missing), and no other name is
-## bound for the rest of the operation. Nothing is done under the embedded
+## bound for the rest of the operation. With `enumerating` (a removal's
+## retry, which reaches every project it listed), a journal must also list
+## those projects' files, even as none. Nothing is done under the embedded
 ## owner, whose recovery goes by name.
-func pin(journal: Dictionary, required: Array) -> void:
+func pin(journal: Dictionary, required: Array, enumerating := false) -> void:
 	if not _plugin_owner:
 		return
 	var recorded = journal.get("paths")
 	var paths: Dictionary = recorded if recorded is Dictionary else {}
-	var enumerated = journal.get("enumerated", [])
+	var enumerated = journal.get("enumerated", null if enumerating else [])
 	var names := {}
 	for name in required + paths.keys():
 		names["" if str(name) == MASTER else str(name)] = true
@@ -208,30 +210,41 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	if found.has("error"):
 		return found
 	var answered: Dictionary = await _target.call_bound(found, tool, arguments)
+	var changing: bool = tool in CHANGING or tool == "docket_flush"
 	if answered.get("stale", false):
 		_stopped = "Docket changed while plugin content was being written (%s)" % answered.error
-		if answered.get("sent", false) and tool in CHANGING:
+		if answered.get("sent", false) and changing:
 			_uncertain.append({"tool": tool, "arguments": _portable(arguments),
 				"project_path": str(found.project.get("path", ""))})
 		return {"error": _stopped}
 	if answered.has("error"):
-		# A change sent but not confirmed (a timeout, a lost connection) may
-		# have been made: the operation stops, and it is uncertain.
-		if answered.get("unconfirmed", false) and (tool in CHANGING or tool == "docket_flush"):
+		# A change that was sent and then failed in any way (a timeout, a lost
+		# connection, a bad reply, even Docket's own error) may have been
+		# made: the operation stops, and it is uncertain.
+		if answered.get("unconfirmed", false) and changing:
 			_stopped = "Docket did not confirm a change it was sent (%s)" % answered.error
 			_uncertain.append({"tool": tool, "arguments": _portable(arguments),
 				"project_path": str(found.project.get("path", ""))})
 			return {"error": _stopped}
 		return _read_checked(tool, {"error": str(answered.error)})
-	return answered.value if answered.get("value") is Dictionary \
-		else _read_checked(tool, {"error": "%s answered %s" % [tool, str(answered)]})
+	if not answered.get("value") is Dictionary:
+		return _read_checked(tool, {"error": "%s answered %s" % [tool, str(answered)]})
+	# A create answered without the new record's id may still have made it.
+	if tool == "docket_create" and str(answered.value.get("id", "")).is_empty():
+		_stopped = "Docket did not say which record it created (%s)" % str(answered.value)
+		_uncertain.append({"tool": tool, "arguments": _portable(arguments),
+			"project_path": str(found.project.get("path", ""))})
+		return {"error": _stopped}
+	return answered.value
 
 
 ## Whether `project` (a name, "" or "master" being the master, or an
 ## OpenProject) is open.
 func has_project(project) -> bool:
+	if not _stopped.is_empty():
+		return false
 	if not unavailable().is_empty():
-		_stopped = unavailable() if _stopped.is_empty() else _stopped
+		_stopped = unavailable()
 		return false
 	if _plugin_owner:
 		return not (await _target_of(project)).has("error")
@@ -248,7 +261,7 @@ func has_project(project) -> bool:
 ## OpenProject, by their paths, listed afresh by the plugin: a list that
 ## cannot be had stops the operation, rather than leave a project out).
 func project_names() -> Array:
-	if not unavailable().is_empty():
+	if not _stopped.is_empty() or not unavailable().is_empty():
 		return []
 	if _plugin_owner:
 		var listed: Dictionary = await _target.open_projects()

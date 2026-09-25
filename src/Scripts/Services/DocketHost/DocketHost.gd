@@ -941,10 +941,11 @@ func _call(connection, tool: String, arguments: Dictionary) -> Dictionary:
 		return {"error": "the Docket plugin is not running"}
 	var answered: Dictionary = await connection.call_tool(tool, arguments)
 	if answered.has("error") or answered.get("success", true) == false:
-		# A request that timed out or lost its connection (local_error) may
-		# have been carried out: `unconfirmed`, unlike Docket's own refusal.
-		return {"error": str(answered.get("error", answered.get("error_message", "%s failed" % tool))),
-			"unconfirmed": answered.get("local_error", false)}
+		# Once the request went out, no failure shows that nothing was changed:
+		# not a timeout or lost connection, not a reply that failed validation,
+		# not Docket's own error text (success false). All are `unconfirmed`.
+		return {"error": str(answered.get("error", answered.get("text", answered.get("error_message", "%s failed" % tool)))),
+			"unconfirmed": true}
 	return {"value": answered}
 
 

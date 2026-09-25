@@ -317,11 +317,17 @@ func _process(delta: float) -> void:
 ## Returns {"error": "..."} on install failure.
 func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
+	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+	var check_def = PluginDef.from_manifest(manifest_path, lane)
+	# Docket content an earlier removal or install of this plugin left to
+	# finish goes first: a new install would be taken for it (as MarketplaceClient).
+	if check_def != null and load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(
+			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)).any(
+			func(entry: Dictionary) -> bool: return entry.id == check_def.id):
+		return {"error": "Plugin '%s' has Docket content still to be repaired from an earlier install or removal; install it once that finishes" % check_def.id}
 	var def = _db.install(manifest_path, lane)
 	if def == null:
 		# PluginDB.install already push_error'd; check for duplicate separately.
-		var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-		var check_def = PluginDef.from_manifest(manifest_path, lane)
 		if check_def != null and _db.has_plugin(check_def.id):
 			return {"error": "Plugin '%s' is already installed" % check_def.id}
 		return {"error": "Failed to install plugin from manifest: %s" % manifest_path}
@@ -477,13 +483,20 @@ func reconcile_recovered() -> void:
 			if recovered.committed:
 				reason = await Seeding.content_committed_problem(journal)
 				done = reason.is_empty()
+			elif journal.get("removal", false) == true and _db.has_plugin(recovered.id):
+				# A removal saves its journal before removing the plugin: one
+				# still installed was not removed (or is installed again), so
+				# its content stays.
+				pass
 			else:
 				var result: Dictionary
 				if attempted != null:
 					result = await reconcile_after_rollback(attempted, journal)
 				else:
+					# Only a removal leaves a journal with no attempted
+					# version: its retry needs the open projects it listed.
 					var operation := Seeding.docket()
-					await operation.pin(journal, [""])
+					await operation.pin(journal, [""], true)
 					result = await Seeding.unseed(self, recovered.id, operation)
 				done = Seeding.complete(result)
 				journal["entries"] = result.get("journal_left", journal.get("entries", []))
@@ -525,28 +538,54 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	if def.state == S_BUILDING:
 		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
 
-	# The staging lock is held until the removal is saved, so no install
-	# replaces this plugin meanwhile. Its unfinished installs are marked
-	# first, so recovery after a crash does not bring it back once removed,
-	# and are dropped only once the record is gone from disk. Only stopping
-	# the plugin happens before that.
-	if _db.is_stale():
-		return {"error": "Another Minerva changed the plugin list; restart Minerva before removing '%s'" % id}
+	if _content_busy.has(id):
+		return {"error": "Plugin '%s' is already being removed or repaired; try again once that finishes" % id}
+
+	# Before anything is removed, the projects the removal will reach (the
+	# master and the knowledge project by name, which are recorded even
+	# while not open, and every open project by its file) are saved as a
+	# cleanup journal marked as a removal. The plugin is removed only once
+	# that is saved; a removal that does not finish leaves the journal for
+	# reconcile_recovered, whose retry reaches exactly those, no other.
+	_content_busy[id] = true
 	var Transaction = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
 	var staging_root := ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)
-	var removal: Dictionary = Transaction.begin_removal(staging_root, id)
-	if removal.has("error"):
-		return {"error": removal.error}
-	if def.state in [S_RUNNING, S_STARTING]:
-		var stop_result := stop_plugin(id)
-		if stop_result.get("error"):
-			Transaction.end_removal(staging_root, id, removal, false)
-			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
-	var removed: bool = _db.remove(id)
-	Transaction.end_removal(staging_root, id, removal, removed)
-	if not removed:
-		return {"error": "Failed to remove plugin '%s' from DB" % id}
-
+	var removal_docket := Seeding.docket()
+	var names: Array = [""]
+	if not def.knowledge.is_empty() and not def.knowledge_project in ["", "master"]:
+		names.append(def.knowledge_project)
+	for name in names:
+		await removal_docket.has_project(name)
+	# Each open project once: one already reached by its name is not added
+	# again by its file.
+	var named_paths: Array = removal_docket.bound_paths().values()
+	var scope: Array = names.duplicate()
+	for project in await removal_docket.project_names():
+		if project is String and ("" if project == "master" else project) in names:
+			continue
+		if not project is String and project.path in named_paths:
+			continue
+		scope.append(project)
+	removal_docket.scope_to(scope)
+	# Which projects are open is unknown when they could not be listed (the
+	# operation stopped): the journal says so (enumerated null), and its
+	# retry waits to be repaired by hand rather than miss one.
+	var cleanup := {"removal": true, "paths": removal_docket.bound_paths(), "enumerated":
+		removal_docket.enumerated_paths() if removal_docket.incomplete().is_empty() else null}
+	for name in names:
+		if not cleanup.paths.has(name):
+			cleanup.paths[name] = ""
+	var cleanup_path: String = Transaction.queue_cleanup(staging_root, id, cleanup,
+		"its Docket content was being removed")
+	if cleanup_path.is_empty():
+		_content_busy.erase(id)
+		return {"error": "Plugin '%s' was not removed: the record of which skills and knowledge to remove could not be saved in %s" % [
+			id, staging_root]}
+	var removed := _remove_record(id, def, Transaction, staging_root)
+	if removed.has("error"):
+		Transaction.content_done(cleanup_path)
+		_content_busy.erase(id)
+		return removed
 
 	_runtime.erase(id)
 	_setup_pipelines.erase(id)
@@ -571,54 +610,43 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	# customised ones kept as the user's), then recompute skill reactivity.
 	# Runs AFTER _db.remove so the uninstalled plugin's tools are no longer
 	# counted as available.
-	var result: Dictionary = {"ok": true}
-	# Before anything is removed, the projects the removal will reach (the
-	# master and the knowledge project by name, which are recorded even
-	# while not open, and every open project by its file) are saved as a
-	# cleanup journal; a removal that does not finish leaves it for
-	# reconcile_recovered, whose retry reaches exactly those, no other.
-	_content_busy[id] = true
-	var removal_docket := Seeding.docket()
-	var names: Array = [""]
-	if def != null and not def.knowledge.is_empty() and not def.knowledge_project in ["", "master"]:
-		names.append(def.knowledge_project)
-	for name in names:
-		await removal_docket.has_project(name)
-	# Each open project once: one already reached by its name is not added
-	# again by its file.
-	var named_paths: Array = removal_docket.bound_paths().values()
-	var scope: Array = names.duplicate()
-	for project in await removal_docket.project_names():
-		if project is String and ("" if project == "master" else project) in names:
-			continue
-		if not project is String and project.path in named_paths:
-			continue
-		scope.append(project)
-	removal_docket.scope_to(scope)
-	# Which projects are open is unknown when they could not be listed (the
-	# operation stopped): the journal says so (enumerated null), and its
-	# retry waits to be repaired by hand rather than miss one.
-	var cleanup := {"paths": removal_docket.bound_paths(), "enumerated":
-		removal_docket.enumerated_paths() if removal_docket.incomplete().is_empty() else null}
-	for name in names:
-		if not cleanup.paths.has(name):
-			cleanup.paths[name] = ""
-	var cleanup_path: String = Transaction.queue_cleanup(staging_root, id, cleanup,
-		"its Docket content was being removed")
-	if cleanup_path.is_empty():
-		# Without a record of its scope, a removal that stopped part-way could
-		# not be finished: nothing is removed, and the result says so.
-		result["content_skipped"] = "%s's skills and knowledge were not removed: the record of what to remove could not be saved in %s" % [
-			id, staging_root]
-		_content_busy.erase(id)
-		return result
-	result.merge(await Seeding.unseed(self, id, removal_docket))
+	var result: Dictionary = await Seeding.unseed(self, id, removal_docket)
+	result["ok"] = true
 	if Seeding.complete(result):
 		Transaction.content_done(cleanup_path)
 	elif not Transaction.requeue_content(cleanup_path, id, cleanup, false, Seeding.unfinished_reason(result)):
 		push_error("[PluginManager] '%s''s leftover Docket content could not be queued for cleanup" % id)
 	_content_busy.erase(id)
 	return result
+
+
+# Stops plugin `id` and removes its record, holding the staging lock until
+# the removal is saved, so no install replaces it meanwhile. Its unfinished
+# installs are marked first, so recovery after a crash does not bring it
+# back once removed, and are dropped only once the record is gone from disk.
+# The cleanup scope was taken from `def` over awaits: a plugin installed,
+# updated or restored since (every one a new PluginDefinition) is not
+# removed. Returns {} or {error}, when the plugin is left installed.
+func _remove_record(id: String, def, Transaction, staging_root: String) -> Dictionary:
+	if _db.get_by_id(id) != def:
+		return {"error": "Plugin '%s' changed while its removal was being prepared; try again" % id}
+	if def.state == S_BUILDING:
+		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
+	if _db.is_stale():
+		return {"error": "Another Minerva changed the plugin list; restart Minerva before removing '%s'" % id}
+	var removal: Dictionary = Transaction.begin_removal(staging_root, id)
+	if removal.has("error"):
+		return {"error": removal.error}
+	if def.state in [S_RUNNING, S_STARTING]:
+		var stop_result := stop_plugin(id)
+		if stop_result.get("error"):
+			Transaction.end_removal(staging_root, id, removal, false)
+			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
+	var removed: bool = _db.remove(id)
+	Transaction.end_removal(staging_root, id, removal, removed)
+	if not removed:
+		return {"error": "Failed to remove plugin '%s' from DB" % id}
+	return {}
 
 
 # ---------------------------------------------------------------------------

@@ -628,6 +628,12 @@ func test_pm_remove_refused_while_building() -> void:
 	check("remove_plugin succeeds once the build is terminal", remove_after.get("ok", false) == true, str(remove_after))
 	check("plugin gone from db after the successful removal", not db.has_plugin(id))
 
+	# With no Docket here, the removal leaves its content cleanup pending,
+	# which would refuse this id's install on the next run.
+	var Txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+	for entry in Txn.content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)):
+		if entry.id == id:
+			Txn.content_done(entry.path)
 	_cleanup_pm_data_dir(pm, id)
 
 
