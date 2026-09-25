@@ -569,7 +569,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 			if context.is_stopped():
 				return context.stopped_result()
 			if not skill_policy["allowed"]:
-				minerva_server._activate_policy_tools(skill_policy)
+				minerva_server._activate_policy_tools(skill_policy, caller_chat_id)
 				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, skill_policy, caller_chat_id)
 				return skill_policy
 			var pending_observations: Array = skill_policy.get("observations", [])
@@ -659,7 +659,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 			return context.stopped_result()
 		if not ext_policy["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
-			minerva_server._activate_policy_tools(ext_policy)
+			minerva_server._activate_policy_tools(ext_policy, caller_chat_id)
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, ext_policy, caller_chat_id)
 			return ext_policy
 		# Drain observation telemetry for external tools (internal tools do this in _execute_tool_impl)

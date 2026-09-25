@@ -24,12 +24,16 @@ func _init(budget: int = DEFAULT_BUDGET) -> void:
 
 
 ## Activate a tool and report whether it remains callable. LRU entries may be
-## evicted to make room, but an over-budget schema is never inserted.
+## evicted to make room, but an over-budget schema is never inserted. An
+## active tool whose schema changed is admitted afresh at its new cost; if
+## that does not fit, it is no longer active rather than kept stale.
 func activate_tool(name: String, schema: Dictionary) -> Dictionary:
 	if _active_tools.has(name):
-		_active_tools[name].last_used_turn = _current_turn
-		return {"active": true, "name": name,
-			"token_cost": int(_active_tools[name].token_cost), "evicted": []}
+		if _active_tools[name].schema == schema:
+			_active_tools[name].last_used_turn = _current_turn
+			return {"active": true, "name": name,
+				"token_cost": int(_active_tools[name].token_cost), "evicted": []}
+		_active_tools.erase(name)
 
 	var cost: int = _estimate_tokens(schema)
 	var evicted: Array[String] = []

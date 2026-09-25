@@ -338,7 +338,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 			return context.stopped_result()
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
-			_activate_policy_tools(policy_result)
+			_activate_policy_tools(policy_result, context.caller_chat_id)
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, context.agent_id)
 			return policy_result
 		# Observation telemetry is best effort and never waits: written for an
@@ -825,33 +825,39 @@ func _write_observation_through(host, rule_id: String, text: String) -> void:
 		push_warning("[MinervaMCPServer] the observation for policy %s could not be written: %s" % [rule_id, failed])
 
 
-## Pre-activate tools referenced in a policy block response so the agent can comply.
-## Parses tool names from knowledge_ref (activates minerva_docket_get) and alternatives.
-func _activate_policy_tools(policy_result: Dictionary) -> void:
-	# minerva_docket_get, as registered, so the agent can read the knowledge
-	# the rule names; when no Docket serves it, the result says so.
+## Activates the tools a policy block response names, so the agent can
+## comply: minerva_docket_get when the rule names knowledge, and registered
+## tools named in its alternatives, as a workflow of the calling chat
+## (MCPManager.activate_tools_for_workflow). The result says what the agent
+## still cannot call: knowledge_unavailable for minerva_docket_get when the
+## rule names knowledge, and unavailable_tools ({name, reason}) otherwise.
+func _activate_policy_tools(policy_result: Dictionary, caller_chat_id: String) -> void:
 	var knowledge_ref: String = str(policy_result.get("knowledge_ref", ""))
+	var names: Array[String] = []
 	if not knowledge_ref.is_empty():
-		if mcp_manager.tool_registry.has("minerva_docket_get"):
-			var docket_get = mcp_manager.tool_registry["minerva_docket_get"]
-			tool_budget_manager.activate_tool("minerva_docket_get", {"name": "minerva_docket_get",
-				"description": docket_get.description, "input_schema": docket_get.input_schema})
-		else:
-			policy_result["knowledge_unavailable"] = \
-				"minerva_docket_get is not available, so the knowledge this rule names (%s) cannot be read now" % knowledge_ref
-			push_warning("[MinervaMCPServer] %s" % policy_result.knowledge_unavailable)
-
-	# Parse tool names from alternatives (match any word_word pattern, then check registry)
+		names.append("minerva_docket_get")
 	var re := RegEx.new()
 	re.compile(r"\b([a-z][a-z0-9]*_[a-z0-9_]+)\b")
 	for alt in policy_result.get("allowed_next_actions", []):
-		var matches := re.search_all(str(alt))
-		for m in matches:
+		for m in re.search_all(str(alt)):
 			var tool_name: String = m.get_string(1)
-			if mcp_manager.tool_registry.has(tool_name):
-				var tool_def = mcp_manager.tool_registry[tool_name]
-				var schema := {"name": tool_name, "description": tool_def.description, "input_schema": tool_def.input_schema}
-				tool_budget_manager.activate_tool(tool_name, schema)
+			if mcp_manager.tool_registry.has(tool_name) and not tool_name in names:
+				names.append(tool_name)
+	if names.is_empty():
+		return
+
+	var activation: Dictionary = mcp_manager.activate_tools_for_workflow(
+		names, MCPToolUtils.find_chat_by_id(caller_chat_id))
+	var unavailable: Array = []
+	for entry: Dictionary in activation.unavailable:
+		if entry.name == "minerva_docket_get" and not knowledge_ref.is_empty():
+			policy_result["knowledge_unavailable"] = "minerva_docket_get cannot be called now (%s), so the knowledge this rule names (%s) cannot be read" % [
+				entry.reason, knowledge_ref]
+			push_warning("[MinervaMCPServer] %s" % policy_result.knowledge_unavailable)
+		else:
+			unavailable.append(entry)
+	if not unavailable.is_empty():
+		policy_result["unavailable_tools"] = unavailable
 
 
 ## The knowledge a call's inject rules name (the injections array from
