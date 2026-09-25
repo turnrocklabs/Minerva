@@ -562,31 +562,49 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 	# Handle skill executable tools
 	if tool_name.begins_with("skill_"):
 		# Policy check for skill tools (same enforcement as all other tools)
-		var skill_injections: Array = []
+		var skill_policy: Dictionary = {}
+		var skill_knowledge: Array = []
 		if minerva_server and minerva_server.policy_engine:
-			var policy_result: Dictionary = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
+			skill_policy = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
 			if context.is_stopped():
 				return context.stopped_result()
-			if not policy_result["allowed"]:
-				minerva_server._activate_policy_tools(policy_result)
-				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
-				return policy_result
-			var pending_observations: Array = policy_result.get("observations", [])
+			if not skill_policy["allowed"]:
+				minerva_server._activate_policy_tools(skill_policy)
+				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, skill_policy, caller_chat_id)
+				return skill_policy
+			var pending_observations: Array = skill_policy.get("observations", [])
 			if not pending_observations.is_empty():
 				minerva_server._write_observation_telemetry(pending_observations)
-			skill_injections = policy_result.get("injections", [])
+			# Injected knowledge is read before the skill runs; unread, it does not run.
+			var knowledge: Dictionary = await minerva_server._resolve_policy_injections(skill_policy.get("injections", []))
+			if context.is_stopped():
+				return context.stopped_result()
+			if knowledge.has("error"):
+				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, knowledge, caller_chat_id)
+				return knowledge
+			skill_knowledge = knowledge.knowledge
 
 		var skill_id := tool_name.substr(6)  # Strip "skill_" prefix
 		var skill_manager = SingletonObject.get_skill_manager()
 		if skill_manager:
 			var args_str: String = arguments.get("args", "")
 			var skill_result = skill_manager.execute_skill_tool(skill_id, args_str)
+			# The executable blocks; a deadline that passed meanwhile stops the call.
+			if context.is_stopped():
+				return context.stopped_result()
+			# An executable that exits nonzero failed; OS.execute gives -1 for one
+			# that could not be started.
+			var exit_code := int(skill_result.get("exit_code", 0))
+			if exit_code != 0 and not skill_result.has("error"):
+				skill_result["error"] = "The skill's executable could not be started" if exit_code == -1 \
+					else "The skill's executable exited with code %d" % exit_code
 			if not skill_result.has("success"):
 				skill_result["success"] = not skill_result.has("error")
-			if not skill_injections.is_empty() and minerva_server:
-				var resolved := minerva_server._resolve_policy_injections(skill_injections)
-				if not resolved.is_empty():
-					skill_result["_injected_knowledge"] = resolved
+			if minerva_server and minerva_server.policy_engine \
+					and minerva_server.policy_call_succeeded(skill_result):
+				minerva_server.policy_engine.commit_scopes(skill_policy)
+				if not skill_knowledge.is_empty():
+					skill_result["_injected_knowledge"] = skill_knowledge
 			tool_executed.emit(server_name, tool_name, skill_result)
 			return skill_result
 		return {"error": "Skill manager not available", "success": false}
@@ -633,21 +651,29 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 		return {"error": "Server not connected: %s" % server_name, "success": false}
 
 	# Policy evaluation for external tools — same enforcement as minerva tools
-	var ext_injections: Array = []
+	var ext_policy: Dictionary = {}
+	var ext_knowledge: Array = []
 	if minerva_server and minerva_server.policy_engine:
-		var policy_result: Dictionary = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
+		ext_policy = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
 		if context.is_stopped():
 			return context.stopped_result()
-		if not policy_result["allowed"]:
+		if not ext_policy["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
-			minerva_server._activate_policy_tools(policy_result)
-			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
-			return policy_result
+			minerva_server._activate_policy_tools(ext_policy)
+			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, ext_policy, caller_chat_id)
+			return ext_policy
 		# Drain observation telemetry for external tools (internal tools do this in _execute_tool_impl)
-		var pending_observations: Array = policy_result.get("observations", [])
+		var pending_observations: Array = ext_policy.get("observations", [])
 		if not pending_observations.is_empty():
 			minerva_server._write_observation_telemetry(pending_observations)
-		ext_injections = policy_result.get("injections", [])
+		# Injected knowledge is read before the call is made; unread, it is not made.
+		var knowledge: Dictionary = await minerva_server._resolve_policy_injections(ext_policy.get("injections", []))
+		if context.is_stopped():
+			return context.stopped_result()
+		if knowledge.has("error"):
+			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, knowledge, caller_chat_id)
+			return knowledge
+		ext_knowledge = knowledge.knowledge
 		if not servers.has(server_name):
 			return {"error": "Server not connected: %s" % server_name, "success": false}
 
@@ -715,11 +741,13 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 		servers.erase(server_name)
 		server_disconnected.emit(server_name)
 
-	# Resolve and append policy injections to external tool results
-	if not ext_injections.is_empty() and minerva_server:
-		var resolved := minerva_server._resolve_policy_injections(ext_injections)
-		if not resolved.is_empty():
-			result["_injected_knowledge"] = resolved
+	# A call that succeeded activates the scopes its rules staged and carries
+	# the knowledge they injected.
+	if minerva_server and minerva_server.policy_engine and minerva_server.policy_call_succeeded(result):
+		minerva_server.policy_engine.commit_scopes(ext_policy)
+		if not ext_knowledge.is_empty():
+			result["_injected_knowledge"] = ext_knowledge
+			outcome.wire_authoritative = false
 
 	tool_executed.emit(server_name, tool_name, result)
 	tool_outcome_executed.emit(server_name, tool_name, outcome)

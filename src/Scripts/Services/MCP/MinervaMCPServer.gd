@@ -330,10 +330,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 		return {"success": true, "rules_loaded": policy_engine.rule_count()}
 
 	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks
-	var pending_observations: Array = []
-	var pending_injections: Array = []
+	var policy_result: Dictionary = {}
+	var injected_knowledge: Array = []
 	if policy_engine:
-		var policy_result: Dictionary = await policy_engine.admit(tool_name, arguments, context.caller_chat_id)
+		policy_result = await policy_engine.admit(tool_name, arguments, context.caller_chat_id)
 		if context.is_stopped():
 			return context.stopped_result()
 		if not policy_result["allowed"]:
@@ -341,8 +341,18 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 			_activate_policy_tools(policy_result)
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, context.agent_id)
 			return policy_result
-		pending_observations = policy_result.get("observations", [])
-		pending_injections = policy_result.get("injections", [])
+		# Observation telemetry is best effort and never waits: written for an
+		# admitted call whether or not it is then made.
+		_write_observation_telemetry(policy_result.get("observations", []))
+		# The knowledge the call's rules inject is read before the call is made:
+		# a call whose knowledge cannot be read is not made.
+		var knowledge := await _resolve_policy_injections(policy_result.get("injections", []))
+		if context.is_stopped():
+			return context.stopped_result()
+		if knowledge.has("error"):
+			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, knowledge, context.agent_id)
+			return knowledge
+		injected_knowledge = knowledge.knowledge
 
 	# Track tool usage for LRU (blocked calls don't count)
 	tool_budget_manager.mark_used(tool_name)
@@ -422,19 +432,22 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	if context.is_stopped():
 		return context.stopped_result()
 
-	# POST-DISPATCH: drain observation telemetry (best-effort, non-blocking)
-	if not pending_observations.is_empty():
-		_write_observation_telemetry(pending_observations)
-
-	# POST-DISPATCH: resolve and append policy injections
-	if not pending_injections.is_empty():
-		var resolved := _resolve_policy_injections(pending_injections)
-		if not resolved.is_empty():
-			dispatch_result["_injected_knowledge"] = resolved
+	# POST-DISPATCH: a call that succeeded activates the scopes its rules
+	# staged and carries the knowledge they injected.
+	if policy_engine and policy_call_succeeded(dispatch_result):
+		policy_engine.commit_scopes(policy_result)
+		if not injected_knowledge.is_empty():
+			dispatch_result["_injected_knowledge"] = injected_knowledge
 			if outcome_holder.has("outcome"):
 				outcome_holder.outcome.wire_authoritative = false
 
 	return dispatch_result
+
+
+## Whether a governed call's `result` is a success, for the scopes its policy
+## rules staged (PolicyEngine.commit_scopes).
+static func policy_call_succeeded(result: Dictionary) -> bool:
+	return result.get("success", not result.has("error")) != false
 
 
 func _record_history_knowledge_telemetry(history, update: Dictionary) -> void:
@@ -775,13 +788,13 @@ func _request_policy_override_approval(rule_id: String, reason: String) -> bool:
 
 
 ## Write observation telemetry to Docket as comments on rule items.
-## Best-effort: failures are silently ignored so they never break tool dispatch.
+## Best effort: a failure never breaks tool dispatch (through the Docket
+## plugin it is logged).
 ## Goes through DocketManager.call_tool() directly (not MCP dispatch) to avoid
 ## recursion back into the policy engine.
 func _write_observation_telemetry(observations: Array) -> void:
 	var dm = SingletonObject.docket_manager if SingletonObject else null
-	if dm == null:
-		return
+	var host = SingletonObject.get("docket_host") if SingletonObject else null
 	for obs in observations:
 		var rule_id: String = str(obs.get("rule_id", ""))
 		if rule_id.is_empty():
@@ -792,13 +805,24 @@ func _write_observation_telemetry(observations: Array) -> void:
 			Time.get_datetime_string_from_system(),
 			str(obs.get("facts", {})),
 		]
-		# Best-effort write — ignore errors to never disrupt the tool call path
-		dm.call_tool("docket_comment", {
-			"action": "add",
-			"item_id": rule_id,
-			"author": "policy-engine",
-			"text": comment_text,
-		})
+		# Best-effort write — never disrupts the tool call path.
+		if dm != null:
+			dm.call_tool("docket_comment", {
+				"action": "add",
+				"item_id": rule_id,
+				"author": "policy-engine",
+				"text": comment_text,
+			})
+		elif host != null:
+			_write_observation_through(host, rule_id, comment_text)
+
+
+# Writes one observation through the Docket plugin's host, not awaited by
+# the call it observes; a write that fails is logged with its rule and cause.
+func _write_observation_through(host, rule_id: String, text: String) -> void:
+	var failed: String = await host.write_policy_observation(rule_id, text)
+	if not failed.is_empty():
+		push_warning("[MinervaMCPServer] the observation for policy %s could not be written: %s" % [rule_id, failed])
 
 
 ## Pre-activate tools referenced in a policy block response so the agent can comply.
@@ -830,49 +854,88 @@ func _activate_policy_tools(policy_result: Dictionary) -> void:
 				tool_budget_manager.activate_tool(tool_name, schema)
 
 
-## Resolve policy injections into concrete knowledge content.
-## Takes the injections array from PolicyEngine.admit() and fetches each
-## knowledge_ref from the docket.  Returns an array of compact content dicts.
-func _resolve_policy_injections(injections: Array) -> Array:
-	if injections.is_empty():
-		return []
+## The knowledge a call's inject rules name (the injections array from
+## PolicyEngine.admit(); knowledge_ref may list several item ids, comma
+## separated), read before the call is made: {knowledge: [compact entries]},
+## or, when an item cannot be read, a refusal naming the rule, the item and
+## why (error_code "policy_knowledge_unavailable"). Read from the embedded
+## Docket when it exists, else through the Docket plugin's host.
+func _resolve_policy_injections(injections: Array) -> Dictionary:
+	var wanted: Array = []  # [rule_id, item id], in order
+	for injection in injections:
+		for ref_id in str(injection.get("knowledge_ref", "")).split(",", false):
+			if not ref_id.strip_edges().is_empty():
+				wanted.append([str(injection.get("rule_id", "")), ref_id.strip_edges()])
+	if wanted.is_empty():
+		return {"knowledge": []}
+	var items: Array = []
 	var dm = SingletonObject.docket_manager if SingletonObject else null
-	if dm == null:
-		return []
+	var host = SingletonObject.get("docket_host") if SingletonObject else null
+	if dm != null:
+		for pair in wanted:
+			var item_result: Dictionary = dm.call_tool("docket_get", {"id": pair[1]})
+			if item_result.has("error"):
+				return _knowledge_refusal(pair[0], pair[1], str(item_result.error))
+			items.append(item_result)
+	elif host != null:
+		var refs := PackedStringArray()
+		for pair in wanted:
+			refs.append(pair[1])
+		var read: Dictionary = await host.policy_knowledge(refs)
+		if read.has("error"):
+			var index := int(read.get("index", -1))
+			if index < 0:
+				return _knowledge_refusal("", _pair_ids(wanted), str(read.error))
+			return _knowledge_refusal(wanted[index][0], wanted[index][1], str(read.error))
+		items = read.items
+	else:
+		return _knowledge_refusal("", _pair_ids(wanted), "no Docket owns Minerva's projects")
 
 	var resolved: Array = []
-	for injection in injections:
-		var refs: String = str(injection.get("knowledge_ref", ""))
-		if refs.is_empty():
-			continue
-		# knowledge_ref can be comma-separated list of docket item IDs
-		for ref_id in refs.split(",", false):
-			ref_id = ref_id.strip_edges()
-			if ref_id.is_empty():
-				continue
-			var item_result: Dictionary = dm.call_tool("docket_get", {"id": ref_id})
-			if item_result.has("error"):
-				continue
-			var item_type: String = str(item_result.get("type", ""))
-			var entry := {
-				"id": ref_id,
-				"type": item_type,
-				"title": str(item_result.get("title", "")),
-				"from_rule": str(injection.get("rule_id", "")),
-			}
-			match item_type:
-				"hint":
-					entry["value"] = str(item_result.get("value", ""))
-				"insight":
-					entry["assumed"] = str(item_result.get("assumed", ""))
-					entry["corrected"] = str(item_result.get("corrected", ""))
-				"kb":
-					entry["summary"] = str(item_result.get("summary", ""))
-					if entry["summary"].is_empty():
-						entry["article"] = str(item_result.get("article", "")).left(500)
-				_:
-					entry["description"] = str(item_result.get("description", "")).left(500)
-			resolved.append(entry)
-	return resolved
+	for index in wanted.size():
+		var item_result: Dictionary = items[index]
+		var item_type: String = str(item_result.get("type", ""))
+		var entry := {
+			"id": wanted[index][1],
+			"type": item_type,
+			"title": str(item_result.get("title", "")),
+			"from_rule": wanted[index][0],
+		}
+		match item_type:
+			"hint":
+				entry["value"] = str(item_result.get("value", ""))
+			"insight":
+				entry["assumed"] = str(item_result.get("assumed", ""))
+				entry["corrected"] = str(item_result.get("corrected", ""))
+			"kb":
+				entry["summary"] = str(item_result.get("summary", ""))
+				if entry["summary"].is_empty():
+					entry["article"] = str(item_result.get("article", "")).left(500)
+			_:
+				entry["description"] = str(item_result.get("description", "")).left(500)
+		resolved.append(entry)
+	return {"knowledge": resolved}
+
+
+static func _pair_ids(wanted: Array) -> String:
+	var ids := PackedStringArray()
+	for pair in wanted:
+		ids.append(pair[1])
+	return ", ".join(ids)
+
+
+# The refusal of a call whose policy knowledge could not be read.
+static func _knowledge_refusal(rule_id: String, refs: String, why: String) -> Dictionary:
+	return {
+		"allowed": false,
+		"effect": "unavailable",
+		"blocked_by_rule": rule_id,
+		"reason": why,
+		"allowed_next_actions": [],
+		"success": false,
+		"error": "Policy knowledge %s%s could not be read, so the call was not made: %s"
+			% [refs, (" (rule %s)" % rule_id) if not rule_id.is_empty() else "", why],
+		"error_code": "policy_knowledge_unavailable",
+	}
 
 #endregion

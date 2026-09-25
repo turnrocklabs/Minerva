@@ -252,6 +252,65 @@ func policy_items() -> Dictionary:
 	return {"items": read.value.items}
 
 
+## The knowledge items policy rules name by id (`refs`), read afresh from
+## the master, as the embedded Docket reads them, in the order of `refs`:
+## {items}, or {error, index}: when Docket is unavailable, its projects
+## cannot be listed or the master is not open (index -1, no ref read), or a
+## ref's read fails, answers with another item or sees the plugin's process
+## change (that ref's index). No refs is a successful empty read.
+func policy_knowledge(refs: PackedStringArray) -> Dictionary:
+	if refs.is_empty():
+		return {"items": []}
+	while state == "starting":
+		await state_changed
+	if not state in ["ready", "degraded"]:
+		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state),
+			"index": -1}
+	var connection = _connection
+	var generation := _generation
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return {"error": listed, "index": -1}
+	var master := master_project()
+	if master.is_empty():
+		return {"error": "the master project is not open", "index": -1}
+	var items := []
+	for index in refs.size():
+		var read := await _call(connection, "docket_get",
+			{"id": refs[index], "project": str(master.get("name", "")), "include": []})
+		if _stale(connection, generation):
+			return {"error": "the Docket plugin's process changed while policy knowledge was read", "index": index}
+		if read.has("error"):
+			return {"error": str(read.error), "index": index}
+		if not read.value is Dictionary or not _names_item(refs[index], str(read.value.get("id", ""))):
+			return {"error": "the master answered with another item", "index": index}
+		items.append(read.value)
+	return {"items": items}
+
+
+# Whether `ref`, as a policy names knowledge, names the item whose id is
+# `id`: the same id, or a short hex prefix of it (four or more digits, any
+# case), as Docket's docket_get resolves one.
+static func _names_item(ref: String, id: String) -> bool:
+	return id == ref or (ref.length() >= 4 and ref.is_valid_hex_number(false)
+		and id.to_lower().begins_with(ref.to_lower()))
+
+
+## Adds `text` as a comment by the policy engine on policy rule `rule_id` in
+## the master: "" or why it could not.
+func write_policy_observation(rule_id: String, text: String) -> String:
+	while state == "starting":
+		await state_changed
+	if not state in ["ready", "degraded"]:
+		return "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)
+	var master := master_project()
+	if master.is_empty():
+		return "the master project is not open"
+	var written := await _call(_connection, "docket_comment", {"action": "add", "item_id": rule_id,
+		"author": "policy-engine", "text": text, "project": str(master.get("name", ""))})
+	return str(written.error) if written.has("error") else ""
+
+
 # Why some prompt could be missing from what the open projects give, or "":
 # the saved session unread, a project of the session not open (its
 # overrides would be missed), or the master's prompt type not as declared.

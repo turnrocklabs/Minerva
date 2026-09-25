@@ -129,6 +129,10 @@ func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> 
 ## Evaluate a tool call against all loaded rules.
 ## Returns an allowed or blocked response Dictionary.
 ## caller_id: chat ID for per-chat scope isolation. Empty string = global scope (backward compat).
+## The scopes an allowed call's rules activate are only staged, in the
+## result's "scopes": commit_scopes() activates them once the call has
+## succeeded (and its required knowledge was delivered), so a call that is
+## refused, fails or is stopped activates none.
 func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") -> Dictionary:
 	# Get normalized action facts.
 	var facts: Dictionary = _normalizer.normalize(tool_name, arguments)
@@ -138,6 +142,7 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 
 	var matched_rule_ids: Array[String] = []
 	var injections: Array[Dictionary] = []
+	var scopes: Array[Dictionary] = []
 
 	for rule in _rules:
 		var rule_id: String = rule["rule_id"]
@@ -172,8 +177,8 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 
 			"scope":
 				var scope_name: String = rule["activate_scope"] if rule["activate_scope"] != null else rule_id
-				var scoped_key: String = _make_scope_key(scope_name, caller_id)
-				_scope_state.activate(scoped_key, rule["scope_max_actions"], rule["scope_ttl_ms"])
+				scopes.append({"key": _make_scope_key(scope_name, caller_id),
+					"max_actions": rule["scope_max_actions"], "ttl_ms": rule["scope_ttl_ms"]})
 				_record_observation(rule, tool_name, facts, "scope")
 
 			"inject":
@@ -186,8 +191,8 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 				# Optionally activate scope to prevent re-injection
 				if rule["activate_scope"] != null:
 					var inject_scope: String = rule["activate_scope"]
-					var inject_key: String = _make_scope_key(inject_scope, caller_id)
-					_scope_state.activate(inject_key, rule["scope_max_actions"], rule["scope_ttl_ms"])
+					scopes.append({"key": _make_scope_key(inject_scope, caller_id),
+						"max_actions": rule["scope_max_actions"], "ttl_ms": rule["scope_ttl_ms"]})
 				_record_observation(rule, tool_name, facts, "inject")
 
 			"observe":
@@ -206,7 +211,16 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 	if not injections.is_empty():
 		result["injections"] = injections
 		result["effect"] = "inject"
+	if not scopes.is_empty():
+		result["scopes"] = scopes
 	return result
+
+
+## Activates the scopes an allowed call's evaluation staged (its "scopes"):
+## called once the call has succeeded.
+func commit_scopes(result: Dictionary) -> void:
+	for scope in result.get("scopes", []):
+		_scope_state.activate(scope.key, scope.max_actions, scope.ttl_ms)
 
 
 ## Return the number of currently compiled rules.
