@@ -75,9 +75,11 @@ const AGENT_FLOATING_SUMMARY_PROMPT_LENGTH: int = 1200
 ## Built-in fallback — used when Docket defines no "agentic-base" prompt.
 const AGENT_SYSTEM_PROMPT_FALLBACK: String = "You are an AI assistant with access to tools.\n\nPhase 1 — SET UP (do this first):\n1. Call minerva_list_skills to see available guides.\n2. Call minerva_get_skill for each relevant skill. This auto-activates the tools you need — do NOT call minerva_tool_search for tools that a skill already activated.\n3. Only use minerva_tool_search for tools not covered by a skill.\n\nPhase 2 — EXECUTE:\nOnce your tools are ready, do the task. Do not search for more tools during execution."
 
-## Set on a chat while Docket's system prompt for it could not be read: why.
-## generate_content_from_provider then sends nothing and reports it.
-const DOCKET_PROMPT_ERROR_META := &"docket_prompt_error"
+## The one entry of a prompt create_prompt could not build because Docket's
+## system prompt could not be read: {PROMPT_REFUSAL_KEY: why}. The refusal is
+## the prompt itself, so it lasts as long as the prompt does, and whoever
+## would send it refuses instead (_prompt_refusal).
+const PROMPT_REFUSAL_KEY := "docket_prompt_refusal"
 
 ## Build the agent system prompt: {prompt}, or {error} when Docket's could
 ## not be read. Loads "agentic-base" from Docket (the master's, overridden by
@@ -114,22 +116,33 @@ func _build_agent_system_prompt(history = null) -> Dictionary:
 
 
 # "agentic-base" from whichever owns Docket's files: the Docket plugin
-# (DocketHost) once it is active, else the embedded DocketManager. {prompt}
-# ("" for none) or {error}.
+# (DocketHost) once it is active, else the embedded DocketManager; with
+# neither, Docket is unavailable. {prompt} ("" for none) or {error}.
 func _docket_base_prompt() -> Dictionary:
 	var host: DocketHost = SingletonObject.docket_host
 	if host != null and host.state != "inactive":
 		return await host.system_prompt("agentic-base")
 	var dm: DocketManager = SingletonObject.docket_manager
-	return {"prompt": dm.get_system_prompt("agentic-base") if dm else ""}
+	if dm == null:
+		return {"error": "Docket is not available"}
+	return {"prompt": dm.get_system_prompt("agentic-base")}
+
+
+# Why prompt `history_list` (as create_prompt returned it) must not be sent,
+# or "".
+static func _prompt_refusal(history_list: Array) -> String:
+	if history_list.size() == 1 and history_list[0] is Dictionary and history_list[0].has(PROMPT_REFUSAL_KEY):
+		var why := str(history_list[0][PROMPT_REFUSAL_KEY])
+		return ("Nothing was sent: Minerva's system prompt could not be read from Docket (%s). "
+			+ "Tools > Docket Session shows Docket's state and any session project that did not open; "
+			+ "put that right, then send again.") % why
+	return ""
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 var latest_msg: Control
 var latest_usr_msg: MessageMarkdown
-# Chat history id → the tool call id whose tool is running for it now.
-var _tools_in_flight: Dictionary = {}
 
 ## Check if a path is within the allowed directories for a chat.
 ## Returns true if allowed (or no restrictions), false if blocked.
@@ -510,11 +523,7 @@ func check_agent_context_limits(history: ChatHistory) -> Dictionary:
 ## Compact a chat history by summarizing older messages and keeping recent ones.
 ## Works for both agent mode and regular chats. Returns true if compaction occurred.
 ## Tries LLM summarization first if a provider is available, falls back to naive.
-## `still_current`, when given, answers whether the turn compacting is still
-## the chat's: once it is not, or the history changed while the summary was
-## written, nothing is compacted.
-func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MESSAGES,
-		still_current: Callable = Callable()) -> bool:
+func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MESSAGES) -> bool:
 	var item_count = history.HistoryItemList.size()
 	if item_count <= keep_recent + 1:  # +1 for potential system prompt
 		return false  # Not enough messages to compact
@@ -585,8 +594,6 @@ func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MES
 
 	# Try LLM summarization, fall back to naive
 	var summary_text := await _try_llm_summarize(conversation_text, summarize_end - summarize_start)
-	if (still_current.is_valid() and not still_current.call()) or history.HistoryItemList.size() != item_count:
-		return false
 	if summary_text.is_empty():
 		# Naive fallback
 		summary_text = """### Conversation Summary ###
@@ -666,8 +673,8 @@ Key points from earlier conversation:
 
 
 ## Legacy wrapper: calls compact_chat for agent mode.
-func summarize_agent_history(history: ChatHistory, still_current: Callable = Callable()) -> void:
-	await compact_chat(history, AGENT_KEEP_RECENT_MESSAGES, still_current)
+func summarize_agent_history(history: ChatHistory) -> void:
+	await compact_chat(history)
 
 
 ## Attempt LLM-powered summarization. Returns empty string on failure (triggers naive fallback).
@@ -815,10 +822,7 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 	return model_msg_node
 
 # Generate content from provider
-## `turn_token`, when given, is the turn the request is for: an answer that
-## arrives after the turn was stopped changes nothing of the chat's state
-## (its cost is still recorded).
-func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, turn_token: int = -1) -> Variant:
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
 	print("[ChatPane] generate_content_from_provider called, provider: %s" % provider.provider_name)
 	var bot_response
@@ -842,13 +846,11 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if "request_reasoning_summary" in provider:
 		provider.request_reasoning_summary = history.ReasoningSummary
 
-	if history.has_meta(DOCKET_PROMPT_ERROR_META):
+	var refusal := _prompt_refusal(history_list)
+	if not refusal.is_empty():
 		bot_response = BotResponse.new()
 		bot_response.provider = provider
-		bot_response.error = ("Nothing was sent: Minerva's system prompt could not be read from Docket (%s). "
-			+ "Tools > Docket Session shows Docket's state and any session project that did not open; "
-			+ "put that right, then send again.") \
-			% history.get_meta(DOCKET_PROMPT_ERROR_META)
+		bot_response.error = refusal
 		bot_response.set_meta("error_code", "system_prompt_unavailable")
 	elif not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
 		bot_response = BotResponse.new()
@@ -857,8 +859,7 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 		bot_response.set_meta("error_code", "provider_disabled")
 	else:
 		bot_response = await provider.generate_content(history_list, optional_params)
-	var stopped := turn_token >= 0 and _turn_stopped(history, turn_token)
-	if bot_response and not str(bot_response.error).is_empty() and not stopped:
+	if bot_response and not str(bot_response.error).is_empty():
 		if provider_override == null or provider_override == history.provider:
 			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
 		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
@@ -1523,9 +1524,10 @@ func _create_visible_chat() -> void:
 ## If [param refresh_detached] is `true`, [method NotesContainer.to_prompt] will regenerate the editor notes.[br]
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.to_prompt` for explanation on `predicate`.
-## `turn_token`, when given, is the turn the prompt is for: a turn stopped
-## while the prompt is built (Docket's system prompt, the notes) gets [] and
-## nothing more is changed.
+## `turn_token`, when given, is the turn the prompt is for: a turn found
+## stopped on entry or after an await here changes nothing more (the result
+## is then [], and the caller checks the turn itself). When Docket's system
+## prompt cannot be read the result is a refusal (see PROMPT_REFUSAL_KEY).
 func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null, turn_token: int = -1) -> Array[Variant]:
 
 	# if we don't have any chats history_list will be empty
@@ -1548,10 +1550,10 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 		return []
 
 	if history:
+		if turn_token >= 0 and _turn_stopped(history, turn_token):
+			return []
 		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
 		var effective_system_prompt: String = ""
-		if history.has_meta(DOCKET_PROMPT_ERROR_META):
-			history.remove_meta(DOCKET_PROMPT_ERROR_META)
 		if history.AgentModeEnabled:
 			# In agent mode: use custom agentic prompt if enabled, or fall back to dynamically built agent prompt
 			if history.AgenticSystemPromptEnabled:
@@ -1562,7 +1564,8 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 					if turn_token >= 0 and _turn_stopped(history, turn_token):
 						return []
 					if built.has("error"):
-						history.set_meta(DOCKET_PROMPT_ERROR_META, str(built.error))
+						var refused: Array[Variant] = [{PROMPT_REFUSAL_KEY: str(built.error)}]
+						return refused
 					else:
 						effective_system_prompt = built.prompt
 			# Append any existing regular system prompt to give additional context (if enabled)
@@ -1590,7 +1593,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 	# any notes container `to_prompt` will go over both standard and drawer notes
 	var history_id_for_filter: String = history.HistoryId if history else ""
 	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached, history_id_for_filter)
-	if turn_token >= 0 and _turn_stopped(history, turn_token):
+	if history and turn_token >= 0 and _turn_stopped(history, turn_token):
 		return []
 
 	# Immediately consume proxies after collection to prevent leaking into
@@ -1728,14 +1731,22 @@ func _on_btn_inspect_pressed():
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
+	# The chat inspected is the one current now; a turn starting on it while
+	# its prompt is built makes this inspection stale.
+	ensure_chat_open()
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var turn_token := history.request_turn_token
+
 	## generate the dictionary we would send to the model.
-	var history_list: Array[Variant] = await create_prompt(new_history_item)
+	var history_list: Array[Variant] = await create_prompt(new_history_item, true, null, Callable(), history, turn_token)
+	if _turn_stopped(history, turn_token):
+		return
+	var refusal := _prompt_refusal(history_list)
+	if not refusal.is_empty():
+		SingletonObject.ErrorDisplay("Nothing would be sent", refusal)
+		return
 
 	# we wont add the message to the history
-
-	ensure_chat_open()
-
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
 	# Build full request body like the provider would
 	var request_body: Dictionary = {
@@ -1835,6 +1846,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	var history_list = await create_prompt(chi, false, history.provider, predicate, history, turn_token)
 	if _turn_stopped(history, turn_token):
+		# Stopped while its prompt was built: the empty response goes too.
 		_drop_item(history, existing_response)
 		return
 
@@ -1844,10 +1856,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	if existing_response.rendered_node:
 		existing_response.rendered_node.loading = true
 
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, turn_token)
-	if _turn_stopped(history, turn_token):
-		_drop_item(history, existing_response)
-		return
+	var bot_response = await generate_content_from_provider(history, history_list)
 
 	# if there was an error with the request
 	if not bot_response:
@@ -1923,7 +1932,10 @@ func _on_send_message_button_item_selected(index: int) -> void:
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
+
+	# Clear any leftover cancelled flag from previous requests
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	SingletonObject.clear_cancelled(history.HistoryId)
 
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
@@ -1979,7 +1991,21 @@ func execute_hcp_chat():
 	
 	history.HistoryItemList.append(user_history_item)
 	
-	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
+	# A turn starting on the chat while this prompt is built makes it stale.
+	var turn_token := history.request_turn_token
+	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history, turn_token)
+	# This send calls its provider directly, so it refuses here as
+	# generate_content_from_provider would, taking back the message it added;
+	# so does a stale one.
+	var stale := _turn_stopped(history, turn_token)
+	var refusal := "" if stale else _prompt_refusal(history_list)
+	if stale or not refusal.is_empty():
+		history.HistoryItemList.erase(user_history_item)
+		if is_instance_valid(user_msg_node):
+			user_msg_node.queue_free()
+		if not refusal.is_empty():
+			SingletonObject.ErrorDisplay("Nothing was sent", refusal)
+		return
 
 	# rerender the message since we changed the history item
 	user_msg_node.first_time_message = true
@@ -2103,12 +2129,10 @@ func _on_pending_bubble_removal_requested(bubble: PendingMessageBubble,
 
 ## Claim the chat for a new turn and return that turn's token. The caller MUST
 ## keep the token and hand it back to _release_chat_turn: it is what tells this
-## turn apart from the one that replaces it after a stop. A stop of an earlier
-## turn (its cancel flag) does not carry over to the new one.
+## turn apart from the one that replaces it after a stop.
 func _begin_chat_turn(history: ChatHistory) -> int:
 	if history == null:
 		return -1
-	SingletonObject.clear_cancelled(history.HistoryId)
 	history.request_turn_token += 1
 	history.is_request_active = true
 	_update_stop_button()
@@ -2134,17 +2158,17 @@ func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
 	_drain_outgoing_queue(history)
 
 
+## Whether turn `turn_token` of `history` was stopped (and maybe replaced)
+## while it waited: it must then change nothing more and send nothing.
+func _turn_stopped(history: ChatHistory, turn_token: int) -> bool:
+	return history == null or turn_token != history.request_turn_token
+
+
 # A regeneration's placeholder response, dropped when its turn was stopped.
 func _drop_item(history: ChatHistory, item: ChatHistoryItem) -> void:
 	history.HistoryItemList.erase(item)
 	if is_instance_valid(item.rendered_node):
 		item.rendered_node.queue_free()
-
-
-## Whether turn `turn_token` of `history` was stopped (and maybe replaced)
-## while it waited: it must then change nothing more and send nothing.
-func _turn_stopped(history: ChatHistory, turn_token: int) -> bool:
-	return history == null or turn_token != history.request_turn_token
 
 
 ## Stop the chat's current turn: bump the token FIRST, so the coroutine still
@@ -2310,10 +2334,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 			await dialog.visibility_changed  # Wait for dialog to close
 			dialog.queue_free()
 			if compacted["value"]:
-				await compact_chat(history, AGENT_KEEP_RECENT_MESSAGES,
-					func() -> bool: return not _turn_stopped(history, turn_token))
-				if _turn_stopped(history, turn_token):
-					return
+				await compact_chat(history)
 				if history.VBox:
 					history.VBox.render_history(history)
 
@@ -2352,16 +2373,11 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, turn_token)
+	var bot_response = await generate_content_from_provider(history, history_list)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
 
 	# Stop the status relay the instant the generate resolves (success/error/cancel).
 	_passthrough_end_relay(_pt_status, bot_response, model_msg_node, dummy_item)
-	if _turn_stopped(history, turn_token):
-		# Its response is not in the history; neither is its bubble, then.
-		if is_instance_valid(model_msg_node):
-			model_msg_node.queue_free()
-		return
 
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
@@ -2684,10 +2700,9 @@ func _get_last_model_history_item(history: ChatHistory) -> ChatHistoryItem:
 
 ## Add tool_result blocks for tools that were not executed (due to cancellation, limits, etc.)
 ## This ensures the conversation can continue without API errors about missing tool_results.
-func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String,
-		outcome: String = "Tool not executed") -> void:
+func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String) -> void:
 	var model_chi = _get_last_model_history_item(history)
-	var error_result = JSON.stringify({"error": "%s: %s" % [outcome, reason]})
+	var error_result = JSON.stringify({"error": "Tool not executed: %s" % reason})
 
 	for tool_call in tool_calls:
 		var tool_id: String = tool_call.get("id", "")
@@ -2718,64 +2733,6 @@ func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reaso
 
 		history.HistoryItemList.append(tool_result_item)
 		print("[Agent] Added unexecuted tool_result for: %s (reason: %s)" % [tool_name, reason])
-
-
-## Gives every tool call made since the chat's last user message that has no
-## result yet one saying `reason`: "not executed", or TOOL_OUTCOME_UNKNOWN for
-## the call whose tool is running (see _add_unexecuted_tool_results).
-func _close_open_tool_calls(history: ChatHistory, reason: String) -> void:
-	var start := 0
-	for i in range(history.HistoryItemList.size() - 1, -1, -1):
-		if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.USER:
-			start = i + 1
-			break
-	var turn := history.HistoryItemList.slice(start)
-	var answered := {}
-	for item: ChatHistoryItem in turn:
-		if item.Role == ChatHistoryItem.ChatRole.TOOL:
-			answered[item.ToolCallId] = true
-	var open: Array = []
-	var running: Array = []
-	for item: ChatHistoryItem in turn:
-		for call in item.ToolCalls:
-			var id := str(call.get("id", ""))
-			if answered.has(id):
-				continue
-			if id == str(_tools_in_flight.get(history.HistoryId, "")):
-				running.append(call)
-			else:
-				open.append(call)
-	if not open.is_empty():
-		_add_unexecuted_tool_results(history, open, reason)
-	# A call already sent to its tool may have done its work: its outcome is
-	# unknown until (unless) the tool answers (_record_late_tool_result).
-	if not running.is_empty():
-		_add_unexecuted_tool_results(history, running, reason, TOOL_OUTCOME_UNKNOWN)
-
-
-## What a tool call that was running when its turn was stopped is answered:
-## it may have completed.
-const TOOL_OUTCOME_UNKNOWN := "Tool outcome unknown (it was running and may have completed)"
-
-
-## The result of tool call `tool_id` that arrived after its turn was stopped
-## replaces, in place, the TOOL_OUTCOME_UNKNOWN answer Stop gave it, so what
-## the tool did is kept and the history keeps its order.
-func _record_late_tool_result(history: ChatHistory, tool_id: String, result: Dictionary) -> void:
-	var text := truncate_tool_result(_filter_tool_result_text(JSON.stringify(result)),
-		history.AgentMaxToolResultLength)
-	var is_error = result.get("error") != null
-	for item: ChatHistoryItem in history.HistoryItemList:
-		if item.Role == ChatHistoryItem.ChatRole.TOOL and item.ToolCallId == tool_id \
-				and item.Message.contains(TOOL_OUTCOME_UNKNOWN):
-			item.Message = text
-		# What the person sees of the call: its execution entries and node.
-		for entry in item.ToolExecutions:
-			if str(entry.get("call_id", "")) == tool_id:
-				entry["result"] = text
-				entry["status"] = "error" if is_error else "done"
-				if is_instance_valid(item.rendered_node):
-					item.rendered_node.update_tool_execution(tool_id, text, is_error)
 
 
 ## Clean up UI state after agent mode finishes (success or error).
@@ -2886,8 +2843,8 @@ static func _execute_with_document_recovery(mcp_manager, unsupported_guard,
 ## @param current_round: Current round number (for recursion)
 ## @param accumulator_chi: The first MODEL ChatHistoryItem that accumulates all display content
 ## @param user_history_item: The user's message, for emitting response_arrived at the end
-## `turn_token`, when given, is the turn the tool calls belong to: once it
-## is stopped, the continuation changes nothing more and sends nothing.
+## `turn_token`, when given, is the turn the tool calls belong to: a turn
+## stopped while its continuation prompt is built sends nothing more.
 func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
 					   accumulator_chi: ChatHistoryItem = null,
 					   user_history_item: ChatHistoryItem = null,
@@ -2895,12 +2852,6 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
 	if unsupported_guard == null:
 		unsupported_guard = UnsupportedOperationGuard.new()
-
-	# The turn was stopped (and maybe replaced): nothing more is done for it.
-	var stopped := func() -> bool: return turn_token >= 0 and _turn_stopped(history, turn_token)
-	var still_current := func() -> bool: return not stopped.call()
-	if stopped.call():
-		return
 
 	# Helper to finish with signal emission
 	var finish_with_signal = func():
@@ -2992,15 +2943,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				result["_deduped"] = true
 				print("[Agent] Dedup: reusing result for %s" % tool_name)
 			else:
-				_tools_in_flight[history.HistoryId] = tool_id
 				result = await _execute_with_document_recovery(mcp_manager,
 					unsupported_guard, tool_name, tool_args, live_document_identity,
 					current_round, history.HistoryId, history)
-				if _tools_in_flight.get(history.HistoryId) == tool_id:
-					_tools_in_flight.erase(history.HistoryId)
-				if stopped.call():
-					_record_late_tool_result(history, tool_id, result)
-					return
 				_batch_cache[call_hash] = result
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
@@ -3060,16 +3005,12 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# floating-summary generation so blocked parent chats still show work.
 		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = true
-		await history.tool_memory_manager.fold_tool_result(history, still_current)
-		if stopped.call():
-			return
+		await history.tool_memory_manager.fold_tool_result(history)
 
 		# Yield one frame so Godot can render/process input between tool calls.
 		# Most tool handlers are synchronous, so `await execute_tool()` completes
 		# instantly — without this, the entire for-loop runs in one frame and walls the CPU.
 		await get_tree().process_frame
-		if stopped.call():
-			return
 
 		if bool(result.get("terminate_tool_loop", false)):
 			if i + 1 < tool_calls.size():
@@ -3105,9 +3046,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	elif context_status.warning:
 		# Warning threshold - try to summarize
 		if context_status.estimated_tokens >= context_status.summarize_threshold:
-			await summarize_agent_history(history, still_current)
-			if stopped.call():
-				return
+			await summarize_agent_history(history)
 			var new_size = estimate_agent_context_size(history)
 			print("[Agent] Context reduced to ~%d tokens" % new_size)
 
@@ -3131,13 +3070,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# instead of calling the initializer again, which can cause issues with graphics composition
 	# Pass history explicitly to avoid current_tab race with concurrent sub-agent chats
 	var continuation_list = await create_prompt(null, false, null, Callable(), history, turn_token)
-	if stopped.call():
-		return
-	if SingletonObject.is_cancelled(history.HistoryId):
-		SingletonObject.clear_cancelled(history.HistoryId)
-		history.termination_reason = "cancelled"
-		history.termination_message = "Cancelled by user before continuation"
-		finish_with_signal.call()
+	# A turn stopped while this prompt was built is over: nothing is sent or
+	# finished for it (its Stop did that).
+	if turn_token >= 0 and _turn_stopped(history, turn_token):
 		return
 
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
@@ -3147,9 +3082,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		model_chi.rendered_node.loading_append = true
 
 	# Get LLM's response to tool results
-	var continuation_response = await generate_content_from_provider(history, continuation_list, null, null, turn_token)
-	if stopped.call():
-		return
+	var continuation_response = await generate_content_from_provider(history, continuation_list)
 
 	if not continuation_response:
 		print("[Agent] ERROR: No continuation response received")
@@ -3167,11 +3100,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		if current_round > 0 and "empty response" in continuation_response.error.to_lower():
 			print("[Agent] Retrying continuation after empty response (round %d)..." % current_round)
 			await get_tree().create_timer(1.0).timeout
-			if stopped.call():
-				return
-			continuation_response = await generate_content_from_provider(history, continuation_list, null, null, turn_token)
-			if stopped.call():
-				return
+			continuation_response = await generate_content_from_provider(history, continuation_list)
 			if continuation_response and not continuation_response.error:
 				# Retry succeeded — continue processing below
 				pass
@@ -3233,8 +3162,6 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.rendered_node.loading_append = false
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
-			if stopped.call():
-				return
 			# Use bottom scroll to follow the growing content (tool calls)
 			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
@@ -3269,8 +3196,6 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.rendered_node.first_time_message = true
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
-			if stopped.call():
-				return
 			# Use bottom scroll to show the final response at the end
 			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
@@ -3298,8 +3223,6 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 	_inputs = get_separated_messages(text_input)
 	
 	for i in _inputs:
-		if _turn_stopped(history, turn_token):
-			return
 		if SingletonObject.is_cancelled(history.HistoryId):
 			SingletonObject.clear_cancelled(history.HistoryId)
 			_release_chat_turn(history, turn_token)
@@ -3344,9 +3267,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		dummy_item.provider = history.provider
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
-		var bot_response = await generate_content_from_provider(history, history_list, null, null, turn_token)
-		if _turn_stopped(history, turn_token):
-			return
+		var bot_response = await generate_content_from_provider(history, history_list)
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
@@ -3510,9 +3431,7 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	
 	
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, run.turn_token)
-	if _turn_stopped(history, run.turn_token):
-		return
+	var bot_response = await generate_content_from_provider(history, history_list)
 	
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
@@ -3564,7 +3483,11 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	var provider := partial_chi.provider if partial_chi.provider != null else history.provider
 	var request := GenerationOptions.request_from_history(history, partial_chi)
 	var temp_chi = provider.continue_partial_response(partial_chi)
-	var history_list: Array[Variant] = await create_prompt(temp_chi, true, provider, Callable(), history)
+	# A turn starting on the chat while this prompt is built makes it stale.
+	var turn_token := history.request_turn_token
+	var history_list: Array[Variant] = await create_prompt(temp_chi, true, provider, Callable(), history, turn_token)
+	if _turn_stopped(history, turn_token):
+		return partial_chi
 	var bot_response = await generate_content_from_provider(history, history_list, request, provider)
 
 	if not bot_response:
@@ -5903,12 +5826,6 @@ func _on_audio_stop_1_pressed() -> void:
 		# the agent_chat_finished emit at line 1036, so we emit it here)
 		if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
 			SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
-
-		# The stopped turn's coroutine returns at its next step without
-		# answering the tool calls it had in hand; each call the model made
-		# that has no result gets one now, before any other turn can start, so
-		# the chat's next request is well-formed.
-		_close_open_tool_calls(history, "Cancelled by user")
 
 		# Mark request as stopped, and apply the cancel rule: the chat's queued
 		# messages are discarded rather than promoted (see _cancel_chat_turn).

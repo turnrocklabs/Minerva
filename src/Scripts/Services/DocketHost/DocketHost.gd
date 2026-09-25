@@ -90,6 +90,8 @@ var _migrating := false
 # The open paths the session was last brought up to date with.
 var _reconciled_paths := PackedStringArray()
 var _reconciling := false
+# Whether the last reconcile could list the open projects.
+var _reconciled_ok := false
 # A person's change to the session (retry, locate, forget) is under way.
 var _changing := false
 # Session path → why the last try to open it failed.
@@ -135,10 +137,12 @@ func master_project() -> Dictionary:
 ## The active system prompt `key` for `model_id` ("" for none), read from
 ## the plugin afresh: the master's prompts, overridden by those of the
 ## session's projects in order (personal.dct's never count), looked up as
-## "key:model_id", then "key:<model family>", then "key". {prompt} ("" when
-## none is defined: the caller's own default applies), or {error} when
-## Docket could not be read, or some of the prompts could be missing (see
-## _prompts_unknown), which is never to be taken for "none".
+## "key:model_id", then "key:<model family>", then "key"; pending session
+## updates are applied first, and a change to the projects read while reading
+## is an error. {prompt} ("" when none is defined: the caller's own default
+## applies), or {error} when Docket could not be read, or some of the prompts
+## could be missing (see _prompts_unknown), which is never to be taken for
+## "none".
 func system_prompt(key: String, model_id: String = "") -> Dictionary:
 	while state == "starting":
 		await state_changed
@@ -146,18 +150,33 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
 	var connection = _connection
 	var generation := _generation
-	# Selectors as they are now, not as a pending reconcile last saw them.
-	var listed := await _refresh(connection, generation)
-	if not listed.is_empty():
-		return {"error": listed}
+	# The session brought up to date first (a project an agent or panel
+	# opened or closed, a person's change), so the projects whose prompts
+	# count are the current ones.
+	while _changing or _reconciling:
+		await get_tree().process_frame
+	if _stale(connection, generation) or not state in ["ready", "degraded"]:
+		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
+	_reconciled_ok = false
+	_reconcile()
+	while _reconciling:
+		await get_tree().process_frame
+	if _stale(connection, generation) or not state in ["ready", "degraded"]:
+		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
+	if not _reconciled_ok:
+		return {"error": "Docket's open projects could not be listed, so the session is not known"}
+	var untracked := _untracked_projects()
+	if not untracked.is_empty():
+		return {"error": "%s open but not yet in the session" % ", ".join(untracked)}
 	var master := master_project()
 	if master.is_empty():
 		return {"error": "the master project is not open"}
 	var unmet := _prompts_unknown()
 	if not unmet.is_empty():
 		return {"error": unmet}
+	var layers: Array = [master] + session_projects()
 	var prompts := {}
-	for project in [master] + session_projects():
+	for project in layers:
 		var read := await _call(connection, "docket_query", {"project": str(project.get("name", "")), "detail": "full",
 			"filter": {"conditions": [
 				{"field": "type", "op": "eq", "value": "prompt"},
@@ -173,6 +192,13 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 			var text := str(item.get("prompt_text", "")) if item is Dictionary else ""
 			if not item_key.is_empty() and not text.is_empty():
 				prompts[item_key] = text
+	# The projects read must still be the session's, each the same opening.
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return {"error": listed}
+	if _changing or _reconciling or not _untracked_projects().is_empty() \
+			or _layer_openings([master_project()] + session_projects()) != _layer_openings(layers):
+		return {"error": "Docket's projects changed while the prompt was read; send again"}
 	for candidate in prompt_keys(key, model_id):
 		if prompts.has(candidate):
 			return {"prompt": prompts[candidate]}
@@ -192,6 +218,24 @@ func _prompts_unknown() -> String:
 		if gap is Dictionary and (gap.has("error") or str(gap.get("slug", "")) == "prompt"):
 			return "the master's prompt type is not as Minerva declares it: %s" % str(gap)
 	return ""
+
+
+# Open projects, as last listed, that are neither the master, personal.dct nor
+# in the session (a change not reconciled yet): their prompts would be missed.
+func _untracked_projects() -> PackedStringArray:
+	var untracked := PackedStringArray()
+	for path in _open_paths():
+		if path != master_path and path != personal_path and not path in _session:
+			untracked.append(path)
+	return untracked
+
+
+# Each layer's path and opening, in order: what a prompt read depends on.
+static func _layer_openings(layers: Array) -> Array:
+	var openings := []
+	for project in layers:
+		openings.append([str(project.get("path", "")), str(project.get("open_generation", ""))])
+	return openings
 
 
 ## The keys prompt `key` is looked up by for `model_id`, most specific
@@ -531,6 +575,7 @@ func _reconcile() -> void:
 		var listed := await _refresh(connection, generation)
 		if _stale(connection, generation):
 			break
+		_reconciled_ok = listed.is_empty()
 		if listed.is_empty():
 			var before := _reconciled_paths
 			var after := _open_paths()

@@ -72,9 +72,7 @@ func project(history: ServiceHistory, provider: BaseProvider) -> Array:
 ## When disabled, skips summarization entirely (raw history preserved).
 ## With batch mode (dehydrate_after_n_rounds > 0): only summarizes when a full
 ## batch of tool results has accumulated outside the context window.
-## `still_current`, when given, answers whether the turn folding is still
-## the chat's: once it is not, no further summary is requested or stored.
-func fold_tool_result(history: ServiceHistory, still_current: Callable = Callable()) -> void:
+func fold_tool_result(history: ServiceHistory) -> void:
 	if not enabled:
 		return
 	# Count total tool results in history
@@ -89,7 +87,7 @@ func fold_tool_result(history: ServiceHistory, still_current: Callable = Callabl
 		if tools_since_last_summary <= window:
 			return  # Batch not full yet — skip summary
 		_last_summary_tool_count = tool_count
-	await _refresh_floating_tool_summary(history, still_current)
+	await _refresh_floating_tool_summary(history)
 
 
 ## Record telemetry update to both self.telemetry and history.AgentContextTelemetry.
@@ -609,7 +607,7 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 	return projected
 
 
-func _refresh_floating_tool_summary(history: ServiceHistory, still_current: Callable = Callable()) -> void:
+func _refresh_floating_tool_summary(history: ServiceHistory) -> void:
 	if not summary_call_fn.is_valid():
 		_record_agent_context_telemetry(history, {"floating_summary_enabled": false})
 		return
@@ -652,15 +650,11 @@ func _refresh_floating_tool_summary(history: ServiceHistory, still_current: Call
 		configured_prompt = configured_prompt.replace("{batch_size}", str(dehydrate_after_n_rounds))
 	var prompt_text := "%s\n\nExisting floating summary:\n%s\n\n---\n\nTool calls to summarize (%d items):\n%s" % [configured_prompt, existing_summary, retiring_items.size(), combined_source]
 	var primary_result: Dictionary = await summary_call_fn.call(settings.get("primary_provider", {}), settings, prompt_text)
-	if still_current.is_valid() and not still_current.call():
-		return
 	var summary_text := str(primary_result.get("text", ""))
 	var fallback_result: Dictionary = {}
 
 	if summary_text.is_empty() and fallback_summary_call_fn.is_valid():
 		fallback_result = await fallback_summary_call_fn.call(settings.get("fallback_provider", {}), settings, prompt_text)
-		if still_current.is_valid() and not still_current.call():
-			return
 		summary_text = str(fallback_result.get("text", ""))
 
 	var used_deterministic_fallback := false

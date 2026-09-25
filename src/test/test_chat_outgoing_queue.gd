@@ -117,7 +117,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 	await get_tree().process_frame
 	return []
 
-func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, _turn_token: int = -1) -> Variant:
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	regen_calls.append("regen")
 	return null
 """
@@ -148,7 +148,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 	await get_tree().process_frame
 	return []
 
-func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, _turn_token: int = -1) -> Variant:
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var sent: ChatHistoryItem = history.HistoryItemList[history.HistoryItemList.size() - 1]
 	real_generates.append(sent.Message)
 	while blocked:
@@ -191,7 +191,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 	await get_tree().process_frame
 	return []
 
-func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, _turn_token: int = -1) -> Variant:
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	real_generates.append(history.provider.provider_name)
 	while blocked:
 		await get_tree().process_frame
