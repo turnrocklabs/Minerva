@@ -90,6 +90,10 @@ var _migrating := false
 # The open paths the session was last brought up to date with.
 var _reconciled_paths := PackedStringArray()
 var _reconciling := false
+# A person's change to the session (retry, locate, forget) is under way.
+var _changing := false
+# Session path → why the last try to open it failed.
+var _open_errors := {}
 var _reconcile_again := false
 
 
@@ -217,6 +221,109 @@ static func model_family(model_id: String) -> String:
 	return family
 
 
+## The session's projects that are not open now: [{path, error}], `error`
+## saying why the last try to open it failed ("" when none was made).
+func failed_projects() -> Array:
+	var failed := []
+	for path in _session:
+		if _descriptor_of(path).is_empty():
+			failed.append({"path": path, "error": str(_open_errors.get(path, ""))})
+	return failed
+
+
+## A person's retry of failed session project `path`: opened again, it stays
+## in the session (as the plugin names it). "" or why not.
+func retry_project(path: String) -> String:
+	return await _change_session(path, path)
+
+
+## A person's replacement of failed session project `path` by the project
+## at `replacement`: once that opens, it takes the entry's place. "" or why
+## not.
+func locate_project(path: String, replacement: String) -> String:
+	return await _change_session(path, replacement)
+
+
+## A person's removal of failed session project `path` from the session; the
+## file is not touched. "" or why not.
+func forget_project(path: String) -> String:
+	return await _change_session(path, "")
+
+
+# Puts the project at `replacement` in the place of failed session entry
+# `path` once it is open ("" leaves the entry out), and saves the session
+# before saying so; one change or reconcile at a time. "" or why not.
+func _change_session(path: String, replacement: String) -> String:
+	while _changing or _reconciling:
+		await get_tree().process_frame
+	_changing = true
+	var why := await _changed_session(path, replacement)
+	_changing = false
+	if state in ["ready", "degraded"]:
+		_publish()
+	return why
+
+
+func _changed_session(path: String, replacement: String) -> String:
+	if not state in ["ready", "degraded"]:
+		return "Docket is not ready: %s" % state
+	if not _session_error.is_empty():
+		return "the saved session could not be read, so it is not changed"
+	var connection = _connection
+	var generation := _generation
+	var listed := await _refresh(connection, generation)
+	if not listed.is_empty():
+		return listed
+	# The entry must still be one that failed: nothing else changed it meanwhile.
+	if not path in _session or not _descriptor_of(path).is_empty():
+		return "%s is not a session project that failed to open" % path
+	var kept := ""
+	var opened_here := {}
+	if not replacement.is_empty():
+		var open_before := _open_paths()
+		var opened := await _open(connection, generation, replacement)
+		if _stale(connection, generation):
+			return "the Docket plugin's process changed"
+		if opened.is_empty():
+			return "%s could not be opened: %s" % [replacement, _open_errors.get(replacement, "no reason given")]
+		kept = str(opened.get("path", replacement))
+		if kept == master_path or kept == personal_path:
+			return "%s is the master or personal project, not a session project" % kept
+		if not kept in open_before:
+			opened_here = opened
+		listed = await _refresh(connection, generation)
+		if not listed.is_empty():
+			return await _unopened(connection, generation, opened_here, listed)
+	var session := PackedStringArray()
+	for entry in _session:
+		if entry == path:
+			if not kept.is_empty() and not kept in session:
+				session.append(kept)
+		elif entry != kept:
+			session.append(entry)
+	var saved := _save_session(session)
+	if not saved.is_empty():
+		return await _unopened(connection, generation, opened_here, saved)
+	_session = session
+	_saved_session = session.duplicate()
+	_migrating = false
+	_reconciled_paths = _open_paths()
+	return ""
+
+
+# A change that failed after opening `opened` (a project that was not open
+# before; {} for none) closes it again, so it does not join the session
+# unasked; `why` is returned, with anything that went wrong closing it.
+func _unopened(connection, generation: int, opened: Dictionary, why: String) -> String:
+	if opened.is_empty() or _stale(connection, generation):
+		return why
+	var closed := await _call(connection, "docket_project_remove", {"name": str(opened.get("name", ""))})
+	if not _stale(connection, generation):
+		await _refresh(connection, generation)
+		_reconciled_paths = _open_paths()
+	return why if not closed.has("error") else "%s; %s stays open: %s" % [why, opened.get("path", ""), closed.error]
+
+
 ## Backend tool `tool` of the plugin with `arguments`, called by the host
 ## itself on the current process: {value} (its result) or {error}.
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
@@ -257,6 +364,7 @@ func _prepare() -> void:
 	_connection = connection
 	_generation = generation
 	_setup_problems.clear()
+	_open_errors.clear()
 	problems.clear()
 	notices.clear()
 	master_report = {}
@@ -303,10 +411,13 @@ func _prepare() -> void:
 		_setup_problems.append("master: %s" % str(gap))
 
 	if FileAccess.file_exists(PERSONAL_USER):
-		var personal := await _open(connection, generation, ProjectSettings.globalize_path(PERSONAL_USER))
+		var personal_file := ProjectSettings.globalize_path(PERSONAL_USER)
+		var personal := await _open(connection, generation, personal_file)
 		if _stale(connection, generation):
 			return
 		personal_path = str(personal.get("path", ""))
+		if personal_path.is_empty():
+			_setup_problems.append("%s could not be opened: %s" % [personal_file, _open_errors.get(personal_file, "")])
 	# Each reopened path is kept as the plugin names the file (canonical);
 	# one that failed is kept as it was.
 	var loaded := _load_session()
@@ -340,14 +451,15 @@ func _prepare() -> void:
 
 
 # Opens the existing project at `path` (never creating it): its descriptor,
-# or {} with the reason among the setup problems.
+# or {} with the reason in _open_errors.
 func _open(connection, generation: int, path: String) -> Dictionary:
 	var opened := await _call(connection, "docket_project_add", {"path": path, "create": false})
 	if _stale(connection, generation):
 		return {}
 	if opened.has("error"):
-		_setup_problems.append("%s could not be opened: %s" % [path, opened.error])
+		_open_errors[path] = str(opened.error)
 		return {}
+	_open_errors.erase(path)
 	return opened.value
 
 
@@ -409,6 +521,8 @@ func _reconcile() -> void:
 	_reconciling = true
 	while true:
 		_reconcile_again = false
+		while _changing:
+			await get_tree().process_frame
 		var connection = _connection
 		var generation := _generation
 		var listed := await _refresh(connection, generation)
@@ -437,6 +551,8 @@ func _reconcile() -> void:
 # could not be saved.
 func _publish(more: Array = []) -> void:
 	var now: Array[String] = _setup_problems.duplicate()
+	for failed in failed_projects():
+		now.append("%s could not be opened: %s" % [failed.path, failed.error])
 	for problem in more:
 		now.append(str(problem))
 	if not master_path.is_empty() and master_project().is_empty():

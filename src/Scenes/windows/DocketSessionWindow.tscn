@@ -1,0 +1,67 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Windows/DocketSessionWindow.gd" id="1_session"]
+
+[node name="DocketSessionWindow" type="Window"]
+title = "Docket Session"
+size = Vector2i(640, 420)
+visible = false
+script = ExtResource("1_session")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+
+[node name="Status" type="Label" parent="Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="FailedLabel" type="Label" parent="Margin/VBox"]
+layout_mode = 2
+text = "Projects of the session that did not open:"
+
+[node name="Failed" type="ItemList" parent="Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Buttons" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+
+[node name="Retry" type="Button" parent="Margin/VBox/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Retry"
+
+[node name="Locate" type="Button" parent="Margin/VBox/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Locate..."
+
+[node name="Forget" type="Button" parent="Margin/VBox/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Forget"
+
+[node name="LocateDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Locate the project file"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.dct ; Docket projects")
+
+[node name="ForgetConfirm" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Forget a session project"
+ok_button_text = "Forget"

@@ -835,7 +835,8 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 		bot_response = BotResponse.new()
 		bot_response.provider = provider
 		bot_response.error = ("Nothing was sent: Minerva's system prompt could not be read from Docket (%s). "
-			+ "Check that the Docket plugin is running in the Plugin Manager, then send again.") \
+			+ "Tools > Docket Session shows Docket's state and any session project that did not open; "
+			+ "put that right, then send again.") \
 			% history.get_meta(DOCKET_PROMPT_ERROR_META)
 		bot_response.set_meta("error_code", "system_prompt_unavailable")
 	elif not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):

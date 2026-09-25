@@ -216,6 +216,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_item("Install Stream Deck Plugin...", 107)
 	tools_menu.add_item("Plugin Manager...", 108)
 	tools_menu.add_item("Docket...", 109)
+	tools_menu.add_item("Docket Session...", 110)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -314,6 +315,7 @@ func _rebuild_tools_menu_full() -> void:
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Add MCP Server...", 106)
 	tools_menu.add_item("Install Stream Deck Plugin...", 107)
+	tools_menu.add_item("Docket Session...", 110)
 	tools_menu.add_item("Refresh All Connections", 100)
 
 
@@ -342,6 +344,16 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_open_plugin_manager()
 		109:
 			SingletonObject.open_docket_panel_for_user()
+		110:
+			_show_docket_session()
+
+
+## Docket's state and the projects of its session that did not open.
+func _show_docket_session() -> void:
+	if not _docket_session_window:
+		_docket_session_window = preload("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
+		get_tree().root.add_child(_docket_session_window)
+	_docket_session_window.popup_centered()
 
 
 func _open_plugin_manager() -> void:
@@ -363,6 +375,7 @@ func _show_trigger_manager() -> void:
 
 
 var _spending_dashboard: SpendingDashboard = null
+var _docket_session_window: Window = null
 
 func _show_spending_dashboard() -> void:
 	if not _spending_dashboard:
