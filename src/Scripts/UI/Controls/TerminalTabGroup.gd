@@ -21,6 +21,9 @@ const _TERMINAL_THEME := preload("res://assets/themes/terminal.tres")
 # this file stays compilable in isolated script-run harnesses.
 const NOTIFY_LEDGER_PATH := "res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd"
 const SESSION_REGISTRY_PATH := "res://Scripts/Services/Terminal/HarnessSessionRegistry.gd"
+const NotifyDeliveryClass := preload("res://Scripts/Services/Terminal/NotifyDeliveryClass.gd")
+## Settled notifications a tab's tooltip lists, newest last.
+const RECENT_SETTLED_SHOWN := 3
 const SESSIONS_DIALOG_PATH := "res://Scenes/HarnessSessionsDialog.tscn"
 const ATTACH_MENU_PATH := "res://Scenes/AgentSessionAttachMenu.tscn"
 
@@ -481,11 +484,14 @@ func _queue_retained_refresh() -> void:
 
 
 ## The notifications still open for each tab's terminal: the tab's tooltip
-## names the registered session the tab holds and lists them with their state
-## and reason, and the header counts them.
+## names the registered session the tab holds and lists them with their state,
+## reason, class and mechanism, then the last few delivered ones; the header
+## counts the open ones.
 func _refresh_retained() -> void:
 	_retained_refresh_queued = false
-	var ledger = load(NOTIFY_LEDGER_PATH).shared()
+	var ledger_script: GDScript = load(NOTIFY_LEDGER_PATH)
+	var ledger = ledger_script.shared()
+	var settled_states: Array = ledger_script.SETTLED
 	var sessions = load(SESSION_REGISTRY_PATH).shared()
 	var total: int = 0
 	for tab in range(_tab_bar.tab_count):
@@ -494,12 +500,20 @@ func _refresh_retained() -> void:
 		if session == null or not is_instance_valid(session) or not "terminal_id" in session:
 			continue
 		var lines := PackedStringArray()
-		for record: Dictionary in ledger.list(str(session.terminal_id), true):
+		var settled := PackedStringArray()
+		for record: Dictionary in ledger.list(str(session.terminal_id)):
 			var why: String = str(record.get("hold_reason", ""))
-			lines.append("%s %s%s: %s" % [str(record["delivery_id"]), str(record["state"]),
-				(" (%s)" % why) if not why.is_empty() else "", str(record["text"]).left(80)])
+			var line: String = "%s %s%s [%s]: %s" % [str(record["delivery_id"]), str(record["state"]),
+				(" (%s)" % why) if not why.is_empty() else "", NotifyDeliveryClass.describe(record),
+				str(record["text"]).left(80)]
+			if str(record["state"]) in settled_states:
+				settled.append(line)
+			else:
+				lines.append(line)
 		total += lines.size()
 		var tip: String = "" if lines.is_empty() else "Notifications waiting:\n" + "\n".join(lines)
+		if not settled.is_empty():
+			tip += "\nLast delivered:\n" + "\n".join(settled.slice(-RECENT_SETTLED_SHOWN))
 		var identity: String = sessions.identity_for_terminal(str(session.terminal_id))
 		if not identity.is_empty():
 			tip = "Session: %s\n%s" % [identity, tip]

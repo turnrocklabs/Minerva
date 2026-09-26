@@ -305,9 +305,12 @@ static func find_chat_tab_index(chat_id: String) -> int:
 ## question pending. The same holds when the chat is merely BUSY: the turn in
 ## flight may end in a question, so a background message queued now is deferred
 ## too, rather than being promoted ahead of the answer the agent is waiting on.
+## `urgent` (background messages only): a queued entry is moved ahead of the
+## routine background entries in front of it (ChatOutgoingQueue.promote_urgent),
+## its pending bubble with it.
 static func submit_user_message(history, text: String,
 		generation_options: Dictionary = {},
-		defer_when_question_pending: bool = false) -> Dictionary:
+		defer_when_question_pending: bool = false, urgent: bool = false) -> Dictionary:
 	if history == null:
 		return error("Chat not available")
 	var chat_pane = SingletonObject.Chats
@@ -323,6 +326,8 @@ static func submit_user_message(history, text: String,
 	if defer_when_question_pending and (history.is_awaiting_question_answer()
 			or history.is_request_active):
 		var deferred = chat_pane.enqueue_background_message(history, text, generation_options)
+		if urgent:
+			_promote_urgent(chat_pane._outgoing_queue, deferred)
 		return {"success": true, "queued": true, "entry_id": deferred.id}
 	var was_busy: bool = history.is_request_active
 	var original_tab: int = chat_pane.current_tab
@@ -342,6 +347,19 @@ static func submit_user_message(history, text: String,
 	if was_busy:
 		entry_id = chat_pane._outgoing_queue.newest_id(history.HistoryId)
 	return {"success": true, "queued": was_busy, "entry_id": entry_id}
+
+
+## Move an urgent queued entry ahead of routine ones, and its pending bubble
+## in front of the bubble of the entry it now precedes.
+static func _promote_urgent(queue: ChatOutgoingQueue, entry: ChatOutgoingQueue.Entry) -> void:
+	var passed: ChatOutgoingQueue.Entry = queue.promote_urgent(entry)
+	if entry.bubble is Control:
+		(entry.bubble as Control).tooltip_text = "Urgent notification: runs ahead of the routine notifications queued here, after this chat's current turn."
+	if passed == null or not is_instance_valid(entry.bubble) or not is_instance_valid(passed.bubble):
+		return
+	var parent: Node = passed.bubble.get_parent()
+	if parent != null and parent == entry.bubble.get_parent():
+		parent.move_child(entry.bubble, passed.bubble.get_index())
 
 
 ## Pending entries of a chat's outgoing queue, oldest first. Read-only view for

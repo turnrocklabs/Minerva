@@ -20,9 +20,9 @@ extends RefCounted
 ## `control:` namespace (e.g. control:stop, control:scope) on an addressed
 ## item: a change whose item's set of control tags differs from the set this
 ## session last saw on that item is a directive, and goes out at once as its
-## own pointer, independent of any routine one. The set is remembered per run,
-## so after a restart the first change to an item still carrying control tags
-## is delivered as a directive again.
+## own pointer, independent of any routine one, sent as urgent. The set is
+## remembered per run, so after a restart the first change to an item still
+## carrying control tags is delivered as a directive again.
 ##
 ## Dedup: each change is taken at most once per session, keyed by
 ## "<identity>|<change key>". The change key is the plugin event's position,
@@ -219,7 +219,7 @@ func _send_controls(identity: String) -> void:
 			_recheck_later()
 			return
 		entry.sending = true
-		entry.delivery_id = await _send(identity, str(entry.line), str(entry.sender))
+		entry.delivery_id = await _send(identity, str(entry.line), str(entry.sender), true)
 		entry.sending = false
 	if queue.is_empty():
 		_control.erase(identity)
@@ -229,9 +229,10 @@ func _send_controls(identity: String) -> void:
 
 # One pointer to `identity` through the ledger: its delivery id, or "" when
 # nothing was kept (refused before a target was chosen, or failed at once).
-func _send(identity: String, line: String, sender: String) -> String:
+# Directives go as urgent (see NotifyDeliveryClass), routine pointers not.
+func _send(identity: String, line: String, sender: String, urgent: bool = false) -> String:
 	var receipt: Dictionary = await tools.notify_retained({"to": identity, "from": sender,
-		"text": TriggerHarnessDelivery.one_line(line)})
+		"text": TriggerHarnessDelivery.one_line(line), "urgent": urgent})
 	var delivery_id: String = str(receipt.get("delivery_id", ""))
 	if delivery_id.is_empty():
 		return ""

@@ -816,7 +816,7 @@ func _test_wiring_is_present() -> void:
 	check("G3: notify submits through the SHARED send path, not its own",
 		body.find("MCPToolUtils.submit_user_message(history, envelope") != -1)
 	check("G3b: notify submits as a BACKGROUND message (deferred while a card waits)",
-		body.find("submit_user_message(history, envelope, {}, true)") != -1, body)
+		body.find("submit_user_message(history, envelope, {}, true, urgent)") != -1, body)
 	check("G4: notify owns no delivery code of its own",
 		body.find("write_input") == -1 and body.find("session.") == -1, body)
 	check("G5: the envelope is built by the host, from the shared prefix",

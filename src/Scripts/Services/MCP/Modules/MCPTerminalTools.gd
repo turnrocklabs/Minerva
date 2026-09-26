@@ -35,6 +35,13 @@ extends MCPToolModule
 ## terminal id, or a registered identity's bound terminal). Identity and role
 ## are addresses, not grants; the caller's name is declared, not verified.
 ## _terminal_notify enforces it.
+##
+## A notification is routine or urgent (NotifyDeliveryClass). Both wait for the
+## harness's turn to end; an urgent one is placed ahead of routine ones: in a
+## passthrough chat's queue, or, on a harness/platform whose own input queue
+## was measured, by typing it into that queue while the turn runs, where
+## Minerva's held routine lines cannot pass it. Every receipt says which
+## mechanism carried it and when the harness gets it; none says interrupted.
 
 
 ## The envelope every notification is delivered inside. Shared by convention
@@ -52,6 +59,8 @@ const NOTIFY_MAX_WAIT_MS := 20000
 const NOTIFY_HUMAN_TYPING_MS := 5000
 ## Pause between looks while a direct delivery waits out a hold.
 const NOTIFY_RETRY_INTERVAL_S := 0.25
+## How long a line typed into a harness's own queue is looked for there.
+const NATIVE_QUEUE_CONFIRM_MS := 2000
 
 ## Entry id the agent-relay provider registers per watched terminal — the ONLY
 ## binding between a passthrough chat and its terminal.
@@ -65,6 +74,7 @@ const AGENT_RELAY_PLUGIN_ID := "agent_relay"
 const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
 const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
+const NotifyDeliveryClass := preload("res://Scripts/Services/Terminal/NotifyDeliveryClass.gd")
 
 ## The hint each harness shows while a turn runs: the host-side twin of the
 ## relay's spinner_glyphs (agent-relay profiles.rs). Change one and change the
@@ -108,7 +118,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_terminal_list",
-		"List all terminal sessions with their IDs, names, and dimensions. A terminal holding a registered harness session also carries its identity and role; `sessions` lists every registered session (minerva_session_register) with identity, role, harness, terminal_id (empty when no terminal holds it this run), liveness (live, other_harness, no_harness, unknown, exited, unbound), pending (notifications kept for it) and superseded_by when a handover replaced it; `unavailable_roles` lists every role no live session holds, with its holders and the notifications pending for it. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable).",
+		"List all terminal sessions with their IDs, names, and dimensions. A terminal holding a registered harness session also carries its identity and role; `sessions` lists every registered session (minerva_session_register) with identity, role, harness, terminal_id (empty when no terminal holds it this run), liveness (live, other_harness, no_harness, unknown, exited, unbound), pending (notifications kept for it) and superseded_by when a handover replaced it; `unavailable_roles` lists every role no live session holds, with its holders and the notifications pending for it. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable). delivery (terminals with a harness in front, or whose foreground this platform cannot read) says how a routine and an urgent minerva_terminal_notify would reach it here: mechanism (chat_queue, relay_when_idle, native_queue, relay_unclassified; relay_into_turn appears only on receipts) and delivered_at (turn_end, harness_queue, unknown).",
 		{"type": "object", "properties": {}}, "terminal")
 
 	server._register_tool("minerva_terminal_write",
@@ -167,17 +177,18 @@ func register_tools() -> void:
 		}, "required": ["terminal_id"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify",
-		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. Any harness terminal may be notified except your own (the one reply_to names); that is refused with code notify_self. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. A line addressed to a registered identity or role that no reachable session holds is kept too, as 'awaiting_recipient', and delivered once one does (it registers again, or the role is handed over with minerva_session_handover); a superseded identity's line goes to its successor. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'awaiting_recipient' (kept, no session to take it yet), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
+		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. Any harness terminal may be notified except your own (the one reply_to names); that is refused with code notify_self. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. A line addressed to a registered identity or role that no reachable session holds is kept too, as 'awaiting_recipient', and delivered once one does (it registers again, or the role is handed over with minerva_session_handover); a superseded identity's line goes to its successor. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'awaiting_recipient' (kept, no session to take it yet), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Nothing interrupts a running turn: every receipt carries class (routine/urgent), mechanism (chat_queue: the passthrough chat's queue, after its turn; relay_when_idle: held while a turn runs, typed when none shows; native_queue: typed into the harness's own input queue while the turn runs, where the harness holds it and decides when it runs (an urgent line, where that queue was measured); relay_into_turn: typed while a turn ran where that queue was never measured; relay_unclassified: no harness could be identified in front) and delivered_at (turn_end, harness_queue, unknown). Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
 		{"type": "object", "properties": {
 			"to": {"type": "string", "description": "Target: a registered session identity, a role held by exactly one live session, a terminal id, a tab name, 'harness@tab name', or a bare harness ('claude' / 'codex') when exactly one terminal runs it. Identity and role are tried first and survive tab renames and Minerva restarts."},
 			"text": {"type": "string", "description": "The notification, ONE line, at most %d characters. No newlines." % NOTIFY_MAX_TEXT_LENGTH},
 			"from": {"type": "string", "description": "Who this is from, self-declared: your harness name, plus '@' and your tab name when you are inside Minerva ($MINERVA_TERMINAL_NAME). Recipients are told to trust the envelope Minerva builds, not the name inside it."},
 			"reply_to": {"type": "string", "description": "Your registered session identity (preferred: it survives restarts) or your own terminal id ($MINERVA_TERMINAL_ID) when you are inside Minerva. It is written into the envelope so the recipient can answer you, not a look-alike instance, and it names the terminal you may not notify. Omit from a host terminal."},
 			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for the harness to take the line before the receipt returns; a line not taken by then is kept either way." % NOTIFY_MAX_WAIT_MS},
+			"urgent": {"type": "boolean", "description": "Stop or scope steering rather than a routine pointer (default false). It goes ahead of routine notifications waiting for the same harness; it does NOT interrupt the turn in progress. The receipt's mechanism and delivered_at say how it went."},
 		}, "required": ["to", "text", "from"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify_status",
-		"Where kept notifications stand: one by the delivery_id its minerva_terminal_notify receipt carried, or every one addressed to a terminal (all when terminal_id is omitted). Each record has state (queued, held, awaiting_recipient, sending, handed_to_harness, unconfirmed, failed, dropped), its target (with the address it is retried under, and retargeted_from after a handover), hold_reason, reason, attempts and its state history. A failed one stays readable here.",
+		"Where kept notifications stand: one by the delivery_id its minerva_terminal_notify receipt carried, or every one addressed to a terminal (all when terminal_id is omitted). Each record has state (queued, held, awaiting_recipient, sending, handed_to_harness, unconfirmed, failed, dropped), class (routine/urgent), mechanism and delivered_at (as in the notify receipt; mechanism is empty until an attempt chose one), its target (with the address it is retried under, and retargeted_from after a handover), hold_reason, reason, attempts and its state history. A failed one stays readable here.",
 		{"type": "object", "properties": {
 			"delivery_id": {"type": "string", "description": "The delivery_id from a notify receipt."},
 			"terminal_id": {"type": "string", "description": "List the notifications addressed to this terminal."},
@@ -413,6 +424,10 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				# Seen through an agent-container launcher: the session it shows.
 				if foreground.has("container"):
 					entry["container"] = str(foreground["container"])
+			# How each class of notification would reach this terminal now.
+			if entry.has("harness") or not entry.has("foreground_process"):
+				entry["delivery"] = NotifyDeliveryClass.plan_for_terminal(str(entry.get("harness", "")),
+					_find_passthrough_chat(str(session.terminal_id)) != null)
 			# cwd is absent, never guessed: a session started without one runs
 			# in Minerva's own working directory, which the host cannot report
 			# as the child's launch directory.
@@ -819,32 +834,39 @@ func _notify_tool(arguments: Dictionary) -> Dictionary:
 		if sessions.is_registered(to):
 			awaiting["identity"] = sessions.current_identity(to)
 			awaiting["address"] = awaiting["identity"]
+		var klass: String = NotifyDeliveryClass.class_of(_urgent(arguments))
 		var waiting_id: String = ledger.open(awaiting, _envelope(arguments), "relay",
-			NotifyDeliveryLedger.AWAITING, {"reason": str(receipt.get("error", ""))})
+			NotifyDeliveryLedger.AWAITING, {"reason": str(receipt.get("error", "")), "class": klass})
 		ledger.wait_for_recipient(waiting_id, _retry_attempt(arguments, waiting_id))
 		return {"success": true, "retained": true, "status": NotifyDeliveryLedger.AWAITING,
 			"code": str(receipt["code"]), "reason": str(receipt.get("error", "")),
-			"target": awaiting, "delivery_id": waiting_id, "note": AWAITING_NOTE}
+			"target": awaiting, "delivery_id": waiting_id, "note": AWAITING_NOTE,
+			"class": klass, "mechanism": "", "delivered_at": ""}
 	if receipt.has("delivery_id") or target.is_empty():
 		return receipt
 	if not str(target.get("identity", "")).is_empty():
 		target["address"] = to if sessions.is_role(to) else str(target["identity"])
 	var envelope: String = _envelope(arguments)
 	var status: String = str(receipt.get("status", ""))
+	var classed: Dictionary = {}
+	for field: String in ["class", "mechanism", "delivered_at"]:
+		classed[field] = str(receipt.get(field, ""))
+	if str(classed["class"]).is_empty():
+		classed["class"] = NotifyDeliveryClass.class_of(_urgent(arguments))
 	if status == NotifyDeliveryLedger.HANDED or status == NotifyDeliveryLedger.UNCONFIRMED:
 		receipt["delivery_id"] = ledger.open(target, envelope, "relay", status,
-			{"submit": receipt.get("submit", "")})
+			classed.merged({"submit": receipt.get("submit", ""), "reason": str(receipt.get("reason", ""))}))
 		return receipt
 	if status != NotifyDeliveryLedger.HELD:
 		receipt["delivery_id"] = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.FAILED,
-			{"reason": str(receipt.get("error", status))})
+			classed.merged({"reason": str(receipt.get("error", status))}))
 		return receipt
 	# A registered session is looked for by identity (or the role it was
 	# addressed by) on every retry, so a line kept for it follows it to the
 	# tab it registers from next.
-	var id: String = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.HELD, {
+	var id: String = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.HELD, classed.merged({
 		"hold_reason": str(receipt.get("hold_reason", "")),
-		"reason": str(receipt.get("reason", ""))})
+		"reason": str(receipt.get("reason", ""))}))
 	ledger.retain(id, _retry_attempt(arguments, id))
 	var kept: Dictionary = receipt.duplicate()
 	kept.erase("error")
@@ -895,6 +917,14 @@ static func _envelope(arguments: Dictionary) -> String:
 	return "%s%s%s] %s" % [NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text]
 
 
+## Whether the caller marked this notification urgent.
+static func _urgent(arguments: Dictionary) -> bool:
+	var urgent = arguments.get("urgent", false)
+	if urgent is bool:
+		return urgent
+	return str(urgent).to_lower() == "true"
+
+
 ## One line from one harness to another. The host resolves the target, holds
 ## while a person is typing there, then hands the envelope to whichever
 ## delivery path the target has: its passthrough chat (queue + bubble) or the
@@ -938,6 +968,7 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 		return own
 
 	var envelope: String = _envelope(arguments)
+	var urgent: bool = _urgent(arguments)
 
 	var wait_ms: int = clampi(
 		MCPToolUtils.coerce_int(arguments.get("wait_ms", 0)), 0, NOTIFY_MAX_WAIT_MS)
@@ -957,7 +988,7 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 	if history == null:
 		# The direct path paces its own holds within wait_ms.
 		return await _notify_direct(target, receipt_target, envelope, wait_ms, expect,
-			bool(options.get("hold_busy", false)))
+			bool(options.get("hold_busy", false)), urgent)
 
 	# The chat path queues, so its holds are decided once, now. A person
 	# mid-sentence in the target outranks any agent: the write would submit
@@ -978,18 +1009,20 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 		return _withdrawn_receipt(receipt_target)
 
 	receipt_target["chat_id"] = str(history.HistoryId)
-	# A notification is never urgent enough to take a turn the chat's agent is
+	# No notification, urgent included, takes a turn the chat's agent is
 	# blocked on: while a question card is unanswered this queues (deferred)
-	# rather than starting a generate, so the human's answer goes first.
+	# rather than starting a generate, so the human's answer goes first. An
+	# urgent one only moves ahead of routine notifications in that queue.
 	# The ledger follows the line past the chat's queue to the relay's answer:
 	# leaving the queue is not the harness taking it. The record goes to the
 	# chat before the submit, because an idle chat starts the turn inside it.
 	var ledger = NotifyDeliveryLedger.shared()
 	var delivery_id: String = str(options.get("delivery_id", ""))
 	if delivery_id.is_empty():
-		delivery_id = ledger.open(receipt_target, envelope, "chat", NotifyDeliveryLedger.SENDING)
+		delivery_id = ledger.open(receipt_target, envelope, "chat", NotifyDeliveryLedger.SENDING,
+			{"class": NotifyDeliveryClass.class_of(urgent)})
 	ledger.begin_chat(delivery_id, str(history.HistoryId))
-	var submitted: Dictionary = MCPToolUtils.submit_user_message(history, envelope, {}, true)
+	var submitted: Dictionary = MCPToolUtils.submit_user_message(history, envelope, {}, true, urgent)
 	if not submitted.get("success", false):
 		ledger.update(delivery_id, NotifyDeliveryLedger.FAILED,
 			{"reason": str(submitted.get("error", "the chat refused it"))})
@@ -1013,6 +1046,9 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 		"queue_position": MCPToolUtils.outgoing_queue_position(entry_id),
 		"entry_id": entry_id,
 		"delivery_id": delivery_id,
+		"class": str(record.get("class", "")),
+		"mechanism": str(record.get("mechanism", "")),
+		"delivered_at": str(record.get("delivered_at", "")),
 	}
 	if not str(record.get("hold_reason", "")).is_empty():
 		receipt["hold_reason"] = str(record["hold_reason"])
@@ -1031,8 +1067,16 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 ## re-read from the live session before each look: a relay left to wait out
 ## a dialog would write the instant a person's keystroke cleared it, which is
 ## exactly when that person is at the keyboard.
+##
+## An urgent line for a harness whose own input queue was measured on this
+## platform is not held for a running turn: it is typed into that queue, and
+## taken as handed only when the harness's queued marker shows it
+## (NotifyDeliveryClass.harness_queued). Every other line waits for the turn
+## to end. Each receipt carries class, mechanism and delivered_at.
 func _notify_direct(target: Dictionary, receipt_target: Dictionary,
-		envelope: String, wait_ms: int, expect: Dictionary = {}, hold_busy: bool = false) -> Dictionary:
+		envelope: String, wait_ms: int, expect: Dictionary = {}, hold_busy: bool = false,
+		urgent: bool = false) -> Dictionary:
+	var klass: String = NotifyDeliveryClass.class_of(urgent)
 	var harness: String = str(target.get("harness", ""))
 	var pid: int = int(target.get("foreground_pid", 0))
 	var tid: String = str(target["terminal_id"])
@@ -1072,6 +1116,9 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 				if harness.is_empty():
 					target["foreground_process"] = session.program_of(foreground)
 					return _no_harness(target)
+		# The harness in front decides the mechanism on every look.
+		var mechanism: String = NotifyDeliveryClass.planned(klass, harness, false)
+		var native: bool = mechanism == NotifyDeliveryClass.NATIVE_QUEUE
 		if hold.is_empty() and typed_ago >= 0 and typed_ago < NOTIFY_HUMAN_TYPING_MS:
 			hold = _held(receipt_target, "human_typing",
 				"a person typed in '%s' %d ms ago; nothing was written" % [str(target["name"]), typed_ago])
@@ -1080,7 +1127,7 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 		elif hold.is_empty() and int(expect.get("process", 0)) > 0 and pid <= 0:
 			hold = _held(receipt_target, "process_unknown",
 				"the foreground process of '%s' cannot be identified just now, so it cannot be confirmed as the expected session; nothing was written" % str(target["name"]))
-		elif hold.is_empty() and hold_busy and _busy_turn_shown(session, harness):
+		elif hold.is_empty() and hold_busy and not native and _busy_turn_shown(session, harness):
 			hold = _held(receipt_target, "busy_turn",
 				"%s in '%s' is in the middle of a turn; nothing was written" % [harness, str(target["name"])])
 		elif hold.is_empty():
@@ -1091,6 +1138,11 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 			# a restart or a withdrawal during the relay's round trip still
 			# stops it.
 			var expected_harness: String = str(expect.get("harness", ""))
+			# A write made while a turn shows lands in the harness's own input
+			# queue; the screen before it is what the queued marker is judged
+			# against.
+			var into_turn: bool = _busy_turn_shown(session, harness)
+			var before: String = _screen_text(session) if into_turn else ""
 			var raw = await _relay_send({
 				"terminal_id": tid, "text": envelope, "arm": false,
 				"profile": harness, "gate_budget_ms": 0,
@@ -1105,15 +1157,39 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 				var sent: Dictionary = classified.get("result", {})
 				var submit = sent.get("submit", null)
 				var submit_state: String = str(submit.get("state", "")) if submit is Dictionary else ""
+				var evidence: String = str(submit.get("evidence", "")) if submit is Dictionary else ""
 				# The relay's own confirmation is the only evidence the harness
 				# took the line; any other outcome typed it and proved nothing.
-				var written: Dictionary = {
+				var status: String = NotifyDeliveryLedger.HANDED if submit_state == "submitted" \
+					else NotifyDeliveryLedger.UNCONFIRMED
+				var why: String = ""
+				var used: String = mechanism
+				if into_turn and evidence == "echo":
+					# An echo is only confirmed once no turn shows: the line ran
+					# as a submit of its own.
+					used = NotifyDeliveryClass.RELAY_WHEN_IDLE
+				elif into_turn:
+					used = NotifyDeliveryClass.NATIVE_QUEUE \
+						if NotifyDeliveryClass.native_queue_measured(harness, NotifyDeliveryClass.platform()) \
+						else NotifyDeliveryClass.RELAY_INTO_TURN
+					# The relay's "busy" evidence was on screen before this write,
+					# so only the harness's queued marker confirms it.
+					var queued: bool = false
+					if status == NotifyDeliveryLedger.HANDED and used == NotifyDeliveryClass.NATIVE_QUEUE:
+						queued = await _harness_queued(session, harness, envelope, before)
+					if status == NotifyDeliveryLedger.HANDED and not queued:
+						status = NotifyDeliveryLedger.UNCONFIRMED
+						why = "typed while %s was in a turn; its queued marker did not show the line" % harness
+				elif used == NotifyDeliveryClass.NATIVE_QUEUE:
+					used = NotifyDeliveryClass.RELAY_WHEN_IDLE
+				var written: Dictionary = _stamped({
 					"success": true, "target": receipt_target,
-					"status": NotifyDeliveryLedger.HANDED if submit_state == "submitted" \
-						else NotifyDeliveryLedger.UNCONFIRMED,
+					"status": status,
 					"harness": harness,
 					"submit": submit_state,
-				}
+				}, klass, used)
+				if not why.is_empty():
+					written["reason"] = why
 				# The host's pane-mode verdict ("unknown": the container does not
 				# report it, so nothing could hold this for it); absent from an
 				# older relay or host.
@@ -1131,13 +1207,43 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 		# look is taken once the caller's wait has lapsed.
 		var remaining_ms: int = deadline - Time.get_ticks_msec()
 		if tree == null or remaining_ms <= 0:
-			return hold
+			return _stamped(hold, klass, mechanism)
 		await tree.create_timer(minf(NOTIFY_RETRY_INTERVAL_S, remaining_ms / 1000.0)).timeout
 		if Time.get_ticks_msec() >= deadline:
-			return hold
+			return _stamped(hold, klass, mechanism)
 	# Unreachable: the loop only leaves through the returns above, but the
 	# parser wants every path to yield a value.
 	return {}
+
+
+## `receipt` with its class, the mechanism that carries it and when the
+## harness gets it (NotifyDeliveryClass).
+static func _stamped(receipt: Dictionary, klass: String, mechanism: String) -> Dictionary:
+	receipt["class"] = klass
+	receipt["mechanism"] = mechanism
+	receipt["delivered_at"] = NotifyDeliveryClass.delivered_at(mechanism)
+	return receipt
+
+
+## Whether the harness shows `envelope` in its own input queue, looked for
+## until NATIVE_QUEUE_CONFIRM_MS has passed: the queued state was first seen
+## within a second of the Enter in the measurements.
+func _harness_queued(session, harness: String, envelope: String, before: String) -> bool:
+	var tree: SceneTree = SingletonObject.get_tree()
+	var deadline: int = Time.get_ticks_msec() + NATIVE_QUEUE_CONFIRM_MS
+	while true:
+		if NotifyDeliveryClass.harness_queued(harness, envelope, before, _screen_text(session)):
+			return true
+		if tree == null or Time.get_ticks_msec() >= deadline:
+			return false
+		await tree.create_timer(NOTIFY_RETRY_INTERVAL_S).timeout
+	return false
+
+
+func _screen_text(session) -> String:
+	if session == null or not session.has_method("read_viewport_text"):
+		return ""
+	return str(session.read_viewport_text())
 
 
 ## The refusal for a terminal whose foreground is not an agent harness.

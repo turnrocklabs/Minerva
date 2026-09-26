@@ -34,6 +34,11 @@ extends RefCounted
 ## Handing a line to the harness is not the recipient reading it; nothing here
 ## infers consumption from what the screen shows.
 ##
+## Every record also carries `class` (routine or urgent), `mechanism` (the
+## path that carries or carried it) and `delivered_at` (turn_end,
+## harness_queue or unknown): see NotifyDeliveryClass. A mechanism is ""
+## until an attempt has chosen one (a record awaiting its recipient).
+##
 ## Direct deliveries are retried by the attempt Callable the tool hands over
 ## (one look each, the same guards every time). Chat deliveries are followed
 ## through their queue entry, and learn the harness's answer from
@@ -82,6 +87,7 @@ const QUEUE_POLL_S := 0.5
 const AWAIT_RECHECK_S := 10.0
 
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
+const NotifyDeliveryClass := preload("res://Scripts/Services/Terminal/NotifyDeliveryClass.gd")
 
 static var _shared = null
 
@@ -172,7 +178,8 @@ func state_of_entry(entry_id: int) -> String:
 # ── Writing ────────────────────────────────────────────────────────────
 
 ## A new record for `envelope` bound for `target` ({terminal_id, name, ...}),
-## in `state`. Returns its delivery id.
+## in `state`; `fields` may set class, mechanism and delivered_at. Returns its
+## delivery id.
 func open(target: Dictionary, envelope: String, path: String, state: String, fields: Dictionary = {}) -> String:
 	_serial += 1
 	var id: String = "nd-%d" % _serial
@@ -190,6 +197,9 @@ func open(target: Dictionary, envelope: String, path: String, state: String, fie
 		"accepted_ticks": Time.get_ticks_msec(),
 		"available_ticks": Time.get_ticks_msec(),
 		"entry_id": 0,
+		"class": NotifyDeliveryClass.ROUTINE,
+		"mechanism": "",
+		"delivered_at": "",
 		"history": [],
 	}
 	_records[id] = record
@@ -217,6 +227,8 @@ func begin_chat(delivery_id: String, history_id: String) -> void:
 	record["path"] = "chat"
 	record["chat_tracked"] = true
 	record["target"]["chat_id"] = history_id
+	record["mechanism"] = NotifyDeliveryClass.CHAT_QUEUE
+	record["delivered_at"] = NotifyDeliveryClass.delivered_at(NotifyDeliveryClass.CHAT_QUEUE)
 	update(delivery_id, SENDING, {"hold_reason": ""})
 
 
@@ -311,8 +323,12 @@ func retarget(from_identities: PackedStringArray, role: String, to_identity: Str
 	return {"retargeted": moved, "left_in_chat": left}
 
 
-## Settle or re-hold a direct record from one notify receipt.
+## Settle or re-hold a direct record from one notify receipt, taking the
+## mechanism the attempt chose.
 func apply_receipt(delivery_id: String, receipt: Dictionary) -> void:
+	if _records.has(delivery_id) and not str(receipt.get("mechanism", "")).is_empty():
+		_records[delivery_id]["mechanism"] = str(receipt["mechanism"])
+		_records[delivery_id]["delivered_at"] = str(receipt.get("delivered_at", ""))
 	if str(receipt.get("code", "")) in HarnessSessionRegistry.RECIPIENT_UNAVAILABLE:
 		update(delivery_id, AWAITING, {"hold_reason": "", "reason": str(receipt.get("error", ""))})
 		return
@@ -536,7 +552,8 @@ func _resubmit_later(delivery_id: String) -> void:
 		return
 	record["attempts"] = int(record["attempts"]) + 1
 	begin_chat(delivery_id, history_id)
-	var submitted: Dictionary = MCPToolUtils.submit_user_message(history, str(record["text"]), {}, true)
+	var submitted: Dictionary = MCPToolUtils.submit_user_message(history, str(record["text"]), {}, true,
+		str(record["class"]) == NotifyDeliveryClass.URGENT)
 	if not bool(submitted.get("success", false)):
 		update(delivery_id, FAILED, {"reason": str(submitted.get("error", "the chat refused it"))})
 		return

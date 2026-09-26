@@ -39,6 +39,9 @@ class Entry extends RefCounted:
 	## blocked on that answer, so the answer's turn must come first. Once a turn
 	## ends without a question, deferred entries are eligible again, in order.
 	var deferred: bool = false
+	## A background message marked urgent (stop or scope steering): placed
+	## ahead of routine background entries by promote_urgent.
+	var urgent: bool = false
 
 
 ## What became of an entry that left the queue.
@@ -118,6 +121,30 @@ func pop_next(history_id: String, include_deferred: bool = true) -> Entry:
 		_pending.erase(entry.history_id)
 	_record_outcome(entry, Outcome.DISPATCHED)
 	return entry
+
+
+## Mark a queued background entry urgent and move it ahead of the routine
+## background entries (deferred, not urgent) directly in front of it. A
+## message a person queued, and an earlier urgent entry, stop the move: those
+## keep their place ahead of it. Returns the entry it now stands in front of,
+## or null when it did not move.
+func promote_urgent(entry: Entry) -> Entry:
+	entry.urgent = true
+	if not _pending.has(entry.history_id):
+		return null
+	var queue: Array = _pending[entry.history_id]
+	var index: int = queue.find(entry)
+	var to: int = index
+	while to > 0:
+		var ahead: Entry = queue[to - 1]
+		if not ahead.deferred or ahead.urgent:
+			break
+		to -= 1
+	if index == -1 or to == index:
+		return null
+	queue.remove_at(index)
+	queue.insert(to, entry)
+	return queue[to + 1]
 
 
 ## Drop one entry (the user removed its bubble). Returns true if it was queued.
