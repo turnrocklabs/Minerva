@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Agent-container gateway policy against instrumented stub upstreams: the tool
 allowlist, Docket item types and references, response shaping, logging, and
-Minerva notify/list with the launcher's binding (fixtures in
-agent_gateway_fixtures.py).
+Minerva notify/list with the launcher's binding, and the session's live
+grants (fixtures in agent_gateway_fixtures.py).
 """
 import io
 import json
+import os
 import socket
 import subprocess
 import sys
 import time
 import unittest
+from unittest import mock
 
 from agent_gateway_fixtures import (  # noqa: E402
-    BUG, DCR, GATEWAY, GatewayCase, KB, NOTE, OTHER, PLUGIN_BUG,
+    BUG, DCR, GATEWAY, GatewayCase, KB, NOTE, OTHER, PLUGIN_BUG, TERMINALS,
     NOTE_A, NOTE_B, NOTE_IMG, POLICY, SECRET, SENTINEL, SESSION, TARGET, TERMINAL,
     text_result)
+
+sys.path.insert(0, str(GATEWAY.parent))
+import agent  # noqa: E402  the launcher Minerva drives grant/revoke through
 
 
 class Test(GatewayCase):
@@ -253,10 +258,10 @@ class Test(GatewayCase):
         self.assertNotIn("leak_sentinel", log)
 
     def test_notify_targets_and_identity(self):
+        # No target list: Minerva judges whether `to` has a harness in front.
+        # The gateway refuses its own terminal and bad text itself.
         self.assertDenied(self.call("minerva", "minerva_terminal_notify",
-                                    {"to": OTHER, "text": "see item"}))
-        self.assertDenied(self.call("minerva", "minerva_terminal_notify",
-                                    {"to": "codex", "text": "see item"}))
+                                    {"to": TERMINAL, "text": "see item"}))
         self.assertDenied(self.call("minerva", "minerva_terminal_notify",
                                     {"to": TARGET, "text": "line one\nline two"}))
         self.assertDenied(self.call("minerva", "minerva_terminal_notify",
@@ -271,9 +276,10 @@ class Test(GatewayCase):
                            "reply_to": TERMINAL}])
 
     def test_notify_and_list_follow_the_binding(self):
-        # A restarted Minerva attaches with a new terminal id and new targets.
-        self.bind("4444", ["5555"])
-        self.assertDenied(self.call("minerva", "minerva_terminal_notify", {"to": TARGET, "text": "x"}))
+        # A restarted Minerva attaches with a new terminal id; that id becomes
+        # the reply address and the one terminal notify refuses.
+        self.bind("4444", [])
+        self.assertDenied(self.call("minerva", "minerva_terminal_notify", {"to": "4444", "text": "x"}))
         body = self.call("minerva", "minerva_terminal_notify", {"to": "5555", "text": "see item"})
         self.assertIn("result", body, body)
         self.assertEqual(self.stubs["minerva"].calls("minerva_terminal_notify")[-1]["reply_to"], "4444")
@@ -296,7 +302,7 @@ class Test(GatewayCase):
         self.assertIn("result", self.call("minerva", "minerva_terminal_notify", {"to": TARGET, "text": "x"}))
 
     def test_notes_only_as_granted(self):
-        self.notes_file.write_text(json.dumps({"read": [NOTE_A, NOTE_IMG], "write": [NOTE_B]}))
+        self.grant(read=[NOTE_A, NOTE_IMG], write=[NOTE_B])
         body = self.call("minerva", "minerva_get_note", {"note_id": NOTE_A})
         self.assertEqual(self.result_value(body), {"success": True, "note_id": NOTE_A, "title": "board",
                                                    "content": "hello"})
@@ -328,7 +334,7 @@ class Test(GatewayCase):
                            ("minerva_delete_note", {"note_id": NOTE_B})):
             with self.subTest(tool):
                 self.assertDenied(self.call("minerva", tool, args))
-        self.notes_file.write_text("not json")                # a broken grant file grants nothing
+        self.grants_file.write_text("not json")               # a broken grant record grants nothing
         self.assertDenied(self.call("minerva", "minerva_update_note", {"note_id": NOTE_B, "content": "x"}))
         self.assertEqual(self.stubs["minerva"].calls("minerva_update_note"), [{"note_id": NOTE_B,
                                                                               "content": "handoff"}])
@@ -339,7 +345,6 @@ class Test(GatewayCase):
         # The same probes agent-container/smoke.py runs inside a dev container,
         # here through the real forwarder to this gateway and its stubs.
         agent_dir = GATEWAY.parent
-        self.notes_file.write_text(json.dumps({"read": [], "write": []}))
         ports = {}
         for name in ("minerva", "docket", "nudge"):
             with socket.socket() as probe:
@@ -366,6 +371,61 @@ class Test(GatewayCase):
                                        "nudge_list_components"})
         self.assertNotIn("minerva_clock", self.stubs["minerva"].tools_called())
         self.assertNotIn("docket_project_list", self.stubs["docket"].tools_called())
+
+    def test_grants_changed_mid_session_apply_on_the_next_call(self):
+        # The 2026-09-25 outage: notify was frozen at attach to a terminal
+        # that no longer existed. Grants now change while the session runs,
+        # through the same agent.py writer Minerva calls, and the very next
+        # call follows them. Oracle: the gateway's decision on that call.
+        def change(add, session=SESSION, **grants):
+            with mock.patch.dict(os.environ, {"MINERVA_AGENT_STATE": str(self.state)}):
+                agent.change_grants(session, add, grants.get("read"), grants.get("write"),
+                                    grants.get("notify", False))
+
+        def update(note):
+            return self.call("minerva", "minerva_update_note", {"note_id": note, "content": "x"})
+        change(False, notify=True)
+        self.assertFalse(json.loads(self.grants_file.read_text())["notify"])
+        body = update(NOTE_B)                                     # refused -> allowed
+        self.assertIn("needs the note-write grant", body["error"]["message"])
+        change(True, write=[NOTE_B])
+        self.assertIn("result", update(NOTE_B))
+        change(False, write=[NOTE_B])                             # allowed -> refused
+        body = update(NOTE_B)
+        self.assertIn("needs the note-write grant", body["error"]["message"])
+        self.assertEqual(len(self.stubs["minerva"].calls("minerva_update_note")), 1)
+
+        # A harness tab opened after the session started (and after attach):
+        # no re-attach, no --takeover, no target list to extend.
+        late = {"id": "4444", "name": "claude-2", "harness": "claude"}
+        self.stubs["minerva"].terminals = TERMINALS + [late]
+        notify = {"to": "4444", "text": "see note"}
+        body = self.call("minerva", "minerva_terminal_notify", notify)
+        self.assertIn("notify_not_granted", body["error"]["message"])   # notify was revoked above
+        change(True, notify=True)
+        body = self.call("minerva", "minerva_terminal_notify", notify)
+        self.assertIn("result", body, body)
+        self.assertEqual(self.stubs["minerva"].calls("minerva_terminal_notify"),
+                         [{**notify, "from": f"container:claude@{SESSION}", "reply_to": TERMINAL}])
+        listed = self.result_value(self.call("minerva", "minerva_terminal_list", {}))["terminals"]
+        self.assertIn("4444", [t["id"] for t in listed])
+        self.assertNotIn(OTHER, [t["id"] for t in listed])     # no harness in front
+        # Its own terminal stays refused, however the grants change.
+        body = self.call("minerva", "minerva_terminal_notify", {"to": TERMINAL, "text": "me"})
+        self.assertIn("notify_self", body["error"]["message"])
+        self.assertEqual(len(self.stubs["minerva"].calls("minerva_terminal_notify")), 1)
+        # A session started by an earlier agent.py has notes.json and no
+        # grants.json: notes.json is its initial record, notify on, and every
+        # change keeps notes.json in step for the gateway it still runs.
+        legacy = self.state / "sessions" / "legacy-a" / "control"
+        for private in (legacy.parent, legacy):
+            private.mkdir(mode=0o700)
+        (legacy / "notes.json").write_text(json.dumps({"read": [NOTE_A], "write": []}))
+        change(True, session="legacy-a", write=[NOTE_B])
+        self.assertEqual(json.loads((legacy / "grants.json").read_text()),
+                         {"version": 1, "note_read": [NOTE_A], "note_write": [NOTE_B], "notify": True})
+        self.assertEqual(json.loads((legacy / "notes.json").read_text()),
+                         {"read": [NOTE_A], "write": [NOTE_B]})
 
     def test_terminal_list_is_filtered_and_projected(self):
         body = self.call("minerva", "minerva_terminal_list", {})

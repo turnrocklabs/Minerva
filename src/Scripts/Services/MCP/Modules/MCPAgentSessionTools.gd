@@ -1,6 +1,7 @@
 extends MCPToolModule
 ## MCP verbs for agent-container sessions: create, start, stop, status, info,
-## readiness, list and build. Each is the MCP twin of a control in Preferences > Containers >
+## readiness, list, build, and grant/revoke (note and notify grants, changed
+## live). Each is the MCP twin of a control in Preferences > Containers >
 ## Agent Sessions; both drive AgentSessionStore, which runs the launcher
 ## Minerva ships. Attaching a session in a tab is done with the
 ## `attach_command` that start, status and list return.
@@ -14,7 +15,8 @@ func get_tool_names() -> Array[String]:
 	return ["minerva_agent_session_create", "minerva_agent_session_start",
 		"minerva_agent_session_stop", "minerva_agent_session_status",
 		"minerva_agent_session_info", "minerva_agent_session_readiness",
-		"minerva_agent_session_list", "minerva_agent_session_build"]
+		"minerva_agent_session_list", "minerva_agent_session_build",
+		"minerva_agent_session_grant", "minerva_agent_session_revoke"]
 
 
 func register_tools() -> void:
@@ -66,6 +68,20 @@ func register_tools() -> void:
 		"Build the agent image from the recipes this Minerva ships. Returns at once; the first build can take a long while. Poll minerva_agent_session_list for image.built and building.",
 		{"type": "object", "properties": {}}, "containers")
 
+	var grant_properties: Dictionary = {
+		"name": _NAME,
+		"note_read": {"type": "array", "items": {"type": "string"}, "description": "Minerva note ids (minerva_list_notes note_id) the session may read."},
+		"note_write": {"type": "array", "items": {"type": "string"}, "description": "Minerva note ids the session may write and append to; write implies read."},
+		"notify": {"type": "boolean", "description": "true names the notify grant (to grant or revoke): the session may notify any Minerva tab with a harness in front except its own; there is no per-target list. false or omitted leaves it as it is."},
+	}
+	server._register_tool("minerva_agent_session_grant",
+		"Grant an agent-container session access, running or not: notes it may read, notes it may write, and/or the notify grant. The session's gateway reads its grants on every call, so its next call can use them; no re-attach or takeover. Returns the session's grants {note_read, note_write, notify}; status, info and list show them too.",
+		{"type": "object", "properties": grant_properties, "required": ["name"]}, "containers")
+
+	server._register_tool("minerva_agent_session_revoke",
+		"Revoke an agent-container session's grants, running or not: a note_read entry, a note_write entry (the next write to that note is refused, naming the grant it needs) and/or the notify grant. A note still in the other list keeps that access. Applies to the session's next call. Returns the session's grants.",
+		{"type": "object", "properties": grant_properties, "required": ["name"]}, "containers")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var store: RefCounted = AgentSessionStore.shared()
@@ -88,6 +104,14 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			result = await store.readiness(name, str(arguments.get("profile", "")).strip_edges())
 		"minerva_agent_session_list":
 			result = await store.list_sessions()
+		"minerva_agent_session_grant", "minerva_agent_session_revoke":
+			var note_read: PackedStringArray = _strings(arguments.get("note_read", []))
+			var note_write: PackedStringArray = _strings(arguments.get("note_write", []))
+			var notify: bool = arguments.get("notify", false) == true
+			if tool_name == "minerva_agent_session_grant":
+				result = await store.grant(name, note_read, note_write, notify)
+			else:
+				result = await store.revoke(name, note_read, note_write, notify)
 		"minerva_agent_session_build":
 			if store.building:
 				return MCPToolUtils.error("the agent image is already building")

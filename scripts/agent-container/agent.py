@@ -5,9 +5,11 @@
   agent.py create NAME --harness claude|codex --folder PATH... [--start-in PATH]
                   [--project P]... [--mode start|resume|shell]
   agent.py start NAME [--mode MODE] [--note-read ID]... [--note-write ID]...
-  agent.py attach NAME [--notify-to TERMINAL_ID]... [--takeover]
+  agent.py attach NAME [--takeover]
   agent.py up NAME [start options] [attach options]     start if needed, then attach
-  agent.py notes NAME [--note-read ID]... [--note-write ID]...
+  agent.py grant NAME [--note-read ID]... [--note-write ID]... [--notify]
+  agent.py revoke NAME [--note-read ID]... [--note-write ID]... [--notify]
+  agent.py notes NAME [--note-read ID]... [--note-write ID]...   replace the note grants
   agent.py stop NAME
   agent.py status NAME
   agent.py info NAME [--map HOST_PATH]...
@@ -31,10 +33,27 @@ detaches; `attach` from any new terminal reconnects to the same shell, never
 starting a new harness or model turn.
 
 Attaching binds the session to that terminal for notify routing: a binding
-file carries the terminal id, the notify targets, a generation token and a
-lease that the attached launcher renews. An attach that dies without
-cleaning up stops routing once its lease lapses. A per-session lock
-serializes create, start, stop and attach ownership.
+file carries the terminal id (the reply address, and the one terminal the
+session may not notify), a generation token and a lease that the attached
+launcher renews. An attach that dies without cleaning up stops routing once
+its lease lapses. A per-session lock serializes create, start, stop and
+attach ownership; grant changes have a lock of their own.
+
+Grants. What a session may do beyond the fixed gateway policy is one record,
+control/grants.json: {"version": 1, "note_read": [NOTE_ID...], "note_write":
+[NOTE_ID...], "notify": true|false}. Write implies read. notify lets the
+session notify any Minerva tab with a harness in front except its own; there
+is no per-target list. Minerva changes the record with `grant` and `revoke`
+(GUI and minerva_agent_session_grant/revoke) at any time, running or not,
+with no attach or --takeover; the gateway reads it on every call, so the next
+call sees the change. `revoke --note-read` removes only the read entry and
+`revoke --note-write` only the write entry.
+Migration: a session with no grants.json (started by an earlier agent.py)
+gets one from its control/notes.json, with notify on, when it next starts or
+its grants are next changed. Every grant change also rewrites notes.json
+({"read", "write"}), which is what a gateway started by an earlier agent.py
+reads per call, so such a running session follows note grants without a
+restart; its notify still follows attach --notify-to until it restarts.
 
 Everything a session keeps lives under the state root
 (${MINERVA_AGENT_STATE:-${XDG_STATE_HOME:-~/.local/state}/minerva-agent}):
@@ -42,8 +61,10 @@ Everything a session keeps lives under the state root
   sessions/NAME/home/                 the harness's own config dir: login,
                                       settings, transcripts (the owner logs in
                                       there once, inside the harness)
-  sessions/NAME/control/binding.json  attached terminal, notify targets, lease
-  sessions/NAME/control/notes.json    Minerva notes the session may read/write
+  sessions/NAME/control/binding.json  attached terminal and its lease
+  sessions/NAME/control/grants.json   notes the session may read/write, notify
+  sessions/NAME/control/notes.json    the note grants, for gateways that predate
+                                      grants.json
   sessions/NAME/launcher.json         the attached launcher's process group and
                                       the container's init, for Minerva to see
                                       the harness in front (host-only)
@@ -106,6 +127,9 @@ LEGACY_KEYS = {"harness", "task", "repos", "projects"}
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 NOTE_ID = re.compile(r"[0-9a-f]{32,64}")
+GRANTS_VERSION = 1
+# Keeps grants.json under the gateway's read limit (gateway.MAX_GRANTS).
+MAX_GRANTED_NOTES = 256
 PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 LEGACY_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 NATIVES_MANIFEST = "/run/minerva-natives.json"
@@ -467,12 +491,14 @@ def read_json(path):
 
 
 @contextlib.contextmanager
-def session_lock(name):
-    """Serializes create, start, stop and binding changes for one session."""
+def session_lock(name, lock="lock"):
+    """Serializes create, start, stop and binding changes for one session.
+    Grant changes take their own lock ("grants.lock"), so they never wait
+    behind a start that is cloning."""
     private_dir(state_root())
     private_dir(state_root() / "sessions")
     sdir = private_dir(session_dir(name))
-    fd = os.open(sdir / "lock", os.O_RDWR | os.O_CREAT, 0o600)
+    fd = os.open(sdir / lock, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
@@ -497,12 +523,81 @@ def attached_terminal(name):
     return ""
 
 
+def grants_path(name):
+    return session_dir(name) / "control" / "grants.json"
+
+
+def _note_ids(value):
+    return isinstance(value, list) and all(isinstance(i, str) and NOTE_ID.fullmatch(i) for i in value)
+
+
+def load_grants(name):
+    """(grants, problem) for session `name`. With no grants.json the record is
+    the one migration gives: notes.json's note grants, notify on. A malformed
+    grants.json reads as no grants at all, as the gateway reads it, and
+    `problem` says so."""
+    empty = {"version": GRANTS_VERSION, "note_read": [], "note_write": [], "notify": False}
+    path = grants_path(name)
+    if os.path.lexists(path):
+        data = read_json(path)
+        if isinstance(data, dict) and set(data) == set(empty) and type(data["version"]) is int \
+                and data["version"] == GRANTS_VERSION and isinstance(data["notify"], bool) \
+                and _note_ids(data["note_read"]) and _note_ids(data["note_write"]):
+            return data, ""
+        return empty, f"{path} is malformed, so the session holds no grants; grant again to rewrite it"
+    notes = read_json(session_dir(name) / "control" / "notes.json")
+    ok = isinstance(notes, dict) and set(notes) == {"read", "write"} \
+        and _note_ids(notes["read"]) and _note_ids(notes["write"])
+    return {"version": GRANTS_VERSION, "note_read": notes["read"] if ok else [],
+            "note_write": notes["write"] if ok else [], "notify": True}, ""
+
+
+def save_grants(name, grants):
+    """Under the grants lock: write grants.json, and notes.json in step for a
+    gateway started before grants.json."""
+    for key in ("note_read", "note_write"):
+        for note in grants[key]:
+            if not NOTE_ID.fullmatch(note):
+                raise Refused(f"bad note id {note!r}")
+        grants[key] = sorted(set(grants[key]))
+        if len(grants[key]) > MAX_GRANTED_NOTES:
+            raise Refused(f"a session holds at most {MAX_GRANTED_NOTES} {key} grants")
+    control = private_dir(session_dir(name) / "control")
+    write_json(control / "grants.json", grants)
+    write_json(control / "notes.json", {"read": grants["note_read"], "write": grants["note_write"]})
+    return grants
+
+
 def write_notes(name, read, write):
+    """Replace the note grants, keeping the notify grant."""
+    with session_lock(name, "grants.lock"):
+        grants, _ = load_grants(name)
+        return save_grants(name, {**grants, "note_read": list(read or []), "note_write": list(write or [])})
+
+
+def ensure_grants(name):
+    """Migration: a session with no grants.json gets the record load_grants
+    derives from its notes.json."""
+    with session_lock(name, "grants.lock"):
+        if not grants_path(name).exists():
+            save_grants(name, load_grants(name)[0])
+
+
+def change_grants(name, add, read, write, notify):
+    """grant (add=True) or revoke the given entries; returns the new record."""
     for note in (read or []) + (write or []):
         if not NOTE_ID.fullmatch(note):
             raise Refused(f"bad note id {note!r}")
-    control = private_dir(session_dir(name) / "control")
-    write_json(control / "notes.json", {"read": sorted(set(read or [])), "write": sorted(set(write or []))})
+    if not (read or write or notify):
+        raise Refused("name at least one grant: --note-read, --note-write or --notify")
+    with session_lock(name, "grants.lock"):
+        grants = dict(load_grants(name)[0])
+        for key, ids in (("note_read", read or []), ("note_write", write or [])):
+            current = set(grants[key])
+            grants[key] = list(current | set(ids) if add else current - set(ids))
+        if notify:
+            grants["notify"] = add
+        return save_grants(name, grants)
 
 
 def sockets_ready(sock):
@@ -571,6 +666,9 @@ def describe(name, record):
               "start_in": record["start_in"], "projects": record["projects"], "mode": record["mode"],
               "state": state, "attached_terminal": attached_terminal(name) if state == "running" else "",
               "record": "folders" if record["version"] == RECORD_VERSION else "legacy"}
+    result["grants"], problem = load_grants(name)
+    if problem:
+        result["grants_error"] = problem
     if "task" in record:
         result["task"] = record["task"]
     folders = ", ".join(f["host"] or f["path"] for f in record["folders"])
@@ -650,8 +748,10 @@ def cmd_start(args):
         stop(gw)  # a gateway whose harness already exited
         if not (control / "binding.json").exists():
             write_json(control / "binding.json", {})
-        if args.note_read or args.note_write or not (control / "notes.json").exists():
+        if args.note_read or args.note_write:
             write_notes(name, args.note_read, args.note_write)
+        else:
+            ensure_grants(name)
         for folder in record["folders"]:
             if folder["kind"] == "clone":
                 ensure_clone(folder)
@@ -828,8 +928,7 @@ def cmd_up(args):
     resolve_record(args)   # never attach to a session created differently
     if running(containers(args.name)[0]):
         if args.note_read or args.note_write:
-            with session_lock(args.name):
-                write_notes(args.name, args.note_read, args.note_write)
+            write_notes(args.name, args.note_read, args.note_write)
     else:
         print(cmd_start(args)["message"])
     return cmd_attach(args)
@@ -837,9 +936,22 @@ def cmd_up(args):
 
 def cmd_notes(args):
     check_layout()
-    with session_lock(args.name):
-        write_notes(args.name, args.note_read, args.note_write)
+    write_notes(args.name, args.note_read, args.note_write)
     return 0
+
+
+def cmd_grant(args, add=True):
+    check_layout()
+    if load_record(args.name) is None:
+        raise Refused(f"no session {args.name}")
+    grants = change_grants(args.name, add, args.note_read, args.note_write, args.notify)
+    return {"ok": True, "id": args.name, "grants": grants,
+            "message": f"{args.name}: read {len(grants['note_read'])} note(s), write "
+                       f"{len(grants['note_write'])}, notify {'on' if grants['notify'] else 'off'}"}
+
+
+def cmd_revoke(args):
+    return cmd_grant(args, add=False)
 
 
 def cmd_stop(args):
@@ -964,14 +1076,22 @@ def parse(argv):
         # Matches a record from before folders; never creates one.
         p.add_argument("--task", type=session_name)
 
+    def grant_options(p):
+        p.add_argument("--notify", action="store_true",
+                       help="the notify grant: any harness tab except the session's own")
+
     def attach_options(p):
-        p.add_argument("--notify-to", action="append", metavar="TERMINAL_ID")
+        # Only a gateway started before grants.json reads this list; a current
+        # gateway lets the session notify any harness tab but its own.
+        p.add_argument("--notify-to", action="append", metavar="TERMINAL_ID", help=argparse.SUPPRESS)
         p.add_argument("--takeover", action="store_true")
 
     for command, options in (("build", []), ("create", [lambda p: record_options(p, True)]),
                              ("start", [start_options, note_options]), ("attach", [attach_options]),
                              ("up", [start_options, note_options, attach_options]),
                              ("notes", [note_options]), ("stop", []), ("status", []),
+                             ("grant", [note_options, grant_options]),
+                             ("revoke", [note_options, grant_options]),
                              ("info", [lambda p: p.add_argument("--map", action="append", metavar="HOST_PATH")]),
                              ("readiness", [lambda p: p.add_argument("--profile", metavar="PROFILE")]),
                              ("list", [])):
@@ -985,7 +1105,8 @@ def parse(argv):
 
 
 COMMANDS = {"build": cmd_build, "create": cmd_create, "start": cmd_start, "attach": cmd_attach,
-            "up": cmd_up, "notes": cmd_notes, "stop": cmd_stop, "status": cmd_status,
+            "up": cmd_up, "notes": cmd_notes, "grant": cmd_grant, "revoke": cmd_revoke,
+            "stop": cmd_stop, "status": cmd_status,
             "info": cmd_info, "readiness": cmd_readiness, "list": cmd_list}
 
 

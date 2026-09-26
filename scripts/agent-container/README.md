@@ -115,6 +115,28 @@ export PATH=/agent-home/tools/bin:$PATH; claude --resume
 
 Once the session is recreated on a current image, this is automatic.
 
+## Grants: notes and notify
+
+What a session may do beyond the fixed gateway policy is one record Minerva
+keeps, `sessions/NAME/control/grants.json`: the notes it may read, the notes
+it may write (write implies read) and whether it may notify. With the notify
+grant a session may notify any Minerva tab with a harness in front except its
+own; there is no list of targets. Change it any time, running or not, from
+Preferences > Containers > Agent Sessions (Grants), with
+`minerva_agent_session_grant` / `minerva_agent_session_revoke`, or:
+
+```bash
+python3 scripts/agent-container/agent.py grant NAME --note-write NOTE_ID --notify
+python3 scripts/agent-container/agent.py revoke NAME --note-write NOTE_ID
+```
+
+The gateway reads the record on every call, so the next call follows it; no
+re-attach or `--takeover` is involved. A session started by an earlier
+`agent.py` gets its `grants.json` from its `notes.json` (notify on) when it
+next starts or its grants next change. Until it restarts, its gateway still
+reads `notes.json` (kept in step with every change) and its notify targets
+from `attach --notify-to`.
+
 ## Notifications into a session (Linux)
 
 Minerva can deliver `minerva_terminal_notify` messages into the tab a session
@@ -131,10 +153,10 @@ Recognising the harness inside a container works on Linux hosts only.
 A session attached before this existed needs the new launcher. Detach first
 (`Ctrl+]` then `d` in the attached tab), then restart Minerva onto a build that
 has it (coordinate this with the owner). Terminal ids can change across the
-restart, so re-attach from a fresh terminal with the CURRENT Codex terminal id:
+restart, so re-attach from a fresh terminal:
 
 ```bash
-python3 scripts/agent-container/agent.py attach NAME --notify-to CURRENT_CODEX_TERMINAL_ID
+python3 scripts/agent-container/agent.py attach NAME
 ```
 
 If the old Minerva has already closed, the attach already ended with it: just

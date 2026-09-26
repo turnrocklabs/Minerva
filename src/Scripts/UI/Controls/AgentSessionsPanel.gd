@@ -5,7 +5,9 @@ extends VBoxContainer
 ## identity, path mappings, Git identity, toolchain profile) and a read-only
 ## readiness check, builds the agent image, and creates
 ## a session from a name, harness, mode, folders, start folder and optional
-## Docket projects. The GUI twin of minerva_agent_session_*; both drive
+## Docket projects. Its Grants section shows and changes the selected
+## session's note grants (from the notes open in Minerva) and notify grant;
+## a change applies to the session's next call, with no re-attach. The GUI twin of minerva_agent_session_*; both drive
 ## AgentSessionStore. Scene: res://Scenes/AgentSessionsPanel.tscn, placed in
 ## Preferences > Containers.
 
@@ -45,6 +47,14 @@ var _busy: bool = false
 @onready var _projects: LineEdit = %Projects
 @onready var _create: Button = %Create
 @onready var _folder_dialog: FileDialog = %FolderDialog
+## Rows of the selected session's note grants; metadata {kind, id}, kind
+## "note_read" or "note_write".
+@onready var _grants: ItemList = %Grants
+@onready var _grant_note: OptionButton = %GrantNote
+@onready var _grant_read: Button = %GrantRead
+@onready var _grant_write: Button = %GrantWrite
+@onready var _revoke_grant: Button = %RevokeGrant
+@onready var _notify: CheckBox = %Notify
 
 
 func _ready() -> void:
@@ -70,6 +80,12 @@ func _ready() -> void:
 	_folders.item_selected.connect(func(_index: int) -> void: _remove_folder.disabled = false)
 	_remove_folder.pressed.connect(_on_remove_folder_pressed)
 	_create.pressed.connect(_on_create_pressed)
+	_tree.item_selected.connect(_show_grants)
+	_grants.item_selected.connect(func(_index: int) -> void: _update_buttons())
+	_grant_read.pressed.connect(_on_grant_note_pressed.bind(false))
+	_grant_write.pressed.connect(_on_grant_note_pressed.bind(true))
+	_revoke_grant.pressed.connect(_on_revoke_grant_pressed)
+	_notify.toggled.connect(_on_notify_toggled)
 	_refresh()
 
 
@@ -135,6 +151,8 @@ func _show_listing(listing: Dictionary) -> void:
 	else:
 		_set_label(_image_status, "Agent image %s is not built yet: Build image before starting a session." % str(image.get("tag", "")), MUTED_COLOR)
 	_build_image.disabled = bool(listing.get("building", false))
+	_fill_note_choices()
+	_show_grants()
 	_update_buttons()
 
 
@@ -163,6 +181,11 @@ func _update_buttons() -> void:
 	_inspect.disabled = _busy or not readable
 	_readiness.disabled = _busy or not readable
 	_create.disabled = _busy
+	var has_note: bool = _grant_note.selected >= 0
+	_grant_read.disabled = _busy or not readable or not has_note
+	_grant_write.disabled = _busy or not readable or not has_note
+	_revoke_grant.disabled = _busy or not readable or _grants.get_selected_items().is_empty()
+	_notify.disabled = _busy or not readable
 
 
 func _set_busy(busy: bool) -> void:
@@ -283,6 +306,94 @@ static func _readiness_text(result: Dictionary) -> String:
 ## Launcher and container text shown literally, never as BBCode.
 static func _esc(text: String) -> String:
 	return text.replace("[", "[lb]")
+
+
+# ── Grants ─────────────────────────────────────────────────────────────
+
+## The notes open in Minerva, for the note picker: uuid -> "tab / title".
+static func _open_notes() -> Dictionary:
+	var titles: Dictionary = {}
+	var container: NotesContainer = SingletonObject.notes_container
+	if container == null:
+		return titles
+	for tab: int in container.get_tab_count():
+		var tab_title: String = container.get_tab_title(tab)
+		for note: Note in container.get_notes(tab):
+			titles[note.uuid] = "%s / %s" % [tab_title, note.title]
+	return titles
+
+
+## Refills the picker with the open notes, keeping the chosen one.
+func _fill_note_choices() -> void:
+	var chosen: String = str(_grant_note.get_selected_metadata()) if _grant_note.selected >= 0 else ""
+	_grant_note.clear()
+	var titles: Dictionary = _open_notes()
+	for uuid: String in titles:
+		_grant_note.add_item(str(titles[uuid]))
+		_grant_note.set_item_metadata(_grant_note.item_count - 1, uuid)
+		if uuid == chosen:
+			_grant_note.select(_grant_note.item_count - 1)
+
+
+## Shows the selected session's grants from its last listing entry.
+func _show_grants() -> void:
+	_grants.clear()
+	var entry: Dictionary = _sessions.get(_selected_id(), {})
+	var grants: Dictionary = entry.get("grants", {}) if entry.get("grants") is Dictionary else {}
+	var titles: Dictionary = _open_notes()
+	for kind: String in ["note_write", "note_read"]:
+		var ids: Array = grants.get(kind, []) if grants.get(kind) is Array else []
+		for id: Variant in ids:
+			var note: String = str(id)
+			var label: String = str(titles.get(note, "note %s… (not open here)" % note.left(12)))
+			_grants.add_item("%s  %s" % ["write" if kind == "note_write" else "read", label])
+			_grants.set_item_metadata(_grants.item_count - 1, {"kind": kind, "id": note})
+	if entry.has("grants_error"):
+		_grants.add_item(str(entry["grants_error"]), null, false)
+		_grants.set_item_custom_fg_color(_grants.item_count - 1, ERROR_COLOR)
+	_notify.set_pressed_no_signal(bool(grants.get("notify", false)))
+	_update_buttons()
+
+
+func _on_grant_note_pressed(write: bool) -> void:
+	var id: String = _selected_id()
+	var note: String = str(_grant_note.get_selected_metadata())
+	var one := PackedStringArray([note])
+	_set_busy(true)
+	var result: Dictionary = await _store.grant(id, PackedStringArray() if write else one,
+		one if write else PackedStringArray(), false)
+	_set_busy(false)
+	_report(result, "%s may now %s %s; its next call can use it." % [id, "write" if write else "read",
+		_grant_note.get_item_text(_grant_note.selected)])
+
+
+func _on_revoke_grant_pressed() -> void:
+	var chosen: PackedInt32Array = _grants.get_selected_items()
+	if chosen.is_empty():
+		return
+	var row: Variant = _grants.get_item_metadata(chosen[0])
+	if not row is Dictionary:
+		return
+	var kind: String = str((row as Dictionary).get("kind", ""))
+	var one := PackedStringArray([str((row as Dictionary).get("id", ""))])
+	var id: String = _selected_id()
+	_set_busy(true)
+	var result: Dictionary = await _store.revoke(id, one if kind == "note_read" else PackedStringArray(),
+		one if kind == "note_write" else PackedStringArray(), false)
+	_set_busy(false)
+	_report(result, "Revoked %s's %s grant on that note from its next call." % [id, "write" if kind == "note_write" else "read"])
+
+
+func _on_notify_toggled(on: bool) -> void:
+	var id: String = _selected_id()
+	_set_busy(true)
+	var result: Dictionary
+	if on:
+		result = await _store.grant(id, PackedStringArray(), PackedStringArray(), true)
+	else:
+		result = await _store.revoke(id, PackedStringArray(), PackedStringArray(), true)
+	_set_busy(false)
+	_report(result, "%s %s notify harness tabs from its next call." % [id, "may" if on else "may no longer"])
 
 
 func _on_build_pressed() -> void:

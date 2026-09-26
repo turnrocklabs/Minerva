@@ -79,37 +79,40 @@ class ProtocolError(Exception):
 
 @dataclass(frozen=True)
 class Binding:
-    """Which Minerva terminal is attached to a session right now, and whom it
-    may notify. Terminal ids change when Minerva restarts, so these come
-    from the launcher's binding file on every call, never from startup."""
+    """Which Minerva terminal is attached to a session right now. Terminal ids
+    change when Minerva restarts, so this comes from the launcher's binding
+    file on every call, never from startup. It is the reply address the
+    gateway stamps on a notify, and the one terminal a notify may not name."""
     terminal_id: object     # str, or None when no terminal is attached
-    notify_targets: frozenset
 
 
-UNATTACHED = Binding(None, frozenset())
+UNATTACHED = Binding(None)
 
 
 @dataclass(frozen=True)
-class NoteGrants:
-    """Minerva notes the launcher lets this session use (coordination and
-    handoff notes). Note ids survive Minerva restarts, so these do not
-    depend on the attach. Write implies read."""
+class Grants:
+    """What Minerva currently lets this session do beyond the fixed policy:
+    the notes it may read and write (write implies read), and whether it may
+    notify other harness tabs at all. Minerva rewrites the grant record while
+    the session runs; the gateway reads it on every call, so a change applies
+    to the next call and nothing is fixed at start or attach."""
     read: frozenset
     write: frozenset
+    notify: bool
 
 
-NO_NOTES = NoteGrants(frozenset(), frozenset())
+NO_GRANTS = Grants(frozenset(), frozenset(), False)
 
 
 @dataclass(frozen=True)
 class Session:
     """One long-running agent session, as registered by the trusted launcher.
-    binding() returns the current Binding, notes() the current NoteGrants."""
+    binding() returns the current Binding, grants() the current Grants."""
     name: str
     harness: str
     docket_projects: frozenset
     binding: object
-    notes: object = lambda: NO_NOTES
+    grants: object = lambda: NO_GRANTS
 
     @property
     def label(self):
@@ -420,11 +423,18 @@ def _check_references(ctx, args):
 
 
 def rule_terminal_notify(ctx, args):
+    """Any harness tab except the session's own (DCR minerva:01a0dbf459c5
+    comment 2202). Minerva resolves `to` and refuses a tab with no harness in
+    front or one that is the reply_to terminal (code notify_self); the gateway
+    refuses what it can see itself: no notify grant, no attached terminal, or
+    `to` naming the attached terminal by id. There is no per-target list."""
+    if not ctx.session.grants().notify:
+        raise Deny("notify_not_granted", "needs the notify grant")
     binding = ctx.session.binding()
     if binding.terminal_id is None:
         raise Deny("not_attached")
-    if args["to"] not in binding.notify_targets:
-        raise Deny("notify_target_not_allowed")
+    if args["to"].strip() == binding.terminal_id:
+        raise Deny("notify_self", "a session does not notify its own terminal")
     if not args["text"] or len(args["text"]) > NOTIFY_TEXT_MAX:
         raise Deny("bad_argument", f"text must be 1-{NOTIFY_TEXT_MAX} characters")
     if not 0 <= args.get("wait_ms", 0) <= NOTIFY_WAIT_MAX:
@@ -438,7 +448,7 @@ def rule_terminal_notify(ctx, args):
 def _require_note_grant(ctx, note_id, write):
     """Refuses a note outside the session's grants, naming the grant needed.
     Every note verb goes through here; write implies read."""
-    grants = ctx.session.notes()
+    grants = ctx.session.grants()
     if write and note_id not in grants.write:
         raise Deny("note_not_granted", "needs the note-write grant")
     if not write and note_id not in grants.read | grants.write:
@@ -482,8 +492,12 @@ def rule_note_append(ctx, args):
 
 
 def rule_terminal_list(ctx, args):
-    binding = ctx.session.binding()
-    visible = binding.notify_targets | ({binding.terminal_id} if binding.terminal_id else set())
+    """While attached: the session's own terminal and, when it holds the
+    notify grant, every terminal with a harness in front (the tabs it may
+    notify, including ones opened after it started). Unattached, or any other
+    terminal: nothing."""
+    own = ctx.session.binding().terminal_id
+    may_notify = own is not None and ctx.session.grants().notify
 
     def shape(result):
         listing = result_json(result)
@@ -494,8 +508,9 @@ def rule_terminal_list(ctx, args):
         for entry in terminals:
             if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
                 raise Deny("upstream_bad_shape")
-            if entry["id"] in visible:
-                kept.append({k: entry[k][:LINE_MAX] for k in ("id", "name", "harness")
+            has_harness = isinstance(entry.get("harness"), str) and entry["harness"] != ""
+            if (own is not None and entry["id"] == own) or (may_notify and has_harness):
+                kept.append({k: entry[k][:LINE_MAX] for k in ("id", "name", "harness", "identity", "role")
                              if isinstance(entry.get(k), str)})
         return json_result({"success": True, "terminals": kept, "count": len(kept)})
     return Call(args, shape)

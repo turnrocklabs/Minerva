@@ -17,6 +17,12 @@ extends RefCounted
 ## identity (HarnessSessionRegistry, the identity notify routes by); readiness
 ## lists what the session is missing (agent.py readiness, readiness.py).
 ##
+## Grants: status, info and list answers carry `grants`, the session's grant
+## record {version, note_read, note_write, notify} (agent.py grants.json);
+## grant() and revoke() change it at any time, running or not. The session's
+## gateway reads the record on every call, so the change applies to its next
+## call with no attach.
+##
 ## The GUI twin is AgentSessionsPanel (Preferences > Containers); the MCP twin
 ## is MCPAgentSessionTools. Both share the one instance from shared().
 
@@ -24,6 +30,7 @@ extends RefCounted
 signal changed
 
 const NAME_PATTERN := "^[a-z0-9][a-z0-9-]{0,31}$"
+const NOTE_ID_PATTERN := "^[0-9a-f]{32,64}$"
 const HARNESSES: PackedStringArray = ["claude", "codex"]
 const MODES: PackedStringArray = ["start", "resume", "shell"]
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
@@ -199,6 +206,44 @@ static func session_identity(id: String, terminal_id: String) -> Dictionary:
 		described["terminal_identity"] = for_terminal
 		described["consistent"] = for_terminal == identity
 	return described
+
+
+## Adds grants to session `id`: notes it may read, notes it may write (write
+## implies read) and, when `notify`, the notify grant (any harness tab except
+## its own). Answers {"ok", "id", "grants"}.
+func grant(id: String, note_read: PackedStringArray, note_write: PackedStringArray,
+		notify: bool) -> Dictionary:
+	return await _change_grants("grant", id, note_read, note_write, notify)
+
+
+## Removes those grants: a read entry, a write entry, the notify grant. A note
+## still in the other list keeps that access.
+func revoke(id: String, note_read: PackedStringArray, note_write: PackedStringArray,
+		notify: bool) -> Dictionary:
+	return await _change_grants("revoke", id, note_read, note_write, notify)
+
+
+func _change_grants(command: String, id: String, note_read: PackedStringArray,
+		note_write: PackedStringArray, notify: bool) -> Dictionary:
+	var problem: String = _check_id(id)
+	var pattern := RegEx.create_from_string(NOTE_ID_PATTERN)
+	var args: PackedStringArray = [command, id]
+	for note: String in note_read + note_write:
+		if problem.is_empty() and pattern.search(note) == null:
+			problem = "note ids are 32-64 lowercase hex characters: %s" % note
+	for note: String in note_read:
+		args.append("--note-read=" + note)
+	for note: String in note_write:
+		args.append("--note-write=" + note)
+	if notify:
+		args.append("--notify")
+	if problem.is_empty() and note_read.is_empty() and note_write.is_empty() and not notify:
+		problem = "name at least one grant: a note to read, a note to write, or notify"
+	if not problem.is_empty():
+		return _error(problem)
+	var result: Dictionary = await _run(args, QUICK_TIMEOUT_S)
+	changed.emit()
+	return result
 
 
 ## Every record, with its state, and whether the agent image is built:

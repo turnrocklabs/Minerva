@@ -73,6 +73,7 @@ class Stub:
         self.lookup_mode = "ok"     # ok | error | malformed
         self.custom = None          # custom(handler, body) -> True when it answered
         self.decorate = None        # decorate(tool, result) -> result, for tools/call
+        self.terminals = TERMINALS  # what minerva_terminal_list answers
         stub = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -135,7 +136,7 @@ class Stub:
             note = notes.get(args["note_id"])
             return text_result(note) if note else text_result({"error": "no note"}, True)
         if name == "minerva_terminal_list":
-            return text_result({"success": True, "terminals": TERMINALS, "count": 3})
+            return text_result({"success": True, "terminals": self.terminals, "count": len(self.terminals)})
         return text_result({"success": True, "echo": args})
 
     def reply(self, handler, body):
@@ -232,11 +233,16 @@ class GatewayCase(unittest.TestCase):
         cls.sock_dir.mkdir(mode=0o700)
         config = {"upstreams": {n: s.url for n, s in cls.stubs.items()},
                   "policy": str(GATEWAY / "policy.json"), "egress": str(egress)}
-        cls.control = cls.scratch / "control"
-        cls.control.mkdir()
+        # Laid out as agent.py's state root (MINERVA_AGENT_STATE=cls.state), so
+        # agent.py's grant writer and this gateway share one control dir.
+        cls.state = cls.scratch / "state"
+        cls.control = cls.state / "sessions" / SESSION / "control"
+        for private in (cls.state, cls.state / "sessions", cls.control.parent, cls.control):
+            private.mkdir(mode=0o700)   # agent.py refuses a state dir others can open
         cls.binding_file = cls.control / "binding.json"
-        cls.notes_file = cls.control / "notes.json"
+        cls.grants_file = cls.control / "grants.json"
         cls.bind(TERMINAL, [TARGET])
+        cls.grant()
         cls.sessions = {"sessions": [{
             "name": SESSION, "harness": "claude", "socket_dir": str(cls.sock_dir),
             "control_dir": str(cls.control),
@@ -257,13 +263,21 @@ class GatewayCase(unittest.TestCase):
                  "expires_at": time.time() + lease_s} if terminal_id else {}
         cls.binding_file.write_text(json.dumps(value))
 
+    @classmethod
+    def grant(cls, read=(), write=(), notify=True):
+        """Write the session's grant record in the shape agent.py keeps it."""
+        cls.grants_file.write_text(json.dumps({"version": 1, "note_read": list(read),
+                                               "note_write": list(write), "notify": notify}))
+
     def setUp(self):
         for stub in self.stubs.values():
             stub.records.clear()
             stub.mode, stub.lookup_mode = "json", "ok"
             stub.custom = stub.decorate = None
+            stub.terminals = TERMINALS
         self.connects.clear()
         self.bind(TERMINAL, [TARGET])
+        self.grant()
 
     def post(self, service, body, headers=None, raw=None):
         conn = UnixHTTPConnection(str(self.sock_dir / f"{service}.sock"))

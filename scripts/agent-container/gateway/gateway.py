@@ -8,12 +8,14 @@ directory:
   proxy.sock                             HTTPS CONNECT egress (connect_proxy)
 A dev container mounts only its own session's directory. Nothing here listens
 on TCP; the upstreams are the host's loopback MCP services. Which Minerva
-terminal is attached (and may be notified) is read from the session's
-binding file on every call: agent.py rewrites it on each attach, since a
-restarted Minerva hands out new terminal ids. A binding carries a lease
-(expires_at) that the attached launcher keeps renewing, so an attach that
-died without cleaning up stops routing notifications once its lease lapses.
-The session's note grants (control/notes.json) are read the same way.
+terminal is attached is read from the session's binding file on every call:
+agent.py rewrites it on each attach, since a restarted Minerva hands out new
+terminal ids. A binding carries a lease (expires_at) that the attached
+launcher keeps renewing, so an attach that died without cleaning up stops
+routing notifications once its lease lapses. The session's grants (notes it
+may read and write, whether it may notify) are read the same way from
+control/grants.json, which Minerva rewrites through `agent.py grant/revoke`
+while the session runs; a missing or malformed record grants nothing.
 
 Usage: gateway.py --config gateway.json --sessions sessions.json
 The gateway never removes files: an existing socket path refuses startup, so
@@ -42,12 +44,14 @@ SESSION_KEYS = {"name", "harness", "socket_dir", "docket_projects", "control_dir
 SESSION_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 MAX_BINDING = 4096
+MAX_GRANTS = 64 * 1024
+GRANTS_KEYS = {"version", "note_read", "note_write", "notify"}
 
 
-def _control_json(path):
+def _control_json(path, limit=MAX_BINDING):
     try:
         with open(path, "rb") as f:
-            return strict_json.loads(f.read(MAX_BINDING + 1), MAX_BINDING)
+            return strict_json.loads(f.read(limit + 1), limit)
     except (OSError, strict_json.StrictJSONError):
         return None
 
@@ -55,31 +59,33 @@ def _control_json(path):
 def read_binding(path, now=time.time):
     """The session's current Binding. Anything missing, malformed or past its
     lease reads as unattached, so a broken or abandoned file can only take
-    notify away, never widen it."""
+    notify away, never widen it. notify_targets is still written for
+    gateways started before grants.json and is ignored here."""
     data = _control_json(path)
     if not isinstance(data, dict) or set(data) != {"terminal_id", "notify_targets", "generation",
                                                    "expires_at"}:
         return mcp_policy.UNATTACHED
-    terminal_id, targets, expires = data["terminal_id"], data["notify_targets"], data["expires_at"]
+    terminal_id, expires = data["terminal_id"], data["expires_at"]
     if not isinstance(terminal_id, str) or not TERMINAL_ID.fullmatch(terminal_id) \
-            or not isinstance(targets, list) \
-            or not all(isinstance(t, str) and TERMINAL_ID.fullmatch(t) for t in targets) \
             or not isinstance(data["generation"], str) \
             or isinstance(expires, bool) or not isinstance(expires, (int, float)) or expires <= now():
         return mcp_policy.UNATTACHED
-    return mcp_policy.Binding(terminal_id, frozenset(targets))
+    return mcp_policy.Binding(terminal_id)
 
 
-def read_notes(path):
-    """The session's NoteGrants; anything missing or malformed grants none."""
-    data = _control_json(path)
-    if not isinstance(data, dict) or set(data) != {"read", "write"}:
-        return mcp_policy.NO_NOTES
-    ids = [data["read"], data["write"]]
+def read_grants(path):
+    """The session's current Grants from the record Minerva keeps (agent.py
+    grants_path): {"version": 1, "note_read": [id...], "note_write": [id...],
+    "notify": bool}. Anything missing or malformed grants nothing."""
+    data = _control_json(path, MAX_GRANTS)
+    if not isinstance(data, dict) or set(data) != GRANTS_KEYS or type(data["version"]) is not int \
+            or data["version"] != 1 or not isinstance(data["notify"], bool):
+        return mcp_policy.NO_GRANTS
+    ids = [data["note_read"], data["note_write"]]
     if not all(isinstance(v, list) and all(isinstance(i, str) and mcp_policy.NOTE_ID.fullmatch(i)
                                            for i in v) for v in ids):
-        return mcp_policy.NO_NOTES
-    return mcp_policy.NoteGrants(frozenset(data["read"]), frozenset(data["write"]))
+        return mcp_policy.NO_GRANTS
+    return mcp_policy.Grants(frozenset(data["note_read"]), frozenset(data["note_write"]), data["notify"])
 
 
 def load_json(path):
@@ -113,7 +119,7 @@ def parse_session(entry):
     control = Path(entry["control_dir"])
     session = mcp_policy.Session(entry["name"], entry["harness"], frozenset(projects),
                                  lambda: read_binding(control / "binding.json"),
-                                 lambda: read_notes(control / "notes.json"))
+                                 lambda: read_grants(control / "grants.json"))
     return session, Path(entry["socket_dir"])
 
 

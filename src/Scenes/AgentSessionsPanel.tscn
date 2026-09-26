@@ -90,6 +90,54 @@ bbcode_enabled = true
 fit_content = true
 selection_enabled = true
 
+[node name="GrantsHeading" type="Label" parent="."]
+layout_mode = 2
+tooltip_text = "What the selected session may do beyond its fixed policy. Changes apply to its next call, running or not; no re-attach."
+mouse_filter = 1
+text = "Grants of the selected session"
+
+[node name="Grants" type="ItemList" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+tooltip_text = "Notes the session may read or write (write implies read). Select one and Revoke."
+
+[node name="GrantRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="GrantNote" type="OptionButton" parent="GrantRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "A Minerva note to share with the selected session."
+
+[node name="GrantRead" type="Button" parent="GrantRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Grant read"
+
+[node name="GrantWrite" type="Button" parent="GrantRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "The session may read, update and append to the note."
+text = "Grant write"
+
+[node name="RevokeGrant" type="Button" parent="GrantRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Remove the selected grant; the session's next call to that note is refused."
+text = "Revoke"
+
+[node name="Notify" type="CheckBox" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "The session may notify any Minerva tab with a harness in front, except its own."
+text = "May notify harness tabs"
+
 [node name="Separator" type="HSeparator" parent="."]
 layout_mode = 2
 
