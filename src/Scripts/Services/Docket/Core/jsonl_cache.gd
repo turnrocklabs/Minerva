@@ -5,13 +5,16 @@ class_name JSONLCache
 ## The cache file lives at <jsonl_path>.cache (e.g. "project.dct.jsonl.cache")
 ## and is gitignored/disposable — it can be deleted and rebuilt at any time.
 ##
-## Cache freshness is detected by storing the JSONL file's size + modification
-## time in docket_meta. This avoids a full SHA-256 read on every open while
-## still catching any modification.
+## Cache freshness is detected by storing the SHA-256 of the JSONL file's bytes
+## in docket_meta ("jsonl_hash"). The same digest is the baseline write_refusal
+## compares against before any rewrite of the file.
 
 
 ## docket_meta key listing record kinds the file held that the parser skipped.
 const UNKNOWN_TYPES_META := "unknown_record_types"
+## docket_meta key listing "<record type>.<key>" fields the file held inside
+## known records that this build does not store, so a rewrite would drop them.
+const UNKNOWN_KEYS_META := "unknown_record_keys"
 
 
 # -- Public API ---------------------------------------------------------------
@@ -19,16 +22,42 @@ const UNKNOWN_TYPES_META := "unknown_record_types"
 static func write_refusal(db: DocketDB, jsonl_path: String) -> String:
 	## Why rewriting `jsonl_path` from `db` would lose data, or "" when it is
 	## safe. A whole-file rewrite from the cache erases (1) anything another
-	## writer put in the file since the cache was built or last saved (the
-	## stored jsonl_hash no longer matches the file) and (2) lines the parser
-	## skipped. Callers must not write when this is non-empty.
+	## writer put in the file since the cache was built or last saved (its
+	## digest no longer matches the stored jsonl_hash, or the file is gone),
+	## (2) lines the parser skipped and (3) keys inside known records this
+	## build does not store. Callers must not write when this is non-empty.
 	var skipped := db.get_meta_value(UNKNOWN_TYPES_META, "")
 	if not skipped.is_empty():
 		return "%s holds records this Docket cannot write (%s); saving would drop them. Nothing was written; edit it in docket.app." % [jsonl_path, skipped]
+	var unknown_keys := db.get_meta_value(UNKNOWN_KEYS_META, "")
+	if not unknown_keys.is_empty():
+		return "%s holds fields this Docket cannot write (%s); saving would drop them. Nothing was written; edit it in docket.app." % [jsonl_path, unknown_keys]
 	var loaded := db.get_meta_value("jsonl_hash", "")
-	if not loaded.is_empty() and FileAccess.file_exists(jsonl_path) and loaded != _file_fingerprint(jsonl_path):
+	if loaded.is_empty():
+		return ""
+	if not FileAccess.file_exists(jsonl_path):
+		return "%s was removed since it was loaded. Nothing was written; restore the file or reopen the project." % jsonl_path
+	if loaded != _file_fingerprint(jsonl_path):
 		return "%s changed on disk since it was loaded. Nothing was written; reopen the project to reload it (unsaved Minerva edits to it are discarded)." % jsonl_path
 	return ""
+
+
+static func guarded_write(db: DocketDB, jsonl_path: String, text: String) -> String:
+	## Replaces `jsonl_path` with `text` unless write_refusal objects. Returns
+	## "" when written, else why not. The refusal check runs under the file's
+	## .lock immediately before the atomic rename, and on success jsonl_hash
+	## becomes the digest of `text`, the new baseline for the next write.
+	var lock := FileLock.acquire(jsonl_path)
+	if lock == null:
+		push_warning("JSONLCache: could not acquire .lock for %s — writing anyway" % jsonl_path)
+	var failure := write_refusal(db, jsonl_path)
+	if failure.is_empty() and not DocketDBJsonl._atomic_write(jsonl_path, text):
+		failure = "could not write %s" % jsonl_path
+	if lock != null:
+		lock.release()
+	if failure.is_empty():
+		db.set_meta_value("jsonl_hash", text.sha256_text())
+	return failure
 
 
 static func open_or_rebuild(jsonl_path: String) -> DocketDB:
@@ -76,6 +105,8 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 	_insert_saved_queries(db, parsed["saved_queries"])
 	if not parsed["unknown_types"].is_empty():
 		db.set_meta_value(UNKNOWN_TYPES_META, ",".join(PackedStringArray(parsed["unknown_types"])))
+	if not parsed["unknown_keys"].is_empty():
+		db.set_meta_value(UNKNOWN_KEYS_META, ",".join(PackedStringArray(parsed["unknown_keys"])))
 
 	# Store a fingerprint so we can validate freshness later
 	var fingerprint := _file_fingerprint(jsonl_path)
@@ -121,14 +152,11 @@ static func _cache_path_for(jsonl_path: String) -> String:
 
 
 static func _file_fingerprint(path: String) -> String:
-	## Returns "size:mtime" as a lightweight freshness token.
-	## Fast and sufficient for detecting any file change.
+	## SHA-256 hex digest of the file's bytes, or "" when it does not exist.
+	## Equal to String.sha256_text() of the UTF-8 text that was written.
 	if not FileAccess.file_exists(path):
 		return ""
-	var size := FileAccess.get_file_as_bytes(path).size()
-	# get_modified_time returns Unix timestamp (integer seconds)
-	var mtime := FileAccess.get_modified_time(path)
-	return "%d:%d" % [size, mtime]
+	return FileAccess.get_sha256(path)
 
 
 static func _delete_cache_files(cache_path: String) -> void:

@@ -36,6 +36,7 @@ const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTool
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const NOTIFY_DELIVERY_PATH := "res://Scripts/Services/MCP/Modules/MCPNotifyDelivery.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
+const LEDGER_PATH := "res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd"
 const World := preload("res://test/helpers/notify_world.gd")
 const FAKE_PROVIDER_SRC := World.FAKE_PROVIDER_SRC
 const HARNESS_PANE_SRC := World.HARNESS_PANE_SRC
@@ -167,7 +168,9 @@ func _run() -> void:
 	await _test_a_notification_queued_mid_turn_stays_deferred()
 	await _test_the_receipt_is_honest_on_an_unanswered_user_message()
 	await _test_an_idle_chat_on_an_unanswered_user_message_is_still_notified()
+	await _test_urgent_moves_ahead_in_the_queue()
 	_test_wiring_is_present()
+	await _test_provider_reports_the_first_relay_reply()
 	_host_render.restore()
 
 
@@ -817,8 +820,6 @@ func _test_wiring_is_present() -> void:
 	var body: = _function_body(delivery_source, "func terminal_notify(")
 	check("G3: notify submits through the SHARED send path, not its own",
 		body.find("MCPToolUtils.submit_user_message(history, envelope") != -1)
-	check("G3b: notify submits as a BACKGROUND message (deferred while a card waits)",
-		body.find("submit_user_message(history, envelope, {}, true, urgent)") != -1, body)
 	check("G4: notify owns no delivery code of its own",
 		body.find("write_input") == -1 and body.find("session.") == -1, body)
 	check("G5: the envelope is built by the host, from the shared prefix",
@@ -826,21 +827,6 @@ func _test_wiring_is_present() -> void:
 			and _function_body(delivery_source, "func _envelope(").find(
 				"tools.NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text") != -1
 			and source.find('const NOTIFY_ENVELOPE_PREFIX := "[MINERVA NOTIFY from "') != -1)
-
-	# The chat-path handed_to_harness oracle: the harness pane above reports
-	# "handed" itself, so only these lines prove the real provider does. The
-	# FIRST relay reply of a call (before the resume loop) is reported, and a
-	# running, answered or questioning turn is reported as handed.
-	var provider_source: = FileAccess.get_file_as_string(World.PLUGIN_PROVIDER_PATH)
-	var dispatch: = _function_body(provider_source, "func _dispatch_call(")
-	var first_report: = dispatch.find("_report_notify(")
-	check("G9: PluginProvider reports the first relay reply of every call",
-		first_report != -1 and first_report < dispatch.find("while _resumable()"), dispatch)
-	var report: = _function_body(provider_source, "func _report_notify(")
-	check("G9b: and a pending/answer/question reply is reported as handed",
-		report.find('"answer", "question", "pending":') != -1
-			and report.find("note_chat_outcome(owner_history_id, text, NotifyDeliveryLedger.CHAT_HANDED)") != -1,
-		report)
 
 	# The chat tool must keep using the same submit path, or the two MCP send
 	# entry points drift and only one of them honours the outgoing queue.
@@ -863,6 +849,76 @@ func _test_wiring_is_present() -> void:
 	var pane_source: = FileAccess.get_file_as_string(CHATPANE_PATH)
 	check("G8: execute_regular_chat still gates on the outgoing queue",
 		pane_source.find("_queue_if_busy(history, text") != -1)
+
+
+## G3b: an urgent notify reaches the chat's queue as urgent. While the claude
+## chat is mid-turn, a routine line then an urgent one are queued; the urgent
+## one sits ahead. Oracle: the queue's pending texts.
+func _test_urgent_moves_ahead_in_the_queue() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+	var pane = w["pane"]
+	var provider = w["provider"]
+	var claude_chat = w["claude"]
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	pane.execute_regular_chat("mid-turn work")
+	await process_frame
+	await _notify(module, {"to": "claude", "from": "codex", "text": "routine R"})
+	await _notify(module, {"to": "claude", "from": "codex", "text": "urgent U", "urgent": true})
+	await process_frame
+	var routine: = "[MINERVA NOTIFY from codex] routine R"
+	var urgent: = "[MINERVA NOTIFY from codex] urgent U"
+	check("G3b: an urgent notify is queued ahead of the routine one before it",
+		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId))
+			== str(PackedStringArray([urgent, routine])),
+		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId)))
+	for text: String in ["mid-turn work", urgent, routine]:
+		provider.release("Claude Session", text)
+		for _i in range(6):
+			await process_frame
+	_teardown(pane, w["chats"])
+
+
+## PluginProvider whose governed call is a scripted relay: each _generate
+## answers with the next scripted reply and records the ledger state of the
+## watched delivery at the moment it was asked.
+const SCRIPTED_RELAY_PROVIDER_SRC := """
+extends "res://Scripts/Services/Providers/PluginProvider.gd"
+var replies: Array = []
+var seen_states: Array = []
+var watch_id: String = ""
+
+func _generate(_args: Dictionary, _timeout_sec: float, _generation: int) -> Dictionary:
+	seen_states.append(str(NotifyDeliveryLedger.shared().get_record(watch_id).get("state", "")))
+	return replies.pop_front() if not replies.is_empty() else {"kind": "answer", "text": "done"}
+"""
+
+
+## G9/G9b: the real PluginProvider tells the ledger the harness took a chat
+## notification from the FIRST relay reply of its call — a "pending" one,
+## before the resume loop asks again. Oracle: the ledger state the scripted
+## relay saw on its second (resume) call, and the record afterwards.
+func _test_provider_reports_the_first_relay_reply() -> void:
+	var ledger_script: GDScript = load(LEDGER_PATH)
+	var saved_ledger = ledger_script._shared
+	ledger_script._shared = ledger_script.new()
+	var ledger = ledger_script.shared()
+	var provider = _make_script(SCRIPTED_RELAY_PROVIDER_SRC).new()
+	provider.owner_history_id = "chat-g9"
+	provider.entry_metadata = {"resumable": true}
+	var envelope: = "[MINERVA NOTIFY from codex] G9 line"
+	var id: String = ledger.open({"terminal_id": "909", "name": "G9"}, envelope, "chat", ledger_script.SENDING)
+	ledger.begin_chat(id, "chat-g9")
+	provider.watch_id = id
+	provider.replies = [{"kind": "pending", "operation_token": "op-g9"}, {"kind": "answer", "text": "ok"}]
+	provider._call_generation = 1
+	await provider._dispatch_call({"text": envelope, "operation_token": "op-g9"}, 5.0, 1)
+	check("G9: the first relay reply is reported before the resume call is made",
+		provider.seen_states == ["sending", "handed_to_harness"], str(provider.seen_states))
+	check("G9b: a pending reply marks the delivery handed_to_harness",
+		str(ledger.get_record(id).get("state", "")) == "handed_to_harness", str(ledger.get_record(id)))
+	provider.free()
+	ledger_script._shared = saved_ledger
 
 
 ## The text of one top-level function in `source`, from `signature` to the

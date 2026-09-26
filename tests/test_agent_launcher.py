@@ -656,7 +656,7 @@ class LauncherTest(unittest.TestCase):
 
 
     # ── planned jobs ──
-    def test_drain_interrupts_and_a_timed_out_job_claims_no_artifact(self):
+    def test_drain_interrupts_and_only_a_finished_job_claims_its_artifact(self):
         # Oracle: result.json and the out/ markers on disk; the fake docker
         # plays the job container (running until stopped, labelled as started).
         self.start_alpha()
@@ -706,6 +706,23 @@ class LauncherTest(unittest.TestCase):
         (out / "ended").write_text("command 0 1\n")
         self.assertEqual(self.answer("job-status", "alpha", timed)[1]["class"], "timed_out")
         self.assertEqual(result(timed)["class"], "timed_out")
+
+        # A command that exited 0 with its collection finished: succeeded, and
+        # its artifact is claimed complete.
+        done = run_job()
+        out = jobs_dir / done / "out"
+        (out / "artifacts/build").mkdir(parents=True)
+        (out / "artifacts/build/out.bin").write_text("built")
+        (out / "artifacts.done").write_text("")
+        (out / "ended").write_text("command 0 2\n")
+        (out / "exit").write_text("0 2\n")
+        state = json.loads((self.s / "docker-state.json").read_text())
+        state["running"].remove(f"minerva-agent-job-alpha-{done}")
+        (self.s / "docker-state.json").write_text(json.dumps(state))
+        code, status = self.answer("job-status", "alpha", done)
+        self.assertEqual(code, 0, status)
+        self.assertEqual(result(done)["class"], "succeeded")
+        self.assertEqual([(a["present"], a["complete"]) for a in result(done)["artifacts"]], [(True, True)])
 
 
 class StaticTest(unittest.TestCase):

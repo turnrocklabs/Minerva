@@ -27,10 +27,14 @@ extends RefCounted
 ##   awaiting_recipient — it is addressed to a registered identity or role
 ##                       whose session is not reachable (unbound, exited, no
 ##                       harness in front, or no live holder of the role).
-##                       Minerva keeps it, with no time limit, and tries again
-##                       whenever a session registers or hands over, and
-##                       every AWAIT_RECHECK_S. It counts as pending for its
-##                       address (pending_by_address).
+##                       Minerva keeps it and tries again whenever a session
+##                       registers or hands over, and on its own schedule:
+##                       first after await_recheck_s, the gap doubling after
+##                       each miss up to AWAIT_BACKOFF_MAX_S. It counts as
+##                       pending for its address (pending_by_address).
+##   failed_unavailable — it awaited its recipient for over await_max_age_s
+##                       and was given up. Kept, with the last reason, for
+##                       reading (unavailable_by_address).
 ## Handing a line to the harness is not the recipient reading it; nothing here
 ## infers consumption from what the screen shows.
 ##
@@ -62,9 +66,10 @@ const UNCONFIRMED := "unconfirmed"
 const FAILED := "failed"
 const DROPPED := "dropped"
 const AWAITING := "awaiting_recipient"
+const FAILED_UNAVAILABLE := "failed_unavailable"
 
 ## States after which nothing more happens to a record.
-const SETTLED := [HANDED, UNCONFIRMED, FAILED, DROPPED]
+const SETTLED := [HANDED, UNCONFIRMED, FAILED, DROPPED, FAILED_UNAVAILABLE]
 
 ## Outcomes a chat's first relay reply maps to (note_chat_outcome).
 const CHAT_HANDED := "handed"
@@ -82,9 +87,13 @@ const RECORDS_KEPT := 128
 const HISTORY_KEPT := 16
 ## How often queued chat entries are looked at.
 const QUEUE_POLL_S := 0.5
-## How often records awaiting their recipient are tried again without a
-## registration to prompt it (a harness started again in its bound tab).
+## The first gap before a record awaiting its recipient is tried again
+## without a registration to prompt it (a harness started again in its bound
+## tab); each miss doubles the gap, up to AWAIT_BACKOFF_MAX_S.
 const AWAIT_RECHECK_S := 10.0
+const AWAIT_BACKOFF_MAX_S := 600.0
+## A record awaiting its recipient this long becomes FAILED_UNAVAILABLE.
+const AWAIT_MAX_AGE_S := 6.0 * 3600.0
 
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
 const NotifyDeliveryClass := preload("res://Scripts/Services/Terminal/NotifyDeliveryClass.gd")
@@ -93,6 +102,8 @@ static var _shared = null
 
 var retry_s: float = RETRY_S
 var hold_limit_s: float = HOLD_LIMIT_S
+var await_recheck_s: float = AWAIT_RECHECK_S
+var await_max_age_s: float = AWAIT_MAX_AGE_S
 
 ## delivery id -> record. Records are Dictionaries so a receipt can carry a
 ## copy as is.
@@ -108,6 +119,8 @@ var _polling: bool = false
 var _waiting: Dictionary = {}
 var _waking: bool = false
 var _wake_again: bool = false
+## The pending round of _wake_waiting tries every record, not only due ones.
+var _wake_all: bool = false
 var _rechecking_waiting: bool = false
 var _watching_registry: bool = false
 
@@ -159,6 +172,17 @@ func pending_by_address() -> Dictionary:
 	var out: Dictionary = {}
 	for id: String in _order:
 		if SETTLED.has(str(_records[id]["state"])):
+			continue
+		var address: String = address_of(id).to_lower()
+		out[address] = int(out.get(address, 0)) + 1
+	return out
+
+
+## Records given up as FAILED_UNAVAILABLE per address, lower case -> count.
+func unavailable_by_address() -> Dictionary:
+	var out: Dictionary = {}
+	for id: String in _order:
+		if str(_records[id]["state"]) != FAILED_UNAVAILABLE:
 			continue
 		var address: String = address_of(id).to_lower()
 		out[address] = int(out.get(address, 0)) + 1
@@ -378,6 +402,10 @@ func _set_state(delivery_id: String, state: String, fields: Dictionary) -> void:
 	# Time spent waiting for a recipient does not count toward hold_limit_s.
 	if str(record["state"]) == AWAITING and moved:
 		record["available_ticks"] = Time.get_ticks_msec()
+	if state == AWAITING and moved:
+		record["awaiting_ticks"] = Time.get_ticks_msec()
+		record["await_gap_s"] = await_recheck_s
+		record["next_try_ticks"] = Time.get_ticks_msec() + int(await_recheck_s * 1000.0)
 	record["state"] = state
 	record["updated_at"] = Time.get_datetime_string_from_system(false, true)
 	var history: Array = record["history"]
@@ -410,24 +438,38 @@ func _on_registry_changed() -> void:
 	_wake_waiting.call_deferred()
 
 
-## One attempt for every record awaiting its recipient. A wake asked for
-## while one runs makes it go round once more.
-func _wake_waiting() -> void:
+## One attempt for every record awaiting its recipient (`due_only`: only
+## those whose backoff gap has passed). A wake asked for while one runs makes
+## it go round once more.
+func _wake_waiting(due_only: bool = false) -> void:
 	if _waking:
 		_wake_again = true
+		_wake_all = _wake_all or not due_only
 		return
 	_waking = true
 	_wake_again = true
+	_wake_all = not due_only
 	while _wake_again:
 		_wake_again = false
-		await _wake_each()
+		var all: bool = _wake_all
+		_wake_all = false
+		await _wake_each(not all)
 	_waking = false
 
 
-func _wake_each() -> void:
+func _wake_each(due_only: bool) -> void:
 	for id: String in _waiting.keys():
 		if not _records.has(id) or str(_records[id]["state"]) != AWAITING:
 			_waiting.erase(id)
+			continue
+		var record: Dictionary = _records[id]
+		var now: int = Time.get_ticks_msec()
+		if now - int(record["awaiting_ticks"]) > int(await_max_age_s * 1000.0):
+			update(id, FAILED_UNAVAILABLE, {"reason": "no recipient for over %d s: %s" % [
+				int(await_max_age_s), str(record.get("reason", ""))]})
+			_waiting.erase(id)
+			continue
+		if due_only and now < int(record["next_try_ticks"]):
 			continue
 		var attempt: Callable = _waiting[id]
 		_records[id]["attempts"] = int(_records[id]["attempts"]) + 1
@@ -439,13 +481,18 @@ func _wake_each() -> void:
 		apply_receipt(id, receipt)
 		var state: String = str(_records[id]["state"])
 		if state == AWAITING:
+			var gap: float = minf(float(_records[id]["await_gap_s"]) * 2.0, AWAIT_BACKOFF_MAX_S)
+			_records[id]["await_gap_s"] = gap
+			_records[id]["next_try_ticks"] = Time.get_ticks_msec() + int(gap * 1000.0)
 			continue
 		_waiting.erase(id)
 		if state == HELD:
 			retain(id, attempt)
 
 
-## While any record awaits its recipient, try again every AWAIT_RECHECK_S.
+## While any record awaits its recipient, look every await_recheck_s and try
+## the ones whose backoff gap has passed (and give up the ones past
+## await_max_age_s).
 func _recheck_waiting() -> void:
 	if _rechecking_waiting:
 		return
@@ -454,8 +501,8 @@ func _recheck_waiting() -> void:
 		return
 	_rechecking_waiting = true
 	while not _waiting.is_empty():
-		await tree.create_timer(AWAIT_RECHECK_S).timeout
-		await _wake_waiting()
+		await tree.create_timer(await_recheck_s).timeout
+		await _wake_waiting(true)
 	_rechecking_waiting = false
 
 

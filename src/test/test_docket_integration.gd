@@ -24,6 +24,8 @@ func _init():
 	test_state_machine_enforcement()
 	test_policy_type_exists()
 	test_jsonl_roundtrip()
+	test_external_writer_refuses_embedded_save()
+	test_unknown_record_keys_refuse_embedded_save()
 	test_plugin_skills_metadata_roundtrip()
 	test_plugin_skills_jsonl_roundtrip()
 	test_plugin_skills_skill_get_lean_view()
@@ -185,22 +187,27 @@ func test_unsaved_change_is_an_error() -> void:
 	registry.init(JSON.parse_string(sf.get_as_text()), db)
 	sf.close()
 	var item_id := str(registry.call_tool("docket_create", {"type": "bug", "title": "Saved"}).get("id", ""))
-	# A directory where the file goes: the atomic rename onto it fails.
+	# A directory where the file goes: the write fails. The retry restores the
+	# last saved bytes first, since a .dct that vanished since load is refused.
+	var saved_bytes := FileAccess.get_file_as_bytes(path)
 	DirAccess.remove_absolute(path)
 	DirAccess.make_dir_absolute(path)
 	var failed := registry.call_tool("docket_update", {"id": item_id, "title": "Unsaved"})
 	check("an update that could not be saved is an error", failed.has("error"))
 	DirAccess.remove_absolute(path)
+	_write_bytes(path, saved_bytes)
 	var retried := registry.call_tool("docket_update", {"id": item_id, "title": "Unsaved"})
 	check("repeating it saves the change the cache already holds",
 		retried.get("status", "") == "unchanged" and FileAccess.get_file_as_string(path).contains("Unsaved"))
 	# A delete that could not be saved leaves nothing in the cache to retry;
 	# the save barrier reports it until the file holds the deletion.
+	saved_bytes = FileAccess.get_file_as_bytes(path)
 	DirAccess.remove_absolute(path)
 	DirAccess.make_dir_absolute(path)
 	var delete_failed := registry.call_tool("docket_delete", {"id": item_id})
 	var still_unsaved := registry.call_tool("docket_persist", {})
 	DirAccess.remove_absolute(path)
+	_write_bytes(path, saved_bytes)
 	var saved := registry.call_tool("docket_persist", {})
 	check("an unsaved delete fails its barrier until the file is written",
 		delete_failed.has("error") and still_unsaved.has("error") and saved.get("status", "") == "saved"
@@ -375,6 +382,69 @@ func test_jsonl_roundtrip() -> void:
 		var item2 := db2.get_item(id2)
 		check("roundtrip preserves hint", not item2.is_empty())
 		db2.close()
+
+
+func _write_bytes(path: String, data: PackedByteArray) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_buffer(data)
+	f.close()
+
+
+const _META_LINE := '{"_type":"meta","version":"1.0.0","counter":0,"id_prefix":"EXT","project":"ext"}'
+const _ITEM_LINE := '{"_type":"item","id":"EXT-0001","type":"chore","status":"open","title":"Original","created_at":"2026-09-26T00:00:00","updated_at":"2026-09-26T00:00:00"}'
+
+
+## A DocketManager serving the .dct at `path` as project "ext", as open_project
+## would, without the master/personal set-up of _ready.
+func _manager_for(path: String) -> DocketManager:
+	var dm := DocketManager.new()
+	dm._project_dbs["ext"] = JSONLCache.open_or_rebuild(path)
+	dm._project_paths["ext"] = path
+	return dm
+
+
+func test_external_writer_refuses_embedded_save() -> void:
+	## Another writer's change to a loaded .dct, even one of equal length, and
+	## its deletion both refuse the embedded save. Oracle: the file bytes.
+	var path := _tmp_dir.path_join("external.dct")
+	_write_bytes(path, (_META_LINE + "\n" + _ITEM_LINE + "\n").to_utf8_buffer())
+	var dm := _manager_for(path)
+	var db: DocketDB = dm._project_dbs["ext"]
+	db.update_item_fields("EXT-0001", {"title": "Edited"})
+	check("an unchallenged save writes the change",
+		dm.save_project("ext").is_empty() and FileAccess.get_file_as_string(path).contains("Edited"))
+
+	var external := FileAccess.get_file_as_string(path).replace("Edited", "Edixed")
+	_write_bytes(path, external.to_utf8_buffer())
+	db.update_item_fields("EXT-0001", {"title": "Minerva"})
+	var refusal := dm.save_project("ext")
+	check("an equal-length external change refuses the save",
+		not refusal.is_empty() and FileAccess.get_file_as_string(path) == external)
+
+	DirAccess.remove_absolute(path)
+	refusal = dm.save_project("ext")
+	check("a .dct deleted since load refuses the save and is not recreated",
+		not refusal.is_empty() and not FileAccess.file_exists(path))
+	db.close()
+	dm.free()
+
+
+func test_unknown_record_keys_refuse_embedded_save() -> void:
+	## docket.app's event lines carry eid/fields, which this writer does not
+	## store: the embedded save refuses and the file keeps them byte for byte.
+	var path := _tmp_dir.path_join("eid.dct")
+	var event_line := '{"_type":"event","item_id":"EXT-0001","seq":1,"event_type":"created","timestamp":"2026-09-26T00:00:00","eid":7,"fields":["status"]}'
+	var original := (_META_LINE + "\n" + _ITEM_LINE + "\n" + event_line + "\n").to_utf8_buffer()
+	_write_bytes(path, original)
+	var dm := _manager_for(path)
+	var db: DocketDB = dm._project_dbs["ext"]
+	db.update_item_fields("EXT-0001", {"title": "Edited"})
+	var refusal := dm.save_project("ext")
+	check("unknown event keys refuse the save and name them",
+		refusal.contains("event.eid") and refusal.contains("event.fields"))
+	check("the file keeps its eid/fields line unchanged", FileAccess.get_file_as_bytes(path) == original)
+	db.close()
+	dm.free()
 
 
 func test_master_dct_exists() -> void:

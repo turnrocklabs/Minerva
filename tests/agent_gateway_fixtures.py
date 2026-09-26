@@ -51,7 +51,7 @@ ITEMS = {
     ("minerva", OBJECTIVE): {"id": OBJECTIVE, "type": "work_item", "title": "objective",
                              "tags": ["wr:objective"], "parent": f"minerva:{DCR}"},
     ("minerva", TASK): {"id": TASK, "type": "work_item", "title": "task", "tags": ["wr:task"],
-                        "parent": f"minerva:{OBJECTIVE}", "assigned_to": "coordinator"},
+                        "parent": f"minerva:{OBJECTIVE}", "assigned_to": "coordinator", "revision": 4},
     ("minerva", ATTEMPT): {"id": ATTEMPT, "type": "work_item", "title": "attempt",
                            "tags": ["wr:attempt", "role:implementer"], "parent": TASK,
                            "status": "open", "assigned_to": IDENT, "claim_holder": IDENT},

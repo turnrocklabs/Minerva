@@ -14,7 +14,8 @@ extends SceneTree
 ## replacement; nothing is ever typed into the superseded session's terminal;
 ## docket_reassign is issued once, for the one claim the old holder held, with
 ## reason "handover: ..."; a pointer kept for an identity that reconnects is
-## delivered exactly once.
+## delivered exactly once; a pointer whose recipient never returns is given
+## up as failed_unavailable after the bound, with backed-off retries.
 ##
 ## Run: godot --headless --path src --script test/test_session_handover.gd
 
@@ -167,6 +168,27 @@ func _test_handover(registry, host) -> void:
 		_texts_to(module, "606").count(line) == 1, str(module.relay_calls))
 	check("H8: and nothing was ever typed into the superseded session's terminal",
 		_texts_to(module, "505").is_empty(), str(module.relay_calls))
+
+	# A recipient that never comes back: the pointer is retried on a doubling
+	# gap and given up as failed_unavailable once it has waited past the bound.
+	ledger.await_recheck_s = 0.1
+	ledger.await_max_age_s = 1.0
+	module.terminals[1]["alive"] = false
+	var stranded: Dictionary = await module.notify_retained(
+		{"to": "worker-b", "from": "codex@lead", "text": "H9 never delivered"})
+	var stranded_id: String = str(stranded.get("delivery_id", ""))
+	await _wait_for(func() -> bool:
+		return str(ledger.get_record(stranded_id).get("state", "")) == "failed_unavailable", 4000)
+	var given_up: Dictionary = ledger.get_record(stranded_id)
+	check("H9: a pointer awaiting past the bound ends failed_unavailable, counted apart from pending",
+		str(given_up.get("state", "")) == "failed_unavailable"
+			and int(ledger.unavailable_by_address().get("worker-b", 0)) == 1
+			and int(ledger.pending_by_address().get("worker-b", 0)) == 0
+			and not _texts_to(module, "606").has("[MINERVA NOTIFY from codex@lead] H9 never delivered"),
+		str(given_up))
+	# Gaps 0.1, 0.2, 0.4, 0.8 s fit in the 1 s bound; a fixed 0.1 s gap would try ~10 times.
+	check("H10: retries back off: few attempts before the bound",
+		int(given_up.get("attempts", 0)) <= 5, str(given_up.get("attempts", 0)))
 
 
 ## The lines the relay was asked to type into `terminal_id`, in order.

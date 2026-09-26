@@ -4,7 +4,8 @@ extends Window
 ## from under an identity and a role, and hands a role over to the selected
 ## session — the GUI twin of minerva_session_register / _forget / _handover.
 ## Roles no live session holds are listed as unavailable with their pending
-## counts, as minerva_terminal_list reports them.
+## counts, as minerva_terminal_list reports them, and so are the addresses
+## whose notifications were given up as failed_unavailable.
 ## Scene: res://Scenes/HarnessSessionsDialog.tscn. Opened from the Sessions
 ## button of a TerminalTabGroup.
 
@@ -103,8 +104,16 @@ func _refresh() -> void:
 	for role: Dictionary in registry.unavailable_roles(listing, pending):
 		lines.append("%s: %d pending (holders: %s)" % [role["role"], int(role["pending"]),
 			", ".join(PackedStringArray(role["holders"])) if not (role["holders"] as Array).is_empty() else "none"])
-	_unavailable.visible = not lines.is_empty()
-	_unavailable.text = "Unavailable roles, no live session holds them — %s" % "; ".join(lines)
+	var text: String = "" if lines.is_empty() else "Unavailable roles, no live session holds them — %s" % "; ".join(lines)
+	var given_up := PackedStringArray()
+	var unavailable: Dictionary = NotifyDeliveryLedger.shared().unavailable_by_address()
+	for address: String in unavailable:
+		given_up.append("%s: %d" % [address, int(unavailable[address])])
+	if not given_up.is_empty():
+		text += ("\n" if not text.is_empty() else "") + "Given up (failed_unavailable), no recipient for %d h — %s" % [
+			int(NotifyDeliveryLedger.shared().await_max_age_s / 3600.0), "; ".join(given_up)]
+	_unavailable.visible = not text.is_empty()
+	_unavailable.text = text
 	_forget.disabled = true
 	_handover.disabled = true
 	var here: String = registry.identity_for_terminal(terminal_id)

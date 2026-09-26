@@ -274,7 +274,8 @@ func _send_controls(identity: String) -> void:
 			continue
 		if not str(entry.delivery_id).is_empty():
 			var state: String = str(NotifyDeliveryLedger.shared().get_record(str(entry.delivery_id)).get("state", ""))
-			if state in [NotifyDeliveryLedger.HANDED, NotifyDeliveryLedger.UNCONFIRMED] or state.is_empty():
+			if state in [NotifyDeliveryLedger.HANDED, NotifyDeliveryLedger.UNCONFIRMED,
+					NotifyDeliveryLedger.FAILED_UNAVAILABLE] or state.is_empty():
 				queue.erase(entry)
 				_settle(entry.keys, state)
 				continue

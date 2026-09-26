@@ -264,6 +264,13 @@ func _test_subscription_dedup(registry) -> void:
 	await _wait_for(handed_12, 4000)
 	check("D7: the embedded pointer for item-12 reached handed_to_harness before the feed read it",
 		handed_12.call() and module.relay_calls.size() == relayed_12 + 1, str(load(LEDGER_PATH).shared().list()))
+	# The ledger reaching handed is not enough: the feed's copy must meet the
+	# key DocketWakeups._settle marked handed, not the still-pending pointer.
+	var key_12: String = "worker-b|" + load(WAKEUPS_PATH).change_key_of("minerva", "item-12", "updated", stamp_12, "", "")
+	await _wait_for(func() -> bool: return str(wakeups._woken.get(key_12, "")) == wakeups.KEY_HANDED, 4000)
+	check("D7b: DocketWakeups settled item-12's change as handed before the feed polls",
+		str(wakeups._woken.get(key_12, "")) == wakeups.KEY_HANDED and not wakeups._pending.has(key_12),
+		"%s %s" % [wakeups._woken.get(key_12, "<absent>"), wakeups._pending.keys()])
 	pages.append([{"project": "minerva", "eid": 10, "item_id": "item-12", "kind": "typed_update",
 		"actor": "a", "timestamp": stamp_12, "fields": ["title"], "possible_duplicate": false}])
 	var calls_12: int = calls.size()

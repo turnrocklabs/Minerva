@@ -105,64 +105,29 @@ func close() -> void:
 # -- JSONL write-through ------------------------------------------------------
 
 func _flush_jsonl() -> void:
-	## Serialize current DB state to JSONL and write atomically.
+	## Serialize current DB state to JSONL and write it through
+	## JSONLCache.guarded_write (lock, refusal check, atomic replace).
 	## Uses _flush_depth to coalesce nested mutations (e.g. add_comment → add_event).
-	## Acquires a .lock file before writing to prevent concurrent corruption.
 	if _jsonl_path.is_empty():
 		return
 	if _flush_depth > 0:
 		return  # We're inside a compound mutation — will flush when outermost returns
-
-	var refusal := JSONLCache.write_refusal(self, _jsonl_path)
-	if not refusal.is_empty():
-		push_error("DocketDBJsonl: %s" % refusal)
-		_unsaved = true
-		if write_error.is_empty():
-			write_error = refusal
-		return
 
 	var jsonl_text := JSONLSerializer.serialize_all(self)
 	if jsonl_text.is_empty():
 		push_warning("DocketDBJsonl: serializer produced empty output, skipping flush")
 		return
 
-	# Acquire advisory lock — tight scope around the file write only.
-	# If we can't get the lock we log a warning but proceed: the SQLite
-	# mutation already succeeded and losing the JSONL write would be worse
-	# than a potential race on a very loaded system.
-	var lock := FileLock.acquire(_jsonl_path)
-	if lock == null:
-		push_warning("DocketDBJsonl: could not acquire .lock for %s — writing anyway" % _jsonl_path)
-
-	var saved := _atomic_write(_jsonl_path, jsonl_text)
-
-	if lock != null:
-		lock.release()
-
-	_unsaved = not saved
-	if not saved:
+	# The fingerprint update inside guarded_write is not the change's write:
+	# its outcome must not become this change's write_error.
+	var prior_error := write_error
+	var failure := JSONLCache.guarded_write(self, _jsonl_path, jsonl_text)
+	write_error = prior_error
+	_unsaved = not failure.is_empty()
+	if _unsaved:
+		push_error("DocketDBJsonl: %s" % failure)
 		if write_error.is_empty():
-			write_error = "could not save %s" % _jsonl_path
-		return
-
-	# Update cache fingerprint so it stays valid
-	var fingerprint := _file_fingerprint(_jsonl_path)
-	if not fingerprint.is_empty():
-		# Use super to avoid triggering another flush. The change is saved
-		# whether or not this lands (a stale fingerprint only rebuilds the
-		# cache), so its failure is not the change's.
-		var saved_error := write_error
-		super.set_meta_value("jsonl_hash", fingerprint)
-		write_error = saved_error
-
-
-static func _file_fingerprint(path: String) -> String:
-	## Lightweight freshness token: "size:mtime".
-	if not FileAccess.file_exists(path):
-		return ""
-	var size := FileAccess.get_file_as_bytes(path).size()
-	var mtime := FileAccess.get_modified_time(path)
-	return "%d:%d" % [size, mtime]
+			write_error = failure
 
 
 static func _atomic_write(path: String, content: String) -> bool:

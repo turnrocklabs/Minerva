@@ -58,41 +58,29 @@ static func parse_file(path: String) -> Dictionary:
 				result["unknown_types"].append(line_type)
 			continue
 
+		var record := _parse_record(line_type, parsed)
+		if record.is_empty():
+			continue
+		_note_unknown_keys(line_type, parsed, record, result["unknown_keys"])
 		match line_type:
 			"meta":
-				result["meta"] = _parse_meta(parsed)
+				result["meta"] = record
 			"item":
-				var item := _parse_item(parsed)
-				if not item.is_empty():
-					result["items"].append(item)
+				result["items"].append(record)
 			"event":
-				var ev := _parse_event(parsed)
-				if not ev.is_empty():
-					result["events"].append(ev)
+				result["events"].append(record)
 			"comment":
-				var c := _parse_comment(parsed)
-				if not c.is_empty():
-					result["comments"].append(c)
+				result["comments"].append(record)
 			"link":
-				var lnk := _parse_link(parsed)
-				if not lnk.is_empty():
-					result["links"].append(lnk)
+				result["links"].append(record)
 			"attachment":
-				var att := _parse_attachment(parsed)
-				if not att.is_empty():
-					result["attachments"].append(att)
+				result["attachments"].append(record)
 			"secret":
-				var s := _parse_secret(parsed)
-				if not s.is_empty():
-					result["secrets"].append(s)
+				result["secrets"].append(record)
 			"secret_version":
-				var sv := _parse_secret_version(parsed)
-				if not sv.is_empty():
-					result["secret_versions"].append(sv)
+				result["secret_versions"].append(record)
 			"saved_query":
-				var sq := _parse_saved_query(parsed)
-				if not sq.is_empty():
-					result["saved_queries"].append(sq)
+				result["saved_queries"].append(record)
 
 	file.close()
 	return result
@@ -119,6 +107,11 @@ static func parse_line(json_text: String) -> Dictionary:
 		push_warning("JSONLParser.parse_line: unknown _type '%s'" % line_type)
 		return {}
 
+	return _parse_record(line_type, parsed)
+
+
+static func _parse_record(line_type: String, parsed: Dictionary) -> Dictionary:
+	## The parsed record for a known _type, or {} when required fields are missing.
 	match line_type:
 		"meta":
 			return _parse_meta(parsed)
@@ -138,7 +131,6 @@ static func parse_line(json_text: String) -> Dictionary:
 			return _parse_secret_version(parsed)
 		"saved_query":
 			return _parse_saved_query(parsed)
-
 	return {}
 
 
@@ -202,7 +194,7 @@ static func _parse_item(d: Dictionary) -> Dictionary:
 				"command", "usage", "prompt_text", "preconditions",
 				"summary", "article", "parameters",
 				"steps", "outcome",
-				"source", "pristine_hash"]:
+				"source", "pristine_hash", "target"]:
 		_copy_str_opt(d, out, key)
 	# Optional integer fields (omitted when 0)
 	_copy_int_opt(d, out, "priority")
@@ -222,6 +214,8 @@ static func _parse_item(d: Dictionary) -> Dictionary:
 	# Object fields
 	if d.has("pristine_content") and d["pristine_content"] is Dictionary:
 		out["pristine_content"] = d["pristine_content"].duplicate(true)
+	if d.has("optimization") and d["optimization"] is Dictionary:
+		out["optimization"] = d["optimization"].duplicate(true)
 	return out
 
 
@@ -362,7 +356,39 @@ static func _empty_result() -> Dictionary:
 		"secret_versions": [],
 		"saved_queries": [],
 		"unknown_types": [],  # _type values skipped because this parser cannot read them
+		"unknown_keys": [],  # "<type>.<key>" fields of known records the writer would drop
 	}
+
+
+# Meta keys JSONLSerializer writes back (jsonl_version is the cache's own copy
+# of `version`), and the only meta version it writes.
+const _WRITTEN_META_KEYS := ["_type", "version", "counter", "id_prefix", "project",
+	"vault_salt", "vault_verify", "jsonl_version"]
+
+
+static func _note_unknown_keys(line_type: String, raw: Dictionary, record: Dictionary, found: Array) -> void:
+	## Appends "<type>.<key>" to `found` for each non-empty field of `raw` that
+	## `record` does not carry, so a rewrite from the cache would drop it. Meta
+	## extras are kept in the cache but never serialized, so meta is checked
+	## against the written key set and version instead.
+	var lost: Array = []
+	if line_type == "meta":
+		if str(raw.get("version", "")) != JSONLSerializer.JSONL_VERSION:
+			lost.append("version")
+		for key: String in raw:
+			if key not in _WRITTEN_META_KEYS:
+				lost.append(key)
+	else:
+		for key: String in raw:
+			var val: Variant = raw[key]
+			var empty: bool = val == null or (val is String and val == "") or (val is float and val == 0.0) or (val is bool and not val) \
+				or (val is Array and val.is_empty()) or (val is Dictionary and val.is_empty())
+			if not record.has(key) and not empty:
+				lost.append(key)
+	for key: String in lost:
+		var tag := "%s.%s" % [line_type, key]
+		if tag not in found:
+			found.append(tag)
 
 
 static func _parse_json_line(line: String, line_number: int) -> Variant:

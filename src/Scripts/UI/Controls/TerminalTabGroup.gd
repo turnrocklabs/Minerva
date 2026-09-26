@@ -485,8 +485,8 @@ func _queue_retained_refresh() -> void:
 
 ## The notifications still open for each tab's terminal: the tab's tooltip
 ## names the registered session the tab holds and lists them with their state,
-## reason, class and mechanism, then the last few delivered ones; the header
-## counts the open ones.
+## reason, class and mechanism, then the last few settled ones (delivered or
+## given up, e.g. failed_unavailable); the header counts the open ones.
 func _refresh_retained() -> void:
 	_retained_refresh_queued = false
 	var ledger_script: GDScript = load(NOTIFY_LEDGER_PATH)
@@ -513,7 +513,7 @@ func _refresh_retained() -> void:
 		total += lines.size()
 		var tip: String = "" if lines.is_empty() else "Notifications waiting:\n" + "\n".join(lines)
 		if not settled.is_empty():
-			tip += "\nLast delivered:\n" + "\n".join(settled.slice(-RECENT_SETTLED_SHOWN))
+			tip += "\nLast settled:\n" + "\n".join(settled.slice(-RECENT_SETTLED_SHOWN))
 		var identity: String = sessions.identity_for_terminal(str(session.terminal_id))
 		if not identity.is_empty():
 			tip = "Session: %s\n%s" % [identity, tip]

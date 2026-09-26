@@ -215,16 +215,21 @@ class Test(GatewayCase):
         self.assertEqual(docket.calls("docket_transition"), [{**move, "holder": IDENT}])
 
         # A fact tag is recorded on the task it is about, which is only on the
-        # chain: review:/test:/integrated:/released: tags go through as IDENT;
-        # any other change to a chain item is refused.
+        # chain: review:/test:/integrated:/released: tags go through as IDENT,
+        # pinned to the revision the gateway inspected (a caller's own
+        # if_revision is kept), so a tag changed meanwhile is refused by
+        # Docket rather than overwritten; any other change is refused here.
         facts = {"id": TASK, "project": "minerva", "tags": ["wr:task", "test:passed"]}
         self.assertIn("result", self.call("docket", "docket_update", facts))
-        self.assertEqual(docket.calls("docket_update"), [{**facts, "holder": IDENT}])
+        self.assertIn("result", self.call("docket", "docket_update", {**facts, "if_revision": 3}))
+        self.assertEqual(docket.calls("docket_update"), [
+            {**facts, "if_revision": 4, "holder": IDENT},
+            {**facts, "if_revision": 3, "holder": IDENT}])
         body = self.call("docket", "docket_update",
                          {"id": TASK, "project": "minerva", "tags": ["wr:task", "requires:review"]})
         self.assertDenied(body)
         self.assertIn(f"docket_out_of_scope: item {TASK} is not assigned to {IDENT}", body["error"]["message"])
-        self.assertEqual(len(docket.calls("docket_update")), 1)
+        self.assertEqual(len(docket.calls("docket_update")), 2)
 
         # The host reassigns the claim: the next protected write is refused,
         # evidence on the item still goes through.
@@ -239,7 +244,7 @@ class Test(GatewayCase):
         body = self.call("docket", "docket_update", {"id": ATTEMPT, "project": "minerva", "priority": 2})
         self.assertIn(f"docket_out_of_scope: item {ATTEMPT} is not assigned to {IDENT}", body["error"]["message"])
         self.assertEqual(len(docket.calls("docket_transition")), 1)
-        self.assertEqual(len(docket.calls("docket_update")), 1)
+        self.assertEqual(len(docket.calls("docket_update")), 2)
 
     def test_upstream_payloads_are_rebuilt_not_relayed(self):
         nudge, docket = self.stubs["nudge"], self.stubs["docket"]

@@ -66,8 +66,16 @@ func _is_already_loaded(abs_path: String) -> bool:
 
 func _exit_tree() -> void:
 	print("[DocketManager] closing all dockets...")
-	close_all()
+	var refused := close_all()
 	print("[DocketManager] all dockets closed")
+	if refused.is_empty():
+		return
+	# The window is going away, so an in-app dialog cannot show: a native
+	# alert blocks until acknowledged, and the process exits non-zero.
+	var message := "Docket could not save:\n\n" + "\n\n".join(refused)
+	printerr("[DocketManager] %s" % message)
+	OS.alert(message, "Docket not saved")
+	get_tree().quit(1)
 
 
 func _load_schema() -> void:
@@ -486,7 +494,8 @@ func save_all() -> PackedStringArray:
 	return refused
 
 
-## "" when saved or nothing needed saving, else why the file was not written.
+## "" when saved or nothing needed saving, else why the file was not written
+## (a refusal from JSONLCache.write_refusal, or a failed open/write/rename).
 func _save_project_to_jsonl(project_name: String) -> String:
 	if not _project_dbs.has(project_name):
 		return ""
@@ -494,32 +503,27 @@ func _save_project_to_jsonl(project_name: String) -> String:
 	if path.is_empty():
 		return ""
 	var db: DocketDB = _project_dbs[project_name]
-	# Untouched this session → the JSONL on disk is already current. Skipping
-	# matters at app close: serialize_all re-reads and re-writes the ENTIRE
-	# docket synchronously on the main thread.
-	if not db.dirty and FileAccess.file_exists(path):
+	# Untouched this session → nothing to write. Skipping matters at app close:
+	# serialize_all re-reads and re-writes the ENTIRE docket synchronously on
+	# the main thread. A file that was never loaded (no jsonl_hash) and is
+	# missing is still written, which is how a new docket gets its file.
+	if not db.dirty and (FileAccess.file_exists(path) or not db.get_meta_value("jsonl_hash", "").is_empty()):
 		return ""
-	var refusal := JSONLCache.write_refusal(db, path)
-	if not refusal.is_empty():
-		push_error("[DocketManager] %s" % refusal)
-		return refusal
 	var jsonl_text := JSONLSerializer.serialize_all(db)
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f:
-		f.store_string(jsonl_text)
-		f.close()
-		# Refresh the cache's stored fingerprint so the next boot recognizes
-		# the file we just wrote and skips the full JSONL→SQLite rebuild.
-		# (Without this, every exit-save invalidated the cache and every boot
-		# paid a full rebuild.)
-		db.set_meta_value("jsonl_hash", JSONLCache._file_fingerprint(path))
-		db.dirty = false
+	# guarded_write refreshes jsonl_hash, so the next boot recognizes the file
+	# and skips the full JSONL→SQLite rebuild.
+	var failure := JSONLCache.guarded_write(db, path, jsonl_text)
+	if not failure.is_empty():
+		push_error("[DocketManager] %s" % failure)
+		return failure
+	db.dirty = false
 	return ""
 
 
-func close_all() -> void:
-	## Save and close all dockets. Called on exit.
-	save_all()
+func close_all() -> PackedStringArray:
+	## Save and close all dockets. Called on exit. Returns one message per
+	## docket that could not be saved; the dockets are closed either way.
+	var refused := save_all()
 	for proj_name in _project_dbs.keys():
 		var t0 := Time.get_ticks_msec()
 		print("[DocketManager] closing db '%s'..." % proj_name)
@@ -528,6 +532,7 @@ func close_all() -> void:
 	_project_dbs.clear()
 	_master_db = null
 	_personal_db = null
+	return refused
 
 
 # -- Internal helpers ---------------------------------------------------------

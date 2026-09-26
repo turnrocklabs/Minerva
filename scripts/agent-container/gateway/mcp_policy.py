@@ -697,6 +697,10 @@ def _mutate(tool):
                                         ctx.policy.mutable_types, direct=not fact)
         if fact and not scope.is_direct(item):
             scope.require_fact_tags(item, item["id"], args["tags"])
+            # tags replace the whole list: pin the revision the check above
+            # judged, so a tag change made since then is refused, not erased.
+            if isinstance(item.get("revision"), int):
+                args.setdefault("if_revision", item["revision"])
         _check_references(ctx, scope, args)
         if docket_scope.touches_protected(tool, args, item):
             scope.require_holder(item, item["id"])
