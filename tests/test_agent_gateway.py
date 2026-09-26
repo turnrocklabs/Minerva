@@ -306,6 +306,24 @@ class Test(GatewayCase):
         self.assertDenied(self.call("minerva", "minerva_update_note", {"note_id": NOTE_A, "content": "x"}))
         body = self.call("minerva", "minerva_update_note", {"note_id": NOTE_B, "content": "handoff"})
         self.assertIn("result", body, body)
+        # append needs note-write; read_since needs note-read (write implies read).
+        # Refusals name the grant; the gateway stamps the append's author.
+        append = {"text": "entry", "request_id": "r1"}
+        body = self.call("minerva", "minerva_append_note", {"note_id": NOTE_B, **append})
+        self.assertEqual(self.result_value(body)["echo"], {"note_id": NOTE_B, **append,
+                                                           "author": f"container:claude@{SESSION}"})
+        for note, grant in ((NOTE_A, "note-write"), ("4" * 64, "note-write")):
+            body = self.call("minerva", "minerva_append_note", {"note_id": note, **append})
+            self.assertDenied(body)
+            self.assertIn(f"needs the {grant} grant", body["error"]["message"])
+        for note in (NOTE_A, NOTE_B):
+            self.assertIn("result", self.call("minerva", "minerva_read_note_since",
+                                              {"note_id": note, "cursor": ""}))
+        body = self.call("minerva", "minerva_read_note_since", {"note_id": "4" * 64, "cursor": ""})
+        self.assertDenied(body)
+        self.assertIn("needs the note-read grant", body["error"]["message"])
+        self.assertEqual(len(self.stubs["minerva"].calls("minerva_append_note")), 1)
+        self.assertEqual(len(self.stubs["minerva"].calls("minerva_read_note_since")), 2)
         for tool, args in (("minerva_list_notes", {}), ("minerva_create_note", {"title": "t", "content": "c"}),
                            ("minerva_delete_note", {"note_id": NOTE_B})):
             with self.subTest(tool):

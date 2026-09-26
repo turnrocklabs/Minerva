@@ -435,10 +435,18 @@ def rule_terminal_notify(ctx, args):
     return Call(args, shape_passthrough)
 
 
-def rule_note_read(ctx, args):
+def _require_note_grant(ctx, note_id, write):
+    """Refuses a note outside the session's grants, naming the grant needed.
+    Every note verb goes through here; write implies read."""
     grants = ctx.session.notes()
-    if args["note_id"] not in grants.read | grants.write:
-        raise Deny("note_not_granted")
+    if write and note_id not in grants.write:
+        raise Deny("note_not_granted", "needs the note-write grant")
+    if not write and note_id not in grants.read | grants.write:
+        raise Deny("note_not_granted", "needs the note-read grant")
+
+
+def rule_note_read(ctx, args):
+    _require_note_grant(ctx, args["note_id"], write=False)
 
     def shape(result):
         note = result_json(result)
@@ -451,9 +459,20 @@ def rule_note_read(ctx, args):
     return Call(args, shape)
 
 
+def rule_note_read_since(ctx, args):
+    _require_note_grant(ctx, args["note_id"], write=False)
+    return Call(args, shape_passthrough)
+
+
 def rule_note_write(ctx, args):
-    if args["note_id"] not in ctx.session.notes().write:
-        raise Deny("note_not_granted")
+    _require_note_grant(ctx, args["note_id"], write=True)
+    return Call(args, shape_passthrough)
+
+
+def rule_note_append(ctx, args):
+    _require_note_grant(ctx, args["note_id"], write=True)
+    # The gateway, not the container, says who wrote the entry.
+    args["author"] = ctx.session.label
     return Call(args, shape_passthrough)
 
 
@@ -548,7 +567,9 @@ RULES = {
     "terminal_notify": rule_terminal_notify,
     "terminal_list": rule_terminal_list,
     "note_read": rule_note_read,
+    "note_read_since": rule_note_read_since,
     "note_write": rule_note_write,
+    "note_append": rule_note_append,
     "docket_get": rule_docket_get,
     "docket_query": rule_docket_query,
     "docket_comment": rule_docket_comment,

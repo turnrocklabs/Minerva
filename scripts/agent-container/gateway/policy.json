@@ -63,6 +63,31 @@
           "note_id"
         ],
         "rule": "note_write"
+      },
+      "minerva_append_note": {
+        "args": {
+          "note_id": "note_id",
+          "text": "text",
+          "request_id": "line"
+        },
+        "required": [
+          "note_id",
+          "text",
+          "request_id"
+        ],
+        "rule": "note_append"
+      },
+      "minerva_read_note_since": {
+        "args": {
+          "note_id": "note_id",
+          "cursor": "line",
+          "limit": "int"
+        },
+        "required": [
+          "note_id",
+          "cursor"
+        ],
+        "rule": "note_read_since"
       }
     },
     "docket": {

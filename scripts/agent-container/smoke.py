@@ -20,7 +20,7 @@ import sys
 
 EXPECTED_TOOLS = {
     "minerva": {"minerva_terminal_notify", "minerva_terminal_list", "minerva_get_note",
-                "minerva_update_note"},
+                "minerva_update_note", "minerva_append_note", "minerva_read_note_since"},
     "docket": {"docket_get", "docket_query", "docket_comment", "docket_create", "docket_update",
                "docket_transition"},
     "nudge": {"nudge_get_hint", "nudge_set_hint", "nudge_query", "nudge_bump", "nudge_list_components"},
