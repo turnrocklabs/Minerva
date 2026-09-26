@@ -164,6 +164,30 @@ func _slide_deck_skill(plugin_id: String = "presentation_demo", version_marker: 
 	}
 
 
+## The consent a person gives by accepting the customised records `accepted`
+## (manifest ids) that updating `previous` to `def` would overwrite, as
+## PluginSkillConsent.collect records it: planned now against Docket as
+## seeding reaches it, each acceptance bound to the record, project and
+## content it was shown (update_seen). `extra` is merged in.
+func _accepted(previous: PluginDefinitionScript, def: PluginDefinitionScript, accepted: Array,
+		extra: Dictionary) -> Dictionary:
+	var Seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
+	var docket = Seeding.docket()
+	var actions: Array = (await PluginSkillSeederScript.plan_reconcile(def,
+		Seeding.available_tools(RolledBackManager.new(def)), docket)).get("actions", [])
+	if not (def.knowledge.is_empty() and previous.knowledge.is_empty()):
+		actions += (await PluginKnowledgeSeeder.plan(def, docket)).get("actions", [])
+	var decisions := {}
+	var seen := {}
+	for action in actions:
+		var item: Dictionary = action.get("entry", action.get("skill", {}))
+		var item_id := str(action.get("id", item.get("id", "")))
+		if str(action.get("action", "")) == PluginSkillSeederScript.RECONCILE_PROMPT_REQUIRED and item_id in accepted:
+			decisions[item_id] = true
+			seen[item_id] = PluginSkillConsentScript.consent_seen(action, def.knowledge_project, docket)
+	return {"collected": true, "update_decisions": decisions, "update_seen": seen}.merged(extra)
+
+
 func _new_docket() -> Dictionary:
 	var db_path := _tmp_dir.path_join("t8_%d.db" % randi())
 	var db := DocketDB.create_new(db_path)
@@ -561,16 +585,16 @@ func test_rollback_restores_content() -> void:
 	var blocked_dir := _tmp_dir.path_join("blocked").path_join("op_blocked")
 	DirAccess.make_dir_recursive_absolute(blocked_dir)
 	FileAccess.open(_tmp_dir.path_join("blocked").path_join(Txn.CONTENT_PENDING), FileAccess.WRITE).close()
-	var skipped: Dictionary = await Seeding.reconcile(RolledBackManager.new(v2), v1, v2, {"collected": true,
-		"update_decisions": {"minerva_notes_demo_wiring": true}, "journal_dir": blocked_dir}, false)
+	var skipped: Dictionary = await Seeding.reconcile(RolledBackManager.new(v2), v1, v2,
+		await _accepted(v1, v2, ["minerva_notes_demo_wiring"], {"journal_dir": blocked_dir}), false)
 	check("an update whose undo record cannot be saved leaves the person's text alone",
 		skipped.has("content_skipped") and registry.call_tool("docket_get", {"id": original_id}).get("article") == "MY NOTES")
 
 	# The person accepts v2 over their text; v2 then fails and is rolled back.
 	var op_dir := _tmp_dir.path_join("op_rollback")
 	DirAccess.make_dir_recursive_absolute(op_dir)
-	await Seeding.reconcile(RolledBackManager.new(v2), v1, v2, {"collected": true,
-		"update_decisions": {"minerva_notes_demo_wiring": true}, "journal_dir": op_dir}, false)
+	await Seeding.reconcile(RolledBackManager.new(v2), v1, v2,
+		await _accepted(v1, v2, ["minerva_notes_demo_wiring"], {"journal_dir": op_dir}), false)
 	check("the accepted update overwrote the person's text, saving it first",
 		registry.call_tool("docket_get", {"id": original_id}).get("article") == "Red to red, always."
 		and Txn.content_journal(op_dir).get("entries", []).size() == 1)
@@ -663,8 +687,8 @@ func test_rollback_restores_content() -> void:
 	var edit_dir := _tmp_dir.path_join("op_edited")
 	DirAccess.make_dir_recursive_absolute(edit_dir)
 	var h3 := _knowledge_def("master", [_hint("57600")])
-	await Seeding.reconcile(RolledBackManager.new(h3), h1, h3, {"collected": true,
-		"update_decisions": {"minerva_notes_demo_baud": true}, "journal_dir": edit_dir}, false)
+	await Seeding.reconcile(RolledBackManager.new(h3), h1, h3,
+		await _accepted(h1, h3, ["minerva_notes_demo_baud"], {"journal_dir": edit_dir}), false)
 	registry.call_tool("docket_update", {"id": baud_id, "value": "NEWER"})
 	var edited_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(h1), h3,
 		Txn.content_journal(edit_dir))
@@ -684,8 +708,8 @@ func test_rollback_restores_content() -> void:
 	var s2 := _make_def("notes_demo", [_slide_deck_skill("notes_demo", "v2")])
 	var skill_dir := _tmp_dir.path_join("op_skill")
 	DirAccess.make_dir_recursive_absolute(skill_dir)
-	await Seeding.reconcile(RolledBackManager.new(s2), s1, s2, {"collected": true,
-		"update_decisions": {skill_v1.id: true}, "journal_dir": skill_dir}, false)
+	await Seeding.reconcile(RolledBackManager.new(s2), s1, s2,
+		await _accepted(s1, s2, [skill_v1.id], {"journal_dir": skill_dir}), false)
 	var skill_took := str(registry.call_tool("docket_get", {"id": skill_id}).get("steps", ""))
 	var skill_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(s1), s2,
 		Txn.content_journal(skill_dir))
