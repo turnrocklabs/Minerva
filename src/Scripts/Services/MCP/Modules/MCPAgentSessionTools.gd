@@ -1,6 +1,6 @@
 extends MCPToolModule
 ## MCP verbs for agent-container sessions: create, start, stop, status, info,
-## readiness, list, build, grant/revoke (note and notify grants, changed
+## readiness, profiles, provision, list, build, grant/revoke (note and notify grants, changed
 ## live), attach (front a session in a terminal tab), and planned jobs:
 ## run_job, job_status, job_log and drain. Each is the MCP twin
 ## of a control in Preferences > Containers > Agent Sessions or of the
@@ -27,7 +27,8 @@ func get_tool_names() -> Array[String]:
 		"minerva_agent_session_grant", "minerva_agent_session_revoke",
 		"minerva_agent_session_attach", "minerva_agent_session_run_job",
 		"minerva_agent_session_job_status", "minerva_agent_session_job_log",
-		"minerva_agent_session_drain"]
+		"minerva_agent_session_drain", "minerva_agent_session_profiles",
+		"minerva_agent_session_provision"]
 
 
 func register_tools() -> void:
@@ -43,6 +44,7 @@ func register_tools() -> void:
 			"start_in": {"type": "string", "description": "Host folder the harness starts in; inside one of the folders. Default: the first folder."},
 			"projects": {"type": "array", "items": {"type": "string"}, "description": "Docket project names the session may use. Default: discovered from the folders' .dct files."},
 			"mode": {"type": "string", "enum": ["start", "resume", "shell"], "description": "What the session shell runs first: the harness, its resume picker, or nothing. Default start."},
+			"profile": {"type": "string", "description": "Toolchain profile the session needs (minerva_agent_session_profiles); info and readiness follow it. Fixed at create. Default: default."},
 		}, "required": ["name", "harness", "folders"]}, "containers")
 
 	server._register_tool("minerva_agent_session_start",
@@ -68,17 +70,28 @@ func register_tools() -> void:
 		{"type": "object", "properties": {"name": _NAME}, "required": ["name"]}, "containers")
 
 	server._register_tool("minerva_agent_session_info",
-		"Inspect one agent-container session without changing it: everything status returns, plus session_identity (the identity registered for it in the harness session registry, the one notify routes by; with the attached terminal's answer and whether they agree), path_mappings (host folder, the path the harness sees, what is mounted; the session home is /agent-home), git_identity (the author git reports in the start folder, measured in the running container) and toolchain_profile. map_paths answers host paths with the container path the harness sees (null when no session folder holds one).",
+		"Inspect one agent-container session without changing it: everything status returns, plus session_identity (the identity registered for it in the harness session registry, the one notify routes by; with the attached terminal's answer and whether they agree), path_mappings (host folder, the path the harness sees, what is mounted; the session home is /agent-home), git_identity (the author git reports in the start folder, measured in the running container) and toolchain_profile (the profile the session was created with: name, selected_by session or default, source, tools with their minimum versions). map_paths answers host paths with the container path the harness sees (null when no session folder holds one).",
 		{"type": "object", "properties": {
 			"name": _NAME,
 			"map_paths": {"type": "array", "items": {"type": "string"}, "description": "Host paths to translate into container paths."},
 		}, "required": ["name"]}, "containers")
 
 	server._register_tool("minerva_agent_session_readiness",
-		"Read-only readiness check of an agent-container session: the toolchain profile's tools and minimum versions, the folders and the Git author identity, measured inside the running container with docker exec; its Docket projects against the Docket service; and a registered session identity. Returns ready, checks [{check, name, ok, detail}] and missing. Starts no application, test suite or container; a stopped session reports only what can be checked from the host.",
+		"Read-only readiness check of an agent-container session: its toolchain profile's tools and minimum versions (a missing tool the profile can provision says so), the folders and the Git author identity, measured inside the running container with docker exec; its Docket projects against the Docket service; and a registered session identity. Returns ready, profile, toolchain, checks [{check, name, ok, detail}], missing, and provisioning / last_provision. Starts no application, test suite or container; a stopped session reports only what can be checked from the host.",
 		{"type": "object", "properties": {
 			"name": _NAME,
-			"profile": {"type": "string", "description": "Toolchain profile to check against (profiles.json in the agent kit). Default: default."},
+			"profile": {"type": "string", "description": "Check against this profile instead of the session's own, as a what-if. Default: the session's profile."},
+		}, "required": ["name"]}, "containers")
+
+	server._register_tool("minerva_agent_session_profiles",
+		"The toolchain profiles a session can be created with: name, description, source (shipped with the agent kit, or user: the user's own agent-profiles.json in Minerva's data directory, which adds profiles and replaces shipped ones of the same name), extends, and tools with minimum versions and whether each is provisionable. Also returns user_file, the path to edit to add a profile. A profile that does not parse shows its error instead of tools.",
+		{"type": "object", "properties": {}}, "containers")
+
+	server._register_tool("minerva_agent_session_provision",
+		"Install, inside a running agent-container session, its toolchain profile's tools that are missing or below the profile's minimum and whose profile entry names an official download (or just the named tools). Each is downloaded through the session's egress, verified against its checksum, unpacked into the session's persistent tools directory and put first on its PATH; the image is not rebuilt and nothing is overwritten. Returns at once; poll minerva_agent_session_readiness, whose provisioning and last_provision report the outcome. Restart the harness to use a newly provisioned tool in it.",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"tools": {"type": "array", "items": {"type": "string"}, "description": "Only these tools. Default: every provisionable tool that readiness would report missing."},
 		}, "required": ["name"]}, "containers")
 
 	server._register_tool("minerva_agent_session_list",
@@ -151,7 +164,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_agent_session_create":
 			result = await store.create(name, str(arguments.get("harness", "")),
 				_strings(arguments.get("folders", [])), str(arguments.get("start_in", "")).strip_edges(),
-				_strings(arguments.get("projects", [])), str(arguments.get("mode", "")).strip_edges())
+				_strings(arguments.get("projects", [])), str(arguments.get("mode", "")).strip_edges(),
+				str(arguments.get("profile", "")).strip_edges())
 		"minerva_agent_session_start":
 			result = await store.start(name, str(arguments.get("mode", "")).strip_edges())
 		"minerva_agent_session_stop":
@@ -164,6 +178,16 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			result = await store.readiness(name, str(arguments.get("profile", "")).strip_edges())
 		"minerva_agent_session_list":
 			result = await store.list_sessions()
+		"minerva_agent_session_profiles":
+			result = await store.profiles()
+		"minerva_agent_session_provision":
+			var invalid: String = AgentSessionStore._check_id(name)
+			if not invalid.is_empty():
+				return MCPToolUtils.error(invalid)
+			if store.provisioning.has(name):
+				return MCPToolUtils.error("%s is already provisioning" % name)
+			store.provision(name, _strings(arguments.get("tools", [])))   # not awaited: downloads outlive this call
+			return {"success": true, "provisioning": true, "id": name}
 		"minerva_agent_session_attach":
 			var terminal: TerminalSession = _terminal(str(arguments.get("terminal", "")).strip_edges())
 			if terminal == null:

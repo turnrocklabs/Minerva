@@ -17,6 +17,16 @@ extends RefCounted
 ## identity (HarnessSessionRegistry, the identity notify routes by); readiness
 ## lists what the session is missing (agent.py readiness, readiness.py).
 ##
+## Toolchain profiles: a session is created with a named profile (the tools and
+## minimum versions it needs), which info and readiness follow. profiles()
+## lists them: the kit's shipped profiles.json plus the user's own file,
+## user://agent-profiles.json, which the launcher reads through
+## $MINERVA_AGENT_PROFILES (set for this process by shared()). provision()
+## installs the profile's missing tools inside the running session from the
+## official download each profile entry names (agent.py provision); it can
+## take minutes, so it runs in the background and its answer is kept in
+## last_provision.
+##
 ## Grants: status, info and list answers carry `grants`, the session's grant
 ## record {version, note_read, note_write, notify, and identity + role once one
 ## is registered} (agent.py grants.json);
@@ -65,12 +75,23 @@ const ATTACH_WAIT_S := 30.0
 const ATTACH_POLL_S := 0.25
 
 const PROFILE_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+const TOOL_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+## The user's own toolchain profiles, added to the kit's shipped ones.
+const USER_PROFILES := "user://agent-profiles.json"
+const USER_PROFILES_ENV := "MINERVA_AGENT_PROFILES"
+## Written when the user first opens their profile file from the GUI.
+const USER_PROFILES_TEMPLATE := """{
+  "_comment": "Your toolchain profiles for agent sessions, added to the shipped ones; a profile with the name of a shipped one replaces it. Each profile: description, extends (a base profile, such as default), tools {name: {min, version_args, provision}}. provision names an official download: version, url, checksum or checksum_url, bin. The shipped profiles.json beside agent.py has a full example."
+}
+"""
 const PYTHON := "python3"
 const QUICK_TIMEOUT_S := 60.0
 ## The container probe and the Docket query each have their own bound inside.
 const READINESS_TIMEOUT_S := 150.0
 ## The first start clones every checkout folder.
 const START_TIMEOUT_S := 900.0
+## Each tool's download and unpack has its own 900 s bound inside.
+const PROVISION_TIMEOUT_S := 3600.0
 ## The first build also builds the builder image's toolchains.
 const BUILD_TIMEOUT_S := 7200.0
 ## Where a packaged build carries the kit (scripts/stage-agent-kit.sh), relative
@@ -87,6 +108,10 @@ static var _shared: RefCounted = null
 ## True while build() runs; the last build's answer stays in last_build.
 var building: bool = false
 var last_build: Dictionary = {}
+## Session id -> true while provision() runs for it.
+var provisioning: Dictionary = {}
+## Session id -> the last provision() answer.
+var last_provision: Dictionary = {}
 ## Container session name -> "identity\nrole" last written to its grant record.
 var _identities_written: Dictionary = {}
 
@@ -94,6 +119,7 @@ var _identities_written: Dictionary = {}
 static func shared() -> RefCounted:
 	if _shared == null:
 		_shared = load("res://Scripts/Services/AgentSessions/AgentSessionStore.gd").new()
+		OS.set_environment(USER_PROFILES_ENV, user_profiles_path())
 		var sync := Callable(_shared, "sync_identities")
 		HarnessSessionRegistry.shared().changed.connect(sync)
 		sync.call()
@@ -157,8 +183,34 @@ static func attach_command(id: String) -> String:
 	return "%s '%s' attach %s" % [PYTHON, launcher.replace("'", "'\\''"), id]
 
 
+## The user's profile file as a host path (it may not exist yet).
+static func user_profiles_path() -> String:
+	return ProjectSettings.globalize_path(USER_PROFILES)
+
+
+## The user's profile file, written from a template first when missing.
+## Returns "" or why it could not be written.
+static func ensure_user_profiles() -> String:
+	if FileAccess.file_exists(USER_PROFILES):
+		return ""
+	var file: FileAccess = FileAccess.open(USER_PROFILES, FileAccess.WRITE)
+	if file == null:
+		return "could not write %s (%s)" % [user_profiles_path(), error_string(FileAccess.get_open_error())]
+	file.store_string(USER_PROFILES_TEMPLATE)
+	file.close()
+	return ""
+
+
+## The profiles a session can be created with: {"ok", "profiles": [{name,
+## description, source (shipped or user), extends, tools {tool: "min …"} or
+## error}], "default", "shipped_file", "user_file", "user_file_exists"}.
+func profiles() -> Dictionary:
+	return await _run(PackedStringArray(["profiles"]), QUICK_TIMEOUT_S)
+
+
+## Creates a session record; `profile` "" leaves it on the default profile.
 func create(id: String, harness: String, folders: PackedStringArray, start_in: String,
-		projects: PackedStringArray, mode: String) -> Dictionary:
+		projects: PackedStringArray, mode: String, profile: String = "") -> Dictionary:
 	var problem: String = _check_id(id)
 	if problem.is_empty() and not HARNESSES.has(harness):
 		problem = "harness must be one of: %s" % ", ".join(HARNESSES)
@@ -166,6 +218,9 @@ func create(id: String, harness: String, folders: PackedStringArray, start_in: S
 		problem = "mode must be one of: %s" % ", ".join(MODES)
 	if problem.is_empty() and folders.is_empty():
 		problem = "a session mounts at least one folder"
+	if problem.is_empty() and not profile.is_empty() \
+			and RegEx.create_from_string(PROFILE_PATTERN).search(profile) == null:
+		problem = "profile names are letters, digits and . _ + -"
 	if not problem.is_empty():
 		return _error(problem)
 	# --option=value keeps a path that starts with "-" from reading as an option.
@@ -178,6 +233,8 @@ func create(id: String, harness: String, folders: PackedStringArray, start_in: S
 		args.append("--project=" + project)
 	if not mode.is_empty():
 		args.append("--mode=" + mode)
+	if not profile.is_empty():
+		args.append("--profile=" + profile)
 	var result: Dictionary = await _run(args, QUICK_TIMEOUT_S)
 	changed.emit()
 	return result
@@ -231,9 +288,11 @@ func info(id: String, map_paths: PackedStringArray = PackedStringArray()) -> Dic
 	return result
 
 
-## Read-only readiness of session `id` against toolchain profile `profile`
-## ("" = the default): {"ok", "ready", "checks": [{check, name, ok, detail}],
-## "missing": [...], "checked"}. A registered session identity is one check.
+## Read-only readiness of session `id` against its own toolchain profile, or
+## `profile` for a what-if: {"ok", "ready", "profile", "profile_selected_by",
+## "toolchain", "checks": [{check, name, ok, detail}], "missing": [...],
+## "checked", "provisioning", "last_provision"}. A registered session
+## identity is one check.
 func readiness(id: String, profile: String = "") -> Dictionary:
 	var problem: String = _check_id(id)
 	if problem.is_empty() and not profile.is_empty() \
@@ -247,6 +306,9 @@ func readiness(id: String, profile: String = "") -> Dictionary:
 	var result: Dictionary = await _run(args, READINESS_TIMEOUT_S)
 	if not bool(result.get("ok", false)):
 		return result
+	result["provisioning"] = provisioning.has(id)
+	if last_provision.has(id):
+		result["last_provision"] = last_provision[id]
 	var identity: Dictionary = session_identity(id, "")
 	var registered: bool = bool(identity["registered"])
 	var check: Dictionary = {"check": "identity", "name": id, "ok": registered,
@@ -260,6 +322,35 @@ func readiness(id: String, profile: String = "") -> Dictionary:
 		missing.append("identity %s: %s" % [id, check["detail"]])
 		result["missing"] = missing
 		result["ready"] = false
+	return result
+
+
+## Installs, inside running session `id`, its profile's tools that are
+## missing or too old and have a provision entry (or just `tools`), from the
+## official downloads the profile names. One run per session at a time; a
+## second call while one runs answers at once. The answer is also kept in
+## last_provision[id].
+func provision(id: String, tools: PackedStringArray = PackedStringArray()) -> Dictionary:
+	var problem: String = _check_id(id)
+	var pattern := RegEx.create_from_string(TOOL_PATTERN)
+	for tool: String in tools:
+		if problem.is_empty() and pattern.search(tool) == null:
+			problem = "bad tool name %s" % tool
+	if problem.is_empty() and provisioning.has(id):
+		return _error("%s is already provisioning" % id)
+	if not problem.is_empty():
+		var refused: Dictionary = _error(problem)
+		last_provision[id] = refused
+		return refused
+	var args: PackedStringArray = ["provision", id]
+	for tool: String in tools:
+		args.append("--tool=" + tool)
+	provisioning[id] = true
+	changed.emit()
+	var result: Dictionary = await _run(args, PROVISION_TIMEOUT_S)
+	provisioning.erase(id)
+	last_provision[id] = result
+	changed.emit()
 	return result
 
 

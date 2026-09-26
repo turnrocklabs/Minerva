@@ -3,7 +3,7 @@
 
   agent.py build
   agent.py create NAME --harness claude|codex --folder PATH... [--start-in PATH]
-                  [--project P]... [--mode start|resume|shell]
+                  [--project P]... [--mode start|resume|shell] [--profile PROFILE]
   agent.py start NAME [--mode MODE] [--note-read ID]... [--note-write ID]...
   agent.py attach NAME
   agent.py up NAME [start options] [attach options]     start if needed, then attach
@@ -15,6 +15,8 @@
   agent.py status NAME
   agent.py info NAME [--map HOST_PATH]...
   agent.py readiness NAME [--profile PROFILE]
+  agent.py provision NAME [--tool TOOL]...
+  agent.py profiles
   agent.py list
   agent.py run-job NAME --rev REV --command CMD [--env K=V]... [--artifact PATH]...
                    [--cpus N] [--memory SIZE] [--seconds S] [--folder PATH]
@@ -25,7 +27,8 @@ Every command takes --json: one JSON object on stdout, {"ok": true, ...} or
 {"ok": false, "error": ...}. Minerva drives sessions this way.
 
 A session is a record: harness, the host folders it mounts, the folder the
-harness starts in, its Docket projects and its default mode. `create` writes
+harness starts in, its Docket projects, its default mode and its toolchain
+profile ("profile"; a record without one uses "default"). `create` writes
 it; `start` and `up` also create it when given --harness and --folder and no
 record exists, and otherwise refuse options that differ from it.
 
@@ -107,10 +110,15 @@ else discovered from the .dct files near the top of each folder.
 `info` adds what a session is, for inspection: the path mappings (host
 folder, the path the harness sees, and the session home at /agent-home),
 the Git author identity git reports in its start folder, and its toolchain
-profile. `readiness` checks the profile's tools and minimum versions, the
-folders and the Git identity inside the running container, and the session's
-Docket projects against the Docket service, and lists what is missing. Both
-are read-only (readiness.py).
+profile with its tools. `readiness` checks the session's profile (or, for a
+what-if, --profile) for tools and minimum versions, the folders and the Git
+identity inside the running container, and the session's Docket projects
+against the Docket service, and lists what is missing. Both are read-only
+(readiness.py). `profiles` lists the profiles on offer: the shipped
+profiles.json plus the user's file named by $MINERVA_AGENT_PROFILES.
+`provision` installs, inside the running session, the profile tools that are
+missing or too old and whose profile entry names an official download
+(provision.py); the image is not rebuilt.
 
 Jobs. `run-job` runs one planned command at an exact revision of a session
 clone in its own bounded container and classifies how it ended: succeeded,
@@ -146,6 +154,7 @@ sys.path.insert(0, str(HERE.parent / "container-build"))
 import build as container_build  # noqa: E402  the builder image and native cache
 import readiness  # noqa: E402  profiles and the read-only probe
 import jobs  # noqa: E402  planned jobs and drain
+import provision  # noqa: E402  profile tools installed into a running session
 COMPOSE = HERE / "docker-compose.yml"
 IMAGE_FILES = ["Dockerfile", "forwarder.py", "minerva-session", "agent-env.sh", "agent-bashrc",
                "agent-upgrade", "tmux.conf", "claude-mcp.json", "smoke.py"]
@@ -153,6 +162,8 @@ HARNESSES = ["claude", "codex"]
 MODES = ["start", "resume", "shell"]
 RECORD_VERSION = 2
 RECORD_KEYS = {"version", "harness", "folders", "start_in", "projects", "mode"}
+# Optional in a record: records from before profiles use the default.
+PROFILE_KEY = "profile"
 LEGACY_KEYS = {"harness", "task", "repos", "projects"}
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -288,8 +299,9 @@ def discover_projects(folders):
     return names
 
 
-def build_record(name, harness, folders, start_in, projects, mode):
-    """The record for a new session, from host paths; nothing is written."""
+def build_record(name, harness, folders, start_in, projects, mode, profile=""):
+    """The record for a new session, from host paths; nothing is written. An
+    empty profile is left out of the record, which then uses the default."""
     if harness not in HARNESSES:
         raise Refused(f"harness must be one of {', '.join(HARNESSES)}")
     if mode not in MODES:
@@ -324,8 +336,22 @@ def build_record(name, harness, folders, start_in, projects, mode):
     for project in projects:
         if not PROJECT.fullmatch(project):
             raise Refused(f"bad Docket project name {project!r}")
-    return {"version": RECORD_VERSION, "harness": harness, "folders": records,
-            "start_in": workdir, "projects": projects, "mode": mode}
+    record = {"version": RECORD_VERSION, "harness": harness, "folders": records,
+              "start_in": workdir, "projects": projects, "mode": mode}
+    if profile:
+        try:
+            readiness.load_profile(profile)
+        except readiness.ProfileError as exc:
+            raise Refused(str(exc))
+        record[PROFILE_KEY] = profile
+    return record
+
+
+def record_profile(record):
+    """(profile name, how it was chosen): the record's, else the default."""
+    if record.get(PROFILE_KEY):
+        return record[PROFILE_KEY], "session"
+    return readiness.DEFAULT_PROFILE, "default"
 
 
 def container_path(folders, host_path):
@@ -345,7 +371,10 @@ def record_view(name, saved):
     A record from before folders (task + repository names) becomes the task
     clones it already has, starting in its start_in repository."""
     path = record_path(name)
-    if isinstance(saved, dict) and set(saved) == RECORD_KEYS and saved["version"] == RECORD_VERSION \
+    if isinstance(saved, dict) and set(saved) - {PROFILE_KEY} == RECORD_KEYS \
+            and saved["version"] == RECORD_VERSION \
+            and (PROFILE_KEY not in saved or (isinstance(saved[PROFILE_KEY], str)
+                                             and readiness.PROFILE_NAME.fullmatch(saved[PROFILE_KEY]))) \
             and saved["harness"] in HARNESSES and saved["mode"] in MODES \
             and isinstance(saved["folders"], list) and saved["folders"] \
             and all(isinstance(f, dict) and set(f) == {"host", "path", "kind"}
@@ -695,9 +724,10 @@ def resolve_record(args):
             raise Refused(f"no session {args.name}: create it first "
                           f"(agent.py create {args.name} --harness H --folder PATH)")
         return build_record(args.name, args.harness, args.folder, args.start_in, args.project,
-                            args.mode or "start"), True
+                            args.mode or "start", args.profile or ""), True
     differs = (args.harness and args.harness != saved["harness"]) \
-        or (args.task and args.task != saved.get("task"))
+        or (args.task and args.task != saved.get("task")) \
+        or (args.profile and args.profile != record_profile(saved)[0])
     if not differs and (args.folder or args.start_in or args.project):
         if saved["version"] != RECORD_VERSION:
             raise Refused(f"session {args.name} was created before folders; its folders cannot be "
@@ -719,6 +749,7 @@ def describe(name, record):
     state = docker_state(containers(name)[0])
     result = {"ok": True, "id": name, "harness": record["harness"], "folders": record["folders"],
               "start_in": record["start_in"], "projects": record["projects"], "mode": record["mode"],
+              "profile": record_profile(record)[0],
               "state": state, "attached_terminal": attached_terminal(name) if state == "running" else "",
               "record": "folders" if record["version"] == RECORD_VERSION else "legacy"}
     result["grants"], problem = load_grants(name)
@@ -768,7 +799,7 @@ def natives_manifest(run_dir):
 def cmd_create(args):
     check_layout()
     record = build_record(args.name, args.harness, args.folder, args.start_in, args.project,
-                          args.mode or "start")
+                          args.mode or "start", args.profile or "")
     with session_lock(args.name):
         saved = load_record(args.name)
         if saved is None:
@@ -1087,16 +1118,23 @@ def cmd_info(args):
     else:
         result["git_identity"] = {"set": False, "name": "", "email": "", "measured": "",
                                   "detail": "measured inside the running session; it is not running"}
+    name, selected_by = record_profile(record)
+    result["toolchain_profile"] = {"name": name, "selected_by": selected_by}
     try:
-        profile = readiness.load_profile(readiness.DEFAULT_PROFILE)
+        profile = readiness.load_profile(name)
+        result["toolchain_profile"].update(description=profile["description"], source=profile["source"],
+                                           tools=readiness.summary(profile))
+        result["toolchain_profile"]["available"] = readiness.profile_names()
     except readiness.ProfileError as exc:
-        raise Refused(str(exc))
-    result["toolchain_profile"] = {"name": profile["name"], "description": profile["description"],
-                                   "selected_by": "default", "available": readiness.profile_names()}
+        result["toolchain_profile"]["error"] = str(exc)
+    tools = result["toolchain_profile"].get("tools", {})
     ident = result["git_identity"]
     result["message"] = "\n".join(
         [result["message"], f"  commits as: {ident['name']} <{ident['email']}>" if ident["set"]
-         else f"  commits as: unknown ({ident['detail']})", f"  toolchain profile: {profile['name']}"]
+         else f"  commits as: unknown ({ident['detail']})",
+         f"  toolchain profile: {name} ({selected_by})"
+         + (": " + ", ".join(f"{t} {v}" for t, v in tools.items()) if tools
+            else f": {result['toolchain_profile'].get('error', '')}")]
         + [f"  {m['host']} -> {m['container']} ({m['kind']})" for m in result["path_mappings"]])
     return result
 
@@ -1107,7 +1145,7 @@ def cmd_readiness(args):
     if record is None:
         raise Refused(f"no session {args.name}")
     try:
-        profile = readiness.load_profile(args.profile or readiness.DEFAULT_PROFILE)
+        profile = readiness.load_profile(args.profile or record_profile(record)[0])
     except readiness.ProfileError as exc:
         raise Refused(str(exc))
     tools = readiness.with_harness(profile, record["harness"])
@@ -1122,8 +1160,55 @@ def cmd_readiness(args):
     where = f"inside {dev} (docker exec) and the host's Docket service" if running_now \
         else "the host's Docket service only"
     return {"ok": True, "id": args.name, "ready": not missing, "profile": profile["name"],
-            "checked": where, "checks": results, "missing": missing,
+            "profile_selected_by": "argument" if args.profile else record_profile(record)[1],
+            "toolchain": readiness.summary(profile), "checked": where, "checks": results, "missing": missing,
             "message": "ready" if not missing else "not ready:\n  " + "\n  ".join(missing)}
+
+
+def cmd_provision(args):
+    check_layout()
+    record = load_record(args.name)
+    if record is None:
+        raise Refused(f"no session {args.name}")
+    dev = containers(args.name)[0]
+    if docker_state(dev) != "running":
+        raise Refused(f"session {args.name} is not running: tools are provisioned inside it")
+    try:
+        profile = readiness.load_profile(record_profile(record)[0])
+    except readiness.ProfileError as exc:
+        raise Refused(str(exc))
+    tools = profile["tools"]
+    for tool in args.tool or []:
+        if not tools.get(tool, {}).get("provision"):
+            raise Refused(f"profile {profile['name']} has no provisioning for {tool!r}")
+    wanted = list(args.tool or [])
+    if not wanted:
+        measured = readiness.probe(dev, record["start_in"], [], tools)
+        if "error" in measured:
+            raise Refused(measured["error"])
+        wanted = [t for t, spec in tools.items() if spec["provision"]
+                  and not readiness.tool_check(spec, measured["tools"].get(t, {}))[0]]
+    results = provision.provision(dev, tools, wanted)
+    failed = [r for r in results if not r["ok"]]
+    lines = [f"{r['tool']}: {'ok' if r['ok'] else 'FAILED'} {r['detail']}" for r in results]
+    return {"ok": not failed, "id": args.name, "profile": profile["name"], "provisioned": results,
+            "error": "; ".join(lines) if failed else "",
+            "message": "\n".join(lines) if results else "nothing to provision: the profile's "
+                       "provisionable tools are present"}
+
+
+def cmd_profiles(args):
+    user = readiness.user_profiles_path()
+    try:
+        profiles = readiness.list_profiles()
+    except readiness.ProfileError as exc:
+        raise Refused(str(exc))
+    return {"ok": True, "profiles": profiles, "default": readiness.DEFAULT_PROFILE,
+            "shipped_file": str(readiness.PROFILES), "user_file": str(user) if user else "",
+            "user_file_exists": bool(user and user.exists()),
+            "message": "\n".join(f"{p['name']:20} {p['source']:8} "
+                                 + (", ".join(f"{t} {v}" for t, v in p["tools"].items()) if "tools" in p
+                                    else p["error"]) for p in profiles)}
 
 
 def cmd_list(args):
@@ -1194,6 +1279,7 @@ def parse(argv):
         p.add_argument("--start-in", metavar="PATH")
         p.add_argument("--project", action="append", metavar="DOCKET_PROJECT")
         p.add_argument("--mode", choices=MODES)
+        p.add_argument("--profile", metavar="PROFILE")
 
     def start_options(p):
         record_options(p, False)
@@ -1219,6 +1305,9 @@ def parse(argv):
                                            lambda p: p.add_argument("--role", default="")]),
                              ("info", [lambda p: p.add_argument("--map", action="append", metavar="HOST_PATH")]),
                              ("readiness", [lambda p: p.add_argument("--profile", metavar="PROFILE")]),
+                             ("provision", [lambda p: p.add_argument("--tool", action="append",
+                                                                     metavar="TOOL")]),
+                             ("profiles", []),
                              ("run-job", [job_options]),
                              ("job-status", [lambda p: p.add_argument("job", nargs="?", default="")]),
                              ("job-log", [lambda p: p.add_argument("job"),
@@ -1228,7 +1317,7 @@ def parse(argv):
                              ("list", [])):
         p = sub.add_parser(command)
         p.add_argument("--json", action="store_true", help="answer with one JSON object on stdout")
-        if command not in ("build", "list"):
+        if command not in ("build", "list", "profiles"):
             p.add_argument("name", type=session_name)
         for add in options:
             add(p)
@@ -1239,7 +1328,8 @@ COMMANDS = {"build": cmd_build, "create": cmd_create, "start": cmd_start, "attac
             "up": cmd_up, "notes": cmd_notes, "grant": cmd_grant, "revoke": cmd_revoke,
             "identity": cmd_identity,
             "stop": cmd_stop, "status": cmd_status,
-            "info": cmd_info, "readiness": cmd_readiness, "list": cmd_list,
+            "info": cmd_info, "readiness": cmd_readiness, "provision": cmd_provision,
+            "profiles": cmd_profiles, "list": cmd_list,
             "run-job": cmd_run_job, "job-status": cmd_job_status, "job-log": cmd_job_log,
             "drain": cmd_drain}
 # This module as jobs.py's host: its docker, lock and control-file helpers.

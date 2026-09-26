@@ -78,6 +78,13 @@ disabled = true
 tooltip_text = "Check, read-only, what the selected session is missing: tools and versions, folders, Git identity, Docket projects, session identity."
 text = "Check readiness"
 
+[node name="Provision" type="Button" parent="Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Install, inside the running session, the tools its profile needs but it lacks, from the official downloads the profile names. The image is not rebuilt. Can take minutes."
+text = "Provision missing tools"
+
 [node name="Status" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
@@ -249,6 +256,26 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "blank = the folders' .dct files; else comma-separated names"
+
+[node name="ProfileLabel" type="Label" parent="Form"]
+layout_mode = 2
+text = "Toolchain profile"
+
+[node name="ProfileRow" type="HBoxContainer" parent="Form"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Profile" type="OptionButton" parent="Form/ProfileRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "The tools and minimum versions the session needs; readiness checks against it. Fixed when the session is created."
+
+[node name="EditProfiles" type="Button" parent="Form/ProfileRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Open your own profile file (agent-profiles.json in Minerva's data folder) to add or change profiles, then press Refresh."
+text = "Edit profiles…"
 
 [node name="Create" type="Button" parent="."]
 unique_name_in_owner = true

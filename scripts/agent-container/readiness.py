@@ -1,9 +1,14 @@
 """Read-only inspection of an agent session for agent.py's `info` and
 `readiness` commands.
 
-Toolchain profiles (profiles.json beside this file) name the tools a session
-needs and, optionally, each tool's minimum version and the arguments that
-print it. A profile may extend another; its tools are laid over the base's.
+Toolchain profiles name the tools a session needs and, optionally, each
+tool's minimum version, the arguments that print it, and how to provision it
+into the session when it is missing (provision.py). A profile may extend
+another; its tools are laid over the base's. Profiles are data: the shipped
+profiles.json beside this file, plus the user's own file named by
+$MINERVA_AGENT_PROFILES (Minerva sets it to agent-profiles.json in its data
+directory), whose profiles are added to the shipped ones and replace any of
+the same name. A session records the profile it was created with.
 
 What the session actually has is measured inside its running dev container
 with one `docker exec` of a bash probe that sources the harness's own shell
@@ -16,6 +21,7 @@ docket_project_list call; its tools/list says whether that Docket build has
 the W1 claim verbs the gateway's scoped protected writes rely on.
 """
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -23,7 +29,9 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 PROFILES = HERE / "profiles.json"
+USER_PROFILES_ENV = "MINERVA_AGENT_PROFILES"
 DEFAULT_PROFILE = "default"
+PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
 ENV_SCRIPT = "/opt/minerva-agent/agent-env.sh"
 PROBE_TIMEOUT_S = 90
 TOOL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
@@ -57,52 +65,133 @@ done
 
 
 class ProfileError(ValueError):
-    """profiles.json is unreadable or does not name the profile asked for."""
+    """A profile file is unreadable or does not name the profile asked for."""
+
+
+# A tool's provisioning: an official download (zip or tar archive) whose URL
+# and executable path may contain {version}, verified by a checksum given
+# inline or read from the channel's own checksum file.
+PROVISION_KEYS = {"version", "url", "checksum", "checksum_url", "bin"}
+PROVISION_VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,31}")
+HTTPS_URL = re.compile(r"https://[A-Za-z0-9.-]+(:\d+)?/[A-Za-z0-9._~%/+:@=&?-]*")
+ARCHIVE = re.compile(r".*\.(zip|tar\.gz|tgz|tar\.xz|tar\.bz2)")
+BIN_PATH = re.compile(r"[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*")
+CHECKSUM = re.compile(r"[0-9a-f]{64}|[0-9a-f]{128}")
+
+
+def user_profiles_path():
+    """The user's profile file, or None when $MINERVA_AGENT_PROFILES is unset."""
+    value = os.environ.get(USER_PROFILES_ENV, "")
+    return Path(value) if value else None
+
+
+def _read_profiles(path, required):
+    """{name: entry} from one file; keys not shaped like a profile name (such
+    as "_comment") are notes, not profiles."""
+    if not required and not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ProfileError(f"{path} is unreadable: {exc}")
+    if not isinstance(data, dict):
+        raise ProfileError(f"{path} must hold an object of profiles")
+    return {k: v for k, v in data.items() if PROFILE_NAME.fullmatch(k)}
+
+
+def _profiles():
+    """{name: (entry, source)}: shipped profiles, then the user's over them."""
+    merged = {k: (v, "shipped") for k, v in _read_profiles(PROFILES, True).items()}
+    user = user_profiles_path()
+    if user is not None:
+        merged.update({k: (v, "user") for k, v in _read_profiles(user, False).items()})
+    return merged
 
 
 def profile_names():
     return sorted(_profiles())
 
 
-def _profiles():
-    try:
-        data = json.loads(PROFILES.read_text())
-    except (OSError, ValueError) as exc:
-        raise ProfileError(f"{PROFILES} is unreadable: {exc}")
-    if not isinstance(data, dict):
-        raise ProfileError(f"{PROFILES} must hold an object of profiles")
-    return data
+def list_profiles():
+    """Every profile as {"name", "description", "source", "extends", "tools"
+    or "error"}, so one bad entry does not hide the rest."""
+    out = []
+    for name, (entry, source) in sorted(_profiles().items()):
+        row = {"name": name, "source": source,
+               "description": str(entry.get("description", "")) if isinstance(entry, dict) else "",
+               "extends": str(entry.get("extends", "")) if isinstance(entry, dict) else ""}
+        try:
+            row["tools"] = summary(load_profile(name))
+        except ProfileError as exc:
+            row["error"] = str(exc)
+        out.append(row)
+    return out
+
+
+def summary(profile):
+    """{tool: "min X" | "any", plus " (provisionable)"} for display."""
+    return {t: (f">= {s['min']}" if s["min"] else "any") + (" (provisionable)" if s["provision"] else "")
+            for t, s in profile["tools"].items()}
+
+
+def _provision(layer, tool, spec):
+    """The checked provisioning of one tool entry, or {} when it has none."""
+    given = spec.get("provision")
+    if given is None:
+        return {}
+    bad = f"profile {layer}: bad provision for tool {tool!r}"
+    if not isinstance(given, dict) or not set(given) <= PROVISION_KEYS \
+            or not all(isinstance(v, str) for v in given.values()):
+        raise ProfileError(f"{bad}: keys are {', '.join(sorted(PROVISION_KEYS))}, all strings")
+    version = given.get("version", "")
+    if not PROVISION_VERSION.fullmatch(version):
+        raise ProfileError(f"{bad}: version is required (letters, digits, . + -)")
+    url = given.get("url", "").replace("{version}", version)
+    sums = given.get("checksum_url", "").replace("{version}", version)
+    binary = given.get("bin", "").replace("{version}", version)
+    if not HTTPS_URL.fullmatch(url) or not ARCHIVE.fullmatch(url.split("?")[0]):
+        raise ProfileError(f"{bad}: url must be an https download of a zip or tar archive")
+    if sums and not HTTPS_URL.fullmatch(sums):
+        raise ProfileError(f"{bad}: checksum_url must be an https URL")
+    checksum = given.get("checksum", "").lower()
+    if (checksum and not CHECKSUM.fullmatch(checksum)) or not (checksum or sums):
+        raise ProfileError(f"{bad}: give checksum (sha256 or sha512 hex) or checksum_url")
+    if not BIN_PATH.fullmatch(binary) or ".." in binary.split("/"):
+        raise ProfileError(f"{bad}: bin is the executable's relative path inside the archive")
+    return {"version": version, "url": url, "checksum": checksum, "checksum_url": sums, "bin": binary}
 
 
 def load_profile(name):
-    """{"name", "description", "tools": {tool: {"min", "version_args"}}}."""
+    """{"name", "description", "source", "tools": {tool: {"min",
+    "version_args", "provision"}}}."""
     profiles = _profiles()
     chain, current = [], name
     while current:
         if current in chain:
             raise ProfileError(f"profile {name} extends itself through {current}")
-        entry = profiles.get(current)
+        entry = profiles.get(current, (None, ""))[0]
         if not isinstance(entry, dict) or not isinstance(entry.get("tools", {}), dict):
             raise ProfileError(f"no toolchain profile {current!r}; profiles: {', '.join(sorted(profiles))}")
         chain.append(current)
         current = entry.get("extends", "")
     tools = {}
     for layer in reversed(chain):
-        for tool, spec in profiles[layer].get("tools", {}).items():
+        for tool, spec in profiles[layer][0].get("tools", {}).items():
             spec = spec if isinstance(spec, dict) else {}
             minimum = str(spec.get("min", ""))
             args = str(spec.get("version_args", "--version"))
             if not TOOL.fullmatch(tool) or (minimum and not MIN_VERSION.fullmatch(minimum)) \
                     or not VERSION_ARGS.fullmatch(args):
                 raise ProfileError(f"profile {layer}: bad entry for tool {tool!r}")
-            tools[tool] = {"min": minimum, "version_args": args}
-    return {"name": name, "description": str(profiles[name].get("description", "")), "tools": tools}
+            tools[tool] = {"min": minimum, "version_args": args, "provision": _provision(layer, tool, spec)}
+    entry, source = profiles[name]
+    return {"name": name, "description": str(entry.get("description", "")), "source": source, "tools": tools}
 
 
 def with_harness(profile, harness):
     """The profile's tools plus the session's harness CLI, which every session needs."""
     tools = dict(profile["tools"])
-    tools.setdefault(harness, {"min": "", "version_args": "--version"})
+    tools.setdefault(harness, {"min": "", "version_args": "--version", "provision": {}})
     return tools
 
 
@@ -152,6 +241,19 @@ def at_least(found, minimum):
     a, b = parts(found), parts(minimum)
     width = max(len(a), len(b))
     return a + [0] * (width - len(a)) >= b + [0] * (width - len(b))
+
+
+def tool_check(spec, seen):
+    """(ok, detail) for one profile tool against what the probe saw of it."""
+    if not seen.get("path"):
+        return False, "not found on the harness's PATH"
+    version = version_of(seen.get("output", ""))
+    if spec["min"] and not version:
+        return False, (f"{seen['path']}: no version in {seen.get('output', '')!r}; "
+                       f"the profile needs {spec['min']} or later")
+    if spec["min"] and not at_least(version, spec["min"]):
+        return False, f"{version} is below the profile's minimum {spec['min']}"
+    return True, f"{version or 'present'} at {seen['path']}"
 
 
 CLAIM_VERBS = ("docket_claim", "docket_release", "docket_reassign")
@@ -229,18 +331,10 @@ def checks(record, running, measured, tools, known_projects, docket_error, claim
         add("session", "probe", False, measured["error"])
     elif running:
         for tool, spec in tools.items():
-            seen = measured["tools"].get(tool, {})
-            if not seen.get("path"):
-                add("tool", tool, False, "not found on the harness's PATH")
-                continue
-            version = version_of(seen.get("output", ""))
-            if spec["min"] and not version:
-                add("tool", tool, False, f"{seen['path']}: no version in {seen.get('output', '')!r}; "
-                                         f"the profile needs {spec['min']} or later")
-            elif spec["min"] and not at_least(version, spec["min"]):
-                add("tool", tool, False, f"{version} is below the profile's minimum {spec['min']}")
-            else:
-                add("tool", tool, True, f"{version or 'present'} at {seen['path']}")
+            ok, detail = tool_check(spec, measured["tools"].get(tool, {}))
+            if not ok and spec["provision"]:
+                detail += f"; provisionable from {spec['provision']['url']} (agent.py provision)"
+            add("tool", tool, ok, detail)
         for folder in record["folders"]:
             visible = measured["dirs"].get(folder["path"], False)
             add("folder", folder["path"], visible,

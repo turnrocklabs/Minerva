@@ -3,9 +3,11 @@ extends VBoxContainer
 ## live state, starts and stops the selected one, copies the command that
 ## attaches it in a Minerva terminal tab, shows its details (session
 ## identity, path mappings, Git identity, toolchain profile) and a read-only
-## readiness check, builds the agent image, and creates
-## a session from a name, harness, mode, folders, start folder and optional
-## Docket projects. Its Grants section shows and changes the selected
+## readiness check, provisions the profile's missing tools into a running
+## session, builds the agent image, and creates a session from a name,
+## harness, mode, folders, start folder, optional Docket projects and a
+## toolchain profile. "Edit profiles…" opens the user's profile file;
+## Refresh re-reads the profiles on offer. Its Grants section shows and changes the selected
 ## session's note grants (from the notes open in Minerva) and notify grant;
 ## a change applies to the session's next call, with no re-attach. Its Jobs
 ## section (AgentSessionJobs.tscn) lists the selected session's planned jobs
@@ -38,6 +40,7 @@ var _busy: bool = false
 @onready var _copy_attach: Button = %CopyAttach
 @onready var _inspect: Button = %Inspect
 @onready var _readiness: Button = %Readiness
+@onready var _provision: Button = %Provision
 ## The last Details or readiness answer for the selected session.
 @onready var _details: RichTextLabel = %Details
 @onready var _build_image: Button = %BuildImage
@@ -48,6 +51,8 @@ var _busy: bool = false
 @onready var _remove_folder: Button = %RemoveFolder
 @onready var _start_in: OptionButton = %StartIn
 @onready var _projects: LineEdit = %Projects
+## Items carry the profile name as metadata.
+@onready var _profile: OptionButton = %Profile
 @onready var _create: Button = %Create
 @onready var _folder_dialog: FileDialog = %FolderDialog
 ## Rows of the selected session's note grants; metadata {kind, id}, kind
@@ -71,6 +76,9 @@ func _ready() -> void:
 		_tree.set_column_expand(column, false)
 		_tree.set_column_custom_minimum_width(column, 110)
 	%Refresh.pressed.connect(_refresh)
+	%Refresh.pressed.connect(_load_profiles)
+	%EditProfiles.pressed.connect(_on_edit_profiles_pressed)
+	_provision.pressed.connect(_on_provision_pressed)
 	_build_image.pressed.connect(_on_build_pressed)
 	_tree.item_selected.connect(_update_buttons)
 	_tree.item_selected.connect(_show_details.bind(""))
@@ -92,6 +100,7 @@ func _ready() -> void:
 	_revoke_grant.pressed.connect(_on_revoke_grant_pressed)
 	_notify.toggled.connect(_on_notify_toggled)
 	_refresh()
+	_load_profiles()
 
 
 func _exit_tree() -> void:
@@ -144,8 +153,9 @@ func _show_listing(listing: Dictionary) -> void:
 			item.set_text(Column.STATE, state)
 			item.set_custom_color(Column.STATE, OK_COLOR if state == "running" else MUTED_COLOR)
 			item.set_text(Column.FOLDERS, _folders_text(entry))
-			item.set_tooltip_text(Column.FOLDERS, "Starts in %s\nDocket: %s" % [
-				str(entry.get("start_in", "")), ", ".join(PackedStringArray(entry.get("projects", [])))])
+			item.set_tooltip_text(Column.FOLDERS, "Starts in %s\nDocket: %s\nToolchain profile: %s" % [
+				str(entry.get("start_in", "")), ", ".join(PackedStringArray(entry.get("projects", []))),
+				str(entry.get("profile", ""))])
 		if id == selected:
 			item.select(Column.ID)
 	var image: Dictionary = listing.get("image", {}) if listing.get("image") is Dictionary else {}
@@ -186,6 +196,8 @@ func _update_buttons() -> void:
 	_copy_attach.disabled = not readable or state != "running" or str(entry.get("attach_command", "")).is_empty()
 	_inspect.disabled = _busy or not readable
 	_readiness.disabled = _busy or not readable
+	_provision.disabled = _busy or not readable or state != "running" \
+		or _store.provisioning.has(_selected_id())
 	_create.disabled = _busy
 	var has_note: bool = _grant_note.selected >= 0
 	_grant_read.disabled = _busy or not readable or not has_note
@@ -286,7 +298,11 @@ static func _info_text(info: Dictionary) -> String:
 	else:
 		lines.append("[b]Commits as:[/b] unknown — %s" % _esc(str(git.get("detail", ""))))
 	var profile: Dictionary = info.get("toolchain_profile", {}) if info.get("toolchain_profile") is Dictionary else {}
-	lines.append("[b]Toolchain profile:[/b] %s" % _esc(str(profile.get("name", ""))))
+	lines.append("[b]Toolchain profile:[/b] %s (%s)" % [_esc(str(profile.get("name", ""))),
+		_esc(str(profile.get("selected_by", "")))])
+	if profile.has("error"):
+		lines.append("  [color=%s]%s[/color]" % [ERROR_COLOR.to_html(false), _esc(str(profile["error"]))])
+	lines.append_array(_toolchain_lines(profile.get("tools", {})))
 	lines.append("[b]Paths[/b] (host → in the container):")
 	var mappings: Array = info.get("path_mappings", []) if info.get("path_mappings") is Array else []
 	for mapping: Variant in mappings:
@@ -298,7 +314,14 @@ static func _info_text(info: Dictionary) -> String:
 
 static func _readiness_text(result: Dictionary) -> String:
 	var lines := PackedStringArray()
-	lines.append("[b]Profile:[/b] %s — checked %s" % [_esc(str(result.get("profile", ""))), _esc(str(result.get("checked", "")))])
+	lines.append("[b]Profile:[/b] %s (%s) — checked %s" % [_esc(str(result.get("profile", ""))),
+		_esc(str(result.get("profile_selected_by", ""))), _esc(str(result.get("checked", "")))])
+	if bool(result.get("provisioning", false)):
+		lines.append("Provisioning tools now…")
+	var last: Dictionary = result.get("last_provision", {}) if result.get("last_provision") is Dictionary else {}
+	if not last.is_empty():
+		lines.append("Last provisioning: %s" % _esc(str(last.get("message", "")) if bool(last.get("ok", false))
+			else str(last.get("error", ""))))
 	var checks: Array = result.get("checks", []) if result.get("checks") is Array else []
 	for check: Variant in checks:
 		if check is Dictionary:
@@ -307,6 +330,15 @@ static func _readiness_text(result: Dictionary) -> String:
 				(OK_COLOR if ok else ERROR_COLOR).to_html(false), "ok" if ok else "MISSING",
 				_esc(str(check.get("check", ""))), _esc(str(check.get("name", ""))), _esc(str(check.get("detail", "")))])
 	return "\n".join(lines)
+
+
+## One line per profile tool: "  tool >= min (provisionable)".
+static func _toolchain_lines(tools: Variant) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if tools is Dictionary:
+		for tool: Variant in tools:
+			lines.append("  %s %s" % [_esc(str(tool)), _esc(str((tools as Dictionary)[tool]))])
+	return lines
 
 
 ## Launcher and container text shown literally, never as BBCode.
@@ -402,6 +434,59 @@ func _on_notify_toggled(on: bool) -> void:
 	_report(result, "%s %s notify harness tabs from its next call." % [id, "may" if on else "may no longer"])
 
 
+# ── Toolchain profiles ─────────────────────────────────────────────────
+
+## Refills the profile choice from the launcher, keeping the chosen one.
+func _load_profiles() -> void:
+	var chosen: String = str(_profile.get_selected_metadata()) if _profile.selected >= 0 else ""
+	var result: Dictionary = await _store.profiles()
+	if not is_inside_tree():
+		return
+	_profile.clear()
+	if not bool(result.get("ok", false)):
+		_set_status(str(result.get("error", "could not read the toolchain profiles")), ERROR_COLOR)
+		return
+	if chosen.is_empty():
+		chosen = str(result.get("default", ""))
+	var rows: Array = result.get("profiles", []) if result.get("profiles") is Array else []
+	for row: Variant in rows:
+		if not row is Dictionary:
+			continue
+		var entry: Dictionary = row
+		var profile_name: String = str(entry.get("name", ""))
+		var usable: bool = not entry.has("error")
+		_profile.add_item(profile_name if str(entry.get("source", "")) == "shipped" else "%s (yours)" % profile_name)
+		var index: int = _profile.item_count - 1
+		_profile.set_item_metadata(index, profile_name)
+		_profile.set_item_disabled(index, not usable)
+		var tip := PackedStringArray([str(entry.get("description", "")) if usable else str(entry.get("error", ""))])
+		if usable:
+			tip.append_array(_toolchain_lines(entry.get("tools", {})))
+		_profile.set_item_tooltip(index, "\n".join(tip))
+		if profile_name == chosen and usable:
+			_profile.select(index)
+
+
+func _on_edit_profiles_pressed() -> void:
+	var problem: String = AgentSessionStore.ensure_user_profiles()
+	if not problem.is_empty():
+		_set_status(problem, ERROR_COLOR)
+		return
+	var path: String = AgentSessionStore.user_profiles_path()
+	OS.shell_open(path)
+	_set_status("Opened %s. Save your changes, then press Refresh." % path, MUTED_COLOR)
+
+
+func _on_provision_pressed() -> void:
+	var id: String = _selected_id()
+	_set_status("Provisioning %s's missing tools inside the session… downloads can take minutes." % id, MUTED_COLOR)
+	var result: Dictionary = await _store.provision(id)
+	if not is_inside_tree():
+		return
+	_report(result, "%s: %s Restart its harness to use a newly provisioned tool." % [id, str(result.get("message", ""))])
+	_update_buttons()
+
+
 func _on_build_pressed() -> void:
 	_build_image.disabled = true
 	var result: Dictionary = await _store.build()
@@ -441,7 +526,8 @@ func _on_create_pressed() -> void:
 	var id: String = _new_name.text.strip_edges()
 	_set_busy(true)
 	var result: Dictionary = await _store.create(id, _harness.get_item_text(_harness.selected),
-		folders, start_in, projects, _mode.get_item_text(_mode.selected))
+		folders, start_in, projects, _mode.get_item_text(_mode.selected),
+		str(_profile.get_selected_metadata()) if _profile.selected >= 0 else "")
 	_set_busy(false)
 	_report(result, "Created %s. Select it and Start." % id)
 	if bool(result.get("ok", false)):

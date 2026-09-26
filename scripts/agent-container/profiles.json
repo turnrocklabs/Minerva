@@ -1,4 +1,5 @@
 {
+  "_comment": "Toolchain profiles (readiness.py). Each profile: description, optional extends (a base profile), tools {name: {min, version_args, provision}}. provision names an official download: {version, url (https zip/tar, {version} substituted), checksum (sha256/sha512 hex) or checksum_url (the channel's sums file), bin (the executable's path in the archive)}. Add or override profiles in the user file $MINERVA_AGENT_PROFILES (Minerva: agent-profiles.json in its data directory); a user profile replaces a shipped one of the same name.",
   "default": {
     "description": "The agent image's toolchain: Godot, Python, Node, Go, Rust and the tools a session shell uses.",
     "tools": {
@@ -12,10 +13,18 @@
     }
   },
   "godot-4.7": {
-    "description": "The default toolchain with Godot 4.7, which projects declaring config/features 4.7 need.",
+    "description": "The default toolchain with Godot 4.7, which projects declaring config/features 4.7 need. Provisioned into the session from the official Godot release when the image's Godot is older.",
     "extends": "default",
     "tools": {
-      "godot": {"min": "4.7"}
+      "godot": {
+        "min": "4.7",
+        "provision": {
+          "version": "4.7",
+          "url": "https://github.com/godotengine/godot/releases/download/{version}-stable/Godot_v{version}-stable_linux.x86_64.zip",
+          "checksum_url": "https://github.com/godotengine/godot/releases/download/{version}-stable/SHA512-SUMS.txt",
+          "bin": "Godot_v{version}-stable_linux.x86_64"
+        }
+      }
     }
   }
 }

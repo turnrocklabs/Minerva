@@ -3,7 +3,7 @@
 `agent.py` launches one harness (Claude Code or Codex) per session in a
 hardened dev container; see its docstring for `create`, `start`, `attach`,
 `stop`, `status`, `info`, `readiness`, `list` and where session state lives.
-Toolchain profiles for `readiness` are in `profiles.json`.
+Each session has a toolchain profile; see Toolchain profiles below.
 
 Minerva drives the same launcher: Preferences > Containers > Agent Sessions
 and the `minerva_agent_session_*` MCP verbs create, start, stop, inspect,
@@ -117,6 +117,47 @@ reach a job; the result records the commit that ran and whether the clone was
 dirty. Minerva's twins are `minerva_agent_session_run_job`, `_job_status`,
 `_job_log`, `_drain` and the Jobs section of Preferences > Containers.
 `jobs.py` documents the classification rules.
+
+## Toolchain profiles
+
+A profile names the tools a session needs, each with an optional minimum
+version, the arguments that print it, and how to provision it. A session
+picks one when it is created (`--profile`, the Profile choice in Preferences
+> Containers, or `profile` on `minerva_agent_session_create`); a session
+created without one uses `default`. `info` shows the profile and its tools,
+and `readiness` checks against it (`--profile` there is a what-if only).
+
+Profiles are data, never code:
+
+- `profiles.json` here ships `default` (the image's toolchain) and
+  `godot-4.7` (for projects that declare Godot 4.7 features).
+- Your own file, named by `$MINERVA_AGENT_PROFILES`, adds profiles and
+  replaces shipped ones of the same name. Minerva sets it to
+  `agent-profiles.json` in its data directory; **Edit profiles…** in the
+  panel creates and opens it. `agent.py profiles` (or
+  `minerva_agent_session_profiles`) lists what is on offer, and a profile
+  that does not parse shows its error.
+
+```json
+{"go-1.27": {"description": "Go 1.27", "extends": "default",
+  "tools": {"go": {"min": "1.27", "version_args": "version",
+    "provision": {"version": "1.27.0",
+                  "url": "https://go.dev/dl/go{version}.linux-amd64.tar.gz",
+                  "checksum": "<sha256 from go.dev/dl>", "bin": "go/bin/go"}}}}}
+```
+
+A tool's `provision` names an official download (an https zip or tar
+archive; `{version}` is substituted), a `checksum` (sha256 or sha512 hex) or
+the channel's own `checksum_url`, and `bin`, the executable's path inside the
+archive. A profile never carries a binary. `agent.py provision NAME` (the
+panel's **Provision missing tools**, `minerva_agent_session_provision`) runs,
+inside the running session, the provisioning of every tool readiness would
+report missing or too old: download through the session's egress, verify,
+unpack into `/agent-home/tools/opt/TOOL-VERSION` and link
+`/agent-home/tools/bin/TOOL`, which is first on the session's PATH. The image
+is not rebuilt; the tool is private to the session and survives restarts.
+Restart the harness to pick it up. Planned jobs run in their own container
+without the session home, so they still see the image's tools.
 
 ## Upgrading Claude Code or Codex in a session
 
