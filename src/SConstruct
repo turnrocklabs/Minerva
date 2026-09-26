@@ -24,6 +24,8 @@ sources = ["gdextension/terminal/register_types.cpp", "gdextension/terminal/comm
 if env["platform"] == "windows":
     sources.append("gdextension/terminal/windows/terminal.cpp")
     sources.append("gdextension/terminal/windows/subprocess.cpp")
+    # GetUserNameW (SubProcess::os_account_name) is exported by Advapi32.
+    env.Append(LIBS=["advapi32"])
     env.Append(CPPDEFINES=["PLATFORM_WINDOWS"])
 elif env["platform"] == "linux":
     sources.append("gdextension/terminal/unix/terminal.cpp")
