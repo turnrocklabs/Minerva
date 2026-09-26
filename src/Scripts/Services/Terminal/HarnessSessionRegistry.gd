@@ -106,6 +106,22 @@ func is_registered(identity: String) -> bool:
 	return _records.has(identity.strip_edges().to_lower())
 
 
+## The identities a Docket `assigned_to` or `directed_to` value names: the
+## session whose identity is exactly `principal`, and every session whose role
+## is exactly it. Exact, as the container gateway scopes Docket access
+## (gateway/docket_scope.py is_direct), so a woken session can read what woke it.
+func identities_addressed_by(principal: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	principal = principal.strip_edges()
+	if principal.is_empty():
+		return out
+	for key: String in _records:
+		var record: Dictionary = _records[key]
+		if str(record["identity"]) == principal or str(record["role"]) == principal:
+			out.append(str(record["identity"]))
+	return out
+
+
 ## Every registered session, described against `listing` (minerva_terminal_list
 ## entries): identity, role, harness, container, terminal_id, name, liveness.
 func sessions(listing: Array) -> Array[Dictionary]:

@@ -4,6 +4,7 @@ extends MCPToolModule
 ## What a trigger's destination is and how delivery to it behaves (the
 ## create and update tool schemas).
 const DESTINATION_DESCRIPTION := "Deliver to an existing harness session instead of an agent: a terminal id, tab name, harness@tab name or harness (claude/codex), as minerva_terminal_notify takes it. Resolved now to exactly one terminal with a harness; its passthrough chat is remembered when it has one (that survives a restart), otherwise the terminal for this Minerva run only. The message is delivered as one notify line from 'trigger <name>', held while someone types there or a dialog is open, queued behind a busy chat; a fire while the previous delivery is still held or queued is counted, not sent. A terminal with no chat is delivered to only while the same harness runs in it. Such a trigger cannot batch or chain. Empty string clears it."
+const WAKE_DESCRIPTION := "For DOCKET_POLL: wake mode. Each change wakes, with one notify line from 'trigger <name>', every registered harness session (minerva_session_register) whose identity or role equals the item's assigned_to or directed_to; no agent or destination is needed. Routine changes within docket_poll_interval coalesce into one pointer per session; a change that alters an item's control:* tags (e.g. control:stop, control:scope) is a directive and is sent at once on its own. A session that is not live gets its pointers when it registers."
 
 const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## MCP tool module for the Agent, Worker, and Trigger domains.
@@ -555,7 +556,11 @@ func _register_trigger_tools() -> void:
 				},
 				"docket_poll_interval": {
 					"type": "number",
-					"description": "For DOCKET_POLL: poll interval in seconds (min 30, default 60)"
+					"description": "For DOCKET_POLL in wake mode: seconds routine changes for one session are gathered into one pointer (default 60). DOCKET_POLL is event-driven; nothing else reads this."
+				},
+				"docket_wake_sessions": {
+					"type": "boolean",
+					"description": WAKE_DESCRIPTION
 				},
 				"hook_fire_probability": {
 					"type": "number",
@@ -623,7 +628,8 @@ func _register_trigger_tools() -> void:
 				"docket_filter_item_ids": { "type": "string", "description": "For DOCKET_POLL: specific item IDs (comma-separated)" },
 				"docket_filter_types": { "type": "string", "description": "For DOCKET_POLL: item types (comma-separated)" },
 				"docket_filter_tags": { "type": "string", "description": "For DOCKET_POLL: tag filter (comma-separated)" },
-				"docket_poll_interval": { "type": "number", "description": "For DOCKET_POLL: poll interval seconds" },
+				"docket_poll_interval": { "type": "number", "description": "For DOCKET_POLL in wake mode: coalescing window seconds" },
+				"docket_wake_sessions": { "type": "boolean", "description": WAKE_DESCRIPTION },
 				"hook_fire_probability": { "type": "number", "description": "Probability of firing (0.0-1.0). Default 1.0. Use 0.1 for 10% nudge rate." },
 				"hook_tool_name_pattern": { "type": "string", "description": "Regex pattern matching tool name. Empty = all tools." },
 				"hook_route_table": { "type": "string", "description": "JSON route table for PreToolUse: [[tool_regex, arg_name, arg_match_regex, hint], ...]" },
@@ -1500,6 +1506,7 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	trig.docket_filter_types = args.get("docket_filter_types", "")
 	trig.docket_filter_tags = args.get("docket_filter_tags", "")
 	trig.docket_poll_interval = float(args.get("docket_poll_interval", 60.0))
+	trig.docket_wake_sessions = bool(args.get("docket_wake_sessions", false))
 	# Hook fields
 	trig.hook_fire_probability = float(args.get("hook_fire_probability", 1.0))
 	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", "")
@@ -1577,6 +1584,7 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.docket_filter_types = args.get("docket_filter_types", existing.docket_filter_types)
 	trig.docket_filter_tags = args.get("docket_filter_tags", existing.docket_filter_tags)
 	trig.docket_poll_interval = float(args.get("docket_poll_interval", existing.docket_poll_interval))
+	trig.docket_wake_sessions = bool(args.get("docket_wake_sessions", existing.docket_wake_sessions))
 	# Hook event fields
 	trig.hook_fire_probability = float(args.get("hook_fire_probability", existing.hook_fire_probability))
 	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", existing.hook_tool_name_pattern)

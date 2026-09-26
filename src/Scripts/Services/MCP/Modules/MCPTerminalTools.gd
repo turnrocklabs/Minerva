@@ -764,6 +764,14 @@ func notify(arguments: Dictionary, expect: Dictionary = {}) -> Dictionary:
 	return await _terminal_notify(arguments, expect)
 
 
+## One notification as the MCP tool delivers it, for host code that wants the
+## line kept: a held line is recorded in the ledger and retried there. The
+## receipt carries delivery_id unless the request was refused before a target
+## was chosen (then nothing is kept).
+func notify_retained(arguments: Dictionary) -> Dictionary:
+	return await _notify_tool(arguments)
+
+
 ## The terminals minerva_terminal_list reports, for host code choosing one.
 func list_terminals() -> Array:
 	return _terminal_list({}).get("terminals", [])

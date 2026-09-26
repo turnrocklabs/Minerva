@@ -57,6 +57,8 @@ var harness_delivery := TriggerHarnessDelivery.new()
 
 ## DOCKET_POLL triggers' events under the Docket plugin (no DocketManager).
 var docket_feed := DocketTriggerFeed.new(self)
+## Wake-up pointers for DOCKET_POLL triggers in wake mode.
+var docket_wakeups := DocketWakeups.new()
 
 
 class BatchState:
@@ -1182,9 +1184,11 @@ static func docket_ids_and_type_pass(trig: TriggerDefinition, item_id: String, i
 ## has no chat of its own under way. `item` is the item as it is now ({} when
 ## it no longer exists, so parent and tag filters fail; null when it could
 ## not be looked for, so they are not applied); it also gives the message its
-## title, type and status.
+## title, type and status. A trigger in wake mode hands the change to
+## docket_wakeups instead; `change_key` names the change for its dedup ("" to
+## let it derive one).
 func fire_docket_event(trig: TriggerDefinition, project: String, item_id: String, event_type: String,
-		item_type: String, old_status: String, new_status: String, item) -> void:
+		item_type: String, old_status: String, new_status: String, item, change_key: String = "") -> void:
 	if not docket_ids_and_type_pass(trig, item_id, item_type):
 		return
 	if item != null and not trig.docket_filter_parent.is_empty() \
@@ -1195,6 +1199,10 @@ func fire_docket_event(trig: TriggerDefinition, project: String, item_id: String
 		for ftag in trig.docket_filter_tags.split(","):
 			if not ftag.strip_edges().is_empty() and ftag.strip_edges() not in item_tags:
 				return
+	if trig.docket_wake_sessions:
+		if item != null:
+			docket_wakeups.take(trig, project, item_id, event_type, old_status, new_status, item, change_key)
+		return
 
 	# Anti-flood: don't fire if trigger already has active chat
 	if _active_trigger_chats.has(trig.id):

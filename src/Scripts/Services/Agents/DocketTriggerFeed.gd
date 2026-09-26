@@ -228,7 +228,8 @@ func _handle(job: Dictionary) -> void:
 		if _manager.get_trigger(trig.id) != trig or _manager.revision(trig.id) != candidate[1] or not trig.enabled:
 			continue
 		_manager.fire_docket_event(trig, str(event.get("project", "")), id, kind, item_type,
-			str(baseline.get("from_status", "")), str(baseline.get("to_status", "")), item)
+			str(baseline.get("from_status", "")), str(baseline.get("to_status", "")), item,
+			"%d/%s/%d" % [job.generation, str(event.get("stream", "")), int(event.get("sequence", 0))])
 		if _status.has(trig.id):
 			_status[trig.id]["problem"] = ""
 

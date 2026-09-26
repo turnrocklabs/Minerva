@@ -73,6 +73,7 @@ var trigger_docket_filter_parent_edit: LineEdit
 var trigger_docket_filter_item_ids_edit: LineEdit
 var trigger_docket_filter_types_edit: LineEdit
 var trigger_docket_poll_interval_spin: SpinBox
+var trigger_docket_wake_check: CheckButton
 var trigger_docket_container: VBoxContainer
 ## Hook controls
 var trigger_hook_container: VBoxContainer
@@ -491,7 +492,11 @@ func _build_triggers_tab() -> Control:
 	trigger_docket_filter_tags_edit.placeholder_text = "e.g. urgent, review"
 	trigger_docket_filter_tags_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	trigger_docket_container.add_child(trigger_docket_filter_tags_edit)
-	var docket_interval_label = _label("Poll Interval (s):")
+	trigger_docket_wake_check = CheckButton.new()
+	trigger_docket_wake_check.text = "Wake the sessions each item is assigned or directed to"
+	trigger_docket_wake_check.tooltip_text = "Instead of an agent or destination: notify every registered session whose identity or role is the item's assigned_to or directed_to. A control:* tag change is sent at once."
+	trigger_docket_container.add_child(trigger_docket_wake_check)
+	var docket_interval_label = _label("Wake-up window (s):")
 	trigger_docket_container.add_child(docket_interval_label)
 	trigger_docket_poll_interval_spin = _spin(30, 3600, 60, 10)
 	trigger_docket_container.add_child(trigger_docket_poll_interval_spin)
@@ -1138,6 +1143,7 @@ func _on_trigger_selected(index: int) -> void:
 	trigger_docket_filter_types_edit.text = trig.docket_filter_types
 	trigger_docket_filter_tags_edit.text = trig.docket_filter_tags
 	trigger_docket_poll_interval_spin.value = trig.docket_poll_interval
+	trigger_docket_wake_check.button_pressed = trig.docket_wake_sessions
 	# Load hook fields
 	trigger_hook_fire_probability_spin.value = trig.hook_fire_probability
 	trigger_hook_tool_pattern_edit.text = trig.hook_tool_name_pattern
@@ -1367,6 +1373,7 @@ func _on_trigger_new() -> void:
 	trigger_docket_filter_types_edit.text = ""
 	trigger_docket_filter_tags_edit.text = ""
 	trigger_docket_poll_interval_spin.value = 60
+	trigger_docket_wake_check.button_pressed = false
 	trigger_hook_fire_probability_spin.value = 1.0
 	trigger_hook_tool_pattern_edit.text = ""
 	trigger_hook_route_table_edit.text = ""
@@ -1464,6 +1471,7 @@ func _trigger_from_form(existing: TriggerDefinition) -> TriggerDefinition:
 	trig.docket_filter_types = trigger_docket_filter_types_edit.text.strip_edges()
 	trig.docket_filter_tags = trigger_docket_filter_tags_edit.text.strip_edges()
 	trig.docket_poll_interval = trigger_docket_poll_interval_spin.value
+	trig.docket_wake_sessions = trigger_docket_wake_check.button_pressed
 	trig.hook_fire_probability = trigger_hook_fire_probability_spin.value
 	trig.hook_tool_name_pattern = trigger_hook_tool_pattern_edit.text.strip_edges()
 	trig.hook_route_table = trigger_hook_route_table_edit.text.strip_edges()

@@ -55,8 +55,14 @@ var docket_filter_parent: String = ""
 var docket_filter_item_ids: String = ""
 ## Optional item type filter (comma-separated, e.g. "work_item,bug")
 var docket_filter_types: String = ""
-## Poll interval in seconds (default 60, min 30)
+## Seconds a wake-mode trigger gathers routine changes for one session into
+## one pointer (DocketWakeups). DOCKET_POLL is event-driven, not polled: no
+## other mode reads this.
 var docket_poll_interval: float = 60.0
+## Wake mode: instead of firing an agent or a destination, each change wakes
+## the registered harness sessions its item is assigned or directed to
+## (DocketWakeups). Needs neither an agent nor a destination.
+var docket_wake_sessions: bool = false
 ## ISO datetime of last successful poll (persisted)
 var docket_last_poll_at: String = ""
 ## Probability of firing for hook events (0.0-1.0, default 1.0)
@@ -87,11 +93,14 @@ func _init(p_id: String = ""):
 		id = p_id
 
 
-## Why this trigger has no valid target, or "": it needs an agent or a
+## Why this trigger has no valid target, or "": a DOCKET_POLL trigger in wake
+## mode targets the sessions each change is addressed to; any other needs an agent or a
 ## destination, and a destination rules out batching and chaining (both wait
 ## for an agent's turn to end) and needs a message unless its source writes
 ## one (docket events, and the route hint of an about-to-execute hook).
 func target_problem() -> String:
+	if trigger_type == TriggerType.DOCKET_POLL and docket_wake_sessions:
+		return ""
 	if destination == null:
 		return "" if not agent_id.is_empty() else "Choose an agent, or a session to deliver to"
 	if not batch_params.is_empty() or not chain_trigger_id.is_empty():
@@ -139,6 +148,7 @@ func serialize() -> Dictionary:
 		"docket_filter_item_ids": docket_filter_item_ids,
 		"docket_filter_types": docket_filter_types,
 		"docket_poll_interval": docket_poll_interval,
+		"docket_wake_sessions": docket_wake_sessions,
 		"docket_last_poll_at": docket_last_poll_at,
 		"hook_fire_probability": hook_fire_probability,
 		"hook_tool_name_pattern": hook_tool_name_pattern,
@@ -186,6 +196,7 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	trig.docket_filter_item_ids = data.get("docket_filter_item_ids", "")
 	trig.docket_filter_types = data.get("docket_filter_types", "")
 	trig.docket_poll_interval = float(data.get("docket_poll_interval", 60.0))
+	trig.docket_wake_sessions = bool(data.get("docket_wake_sessions", false))
 	trig.docket_last_poll_at = data.get("docket_last_poll_at", "")
 	trig.hook_fire_probability = float(data.get("hook_fire_probability", 1.0))
 	trig.hook_tool_name_pattern = data.get("hook_tool_name_pattern", "")
