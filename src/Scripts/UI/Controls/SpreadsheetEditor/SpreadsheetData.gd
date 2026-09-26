@@ -5,6 +5,7 @@ extends RefCounted
 const SpreadsheetCellScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetCell.gd")
 const FormulaEngineScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/FormulaEngine.gd")
 const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd")
+const SpreadsheetAutoFilterScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilter.gd")
 
 signal data_changed()
 signal cell_changed(row: int, col: int)
@@ -61,6 +62,10 @@ var row_meta: Array[RowMeta] = []
 ## Chart definitions
 var charts: Array = []  # Array of SpreadsheetChart
 
+## AutoFilter (always present; inactive until a range is set). Hidden rows
+## are a view concern: see SpreadsheetRowGeometry.
+var autofilter: SpreadsheetAutoFilterScript = SpreadsheetAutoFilterScript.new()
+
 ## Number of header rows
 var header_row_count: int = 1
 
@@ -100,6 +105,8 @@ func _init(rows: int = 100, cols: int = 26) -> void:
 	row_count = rows
 	column_count = cols
 	_init_metadata()
+	autofilter.attach(self)
+	autofilter.changed.connect(structure_changed.emit)
 
 
 ## Initialize column and row metadata
@@ -423,6 +430,7 @@ func insert_row(at_row: int) -> void:
 	var new_meta := RowMeta.new()
 	row_meta.insert(at_row, new_meta)
 	row_count += 1
+	autofilter.on_row_inserted(at_row)
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -455,6 +463,7 @@ func insert_column(at_col: int) -> void:
 	var new_meta := ColumnMeta.new()
 	column_meta.insert(at_col, new_meta)
 	column_count += 1
+	autofilter.on_column_inserted(at_col)
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -492,6 +501,7 @@ func delete_row(row: int) -> void:
 	if row < row_meta.size():
 		row_meta.remove_at(row)
 	row_count = maxi(1, row_count - 1)
+	autofilter.on_row_deleted(row)
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -529,6 +539,7 @@ func delete_column(col: int) -> void:
 	if col < column_meta.size():
 		column_meta.remove_at(col)
 	column_count = maxi(1, column_count - 1)
+	autofilter.on_column_deleted(col)
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -743,7 +754,7 @@ func to_dict() -> Dictionary:
 	for meta in row_meta:
 		rows_arr.append(meta.to_dict())
 
-	return {
+	var result := {
 		"version": 1,
 		"row_count": row_count,
 		"column_count": column_count,
@@ -755,6 +766,10 @@ func to_dict() -> Dictionary:
 		"cells": cells_dict,
 		"charts": []  # TODO: Serialize charts
 	}
+	# Written only when a filter range exists, so unfiltered sheets save as before.
+	if autofilter.is_active():
+		result["autofilter"] = autofilter.to_dict()
+	return result
 
 
 ## Deserialize from dictionary (loads into this instance)
@@ -792,6 +807,8 @@ func load_from_dict(data: Dictionary) -> void:
 		var cell = SpreadsheetCellScript.new()
 		cell.load_from_dict(cells_dict[key])
 		cells[key] = cell
+
+	autofilter.load_from_dict(data.get("autofilter", {}))
 
 	# TODO: Load charts
 

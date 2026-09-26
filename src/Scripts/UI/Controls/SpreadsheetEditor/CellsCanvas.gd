@@ -3,6 +3,7 @@ extends Control
 ## Renders the spreadsheet grid with cells, selection, and handles input.
 
 const SpreadsheetDataScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetData.gd")
+const RowGeometry := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetRowGeometry.gd")
 
 signal cell_selected(row: int, col: int)
 signal cell_double_clicked(row: int, col: int)
@@ -177,6 +178,8 @@ func _draw_region(start_row: int, start_col: int, end_row: int, end_col: int, of
 
 func _draw_cell_backgrounds_region(start_row: int, start_col: int, end_row: int, end_col: int, offset: Vector2) -> void:
 	for row in range(start_row, end_row):
+		if not RowGeometry.is_row_shown(data, row):
+			continue
 		for col in range(start_col, end_col):
 			var rect := _get_cell_rect(row, col)
 			rect.position -= offset
@@ -218,9 +221,11 @@ func _draw_grid_lines_region(start_row: int, start_col: int, end_row: int, end_c
 		)
 		x += col_width
 
-	# Horizontal lines
+	# Horizontal lines (one at the top of each shown row, plus the region bottom)
 	var y := _get_row_y(start_row) - offset.y
 	for row in range(start_row, end_row + 1):
+		if row < data.row_count and not RowGeometry.is_row_shown(data, row):
+			continue
 		var row_height := data.get_row_height(row) if row < data.row_count else SpreadsheetDataScript.DEFAULT_ROW_HEIGHT
 		draw_line(
 			Vector2(region_left, y),
@@ -233,6 +238,8 @@ func _draw_grid_lines_region(start_row: int, start_col: int, end_row: int, end_c
 
 func _draw_cell_content_region(start_row: int, start_col: int, end_row: int, end_col: int, offset: Vector2) -> void:
 	for row in range(start_row, end_row):
+		if not RowGeometry.is_row_shown(data, row):
+			continue
 		for col in range(start_col, end_col):
 			var cell := data.get_cell_if_exists(row, col)
 			if not cell or cell.is_empty():
@@ -581,16 +588,7 @@ func _get_col_at_x(x: float) -> int:
 
 
 func _get_row_at_y(y: float) -> int:
-	var current_y := 0.0
-
-	for row in range(data.row_count):
-		var height := data.get_row_height(row)
-		if y >= current_y and y < current_y + height:
-			return row
-		current_y += height
-
-	# Return last row for coordinates beyond data bounds (enables scrolling past last row)
-	return data.row_count - 1 if data.row_count > 0 else -1
+	return RowGeometry.row_at_y(data, y)
 
 
 func _get_col_x(col: int) -> float:
@@ -601,10 +599,7 @@ func _get_col_x(col: int) -> float:
 
 
 func _get_row_y(row: int) -> float:
-	var y := 0.0
-	for r in range(mini(row, data.row_count)):
-		y += data.get_row_height(r)
-	return y
+	return RowGeometry.row_y(data, row)
 
 
 func _get_cell_rect(row: int, col: int) -> Rect2:
@@ -612,7 +607,7 @@ func _get_cell_rect(row: int, col: int) -> Rect2:
 		_get_col_x(col),
 		_get_row_y(row),
 		data.get_column_width(col),
-		data.get_row_height(row)
+		RowGeometry.shown_height(data, row)
 	)
 
 
@@ -633,12 +628,11 @@ func _get_max_scroll_x() -> float:
 
 
 func _get_max_scroll_y() -> float:
-	var total_height := 0.0
-	for row in range(data.row_count):
-		total_height += data.get_row_height(row)
-	# Allow scrolling until the last row reaches the top of the viewport
+	var total_height := RowGeometry.total_height(data)
+	# Allow scrolling until the last shown row reaches the top of the viewport
 	# (keeping one row height visible so it's not completely empty)
-	var min_visible := data.get_row_height(data.row_count - 1) if data.row_count > 0 else 0.0
+	var last_row := RowGeometry.last_shown_row(data)
+	var min_visible := data.get_row_height(last_row) if last_row >= 0 else 0.0
 	return maxf(0, total_height - min_visible)
 
 
@@ -740,10 +734,7 @@ func get_total_width() -> float:
 
 
 func get_total_height() -> float:
-	var total := 0.0
-	for row in range(data.row_count):
-		total += data.get_row_height(row)
-	return total
+	return RowGeometry.total_height(data)
 
 
 func update_theme_colors() -> void:

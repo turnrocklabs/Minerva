@@ -3,6 +3,7 @@ extends Control
 ## Renders the row headers (1, 2, 3, ...) for the spreadsheet.
 
 const SpreadsheetDataScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetData.gd")
+const RowGeometry := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetRowGeometry.gd")
 
 signal row_clicked(row: int)
 signal row_resize_started(row: int)
@@ -97,6 +98,8 @@ func _draw() -> void:
 
 
 func _draw_row_header(row: int, offset: float = 0.0) -> void:
+	if not RowGeometry.is_row_shown(data, row):
+		return
 	var y := _get_row_y(row) - offset
 	var height := data.get_row_height(row)
 	var rect := Rect2(0, y, size.x, height)
@@ -197,38 +200,15 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 
 
 func _get_resize_handle_row(screen_y: float) -> int:
-	var y := screen_y + scroll_offset_y
-
-	var row_y := 0.0
-	for row in range(data.row_count):
-		row_y += data.get_row_height(row)
-		var handle_start := row_y - resize_handle_height / 2.0
-		var handle_end := row_y + resize_handle_height / 2.0
-
-		if y >= handle_start and y <= handle_end:
-			return row
-
-	return -1
+	return RowGeometry.row_bottom_near_y(data, screen_y + scroll_offset_y, resize_handle_height / 2.0)
 
 
 func _get_row_at_y(y: float) -> int:
-	var current_y := 0.0
-
-	for row in range(data.row_count):
-		var height := data.get_row_height(row)
-		if y >= current_y and y < current_y + height:
-			return row
-		current_y += height
-
-	# Return last row for coordinates beyond data bounds
-	return data.row_count - 1 if data.row_count > 0 else -1
+	return RowGeometry.row_at_y(data, y)
 
 
 func _get_row_y(row: int) -> float:
-	var y := 0.0
-	for r in range(mini(row, data.row_count)):
-		y += data.get_row_height(r)
-	return y
+	return RowGeometry.row_y(data, row)
 
 
 func set_scroll_offset(offset: float) -> void:
@@ -241,6 +221,16 @@ func set_selected_rows(rows: Array[int]) -> void:
 	queue_redraw()
 
 
+## Row visibility follows cell values under an AutoFilter, so any data or
+## structure change of the sheet can move row headers.
 func set_data(new_data: SpreadsheetDataScript) -> void:
+	if data:
+		if data.data_changed.is_connected(queue_redraw):
+			data.data_changed.disconnect(queue_redraw)
+		if data.structure_changed.is_connected(queue_redraw):
+			data.structure_changed.disconnect(queue_redraw)
 	data = new_data
+	if data:
+		data.data_changed.connect(queue_redraw)
+		data.structure_changed.connect(queue_redraw)
 	queue_redraw()
