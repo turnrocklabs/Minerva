@@ -26,6 +26,7 @@ enum ActionType {
 	COLUMN_DELETE,
 	ROW_RESIZE,
 	COLUMN_RESIZE,
+	AUTOFILTER,
 }
 
 
@@ -133,6 +134,16 @@ func record_column_resize(col: int, old_width: float, new_width: float) -> void:
 		"new_width": new_width,
 	})
 	_push_action(action)
+
+
+## Record an AutoFilter change as before/after snapshots of the filter
+## (SpreadsheetAutoFilter.to_dict(), or {} when no filter range exists).
+## SpreadsheetAutoFilterActions.replay() applies them.
+func record_autofilter(old_state: Dictionary, new_state: Dictionary) -> void:
+	_push_action(HistoryAction.new(ActionType.AUTOFILTER, {
+		"old_state": old_state,
+		"new_state": new_state,
+	}))
 
 
 ## Push an action onto the undo stack

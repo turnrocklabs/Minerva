@@ -13,6 +13,8 @@ const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEd
 const ChartRendererScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ChartRenderer.gd")
 const ChartCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ChartCanvas.gd")
 const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
+const AutoFilterUIScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterUI.gd")
+const AutoFilterActionsScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterActions.gd")
 
 signal content_changed()
 signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: int)
@@ -40,6 +42,7 @@ var v_scrollbar: VScrollBar
 var inline_editor: LineEdit
 var import_dialog: FileDialog
 var export_dialog: FileDialog
+var autofilter_ui: AutoFilterUIScript  # header dropdowns, filter popup, row count
 
 ## Chart components
 var chart_panel: PanelContainer
@@ -191,6 +194,10 @@ func _build_ui() -> void:
 
 	# Chart panel (in split container, resizable)
 	_build_chart_panel()
+
+	# Before _connect_signals: it must see column-menu requests first.
+	autofilter_ui = AutoFilterUIScript.attach(self, spreadsheet_data, history, column_headers, cells_canvas,
+		formula_bar, _update_scrollbar_ranges, content_changed.emit)
 
 
 func _build_toolbar() -> void:
@@ -752,6 +759,7 @@ func _show_context_menu(screen_pos: Vector2) -> void:
 		context_menu.add_separator()
 		context_menu.add_item("Auto-Fit Row Height", 1)
 
+	autofilter_ui.add_context_items(context_menu, _context_source)
 	context_menu.position = Vector2i(int(screen_pos.x), int(screen_pos.y))
 	context_menu.popup()
 
@@ -1592,6 +1600,9 @@ func _apply_history_action(action, is_undo: bool) -> void:
 				column_headers.queue_redraw()
 			_update_scrollbar_ranges()
 
+		SpreadsheetHistoryScript.ActionType.AUTOFILTER:
+			AutoFilterActionsScript.replay(spreadsheet_data, action, is_undo)
+
 	cells_canvas.queue_redraw()
 	_update_selection_display()
 	content_changed.emit()
@@ -2290,6 +2301,7 @@ func deserialize(data: Dictionary) -> void:
 	cells_canvas.set_data(spreadsheet_data)
 	column_headers.set_data(spreadsheet_data)
 	row_headers.set_data(spreadsheet_data)
+	autofilter_ui.bind(spreadsheet_data)
 	spreadsheet_data.data_changed.connect(_on_data_changed)
 	print("[SpreadsheetEditor] Canvas size: %s, data.row_count=%d, data.column_count=%d" % [cells_canvas.size, spreadsheet_data.row_count, spreadsheet_data.column_count])
 

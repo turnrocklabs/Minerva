@@ -10,6 +10,9 @@ signal column_resize(col: int, new_width: float)
 signal column_resize_ended(col: int)
 signal column_autofit_requested(col: int)
 signal column_context_menu_requested(col: int, screen_pos: Vector2)
+## The AutoFilter dropdown glyph of `col` was clicked; `screen_rect` is the
+## glyph's rectangle in the same screen space as column_context_menu_requested.
+signal autofilter_button_pressed(col: int, screen_rect: Rect2)
 
 ## Reference to spreadsheet data
 var data: SpreadsheetDataScript = null
@@ -26,6 +29,13 @@ var border_color: Color = Color(0.3, 0.3, 0.35, 1.0)
 var text_color: Color = Color(0.8, 0.8, 0.8, 1.0)
 var selected_bg_color: Color = Color(0.3, 0.4, 0.5, 1.0)
 var hover_color: Color = Color(0.25, 0.25, 0.3, 1.0)
+var filter_glyph_color: Color = Color(0.75, 0.75, 0.8, 1.0)
+var filter_active_color: Color = Color(0.35, 0.65, 1.0, 1.0)
+
+## AutoFilter dropdown glyph: a square at the right end of each header cell
+## inside the filter range, clear of the column resize handle.
+const FILTER_GLYPH_SIZE := 14.0
+const FILTER_GLYPH_MARGIN := 5.0
 
 ## Font
 var font: Font
@@ -123,11 +133,60 @@ func _draw_column_header(col: int, offset: float = 0.0) -> void:
 	if col < data.column_meta.size() and not data.column_meta[col].header_name.is_empty():
 		label = data.column_meta[col].header_name
 
-	var text_width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	var has_glyph := _has_filter_glyph(col)
+	var text_room := width - 4 - (FILTER_GLYPH_SIZE + FILTER_GLYPH_MARGIN if has_glyph else 0.0)
+	var text_width := minf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x, text_room)
 	var text_x := x + (width - text_width) / 2.0
+	if has_glyph:
+		text_x = minf(text_x, x + 2 + text_room - text_width)
 	var text_y := (size.y + font.get_height(font_size)) / 2.0 - font.get_descent(font_size)
 
-	draw_string(font, Vector2(text_x, text_y), label, HORIZONTAL_ALIGNMENT_LEFT, width - 4, font_size, text_color)
+	draw_string(font, Vector2(text_x, text_y), label, HORIZONTAL_ALIGNMENT_LEFT, text_room, font_size, text_color)
+
+	if has_glyph:
+		_draw_filter_glyph(_filter_glyph_rect(col, offset), data.autofilter.has_criterion(col))
+
+
+## Unfiltered column: a small down arrow. Filtered column: a funnel on an
+## accent-colored square, so an active criterion is visible at a glance.
+func _draw_filter_glyph(rect: Rect2, filtered: bool) -> void:
+	var c := rect.get_center()
+	if filtered:
+		draw_rect(rect, filter_active_color.darkened(0.45))
+		draw_rect(rect, filter_active_color, false, 1.0)
+		draw_colored_polygon(PackedVector2Array([
+			c + Vector2(-4.5, -4), c + Vector2(4.5, -4), c + Vector2(1, 0),
+			c + Vector2(1, 4.5), c + Vector2(-1, 3.5), c + Vector2(-1, 0),
+		]), filter_active_color)
+	else:
+		draw_rect(rect, filter_glyph_color.darkened(0.6))
+		draw_colored_polygon(PackedVector2Array([
+			c + Vector2(-3.5, -1.5), c + Vector2(3.5, -1.5), c + Vector2(0, 2.5),
+		]), filter_glyph_color)
+
+
+## True when `col` lies inside the active AutoFilter range.
+func _has_filter_glyph(col: int) -> bool:
+	var filter := data.autofilter
+	return filter.is_active() and col >= filter.filter_range.position.x and col < filter.filter_range.end.x
+
+
+## Glyph rectangle of `col` in local coordinates, for a header drawn at
+## horizontal `offset` (0 for frozen columns, scroll_offset_x otherwise).
+func _filter_glyph_rect(col: int, offset: float) -> Rect2:
+	var right := _get_col_x(col + 1) - offset - FILTER_GLYPH_MARGIN
+	return Rect2(right - FILTER_GLYPH_SIZE, (size.y - FILTER_GLYPH_SIZE) / 2.0, FILTER_GLYPH_SIZE, FILTER_GLYPH_SIZE)
+
+
+## Column whose filter glyph contains local point `pos`, or -1. Frozen columns
+## are drawn unscrolled, so they are tested without the scroll offset.
+func _filter_glyph_col_at(pos: Vector2) -> int:
+	var frozen_width := _get_col_x(data.frozen_cols)
+	var offset := 0.0 if pos.x < frozen_width else scroll_offset_x
+	var col := _get_col_at_x(pos.x + offset)
+	if col < 0 or not _has_filter_glyph(col):
+		return -1
+	return col if _filter_glyph_rect(col, offset).has_point(pos) else -1
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -165,6 +224,14 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			resize_start_x = event.position.x
 			resize_start_width = data.get_column_width(resize_col)
 			column_resize_started.emit(resize_col)
+			return
+
+		var glyph_col := _filter_glyph_col_at(event.position)
+		if glyph_col >= 0:
+			var offset := 0.0 if glyph_col < data.frozen_cols else scroll_offset_x
+			var glyph_rect := _filter_glyph_rect(glyph_col, offset)
+			glyph_rect.position += get_screen_position()
+			autofilter_button_pressed.emit(glyph_col, glyph_rect)
 			return
 
 		# Column selection
@@ -252,5 +319,10 @@ func set_selected_columns(cols: Array[int]) -> void:
 
 
 func set_data(new_data: SpreadsheetDataScript) -> void:
+	# Filter changes arrive as structure_changed; the glyphs depend on them.
+	if data and data.structure_changed.is_connected(queue_redraw):
+		data.structure_changed.disconnect(queue_redraw)
 	data = new_data
+	if data:
+		data.structure_changed.connect(queue_redraw)
 	queue_redraw()
