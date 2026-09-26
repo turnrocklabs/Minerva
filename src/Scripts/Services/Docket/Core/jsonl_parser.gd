@@ -15,7 +15,7 @@ const KNOWN_TYPES := [
 static func parse_file(path: String) -> Dictionary:
 	## Read a .dct.jsonl file and return structured data.
 	## Returns a dict with keys: meta, items, events, comments, links,
-	## attachments, secrets, secret_versions, saved_queries.
+	## attachments, secrets, secret_versions, saved_queries, unknown_types.
 	## meta is a Dictionary; all others are Arrays of Dictionaries.
 	var empty := _empty_result()
 
@@ -54,6 +54,8 @@ static func parse_file(path: String) -> Dictionary:
 		var line_type: String = str(type_val)
 		if line_type not in KNOWN_TYPES:
 			push_warning("JSONLParser: line %d unknown _type '%s', skipping" % [line_number, line_type])
+			if line_type not in result["unknown_types"]:
+				result["unknown_types"].append(line_type)
 			continue
 
 		match line_type:
@@ -359,6 +361,7 @@ static func _empty_result() -> Dictionary:
 		"secrets": [],
 		"secret_versions": [],
 		"saved_queries": [],
+		"unknown_types": [],  # _type values skipped because this parser cannot read them
 	}
 
 

@@ -50,7 +50,8 @@ var revision: int = 0
 var _body: String = ""
 var _entries: Array[Entry] = []
 
-# request_id -> {"entry_id": String, "revision": int}, oldest first in _request_order.
+# request_id -> {"entry_id": String, "revision": int, "text_hash": String},
+# oldest first in _request_order.
 var _requests: Dictionary[String, Dictionary] = {}
 var _request_order: Array[String] = []
 
@@ -72,8 +73,12 @@ func get_entry_texts() -> PackedStringArray:
 	return texts
 
 
-## Appends [param text] as a new entry at the end and returns it.
+## Appends [param text] as a new entry at the end and returns it. Empty text is
+## refused (returns null, nothing changes): a 0-length entry would match any
+## position when [method set_body] looks for surviving entries.
 func append(text: String, author: String) -> Entry:
+	if text.is_empty():
+		return null
 	var e: = Entry.new(_new_id(), _now(), author, text.length())
 	if _entries.is_empty():
 		_body = text
@@ -84,20 +89,21 @@ func append(text: String, author: String) -> Entry:
 	return e
 
 
-## The {"entry_id", "revision"} an earlier append with [param request_id]
-## produced, or {} when the id is empty or no longer remembered.
+## The {"entry_id", "revision", "text_hash"} an earlier append with
+## [param request_id] produced, or {} when the id is empty or no longer
+## remembered. text_hash is [method text_hash] of that append's text.
 func find_request(request_id: String) -> Dictionary:
 	if request_id.is_empty():
 		return {}
 	return _requests.get(request_id, {})
 
 
-## Records that [param request_id] produced [param entry]; the oldest id is
-## forgotten once more than [constant REQUEST_MEMORY] are held.
-func remember_request(request_id: String, entry: Entry) -> void:
+## Records that [param request_id] produced [param entry] from [param text]; the
+## oldest id is forgotten once more than [constant REQUEST_MEMORY] are held.
+func remember_request(request_id: String, entry: Entry, text: String) -> void:
 	if request_id.is_empty() or _requests.has(request_id):
 		return
-	_requests[request_id] = {"entry_id": entry.id, "revision": revision}
+	_requests[request_id] = {"entry_id": entry.id, "revision": revision, "text_hash": text_hash(text)}
 	_request_order.append(request_id)
 	while _request_order.size() > REQUEST_MEMORY:
 		_requests.erase(_request_order.pop_front())
@@ -263,6 +269,11 @@ func restore(index: Array, saved_revision: int) -> bool:
 	_entries = parsed
 	revision = saved_revision
 	return true
+
+
+## Digest used to tell whether a retried append carries the same text.
+static func text_hash(text: String) -> String:
+	return text.sha256_text()
 
 
 func _index_of(id: String) -> int:

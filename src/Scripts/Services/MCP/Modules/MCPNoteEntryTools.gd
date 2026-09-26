@@ -22,12 +22,12 @@ func get_tool_names() -> Array[String]:
 func register_tools() -> void:
 	server._register_tool("minerva_append_note",
 		"Append text to a text note as one new entry, without resending or rewriting the rest of the note. Returns {entry_id, revision}; the body shows the entry on a new line after the existing text.\n\n"
-		+ "Retry: pass a request_id unique to this append (e.g. a UUID) and reuse it when retrying after a timeout or lost reply. A repeat with a remembered request_id adds nothing and returns the original entry_id and revision with deduplicated=true. Each note remembers its last %d request_ids in memory only, so the window also ends when Minerva restarts or the note is reloaded; a retry after that appends again." % NoteEntryLog.REQUEST_MEMORY,
+		+ "Retry: pass a request_id unique to this append (e.g. a UUID) and reuse it when retrying after a timeout or lost reply. A repeat with a remembered request_id and the same text adds nothing and returns the original entry_id and revision with deduplicated=true; a remembered request_id with different text is refused (\"request_id already used for different content\") and nothing is written. Each note remembers its last %d request_ids in memory only, so the window also ends when Minerva restarts or the note is reloaded; a retry after that appends again." % NoteEntryLog.REQUEST_MEMORY,
 		{
 			"type": "object",
 			"properties": {
 				"note_id": {"type": "string", "description": "The UUID of a text note"},
-				"text": {"type": "string", "description": "Text of the new entry. May span several lines."},
+				"text": {"type": "string", "description": "Text of the new entry. May span several lines; must not be empty."},
 				"request_id": {"type": "string", "description": "Caller-chosen id for this append; reuse it only when retrying the same append."},
 				"author": {"type": "string", "description": "Optional author label stored with the entry, e.g. 'claude@Terminal 3'."},
 			},
@@ -88,13 +88,18 @@ func _append_note(args: Dictionary) -> Dictionary:
 	if controls == null:
 		return failure
 
+	var text: String = args["text"]
 	var earlier: = controls.entry_log.find_request(request_id)
 	if not earlier.is_empty():
+		if earlier["text_hash"] != NoteEntryLog.text_hash(text):
+			return MCPToolUtils.error("request_id already used for different content")
 		return {"success": true, "note_id": note_id, "entry_id": earlier["entry_id"],
 			"revision": earlier["revision"], "deduplicated": true}
 
-	var entry: = controls.append_entry(args["text"], str(args.get("author", "")))
-	controls.entry_log.remember_request(request_id, entry)
+	var entry: = controls.append_entry(text, str(args.get("author", "")))
+	if entry == null:
+		return MCPToolUtils.error("text must not be empty")
+	controls.entry_log.remember_request(request_id, entry, text)
 	return {"success": true, "note_id": note_id, "entry_id": entry.id,
 		"revision": controls.entry_log.revision, "deduplicated": false}
 

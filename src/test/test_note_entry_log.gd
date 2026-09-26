@@ -109,10 +109,12 @@ func test_entries_survive_save_and_reload() -> void:
 ## Two appenders interleave five appends each (one retried with the same
 ## request_id); the note must then hold the seed entry plus exactly those ten
 ## ids, all distinct. Three read_since pages (limit 4) must concatenate to that
-## same id list with no gap or overlap. A stale if_revision must leave the
-## serialized note byte-identical. Editing an entry the reader has already seen
-## must make the next read reset, and re-reading from "" must return the edited
-## log.
+## same id list with no gap or overlap. An append after the held cursor must
+## be read from it without a reset (checked before any body edit). A reused
+## request_id with different text, and empty text, must be refused without
+## adding an entry. A stale if_revision must leave the serialized note
+## byte-identical. Editing an entry the reader has already seen must make the
+## next read reset, and re-reading from "" must return the edited log.
 func test_mcp_append_read_since_and_if_revision() -> void:
 	print("test_mcp_append_read_since_and_if_revision:")
 	var entry_tools: = MCPNoteEntryTools.new(null)
@@ -153,7 +155,26 @@ func test_mcp_append_read_since_and_if_revision() -> void:
 		(tail_read.get("entries", []) as Array).is_empty() and tail_read.get("next_cursor") == cursor and tail_read.get("reset") == false)
 
 	var stale_revision: = controls.entry_log.revision
-	entry_tools.handle("minerva_append_note", {"note_id": id, "text": "late", "request_id": "c-0"})
+	var late: Dictionary = entry_tools.handle("minerva_append_note", {"note_id": id, "text": "late", "request_id": "c-0"})
+
+	# An append after the held cursor must not invalidate it: the next read
+	# returns just the new entry. Read BEFORE any body edit, so a read_since
+	# that resets whenever the revision moved fails here.
+	var after_append: Dictionary = entry_tools.handle("minerva_read_note_since", {"note_id": id, "cursor": cursor})
+	var after_entries: Array = after_append.get("entries", [])
+	_check("append after the cursor does not reset it", after_append.get("reset") == false)
+	_check("held cursor returns only the appended entry",
+		after_entries.size() == 1 and str((after_entries[0] as Dictionary).get("id")) == str(late.get("entry_id"))
+		and str((after_entries[0] as Dictionary).get("text")) == "late")
+
+	var count_before_refusals: = controls.entry_log.get_entries().size()
+	var reused: Dictionary = entry_tools.handle("minerva_append_note", {"note_id": id, "text": "not late", "request_id": "c-0"})
+	_check("reused request_id with different text is refused",
+		reused.has("error") and str(reused.get("error")).contains("request_id already used for different content"))
+	var empty: Dictionary = entry_tools.handle("minerva_append_note", {"note_id": id, "text": "", "request_id": "c-1"})
+	_check("empty append text is refused", empty.has("error"))
+	_check("refused appends add no entry", controls.entry_log.get_entries().size() == count_before_refusals)
+
 	var before: = JSON.stringify(note.serialize())
 	var stale: Dictionary = notes_tools.handle("minerva_update_note",
 		{"note_id": id, "content": "overwrite", "title": "overwrite", "if_revision": stale_revision})

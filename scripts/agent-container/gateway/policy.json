@@ -57,7 +57,8 @@
         "args": {
           "note_id": "note_id",
           "content": "text",
-          "title": "line"
+          "title": "line",
+          "if_revision": "int"
         },
         "required": [
           "note_id"

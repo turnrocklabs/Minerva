@@ -471,7 +471,7 @@ func _on_menu_action(action: String) -> void:
 			_open_dialog.popup_centered(Vector2i(600, 400))
 		"save":
 			if _dm:
-				_dm.save_all()
+				_show_save_refusals(_dm.save_all())
 		"save_as":
 			_save_dialog.popup_centered(Vector2i(600, 400))
 		"add_project":
@@ -525,7 +525,7 @@ func _on_open_file_selected(path: String) -> void:
 
 func _on_save_as_file_selected(path: String) -> void:
 	if _dm:
-		_dm.save_all()
+		_show_save_refusals(_dm.save_all())
 	_add_to_recent(path)
 	_update_file_label()
 
@@ -897,3 +897,12 @@ func _add_to_recent(path: String) -> void:
 	_recent_files = updated
 	_save_recent_files()
 	_menu_builder.set_recent_files(_recent_files)
+
+
+## Pops up the projects DocketManager.save_all refused to write, if any.
+func _show_save_refusals(refused: PackedStringArray) -> void:
+	if refused.is_empty():
+		return
+	_info_dialog.title = "Docket not saved"
+	_info_dialog.dialog_text = "\n\n".join(refused)
+	_info_dialog.popup_centered()

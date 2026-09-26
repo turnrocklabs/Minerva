@@ -113,6 +113,14 @@ func _flush_jsonl() -> void:
 	if _flush_depth > 0:
 		return  # We're inside a compound mutation — will flush when outermost returns
 
+	var refusal := JSONLCache.write_refusal(self, _jsonl_path)
+	if not refusal.is_empty():
+		push_error("DocketDBJsonl: %s" % refusal)
+		_unsaved = true
+		if write_error.is_empty():
+			write_error = refusal
+		return
+
 	var jsonl_text := JSONLSerializer.serialize_all(self)
 	if jsonl_text.is_empty():
 		push_warning("DocketDBJsonl: serializer produced empty output, skipping flush")

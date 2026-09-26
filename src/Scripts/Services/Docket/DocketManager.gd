@@ -269,7 +269,9 @@ func close_project(project_name: String) -> Dictionary:
 		return {"error": "Cannot close master docket"}
 	if not _project_dbs.has(project_name):
 		return {"error": "Project '%s' not loaded" % project_name}
-	_save_project_to_jsonl(project_name)
+	var refusal := _save_project_to_jsonl(project_name)
+	if not refusal.is_empty():
+		return {"error": refusal}
 	_project_dbs[project_name].close()
 	_project_dbs.erase(project_name)
 	_refresh_tool_registry()
@@ -465,32 +467,42 @@ func _emit_signals_for(tool_name: String, args: Dictionary, result: Dictionary) 
 
 # -- JSONL persistence --------------------------------------------------------
 
-func save_project(project_name: String) -> void:
-	## Write a project's SQLite state back to its .dct JSONL file.
-	_save_project_to_jsonl(project_name)
+func save_project(project_name: String) -> String:
+	## Write a project's SQLite state back to its .dct JSONL file. Returns ""
+	## or why it was not written.
+	return _save_project_to_jsonl(project_name)
 
 
-func save_all() -> void:
-	## Save all loaded projects to JSONL.
+func save_all() -> PackedStringArray:
+	## Save all loaded projects to JSONL. Returns one message per refused save.
+	var refused: PackedStringArray = []
 	for proj_name in _project_dbs:
 		var t0 := Time.get_ticks_msec()
 		print("[DocketManager] saving '%s'..." % proj_name)
-		_save_project_to_jsonl(proj_name)
+		var err := _save_project_to_jsonl(proj_name)
+		if not err.is_empty():
+			refused.append(err)
 		print("[DocketManager] saved '%s' in %d ms" % [proj_name, Time.get_ticks_msec() - t0])
+	return refused
 
 
-func _save_project_to_jsonl(project_name: String) -> void:
+## "" when saved or nothing needed saving, else why the file was not written.
+func _save_project_to_jsonl(project_name: String) -> String:
 	if not _project_dbs.has(project_name):
-		return
+		return ""
 	var path: String = _project_paths.get(project_name, "")
 	if path.is_empty():
-		return
+		return ""
 	var db: DocketDB = _project_dbs[project_name]
 	# Untouched this session → the JSONL on disk is already current. Skipping
 	# matters at app close: serialize_all re-reads and re-writes the ENTIRE
 	# docket synchronously on the main thread.
 	if not db.dirty and FileAccess.file_exists(path):
-		return
+		return ""
+	var refusal := JSONLCache.write_refusal(db, path)
+	if not refusal.is_empty():
+		push_error("[DocketManager] %s" % refusal)
+		return refusal
 	var jsonl_text := JSONLSerializer.serialize_all(db)
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f:
@@ -502,6 +514,7 @@ func _save_project_to_jsonl(project_name: String) -> void:
 		# paid a full rebuild.)
 		db.set_meta_value("jsonl_hash", JSONLCache._file_fingerprint(path))
 		db.dirty = false
+	return ""
 
 
 func close_all() -> void:

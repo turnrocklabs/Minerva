@@ -454,8 +454,13 @@ def rule_note_read(ctx, args):
                 or note.get("type") != "TEXT" or not isinstance(note.get("content"), str) \
                 or not isinstance(note.get("title"), str):
             raise Deny("note_not_available")
-        return json_result({"success": True, "note_id": note["note_id"], "title": note["title"],
-                            "content": note["content"]})
+        shaped = {"success": True, "note_id": note["note_id"], "title": note["title"],
+                  "content": note["content"]}
+        # revision feeds update_note's if_revision; passed only when it is an integer.
+        revision = note.get("revision")
+        if isinstance(revision, int) and not isinstance(revision, bool):
+            shaped["revision"] = revision
+        return json_result(shaped)
     return Call(args, shape)
 
 

@@ -29,8 +29,11 @@ func setup(owner_note: Note, note_content: String):
 
 
 ## Appends [param text] as a new entry without rewriting the existing ones.
+## Returns null, changing nothing, when the log refuses the text (empty).
 func append_entry(text: String, author: String) -> NoteEntryLog.Entry:
 	var entry: = entry_log.append(text, author)
+	if entry == null:
+		return null
 	_show_body()
 	return entry
 

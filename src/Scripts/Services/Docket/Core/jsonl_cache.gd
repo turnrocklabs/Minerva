@@ -10,7 +10,26 @@ class_name JSONLCache
 ## still catching any modification.
 
 
+## docket_meta key listing record kinds the file held that the parser skipped.
+const UNKNOWN_TYPES_META := "unknown_record_types"
+
+
 # -- Public API ---------------------------------------------------------------
+
+static func write_refusal(db: DocketDB, jsonl_path: String) -> String:
+	## Why rewriting `jsonl_path` from `db` would lose data, or "" when it is
+	## safe. A whole-file rewrite from the cache erases (1) anything another
+	## writer put in the file since the cache was built or last saved (the
+	## stored jsonl_hash no longer matches the file) and (2) lines the parser
+	## skipped. Callers must not write when this is non-empty.
+	var skipped := db.get_meta_value(UNKNOWN_TYPES_META, "")
+	if not skipped.is_empty():
+		return "%s holds records this Docket cannot write (%s); saving would drop them. Nothing was written; edit it in docket.app." % [jsonl_path, skipped]
+	var loaded := db.get_meta_value("jsonl_hash", "")
+	if not loaded.is_empty() and FileAccess.file_exists(jsonl_path) and loaded != _file_fingerprint(jsonl_path):
+		return "%s changed on disk since it was loaded. Nothing was written; reopen the project to reload it (unsaved Minerva edits to it are discarded)." % jsonl_path
+	return ""
+
 
 static func open_or_rebuild(jsonl_path: String) -> DocketDB:
 	## Open the cache if it is fresh, otherwise rebuild it from the JSONL file.
@@ -55,6 +74,8 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 	_insert_secrets(db, parsed["secrets"])
 	_insert_secret_versions(db, parsed["secret_versions"])
 	_insert_saved_queries(db, parsed["saved_queries"])
+	if not parsed["unknown_types"].is_empty():
+		db.set_meta_value(UNKNOWN_TYPES_META, ",".join(PackedStringArray(parsed["unknown_types"])))
 
 	# Store a fingerprint so we can validate freshness later
 	var fingerprint := _file_fingerprint(jsonl_path)
