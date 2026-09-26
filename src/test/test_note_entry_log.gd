@@ -15,6 +15,13 @@ extends SceneTree
 ## Run:
 ##   godot --headless --path ~/github/Minerva/src --script test/test_note_entry_log.gd
 
+# Note, NoteTextControls and the MCP note modules reference the
+# SingletonObject autoload, so they are loaded after autoloads register
+# rather than named as types (which --script compiles before autoloads).
+var NoteScript: Script = null
+var EntryToolsScript: Script = null
+var NotesToolsScript: Script = null
+
 var _pass: int = 0
 var _fail: int = 0
 
@@ -24,6 +31,9 @@ func _init() -> void:
 
 
 func _run_tests() -> void:
+	NoteScript = load("res://Scripts/UI/Controls/Note.gd")
+	EntryToolsScript = load("res://Scripts/Services/MCP/Modules/MCPNoteEntryTools.gd")
+	NotesToolsScript = load("res://Scripts/Services/MCP/Modules/MCPNotesTools.gd")
 	print("=== note entry log round trip ===\n")
 	await test_entries_survive_save_and_reload()
 	await test_mcp_append_read_since_and_if_revision()
@@ -49,15 +59,15 @@ func _ids(entry_log: NoteEntryLog) -> PackedStringArray:
 	return ids
 
 
-func _add(note: Note) -> Note:
+func _add(note: VBoxContainer) -> VBoxContainer:
 	root.add_child(note)
 	await process_frame
 	return note
 
 
-func _reload(note: Note) -> Note:
+func _reload(note: VBoxContainer) -> VBoxContainer:
 	var parsed: Variant = JSON.parse_string(JSON.stringify(note.serialize()))
-	return await _add(Note.deserialize(parsed as Dictionary, false))
+	return await _add(NoteScript.deserialize(parsed as Dictionary, false))
 
 
 func test_entries_survive_save_and_reload() -> void:
@@ -66,8 +76,8 @@ func test_entries_survive_save_and_reload() -> void:
 	# A note saved before entry logs existed: no Entries / Revision keys.
 	var legacy_body: = "line one\nline two"
 	var legacy_dict: = {"Title": "legacy", "UUID": "entry-log-test-uuid", "ContentType": "text", "Content": legacy_body}
-	var note: Note = await _add(Note.deserialize(legacy_dict, false))
-	var controls: = note.get_controls_container() as NoteTextControls
+	var note: VBoxContainer = await _add(NoteScript.deserialize(legacy_dict, false))
+	var controls: VBoxContainer = note.get_controls_container()
 	_check("legacy note shows identical text", controls.content == legacy_body)
 	_check("legacy note loads as one entry", controls.entry_log.get_entries().size() == 1)
 
@@ -75,14 +85,14 @@ func test_entries_survive_save_and_reload() -> void:
 	controls.append_entry("second\nspans two lines", "agent-b")
 	controls.append_entry("third", "agent-a")
 	var ids_before: = _ids(controls.entry_log)
-	var texts_before: = controls.entry_log.get_entry_texts()
-	var revision_before: = controls.entry_log.revision
+	var texts_before: PackedStringArray = controls.entry_log.get_entry_texts()
+	var revision_before: int = controls.entry_log.revision
 	_check("four distinct ids", ids_before.size() == 4 and Array(ids_before).all(func(i: String) -> bool: return ids_before.count(i) == 1))
 	_check("texts in append order", texts_before == PackedStringArray([legacy_body, "first", "second\nspans two lines", "third"]))
 	_check("body is the entries joined", controls.content == "\n".join(texts_before))
 
-	var reloaded: Note = await _reload(note)
-	var reloaded_controls: = reloaded.get_controls_container() as NoteTextControls
+	var reloaded: VBoxContainer = await _reload(note)
+	var reloaded_controls: VBoxContainer = reloaded.get_controls_container()
 	_check("ids and order survive save + reload", _ids(reloaded_controls.entry_log) == ids_before)
 	_check("texts survive save + reload", reloaded_controls.entry_log.get_entry_texts() == texts_before)
 	_check("body survives save + reload", reloaded_controls.content == controls.content)
@@ -117,11 +127,11 @@ func test_entries_survive_save_and_reload() -> void:
 ## next read reset, and re-reading from "" must return the edited log.
 func test_mcp_append_read_since_and_if_revision() -> void:
 	print("test_mcp_append_read_since_and_if_revision:")
-	var entry_tools: = MCPNoteEntryTools.new(null)
-	var notes_tools: = MCPNotesTools.new(null)
-	var note: Note = await _add(Note.create_text_note("mcp verbs", "seed"))
-	var id: = note.uuid
-	var controls: = note.get_controls_container() as NoteTextControls
+	var entry_tools: RefCounted = EntryToolsScript.new(null)
+	var notes_tools: RefCounted = NotesToolsScript.new(null)
+	var note: VBoxContainer = await _add(NoteScript.create_text_note("mcp verbs", "seed"))
+	var id: String = note.uuid
+	var controls: VBoxContainer = note.get_controls_container()
 
 	var returned: = PackedStringArray()
 	for i: int in 5:
@@ -154,7 +164,7 @@ func test_mcp_append_read_since_and_if_revision() -> void:
 	_check("read at the end returns nothing and keeps the cursor",
 		(tail_read.get("entries", []) as Array).is_empty() and tail_read.get("next_cursor") == cursor and tail_read.get("reset") == false)
 
-	var stale_revision: = controls.entry_log.revision
+	var stale_revision: int = controls.entry_log.revision
 	var late: Dictionary = entry_tools.handle("minerva_append_note", {"note_id": id, "text": "late", "request_id": "c-0"})
 
 	# An append after the held cursor must not invalidate it: the next read
@@ -167,7 +177,7 @@ func test_mcp_append_read_since_and_if_revision() -> void:
 		after_entries.size() == 1 and str((after_entries[0] as Dictionary).get("id")) == str(late.get("entry_id"))
 		and str((after_entries[0] as Dictionary).get("text")) == "late")
 
-	var count_before_refusals: = controls.entry_log.get_entries().size()
+	var count_before_refusals: int = controls.entry_log.get_entries().size()
 	var reused: Dictionary = entry_tools.handle("minerva_append_note", {"note_id": id, "text": "not late", "request_id": "c-0"})
 	_check("reused request_id with different text is refused",
 		reused.has("error") and str(reused.get("error")).contains("request_id already used for different content"))

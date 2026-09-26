@@ -6,7 +6,15 @@ var _pass_count: int = 0
 var _fail_count: int = 0
 var _tmp_dir: String = ""
 
+# DocketManager references the SingletonObject autoload, so it is loaded by
+# path once autoloads exist; the suite runs on the first frame for that.
+const DOCKET_MANAGER_PATH := "res://Scripts/Services/Docket/DocketManager.gd"
+
 func _init():
+	process_frame.connect(_run, CONNECT_ONE_SHOT)
+
+
+func _run() -> void:
 	print("=== Docket Integration Tests ===\n")
 
 	_tmp_dir = OS.get_cache_dir().path_join("minerva_docket_test_%d" % randi())
@@ -26,6 +34,7 @@ func _init():
 	test_jsonl_roundtrip()
 	test_external_writer_refuses_embedded_save()
 	test_unknown_record_keys_refuse_embedded_save()
+	test_shipped_master_dct_round_trips()
 	test_plugin_skills_metadata_roundtrip()
 	test_plugin_skills_jsonl_roundtrip()
 	test_plugin_skills_skill_get_lean_view()
@@ -396,8 +405,8 @@ const _ITEM_LINE := '{"_type":"item","id":"EXT-0001","type":"chore","status":"op
 
 ## A DocketManager serving the .dct at `path` as project "ext", as open_project
 ## would, without the master/personal set-up of _ready.
-func _manager_for(path: String) -> DocketManager:
-	var dm := DocketManager.new()
+func _manager_for(path: String) -> Node:
+	var dm: Node = load(DOCKET_MANAGER_PATH).new()
 	dm._project_dbs["ext"] = JSONLCache.open_or_rebuild(path)
 	dm._project_paths["ext"] = path
 	return dm
@@ -417,7 +426,7 @@ func test_external_writer_refuses_embedded_save() -> void:
 	var external := FileAccess.get_file_as_string(path).replace("Edited", "Edixed")
 	_write_bytes(path, external.to_utf8_buffer())
 	db.update_item_fields("EXT-0001", {"title": "Minerva"})
-	var refusal := dm.save_project("ext")
+	var refusal: String = dm.save_project("ext")
 	check("an equal-length external change refuses the save",
 		not refusal.is_empty() and FileAccess.get_file_as_string(path) == external)
 
@@ -439,10 +448,33 @@ func test_unknown_record_keys_refuse_embedded_save() -> void:
 	var dm := _manager_for(path)
 	var db: DocketDB = dm._project_dbs["ext"]
 	db.update_item_fields("EXT-0001", {"title": "Edited"})
-	var refusal := dm.save_project("ext")
+	var refusal: String = dm.save_project("ext")
 	check("unknown event keys refuse the save and name them",
 		refusal.contains("event.eid") and refusal.contains("event.fields"))
 	check("the file keeps its eid/fields line unchanged", FileAccess.get_file_as_bytes(path) == original)
+	db.close()
+	dm.free()
+
+
+func test_shipped_master_dct_round_trips() -> void:
+	## The shipped master.dct (some items hold tags as one comma-separated
+	## string) loads with nothing the writer would drop, saves, and keeps
+	## every tag as a list.
+	var path := _tmp_dir.path_join("master_copy.dct")
+	_write_bytes(path, FileAccess.get_file_as_bytes("res://Data/master.dct"))
+	var dm := _manager_for(path)
+	var db: DocketDB = dm._project_dbs["ext"]
+	check("the shipped master.dct has no field the writer would drop",
+		JSONLCache.write_refusal(db, path).is_empty())
+	var agent_supervision := "019d5c00000000000000000000000001"
+	db.update_item_fields(agent_supervision, {"title": "Agent Supervision (saved)"})
+	check("the shipped master.dct saves", dm.save_project("ext").is_empty())
+	var saved := {}
+	for item: Dictionary in JSONLParser.parse_file(path)["items"]:
+		if item["id"] == agent_supervision:
+			saved = item
+	check("its comma-separated tags are written back as a list",
+		saved.get("tags", []) == ["agent-supervision", "workflow"])
 	db.close()
 	dm.free()
 

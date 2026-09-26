@@ -236,8 +236,10 @@ func _run() -> void:
 			and str(held.get("hold_reason", "")) == "screen", str(held))
 	await _check_block_clears(tools, b, "E6", held, "held-line",
 		func() -> void: b.write_input("y"))
+	# The held line's turn has redrawn the screen since, so the answer is in
+	# the scrollback, not the viewport.
 	check("E6: the dialog was answered by the person's keystroke, not by the relay",
-		b.get_plain_text().find("DIALOG-ANSWERED: y") != -1, b.get_plain_text().right(300))
+		_scrollback(b).find("DIALOG-ANSWERED: y") != -1, _rows_containing(b, "DIALOG-ANSWERED"))
 
 	# ── E7: a person typing in the target outranks the agent ──────────────
 	var b_idle: bool = await _wait_until(func() -> bool: return _idle(b))
@@ -339,6 +341,10 @@ func _run() -> void:
 	var busy_idle: bool = await _wait_until(func() -> bool:
 		return _idle(b) and _has_row_ending(b, "MOCK-ANSWER: x"))
 	check("E10: target idle before the busy leg", busy_idle)
+	# E9's keystroke stamped both typing clocks; clear them so the busy turn
+	# is the only block.
+	b.last_input_ms = 0
+	b.last_input_ticks_ms = 0
 	b.write_input("slow-turn\r")
 	var busy_up: bool = await _wait_until(func() -> bool:
 		return b.read_viewport_text().find("esc to interrupt") != -1, 5000)

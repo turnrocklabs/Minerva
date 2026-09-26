@@ -209,9 +209,17 @@ static func _parse_item(d: Dictionary) -> Dictionary:
 	_copy_int_opt(d, out, "quality")
 	_copy_int_opt(d, out, "customised")
 	_copy_int_opt(d, out, "deprecated")
-	# Array fields
+	# Array fields. Older files (the shipped master.dct among them) hold tags
+	# as one comma-separated string; it is read as the list the writer emits.
 	if d.has("tags") and d["tags"] is Array:
 		out["tags"] = d["tags"].duplicate()
+	elif d.has("tags") and d["tags"] is String:
+		var tags: Array = []
+		for tag: String in d["tags"].split(",", false):
+			if not tag.strip_edges().is_empty():
+				tags.append(tag.strip_edges())
+		if not tags.is_empty():
+			out["tags"] = tags
 	if d.has("tool_deps") and d["tool_deps"] is Array:
 		out["tool_deps"] = d["tool_deps"].duplicate()
 	if d.has("unsatisfied_deps") and d["unsatisfied_deps"] is Array:

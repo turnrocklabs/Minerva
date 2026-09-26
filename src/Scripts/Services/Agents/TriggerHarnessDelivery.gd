@@ -86,13 +86,16 @@ func cancel(trigger_id: String) -> void:
 ## status is sending, held, queued, handed_to_harness, unconfirmed, dropped,
 ## unknown, failed, cancelled or withdrawn (see NotifyDeliveryLedger), with
 ## the reason, target and time. A chat delivery is read on from its ledger
-## record, which follows it past its queue to the relay's answer. A direct
-## write also carries pane_mode_check (see TerminalInputArbiter).
+## record, which follows it past its queue to the relay's answer, except a
+## withdrawn one: cancel took it out of the queue before it ran, and the
+## ledger records that only as dropped. A direct write also carries
+## pane_mode_check (see TerminalInputArbiter).
 func receipt(trigger_id: String) -> Dictionary:
 	_is_outstanding(trigger_id)
 	var delivery_receipt: Dictionary = _receipts.get(trigger_id, {})
 	var delivery_id: String = str(delivery_receipt.get("delivery_id", ""))
-	if not delivery_id.is_empty() and not _outstanding.has(trigger_id):
+	if not delivery_id.is_empty() and not _outstanding.has(trigger_id) \
+			and delivery_receipt.get("status") != "withdrawn":
 		var state: String = str(NotifyDeliveryLedger.shared().get_record(delivery_id).get("state", ""))
 		if not state.is_empty():
 			delivery_receipt["status"] = state

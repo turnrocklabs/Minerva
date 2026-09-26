@@ -1059,7 +1059,10 @@ def attach_established(dev, before, client, timeout_s=ATTACH_WAIT_S):
 
 def cmd_up(args):
     check_layout()
-    resolve_record(args)   # never attach to a session created differently
+    record, _ = resolve_record(args)   # never attach to a session created differently
+    # The folder layout is refused before any docker call, as in cmd_start.
+    check_layout([f["host"] for f in record["folders"] if f["host"]])
+    check_folders(record)
     if running(containers(args.name)[0]):
         if args.note_read or args.note_write:
             write_notes(args.name, args.note_read, args.note_write)

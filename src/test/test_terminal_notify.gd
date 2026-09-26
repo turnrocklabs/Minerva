@@ -1022,6 +1022,12 @@ func _test_receipt_follows_the_entry() -> void:
 	# older entries out of it. "Dispatched" is the one answer a sender acts on,
 	# so it must never be a guess: an id the queue can no longer speak for is
 	# reported as unknown.
+	# The ledger maps queue entry ids to deliveries and outlives a pane; this
+	# world's queue restarts its ids at 1, so earlier sections' records for
+	# the same ids would answer for it. A fresh ledger holds none.
+	var ledger_script: GDScript = load(LEDGER_PATH)
+	var saved_ledger = ledger_script._shared
+	ledger_script._shared = ledger_script.new()
 	var w3: = _world()
 	var module3: Object = w3["module"]
 	var pane3 = w3["pane"]
@@ -1045,6 +1051,7 @@ func _test_receipt_follows_the_entry() -> void:
 		module3.notify_status(first_id, 0))
 
 	_teardown(pane3, w3["chats"])
+	ledger_script._shared = saved_ledger
 
 #endregion
 

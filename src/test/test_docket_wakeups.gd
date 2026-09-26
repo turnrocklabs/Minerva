@@ -281,6 +281,29 @@ func _test_subscription_dedup(registry) -> void:
 		acks_12.size() == 1 and acks_12[0].arguments.get("event_ids", []) == [{"project": "minerva", "eid": 10}]
 			and module.relay_calls.size() == relayed_12 + 1, str(calls.slice(calls_12)))
 
+	# item-13 reaches Minerva only through the feed, so its receipt waits on
+	# the pointer; that pointer is typed but never confirmed, so the receipt is
+	# abandoned when it settles, never released into a docket_ack.
+	module.relay_reply = {"ok": true, "submit": {"state": "typed", "evidence": ""}}
+	var stamp_13 := "2026-09-26T10:15:00"
+	items["item-13"] = {"id": "item-13", "title": "Task item-13", "type": "work_item", "status": "open",
+		"assigned_to": "worker-b", "tags": [], "updated_at": stamp_13, "events": []}
+	pages.append([{"project": "minerva", "eid": 11, "item_id": "item-13", "kind": "typed_update",
+		"actor": "a", "timestamp": stamp_13, "fields": ["title"], "possible_duplicate": false}])
+	var calls_13: int = calls.size()
+	var relayed_13: int = module.relay_calls.size()
+	await feed.poll_once()
+	var unconfirmed_13 := func() -> bool:
+		for record: Dictionary in load(LEDGER_PATH).shared().list():
+			if str(record.get("text", "")).contains("item-13") and str(record.get("state", "")) == "unconfirmed":
+				return true
+		return false
+	await _wait_for(unconfirmed_13, 6000)
+	await _settle(1500)
+	check("D9: a feed-only change whose pointer settles unconfirmed is sent once and not acked",
+		unconfirmed_13.call() and module.relay_calls.size() == relayed_13 + 1
+			and _acks(calls.slice(calls_13)).is_empty(), str(calls.slice(calls_13)))
+
 
 # The docket_ack calls in a scripted Docket call log.
 func _acks(calls: Array) -> Array:

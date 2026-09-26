@@ -105,6 +105,7 @@ HERMETIC_TESTS=(
 	test/test_os_open_policy.gd
 	test/test_chat_groups.gd
 	test/test_chat_outgoing_queue.gd
+	test/test_note_entry_log.gd
 	test/test_terminal_notify.gd
 	test/test_trigger_harness_delivery.gd
 	test/test_docket_wakeups.gd
