@@ -19,14 +19,22 @@ set. Do not push until the batch closes.
 - Nothing is pushed until review and scoped execution finish.
 - The full suite is deferred to its scheduled run.
 - Comments should be salient.
-- Reviews should be at batch end, not item-by-item.
-- Codex runs serially after Fable's rounds close, as the final check.
+- Reviews should be at batch end, not item-by-item. There is no per-task or
+  per-slice review gate, and the configuration has no key for one.
+- The cross-provider reviewer runs serially after the batch review's rounds
+  close, as the final check.
+- Who fills each role, how many reviewers and fix rounds each boundary gets,
+  and which stages run come from the configuration record (see
+  Configuration). This skill names no provider or model.
+- A gated stage — review, test execution, push — runs only when a standing
+  authorization covers it (see Authority). A missing one stops the batch; it is
+  never skipped silently.
 - Owner rulings on the campaign anchor minerva:01a0dc2bf96e bind every batch:
   static gates, syntax checks and exploratory experiments are always allowed,
-  test execution only at step 7 (#2183); at most three fix rounds per review
-  boundary (#2184's approved tables); no finding is dropped — it is resolved,
-  placed on an owning task, or filed with a blast-radius priority (#2191, scale
-  #2192).
+  test execution only at step 7 (#2183); fix rounds per review boundary are
+  capped (#2184's approved tables — the default configuration's `rounds`); no
+  finding is dropped — it is resolved, placed on an owning task, or filed with
+  a blast-radius priority (#2191, scale #2192).
 - Every stage leaves its Docket work record (see Work records).
 
 
@@ -51,7 +59,7 @@ set. Do not push until the batch closes.
   prior discussion as context.
 - **Deferred suite** — the full test suite, run separately on schedule.
 
-### Pre-flight
+### Pre-flight (preconditions)
 
 Before dispatch, verify:
 
@@ -59,14 +67,94 @@ Before dispatch, verify:
 - the working tree contains no unrelated changes;
 - the repository and branch are fresh enough for the work;
 - the tracker item, acceptance criteria, and requested outcome are still valid;
+- exactly one configuration record is found, and it is valid (below);
 - the exact `HEAD` SHA is recorded.
 
 Stop if any check fails. Do not improvise past pre-flight.
 
 **Records.** Reads the objective and each task (status, DONE WHEN, open
-`deferred:` comments) and every attempt under them. An attempt left
-`in_progress` or `blocked` by an earlier session is reconciled first. The
-pinned `HEAD` becomes the first attempt's `base:` tag.
+`deferred:` comments) and every attempt under them, and the configuration
+record. An attempt left `in_progress` or `blocked` by an earlier session is
+reconciled first. The pinned `HEAD` becomes the first attempt's `base:` tag.
+
+#### Configuration
+
+The process is configured by a record, not by editing this skill or host code.
+It is a `kb` item tagged `process-config` whose `key` is
+`process-config/task-cycle`, in the objective's project; an objective tagged
+`config:<item id>` uses that item instead. The default lives in project
+minerva as minerva:01a0dda7bf4c. Its `article` holds one fenced JSON object:
+
+```json
+{
+  "schema": "task-cycle/v1",
+  "roles": {
+    "implementer":    {"provider": "<p>", "model": "<m>"},
+    "reviewer":       {"provider": "<p>", "model": "<m>"},
+    "cross_reviewer": {"provider": "<p>", "model": "<m>", "notes": "<text>"},
+    "tester":         {"provider": "<p>", "model": "<m>"},
+    "integrator":     {"provider": "<p>", "model": "<m>", "principal": "<id>"}
+  },
+  "stages":    {"batch_review": true, "cross_provider": true,
+                "testex": true, "push": true},
+  "reviewers": {"batch_review": 1, "cross_provider": 1},
+  "rounds":    {"batch_review": 3, "cross_provider": 1, "testex": 3},
+  "queue":     {"serial": true}
+}
+```
+
+- `roles.<role>` — who fills the role. `provider` is the harness that runs it
+  and `model` the model that harness is told to use; both are opaque strings
+  passed to that harness. Optional `principal` is the actor's principal id
+  (template section 5), default the orchestrator's own; optional `notes` is
+  dispatch advice for that provider (how to feed it input, what it cannot do),
+  read by the orchestrator and not pasted into the brief. The attempt role tags
+  are `role:implementer`, `role:reviewer` (reviewer and cross_reviewer),
+  `role:tester` and `role:integrator`.
+- `stages.<stage>` — whether steps 5, 8, 7 and 9 run. A stage turned off is
+  recorded where the step says, never dropped silently.
+- `reviewers.<stage>` — independent cold reviewers per review boundary, each
+  its own attempt.
+- `rounds.<stage>` — fix rounds allowed at that boundary before the owner is
+  asked; for `testex`, retries of one failure.
+- `queue.serial` — tasks dispatch one at a time, the next only after the
+  previous commit. This template implements only `true`; `false` is refused.
+
+Every key is required except `principal` and `notes`. Validate the whole
+object before dispatch. A key not listed here (for example a per-task review
+switch), a missing key, a wrong type, a count below 1, `serial: false`, or a
+cross reviewer with the reviewer's provider while `cross_provider` is on stops
+pre-flight with a message naming the key path and what was wrong. Changing a
+role's provider or model in the record changes the next attempt dispatched
+for that role; nothing else needs editing.
+
+#### Authority
+
+Review (steps 5 and 8), test execution (step 7) and push (step 9) need a
+standing authorization (W1 T3): an active `policy` item tagged
+`authorization`, `action:<class>`, `scope:*` and `granted-by:*`, grantee in
+`directed_to`. The action classes are `review`, `execute-tests` and `push`.
+
+Immediately before each gated stage, and again as a preview on the dispatch
+table, ask:
+
+```text
+docket_authorized(actor="role:<role tag>", action=<class>, id=<objective>, project=<p>)
+docket_authorized(actor=<role's principal>,  action=<class>, id=<objective>, project=<p>)
+```
+
+Either `authorized: true` suffices; cite the matching record id in the
+attempt's brief. If both are false, STOP the batch: comment on the objective
+`MISSING AUTHORIZATION: action:<class> for role:<role> or <principal>,
+scopes checked <scopes_checked>` and ask the owner. Only a person grants one;
+the orchestrator never creates or widens an authorization. Assignment is not
+authority, and authority does not claim an item.
+
+A Docket server without `docket_authorized` answers the same question with
+`docket_query`: `type` policy, `status` active, tags `authorization` and
+`action:<class>`, `directed_to` equal to the actor; keep records whose scope
+tag is `scope:project:<p>`, `scope:item:<full id>` of the objective or an
+ancestor, or `scope:tag:<t>` for a tag the objective carries.
 
 ### Shared controls
 
@@ -131,16 +219,22 @@ Prepare one dispatch table per task:
   Task          <item id> — <title>
   Goal          <one-line goal, verbatim as the brief will state it>
   Base          <task base SHA>  (repository, branch)
-  Implementer   Opus
-  Adversary     Fable
+  Config        <config item id>, updated <updated_at>
+  Roles         <role>: <provider>/<model> [<principal>]  — one line per role
+  Review        batch <reviewers>×, ≤<rounds> rounds; cross-provider <reviewers>×,
+                ≤<rounds> rounds; testex ≤<rounds> retries
+  Stages        batch_review on/off; cross_provider on/off; testex on/off;
+                push on/off   (queue serial)
+  Authority     review <record id or MISSING>; execute-tests <…>; push <…>
   Tests         authored / none — oracle: <what would show this wrong>
   Constraints   <constraints in the brief>
   Not in scope  <what this task deliberately does not touch>
-  Cross-provider yes / no
   Deferred      full suite: <last scheduled run> or OVERDUE
 ```
 
-If the deferred suite is overdue, say so explicitly.
+The Config through Authority rows are the effective configuration, read from
+the record at pre-flight, not typed from memory. If the deferred suite is
+overdue, or an enabled stage's authorization is MISSING, say so explicitly.
 
 Wait for owner approval before spawning any agent. The owner must confirm:
 
@@ -177,15 +271,18 @@ The brief must also state:
   explain why.
 
 **Records.** The brief is the description of a new `wr:attempt` under the task:
-`role:implementer`, the actor's principal in `assigned_to`, `base:` = the task
-base, plus what the attempt is authorized to do and its test plan. The task
+`role:implementer`, the role's principal in `assigned_to`, `base:` = the task
+base, `provider:<provider>/<model>` from the configuration, plus what the
+attempt is authorized to do and its test plan. Every attempt carries the
+`provider:` tag, because local principals cannot tell two providers on one
+machine apart (template section 5). The task
 moves to `in_progress` (and is claimed, where the build has claims); the
 attempt moves to `open` when spawned.
 
 ### 2. Implement and author tests
 
-Spawn the implementer. The implementer chooses the mechanism, implements the
-goal, and authors the smallest useful test delta.
+Spawn the configured implementer through its provider. The implementer chooses
+the mechanism, implements the goal, and authors the smallest useful test delta.
 
 For every test, identify the oracle before writing it. Prefer few, wide tests
 over many narrow tests. Use real paths where possible; mock only inherently
@@ -222,8 +319,9 @@ stays `in_progress` — acceptance is decided later, not here.
 
 ### 5. Review the batch
 
-Give the cold adversary the diff from the dispatch base through the current
-`HEAD`, along with:
+Runs when `stages.batch_review` is on; check `review` authority first. Give
+each of the `reviewers.batch_review` configured cold reviewers the diff from
+the dispatch base through the current `HEAD`, along with:
 
 ```text
 git status --porcelain
@@ -255,10 +353,12 @@ The reviewer must answer these policy questions with yes/no and a reason:
 Keep the review under 300 words unless the diff must be split by dimension.
 Never split it by task.
 
-**Records.** One `role:reviewer` attempt for the batch, parented to the
+**Records.** One `role:reviewer` attempt per reviewer, parented to the
 objective (the review spans tasks), with `base:` = the reviewed `HEAD`; the
 verdict and policy answers are its evidence. Each finding is a comment on the
-task it belongs to, and that task moves to `review:findings-open`.
+task it belongs to, and that task moves to `review:findings-open`. A stage
+turned off in the configuration is a comment on the objective naming the
+config item, and each task keeps `review:requested`.
 
 ### 6. Resolve findings
 
@@ -268,7 +368,7 @@ Allowed dispositions:
 - **approve_with_notes** — disposition every note as applied, rejected with a
   reason, or filed;
 - **must_fix, resolvable** — fix and obtain a cold re-review of the finding and
-  resolution;
+  resolution; after `rounds.batch_review` rounds, escalate to the owner;
 - **must_fix, judgement-dependent** — stop and escalate to the owner;
 - **reject** — return the work to the responsible implementer with the review as
   context. A second rejection escalates to the owner.
@@ -292,10 +392,11 @@ Before running anything, name:
 2. tests covering plausible regressions in touched modules and their direct
    callers.
 
-Record the set and its justification. Run only that set.
+Record the set and its justification. Runs when `stages.testex` is on; check
+`execute-tests` authority, then the configured tester runs only that set.
 
 A failure returns to the responsible task with the failing assertion as context.
-Retry the same failure at most three times, then escalate.
+Retry the same failure at most `rounds.testex` times, then escalate.
 
 Do not run the full suite.
 
@@ -304,26 +405,32 @@ covers, which moves to `test:planned`; the owner's approval is a comment on the
 objective. The run is a `role:tester` attempt whose evidence is the command and
 its result; each task then carries `test:passed` or `test:failed`. A failure
 returns as a new implementer attempt with the failing assertion in its brief.
+With the stage off, each task carries `test:not-run` and `deferred:scoped-tests`
+naming the config item.
 
-### 8. Cross-provider final check (Codex)
+### 8. Cross-provider final check
 
-Codex is the final double-check of code Claude believes is finally good. It
-runs SERIALLY, only after every Fable find/fix round has closed and every
-must_fix is folded in — never in parallel with the batch review, and never on
-a diff that still has open findings. Feed it the diff on stdin (it cannot use
-its sandbox on this host); tell it not to run commands.
+The configured cross reviewer — a different provider from the batch reviewer —
+is the final double-check of code the batch review believes is finally good.
+It runs when `stages.cross_provider` is on, after `review` authority is
+checked, SERIALLY: only after every batch-review find/fix round has closed and
+every must_fix is folded in — never in parallel with the batch review, and
+never on a diff that still has open findings. Follow the role's `notes` for how
+to feed it the diff.
 
-Disposition its findings the same way as step 6. A must_fix from Codex goes
-back through one Fable-judged fix round, then Codex re-checks the fold; a
-second Codex must_fix escalates to the owner. Small batches may skip Codex;
-record that they were skipped and why.
+Disposition its findings the same way as step 6. A must_fix goes back through a
+fix round judged by the batch reviewer, then the cross reviewer re-checks the
+fold; past `rounds.cross_provider` rounds, escalate to the owner. A small batch
+may skip the stage by saying so, with the reason, on its dispatch table.
 
-**Records.** As step 5: a second `role:reviewer` attempt with its own actor;
-a skip is a comment on the objective.
+**Records.** As step 5: one `role:reviewer` attempt per cross reviewer, with
+its own actor and `provider:` tag; a stage turned off or skipped is a comment
+on the objective.
 
 ### 9. Push and report
 
-Push only after review and scoped execution finish.
+Push only after review and scoped execution finish. Runs when `stages.push` is
+on; check `push` authority, then the configured integrator pushes.
 
 Report only what the scoped run established, for example:
 
@@ -346,4 +453,5 @@ per commit landed; every required branch is integrated only when each
 Validation that did not run — the deferred suite, a human check — is a
 `deferred:<what>` tag plus one open comment naming what, why and who owns it.
 The task's holder then records `outcome:accepted` (or rejected / abandoned /
-superseded) with a `resolution` and moves it to `done`.
+superseded) with a `resolution` and moves it to `done`. With the push stage
+off, each task carries `deferred:push` instead of `integrated:`.
