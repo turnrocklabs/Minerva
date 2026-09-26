@@ -8,6 +8,7 @@ extends RefCounted
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const _MCPAnnotationReplyToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAnnotationReplyTools.gd")
 const _MCPSessionToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPSessionTools.gd")
+const _MCPAgentSessionToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAgentSessionTools.gd")
 
 ## Non-owning parent link; MCPManager owns this server.
 var _mcp_manager_ref: WeakRef = null
@@ -107,6 +108,7 @@ func _init_modules() -> void:
 		MCPGenerationTools.new(self),
 		MCPSkillTools.new(self),
 		MCPContainerTools.new(self),
+		_MCPAgentSessionToolsScript.new(self),
 		# MCPCodeTools removed (DCR 019e7b6609 P2.3): the file-primitive tools
 		# (minerva_file_glob/grep, minerva_bash, minerva_cwd) now live in the
 		# optional `codetools` marketplace plugin as minerva_codetools_*.

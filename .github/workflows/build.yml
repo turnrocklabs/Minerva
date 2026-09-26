@@ -1067,6 +1067,12 @@ jobs:
             tar -xzf "$archive" -C "$ROOT/$target"
           done
 
+      # The agent-session launcher, image recipes and gateway policy ship in
+      # Resources, never beside the signed executable (AgentSessionStore.gd).
+      - name: Stage agent-session kit (macOS)
+        working-directory: src
+        run: ../scripts/stage-agent-kit.sh build/macos/Minerva.app/Contents/Resources
+
       - name: Verify CEF dylib present
         # Catch a broken bundle BEFORE the smoke launch so the failure is
         # locatable. The actual CEF binary is `libgdcef.dylib` inside the
@@ -1429,6 +1435,16 @@ jobs:
           [ ! -d build/windows ] || stage_helper windows-x86_64 build/windows
           [ ! -d build/windows-debug ] || stage_helper windows-x86_64 build/windows-debug
 
+      # The agent-session launcher, image recipes and gateway policy ship
+      # beside the executable (AgentSessionStore.gd); Linux only, as agent
+      # sessions need a Unix host.
+      - name: Stage agent-session kit
+        working-directory: src
+        run: |
+          for tree in build/linux build/linux-debug; do
+            [ ! -d "$tree" ] || ../scripts/stage-agent-kit.sh "$tree"
+          done
+
       # ─── Post-export verification ──────────────────────────────────────
       # RCA: prior CI builds shipped binaries missing libminerva-vt.so and
       # CEF runtime data (icudtl.dat, *.pak, locales/), because Godot's
@@ -1459,6 +1475,8 @@ jobs:
             mcp-runtime/linux-x86_64/minerva-json-schema-helper
             mcp-runtime/linux-x86_64/SOURCE_PROVENANCE
             mcp-runtime/linux-x86_64/jsoncons-LICENSE
+            agent-kit/agent-container/agent.py
+            agent-kit/container-build/build.py
           )
           required_dirs=(locales)
           fail=0

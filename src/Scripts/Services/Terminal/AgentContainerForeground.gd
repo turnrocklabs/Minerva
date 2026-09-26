@@ -4,7 +4,7 @@ extends RefCounted
 ## native answer through resolve(), so the notify path, the input arbiter's
 ## guards and terminal_list all judge the harness the person actually sees.
 ##
-## A tab attached to an agent session (scripts/agent-container/agent.py
+## A tab attached to an agent session (the shipped launcher agent.py,
 ## attach/up) has the launcher in front on the host; the container's
 ## processes are not its descendants. The host can still read them in /proc
 ## (same kernel, pids translated into the host's namespace), so no command

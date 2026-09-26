@@ -1,40 +1,33 @@
 # Agent containers
 
 `agent.py` launches one harness (Claude Code or Codex) per session in a
-hardened dev container; see its docstring for `build`, `start`, `attach`,
-`stop` and where session state lives.
+hardened dev container; see its docstring for `create`, `start`, `attach`,
+`stop`, `status`, `list` and where session state lives.
 
-## One workspace, four repositories
+Minerva drives the same launcher: Preferences > Containers > Agent Sessions
+and the `minerva_agent_session_*` MCP verbs create, start, stop and list
+sessions. A packaged Minerva carries this directory and
+`scripts/container-build` as `agent-kit/` beside its executable (Linux) or in
+`Contents/Resources/agent-kit/` (macOS), staged by
+`scripts/stage-agent-kit.sh`; images build locally from these recipes.
 
-Every session mounts its own clones of Minerva, minerva-plugins,
-minervaservices and ccsandbox under `~/agent-work/TASK/`, so an agent can
-work across all four. `--start-in REPO` only picks where the harness starts
-(default `Minerva`, which loads Minerva's `CLAUDE.md`); it never reduces the
-mounts. The old `--repo` filter is refused.
+## Sessions and folders
 
-```bash
-python3 ~/github/Minerva/scripts/agent-container/agent.py up NAME --harness claude --task TASK
-python3 ~/github/Minerva/scripts/agent-container/agent.py up NAME --harness claude --task TASK --start-in ccsandbox
-```
-
-### Sessions started with a single repository
-
-A session saved before this mounts only the repos it was started with.
-`start` and `up` refuse it; `attach` still works but warns. To move it over,
-exit the harness and the session shell (or `agent.py stop NAME`), then:
+A session mounts the host folders it was created with. A git checkout is
+cloned once into `~/agent-work/NAME/` and the clone is mounted, never the
+checkout; any other folder is mounted as it is. `--start-in` picks where the
+harness starts (default: the first folder). Docket projects are `--project`,
+or else the `.dct` files found near the top of the folders.
 
 ```bash
-python3 ~/github/Minerva/scripts/agent-container/agent.py migrate NAME [--start-in REPO]
-python3 ~/github/Minerva/scripts/agent-container/agent.py up NAME --harness H --task SAME_TASK --start-in REPO --mode shell
+python3 scripts/agent-container/agent.py create NAME --harness claude --folder ~/code/app --folder ~/notes
+python3 scripts/agent-container/agent.py up NAME          # start if needed, then attach
+python3 scripts/agent-container/agent.py up NAME --harness claude --folder ~/code/app   # create, start, attach
 ```
 
-`migrate` keeps the old settings as `session.legacy.json` and never touches
-the session home (login, transcripts) or its existing clone; the next start
-clones only the missing repositories. Harness transcripts are indexed by
-directory: starting in Minerva does not bring back a conversation held in
-`ccsandbox`. To continue it, `cd` to the ccsandbox clone in the session shell
-and run `claude --resume` there, choosing the conversation explicitly (or
-migrate with `--start-in ccsandbox`).
+Sessions created before folders (a `task` and fixed repository names in
+`session.json`) keep working: they start, stop and attach from the task
+clones they already have, and `--task` still matches them.
 
 ## Dev tests inside a session
 
@@ -140,7 +133,7 @@ has it (coordinate this with the owner). Terminal ids can change across the
 restart, so re-attach from a fresh terminal with the CURRENT Codex terminal id:
 
 ```bash
-python3 ~/github/Minerva/scripts/agent-container/agent.py attach NAME --notify-to CURRENT_CODEX_TERMINAL_ID
+python3 scripts/agent-container/agent.py attach NAME --notify-to CURRENT_CODEX_TERMINAL_ID
 ```
 
 If the old Minerva has already closed, the attach already ended with it: just

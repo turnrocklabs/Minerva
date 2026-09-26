@@ -1,0 +1,187 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/AgentSessionsPanel.gd" id="1_panel"]
+
+[node name="AgentSessionsPanel" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+script = ExtResource("1_panel")
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Heading" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+text = "Agent Sessions"
+
+[node name="Refresh" type="Button" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Refresh"
+
+[node name="BuildImage" type="Button" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Build the agent image from the recipes this Minerva ships. The first build can take a long while."
+text = "Build image"
+
+[node name="ImageStatus" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Sessions" type="Tree" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 150)
+layout_mode = 2
+columns = 4
+column_titles_visible = true
+hide_root = true
+select_mode = 1
+
+[node name="Actions" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Start" type="Button" parent="Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Start"
+
+[node name="Stop" type="Button" parent="Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Stop"
+
+[node name="CopyAttach" type="Button" parent="Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Copy the command that attaches the selected session; paste it into a Minerva terminal tab."
+text = "Copy attach command"
+
+[node name="Status" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Separator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="NewHeading" type="Label" parent="."]
+layout_mode = 2
+text = "New session"
+
+[node name="Form" type="GridContainer" parent="."]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+columns = 2
+
+[node name="NameLabel" type="Label" parent="Form"]
+layout_mode = 2
+text = "Name"
+
+[node name="NewName" type="LineEdit" parent="Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "lowercase letters, digits and -"
+
+[node name="HarnessLabel" type="Label" parent="Form"]
+layout_mode = 2
+text = "Harness"
+
+[node name="Harness" type="OptionButton" parent="Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "claude"
+popup/item_0/id = 0
+popup/item_1/text = "codex"
+popup/item_1/id = 1
+
+[node name="ModeLabel" type="Label" parent="Form"]
+layout_mode = 2
+text = "Mode"
+
+[node name="Mode" type="OptionButton" parent="Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "What the session shell runs first: the harness, its resume picker, or nothing."
+selected = 0
+item_count = 3
+popup/item_0/text = "start"
+popup/item_0/id = 0
+popup/item_1/text = "resume"
+popup/item_1/id = 1
+popup/item_2/text = "shell"
+popup/item_2/id = 2
+
+[node name="FoldersLabel" type="Label" parent="Form"]
+layout_mode = 2
+size_flags_vertical = 0
+text = "Folders"
+
+[node name="FolderBox" type="VBoxContainer" parent="Form"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Folders" type="ItemList" parent="Form/FolderBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+tooltip_text = "Git checkouts are cloned for the session; other folders are mounted as they are."
+
+[node name="FolderButtons" type="HBoxContainer" parent="Form/FolderBox"]
+layout_mode = 2
+
+[node name="AddFolder" type="Button" parent="Form/FolderBox/FolderButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Add folder…"
+
+[node name="RemoveFolder" type="Button" parent="Form/FolderBox/FolderButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Remove"
+
+[node name="StartInLabel" type="Label" parent="Form"]
+layout_mode = 2
+text = "Start in"
+
+[node name="StartIn" type="OptionButton" parent="Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "The folder the harness starts in."
+
+[node name="ProjectsLabel" type="Label" parent="Form"]
+layout_mode = 2
+text = "Docket projects"
+
+[node name="Projects" type="LineEdit" parent="Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "blank = the folders' .dct files; else comma-separated names"
+
+[node name="Create" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+text = "Create session"
+
+[node name="FolderDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Choose a folder to mount"
+size = Vector2i(700, 450)
+ok_button_text = "Select Current Folder"
+file_mode = 2
+access = 2

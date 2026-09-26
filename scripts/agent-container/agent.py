@@ -2,14 +2,22 @@
 """Trusted host launcher for agent containers (one harness per session).
 
   agent.py build
-  agent.py start NAME --harness claude|codex --task TASK [--start-in REPO] [--project P]...
-                 [--mode start|resume|shell] [--note-read ID]... [--note-write ID]...
+  agent.py create NAME --harness claude|codex --folder PATH... [--start-in PATH]
+                  [--project P]... [--mode start|resume|shell]
+  agent.py start NAME [--mode MODE] [--note-read ID]... [--note-write ID]...
   agent.py attach NAME [--notify-to TERMINAL_ID]... [--takeover]
   agent.py up NAME [start options] [attach options]     start if needed, then attach
   agent.py notes NAME [--note-read ID]... [--note-write ID]...
   agent.py stop NAME
+  agent.py status NAME
   agent.py list
-  agent.py migrate NAME [--start-in REPO]    move a stopped pre-unified session to all four repos
+Every command takes --json: one JSON object on stdout, {"ok": true, ...} or
+{"ok": false, "error": ...}. Minerva drives sessions this way.
+
+A session is a record: harness, the host folders it mounts, the folder the
+harness starts in, its Docket projects and its default mode. `create` writes
+it; `start` and `up` also create it when given --harness and --folder and no
+record exists, and otherwise refuse options that differ from it.
 
 A session is long-running: `start` launches its gateway and dev containers
 detached. In the dev container a tmux session holds an interactive shell
@@ -24,11 +32,11 @@ Attaching binds the session to that terminal for notify routing: a binding
 file carries the terminal id, the notify targets, a generation token and a
 lease that the attached launcher renews. An attach that dies without
 cleaning up stops routing once its lease lapses. A per-session lock
-serializes start, stop and attach ownership.
+serializes create, start, stop and attach ownership.
 
 Everything a session keeps lives under the state root
 (${MINERVA_AGENT_STATE:-${XDG_STATE_HOME:-~/.local/state}/minerva-agent}):
-  sessions/NAME/session.json          what it was started with (never replaced)
+  sessions/NAME/session.json          the session record (never replaced)
   sessions/NAME/home/                 the harness's own config dir: login,
                                       settings, transcripts (the owner logs in
                                       there once, inside the harness)
@@ -39,13 +47,20 @@ Everything a session keeps lives under the state root
                                       the harness in front (host-only)
   run/NAME-*/                         one gateway run's sessions.json + sockets,
                                       and natives.json (see natives_manifest)
-Every session mounts all four task repositories (REPOS), independent clones
-under ${MINERVA_AGENT_WORK:-~/agent-work}/TASK/, made once from the host
-checkouts and mounted at the same absolute path. --start-in only picks the
-directory the harness starts in (default Minerva, whose CLAUDE.md it loads).
-Sessions saved before this (a "repos" subset, no "start_in") are legacy:
-start and up refuse them and attach warns, until `migrate` rewrites their
-session.json (keeping the old one as session.legacy.json).
+
+Folders. A folder that is a git checkout is never mounted itself: the session
+gets an independent clone of it under ${MINERVA_AGENT_WORK:-~/agent-work}/NAME/,
+made once at the first start and mounted at its own absolute path, so the
+host never runs git inside a directory the container can write. Any other
+folder is mounted read-write at its own path; one holding a git checkout
+within a few levels is refused (choose that checkout, which is cloned). The
+start folder is a host path inside one of the folders; the harness starts at
+the matching path inside the container. Docket projects are --project, or
+else discovered from the .dct files near the top of each folder.
+
+Records written before folders existed (a task and a list of repository
+names, cloned under the work root's TASK/) still start, stop and attach:
+their folders are the task clones they already have.
 This tool never deletes files and never runs git inside an existing clone.
 """
 import argparse
@@ -72,18 +87,23 @@ import build as container_build  # noqa: E402  the builder image and native cach
 COMPOSE = HERE / "docker-compose.yml"
 IMAGE_FILES = ["Dockerfile", "forwarder.py", "minerva-session", "agent-env.sh", "agent-bashrc",
                "agent-upgrade", "tmux.conf", "claude-mcp.json", "smoke.py"]
-# The four repositories an agent session may work on, relative to the source
-# root (HOME, or MINERVA_AGENT_SOURCE_ROOT).
-REPOS = {"Minerva": "github/Minerva", "minerva-plugins": "github/minerva-plugins",
-         "minervaservices": "gitlab/minervaservices", "ccsandbox": "gitlab/ccsandbox"}
-DOCKET_PROJECTS = ["minerva", "plugins.dct", "minerva-services", "Master"]
+HARNESSES = ["claude", "codex"]
 MODES = ["start", "resume", "shell"]
+RECORD_VERSION = 2
+RECORD_KEYS = {"version", "harness", "folders", "start_in", "projects", "mode"}
+LEGACY_KEYS = {"harness", "task", "repos", "projects"}
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 NOTE_ID = re.compile(r"[0-9a-f]{32,64}")
-# Characters that would change the meaning of a `docker -v src:dst[:ro]`.
+PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+LEGACY_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 NATIVES_MANIFEST = "/run/minerva-natives.json"
+# Characters that would change the meaning of a `docker -v src:dst[:ro]`.
 UNSAFE_PATH = re.compile(r"[:,\n\r\0]")
+# How far below a folder's top .dct files are discovered and nested git
+# checkouts refused; these directories are never entered.
+SCAN_DEPTH = 3
+SCAN_SKIP = {".git", "node_modules", ".godot", "__pycache__"}
 SOCKETS = ("minerva", "docket", "nudge", "proxy")
 SOCKET_WAIT_S = 15
 ATTACH_WAIT_S = 10
@@ -107,10 +127,6 @@ def work_root():
     return Path(os.environ.get("MINERVA_AGENT_WORK") or Path.home() / "agent-work")
 
 
-def source_root():
-    return Path(os.environ.get("MINERVA_AGENT_SOURCE_ROOT") or Path.home())
-
-
 def lease_s():
     value = os.environ.get("MINERVA_AGENT_LEASE_S", "60")
     if not value.isdigit() or not 2 <= int(value) <= 3600:
@@ -122,54 +138,190 @@ def _within(inner, outer):
     return inner == outer or outer in inner.parents
 
 
-def check_layout():
+def check_layout(folders=()):
     """Before anything is written, stopped or cloned: the state and work roots
     must be plain absolute paths (no symlinked component, nothing docker -v
-    would misparse), the work root must not expose HOME or a host checkout,
-    and the state root (control files, sockets) must be disjoint from the work
-    root, whose clones the dev container can write."""
+    would misparse), neither may hold all of HOME, the state root (control
+    files, sockets) must be disjoint from the work root, whose clones the dev
+    container can write, and no session folder may overlap either root."""
     home = Path(os.path.realpath(Path.home()))
-    roots = {"state root": state_root(), "work root": work_root(), "source root": source_root()}
-    for label, path in roots.items():
+    for label, path in {"state root": state_root(), "work root": work_root()}.items():
         if not path.is_absolute() or UNSAFE_PATH.search(str(path)):
             raise Refused(f"{label} {path} must be an absolute path without ':' or ','")
         if os.path.realpath(path) != os.path.abspath(path):
             raise Refused(f"{label} {path} goes through a symlink")
     state, work = Path(os.path.abspath(state_root())), Path(os.path.abspath(work_root()))
-    checkouts = [Path(os.path.realpath(source_root() / rel)) for rel in REPOS.values()]
     if _within(home, work):
         raise Refused(f"work root {work} would expose all of {home}")
     if _within(home, state):
         raise Refused(f"state root {state} would hold all of {home}")
     if _within(state, work) or _within(work, state):
         raise Refused(f"state root {state} and work root {work} must not contain each other")
-    for checkout in checkouts:
-        if _within(work, checkout) or _within(checkout, work):
-            raise Refused(f"work root {work} overlaps the host checkout {checkout}")
-        if _within(state, checkout) or _within(checkout, state):
-            raise Refused(f"state root {state} overlaps the host checkout {checkout}")
+    for folder in map(Path, folders):
+        for label, root in (("work root", work), ("state root", state)):
+            if _within(root, folder) or _within(folder, root):
+                raise Refused(f"{label} {root} overlaps the folder {folder}")
 
 
-def check_clone_paths(task, repos):
-    """Every existing component below the work root on the way to each clone
-    must be a real directory: a symlinked TASK or REPO would otherwise mount
-    somewhere the work-root checks never looked. Called before any side
-    effect and again just before the mounts."""
+def plain_folder(value):
+    """value as an absolute, existing directory reached through no symlink,
+    that docker -v reads unchanged and that does not hold all of HOME."""
+    path = Path(os.path.abspath(os.path.expanduser(value)))
+    if UNSAFE_PATH.search(str(path)):
+        raise Refused(f"folder {path} contains ':' or ','")
+    if not path.is_dir():
+        raise Refused(f"{path} is not a directory")
+    if os.path.realpath(path) != str(path):
+        raise Refused(f"{path} goes through a symlink")
+    home = Path(os.path.realpath(Path.home()))
+    if _within(home, path):
+        raise Refused(f"folder {path} would expose all of {home}")
+    return path
+
+
+def scan(root):
+    """Every entry within SCAN_DEPTH directory levels of root (root's own
+    entries are the first level), in name order level by level, never
+    following symlinks or entering SCAN_SKIP."""
+    level = [str(root)]
+    for _ in range(SCAN_DEPTH):
+        deeper = []
+        for directory in level:
+            try:
+                with os.scandir(directory) as it:
+                    found = sorted(it, key=lambda e: e.name)
+            except OSError:
+                continue
+            for entry in found:
+                yield entry
+                if entry.name not in SCAN_SKIP and entry.is_dir(follow_symlinks=False):
+                    deeper.append(entry.path)
+        level = deeper
+
+
+def is_checkout(path):
+    return os.path.lexists(Path(path) / ".git")
+
+
+def discover_projects(folders):
+    """Docket project names for the .dct files near the top of each folder.
+    Docket registers a file under its stem or its whole name, so both are
+    allowed; a name no project uses matches nothing."""
+    names = []
+    for folder in folders:
+        for entry in scan(folder):
+            if entry.name.endswith(".dct") and entry.is_file(follow_symlinks=False):
+                for name in (entry.name[:-4], entry.name):
+                    if PROJECT.fullmatch(name) and name not in names:
+                        names.append(name)
+    return names
+
+
+def build_record(name, harness, folders, start_in, projects, mode):
+    """The record for a new session, from host paths; nothing is written."""
+    if harness not in HARNESSES:
+        raise Refused(f"harness must be one of {', '.join(HARNESSES)}")
+    if mode not in MODES:
+        raise Refused(f"mode must be one of {', '.join(MODES)}")
+    hosts = [plain_folder(f) for f in folders or []]
+    if not hosts:
+        raise Refused("a session mounts at least one folder (--folder)")
+    for i, a in enumerate(hosts):
+        for b in hosts[i + 1:]:
+            if _within(a, b) or _within(b, a):
+                raise Refused(f"folders {a} and {b} overlap")
+    check_layout(hosts)
+    records, labels = [], set()
+    for host in hosts:
+        if is_checkout(host):
+            label, n = host.name, 2
+            while label in labels:
+                label, n = f"{host.name}-{n}", n + 1
+            labels.add(label)
+            records.append({"host": str(host), "path": str(work_root() / name / label), "kind": "clone"})
+            continue
+        nested = next((e.path for e in scan(host) if e.name == ".git"), None)
+        if nested:
+            raise Refused(f"{host} holds the git checkout {Path(nested).parent}: choose that checkout "
+                          "(it is cloned) or a folder without one")
+        records.append({"host": str(host), "path": str(host), "kind": "mount"})
+    start = plain_folder(start_in) if start_in else hosts[0]
+    owner = next((r for r in records if _within(start, Path(r["host"]))), None)
+    if owner is None:
+        raise Refused(f"start folder {start} is not inside a session folder")
+    workdir = Path(owner["path"]) / start.relative_to(owner["host"])
+    projects = list(projects) if projects else discover_projects(hosts)
+    for project in projects:
+        if not PROJECT.fullmatch(project):
+            raise Refused(f"bad Docket project name {project!r}")
+    return {"version": RECORD_VERSION, "harness": harness, "folders": records,
+            "start_in": str(workdir), "projects": projects, "mode": mode}
+
+
+def record_view(name, saved):
+    """A saved record in the current shape, or Refused when it is unreadable.
+    A record from before folders (task + repository names) becomes the task
+    clones it already has, starting in its start_in repository."""
+    path = record_path(name)
+    if isinstance(saved, dict) and set(saved) == RECORD_KEYS and saved["version"] == RECORD_VERSION \
+            and saved["harness"] in HARNESSES and saved["mode"] in MODES \
+            and isinstance(saved["folders"], list) and saved["folders"] \
+            and all(isinstance(f, dict) and set(f) == {"host", "path", "kind"}
+                    and f["kind"] in ("clone", "mount") for f in saved["folders"]) \
+            and isinstance(saved["projects"], list):
+        return saved
+    if isinstance(saved, dict) and LEGACY_KEYS <= set(saved) <= LEGACY_KEYS | {"start_in"} \
+            and saved["harness"] in HARNESSES and isinstance(saved["task"], str) \
+            and NAME.fullmatch(saved["task"]) and isinstance(saved["repos"], list) and saved["repos"] \
+            and all(isinstance(r, str) and LEGACY_REPO.fullmatch(r) for r in saved["repos"]) \
+            and isinstance(saved["projects"], list):
+        work = work_root() / saved["task"]
+        start = saved.get("start_in") or saved["repos"][0]
+        if start not in saved["repos"]:
+            raise Refused(f"{path} starts in {start!r}, which it does not mount")
+        return {"version": 1, "harness": saved["harness"], "task": saved["task"],
+                "folders": [{"host": "", "path": str(work / r), "kind": "clone"} for r in saved["repos"]],
+                "start_in": str(work / start), "projects": saved["projects"], "mode": "start"}
+    raise Refused(f"{path} is unreadable or incomplete; fix it by hand or use a new name")
+
+
+def load_record(name):
+    """The session's record in the current shape, or None when it has none."""
+    path = record_path(name)
+    if not os.path.lexists(path):
+        return None
+    try:
+        saved = json.loads(path.read_text())
+    except (OSError, ValueError):
+        saved = None
+    return record_view(name, saved)
+
+
+def check_folders(record):
+    """Before any side effect, and again just before the mounts: every clone
+    lies inside the work root with no symlinked component below it and is
+    either present or clonable, and every directly mounted folder is still a
+    plain directory at the path the record names."""
     work = Path(os.path.abspath(work_root()))
-    for repo in repos:
-        for path in (work / task, work / task / repo):
-            if os.path.lexists(path) and (os.path.islink(path) or not os.path.isdir(path)
-                                          or os.path.realpath(path) != str(path)):
-                raise Refused(f"{path} is not a plain directory inside the work root")
-
-
-def check_sources(task, repos):
-    """Every repository still to be cloned must have its host checkout, so a
-    missing one is refused before anything is written or started."""
-    for repo in repos:
-        src = source_root() / REPOS[repo]
-        if not os.path.lexists(work_root() / task / repo) and not (src / ".git").is_dir():
-            raise Refused(f"{src} is not a git checkout (needed for {repo})")
+    for folder in record["folders"]:
+        path = Path(folder["path"])
+        if folder["kind"] == "mount":
+            if plain_folder(path) != path or folder["host"] != folder["path"]:
+                raise Refused(f"mounted folder {path} is no longer the plain directory recorded")
+            continue
+        if not path.is_absolute() or not _within(path.parent, work) or path.parent == work \
+                or UNSAFE_PATH.search(str(path)):
+            raise Refused(f"clone {path} is not inside the work root {work}")
+        for p in (path.parent, path):
+            if os.path.lexists(p) and (os.path.islink(p) or not os.path.isdir(p)
+                                       or os.path.realpath(p) != str(p)):
+                raise Refused(f"{p} is not a plain directory inside the work root")
+        if not os.path.lexists(path):
+            if not folder["host"]:
+                raise Refused(f"{path} is missing and this session was created before folders, "
+                              "so there is nothing to clone it from; create a new session")
+            if not is_checkout(folder["host"]):
+                raise Refused(f"{folder['host']} is not a git checkout")
 
 
 def private_dir(path):
@@ -188,6 +340,10 @@ def containers(name):
 
 def session_dir(name):
     return state_root() / "sessions" / name
+
+
+def record_path(name):
+    return session_dir(name) / "session.json"
 
 
 def image_tag():
@@ -217,10 +373,25 @@ def run(cmd, **kwargs):
     return subprocess.run(cmd, env=compose_env(), **kwargs)
 
 
+def docker_state(container):
+    """"running", "stopped", or "unknown" when docker cannot be asked."""
+    try:
+        probe = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", container],
+                               capture_output=True, text=True)
+    except FileNotFoundError:
+        return "unknown"
+    return "running" if probe.returncode == 0 and probe.stdout.strip() == "true" else "stopped"
+
+
 def running(container):
-    probe = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", container],
-                           capture_output=True, text=True)
-    return probe.returncode == 0 and probe.stdout.strip() == "true"
+    return docker_state(container) == "running"
+
+
+def image_built(tag):
+    try:
+        return subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode == 0
+    except FileNotFoundError:
+        return False
 
 
 def container_identity(container):
@@ -273,7 +444,7 @@ def read_json(path):
 
 @contextlib.contextmanager
 def session_lock(name):
-    """Serializes start, stop and binding changes for one session."""
+    """Serializes create, start, stop and binding changes for one session."""
     private_dir(state_root())
     private_dir(state_root() / "sessions")
     sdir = private_dir(session_dir(name))
@@ -293,6 +464,15 @@ def launcher_path(name):
     return session_dir(name) / "launcher.json"
 
 
+def attached_terminal(name):
+    """The terminal holding a live attach lease, or ""."""
+    binding = read_json(binding_path(name))
+    expires = binding.get("expires_at") if isinstance(binding, dict) else None
+    if isinstance(expires, (int, float)) and not isinstance(expires, bool) and expires > time.time():
+        return str(binding.get("terminal_id", ""))
+    return ""
+
+
 def write_notes(name, read, write):
     for note in (read or []) + (write or []):
         if not NOTE_ID.fullmatch(note):
@@ -306,19 +486,20 @@ def sockets_ready(sock):
     return all(os.path.lexists(p) and stat.S_ISSOCK(os.lstat(p).st_mode) for p in paths)
 
 
-# ── repositories ──────────────────────────────────────────────────────────
+# ── folders ──────────────────────────────────────────────────────────────
 
-def ensure_clone(repo, task):
-    """The task clone of repo, made once with independent object files. An
-    existing clone is used as it is: the host never runs git inside a clone
-    an agent can modify (its .git/config could make git run code)."""
-    src = source_root() / REPOS[repo]
-    dest = work_root() / task / repo
+def ensure_clone(folder):
+    """The session's clone of a checkout folder, made once with independent
+    object files. An existing clone is used as it is: the host never runs git
+    inside a clone an agent can modify (its .git/config could make git run
+    code)."""
+    dest = Path(folder["path"])
     if os.path.lexists(dest):
         if dest.is_symlink() or not dest.is_dir():
             raise Refused(f"{dest} exists and is not a directory")
         return dest
-    if not (src / ".git").is_dir():
+    src = Path(folder["host"])
+    if not folder["host"] or not is_checkout(src):
         raise Refused(f"{src} is not a git checkout")
     dest.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "clone", "--no-hardlinks", "--quiet", "--", str(src), str(dest)],
@@ -326,50 +507,63 @@ def ensure_clone(repo, task):
     return dest
 
 
+# ── records ──────────────────────────────────────────────────────────────
+
+def resolve_record(args):
+    """(record, new) for start and up: the saved record, refusing any option
+    that differs from it, or a new record from --harness and --folder."""
+    saved = load_record(args.name)
+    if saved is None:
+        if args.task:
+            raise Refused(f"no session {args.name}; --task only names a session created before "
+                          "folders, a new one takes --folder")
+        if not (args.harness and args.folder):
+            raise Refused(f"no session {args.name}: create it first "
+                          f"(agent.py create {args.name} --harness H --folder PATH)")
+        return build_record(args.name, args.harness, args.folder, args.start_in, args.project,
+                            args.mode or "start"), True
+    differs = (args.harness and args.harness != saved["harness"]) \
+        or (args.task and args.task != saved.get("task"))
+    if not differs and (args.folder or args.start_in or args.project):
+        if saved["version"] != RECORD_VERSION:
+            raise Refused(f"session {args.name} was created before folders; its folders cannot be "
+                          "given again, start it by name")
+        wanted = build_record(args.name, saved["harness"],
+                              args.folder or [f["host"] for f in saved["folders"]],
+                              args.start_in, args.project, saved["mode"])
+        differs = (args.folder and wanted["folders"] != saved["folders"]) \
+            or (args.start_in and wanted["start_in"] != saved["start_in"]) \
+            or (args.project and wanted["projects"] != saved["projects"])
+    if differs:
+        raise Refused(f"session {args.name} was created with different settings "
+                      f"({record_path(args.name)}); use those, or a new name")
+    return saved, False
+
+
+def describe(name, record):
+    """A record as Minerva lists it, with its live state."""
+    state = docker_state(containers(name)[0])
+    result = {"ok": True, "id": name, "harness": record["harness"], "folders": record["folders"],
+              "start_in": record["start_in"], "projects": record["projects"], "mode": record["mode"],
+              "state": state, "attached_terminal": attached_terminal(name) if state == "running" else "",
+              "record": "folders" if record["version"] == RECORD_VERSION else "legacy"}
+    if "task" in record:
+        result["task"] = record["task"]
+    folders = ", ".join(f["host"] or f["path"] for f in record["folders"])
+    result["message"] = f"{name:24} {state:8} {record['harness']:7} {folders}"
+    return result
+
+
 # ── commands ─────────────────────────────────────────────────────────────
-
-def settings(args):
-    if args.repo:
-        raise Refused("--repo is gone: every session mounts all four repositories; "
-                      "use --start-in REPO to choose where the harness starts")
-    return {"harness": args.harness, "task": args.task, "repos": sorted(REPOS),
-            "start_in": args.start_in, "projects": args.project or DOCKET_PROJECTS}
-
-
-def is_legacy(saved):
-    """A session.json from before every session mounted all four repositories."""
-    return isinstance(saved, dict) and "repos" in saved and "start_in" not in saved
-
-
-def legacy_refusal(name, saved):
-    return Refused(f"session {name} is a legacy session that mounts only {', '.join(saved['repos'])}; "
-                   f"stop it, then `agent.py migrate {name}` to mount all four repositories "
-                   "(its home and clones are kept), or use a new name")
-
-
-def check_saved(name, config):
-    """False when the session has no saved settings yet; True when they match.
-    Different or unreadable saved settings are refused, never replaced."""
-    path = session_dir(name) / "session.json"
-    if not os.path.lexists(path):
-        return False
-    try:
-        saved = json.loads(path.read_text())
-    except (OSError, ValueError):
-        saved = None
-    if is_legacy(saved):
-        raise legacy_refusal(name, saved)
-    if not isinstance(saved, dict) or set(saved) != set(config):
-        raise Refused(f"{path} is unreadable or incomplete; fix it by hand or use a new name")
-    if saved != config:
-        raise Refused(f"session {name} was started with different settings ({path}); "
-                      "use those, or a new name")
-    return True
-
 
 def cmd_build(args):
     container_build.ensure_image()  # the agent image is built on the builder image
-    return run(compose("build", "build", "gateway")).returncode
+    code = run(compose("build", "build", "gateway")).returncode
+    if args.json:
+        tag = image_tag()
+        return {"ok": code == 0, "image": tag, "error": "" if code == 0 else f"building {tag} failed",
+                "message": tag}
+    return code
 
 
 def natives_manifest(run_dir):
@@ -394,36 +588,57 @@ def natives_manifest(run_dir):
     return mounts + (bind_mount(builds, builds, True) if has_cache else [])
 
 
+def cmd_create(args):
+    check_layout()
+    record = build_record(args.name, args.harness, args.folder, args.start_in, args.project,
+                          args.mode or "start")
+    with session_lock(args.name):
+        saved = load_record(args.name)
+        if saved is None:
+            write_json(record_path(args.name), record)
+        elif saved != record:
+            raise Refused(f"session {args.name} already exists with different settings; use a new name")
+    result = describe(args.name, record)
+    result["message"] = f"session {args.name} created; start it with `agent.py start {args.name}`"
+    return result
+
+
 def cmd_start(args):
     check_layout()
-    name, config = args.name, settings(args)
-    check_clone_paths(args.task, config["repos"])
-    check_sources(args.task, config["repos"])
+    name = args.name
+    record, new = resolve_record(args)
+    check_layout([f["host"] for f in record["folders"] if f["host"]])
+    check_folders(record)
+    mode = args.mode or record["mode"]
     dev, gw = containers(name)
     tag = image_tag()
-    if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode != 0:
+    if not image_built(tag):
         raise Refused(f"image {tag} is not built: run `agent.py build` first")
     with session_lock(name):
         if running(dev):
             raise Refused(f"session {name} is already running: use `agent.py attach {name}`")
         home = private_dir(session_dir(name) / "home")
         control = private_dir(session_dir(name) / "control")
-        if not check_saved(name, config):
-            write_json(session_dir(name) / "session.json", config)
+        if new:
+            if load_record(name) is not None:
+                raise Refused(f"session {name} was created meanwhile; start it by name")
+            write_json(record_path(name), record)
         stop(gw)  # a gateway whose harness already exited
         if not (control / "binding.json").exists():
             write_json(control / "binding.json", {})
         if args.note_read or args.note_write or not (control / "notes.json").exists():
             write_notes(name, args.note_read, args.note_write)
-        clones = [ensure_clone(repo, args.task) for repo in config["repos"]]
-        check_clone_paths(args.task, config["repos"])
+        for folder in record["folders"]:
+            if folder["kind"] == "clone":
+                ensure_clone(folder)
+        check_folders(record)
 
         run_dir = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=private_dir(state_root() / "run")))
         sock = private_dir(run_dir / "sock")
         native_mounts = natives_manifest(run_dir)  # may refuse: before anything starts
         write_json(run_dir / "sessions.json", {"sessions": [{
-            "name": name, "harness": args.harness, "socket_dir": "/run/minerva-agent/sock",
-            "docket_projects": config["projects"], "control_dir": "/run/minerva-agent/control"}]})
+            "name": name, "harness": record["harness"], "socket_dir": "/run/minerva-agent/sock",
+            "docket_projects": record["projects"], "control_dir": "/run/minerva-agent/control"}]})
 
         started = run(compose(name, "run", "-d", "--rm", "--name", gw,
                               *bind_mount(sock, "/run/minerva-agent/sock"),
@@ -441,23 +656,23 @@ def cmd_start(args):
 
         mounts = bind_mount(sock, "/run/minerva-agent", True) + bind_mount(home, "/agent-home")
         mounts += native_mounts
-        for clone in clones:
-            mounts += bind_mount(clone, clone)
-        workdir = work_root() / args.task / config["start_in"]
-        started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", str(workdir),
+        for folder in record["folders"]:   # clones and direct mounts, each at its own path
+            mounts += bind_mount(folder["path"], folder["path"])
+        started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", record["start_in"],
                               "-e", f"MINERVA_AGENT_SESSION={name}",
                               # Which image this session runs, so it can tell
                               # an image older than its checkout's recipe.
-                              "-e", f"MINERVA_AGENT_IMAGE={image_tag()}",
+                              "-e", f"MINERVA_AGENT_IMAGE={tag}",
                               "-e", f"MINERVA_NATIVES_MANIFEST={NATIVES_MANIFEST}", *mounts,
-                              "dev", "/opt/minerva-agent/minerva-session", args.harness, args.mode),
+                              "dev", "/opt/minerva-agent/minerva-session", record["harness"], mode),
                       stdout=subprocess.DEVNULL)
         if started.returncode != 0:
             stop(gw)
             raise Refused("dev container did not start")
-    print(f"session {name} running ({args.harness}, task {args.task}, mode {args.mode}); "
-          f"attach from a Minerva terminal: agent.py attach {name}")
-    return 0
+    result = describe(name, record)
+    result["message"] = (f"session {name} running ({record['harness']}, mode {mode}); "
+                         f"attach from a Minerva terminal: agent.py attach {name}")
+    return result
 
 
 class Lease:
@@ -527,11 +742,6 @@ def cmd_attach(args):
             raise Refused(f"bad terminal id {target!r}")
     if not running(dev):
         raise Refused(f"session {name} is not running: use `agent.py up` or `agent.py start`")
-    saved = read_json(session_dir(name) / "session.json")
-    if is_legacy(saved):
-        # Attach still works, so a live legacy session is never cut off.
-        print(f"agent.py: warning: legacy session {name} mounts only {', '.join(saved['repos'])}; "
-              f"after it stops, `agent.py migrate {name}`", file=sys.stderr)
     lease = Lease(name, terminal, args.notify_to or [], container_identity(dev))
     client = None
 
@@ -591,14 +801,13 @@ def attach_established(dev, before, client, timeout_s=ATTACH_WAIT_S):
 
 def cmd_up(args):
     check_layout()
-    check_clone_paths(args.task, settings(args)["repos"])
+    resolve_record(args)   # never attach to a session created differently
     if running(containers(args.name)[0]):
-        check_saved(args.name, settings(args))  # never attach to a session started differently
         if args.note_read or args.note_write:
             with session_lock(args.name):
                 write_notes(args.name, args.note_read, args.note_write)
     else:
-        cmd_start(args)
+        print(cmd_start(args)["message"])
     return cmd_attach(args)
 
 
@@ -615,50 +824,41 @@ def cmd_stop(args):
         stop(*containers(args.name))
         if binding_path(args.name).exists():
             write_json(binding_path(args.name), {})
-    print(f"session {args.name} stopped; its home, clones and state are kept")
-    return 0
+    return {"ok": True, "id": args.name, "state": docker_state(containers(args.name)[0]),
+            "message": f"session {args.name} stopped; its home, clones and state are kept"}
 
 
-def cmd_migrate(args):
-    """Rewrite a stopped legacy session's settings to the unified shape. The old
-    file is kept beside it; the home (login, transcripts) is untouched. The
-    missing clones are made by the next start."""
+def cmd_status(args):
     check_layout()
-    with session_lock(args.name):
-        if running(containers(args.name)[0]):
-            raise Refused(f"session {args.name} is running: stop it first")
-        path = session_dir(args.name) / "session.json"
-        saved = read_json(path)
-        if not is_legacy(saved):
-            raise Refused(f"{path} is not a legacy session")
-        backup = session_dir(args.name) / "session.legacy.json"
-        try:
-            fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            raise Refused(f"{backup} already exists") from None
-        with os.fdopen(fd, "wb") as f:
-            f.write(path.read_bytes())
-        config = {**saved, "repos": sorted(REPOS), "start_in": args.start_in}
-        write_json(path, config)
-    print(f"session {args.name} is configured to mount all four repositories on its next start, "
-          f"starting in {args.start_in}; "
-          f"previous settings kept in {backup}; start it with the same --harness/--task")
-    return 0
+    record = load_record(args.name)
+    if record is None:
+        raise Refused(f"no session {args.name}")
+    return describe(args.name, record)
 
 
 def cmd_list(args):
+    check_layout()
     root = state_root() / "sessions"
+    sessions = []
     for sdir in sorted(root.iterdir()) if root.is_dir() else []:
-        config = read_json(sdir / "session.json")
-        state = "running" if running(containers(sdir.name)[0]) else "stopped"
-        print(f"{sdir.name:24} {state:8} {config.get('harness', '?'):7} task={config.get('task', '?')}")
-    return 0
+        if not NAME.fullmatch(sdir.name) or not sdir.is_dir():
+            continue
+        try:
+            record = load_record(sdir.name)
+        except Refused as exc:
+            sessions.append({"ok": False, "id": sdir.name, "error": str(exc),
+                             "message": f"{sdir.name:24} {exc}"})
+            continue
+        if record is not None:
+            sessions.append(describe(sdir.name, record))
+    tag = image_tag()
+    return {"ok": True, "sessions": sessions, "image": {"tag": tag, "built": image_built(tag)},
+            "message": "\n".join(s["message"] for s in sessions)}
 
 
 def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build")
 
     def session_name(value):
         if not NAME.fullmatch(value):
@@ -669,45 +869,59 @@ def parse(argv):
         p.add_argument("--note-read", action="append", metavar="NOTE_ID")
         p.add_argument("--note-write", action="append", metavar="NOTE_ID")
 
+    def record_options(p, required):
+        p.add_argument("--harness", required=required, choices=HARNESSES)
+        p.add_argument("--folder", action="append", required=required, metavar="PATH")
+        p.add_argument("--start-in", metavar="PATH")
+        p.add_argument("--project", action="append", metavar="DOCKET_PROJECT")
+        p.add_argument("--mode", choices=MODES)
+
     def start_options(p):
-        p.add_argument("--harness", required=True, choices=["claude", "codex"])
-        p.add_argument("--task", required=True, type=session_name)
-        p.add_argument("--start-in", default="Minerva", choices=sorted(REPOS))
-        p.add_argument("--repo", action="append", help=argparse.SUPPRESS)  # refused: see settings()
-        p.add_argument("--project", action="append", choices=DOCKET_PROJECTS)
-        p.add_argument("--mode", default="start", choices=MODES)
+        record_options(p, False)
+        # Matches a record from before folders; never creates one.
+        p.add_argument("--task", type=session_name)
 
     def attach_options(p):
         p.add_argument("--notify-to", action="append", metavar="TERMINAL_ID")
         p.add_argument("--takeover", action="store_true")
 
-    for command, options in (("start", [start_options, note_options]), ("attach", [attach_options]),
+    for command, options in (("build", []), ("create", [lambda p: record_options(p, True)]),
+                             ("start", [start_options, note_options]), ("attach", [attach_options]),
                              ("up", [start_options, note_options, attach_options]),
-                             ("notes", [note_options]), ("stop", []), ("list", []),
-                             ("migrate", [lambda p: p.add_argument("--start-in", default="Minerva",
-                                                                   choices=sorted(REPOS))])):
+                             ("notes", [note_options]), ("stop", []), ("status", []), ("list", [])):
         p = sub.add_parser(command)
-        if command != "list":
+        p.add_argument("--json", action="store_true", help="answer with one JSON object on stdout")
+        if command not in ("build", "list"):
             p.add_argument("name", type=session_name)
         for add in options:
             add(p)
     return parser.parse_args(argv)
 
 
-COMMANDS = {"build": cmd_build, "start": cmd_start, "attach": cmd_attach, "up": cmd_up,
-            "notes": cmd_notes, "stop": cmd_stop, "list": cmd_list, "migrate": cmd_migrate}
+COMMANDS = {"build": cmd_build, "create": cmd_create, "start": cmd_start, "attach": cmd_attach,
+            "up": cmd_up, "notes": cmd_notes, "stop": cmd_stop, "status": cmd_status, "list": cmd_list}
 
 
 def main(argv=None):
     args = parse(sys.argv[1:] if argv is None else argv)
     try:
-        return COMMANDS[args.command](args)
+        result = COMMANDS[args.command](args)
     except Refused as exc:
-        print(f"agent.py: {exc}", file=sys.stderr)
-        return 1
+        result = {"ok": False, "error": str(exc)}
     except subprocess.TimeoutExpired as exc:
-        print(f"agent.py: docker did not answer within {exc.timeout:g} s", file=sys.stderr)
-        return 1
+        result = {"ok": False, "error": f"docker did not answer within {exc.timeout:g} s"}
+    except FileNotFoundError as exc:
+        result = {"ok": False, "error": f"{exc.filename or exc} was not found (is it installed?)"}
+    if isinstance(result, int):
+        return result
+    if args.json:
+        print(json.dumps(result))
+    elif result["ok"]:
+        if result.get("message"):
+            print(result["message"])
+    else:
+        print(f"agent.py: {result['error']}", file=sys.stderr)
+    return 0 if result["ok"] else 1
 
 
 if __name__ == "__main__":

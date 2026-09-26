@@ -3761,6 +3761,7 @@ func _on_voice_status_pressed() -> void:
 
 const DockerManagerScript = preload("res://Scripts/Services/Docker/DockerManager.gd")
 const ContainerDefScript = preload("res://Scripts/Services/Docker/ContainerDefinition.gd")
+const AgentSessionsPanelScene = preload("res://Scenes/AgentSessionsPanel.tscn")
 
 var _containers_tab: VBoxContainer
 var _docker_status_label: Label
@@ -3840,6 +3841,10 @@ func _create_containers_tab() -> void:
 	_build_log_label.add_theme_font_size_override("font_size", 11)
 	_build_log_label.visible = false
 	vbox.add_child(_build_log_label)
+
+	# --- Agent Sessions Section (its own scene) ---
+	vbox.add_child(HSeparator.new())
+	vbox.add_child(AgentSessionsPanelScene.instantiate())
 
 	# Poll timer for build progress (1s interval)
 	_build_poll_timer = Timer.new()

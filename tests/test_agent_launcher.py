@@ -20,8 +20,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENT = ROOT / "scripts/agent-container"
-REPOS = {"Minerva": "github/Minerva", "minerva-plugins": "github/minerva-plugins",
-         "minervaservices": "gitlab/minervaservices", "ccsandbox": "gitlab/ccsandbox"}
 sys.dont_write_bytecode = True
 
 FAKE_DOCKER = r'''#!/usr/bin/env python3
@@ -98,22 +96,31 @@ class LauncherTest(unittest.TestCase):
             path.write_text(text)
             path.chmod(0o755)
         self.home = self.s / "home"
-        for rel in REPOS.values():
-            src = self.home / rel
+        # Two checkouts that are not Minerva's and a plain folder: any folders mount.
+        self.app, self.lib, self.notes = self.home / "code/app", self.home / "code/lib", self.home / "notes"
+        for src in (self.app, self.lib):
             src.mkdir(parents=True)
             subprocess.run(["/usr/bin/git", "init", "-q", str(src)], check=True)
             (src / "README").write_text("hello\n")
-            subprocess.run(["/usr/bin/git", "-C", str(src), "add", "README"], check=True)
+            (src / "sub").mkdir()
+            (src / "sub/file").write_text("x\n")
+            subprocess.run(["/usr/bin/git", "-C", str(src), "add", "README", "sub"], check=True)
             subprocess.run(["/usr/bin/git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t",
                             "commit", "-qm", "init"], check=True)
+        (self.app / "Docs").mkdir()
+        (self.app / "Docs/app.dct").write_text("")
+        (self.notes / "docs").mkdir(parents=True)
+        (self.notes / "docs/notes.dct").write_text("")
         self.env = {**os.environ, "HOME": str(self.home), "PATH": f"{self.s / 'bin'}:{os.environ['PATH']}",
                     "MINERVA_AGENT_STATE": str(self.home / "state"),
                     "FAKE_DOCKER_STATE": str(self.s / "docker-state.json"),
                     "FAKE_DOCKER_LOG": str(self.s / "docker.log"), "FAKE_GIT_LOG": str(self.s / "git.log"),
                     "FAKE_IMAGE": "present", "MINERVA_TERMINAL_ID": "1111"}
         self.env.pop("MINERVA_AGENT_WORK", None)
-        self.env.pop("MINERVA_AGENT_SOURCE_ROOT", None)
         self.env.pop("XDG_STATE_HOME", None)
+
+    def folders(self, *paths):
+        return [a for p in (paths or (self.app, self.lib, self.notes)) for a in ("--folder", str(p))]
 
     def agent(self, *args, env=None, wait=True):
         cmd = [sys.executable, "-B", str(AGENT / "agent.py"), *args]
@@ -124,6 +131,10 @@ class LauncherTest(unittest.TestCase):
                                     stderr=subprocess.DEVNULL)
         return subprocess.run(cmd, env=env or self.env, cwd=self.s, capture_output=True, text=True,
                               timeout=60)
+
+    def answer(self, *args):
+        result = self.agent(*args, "--json")
+        return result.returncode, json.loads(result.stdout)
 
     def docker_calls(self):
         log = self.s / "docker.log"
@@ -150,16 +161,15 @@ class LauncherTest(unittest.TestCase):
             time.sleep(0.05)
 
     def start_alpha(self, *extra, env=None):
-        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1", *extra, env=env)
+        result = self.agent("start", "alpha", "--harness", "claude", *self.folders(), *extra, env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     # ── start ──
     def test_start_mounts_only_what_the_design_allows(self):
-        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.start_alpha()
         gateway, dev = self.runs()
-        clone = self.home / "agent-work/t1/Minerva"
-        clones = [self.home / "agent-work/t1" / repo for repo in REPOS]
+        work = self.home / "agent-work/alpha"
+        clones = [work / "app", work / "lib"]
         state = self.home / "state"
         run_dir = next((state / "run").iterdir())
 
@@ -168,31 +178,34 @@ class LauncherTest(unittest.TestCase):
             f"{run_dir}/sock:/run/minerva-agent/sock",
             f"{run_dir}/sessions.json:/run/minerva-agent/sessions.json:ro",
             f"{state}/sessions/alpha/control:/run/minerva-agent/control:ro"]))
+        # Checkouts are cloned and the clones mounted; the plain folder is mounted as it is.
         self.assertEqual(sorted(self.mounts(dev)), sorted([
             f"{run_dir}/sock:/run/minerva-agent:ro",
             f"{run_dir}/natives.json:/run/minerva-natives.json:ro",
-            f"{state}/sessions/alpha/home:/agent-home"] + [f"{c}:{c}" for c in clones]))
+            f"{state}/sessions/alpha/home:/agent-home", f"{self.notes}:{self.notes}"]
+            + [f"{c}:{c}" for c in clones]))
         self.assertIn("MINERVA_NATIVES_MANIFEST=/run/minerva-natives.json", dev)
         sys.path.insert(0, str(AGENT))
         import agent
         self.assertIn(f"MINERVA_AGENT_IMAGE={agent.image_tag()}", dev)       # the session can name its image
         self.assertEqual(dev[-4:], ["dev", "/opt/minerva-agent/minerva-session", "claude", "start"])
-        self.assertEqual(dev[dev.index("--workdir") + 1], str(clone))
+        self.assertEqual(dev[dev.index("--workdir") + 1], str(work / "app"))
         for argv in (gateway, dev):
             joined = " ".join(argv)
             self.assertNotIn("docker.sock", joined)
             self.assertNotIn(f"{self.home}:", joined)                      # never HOME itself
-            for rel in REPOS.values():
-                self.assertNotIn(f"{self.home}/{rel}", joined)             # never a host checkout
+            for checkout in (self.app, self.lib):
+                self.assertNotIn(f"{checkout}", joined)                    # never a host checkout
             self.assertNotIn("TOKEN", joined)
             self.assertNotIn("MINERVA_TERMINAL_ID", joined)                # identity is the binding's job
         self.assertTrue(all(c["image"] and c["image"].startswith("minerva-agent:")
                             for c in self.docker_calls() if c["argv"][0] == "compose"))
 
+        # Docket projects come from the folders' .dct files, under stem and file name.
         sessions = json.loads((run_dir / "sessions.json").read_text())["sessions"]
         self.assertEqual(sessions, [{"name": "alpha", "harness": "claude",
                                      "socket_dir": "/run/minerva-agent/sock",
-                                     "docket_projects": ["minerva", "plugins.dct", "minerva-services", "Master"],
+                                     "docket_projects": ["app", "app.dct", "notes", "notes.dct"],
                                      "control_dir": "/run/minerva-agent/control"}])
         self.assertEqual(self.binding(), {})
         for d in (state / "sessions/alpha/home", state / "sessions/alpha/control", run_dir / "sock"):
@@ -222,127 +235,152 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(json.loads((newest / "natives.json").read_text())["cache"], str(builds.parent))
 
     def test_start_refuses_without_the_builder_image(self):
-        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1",
+        result = self.agent("start", "alpha", "--harness", "claude", *self.folders(),
                             env={**self.env, "FAKE_IMAGE": "absent"})
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.runs(), [])
 
     def test_start_in_picks_the_directory_and_never_reduces_mounts(self):
-        self.start_alpha("--start-in", "ccsandbox")
+        self.start_alpha("--start-in", str(self.lib / "sub"))
         dev = self.runs()[-1]
-        work = self.home / "agent-work/t1"
-        self.assertEqual(dev[dev.index("--workdir") + 1], str(work / "ccsandbox"))
-        for repo in REPOS:
-            self.assertIn(f"{work / repo}:{work / repo}", self.mounts(dev))
+        work = self.home / "agent-work/alpha"
+        self.assertEqual(dev[dev.index("--workdir") + 1], str(work / "lib/sub"))
+        for clone in (work / "app", work / "lib"):
+            self.assertIn(f"{clone}:{clone}", self.mounts(dev))
         saved = json.loads((self.home / "state/sessions/alpha/session.json").read_text())
-        self.assertEqual((saved["repos"], saved["start_in"]), (sorted(REPOS), "ccsandbox"))
+        self.assertEqual(saved["start_in"], str(work / "lib/sub"))
         # Same session, other starting directory: different settings, refused.
         self.agent("stop", "alpha")
-        other = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+        other = self.agent("start", "alpha", "--start-in", str(self.app))
         self.assertEqual(other.returncode, 1)
         self.assertIn("different settings", other.stderr)
-        # The old repo filter is refused, never read as a subset or a start directory.
-        legacy = self.agent("start", "beta", "--harness", "claude", "--task", "t2", "--repo", "Minerva")
-        self.assertEqual(legacy.returncode, 1)
-        self.assertIn("--start-in", legacy.stderr)
+        # A start folder outside the folders, or a folder holding a checkout, is refused.
+        outside = self.agent("create", "beta", "--harness", "claude", "--folder", str(self.notes),
+                             "--start-in", str(self.app))
+        self.assertIn("not inside a session folder", outside.stderr)
+        nested = self.agent("create", "beta", "--harness", "claude", "--folder", str(self.home / "code"))
+        self.assertEqual(nested.returncode, 1)
+        self.assertIn("holds the git checkout", nested.stderr)
+        self.assertFalse((self.home / "state/sessions/beta/session.json").exists())
         self.assertEqual(len(self.runs()), 2)
 
     def test_a_missing_source_checkout_is_refused_before_anything_happens(self):
-        missing = self.home / "gitlab/minervaservices"
-        missing.rename(self.s / "moved-away")
+        created = self.agent("create", "alpha", "--harness", "claude", *self.folders())
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.lib.rename(self.s / "moved-away")
         before = self.tree()
-        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+        result = self.agent("start", "alpha")
         self.assertEqual(result.returncode, 1)
-        self.assertIn(f"{missing} is not a git checkout", result.stderr)
+        self.assertIn(f"{self.lib} is not a git checkout", result.stderr)
         self.assertEqual(self.tree(), before)
         self.assertEqual(self.runs(), [])
         self.assertFalse((self.s / "git.log").exists())
 
-    def test_legacy_single_repo_session_is_refused_until_migrated(self):
+    def test_a_record_from_before_folders_starts_from_its_task_clones(self):
         sdir = self.home / "state/sessions/alpha"
         (sdir / "home").mkdir(parents=True)
         for d in (self.home / "state", self.home / "state/sessions", sdir, sdir / "home"):
             d.chmod(0o700)
         (sdir / "home/transcript").write_text("kept\n")
-        legacy = {"harness": "claude", "task": "t1", "repos": ["ccsandbox"],
-                  "projects": ["minerva", "plugins.dct", "minerva-services", "Master"]}
+        legacy = {"harness": "claude", "task": "t1", "repos": ["Minerva", "ccsandbox"],
+                  "start_in": "ccsandbox", "projects": ["minerva", "Master"]}
         (sdir / "session.json").write_text(json.dumps(legacy))
-        # The legacy session's own clone, made earlier; the host never runs git inside it.
-        old_clone = self.home / "agent-work/t1/ccsandbox"
-        subprocess.run(["/usr/bin/git", "clone", "-q", str(self.home / "gitlab/ccsandbox"), str(old_clone)],
-                       check=True)
-        for command in ("start", "up"):
-            result = self.agent(command, "alpha", "--harness", "claude", "--task", "t1")
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("legacy session that mounts only ccsandbox", result.stderr)
-        self.assertEqual(self.runs(), [])
-
-        # Attaching a running legacy session still works, with a warning.
-        state = self.s / "docker-state.json"
-        state.write_text(json.dumps({"running": ["minerva-agent-alpha"]}))
-        refused = self.agent("migrate", "alpha")
-        self.assertEqual(refused.returncode, 1)
-        self.assertIn("stop it first", refused.stderr)
-        attached = self.agent("attach", "alpha")
-        self.assertEqual(attached.returncode, 0, attached.stderr)
-        self.assertIn("legacy session alpha mounts only ccsandbox", attached.stderr)
-        state.write_text(json.dumps({"running": []}))
-
-        migrated = self.agent("migrate", "alpha")
-        self.assertEqual(migrated.returncode, 0, migrated.stderr)
-        self.assertEqual(json.loads((sdir / "session.legacy.json").read_text()), legacy)
-        self.assertEqual(json.loads((sdir / "session.json").read_text()),
-                         {**legacy, "repos": sorted(REPOS), "start_in": "Minerva"})
-        self.assertEqual(self.agent("migrate", "alpha").returncode, 1)     # never twice
-        self.start_alpha()
+        work = self.home / "agent-work/t1"
+        for repo, src in (("Minerva", self.app), ("ccsandbox", self.lib)):
+            subprocess.run(["/usr/bin/git", "clone", "-q", str(src), str(work / repo)], check=True)
+        self.assertEqual(self.agent("start", "alpha").returncode, 0)
         dev = self.runs()[-1]
-        for repo in REPOS:
-            clone = self.home / "agent-work/t1" / repo
-            self.assertIn(f"{clone}:{clone}", self.mounts(dev))
+        for repo in ("Minerva", "ccsandbox"):
+            self.assertIn(f"{work / repo}:{work / repo}", self.mounts(dev))
+        self.assertEqual(dev[dev.index("--workdir") + 1], str(work / "ccsandbox"))
+        run_dir = next((self.home / "state/run").iterdir())
+        sessions = json.loads((run_dir / "sessions.json").read_text())["sessions"]
+        self.assertEqual(sessions[0]["docket_projects"], ["minerva", "Master"])
+        self.assertEqual(json.loads((sdir / "session.json").read_text()), legacy)   # never rewritten
         self.assertEqual((sdir / "home/transcript").read_text(), "kept\n")
-        git_log = (self.s / "git.log").read_text().splitlines()
-        self.assertEqual(len(git_log), 3, git_log)                    # only the three missing clones
-        self.assertFalse(any("ccsandbox" in line for line in git_log))
+        self.assertFalse((self.s / "git.log").exists())                  # no git by the launcher
+        # The old up/start options still match it; different ones are refused.
+        same = self.agent("up", "alpha", "--harness", "claude", "--task", "t1")
+        self.assertEqual(same.returncode, 0, same.stderr)
+        other = self.agent("up", "alpha", "--harness", "claude", "--task", "t2")
+        self.assertIn("different settings", other.stderr)
+        status, answer = self.answer("status", "alpha")
+        self.assertEqual((status, answer["record"], answer["task"], answer["state"]),
+                         (0, "legacy", "t1", "running"))
+        # A clone it lost cannot be remade: there is no source to clone it from.
+        self.agent("stop", "alpha")
+        (work / "Minerva").rename(self.s / "lost-clone")
+        lost = self.agent("start", "alpha")
+        self.assertEqual(lost.returncode, 1)
+        self.assertIn("created before folders", lost.stderr)
 
     def test_no_duplicate_launch_and_no_git_inside_existing_clones(self):
-        self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
-        again = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+        self.start_alpha()
+        again = self.agent("start", "alpha")
         self.assertEqual(again.returncode, 1)
         self.assertIn("already running", again.stderr)
         self.assertEqual(len(self.runs()), 2)
         # Restart after a stop: the clone is reused; the host runs no git inside it.
-        clone = self.home / "agent-work/t1/Minerva"
+        clone = self.home / "agent-work/alpha/app"
         (clone / ".git/hooks/post-checkout").write_text("#!/bin/sh\ntouch /tmp/SHOULD-NOT-RUN\n")
         self.assertEqual(self.agent("stop", "alpha").returncode, 0)
-        self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
+        self.assertEqual(self.agent("start", "alpha").returncode, 0)
         git_log = (self.s / "git.log").read_text().splitlines()
-        self.assertEqual(len(git_log), len(REPOS), git_log)          # the four initial clones
+        self.assertEqual(len(git_log), 2, git_log)                    # the two initial clones
         self.assertFalse(any(line.split("\t")[0].startswith(str(clone.parent)) for line in git_log))
 
-    def test_changed_settings_for_a_name_are_refused(self):
-        self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
-        self.agent("stop", "alpha")
+    def test_create_status_and_list_answer_in_json_and_refuse_changes(self):
+        code, created = self.answer("create", "alpha", "--harness", "claude", *self.folders(self.notes, self.app),
+                                    "--project", "own-project", "--mode", "shell")
+        self.assertEqual(code, 0, created)
+        work = self.home / "agent-work/alpha"
+        self.assertEqual((created["id"], created["harness"], created["state"], created["mode"],
+                          created["projects"], created["start_in"], created["record"]),
+                         ("alpha", "claude", "stopped", "shell", ["own-project"], str(self.notes), "folders"))
+        self.assertEqual(created["folders"], [
+            {"host": str(self.notes), "path": str(self.notes), "kind": "mount"},
+            {"host": str(self.app), "path": str(work / "app"), "kind": "clone"}])
         saved = (self.home / "state/sessions/alpha/session.json").read_text()
-        other = self.agent("start", "alpha", "--harness", "codex", "--task", "t1")
-        self.assertEqual(other.returncode, 1)
+        self.assertEqual(self.runs(), [])                              # creating starts nothing
+        self.assertFalse(work.exists())                               # nor clones
+        self.assertEqual(self.answer("create", "alpha", "--harness", "claude",
+                                     *self.folders(self.notes, self.app), "--project", "own-project",
+                                     "--mode", "shell")[0], 0)            # the same record again
+        for changed in (["--harness", "codex", *self.folders(self.notes, self.app)],
+                        ["--harness", "claude", *self.folders(self.app)]):
+            code, refused = self.answer("create", "alpha", *changed)
+            self.assertEqual((code, refused["ok"]), (1, False))
+            self.assertIn("different settings", refused["error"])
+        other = self.agent("start", "alpha", "--harness", "codex")
         self.assertIn("different settings", other.stderr)
         self.assertEqual((self.home / "state/sessions/alpha/session.json").read_text(), saved)
 
+        self.assertEqual(self.agent("start", "alpha").returncode, 0)
+        self.assertEqual(self.runs()[-1][-2:], ["claude", "shell"])   # the record's mode
+        code, status = self.answer("status", "alpha")
+        self.assertEqual((code, status["state"], status["attached_terminal"]), (0, "running", ""))
+        code, listing = self.answer("list")
+        self.assertEqual([s["id"] for s in listing["sessions"]], ["alpha"])
+        self.assertTrue(listing["image"]["tag"].startswith("minerva-agent:"))
+        self.assertTrue(listing["image"]["built"])
+        code, missing = self.answer("status", "nobody")
+        self.assertEqual((code, missing["ok"]), (1, False))
+
     def test_missing_image_and_overlapping_work_root_are_refused(self):
-        missing = self.agent("start", "alpha", "--harness", "claude", "--task", "t1",
+        missing = self.agent("start", "alpha", "--harness", "claude", *self.folders(),
                              env={**self.env, "FAKE_IMAGE": "absent"})
         self.assertEqual(missing.returncode, 1)
         self.assertIn("agent.py build", missing.stderr)
-        for work in (self.home, self.home / "github", self.home / "github/Minerva/sub"):
+        for work in (self.home, self.home / "code", self.home / "code/app/sub"):
             with self.subTest(work=work):
-                result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1",
+                result = self.agent("start", "alpha", "--harness", "claude", *self.folders(),
                                     env={**self.env, "MINERVA_AGENT_WORK": str(work)})
                 self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(self.runs(), [])
 
     # ── attach ──
     def test_attach_binds_this_terminal_then_clears(self):
-        self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
+        self.start_alpha()
         no_terminal = {k: v for k, v in self.env.items() if k != "MINERVA_TERMINAL_ID"}
         refused = self.agent("attach", "alpha", env=no_terminal)
         self.assertEqual(refused.returncode, 1)
@@ -383,7 +421,7 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(attach[8:], [";", "attach-session", "-d", "-t", "harness"])
 
     def test_takeover_and_hangup_clear_only_their_own_binding(self):
-        self.assertEqual(self.agent("start", "alpha", "--harness", "claude", "--task", "t1").returncode, 0)
+        self.start_alpha()
         first = self.agent("attach", "alpha", env={**self.env, "FAKE_ATTACH_SECONDS": "30"}, wait=False)
         deadline = time.monotonic() + 5
         while self.binding().get("terminal_id") != "1111" and time.monotonic() < deadline:
@@ -479,21 +517,21 @@ class LauncherTest(unittest.TestCase):
 
     def test_symlinked_clone_ancestors_are_refused_before_anything_happens(self):
         outside = self.s / "outside"
-        (outside / "Minerva").mkdir(parents=True)
+        (outside / "app").mkdir(parents=True)
         work = self.home / "agent-work"
         work.mkdir()
         (self.home / "state/sessions/alpha/control").mkdir(parents=True)
-        targets = {"t-out": outside, "t-checkout": self.home / "github",
+        targets = {"t-out": outside, "t-checkout": self.home / "code",
                    "t-control": self.home / "state/sessions/alpha"}
-        for task, target in targets.items():
-            (work / task).symlink_to(target)
+        for name, target in targets.items():
+            (work / name).symlink_to(target)
         (work / "t-leaf").mkdir()
-        (work / "t-leaf" / "Minerva").symlink_to(outside / "Minerva")
+        (work / "t-leaf" / "app").symlink_to(outside / "app")
         before = self.tree()
-        for task in list(targets) + ["t-leaf"]:
+        for name in list(targets) + ["t-leaf"]:
             for command in ("start", "up"):
-                with self.subTest(task=task, command=command):
-                    result = self.agent(command, "alpha", "--harness", "claude", "--task", task)
+                with self.subTest(name=name, command=command):
+                    result = self.agent(command, name, "--harness", "claude", *self.folders(self.app))
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertIn("not a plain directory", result.stderr)
         mutating = [c for c in self.docker_calls() if c["argv"][0] in ("stop", "exec") or "run" in c["argv"]]
@@ -509,7 +547,7 @@ class LauncherTest(unittest.TestCase):
         for content in ("", "{not json", "[]", json.dumps({"harness": "claude"})):
             with self.subTest(content=content):
                 (sdir / "session.json").write_text(content)
-                result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+                result = self.agent("start", "alpha", "--harness", "claude", *self.folders())
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("unreadable or incomplete", result.stderr)
                 self.assertEqual((sdir / "session.json").read_text(), content)
@@ -517,11 +555,11 @@ class LauncherTest(unittest.TestCase):
 
     def test_up_refuses_a_running_session_started_differently(self):
         self.start_alpha()
-        other = self.agent("up", "alpha", "--harness", "codex", "--task", "t1")
+        other = self.agent("up", "alpha", "--harness", "codex")
         self.assertEqual(other.returncode, 1)
         self.assertIn("different settings", other.stderr)
         self.assertFalse([c for c in self.docker_calls() if "attach-session" in c["argv"]])
-        same = self.agent("up", "alpha", "--harness", "claude", "--task", "t1")
+        same = self.agent("up", "alpha", "--harness", "claude", *self.folders())
         self.assertEqual(same.returncode, 0, same.stderr)
         self.assertEqual(len(self.runs()), 2)                       # attached, not started again
 
@@ -538,24 +576,30 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(json.loads(notes.read_text()), {"read": [note_b], "write": []})
 
     def test_unsafe_layouts_are_refused_before_anything_happens(self):
-        clone_state = self.home / "agent-work/t1/Minerva/.state"
+        clone_state = self.home / "agent-work/alpha/app/.state"
         (self.s / "real-state").mkdir()
         (self.s / "linked-state").symlink_to(self.s / "real-state")
         cases = {
             "state inside a writable clone": {"MINERVA_AGENT_STATE": str(clone_state)},
             "work root inside the state root": {"MINERVA_AGENT_WORK": str(self.home / "state/work")},
-            "state inside a host checkout": {"MINERVA_AGENT_STATE": str(self.home / "github/Minerva/.s")},
+            "state root holding HOME": {"MINERVA_AGENT_STATE": str(self.home)},
             "symlinked state root": {"MINERVA_AGENT_STATE": str(self.s / "linked-state/x")},
             "colon in the work root": {"MINERVA_AGENT_WORK": str(self.s / "w:x")},
             "relative state root": {"MINERVA_AGENT_STATE": "state"},
         }
         before = self.tree()
         for label, extra in cases.items():
-            for command in (["start", "alpha", "--harness", "claude", "--task", "t1"], ["stop", "alpha"],
-                            ["attach", "alpha"], ["notes", "alpha"]):
+            for command in (["start", "alpha", "--harness", "claude", *self.folders()], ["stop", "alpha"],
+                            ["attach", "alpha"], ["notes", "alpha"], ["create", "alpha", "--harness", "claude",
+                                                                      *self.folders()]):
                 with self.subTest(label=label, command=command[0]):
                     result = self.agent(*command, env={**self.env, **extra})
                     self.assertEqual(result.returncode, 1, result.stderr)
+        # A folder overlapping the state root is refused too.
+        inside = self.agent("create", "alpha", "--harness", "claude", "--folder", str(self.app),
+                            env={**self.env, "MINERVA_AGENT_STATE": str(self.app / ".s")})
+        self.assertEqual(inside.returncode, 1, inside.stderr)
+        self.assertIn("overlaps the folder", inside.stderr)
         self.assertEqual(self.docker_calls(), [])
         self.assertEqual(self.tree(), before)
 
@@ -565,7 +609,7 @@ class LauncherTest(unittest.TestCase):
         control.chmod(0o777)
         for d in (self.home / "state", self.home / "state/sessions", self.home / "state/sessions/alpha"):
             d.chmod(0o700)
-        result = self.agent("start", "alpha", "--harness", "claude", "--task", "t1")
+        result = self.agent("start", "alpha", "--harness", "claude", *self.folders())
         self.assertEqual(result.returncode, 1)
         self.assertIn("no group/other access", result.stderr)
         self.assertEqual(self.runs(), [])
@@ -573,7 +617,7 @@ class LauncherTest(unittest.TestCase):
 
     # ── stop ──
     def test_stop_stops_both_containers_and_keeps_every_file(self):
-        self.assertEqual(self.agent("start", "alpha", "--harness", "codex", "--task", "t1").returncode, 0)
+        self.assertEqual(self.agent("start", "alpha", "--harness", "codex", *self.folders()).returncode, 0)
         (self.home / "state/sessions/alpha/home/auth.json").write_text("{}")
         before = self.tree()
         self.assertEqual(self.agent("stop", "alpha").returncode, 0)

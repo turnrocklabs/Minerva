@@ -1,10 +1,10 @@
-# Agent containers: scripts/agent-container/agent.py drives this file, one
-# compose project per Minerva terminal (-p minerva-agent-<terminal id>).
+# Agent containers: agent.py (beside this file) drives it, one
+# compose project per session (-p minerva-agent-<session name>).
 #   gateway  the only thing that reaches host services: filtered MCP + egress
 #            proxy on Unix sockets in that session's run directory. Host
 #            network, and nothing else mounted: no repos, no credentials.
 #   dev      the harness, long-running inside tmux: no network at all, host
-#            uid, read-only root, per-session mounts (task clones, harness
+#            uid, read-only root, per-session mounts (folders or their clones, harness
 #            config dir, sockets, native build cache read-only) added by
 #            agent.py at `compose run` time.
 #            Minerva terminals attach with `docker exec ... tmux attach`.
