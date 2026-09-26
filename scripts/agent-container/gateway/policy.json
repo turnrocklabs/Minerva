@@ -90,6 +90,26 @@
           "cursor"
         ],
         "rule": "note_read_since"
+      },
+      "minerva_orchview_tree": {
+        "args": {
+          "root": "line",
+          "depth": "int",
+          "fields": "str_list",
+          "max_nodes": "int",
+          "continuation": "line"
+        },
+        "required": [],
+        "rule": "orchview_view"
+      },
+      "minerva_orchview_changes": {
+        "args": {
+          "cursor": "line"
+        },
+        "required": [
+          "cursor"
+        ],
+        "rule": "orchview_view"
       }
     },
     "docket": {

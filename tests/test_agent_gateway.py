@@ -17,7 +17,7 @@ from unittest import mock
 
 from agent_gateway_fixtures import (  # noqa: E402
     ATTEMPT, BUG, DCR, FOREIGN, GATEWAY, GatewayCase, IDENT, KB, NOTE, OBJECTIVE, OTHER, PLUGIN_BUG,
-    TASK, TERMINALS,
+    ROLE, TASK, TERMINALS,
     NOTE_A, NOTE_B, NOTE_IMG, POLICY, SECRET, SENTINEL, SESSION, TARGET, TERMINAL,
     text_result)
 
@@ -484,6 +484,31 @@ class Test(GatewayCase):
                          {"version": 1, "note_read": [NOTE_A], "note_write": [NOTE_B], "notify": True})
         self.assertEqual(json.loads((legacy / "notes.json").read_text()),
                          {"read": [NOTE_A], "write": [NOTE_B]})
+
+    def test_orchview_verbs_are_evaluated_for_the_session_identity(self):
+        # The container cannot name a caller; the gateway stamps the registered
+        # identity and role, and refuses an answer cut for anyone else.
+        # Oracle: what reaches the upstream and what the container receives.
+        self.assertDenied(self.call("minerva", "minerva_orchview_tree", {"caller": "owner"}))
+        self.assertEqual(self.stubs["minerva"].records, [])
+        reply = {"identity": {"principal": IDENT, "source": "caller_argument"}, "scope": "restricted",
+                 "tree": []}
+        self.stubs["minerva"].decorate = lambda tool, result: text_result(reply)
+        body = self.call("minerva", "minerva_orchview_tree", {"depth": 2})
+        self.assertEqual(self.result_value(body), reply)
+        body = self.call("minerva", "minerva_orchview_changes", {"cursor": "r1:abc"})
+        self.assertIn("result", body, body)
+        self.assertEqual(self.stubs["minerva"].calls("minerva_orchview_tree"),
+                         [{"depth": 2, "caller": IDENT, "caller_role": ROLE}])
+        self.assertEqual(self.stubs["minerva"].calls("minerva_orchview_changes"),
+                         [{"cursor": "r1:abc", "caller": IDENT, "caller_role": ROLE}])
+        for wrong in ({**reply, "scope": "full"}, {**reply, "identity": {"principal": "owner"}}):
+            with self.subTest(wrong=wrong):
+                self.stubs["minerva"].decorate = lambda tool, result, wrong=wrong: text_result(wrong)
+                self.assertDenied(self.call("minerva", "minerva_orchview_tree", {}))
+        self.grant(identity="")
+        self.assertDenied(self.call("minerva", "minerva_orchview_tree", {}))
+        self.assertEqual(len(self.stubs["minerva"].calls("minerva_orchview_tree")), 3)
 
     def test_terminal_list_is_filtered_and_projected(self):
         body = self.call("minerva", "minerva_terminal_list", {})

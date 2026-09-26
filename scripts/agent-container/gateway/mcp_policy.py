@@ -564,6 +564,31 @@ def rule_terminal_list(ctx, args):
     return Call(args, shape)
 
 
+def rule_orchview_view(ctx, args):
+    """The orchestration viewer's verbs, evaluated for the session: the gateway
+    stamps `caller` and `caller_role` with the identity and role Minerva
+    registered for it (the policy spec offers neither to the container), and
+    the answer must say it was evaluated for that identity as a restricted
+    view, or it is refused."""
+    grants = ctx.session.grants()
+    if not grants.identity:
+        raise Deny("docket_out_of_scope", "no session identity is registered, so no work is in view")
+    args["caller"] = grants.identity
+    if grants.role:
+        args["caller_role"] = grants.role
+
+    def shape(result):
+        if isinstance(result, dict) and result.get("isError") is True:
+            return shape_passthrough(result)
+        value = result_json(result)
+        identity = value.get("identity") if isinstance(value, dict) else None
+        if not isinstance(identity, dict) or identity.get("principal") != grants.identity \
+                or value.get("scope") != "restricted":
+            raise Deny("upstream_bad_shape", "the view was not evaluated for this session")
+        return json_result(value)
+    return Call(args, shape)
+
+
 def rule_docket_get(ctx, args):
     _, hex_id = _split_ref(args["id"], args["project"], True)
     args["id"] = hex_id
@@ -701,6 +726,7 @@ RULES = {
     "note_read_since": rule_note_read_since,
     "note_write": rule_note_write,
     "note_append": rule_note_append,
+    "orchview_view": rule_orchview_view,
     "docket_get": rule_docket_get,
     "docket_query": rule_docket_query,
     "docket_comment": rule_docket_comment,
