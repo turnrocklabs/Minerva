@@ -1048,7 +1048,8 @@ func link_to_chat(history_id: String) -> void:
 
 # region Serialization
 
-## Serializes the [class Note] object into a JSON serializable dictionary.
+## Serializes the [class Note] object into a JSON serializable dictionary.[br]
+## Text notes also carry "Entries" and "Revision"; NoteEntryLog documents them.
 func serialize() -> Dictionary:
 	
 	# File field is handled by the _serialize_controls_data method
@@ -1103,6 +1104,8 @@ func _serialize_controls_data() -> Dictionary:
 			data["File"] = file
 		else:
 			data["Content"] = controls_container.content
+			data["Entries"] = controls_container.entry_log.to_index()
+			data["Revision"] = controls_container.entry_log.revision
 	
 	# Generally audio note's content can't be changed in terms of the audio
 	# But if the audio was recorded inside the app, we still need to save the data
@@ -1261,6 +1264,14 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 			_:
 				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
 				return
+
+	# Text notes saved with an entry index get their entry ids and revision
+	# back; without one the body stays a single entry (see NoteEntryLog).
+	var entries_v: Variant = note_data.get("Entries")
+	if note.type == Type.TEXT and entries_v is Array and not note_data.get("File"):
+		var text_controls: = note.get_controls_container() as NoteTextControls
+		if text_controls:
+			text_controls.entry_log.restore(entries_v, int(note_data.get("Revision", 0)))
 
 	# Restore linked chat IDs before ready (not UI-dependent)
 	var saved_links: Array = note_data.get("LinkedChatIds", [])
