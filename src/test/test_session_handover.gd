@@ -174,11 +174,14 @@ func _test_handover(registry, host) -> void:
 	ledger.await_recheck_s = 0.1
 	ledger.await_max_age_s = 1.0
 	module.terminals[1]["alive"] = false
+	# Taken before the send, so the measured wait is never shorter than the awaited age.
+	var stranded_at: int = Time.get_ticks_msec()
 	var stranded: Dictionary = await module.notify_retained(
 		{"to": "worker-b", "from": "codex@lead", "text": "H9 never delivered"})
 	var stranded_id: String = str(stranded.get("delivery_id", ""))
 	await _wait_for(func() -> bool:
 		return str(ledger.get_record(stranded_id).get("state", "")) == "failed_unavailable", 4000)
+	var stranded_ms: int = Time.get_ticks_msec() - stranded_at
 	var given_up: Dictionary = ledger.get_record(stranded_id)
 	check("H9: a pointer awaiting past the bound ends failed_unavailable, counted apart from pending",
 		str(given_up.get("state", "")) == "failed_unavailable"
@@ -189,6 +192,10 @@ func _test_handover(registry, host) -> void:
 	# Gaps 0.1, 0.2, 0.4, 0.8 s fit in the 1 s bound; a fixed 0.1 s gap would try ~10 times.
 	check("H10: retries back off: few attempts before the bound",
 		int(given_up.get("attempts", 0)) <= 5, str(given_up.get("attempts", 0)))
+	# Giving up on the first miss would show one attempt and a wait far under the bound.
+	check("H10b: it retried and was given up no sooner than the bound",
+		int(given_up.get("attempts", 0)) >= 2 and stranded_ms >= int(ledger.await_max_age_s * 1000.0),
+		"attempts=%s waited_ms=%d" % [str(given_up.get("attempts", 0)), stranded_ms])
 
 
 ## The lines the relay was asked to type into `terminal_id`, in order.

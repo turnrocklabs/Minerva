@@ -852,8 +852,9 @@ func _test_wiring_is_present() -> void:
 
 
 ## G3b: an urgent notify reaches the chat's queue as urgent. While the claude
-## chat is mid-turn, a routine line then an urgent one are queued; the urgent
-## one sits ahead. Oracle: the queue's pending texts.
+## chat is mid-turn, routine A, urgent U and routine B are queued; U moves
+## ahead of A while A and B keep their order (LIFO gives [B, U, A], FIFO
+## [A, U, B]). Oracle: the queue's pending texts.
 func _test_urgent_moves_ahead_in_the_queue() -> void:
 	var w: = _world()
 	var module: Object = w["module"]
@@ -863,16 +864,18 @@ func _test_urgent_moves_ahead_in_the_queue() -> void:
 	pane.current_tab = _so.ChatList.find(claude_chat)
 	pane.execute_regular_chat("mid-turn work")
 	await process_frame
-	await _notify(module, {"to": "claude", "from": "codex", "text": "routine R"})
+	await _notify(module, {"to": "claude", "from": "codex", "text": "routine A"})
 	await _notify(module, {"to": "claude", "from": "codex", "text": "urgent U", "urgent": true})
+	await _notify(module, {"to": "claude", "from": "codex", "text": "routine B"})
 	await process_frame
-	var routine: = "[MINERVA NOTIFY from codex] routine R"
+	var routine_a: = "[MINERVA NOTIFY from codex] routine A"
 	var urgent: = "[MINERVA NOTIFY from codex] urgent U"
-	check("G3b: an urgent notify is queued ahead of the routine one before it",
+	var routine_b: = "[MINERVA NOTIFY from codex] routine B"
+	check("G3b: an urgent notify is queued ahead of the routine ones, which keep their order",
 		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId))
-			== str(PackedStringArray([urgent, routine])),
+			== str(PackedStringArray([urgent, routine_a, routine_b])),
 		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId)))
-	for text: String in ["mid-turn work", urgent, routine]:
+	for text: String in ["mid-turn work", urgent, routine_a, routine_b]:
 		provider.release("Claude Session", text)
 		for _i in range(6):
 			await process_frame

@@ -27,12 +27,18 @@ static func parse_file(path: String) -> Dictionary:
 	if file == null:
 		push_warning("JSONLParser: cannot open file: %s" % path)
 		return empty
+	var text := file.get_as_text()
+	file.close()
+	return parse_text(text)
 
+
+static func parse_text(text: String) -> Dictionary:
+	## parse_file on text already read, so a caller can hash the same bytes
+	## it parses. Same result shape as parse_file.
 	var result := _empty_result()
 	var line_number := 0
 
-	while not file.eof_reached():
-		var raw_line: String = file.get_line()
+	for raw_line: String in text.split("\n"):
 		line_number += 1
 		var line: String = raw_line.strip_edges()
 		if line.is_empty():
@@ -82,7 +88,6 @@ static func parse_file(path: String) -> Dictionary:
 			"saved_query":
 				result["saved_queries"].append(record)
 
-	file.close()
 	return result
 
 

@@ -44,17 +44,17 @@ static func write_refusal(db: DocketDB, jsonl_path: String) -> String:
 
 static func guarded_write(db: DocketDB, jsonl_path: String, text: String) -> String:
 	## Replaces `jsonl_path` with `text` unless write_refusal objects. Returns
-	## "" when written, else why not. The refusal check runs under the file's
-	## .lock immediately before the atomic rename, and on success jsonl_hash
-	## becomes the digest of `text`, the new baseline for the next write.
+	## "" when written, else why not (including when the file's .lock cannot be
+	## taken). The refusal check runs under the .lock immediately before the
+	## atomic rename, and on success jsonl_hash becomes the digest of `text`,
+	## the new baseline for the next write.
 	var lock := FileLock.acquire(jsonl_path)
 	if lock == null:
-		push_warning("JSONLCache: could not acquire .lock for %s — writing anyway" % jsonl_path)
+		return "could not lock %s (another writer holds its .lock). Nothing was written; try again." % jsonl_path
 	var failure := write_refusal(db, jsonl_path)
 	if failure.is_empty() and not DocketDBJsonl._atomic_write(jsonl_path, text):
 		failure = "could not write %s" % jsonl_path
-	if lock != null:
-		lock.release()
+	lock.release()
 	if failure.is_empty():
 		db.set_meta_value("jsonl_hash", text.sha256_text())
 	return failure
@@ -76,8 +76,10 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 	## Parse the JSONL file and write a fresh SQLite cache.
 	## Returns an open DocketDB on success, null on failure.
 
-	# Parse the JSONL source
-	var parsed := JSONLParser.parse_file(jsonl_path)
+	# Read once: the digest and the parse come from the same bytes, so a write
+	# landing after the read cannot pair stale content with a fresh digest.
+	var bytes := FileAccess.get_file_as_bytes(jsonl_path)
+	var parsed := JSONLParser.parse_text(bytes.get_string_from_utf8())
 	if parsed.is_empty() or parsed["meta"].is_empty():
 		push_error("JSONLCache: failed to parse JSONL (or missing meta): %s" % jsonl_path)
 		return null
@@ -109,8 +111,7 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 		db.set_meta_value(UNKNOWN_KEYS_META, ",".join(PackedStringArray(parsed["unknown_keys"])))
 
 	# Store a fingerprint so we can validate freshness later
-	var fingerprint := _file_fingerprint(jsonl_path)
-	db.set_meta_value("jsonl_hash", fingerprint)
+	db.set_meta_value("jsonl_hash", _bytes_sha256(bytes))
 
 	db._commit()
 
@@ -157,6 +158,14 @@ static func _file_fingerprint(path: String) -> String:
 	if not FileAccess.file_exists(path):
 		return ""
 	return FileAccess.get_sha256(path)
+
+
+static func _bytes_sha256(bytes: PackedByteArray) -> String:
+	## SHA-256 hex digest of `bytes`; matches _file_fingerprint of a file holding them.
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(bytes)
+	return ctx.finish().hex_encode()
 
 
 static func _delete_cache_files(cache_path: String) -> void:
