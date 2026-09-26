@@ -10,6 +10,8 @@
   agent.py notes NAME [--note-read ID]... [--note-write ID]...
   agent.py stop NAME
   agent.py status NAME
+  agent.py info NAME [--map HOST_PATH]...
+  agent.py readiness NAME [--profile PROFILE]
   agent.py list
 Every command takes --json: one JSON object on stdout, {"ok": true, ...} or
 {"ok": false, "error": ...}. Minerva drives sessions this way.
@@ -58,6 +60,14 @@ start folder is a host path inside one of the folders; the harness starts at
 the matching path inside the container. Docket projects are --project, or
 else discovered from the .dct files near the top of each folder.
 
+`info` adds what a session is, for inspection: the path mappings (host
+folder, the path the harness sees, and the session home at /agent-home),
+the Git author identity git reports in its start folder, and its toolchain
+profile. `readiness` checks the profile's tools and minimum versions, the
+folders and the Git identity inside the running container, and the session's
+Docket projects against the Docket service, and lists what is missing. Both
+are read-only (readiness.py).
+
 Records written before folders existed (a task and a list of repository
 names, cloned under the work root's TASK/) still start, stop and attach:
 their folders are the task clones they already have.
@@ -84,6 +94,7 @@ HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE.parent / "container-build"))
 import build as container_build  # noqa: E402  the builder image and native cache
+import readiness  # noqa: E402  profiles and the read-only probe
 COMPOSE = HERE / "docker-compose.yml"
 IMAGE_FILES = ["Dockerfile", "forwarder.py", "minerva-session", "agent-env.sh", "agent-bashrc",
                "agent-upgrade", "tmux.conf", "claude-mcp.json", "smoke.py"]
@@ -98,6 +109,8 @@ NOTE_ID = re.compile(r"[0-9a-f]{32,64}")
 PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 LEGACY_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 NATIVES_MANIFEST = "/run/minerva-natives.json"
+# The session home (the harness's config dir) as the dev container mounts it.
+HOME_IN_CONTAINER = "/agent-home"
 # Characters that would change the meaning of a `docker -v src:dst[:ro]`.
 UNSAFE_PATH = re.compile(r"[:,\n\r\0]")
 # How far below a folder's top .dct files are discovered and nested git
@@ -246,16 +259,27 @@ def build_record(name, harness, folders, start_in, projects, mode):
                           "(it is cloned) or a folder without one")
         records.append({"host": str(host), "path": str(host), "kind": "mount"})
     start = plain_folder(start_in) if start_in else hosts[0]
-    owner = next((r for r in records if _within(start, Path(r["host"]))), None)
-    if owner is None:
+    workdir = container_path(records, start)
+    if workdir is None:
         raise Refused(f"start folder {start} is not inside a session folder")
-    workdir = Path(owner["path"]) / start.relative_to(owner["host"])
     projects = list(projects) if projects else discover_projects(hosts)
     for project in projects:
         if not PROJECT.fullmatch(project):
             raise Refused(f"bad Docket project name {project!r}")
     return {"version": RECORD_VERSION, "harness": harness, "folders": records,
-            "start_in": str(workdir), "projects": projects, "mode": mode}
+            "start_in": workdir, "projects": projects, "mode": mode}
+
+
+def container_path(folders, host_path):
+    """The path the harness sees for a host path, or None when no session
+    folder holds it. `folders` are record folders ({host, path}); a host path
+    inside a checkout, or inside its clone, maps into the clone's path."""
+    path = Path(os.path.abspath(os.path.expanduser(str(host_path))))
+    for folder in folders:
+        for root in (folder["host"], folder["path"]):
+            if root and _within(path, Path(root)):
+                return str(Path(folder["path"]) / path.relative_to(root))
+    return None
 
 
 def record_view(name, saved):
@@ -654,7 +678,7 @@ def cmd_start(args):
                 raise Refused(f"gateway sockets did not appear in {sock}")
             time.sleep(0.2)
 
-        mounts = bind_mount(sock, "/run/minerva-agent", True) + bind_mount(home, "/agent-home")
+        mounts = bind_mount(sock, "/run/minerva-agent", True) + bind_mount(home, HOME_IN_CONTAINER)
         mounts += native_mounts
         for folder in record["folders"]:   # clones and direct mounts, each at its own path
             mounts += bind_mount(folder["path"], folder["path"])
@@ -836,6 +860,65 @@ def cmd_status(args):
     return describe(args.name, record)
 
 
+def cmd_info(args):
+    check_layout()
+    record = load_record(args.name)
+    if record is None:
+        raise Refused(f"no session {args.name}")
+    result = describe(args.name, record)
+    home = {"host": str(session_dir(args.name) / "home"), "path": HOME_IN_CONTAINER, "kind": "home"}
+    result["path_mappings"] = [{"host": f["host"] or f["path"], "container": f["path"], "kind": f["kind"],
+                                "mounted_from": f["path"]} for f in record["folders"] + [home]]
+    if args.map:
+        result["mapped"] = {p: container_path(record["folders"] + [home], p) for p in args.map}
+    if result["state"] == "running":
+        measured = readiness.probe(containers(args.name)[0], record["start_in"], [], {})
+        ident = measured.get("identity", {})
+        result["git_identity"] = {"set": bool(ident), "name": ident.get("name", ""),
+                                  "email": ident.get("email", ""), "measured": "container",
+                                  "detail": measured.get("error", "") if "error" in measured else
+                                  ("" if ident else "git has no author identity in the start folder: commits fail")}
+    else:
+        result["git_identity"] = {"set": False, "name": "", "email": "", "measured": "",
+                                  "detail": "measured inside the running session; it is not running"}
+    try:
+        profile = readiness.load_profile(readiness.DEFAULT_PROFILE)
+    except readiness.ProfileError as exc:
+        raise Refused(str(exc))
+    result["toolchain_profile"] = {"name": profile["name"], "description": profile["description"],
+                                   "selected_by": "default", "available": readiness.profile_names()}
+    ident = result["git_identity"]
+    result["message"] = "\n".join(
+        [result["message"], f"  commits as: {ident['name']} <{ident['email']}>" if ident["set"]
+         else f"  commits as: unknown ({ident['detail']})", f"  toolchain profile: {profile['name']}"]
+        + [f"  {m['host']} -> {m['container']} ({m['kind']})" for m in result["path_mappings"]])
+    return result
+
+
+def cmd_readiness(args):
+    check_layout()
+    record = load_record(args.name)
+    if record is None:
+        raise Refused(f"no session {args.name}")
+    try:
+        profile = readiness.load_profile(args.profile or readiness.DEFAULT_PROFILE)
+    except readiness.ProfileError as exc:
+        raise Refused(str(exc))
+    tools = readiness.with_harness(profile, record["harness"])
+    dev = containers(args.name)[0]
+    running_now = docker_state(dev) == "running"
+    measured = readiness.probe(dev, record["start_in"], [f["path"] for f in record["folders"]], tools) \
+        if running_now else {}
+    known, docket_error = readiness.docket_projects() if record["projects"] else (set(), "")
+    results = readiness.checks(record, running_now, measured, tools, known, docket_error)
+    missing = [f"{c['check']} {c['name']}: {c['detail']}" for c in results if not c["ok"]]
+    where = f"inside {dev} (docker exec) and the host's Docket service" if running_now \
+        else "the host's Docket service only"
+    return {"ok": True, "id": args.name, "ready": not missing, "profile": profile["name"],
+            "checked": where, "checks": results, "missing": missing,
+            "message": "ready" if not missing else "not ready:\n  " + "\n  ".join(missing)}
+
+
 def cmd_list(args):
     check_layout()
     root = state_root() / "sessions"
@@ -888,7 +971,10 @@ def parse(argv):
     for command, options in (("build", []), ("create", [lambda p: record_options(p, True)]),
                              ("start", [start_options, note_options]), ("attach", [attach_options]),
                              ("up", [start_options, note_options, attach_options]),
-                             ("notes", [note_options]), ("stop", []), ("status", []), ("list", [])):
+                             ("notes", [note_options]), ("stop", []), ("status", []),
+                             ("info", [lambda p: p.add_argument("--map", action="append", metavar="HOST_PATH")]),
+                             ("readiness", [lambda p: p.add_argument("--profile", metavar="PROFILE")]),
+                             ("list", [])):
         p = sub.add_parser(command)
         p.add_argument("--json", action="store_true", help="answer with one JSON object on stdout")
         if command not in ("build", "list"):
@@ -899,7 +985,8 @@ def parse(argv):
 
 
 COMMANDS = {"build": cmd_build, "create": cmd_create, "start": cmd_start, "attach": cmd_attach,
-            "up": cmd_up, "notes": cmd_notes, "stop": cmd_stop, "status": cmd_status, "list": cmd_list}
+            "up": cmd_up, "notes": cmd_notes, "stop": cmd_stop, "status": cmd_status,
+            "info": cmd_info, "readiness": cmd_readiness, "list": cmd_list}
 
 
 def main(argv=None):

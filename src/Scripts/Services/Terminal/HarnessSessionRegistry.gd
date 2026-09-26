@@ -14,8 +14,9 @@ extends RefCounted
 ## One registry per Minerva process (shared()); tests build their own and point
 ## store_path somewhere else.
 ##
-## identity_for_terminal() is the one lookup other code (session_info, the
-## container gateway's callers) uses to learn which session a terminal holds.
+## identity_for_terminal() is the one lookup other code uses to learn which
+## session a terminal holds; identity_for_container() answers the same for an
+## agent-container session by name (AgentSessionStore.info uses both).
 
 ## Emitted after any registration, re-binding or forget.
 signal changed()
@@ -73,7 +74,15 @@ func identity_for_terminal(terminal_id: String) -> String:
 	if key.is_empty():
 		return ""
 	_bind(key, terminal_id)
-	return str(_records[key]["identity"])
+	return identity_for_container(container)
+
+
+## The registered identity of agent-container session `container`, or "" when
+## none is registered. identity_for_terminal answers with this same record for
+## a terminal fronting that container.
+func identity_for_container(container: String) -> String:
+	var key: String = _key_for_container(container)
+	return str(_records[key]["identity"]) if not key.is_empty() else ""
 
 
 ## The terminal id `identity` is bound to in this run, or "".

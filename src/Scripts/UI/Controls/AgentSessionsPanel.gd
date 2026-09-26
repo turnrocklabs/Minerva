@@ -1,7 +1,9 @@
 extends VBoxContainer
 ## Agent sessions in the Containers area: lists every session record with its
 ## live state, starts and stops the selected one, copies the command that
-## attaches it in a Minerva terminal tab, builds the agent image, and creates
+## attaches it in a Minerva terminal tab, shows its details (session
+## identity, path mappings, Git identity, toolchain profile) and a read-only
+## readiness check, builds the agent image, and creates
 ## a session from a name, harness, mode, folders, start folder and optional
 ## Docket projects. The GUI twin of minerva_agent_session_*; both drive
 ## AgentSessionStore. Scene: res://Scenes/AgentSessionsPanel.tscn, placed in
@@ -29,6 +31,10 @@ var _busy: bool = false
 @onready var _start: Button = %Start
 @onready var _stop: Button = %Stop
 @onready var _copy_attach: Button = %CopyAttach
+@onready var _inspect: Button = %Inspect
+@onready var _readiness: Button = %Readiness
+## The last Details or readiness answer for the selected session.
+@onready var _details: RichTextLabel = %Details
 @onready var _build_image: Button = %BuildImage
 @onready var _new_name: LineEdit = %NewName
 @onready var _harness: OptionButton = %Harness
@@ -53,9 +59,12 @@ func _ready() -> void:
 	%Refresh.pressed.connect(_refresh)
 	_build_image.pressed.connect(_on_build_pressed)
 	_tree.item_selected.connect(_update_buttons)
+	_tree.item_selected.connect(_show_details.bind(""))
 	_start.pressed.connect(_on_start_pressed)
 	_stop.pressed.connect(_on_stop_pressed)
 	_copy_attach.pressed.connect(_on_copy_attach_pressed)
+	_inspect.pressed.connect(_on_inspect_pressed)
+	_readiness.pressed.connect(_on_readiness_pressed)
 	%AddFolder.pressed.connect(_folder_dialog.popup_centered)
 	_folder_dialog.dir_selected.connect(_on_folder_chosen)
 	_folders.item_selected.connect(func(_index: int) -> void: _remove_folder.disabled = false)
@@ -151,6 +160,8 @@ func _update_buttons() -> void:
 	_start.disabled = _busy or not readable or state == "running"
 	_stop.disabled = _busy or not readable or state != "running"
 	_copy_attach.disabled = not readable or state != "running" or str(entry.get("attach_command", "")).is_empty()
+	_inspect.disabled = _busy or not readable
+	_readiness.disabled = _busy or not readable
 	_create.disabled = _busy
 
 
@@ -197,6 +208,81 @@ func _on_copy_attach_pressed() -> void:
 	var entry: Dictionary = _sessions.get(_selected_id(), {})
 	DisplayServer.clipboard_set(str(entry.get("attach_command", "")))
 	_set_status("Attach command copied: paste it into a Minerva terminal tab.", OK_COLOR)
+
+
+func _on_inspect_pressed() -> void:
+	var id: String = _selected_id()
+	_set_busy(true)
+	_set_status("Reading %s…" % id, MUTED_COLOR)
+	var result: Dictionary = await _store.info(id)
+	_set_busy(false)
+	_report(result, "Details of %s." % id)
+	_show_details(_info_text(result) if bool(result.get("ok", false)) else "")
+
+
+func _on_readiness_pressed() -> void:
+	var id: String = _selected_id()
+	_set_busy(true)
+	_set_status("Checking %s (read-only)…" % id, MUTED_COLOR)
+	var result: Dictionary = await _store.readiness(id)
+	_set_busy(false)
+	if not bool(result.get("ok", false)):
+		_report(result, "")
+		_show_details("")
+		return
+	var ready: bool = bool(result.get("ready", false))
+	_set_status("%s is ready." % id if ready else "%s is missing something; see below." % id,
+		OK_COLOR if ready else ERROR_COLOR)
+	_show_details(_readiness_text(result))
+
+
+func _show_details(text: String) -> void:
+	_details.text = text
+	_details.visible = not text.is_empty()
+
+
+static func _info_text(info: Dictionary) -> String:
+	var lines := PackedStringArray()
+	var identity: Dictionary = info.get("session_identity", {}) if info.get("session_identity") is Dictionary else {}
+	if bool(identity.get("registered", false)):
+		lines.append("[b]Session identity:[/b] %s" % _esc(str(identity.get("identity", ""))))
+	else:
+		lines.append("[b]Session identity:[/b] not registered")
+	if identity.has("consistent") and not bool(identity["consistent"]):
+		lines.append("  terminal %s answers %s" % [_esc(str(identity.get("terminal_id", ""))),
+			_esc(str(identity.get("terminal_identity", "")))])
+	var git: Dictionary = info.get("git_identity", {}) if info.get("git_identity") is Dictionary else {}
+	if bool(git.get("set", false)):
+		lines.append("[b]Commits as:[/b] %s <%s>" % [_esc(str(git.get("name", ""))), _esc(str(git.get("email", "")))])
+	else:
+		lines.append("[b]Commits as:[/b] unknown — %s" % _esc(str(git.get("detail", ""))))
+	var profile: Dictionary = info.get("toolchain_profile", {}) if info.get("toolchain_profile") is Dictionary else {}
+	lines.append("[b]Toolchain profile:[/b] %s" % _esc(str(profile.get("name", ""))))
+	lines.append("[b]Paths[/b] (host → in the container):")
+	var mappings: Array = info.get("path_mappings", []) if info.get("path_mappings") is Array else []
+	for mapping: Variant in mappings:
+		if mapping is Dictionary:
+			lines.append("  %s → %s (%s)" % [_esc(str(mapping.get("host", ""))),
+				_esc(str(mapping.get("container", ""))), _esc(str(mapping.get("kind", "")))])
+	return "\n".join(lines)
+
+
+static func _readiness_text(result: Dictionary) -> String:
+	var lines := PackedStringArray()
+	lines.append("[b]Profile:[/b] %s — checked %s" % [_esc(str(result.get("profile", ""))), _esc(str(result.get("checked", "")))])
+	var checks: Array = result.get("checks", []) if result.get("checks") is Array else []
+	for check: Variant in checks:
+		if check is Dictionary:
+			var ok: bool = bool(check.get("ok", false))
+			lines.append("[color=%s]%s[/color] %s %s: %s" % [
+				(OK_COLOR if ok else ERROR_COLOR).to_html(false), "ok" if ok else "MISSING",
+				_esc(str(check.get("check", ""))), _esc(str(check.get("name", ""))), _esc(str(check.get("detail", "")))])
+	return "\n".join(lines)
+
+
+## Launcher and container text shown literally, never as BBCode.
+static func _esc(text: String) -> String:
+	return text.replace("[", "[lb]")
 
 
 func _on_build_pressed() -> void:

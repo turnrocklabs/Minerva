@@ -1,6 +1,6 @@
 extends MCPToolModule
-## MCP verbs for agent-container sessions: create, start, stop, status, list
-## and build. Each is the MCP twin of a control in Preferences > Containers >
+## MCP verbs for agent-container sessions: create, start, stop, status, info,
+## readiness, list and build. Each is the MCP twin of a control in Preferences > Containers >
 ## Agent Sessions; both drive AgentSessionStore, which runs the launcher
 ## Minerva ships. Attaching a session in a tab is done with the
 ## `attach_command` that start, status and list return.
@@ -13,6 +13,7 @@ const _NAME := {"type": "string", "description": "Session name: 1-32 lowercase l
 func get_tool_names() -> Array[String]:
 	return ["minerva_agent_session_create", "minerva_agent_session_start",
 		"minerva_agent_session_stop", "minerva_agent_session_status",
+		"minerva_agent_session_info", "minerva_agent_session_readiness",
 		"minerva_agent_session_list", "minerva_agent_session_build"]
 
 
@@ -43,6 +44,20 @@ func register_tools() -> void:
 		"One agent-container session: harness, folders (host path, path in the container, clone or mount), start folder, Docket projects, mode, state (running, stopped, unknown), the attached terminal, and attach_command.",
 		{"type": "object", "properties": {"name": _NAME}, "required": ["name"]}, "containers")
 
+	server._register_tool("minerva_agent_session_info",
+		"Inspect one agent-container session without changing it: everything status returns, plus session_identity (the identity registered for it in the harness session registry, the one notify routes by; with the attached terminal's answer and whether they agree), path_mappings (host folder, the path the harness sees, what is mounted; the session home is /agent-home), git_identity (the author git reports in the start folder, measured in the running container) and toolchain_profile. map_paths answers host paths with the container path the harness sees (null when no session folder holds one).",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"map_paths": {"type": "array", "items": {"type": "string"}, "description": "Host paths to translate into container paths."},
+		}, "required": ["name"]}, "containers")
+
+	server._register_tool("minerva_agent_session_readiness",
+		"Read-only readiness check of an agent-container session: the toolchain profile's tools and minimum versions, the folders and the Git author identity, measured inside the running container with docker exec; its Docket projects against the Docket service; and a registered session identity. Returns ready, checks [{check, name, ok, detail}] and missing. Starts no application, test suite or container; a stopped session reports only what can be checked from the host.",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"profile": {"type": "string", "description": "Toolchain profile to check against (profiles.json in the agent kit). Default: default."},
+		}, "required": ["name"]}, "containers")
+
 	server._register_tool("minerva_agent_session_list",
 		"Every agent-container session record with its live state, plus whether the agent image is built (image.built) or building.",
 		{"type": "object", "properties": {}}, "containers")
@@ -67,6 +82,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			result = await store.stop(name)
 		"minerva_agent_session_status":
 			result = await store.status(name)
+		"minerva_agent_session_info":
+			result = await store.info(name, _strings(arguments.get("map_paths", [])))
+		"minerva_agent_session_readiness":
+			result = await store.readiness(name, str(arguments.get("profile", "")).strip_edges())
 		"minerva_agent_session_list":
 			result = await store.list_sessions()
 		"minerva_agent_session_build":

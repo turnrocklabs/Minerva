@@ -12,6 +12,11 @@ extends RefCounted
 ## list answers also carry `attach_command`, the line that attaches the
 ## session from a Minerva terminal tab.
 ##
+## info() and readiness() inspect a session without changing it: info adds its
+## path mappings, Git identity, toolchain profile and its registered session
+## identity (HarnessSessionRegistry, the identity notify routes by); readiness
+## lists what the session is missing (agent.py readiness, readiness.py).
+##
 ## The GUI twin is AgentSessionsPanel (Preferences > Containers); the MCP twin
 ## is MCPAgentSessionTools. Both share the one instance from shared().
 
@@ -21,8 +26,13 @@ signal changed
 const NAME_PATTERN := "^[a-z0-9][a-z0-9-]{0,31}$"
 const HARNESSES: PackedStringArray = ["claude", "codex"]
 const MODES: PackedStringArray = ["start", "resume", "shell"]
+const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
+
+const PROFILE_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
 const PYTHON := "python3"
 const QUICK_TIMEOUT_S := 60.0
+## The container probe and the Docket query each have their own bound inside.
+const READINESS_TIMEOUT_S := 150.0
 ## The first start clones every checkout folder.
 const START_TIMEOUT_S := 900.0
 ## The first build also builds the builder image's toolchains.
@@ -125,6 +135,70 @@ func status(id: String) -> Dictionary:
 	if not problem.is_empty():
 		return _error(problem)
 	return _with_attach(await _run(PackedStringArray(["status", id]), QUICK_TIMEOUT_S))
+
+
+## One session for inspection: status plus path_mappings, git_identity,
+## toolchain_profile and session_identity; `map_paths` are host paths answered
+## in `mapped` with the path the harness sees (null when no folder holds one).
+func info(id: String, map_paths: PackedStringArray = PackedStringArray()) -> Dictionary:
+	var problem: String = _check_id(id)
+	if not problem.is_empty():
+		return _error(problem)
+	var args: PackedStringArray = ["info", id]
+	for path: String in map_paths:
+		args.append("--map=" + path)
+	var result: Dictionary = _with_attach(await _run(args, QUICK_TIMEOUT_S))
+	if bool(result.get("ok", false)):
+		result["session_identity"] = session_identity(id, str(result.get("attached_terminal", "")))
+	return result
+
+
+## Read-only readiness of session `id` against toolchain profile `profile`
+## ("" = the default): {"ok", "ready", "checks": [{check, name, ok, detail}],
+## "missing": [...], "checked"}. A registered session identity is one check.
+func readiness(id: String, profile: String = "") -> Dictionary:
+	var problem: String = _check_id(id)
+	if problem.is_empty() and not profile.is_empty() \
+			and RegEx.create_from_string(PROFILE_PATTERN).search(profile) == null:
+		problem = "profile names are letters, digits and . _ + -"
+	if not problem.is_empty():
+		return _error(problem)
+	var args: PackedStringArray = ["readiness", id]
+	if not profile.is_empty():
+		args.append("--profile=" + profile)
+	var result: Dictionary = await _run(args, READINESS_TIMEOUT_S)
+	if not bool(result.get("ok", false)):
+		return result
+	var identity: Dictionary = session_identity(id, "")
+	var registered: bool = bool(identity["registered"])
+	var check: Dictionary = {"check": "identity", "name": id, "ok": registered,
+		"detail": str(identity["identity"]) if registered else
+			"no session identity is registered: register it with minerva_session_register (container %s)" % id}
+	var checks: Array = result.get("checks", []) if result.get("checks") is Array else []
+	checks.append(check)
+	result["checks"] = checks
+	if not registered:
+		var missing: Array = result.get("missing", []) if result.get("missing") is Array else []
+		missing.append("identity %s: %s" % [id, check["detail"]])
+		result["missing"] = missing
+		result["ready"] = false
+	return result
+
+
+## The session's identity as HarnessSessionRegistry holds it: the record
+## registered for container `id`, and, when `terminal_id` fronts the session,
+## what the registry answers for that terminal (the same record, so
+## `consistent` is true unless a stale binding shadows it).
+static func session_identity(id: String, terminal_id: String) -> Dictionary:
+	var registry: HarnessSessionRegistry = HarnessSessionRegistry.shared()
+	var identity: String = registry.identity_for_container(id)
+	var described: Dictionary = {"identity": identity, "registered": not identity.is_empty()}
+	if not terminal_id.is_empty():
+		var for_terminal: String = registry.identity_for_terminal(terminal_id)
+		described["terminal_id"] = terminal_id
+		described["terminal_identity"] = for_terminal
+		described["consistent"] = for_terminal == identity
+	return described
 
 
 ## Every record, with its state, and whether the agent image is built:

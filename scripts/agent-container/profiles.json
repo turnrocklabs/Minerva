@@ -1,0 +1,21 @@
+{
+  "default": {
+    "description": "The agent image's toolchain: Godot, Python, Node, Go, Rust and the tools a session shell uses.",
+    "tools": {
+      "git": {"min": "2.30"},
+      "python3": {"min": "3.10"},
+      "godot": {"min": "4.6"},
+      "node": {"min": "22"},
+      "go": {"min": "1.26", "version_args": "version"},
+      "cargo": {},
+      "tmux": {"version_args": "-V"}
+    }
+  },
+  "godot-4.7": {
+    "description": "The default toolchain with Godot 4.7, which projects declaring config/features 4.7 need.",
+    "extends": "default",
+    "tools": {
+      "godot": {"min": "4.7"}
+    }
+  }
+}

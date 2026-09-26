@@ -63,10 +63,32 @@ disabled = true
 tooltip_text = "Copy the command that attaches the selected session; paste it into a Minerva terminal tab."
 text = "Copy attach command"
 
+[node name="Inspect" type="Button" parent="Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Show the selected session's identity, path mappings, Git identity and toolchain profile."
+text = "Details"
+
+[node name="Readiness" type="Button" parent="Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Check, read-only, what the selected session is missing: tools and versions, folders, Git identity, Docket projects, session identity."
+text = "Check readiness"
+
 [node name="Status" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
+
+[node name="Details" type="RichTextLabel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+selection_enabled = true
 
 [node name="Separator" type="HSeparator" parent="."]
 layout_mode = 2
