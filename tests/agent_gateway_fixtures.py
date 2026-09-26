@@ -8,6 +8,7 @@ sent to stubs, never to a real Minerva, Docket or Nudge. Proxy tests inject a
 resolver table and a connector that lands on the echo server, so no private
 or real address is dialled. Scratch directories are kept.
 """
+import copy
 import http.client
 import http.server
 import json
@@ -27,19 +28,36 @@ import gateway  # noqa: E402
 
 TERMINAL, TARGET, OTHER = "1111", "2222", "3333"
 SESSION = "claude-a"
+# The Docket identity and role Minerva registered for the session (grants.json).
+IDENT, ROLE = "worker-a", "implementer"
 NOTE_A, NOTE_B, NOTE_IMG = "1" * 64, "2" * 64, "3" * 64
 BUG, POLICY, SECRET, NOTE = ("a" * 32, "b" * 32, "c" * 32, "d" * 32)
 PLUGIN_BUG, DCR, KB = "e" * 32, "f" * 32, "0" * 32
+# A W1 work chain: objective <- task <- attempt (assigned to IDENT, claimed by
+# it), and a sibling task assigned to someone else.
+OBJECTIVE, TASK, ATTEMPT, FOREIGN = "10" * 16, "20" * 16, "30" * 16, "40" * 16
 ITEMS = {
-    ("minerva", BUG): {"id": BUG, "type": "bug", "title": "a bug"},
+    ("minerva", BUG): {"id": BUG, "type": "bug", "title": "a bug", "assigned_to": IDENT,
+                       "claim_holder": IDENT},
     ("minerva", POLICY): {"id": POLICY, "type": "policy", "title": "a policy",
                           "description": "POLICY-SENTINEL"},
     ("minerva", SECRET): {"id": SECRET, "type": "secret", "title": "s",
                           "description": "SECRET-SENTINEL"},
     ("minerva", NOTE): {"id": NOTE, "type": "encrypted_note", "title": "n"},
-    ("plugins.dct", PLUGIN_BUG): {"id": PLUGIN_BUG, "type": "bug", "title": "plugin bug"},
-    ("minerva", DCR): {"id": DCR, "type": "dcr", "title": "a dcr"},
-    ("minerva", KB): {"id": KB, "type": "kb", "title": "rubric"},
+    ("plugins.dct", PLUGIN_BUG): {"id": PLUGIN_BUG, "type": "bug", "title": "plugin bug",
+                                  "directed_to": ROLE},
+    ("minerva", DCR): {"id": DCR, "type": "dcr", "title": "a dcr", "assigned_to": IDENT},
+    ("minerva", KB): {"id": KB, "type": "kb", "title": "rubric", "directed_to": IDENT},
+    ("minerva", OBJECTIVE): {"id": OBJECTIVE, "type": "work_item", "title": "objective",
+                             "tags": ["wr:objective"], "parent": f"minerva:{DCR}"},
+    ("minerva", TASK): {"id": TASK, "type": "work_item", "title": "task", "tags": ["wr:task"],
+                        "parent": f"minerva:{OBJECTIVE}", "assigned_to": "coordinator"},
+    ("minerva", ATTEMPT): {"id": ATTEMPT, "type": "work_item", "title": "attempt",
+                           "tags": ["wr:attempt", "role:implementer"], "parent": TASK,
+                           "status": "open", "assigned_to": IDENT, "claim_holder": IDENT},
+    ("minerva", FOREIGN): {"id": FOREIGN, "type": "work_item", "title": "someone else's task",
+                           "tags": ["wr:task"], "parent": f"minerva:{OBJECTIVE}",
+                           "assigned_to": "worker-b", "description": "FOREIGN-SENTINEL"},
 }
 SENTINEL = "LEAK-SENTINEL"
 TERMINALS = [
@@ -74,6 +92,7 @@ class Stub:
         self.custom = None          # custom(handler, body) -> True when it answered
         self.decorate = None        # decorate(tool, result) -> result, for tools/call
         self.terminals = TERMINALS  # what minerva_terminal_list answers
+        self.items = copy.deepcopy(ITEMS)  # what Docket holds; tests may reassign
         stub = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -124,10 +143,17 @@ class Stub:
                 return text_result({"error": "backend down"}, is_error=True)
             if self.lookup_mode == "malformed":
                 return {"content": [{"type": "text", "text": "not json"}]}
-            item = ITEMS.get((args.get("project"), args["id"]))
+            item = self.items.get((args.get("project"), args["id"]))
             return text_result(item) if item else text_result({"error": "not found"}, True)
+        if name == "docket_query" and "$or" in args.get("filter", {}):
+            # The gateway's scope lookup: rows as Docket returns them, which
+            # carry no claim_holder.
+            rows = [{k: v for k, v in item.items() if k != "claim_holder"}
+                    for (project, _), item in self.items.items() if project == args["project"]
+                    and any(item.get(c["field"]) == c["value"] for c in args["filter"]["$or"])]
+            return text_result({"count": len(rows), "items": rows})
         if name == "docket_query":
-            return text_result({"count": 4, "items": [ITEMS[("minerva", k)] for k in (BUG, POLICY, SECRET, NOTE)]})
+            return text_result({"count": 4, "items": [self.items[("minerva", k)] for k in (BUG, POLICY, SECRET, NOTE)]})
         if name == "minerva_get_note":
             notes = {NOTE_A: {"note_id": NOTE_A, "title": "board", "content": "hello", "type": "TEXT",
                               "tab": "Minerva Core Cycle", "enabled": False, "success": True},
@@ -264,10 +290,12 @@ class GatewayCase(unittest.TestCase):
         cls.binding_file.write_text(json.dumps(value))
 
     @classmethod
-    def grant(cls, read=(), write=(), notify=True):
+    def grant(cls, read=(), write=(), notify=True, identity=IDENT, role=ROLE):
         """Write the session's grant record in the shape agent.py keeps it."""
-        cls.grants_file.write_text(json.dumps({"version": 1, "note_read": list(read),
-                                               "note_write": list(write), "notify": notify}))
+        record = {"version": 1, "note_read": list(read), "note_write": list(write), "notify": notify}
+        if identity:
+            record.update(identity=identity, role=role)
+        cls.grants_file.write_text(json.dumps(record))
 
     def setUp(self):
         for stub in self.stubs.values():
@@ -275,6 +303,7 @@ class GatewayCase(unittest.TestCase):
             stub.mode, stub.lookup_mode = "json", "ok"
             stub.custom = stub.decorate = None
             stub.terminals = TERMINALS
+            stub.items = copy.deepcopy(ITEMS)
         self.connects.clear()
         self.bind(TERMINAL, [TARGET])
         self.grant()

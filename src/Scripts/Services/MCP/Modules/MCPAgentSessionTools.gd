@@ -25,6 +25,9 @@ func get_tool_names() -> Array[String]:
 
 
 func register_tools() -> void:
+	# The store copies registered container identities into grant records
+	# from its creation on, so it exists whenever the MCP server does.
+	AgentSessionStore.shared()
 	server._register_tool("minerva_agent_session_create",
 		"Create an agent-container session record: a harness (claude or codex) in a hardened container that mounts the given host folders. A folder that is a git checkout is cloned once into the session's work directory and the clone is mounted (the checkout itself never is); any other folder is mounted as it is. Docket projects default to the .dct files found near the top of the folders. The record survives Minerva restarts. Creating does not start it: call minerva_agent_session_start.",
 		{"type": "object", "properties": {

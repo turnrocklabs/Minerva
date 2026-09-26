@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import json
 import re
 
+import docket_scope
 import strict_json
 
 MAX_RESULT_TEXT = 4 * 1024 * 1024
@@ -26,6 +27,8 @@ ERROR_TEXT_MAX = 500
 NOTIFY_TEXT_MAX = 400      # Minerva's NOTIFY_MAX_TEXT_LENGTH
 NOTIFY_WAIT_MAX = 20000    # Minerva's NOTIFY_MAX_WAIT_MS
 QUERY_LIMIT_MAX = 200
+# Attachment data travels inside one request body (mcp_http.MAX_REQUEST_BODY).
+BASE64_MAX = 900 * 1024
 ID_MAX = 2**53
 
 METHODS = {"initialize", "notifications/initialized", "ping", "tools/list", "tools/call"}
@@ -44,6 +47,7 @@ PROTOCOL_VERSION = re.compile(r"[0-9A-Za-z.-]{1,32}")
 # Characters that end or fake a line in a terminal or a Docket field.
 LINE_BREAKERS = re.compile("[\x00-\x1f\x7f\x85\u2028\u2029]")
 TEXT_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}")
 KIND_SCHEMA = {
     "line": {"type": "string", "maxLength": LINE_MAX},
     "project": {"type": "string"},
@@ -54,6 +58,7 @@ KIND_SCHEMA = {
     "json": {},
     "ref": {"type": "string", "pattern": REF.pattern},
     "note_id": {"type": "string", "pattern": NOTE_ID.pattern},
+    "base64": {"type": "string", "maxLength": BASE64_MAX},
 }
 
 
@@ -92,13 +97,18 @@ UNATTACHED = Binding(None)
 @dataclass(frozen=True)
 class Grants:
     """What Minerva currently lets this session do beyond the fixed policy:
-    the notes it may read and write (write implies read), and whether it may
-    notify other harness tabs at all. Minerva rewrites the grant record while
-    the session runs; the gateway reads it on every call, so a change applies
-    to the next call and nothing is fixed at start or attach."""
+    the notes it may read and write (write implies read), whether it may
+    notify other harness tabs at all, and the session identity and role
+    Minerva registered for it, which decide its Docket scope (docket_scope.py;
+    "" = none registered, so nothing in Docket is in scope). Minerva rewrites
+    the grant record while the session runs; the gateway reads it on every
+    call, so a change applies to the next call and nothing is fixed at start
+    or attach."""
     read: frozenset
     write: frozenset
     notify: bool
+    identity: str = ""
+    role: str = ""
 
 
 NO_GRANTS = Grants(frozenset(), frozenset(), False)
@@ -269,6 +279,9 @@ def _check_value(kind, name, value, session):
     elif kind == "ref":
         if not isinstance(value, str) or not REF.fullmatch(value):
             raise Deny("bad_argument", f"{name}: must be a full 32-hex item id")
+    elif kind == "base64":
+        if not isinstance(value, str) or len(value) > BASE64_MAX or not BASE64.fullmatch(value):
+            raise Deny("bad_argument", f"{name}: must be base64 of at most {BASE64_MAX} characters")
 
 
 def validate_arguments(spec, args, session):
@@ -388,38 +401,73 @@ def _split_ref(value, project, same_project):
     return ref_project, hex_id
 
 
-def _item_type(ctx, ref_project, hex_id):
-    """Look an item's type up upstream; any failure denies."""
-    if ref_project not in ctx.session.docket_projects:
-        raise Deny("project_not_allowed", "referenced project")
+def _fetch_item(ctx, project, hex_id):
+    """docket_get upstream: the item, or None when Docket reports an error
+    (no such item). A transport failure or a malformed answer denies."""
     try:
-        result = ctx.lookup("docket_get", {"id": hex_id, "project": ref_project, "include": []})
+        result = ctx.lookup("docket_get", {"id": hex_id, "project": project, "include": []})
     except Deny:
         raise
     except Exception:
         raise Deny("lookup_failed") from None
+    if isinstance(result, dict) and result.get("isError") is True:
+        return None
     try:
         item = result_json(result)
     except Deny:
         raise Deny("lookup_failed") from None
     if not isinstance(item, dict) or item.get("id") != hex_id or not isinstance(item.get("type"), str):
         raise Deny("lookup_failed")
-    return item["type"]
+    return item
 
 
-def _require_item(ctx, value, project, same_project, allowed):
-    """The canonical reference to forward, once the item's type is allowed."""
+def _find_items(ctx, project, match):
+    """docket_query upstream for the rows matching `match`; a project Docket
+    reports an error for contributes nothing."""
+    try:
+        result = ctx.lookup("docket_query", {"project": project, "filter": match, "detail": "full",
+                                             "limit": docket_scope.ASSIGNED_LIMIT})
+    except Deny:
+        raise
+    except Exception:
+        raise Deny("lookup_failed") from None
+    if isinstance(result, dict) and result.get("isError") is True:
+        return []
+    value = result_json(result)
+    rows = value.get("items") if isinstance(value, dict) else None
+    if not isinstance(rows, list):
+        raise Deny("lookup_failed")
+    return rows
+
+
+def _scope(ctx):
+    """This call's Docket scope, from the grant record as it is now."""
+    grants = ctx.session.grants()
+    scope = docket_scope.Scope(grants.identity, grants.role, ctx.session.docket_projects,
+                               lambda p, i: _fetch_item(ctx, p, i), lambda p, m: _find_items(ctx, p, m))
+    scope.require_identity()
+    return scope
+
+
+def _scoped_item(ctx, scope, value, project, same_project, allowed, direct=False):
+    """(canonical reference to forward, item) once the item is in scope and
+    its type is allowed."""
     ref_project, hex_id = _split_ref(value, project, same_project)
-    if _item_type(ctx, ref_project, hex_id) not in allowed:
+    if ref_project not in ctx.session.docket_projects:
+        raise Deny("project_not_allowed", "referenced project")
+    item = scope.require(ref_project, hex_id, direct)
+    if item.get("type") not in allowed:
         raise Deny("item_type_not_allowed")
-    return hex_id if ref_project == project else f"{ref_project}:{hex_id}"
+    return (hex_id if ref_project == project else f"{ref_project}:{hex_id}"), item
 
 
-def _check_references(ctx, args):
+def _check_references(ctx, scope, args):
+    """parent and blocked_by may name only items on the session's chain, so a
+    write can never pull an unrelated item into scope."""
     for field in ("parent", "blocked_by"):
         if field in args:
-            args[field] = _require_item(ctx, args[field], args["project"], False,
-                                        ctx.policy.mutable_types)
+            args[field], _ = _scoped_item(ctx, scope, args[field], args["project"], False,
+                                          ctx.policy.mutable_types)
 
 
 def rule_terminal_notify(ctx, args):
@@ -521,6 +569,7 @@ def rule_docket_get(ctx, args):
     args["id"] = hex_id
     if not set(args.get("include", [])) <= {"events", "links"}:
         raise Deny("bad_argument", "include: value not allowed")
+    _scope(ctx).require(args["project"], hex_id)
 
     def shape(result):
         item = result_json(result)  # an upstream error denies without detail
@@ -532,10 +581,13 @@ def rule_docket_get(ctx, args):
 
 
 def rule_docket_query(ctx, args):
+    """The container's own filter runs upstream; only rows on its chain in
+    that project come back."""
     args["detail"] = "full"  # lean rows carry no type, so they could not be filtered
     if not 1 <= args.get("limit", 50) <= QUERY_LIMIT_MAX:
         raise Deny("bad_argument", f"limit must be 1-{QUERY_LIMIT_MAX}")
     args.setdefault("limit", 50)
+    chain = _scope(ctx).chain()
 
     def shape(result):
         value = result_json(result)
@@ -546,7 +598,7 @@ def rule_docket_query(ctx, args):
         for item in items:
             if not isinstance(item, dict) or not isinstance(item.get("type"), str):
                 raise Deny("upstream_bad_shape")
-            if item["type"] in ctx.policy.readable_types:
+            if item["type"] in ctx.policy.readable_types and (args["project"], item.get("id")) in chain:
                 kept.append(item)
         return json_result({"count": len(kept), "items": kept})
     return Call(args, shape)
@@ -559,7 +611,7 @@ def rule_docket_comment(ctx, args):
     if args["action"] not in ("list", "add"):
         raise Deny("bad_argument", "action not allowed")
     allowed = ctx.policy.readable_types if args["action"] == "list" else ctx.policy.mutable_types
-    args["item_id"] = _require_item(ctx, args["item_id"], args["project"], True, allowed)
+    args["item_id"], _ = _scoped_item(ctx, _scope(ctx), args["item_id"], args["project"], True, allowed)
     if args["action"] == "list":
         if "text" in args:
             raise Deny("bad_argument", "list takes no text")
@@ -570,17 +622,72 @@ def rule_docket_comment(ctx, args):
     return Call(args, shape_passthrough)
 
 
+def rule_docket_attach(ctx, args):
+    """Evidence: a file attached to an item on the session's chain."""
+    args["item_id"], _ = _scoped_item(ctx, _scope(ctx), args["item_id"], args["project"], True,
+                                      ctx.policy.mutable_types)
+    return Call(args, shape_passthrough)
+
+
+def rule_docket_detach(ctx, args):
+    """list names the item; get names only an attachment id, so its answer is
+    checked: the attachment's item must be on the session's chain."""
+    scope = _scope(ctx)
+    if args["action"] == "list":
+        if "attachment_id" in args or "item_id" not in args:
+            raise Deny("bad_argument", "list takes item_id only")
+        args["item_id"], _ = _scoped_item(ctx, scope, args["item_id"], args["project"], True,
+                                          ctx.policy.readable_types)
+        return Call(args, shape_passthrough)
+    if args["action"] != "get" or "item_id" in args or "attachment_id" not in args:
+        raise Deny("bad_argument", "get takes attachment_id only")
+
+    def shape(result):
+        attachment = result_json(result)
+        owner = attachment.get("item_id") if isinstance(attachment, dict) else None
+        if not isinstance(owner, str) or scope.reach(args["project"], owner) is None:
+            raise Deny("docket_out_of_scope")
+        return json_result(attachment)
+    return Call(args, shape)
+
+
 def rule_docket_create(ctx, args):
+    """A new item hangs under an item on the session's chain (a new attempt
+    under its task, a bug under its attempt)."""
     if args["type"] not in ctx.policy.mutable_types:
         raise Deny("item_type_not_allowed")
-    _check_references(ctx, args)
+    _check_references(ctx, _scope(ctx), args)
     return Call(args, shape_passthrough)
 
 
-def rule_docket_mutate(ctx, args):
-    args["id"] = _require_item(ctx, args["id"], args["project"], True, ctx.policy.mutable_types)
-    _check_references(ctx, args)
-    return Call(args, shape_passthrough)
+def _mutate(tool):
+    """docket_update / docket_transition / docket_append: only on a direct
+    item, as holder = the session identity; a protected change also needs the
+    item's claim held by that identity."""
+    def rule(ctx, args):
+        scope = _scope(ctx)
+        args["id"], item = _scoped_item(ctx, scope, args["id"], args["project"], True,
+                                        ctx.policy.mutable_types, direct=True)
+        _check_references(ctx, scope, args)
+        if docket_scope.touches_protected(tool, args, item):
+            scope.require_holder(item, item["id"])
+        args["holder"] = scope.identity
+        return Call(args, shape_passthrough)
+    return rule
+
+
+def _claim_verb(stamp):
+    """docket_claim / docket_release (holder) and docket_reassign (actor): on
+    a direct item, always in the session identity's name. reassign offers no
+    override, so a session can hand over only a claim it holds or one nobody
+    holds."""
+    def rule(ctx, args):
+        scope = _scope(ctx)
+        args["id"], _ = _scoped_item(ctx, scope, args["id"], args["project"], True,
+                                     ctx.policy.mutable_types, direct=True)
+        args[stamp] = scope.identity
+        return Call(args, shape_passthrough)
+    return rule
 
 
 RULES = {
@@ -594,7 +701,14 @@ RULES = {
     "docket_query": rule_docket_query,
     "docket_comment": rule_docket_comment,
     "docket_create": rule_docket_create,
-    "docket_mutate": rule_docket_mutate,
+    "docket_attach": rule_docket_attach,
+    "docket_detach": rule_docket_detach,
+    "docket_update": _mutate("docket_update"),
+    "docket_transition": _mutate("docket_transition"),
+    "docket_append": _mutate("docket_append"),
+    "docket_claim": _claim_verb("holder"),
+    "docket_release": _claim_verb("holder"),
+    "docket_reassign": _claim_verb("actor"),
 }
 
 
@@ -617,4 +731,7 @@ def plan_call(policy, service, session, name, arguments, lookup):
     rule = spec.get("rule")
     if rule is None:
         return Call(args, shape_passthrough)
-    return RULES[rule](_Context(policy, session, lookup), args)
+    try:
+        return RULES[rule](_Context(policy, session, lookup), args)
+    except docket_scope.Refused as exc:
+        raise Deny(exc.code, exc.detail) from None

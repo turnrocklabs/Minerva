@@ -18,10 +18,17 @@ extends RefCounted
 ## lists what the session is missing (agent.py readiness, readiness.py).
 ##
 ## Grants: status, info and list answers carry `grants`, the session's grant
-## record {version, note_read, note_write, notify} (agent.py grants.json);
+## record {version, note_read, note_write, notify, and identity + role once one
+## is registered} (agent.py grants.json);
 ## grant() and revoke() change it at any time, running or not. The session's
 ## gateway reads the record on every call, so the change applies to its next
 ## call with no attach.
+##
+## Docket identity: the identity and role HarnessSessionRegistry holds for a
+## container session are copied into its grant record (agent.py identity)
+## whenever the registry changes, and once when the store is first created.
+## The session's gateway scopes its Docket access to the work assigned or
+## directed to them (gateway/docket_scope.py).
 ##
 ## attach() fronts a running session in a terminal tab: it writes the attach
 ## command into the tab's shell, where the launcher holds the session's lease
@@ -74,12 +81,54 @@ static var _shared: RefCounted = null
 ## True while build() runs; the last build's answer stays in last_build.
 var building: bool = false
 var last_build: Dictionary = {}
+## Container session name -> "identity\nrole" last written to its grant record.
+var _identities_written: Dictionary = {}
 
 
 static func shared() -> RefCounted:
 	if _shared == null:
 		_shared = load("res://Scripts/Services/AgentSessions/AgentSessionStore.gd").new()
+		var sync := Callable(_shared, "sync_identities")
+		HarnessSessionRegistry.shared().changed.connect(sync)
+		sync.call()
 	return _shared
+
+
+## Writes each container session's registered identity and role into its
+## grant record, and clears it for a session whose registration is gone. Only
+## changes since the last write run the launcher; a failure is reported once
+## and retried when that registration next changes.
+func sync_identities() -> void:
+	if OS.get_name() == "Windows" or launcher_path().is_empty():
+		return
+	var registry: HarnessSessionRegistry = HarnessSessionRegistry.shared()
+	var wanted: Dictionary = registry.container_identities()
+	for container: String in _identities_written:
+		if not wanted.has(container):
+			wanted[container] = {"identity": "", "role": ""}
+	var wrote: bool = false
+	for container: String in wanted:
+		var identity: String = str(wanted[container]["identity"])
+		var role: String = str(wanted[container]["role"])
+		var written: String = "%s\n%s" % [identity, role]
+		if str(_identities_written.get(container, "")) == written or not _check_id(container).is_empty():
+			continue
+		# Marked before the launcher runs, so a change signalled meanwhile
+		# does not write the same record twice.
+		_identities_written[container] = written
+		var args: PackedStringArray = ["identity", container]
+		if not identity.is_empty():
+			args.append("--identity=" + identity)
+			if not role.is_empty():
+				args.append("--role=" + role)
+		var result: Dictionary = await _run(args, QUICK_TIMEOUT_S)
+		wrote = true
+		if not bool(result.get("ok", false)):
+			push_warning("AgentSessionStore: Docket identity for %s not recorded: %s" % [container, str(result.get("error", ""))])
+		if identity.is_empty() and _identities_written.get(container) == written:
+			_identities_written.erase(container)
+	if wrote:
+		changed.emit()
 
 
 ## The launcher this Minerva uses: the packaged kit when present, else the

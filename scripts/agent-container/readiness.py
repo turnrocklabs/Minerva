@@ -12,7 +12,8 @@ only resolves tools, runs their version commands, tests that folders exist
 and asks git for the author identity; it starts no application, test suite
 or container. Docket projects are checked on the host against the Docket
 service the gateway forwards to (gateway/gateway.json), with the read-only
-docket_project_list call.
+docket_project_list call; its tools/list says whether that Docket build has
+the W1 claim verbs the gateway's scoped protected writes rely on.
 """
 import json
 from pathlib import Path
@@ -153,8 +154,12 @@ def at_least(found, minimum):
     return a + [0] * (width - len(a)) >= b + [0] * (width - len(b))
 
 
-def docket_projects():
-    """(names the Docket service knows, "") or (None, why it could not be asked)."""
+CLAIM_VERBS = ("docket_claim", "docket_release", "docket_reassign")
+
+
+def _docket(method, params):
+    """One read-only request to the Docket service the gateway forwards to:
+    (result, "") or (None, why it could not be asked)."""
     gateway = str(HERE / "gateway")
     sys.path.insert(0, gateway)
     try:
@@ -164,22 +169,53 @@ def docket_projects():
     try:
         config = json.loads((HERE / "gateway" / "gateway.json").read_text())
         upstream = mcp_http.Upstream.parse(config["upstreams"]["docket"])
-        message = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                   "params": {"name": "docket_project_list", "arguments": {}}}
-        reply, _ = mcp_http.call_upstream(upstream, message, {}, deadline_s=15)
-        result = reply.get("result", {}) if isinstance(reply, dict) else {}
-        text = result["content"][0]["text"] if not result.get("isError") else ""
-        listed = json.loads(text).get("projects") if text else None
+        reply, _ = mcp_http.call_upstream(upstream, {"jsonrpc": "2.0", "id": 1, "method": method,
+                                                     "params": params}, {}, deadline_s=15)
     except mcp_http.UpstreamError as exc:
         return None, f"the Docket service could not be asked ({exc})"
-    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+    except (OSError, ValueError, KeyError) as exc:
+        return None, f"the Docket service could not be asked ({type(exc).__name__})"
+    result = reply.get("result") if isinstance(reply, dict) else None
+    return (result, "") if isinstance(result, dict) else (None, "the Docket service gave no result")
+
+
+def docket_projects():
+    """(names the Docket service knows, "") or (None, why it could not be asked)."""
+    result, error = _docket("tools/call", {"name": "docket_project_list", "arguments": {}})
+    if result is None:
+        return None, error
+    try:
+        text = result["content"][0]["text"] if not result.get("isError") else ""
+        listed = json.loads(text).get("projects") if text else None
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
         return None, f"the Docket service gave no project list ({type(exc).__name__})"
     if not isinstance(listed, list):
         return None, "the Docket service did not list its projects"
     return {str(p.get("name", "")) for p in listed if isinstance(p, dict)}, ""
 
 
-def checks(record, running, measured, tools, known_projects, docket_error):
+def docket_claims():
+    """(True, detail) when the Docket service offers the claim verbs and
+    docket_update takes `holder`; (False, what is missing or why it could
+    not be asked) otherwise. Read from its tools/list."""
+    result, error = _docket("tools/list", {})
+    if result is None:
+        return False, error
+    tools = {t.get("name"): t for t in result.get("tools", []) if isinstance(t, dict)} \
+        if isinstance(result.get("tools"), list) else {}
+    schema = tools.get("docket_update", {}).get("inputSchema", {})
+    props = schema.get("properties", {}) if isinstance(schema, dict) else {}
+    missing = [v for v in CLAIM_VERBS if v not in tools]
+    if not isinstance(props, dict) or "holder" not in props:
+        missing.append("docket_update holder")
+    if missing:
+        return False, (f"this Docket build lacks {', '.join(missing)}: the session can read and add "
+                       "evidence to its assigned work, but its claims and protected-field changes are "
+                       "refused until the Docket app is updated")
+    return True, "the Docket service offers docket_claim/release/reassign and holder on writes"
+
+
+def checks(record, running, measured, tools, known_projects, docket_error, claims=None):
     """Every readiness check as {"check", "name", "ok", "detail"}."""
     out = []
 
@@ -221,4 +257,6 @@ def checks(record, running, measured, tools, known_projects, docket_error):
             add("docket", project, project in known_projects,
                 "loaded by the Docket service" if project in known_projects
                 else "the Docket service has no project by this name")
+    if claims is not None:
+        add("docket", "claim verbs", claims[0], claims[1])
     return out

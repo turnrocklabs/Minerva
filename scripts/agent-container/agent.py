@@ -10,6 +10,7 @@
   agent.py grant NAME [--note-read ID]... [--note-write ID]... [--notify]
   agent.py revoke NAME [--note-read ID]... [--note-write ID]... [--notify]
   agent.py notes NAME [--note-read ID]... [--note-write ID]...   replace the note grants
+  agent.py identity NAME [--identity ID [--role ROLE]]   set (or, bare, clear) the Docket identity
   agent.py stop NAME
   agent.py status NAME
   agent.py info NAME [--map HOST_PATH]...
@@ -60,6 +61,11 @@ is no per-target list. Minerva changes the record with `grant` and `revoke`
 with no re-attach; the gateway reads it on every call, so the next
 call sees the change. `revoke --note-read` removes only the read entry and
 `revoke --note-write` only the write entry.
+The record also carries the session identity and role Minerva registered for
+it (HarnessSessionRegistry), as "identity" and "role", written by `identity`
+whenever that registration changes and absent while there is none. The
+gateway scopes the session's Docket access to the work assigned or directed
+to them (gateway/docket_scope.py).
 Migration: a session with no grants.json (started by an earlier agent.py)
 gets one from its control/notes.json, with notify on, when it next starts or
 its grants are next changed. Every grant change also rewrites notes.json
@@ -140,6 +146,10 @@ NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 NOTE_ID = re.compile(r"[0-9a-f]{32,64}")
 GRANTS_VERSION = 1
+GRANTS_KEYS = {"version", "note_read", "note_write", "notify"}
+IDENTITY_KEYS = {"identity", "role"}
+# The registry's identity and role alphabet (HarnessSessionRegistry._validate).
+PRINCIPAL = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
 # Keeps grants.json under the gateway's read limit (gateway.MAX_GRANTS).
 MAX_GRANTED_NOTES = 256
 PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -543,6 +553,11 @@ def _note_ids(value):
     return isinstance(value, list) and all(isinstance(i, str) and NOTE_ID.fullmatch(i) for i in value)
 
 
+def _principals(identity, role):
+    return isinstance(identity, str) and bool(PRINCIPAL.fullmatch(identity)) \
+        and isinstance(role, str) and (role == "" or bool(PRINCIPAL.fullmatch(role)))
+
+
 def load_grants(name):
     """(grants, problem) for session `name`. With no grants.json the record is
     the one migration gives: notes.json's note grants, notify on. A malformed
@@ -552,9 +567,11 @@ def load_grants(name):
     path = grants_path(name)
     if os.path.lexists(path):
         data = read_json(path)
-        if isinstance(data, dict) and set(data) == set(empty) and type(data["version"]) is int \
+        if isinstance(data, dict) and set(data) in (GRANTS_KEYS, GRANTS_KEYS | IDENTITY_KEYS) \
+                and type(data["version"]) is int \
                 and data["version"] == GRANTS_VERSION and isinstance(data["notify"], bool) \
-                and _note_ids(data["note_read"]) and _note_ids(data["note_write"]):
+                and _note_ids(data["note_read"]) and _note_ids(data["note_write"]) \
+                and ("identity" not in data or _principals(data["identity"], data["role"])):
             return data, ""
         return empty, f"{path} is malformed, so the session holds no grants; grant again to rewrite it"
     notes = read_json(session_dir(name) / "control" / "notes.json")
@@ -609,6 +626,20 @@ def change_grants(name, add, read, write, notify):
             grants[key] = list(current | set(ids) if add else current - set(ids))
         if notify:
             grants["notify"] = add
+        return save_grants(name, grants)
+
+
+def set_identity(name, identity, role):
+    """Record the session identity and role (or, with identity "", remove
+    them), keeping every other grant."""
+    if identity and not _principals(identity, role or ""):
+        raise Refused("identity and role are 1-64 letters, digits and . _ : -")
+    if role and not identity:
+        raise Refused("a role needs an identity")
+    with session_lock(name, "grants.lock"):
+        grants = {k: v for k, v in load_grants(name)[0].items() if k not in IDENTITY_KEYS}
+        if identity:
+            grants.update(identity=identity, role=role or "")
         return save_grants(name, grants)
 
 
@@ -990,6 +1021,17 @@ def cmd_grant(args, add=True):
                        f"{len(grants['note_write'])}, notify {'on' if grants['notify'] else 'off'}"}
 
 
+def cmd_identity(args):
+    check_layout()
+    if load_record(args.name) is None:
+        raise Refused(f"no session {args.name}")
+    grants = set_identity(args.name, args.identity, args.role)
+    who = grants.get("identity", "")
+    return {"ok": True, "id": args.name, "grants": grants,
+            "message": f"{args.name}: Docket identity {who or 'none'}"
+                       + (f", role {grants['role']}" if grants.get("role") else "")}
+
+
 def cmd_revoke(args):
     return cmd_grant(args, add=False)
 
@@ -1062,7 +1104,8 @@ def cmd_readiness(args):
     measured = readiness.probe(dev, record["start_in"], [f["path"] for f in record["folders"]], tools) \
         if running_now else {}
     known, docket_error = readiness.docket_projects() if record["projects"] else (set(), "")
-    results = readiness.checks(record, running_now, measured, tools, known, docket_error)
+    claims = readiness.docket_claims() if record["projects"] else None
+    results = readiness.checks(record, running_now, measured, tools, known, docket_error, claims)
     missing = [f"{c['check']} {c['name']}: {c['detail']}" for c in results if not c["ok"]]
     where = f"inside {dev} (docker exec) and the host's Docket service" if running_now \
         else "the host's Docket service only"
@@ -1131,6 +1174,8 @@ def parse(argv):
                              ("notes", [note_options]), ("stop", []), ("status", []),
                              ("grant", [note_options, grant_options]),
                              ("revoke", [note_options, grant_options]),
+                             ("identity", [lambda p: p.add_argument("--identity", default=""),
+                                           lambda p: p.add_argument("--role", default="")]),
                              ("info", [lambda p: p.add_argument("--map", action="append", metavar="HOST_PATH")]),
                              ("readiness", [lambda p: p.add_argument("--profile", metavar="PROFILE")]),
                              ("list", [])):
@@ -1145,6 +1190,7 @@ def parse(argv):
 
 COMMANDS = {"build": cmd_build, "create": cmd_create, "start": cmd_start, "attach": cmd_attach,
             "up": cmd_up, "notes": cmd_notes, "grant": cmd_grant, "revoke": cmd_revoke,
+            "identity": cmd_identity,
             "stop": cmd_stop, "status": cmd_status,
             "info": cmd_info, "readiness": cmd_readiness, "list": cmd_list}
 

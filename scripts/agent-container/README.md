@@ -136,7 +136,7 @@ export PATH=/agent-home/tools/bin:$PATH; claude --resume
 
 Once the session is recreated on a current image, this is automatic.
 
-## Grants: notes and notify
+## Grants: notes, notify and the Docket identity
 
 What a session may do beyond the fixed gateway policy is one record Minerva
 keeps, `sessions/NAME/control/grants.json`: the notes it may read, the notes
@@ -157,6 +157,23 @@ re-attach is involved. A session started by an earlier
 next starts or its grants next change. Until it restarts, its gateway still
 reads `notes.json` (kept in step with every change) and its notify targets
 from `attach --notify-to`.
+
+## Docket: the session's assigned work only
+
+The session reaches Docket only for the work assigned to it. Its principals
+are the identity and role registered for it (`minerva_session_register` with
+`container`); Minerva copies them into `grants.json` (`agent.py identity`)
+whenever that registration changes. An item is the session's when its
+`assigned_to` or `directed_to` is exactly that identity or role; its chain
+adds those items' parents up to the first `wr:objective`. On the chain it may
+read items, comments and attachments and add comments, attachments and child
+items; it changes fields only on its own items, with `holder` stamped as its
+identity, and a protected field (W1 contract) only while it holds the claim
+(`docket_claim`). Anything else is refused with `docket_out_of_scope`, naming
+the item and the identity. `gateway/docket_scope.py` evaluates this on every
+call from the current records. `agent.py readiness NAME` reports whether the
+Docket service offers the claim verbs (an older Docket build does not: then
+claims and protected changes are refused).
 
 ## Notifications into a session (Linux)
 

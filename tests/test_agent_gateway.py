@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Agent-container gateway policy against instrumented stub upstreams: the tool
-allowlist, Docket item types and references, response shaping, logging, and
-Minerva notify/list with the launcher's binding, and the session's live
-grants (fixtures in agent_gateway_fixtures.py).
+allowlist, Docket item types and references, the Docket scope (assigned work
+and the claim), response shaping, logging, and Minerva notify/list with the
+launcher's binding, and the session's live grants (fixtures in
+agent_gateway_fixtures.py).
 """
 import io
 import json
@@ -15,7 +16,8 @@ import unittest
 from unittest import mock
 
 from agent_gateway_fixtures import (  # noqa: E402
-    BUG, DCR, GATEWAY, GatewayCase, KB, NOTE, OTHER, PLUGIN_BUG, TERMINALS,
+    ATTEMPT, BUG, DCR, FOREIGN, GATEWAY, GatewayCase, IDENT, KB, NOTE, OBJECTIVE, OTHER, PLUGIN_BUG,
+    TASK, TERMINALS,
     NOTE_A, NOTE_B, NOTE_IMG, POLICY, SECRET, SENTINEL, SESSION, TARGET, TERMINAL,
     text_result)
 
@@ -156,7 +158,7 @@ class Test(GatewayCase):
         self.assertIn("result", body, body)
         self.assertEqual(self.stubs["docket"].calls("docket_update"),
                          [{"id": BUG, "project": "minerva", "title": "t",
-                           "parent": f"plugins.dct:{PLUGIN_BUG}"}])
+                           "parent": f"plugins.dct:{PLUGIN_BUG}", "holder": IDENT}])
         self.call("docket", "docket_comment", {"action": "add", "item_id": BUG, "project": "minerva",
                                                "text": "hello"})
         self.assertEqual(self.stubs["docket"].calls("docket_comment")[0]["author"],
@@ -182,6 +184,50 @@ class Test(GatewayCase):
         called = self.stubs["docket"].tools_called()
         self.assertFalse({"docket_update", "docket_transition", "docket_create"} & set(called), called)
         self.assertEqual(len(self.stubs["docket"].calls("docket_comment")), 1)  # the list
+
+    def test_docket_scope_is_the_assigned_work_and_the_claim(self):
+        # Oracle: the gateway's decision and its refusal text. The session's
+        # identity (grants.json) is IDENT; ATTEMPT is assigned to it and
+        # claimed by it, TASK and OBJECTIVE are its parents, FOREIGN is a
+        # sibling task assigned to someone else.
+        docket = self.stubs["docket"]
+        for item in (ATTEMPT, TASK, OBJECTIVE):
+            with self.subTest(read=item):
+                body = self.call("docket", "docket_get", {"id": item, "project": "minerva"})
+                self.assertEqual(self.result_value(body)["id"], item)
+        body = self.call("docket", "docket_get", {"id": FOREIGN, "project": "minerva"})
+        self.assertDenied(body)
+        self.assertIn(f"docket_out_of_scope: item {FOREIGN} is not assigned to {IDENT}",
+                      body["error"]["message"])
+        self.assertNotIn("FOREIGN-SENTINEL", json.dumps(body))
+
+        # Evidence on the chain: an attachment on the parent task.
+        attach = {"item_id": TASK, "project": "minerva", "filename": "log.txt", "data": "aGVsbG8="}
+        self.assertIn("result", self.call("docket", "docket_attach", attach))
+        self.assertEqual(docket.calls("docket_attach"), [attach])
+        self.assertDenied(self.call("docket", "docket_attach", {**attach, "item_id": FOREIGN}))
+
+        # A protected write while the session holds the claim: forwarded,
+        # with the gateway's holder whatever the container sent.
+        move = {"id": ATTEMPT, "project": "minerva", "to": "in_progress"}
+        self.assertIn("result", self.call("docket", "docket_transition", move))
+        self.assertDenied(self.call("docket", "docket_transition", {**move, "holder": "worker-b"}))
+        self.assertEqual(docket.calls("docket_transition"), [{**move, "holder": IDENT}])
+
+        # The host reassigns the claim: the next protected write is refused,
+        # evidence on the item still goes through.
+        docket.items[("minerva", ATTEMPT)]["claim_holder"] = "worker-b"
+        body = self.call("docket", "docket_transition", move)
+        self.assertDenied(body)
+        self.assertIn(f"docket_not_holder: item {ATTEMPT} is not claimed by {IDENT}", body["error"]["message"])
+        self.assertIn("result", self.call("docket", "docket_comment", {
+            "action": "add", "item_id": ATTEMPT, "project": "minerva", "text": "what I did"}))
+        # ...and once assigned_to moves too, the item leaves the scope.
+        docket.items[("minerva", ATTEMPT)]["assigned_to"] = "worker-b"
+        body = self.call("docket", "docket_update", {"id": ATTEMPT, "project": "minerva", "priority": 2})
+        self.assertIn(f"docket_out_of_scope: item {ATTEMPT} is not assigned to {IDENT}", body["error"]["message"])
+        self.assertEqual(len(docket.calls("docket_transition")), 1)
+        self.assertNotIn("docket_update", docket.tools_called())
 
     def test_upstream_payloads_are_rebuilt_not_relayed(self):
         nudge, docket = self.stubs["nudge"], self.stubs["docket"]

@@ -1,5 +1,6 @@
 {
-  "comment": "Agent-container MCP allowlist. Deny by default: a tool, argument or value not listed here never reaches the upstream. Argument kinds: line (one line, <=512 chars), text (<=64 KiB), int, bool, str_list, json (any JSON, <=64 KiB encoded), ref (Docket item id: 32 hex, or allowed-project:32 hex), note_id (Minerva note id; the session's note grants decide which), project (must be one of the session's Docket projects), {enum: [...]}. Tool schemas shown to the container are generated from these specs. 'rule' names the check in mcp_policy.py that runs after argument validation. Minerva item ids and item types are data owned by the upstreams; see design minerva:01a0c9aeecc8 #2080.",
+  "comment": "Agent-container MCP allowlist. Deny by default: a tool, argument or value not listed here never reaches the upstream. Argument kinds: line (one line, <=512 chars), text (<=64 KiB), int, bool, str_list, json (any JSON, <=64 KiB encoded), ref (Docket item id: 32 hex, or allowed-project:32 hex), base64 (attachment data, <=900 KiB encoded), note_id (Minerva note id; the session's note grants decide which), project (must be one of the session's Docket projects), {enum: [...]}. Tool schemas shown to the container are generated from these specs. 'rule' names the check in mcp_policy.py that runs after argument validation. Minerva item ids and item types are data owned by the upstreams; see design minerva:01a0c9aeecc8 #2080.",
+  "docket_scope": "Docket is scoped to the session's assigned work (docket_scope.py, evaluated on every call from the current records). The session's principals are the identity and role Minerva registered for it, carried in its grant record (control/grants.json). An item is direct when its assigned_to or directed_to equals one of them; the session's chain is its direct items plus their parents up to the first wr:objective. It may read chain items (docket_get, docket_query rows, comments, attachment lists and downloads) and add evidence to them (docket_comment add, docket_attach, docket_create under a chain item). It changes fields only on direct items (docket_update, docket_transition, docket_append, docket_claim, docket_release, docket_reassign), always with holder or actor stamped as its identity, and a protected-field change (W1 contract section 4) also needs the item's claim held by that identity. Everything else is refused as docket_out_of_scope; with no registered identity nothing is in scope.",
   "docket_readable_types": [
     "bug",
     "work_item",
@@ -169,7 +170,8 @@
         "required": [
           "type",
           "title",
-          "project"
+          "project",
+          "parent"
         ],
         "rule": "docket_create"
       },
@@ -196,13 +198,14 @@
           "value": "text",
           "article": "text",
           "test_setup": "text",
-          "test_steps": "text"
+          "test_steps": "text",
+          "if_revision": "int"
         },
         "required": [
           "id",
           "project"
         ],
-        "rule": "docket_mutate"
+        "rule": "docket_update"
       },
       "docket_transition": {
         "args": {
@@ -211,14 +214,105 @@
           "to": "line",
           "note": "text",
           "resolution": "text",
-          "blocked_by": "ref"
+          "blocked_by": "ref",
+          "if_revision": "int"
         },
         "required": [
           "id",
           "project",
           "to"
         ],
-        "rule": "docket_mutate"
+        "rule": "docket_transition"
+      },
+      "docket_append": {
+        "args": {
+          "id": "ref",
+          "project": "project",
+          "field": "line",
+          "text": "text",
+          "request_id": "line",
+          "if_revision": "int"
+        },
+        "required": [
+          "id",
+          "project",
+          "field",
+          "text",
+          "request_id"
+        ],
+        "rule": "docket_append"
+      },
+      "docket_attach": {
+        "args": {
+          "item_id": "ref",
+          "project": "project",
+          "filename": "line",
+          "data": "base64",
+          "mime_type": "line",
+          "description": "line"
+        },
+        "required": [
+          "item_id",
+          "project",
+          "filename",
+          "data"
+        ],
+        "rule": "docket_attach"
+      },
+      "docket_detach": {
+        "args": {
+          "action": {
+            "enum": [
+              "list",
+              "get"
+            ]
+          },
+          "item_id": "ref",
+          "attachment_id": "int",
+          "project": "project"
+        },
+        "required": [
+          "action",
+          "project"
+        ],
+        "rule": "docket_detach"
+      },
+      "docket_claim": {
+        "args": {
+          "id": "ref",
+          "project": "project"
+        },
+        "required": [
+          "id",
+          "project"
+        ],
+        "rule": "docket_claim"
+      },
+      "docket_release": {
+        "args": {
+          "id": "ref",
+          "project": "project"
+        },
+        "required": [
+          "id",
+          "project"
+        ],
+        "rule": "docket_release"
+      },
+      "docket_reassign": {
+        "args": {
+          "id": "ref",
+          "project": "project",
+          "to": "line",
+          "reason": "line"
+        },
+        "required": [
+          "id",
+          "project",
+          "to",
+          "reason"
+        ],
+        "rule": "docket_reassign"
       }
     },
     "nudge": {

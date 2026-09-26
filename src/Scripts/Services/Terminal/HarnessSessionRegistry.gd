@@ -85,6 +85,18 @@ func identity_for_container(container: String) -> String:
 	return str(_records[key]["identity"]) if not key.is_empty() else ""
 
 
+## Every registered agent-container session: container session name ->
+## {"identity", "role"}. AgentSessionStore copies these into each session's
+## grant record, where the container gateway scopes its Docket access by them.
+func container_identities() -> Dictionary:
+	var out: Dictionary = {}
+	for key: String in _records:
+		var container: String = str(_records[key]["container"])
+		if not container.is_empty():
+			out[container] = {"identity": str(_records[key]["identity"]), "role": str(_records[key]["role"])}
+	return out
+
+
 ## The terminal id `identity` is bound to in this run, or "".
 func terminal_of(identity: String) -> String:
 	return str(_bound.get(identity.strip_edges().to_lower(), ""))

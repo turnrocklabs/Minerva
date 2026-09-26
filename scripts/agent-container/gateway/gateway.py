@@ -13,9 +13,10 @@ agent.py rewrites it on each attach, since a restarted Minerva hands out new
 terminal ids. A binding carries a lease (expires_at) that the attached
 launcher keeps renewing, so an attach that died without cleaning up stops
 routing notifications once its lease lapses. The session's grants (notes it
-may read and write, whether it may notify) are read the same way from
-control/grants.json, which Minerva rewrites through `agent.py grant/revoke`
-while the session runs; a missing or malformed record grants nothing.
+may read and write, whether it may notify, the session identity and role
+that decide its Docket scope) are read the same way from control/grants.json,
+which Minerva rewrites through `agent.py grant/revoke/identity` while the
+session runs; a missing or malformed record grants nothing.
 
 Usage: gateway.py --config gateway.json --sessions sessions.json
 The gateway never removes files: an existing socket path refuses startup, so
@@ -46,6 +47,9 @@ TERMINAL_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 MAX_BINDING = 4096
 MAX_GRANTS = 64 * 1024
 GRANTS_KEYS = {"version", "note_read", "note_write", "notify"}
+# Written only once Minerva has registered a session identity (agent.py identity).
+IDENTITY_KEYS = {"identity", "role"}
+PRINCIPAL = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
 
 
 def _control_json(path, limit=MAX_BINDING):
@@ -76,16 +80,23 @@ def read_binding(path, now=time.time):
 def read_grants(path):
     """The session's current Grants from the record Minerva keeps (agent.py
     grants_path): {"version": 1, "note_read": [id...], "note_write": [id...],
-    "notify": bool}. Anything missing or malformed grants nothing."""
+    "notify": bool}, plus "identity" and "role" once a session identity is
+    registered. Anything missing or malformed grants nothing."""
     data = _control_json(path, MAX_GRANTS)
-    if not isinstance(data, dict) or set(data) != GRANTS_KEYS or type(data["version"]) is not int \
+    if not isinstance(data, dict) or set(data) not in (GRANTS_KEYS, GRANTS_KEYS | IDENTITY_KEYS) \
+            or type(data["version"]) is not int \
             or data["version"] != 1 or not isinstance(data["notify"], bool):
+        return mcp_policy.NO_GRANTS
+    identity, role = data.get("identity", ""), data.get("role", "")
+    if "identity" in data and not (isinstance(identity, str) and PRINCIPAL.fullmatch(identity)
+                                   and isinstance(role, str) and (role == "" or PRINCIPAL.fullmatch(role))):
         return mcp_policy.NO_GRANTS
     ids = [data["note_read"], data["note_write"]]
     if not all(isinstance(v, list) and all(isinstance(i, str) and mcp_policy.NOTE_ID.fullmatch(i)
                                            for i in v) for v in ids):
         return mcp_policy.NO_GRANTS
-    return mcp_policy.Grants(frozenset(data["note_read"]), frozenset(data["note_write"]), data["notify"])
+    return mcp_policy.Grants(frozenset(data["note_read"]), frozenset(data["note_write"]), data["notify"],
+                             identity, role)
 
 
 def load_json(path):
