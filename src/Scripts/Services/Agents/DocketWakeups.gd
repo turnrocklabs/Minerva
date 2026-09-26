@@ -39,6 +39,14 @@ extends RefCounted
 ## When a role is handed over (the registry's handed_over), batches and
 ## directives not yet sent to a superseded identity move to the replacement;
 ## pointers already in the ledger are moved there (NotifyDeliveryLedger.retarget).
+##
+## Receipts: a caller that must know when a change was consumed (the docket.app
+## subscription feed, which acks it then) passes a Receipt to take(). Each
+## session the change is addressed to holds the receipt until the pointer
+## carrying the change is handed_to_harness in the ledger; a change this
+## session already took holds it until that earlier pointer settles. A pointer
+## that ends unconfirmed (or whose record is gone) abandons the receipt, so it
+## never fires. A change that wakes nobody holds nothing.
 
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
 const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
@@ -71,23 +79,59 @@ var _woken: Dictionary = {}
 # "<identity>|<project>|<item id>" -> the item's control tags last seen.
 var _control_seen: Dictionary = {}
 var _rechecking: bool = false
+# "<identity>|<change key>" -> Array of Receipt: changes taken and not yet
+# settled in the ledger, with the receipts waiting on them.
+var _pending: Dictionary = {}
+
+
+## Fires its Callable once every hold on it is released; never once abandoned.
+## Its creator holds it from the start and releases that hold when it has
+## handed the change to every consumer.
+class Receipt extends RefCounted:
+	var _holds: int = 1
+	var _abandoned: bool = false
+	var _on_consumed: Callable
+
+	func _init(on_consumed: Callable) -> void:
+		_on_consumed = on_consumed
+
+	func hold() -> void:
+		_holds += 1
+
+	func release() -> void:
+		_holds -= 1
+		if _holds == 0 and not _abandoned:
+			_on_consumed.call()
+
+	func abandon() -> void:
+		_abandoned = true
 
 
 func _init() -> void:
 	registry.changed.connect(_flush_all)
 	registry.handed_over.connect(_on_handed_over)
+	NotifyDeliveryLedger.shared().changed.connect(_on_ledger_changed)
+
+
+## The change key of a change with no source position: the embedded
+## DocketManager's, derived from the item's updated_at after the change.
+static func change_key_of(project: String, item_id: String, kind: String, updated_at: String,
+		from_status: String, to_status: String) -> String:
+	return "%s|%s|%s|%s|%s>%s" % [project, item_id, kind, updated_at, from_status, to_status]
 
 
 ## Take one Docket change of `item_id` in `project` (kind: created,
 ## transitioned, updated, comment_added) that `trig` passed its filters for.
-## `item` is the item as it is now; {} (deleted) wakes nobody.
+## `item` is the item as it is now; {} (deleted) wakes nobody. `receipt`,
+## when given, is held until the change is delivered (see Receipts).
 func take(trig: TriggerDefinition, project: String, item_id: String, kind: String,
-		from_status: String, to_status: String, item: Dictionary, change_key: String) -> void:
+		from_status: String, to_status: String, item: Dictionary, change_key: String,
+		receipt: Receipt = null) -> void:
 	if item.is_empty():
 		return
 	if change_key.is_empty():
-		change_key = "%s|%s|%s|%s|%s>%s" % [project, item_id, kind, str(item.get("updated_at", "")),
-			from_status, to_status]
+		change_key = change_key_of(project, item_id, kind, str(item.get("updated_at", "")),
+			from_status, to_status)
 	var identities := PackedStringArray()
 	for field: String in ["assigned_to", "directed_to"]:
 		var principal = item.get(field)
@@ -108,8 +152,16 @@ func take(trig: TriggerDefinition, project: String, item_id: String, kind: Strin
 	var control_set: String = ",".join(controls)
 	var sender: String = TriggerHarnessDelivery._sender(trig)
 	for identity in identities:
-		if not _first_sight(identity + "|" + change_key):
+		var key: String = identity + "|" + change_key
+		if not _first_sight(key):
+			if receipt != null and _pending.has(key):
+				receipt.hold()
+				(_pending[key] as Array).append(receipt)
 			continue
+		_pending[key] = []
+		if receipt != null:
+			receipt.hold()
+			(_pending[key] as Array).append(receipt)
 		var seen_key: String = "%s|%s|%s" % [identity, project, item_id]
 		var before: String = str(_control_seen.get(seen_key, ""))
 		if control_set.is_empty():
@@ -120,10 +172,10 @@ func take(trig: TriggerDefinition, project: String, item_id: String, kind: Strin
 			var line: String = "Docket CONTROL %s on %s '%s' (%s): read it before you continue" % [
 				control_set, ref, _short(title), kind]
 			var queue: Array = _control.get_or_add(identity, [])
-			queue.append({"line": line, "sender": sender, "delivery_id": "", "sending": false})
+			queue.append({"line": line, "sender": sender, "delivery_id": "", "sending": false, "keys": [key]})
 			_send_controls(identity)
 		else:
-			_add_routine(identity, ref, title, kind, sender)
+			_add_routine(identity, ref, title, kind, sender, key)
 			_arm(identity, maxf(trig.docket_poll_interval, MIN_WINDOW_S))
 
 
@@ -137,8 +189,9 @@ func _first_sight(key: String) -> bool:
 	return true
 
 
-func _add_routine(identity: String, ref: String, title: String, kind: String, sender: String) -> void:
+func _add_routine(identity: String, ref: String, title: String, kind: String, sender: String, key: String) -> void:
 	var batch: Dictionary = _routine.get_or_add(identity, _new_batch(sender))
+	(batch.keys as Array).append(key)
 	var entry: Dictionary = batch.items.get_or_add(ref, {"title": title, "kinds": {}})
 	entry.title = title
 	entry.kinds[kind] = int(entry.kinds.get(kind, 0)) + 1
@@ -146,7 +199,7 @@ func _add_routine(identity: String, ref: String, title: String, kind: String, se
 
 
 static func _new_batch(sender: String) -> Dictionary:
-	return {"items": {}, "changes": 0, "sender": sender, "armed": false}
+	return {"items": {}, "changes": 0, "sender": sender, "armed": false, "keys": []}
 
 
 # Folds batch `from` into `into`, counts added.
@@ -157,6 +210,7 @@ static func _merge(into: Dictionary, from: Dictionary) -> void:
 		for kind: String in theirs.kinds:
 			ours.kinds[kind] = int(ours.kinds.get(kind, 0)) + int(theirs.kinds[kind])
 	into.changes = int(into.changes) + int(from.changes)
+	(into.keys as Array).append_array(from.keys)
 
 
 # Opens `identity`'s coalescing window unless one is open; sends when it closes.
@@ -184,6 +238,8 @@ func _send_routine(identity: String) -> void:
 		_inflight.erase(identity)
 		if state in [NotifyDeliveryLedger.FAILED, NotifyDeliveryLedger.DROPPED]:
 			_merge(_routine.get_or_add(identity, _new_batch(str(open.batch.sender))), open.batch)
+		else:
+			_settle(open.batch.keys, state)
 	if not _routine.has(identity) or _routine[identity].items.is_empty() or _routine[identity].armed:
 		return
 	if not _live(identity):
@@ -198,6 +254,7 @@ func _send_routine(identity: String) -> void:
 		_merge(_routine.get_or_add(identity, _new_batch(str(batch.sender))), batch)
 	else:
 		_inflight[identity].delivery_id = delivery_id
+		_on_ledger_changed(delivery_id)
 	_recheck_later()
 
 
@@ -210,6 +267,7 @@ func _send_controls(identity: String) -> void:
 			var state: String = str(NotifyDeliveryLedger.shared().get_record(str(entry.delivery_id)).get("state", ""))
 			if state in [NotifyDeliveryLedger.HANDED, NotifyDeliveryLedger.UNCONFIRMED] or state.is_empty():
 				queue.erase(entry)
+				_settle(entry.keys, state)
 				continue
 			if not state in [NotifyDeliveryLedger.FAILED, NotifyDeliveryLedger.DROPPED]:
 				_recheck_later()
@@ -221,10 +279,42 @@ func _send_controls(identity: String) -> void:
 		entry.sending = true
 		entry.delivery_id = await _send(identity, str(entry.line), str(entry.sender), true)
 		entry.sending = false
+		if not str(entry.delivery_id).is_empty():
+			_on_ledger_changed(str(entry.delivery_id))
 	if queue.is_empty():
 		_control.erase(identity)
 	else:
 		_recheck_later()
+
+
+# The changes `keys` left the ledger in `state`: their receipts are released
+# when it is handed_to_harness, abandoned otherwise.
+func _settle(keys: Array, state: String) -> void:
+	for key: String in keys:
+		var receipts: Array = _pending.get(key, [])
+		_pending.erase(key)
+		for receipt: Receipt in receipts:
+			if state == NotifyDeliveryLedger.HANDED:
+				receipt.release()
+			else:
+				receipt.abandon()
+
+
+# A pointer sent from here settled (possibly before its send returned): look
+# again now rather than at the next RECHECK_S, deferred so the ledger finishes
+# the change it is signalling first.
+func _on_ledger_changed(delivery_id: String) -> void:
+	var state: String = str(NotifyDeliveryLedger.shared().get_record(delivery_id).get("state", ""))
+	if not state in NotifyDeliveryLedger.SETTLED:
+		return
+	var ours: bool = false
+	for open: Dictionary in _inflight.values():
+		ours = ours or str(open.delivery_id) == delivery_id
+	for queue: Array in _control.values():
+		for entry: Dictionary in queue:
+			ours = ours or str(entry.delivery_id) == delivery_id
+	if ours:
+		_flush_all.call_deferred()
 
 
 # One pointer to `identity` through the ledger: its delivery id, or "" when

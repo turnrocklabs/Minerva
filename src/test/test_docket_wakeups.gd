@@ -14,6 +14,12 @@ extends SceneTree
 ## never sent to the same identity again, even when the item names that
 ## identity twice (assigned_to and directed_to).
 ##
+## A docket.app subscription event (DocketSubscriptionFeed, against a scripted
+## Docket whose call log is the oracle) for a change the embedded path already
+## gave is not sent again, and docket_ack goes out only after the ledger has
+## the pointer handed_to_harness: the log reads subscribe, changes_since,
+## get, then ack, and nothing is acked while the pointer's window is open.
+##
 ## Run: godot --headless --path src --script test/test_docket_wakeups.gd
 
 const World := preload("res://test/helpers/notify_world.gd")
@@ -22,6 +28,8 @@ const TRIGGER_PATH := "res://Scripts/Services/Agents/TriggerDefinition.gd"
 const REGISTRY_PATH := "res://Scripts/Services/Terminal/HarnessSessionRegistry.gd"
 const LEDGER_PATH := "res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd"
 const TEST_STORE := "user://test_docket_wakeups_sessions.json"
+const FEED_PATH := "res://Scripts/Services/Agents/DocketSubscriptionFeed.gd"
+const TEST_FEED_STATE := "user://test_docket_wakeups_feed.json"
 
 var _pass := 0
 var _fail := 0
@@ -61,10 +69,13 @@ func _run() -> void:
 	registry_script._shared = registry
 	ledger_script._shared = ledger_script.new()
 	await _test_wakeups(registry)
+	await _test_subscription_dedup(registry)
 	registry_script._shared = saved_registry
 	ledger_script._shared = saved_ledger
 	if FileAccess.file_exists(TEST_STORE):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_STORE))
+	if FileAccess.file_exists(TEST_FEED_STATE):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_FEED_STATE))
 
 
 func _test_wakeups(registry) -> void:
@@ -131,6 +142,70 @@ func _test_wakeups(registry) -> void:
 	await _settle(2500)
 	check("W6: a change already taken never wakes the same identity again",
 		module.relay_calls.size() == before_replay, str(module.relay_calls.slice(before_replay)))
+
+
+func _test_subscription_dedup(registry) -> void:
+	var module = World.make_module([
+		{"id": "606", "name": "Worker B", "harness": "codex", "foreground_process": "codex",
+			"foreground_pid": 6060, "alive": true},
+	], {})
+	var registered: Dictionary = registry.register("worker-b", "reviewer", "606", "", "codex", module.terminals)
+	check("D0: worker-b is registered at terminal 606", bool(registered.get("success", false)), str(registered))
+	var wakeups = load(WAKEUPS_PATH).new()
+	wakeups.tools = module
+	var trig = load(TRIGGER_PATH).new()
+	trig.name = "wake-sub"
+	trig.enabled = true
+	trig.trigger_type = TriggerDefinition.TriggerType.DOCKET_POLL
+	trig.docket_wake_sessions = true
+	trig.docket_poll_interval = 1.0
+
+	# One transition of item-9, seen first by the embedded path.
+	var stamp := "2026-09-26T10:00:00"
+	var item: Dictionary = {"id": "item-9", "title": "Task item-9", "type": "work_item", "status": "in_progress",
+		"assigned_to": "worker-b", "tags": [], "updated_at": stamp,
+		"events": [{"event_type": "transition", "timestamp": stamp, "note": "open → in_progress", "actor": "a"}]}
+	wakeups.take(trig, "minerva", "item-9", "transitioned", "open", "in_progress", item, "")
+
+	# The same change from docket.app's feed. The scripted Docket logs each call
+	# with the relay sends made before it.
+	var calls: Array = []
+	var served: Array[TriggerDefinition] = [trig]
+	var feed = load(FEED_PATH).new(wakeups, func() -> Array[TriggerDefinition]: return served)
+	feed.state_path = TEST_FEED_STATE
+	feed.caller = func(tool: String, arguments: Dictionary) -> Dictionary:
+		calls.append({"tool": tool, "arguments": arguments, "relayed": module.relay_calls.size()})
+		match tool:
+			"docket_subscribe":
+				return {"subscriber": "sub-1", "name": arguments.get("name", ""), "cursor": "c0"}
+			"docket_changes_since":
+				return {"events": [{"project": "minerva", "eid": 7, "item_id": "item-9", "kind": "transition",
+					"actor": "a", "timestamp": stamp, "fields": ["status"], "possible_duplicate": false}],
+					"next_cursor": "c1", "more": false, "expired": false}
+			"docket_get":
+				return item
+			"docket_ack":
+				return {"subscriber": "sub-1", "acked": arguments.get("event_ids", []), "already_acked": [], "pending_count": 0}
+		return {"error": "unexpected %s" % tool}
+	await feed.poll_once()
+	var tools: Array = calls.map(func(entry: Dictionary) -> String: return str(entry.tool))
+	check("D1: the feed subscribes under the installation identity, reads, and has not acked while the pointer waits",
+		tools == ["docket_subscribe", "docket_changes_since", "docket_get"]
+			and str(calls[0].arguments.name).begins_with("minerva@install-") and module.relay_calls.is_empty(),
+		str(calls))
+
+	await _wait_for(func() -> bool: return calls.size() >= 4, 6000)
+	await _settle(1500)
+	var sent: Array = module.relay_calls.filter(func(relayed: Dictionary) -> bool: return str(relayed.get("text", "")).contains("item-9"))
+	check("D2: the subscription's copy of the change is deduped: ONE pointer, counting one change",
+		sent.size() == 1 and str(sent[0].get("text", "")).contains("1 change on"), str(module.relay_calls))
+	var ack: Dictionary = calls[3] if calls.size() >= 4 else {}
+	check("D3: docket_ack is the last call, names the event, and follows the pointer's delivery",
+		calls.size() == 4 and str(ack.get("tool", "")) == "docket_ack" and int(ack.get("relayed", 0)) >= 1
+			and str(ack.arguments.get("subscriber", "")) == "sub-1"
+			and ack.arguments.get("event_ids", []) == [{"project": "minerva", "eid": 7}],
+		str(calls))
+	check("D4: the feed saved the cursor after the page", feed.cursor == "c1", feed.cursor)
 
 
 func _ledger_classes() -> Array:

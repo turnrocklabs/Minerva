@@ -59,6 +59,9 @@ var harness_delivery := TriggerHarnessDelivery.new()
 var docket_feed := DocketTriggerFeed.new(self)
 ## Wake-up pointers for DOCKET_POLL triggers in wake mode.
 var docket_wakeups := DocketWakeups.new()
+## Wake-mode DOCKET_POLL triggers fed from docket.app's change feed too, when
+## that is enabled (off by default).
+var docket_subscription: DocketSubscriptionFeed
 
 
 class BatchState:
@@ -88,6 +91,8 @@ func _ready() -> void:
 	# PLUGIN_EVENT triggers: connect to plugin_event_broker if available
 	_connect_plugin_event_broker()
 	docket_feed.connect_sources()
+	docket_subscription = DocketSubscriptionFeed.new(docket_wakeups, func() -> Array[TriggerDefinition]: return triggers)
+	docket_subscription.start()
 
 	# Wall-clock schedule poll timer (checks every 60 seconds)
 	_schedule_check_timer = Timer.new()
@@ -1178,6 +1183,23 @@ static func docket_ids_and_type_pass(trig: TriggerDefinition, item_id: String, i
 	return true
 
 
+## Whether a change of item `item_id` passes all of `trig`'s Docket filters:
+## ids and type, then parent and tags against `item` (as fire_docket_event
+## takes it; null skips those two).
+static func docket_filters_pass(trig: TriggerDefinition, item_id: String, item_type: String, item) -> bool:
+	if not docket_ids_and_type_pass(trig, item_id, item_type):
+		return false
+	if item != null and not trig.docket_filter_parent.is_empty() \
+			and (item.is_empty() or str(item.get("parent", "")) != trig.docket_filter_parent):
+		return false
+	if item != null and not trig.docket_filter_tags.is_empty():
+		var item_tags: Array = item.get("tags", [])
+		for ftag in trig.docket_filter_tags.split(","):
+			if not ftag.strip_edges().is_empty() and ftag.strip_edges() not in item_tags:
+				return false
+	return true
+
+
 ## Fires `trig` for a Docket change (`event_type`: created, transitioned,
 ## updated or comment_added) of item `item_id` in `project`, which its
 ## project filter has already matched, when its other filters pass and it
@@ -1189,16 +1211,8 @@ static func docket_ids_and_type_pass(trig: TriggerDefinition, item_id: String, i
 ## let it derive one).
 func fire_docket_event(trig: TriggerDefinition, project: String, item_id: String, event_type: String,
 		item_type: String, old_status: String, new_status: String, item, change_key: String = "") -> void:
-	if not docket_ids_and_type_pass(trig, item_id, item_type):
+	if not docket_filters_pass(trig, item_id, item_type, item):
 		return
-	if item != null and not trig.docket_filter_parent.is_empty() \
-			and (item.is_empty() or str(item.get("parent", "")) != trig.docket_filter_parent):
-		return
-	if item != null and not trig.docket_filter_tags.is_empty():
-		var item_tags: Array = item.get("tags", [])
-		for ftag in trig.docket_filter_tags.split(","):
-			if not ftag.strip_edges().is_empty() and ftag.strip_edges() not in item_tags:
-				return
 	if trig.docket_wake_sessions:
 		if item != null:
 			docket_wakeups.take(trig, project, item_id, event_type, old_status, new_status, item, change_key)
