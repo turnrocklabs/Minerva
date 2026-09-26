@@ -20,7 +20,8 @@ extends SceneTree
 ## pointer; docket_ack goes out for each event only after the ledger has the
 ## pointer handed_to_harness, and nothing is acked while the window is open.
 ## A feed event for a change whose embedded pointer ended unconfirmed is
-## never acked.
+## never acked. A feed event arriving after the embedded pointer was already
+## handed over is acked once and not sent again.
 ##
 ## Run: godot --headless --path src --script test/test_docket_wakeups.gd
 
@@ -245,6 +246,33 @@ func _test_subscription_dedup(registry) -> void:
 	check("D6: the feed's copy of a change whose pointer was never handed over is not acked, nor sent again",
 		_acks(late).is_empty() and late.map(func(entry: Dictionary) -> String: return str(entry.tool)) == ["docket_changes_since", "docket_get"]
 			and module.relay_calls.size() == relayed_before + 1, str(late))
+
+	# item-12: the embedded pointer is handed over first; the feed's copy of
+	# the same change arrives afterwards and is acked without a second send.
+	module.relay_reply = {"ok": true, "submit": {"state": "submitted", "evidence": "echo"}}
+	var stamp_12 := "2026-09-26T10:10:00"
+	var item_12: Dictionary = {"id": "item-12", "title": "Task item-12", "type": "work_item", "status": "open",
+		"assigned_to": "worker-b", "tags": [], "updated_at": stamp_12, "events": []}
+	items["item-12"] = item_12
+	var relayed_12: int = module.relay_calls.size()
+	wakeups.take(trig, "minerva", "item-12", "updated", "", "", item_12, "")
+	var handed_12 := func() -> bool:
+		for record: Dictionary in load(LEDGER_PATH).shared().list():
+			if str(record.get("text", "")).contains("item-12") and str(record.get("state", "")) == "handed_to_harness":
+				return true
+		return false
+	await _wait_for(handed_12, 4000)
+	check("D7: the embedded pointer for item-12 reached handed_to_harness before the feed read it",
+		handed_12.call() and module.relay_calls.size() == relayed_12 + 1, str(load(LEDGER_PATH).shared().list()))
+	pages.append([{"project": "minerva", "eid": 10, "item_id": "item-12", "kind": "typed_update",
+		"actor": "a", "timestamp": stamp_12, "fields": ["title"], "possible_duplicate": false}])
+	var calls_12: int = calls.size()
+	await feed.poll_once()
+	await _settle(1500)
+	var acks_12: Array = _acks(calls.slice(calls_12))
+	check("D8: the feed's copy of a change already handed over is acked once and not sent again",
+		acks_12.size() == 1 and acks_12[0].arguments.get("event_ids", []) == [{"project": "minerva", "eid": 10}]
+			and module.relay_calls.size() == relayed_12 + 1, str(calls.slice(calls_12)))
 
 
 # The docket_ack calls in a scripted Docket call log.

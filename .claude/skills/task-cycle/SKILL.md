@@ -31,8 +31,8 @@ set. Do not push until the batch closes.
   never skipped silently.
 - Static gates, syntax checks and exploratory experiments are always allowed.
   Tests run only at step 7, after review, on a named set the owner approved.
-- Fix rounds per review boundary are capped by the configuration's `rounds`,
-  never more than 3; past the cap the owner is asked.
+- Fix rounds per review boundary are capped by the configuration record's
+  `rounds` value; when the cap is reached the owner is asked.
 - No finding is dropped: each is resolved, placed on an owning task, or filed
   with a priority set by its blast radius.
 - Every stage leaves its Docket work record (see Work records).
@@ -123,8 +123,8 @@ holds one fenced JSON object:
 
 Every key is required except `principal` and `notes`. Validate the whole
 object before dispatch. A key not listed here (for example a per-task review
-switch), a missing key, a wrong type, a count below 1, a `rounds` count above
-3, `serial: false`, or a cross reviewer with the reviewer's provider while
+switch), a missing key, a wrong type, a count below 1,
+`serial: false`, or a cross reviewer with the reviewer's provider while
 `cross_provider` is on stops pre-flight with a message naming the key path and
 what was wrong. Changing a
 role's provider or model in the record changes the next attempt dispatched
