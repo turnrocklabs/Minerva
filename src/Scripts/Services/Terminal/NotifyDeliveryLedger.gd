@@ -24,6 +24,13 @@ extends RefCounted
 ##                       hold_limit_s. Kept, with the last reason, for reading.
 ##   dropped           — a person removed it from its chat's queue (Stop, or
 ##                       closing the pending bubble) before it ran.
+##   awaiting_recipient — it is addressed to a registered identity or role
+##                       whose session is not reachable (unbound, exited, no
+##                       harness in front, or no live holder of the role).
+##                       Minerva keeps it, with no time limit, and tries again
+##                       whenever a session registers or hands over, and
+##                       every AWAIT_RECHECK_S. It counts as pending for its
+##                       address (pending_by_address).
 ## Handing a line to the harness is not the recipient reading it; nothing here
 ## infers consumption from what the screen shows.
 ##
@@ -32,6 +39,11 @@ extends RefCounted
 ## through their queue entry, and learn the harness's answer from
 ## note_chat_outcome, which PluginProvider calls with its first reply; a chat
 ## delivery the relay held is submitted to its chat again after retry_s.
+##
+## Every record's target carries the address it is retried under
+## (address_of): the registered identity or role it was sent to, else its
+## terminal id. retarget() moves the open records of superseded sessions to
+## their replacement when a role is handed over.
 
 ## Emitted whenever a record changes state; views that show retained lines
 ## listen for it.
@@ -44,6 +56,7 @@ const HANDED := "handed_to_harness"
 const UNCONFIRMED := "unconfirmed"
 const FAILED := "failed"
 const DROPPED := "dropped"
+const AWAITING := "awaiting_recipient"
 
 ## States after which nothing more happens to a record.
 const SETTLED := [HANDED, UNCONFIRMED, FAILED, DROPPED]
@@ -64,6 +77,11 @@ const RECORDS_KEPT := 128
 const HISTORY_KEPT := 16
 ## How often queued chat entries are looked at.
 const QUEUE_POLL_S := 0.5
+## How often records awaiting their recipient are tried again without a
+## registration to prompt it (a harness started again in its bound tab).
+const AWAIT_RECHECK_S := 10.0
+
+const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
 
 static var _shared = null
 
@@ -79,6 +97,13 @@ var _order: Array[String] = []
 var _by_entry: Dictionary = {}
 var _serial: int = 0
 var _polling: bool = false
+## delivery id -> the attempt Callable (see retain) of a record awaiting its
+## recipient.
+var _waiting: Dictionary = {}
+var _waking: bool = false
+var _wake_again: bool = false
+var _rechecking_waiting: bool = false
+var _watching_registry: bool = false
 
 
 static func shared():
@@ -107,6 +132,30 @@ func list(terminal_id: String = "", open_only: bool = false) -> Array[Dictionary
 		if open_only and SETTLED.has(str(record["state"])):
 			continue
 		out.append(record.duplicate(true))
+	return out
+
+
+## The address a record is retried under: target.address, else its
+## registered identity, else its terminal id; "" for an unknown id.
+func address_of(delivery_id: String) -> String:
+	if not _records.has(delivery_id):
+		return ""
+	var target: Dictionary = _records[delivery_id]["target"]
+	for field: String in ["address", "identity", "terminal_id"]:
+		if not str(target.get(field, "")).is_empty():
+			return str(target[field])
+	return ""
+
+
+## Open (not settled) records per address, lower case -> count: what is
+## pending for each registered identity or role, and each terminal id.
+func pending_by_address() -> Dictionary:
+	var out: Dictionary = {}
+	for id: String in _order:
+		if SETTLED.has(str(_records[id]["state"])):
+			continue
+		var address: String = address_of(id).to_lower()
+		out[address] = int(out.get(address, 0)) + 1
 	return out
 
 
@@ -139,6 +188,7 @@ func open(target: Dictionary, envelope: String, path: String, state: String, fie
 		"attempts": 0,
 		"accepted_at": now,
 		"accepted_ticks": Time.get_ticks_msec(),
+		"available_ticks": Time.get_ticks_msec(),
 		"entry_id": 0,
 		"history": [],
 	}
@@ -203,15 +253,69 @@ func retain(delivery_id: String, attempt: Callable) -> void:
 			return
 		_records[delivery_id]["attempts"] = int(_records[delivery_id]["attempts"]) + 1
 		var receipt: Dictionary = await attempt.call()
+		_note_terminal(delivery_id, receipt)
 		# A retry that found the terminal bound to a chat was tracked into this
 		# same record by the chat path; its queue decides from here.
 		if bool(_records[delivery_id].get("chat_tracked", false)):
 			return
 		apply_receipt(delivery_id, receipt)
+		if str(_records[delivery_id]["state"]) == AWAITING:
+			wait_for_recipient(delivery_id, attempt)
+
+
+## Keep a record awaiting its recipient (AWAITING) and try `attempt` (as in
+## retain) again whenever the session registry changes and every
+## AWAIT_RECHECK_S, until it leaves AWAITING; a record found held then is
+## retained as usual.
+func wait_for_recipient(delivery_id: String, attempt: Callable) -> void:
+	if not _records.has(delivery_id):
+		return
+	_waiting[delivery_id] = attempt
+	if not _watching_registry:
+		_watching_registry = true
+		HarnessSessionRegistry.shared().changed.connect(_on_registry_changed)
+	_recheck_waiting()
+
+
+## Move the open records addressed to any of `from_identities` (or to
+## `role`) to `to_identity`, then try the waiting ones at once. A record
+## already offered to a chat (path "chat") stays with that chat. Returns
+## {retargeted, left_in_chat}: delivery ids.
+func retarget(from_identities: PackedStringArray, role: String, to_identity: String) -> Dictionary:
+	var from := PackedStringArray()
+	for identity: String in from_identities:
+		from.append(identity.to_lower())
+	var moved: Array[String] = []
+	var left: Array[String] = []
+	for id: String in _order:
+		var record: Dictionary = _records[id]
+		if SETTLED.has(str(record["state"])):
+			continue
+		var target: Dictionary = record["target"]
+		var address: String = address_of(id).to_lower()
+		var identity: String = str(target.get("identity", "")).to_lower()
+		var by_role: bool = not role.is_empty() and address == role.to_lower()
+		if not (by_role or address in from or identity in from):
+			continue
+		if str(record["path"]) == "chat":
+			left.append(id)
+			continue
+		if not identity.is_empty() and identity != to_identity.to_lower():
+			target["retargeted_from"] = str(target["identity"])
+		if not by_role:
+			target["address"] = to_identity
+		target["identity"] = to_identity
+		moved.append(id)
+		changed.emit(id)
+	_wake_waiting()
+	return {"retargeted": moved, "left_in_chat": left}
 
 
 ## Settle or re-hold a direct record from one notify receipt.
 func apply_receipt(delivery_id: String, receipt: Dictionary) -> void:
+	if str(receipt.get("code", "")) in HarnessSessionRegistry.RECIPIENT_UNAVAILABLE:
+		update(delivery_id, AWAITING, {"hold_reason": "", "reason": str(receipt.get("error", ""))})
+		return
 	var status: String = str(receipt.get("status", ""))
 	match status:
 		HELD:
@@ -255,6 +359,9 @@ func _set_state(delivery_id: String, state: String, fields: Dictionary) -> void:
 	var record: Dictionary = _records[delivery_id]
 	record.merge(fields, true)
 	var moved: bool = str(record["state"]) != state
+	# Time spent waiting for a recipient does not count toward hold_limit_s.
+	if str(record["state"]) == AWAITING and moved:
+		record["available_ticks"] = Time.get_ticks_msec()
 	record["state"] = state
 	record["updated_at"] = Time.get_datetime_string_from_system(false, true)
 	var history: Array = record["history"]
@@ -267,8 +374,73 @@ func _set_state(delivery_id: String, state: String, fields: Dictionary) -> void:
 
 
 func _held_too_long(delivery_id: String) -> bool:
-	var accepted: int = int(_records[delivery_id]["accepted_ticks"])
-	return Time.get_ticks_msec() - accepted > int(hold_limit_s * 1000.0)
+	var available: int = int(_records[delivery_id]["available_ticks"])
+	return Time.get_ticks_msec() - available > int(hold_limit_s * 1000.0)
+
+
+## The terminal an attempt's receipt found for a record, kept in its target
+## so list() by terminal finds a record that was awaiting its recipient.
+func _note_terminal(delivery_id: String, receipt: Dictionary) -> void:
+	var found = receipt.get("target", {})
+	if not _records.has(delivery_id) or not found is Dictionary \
+			or str(found.get("terminal_id", "")).is_empty():
+		return
+	var target: Dictionary = _records[delivery_id]["target"]
+	target["terminal_id"] = str(found["terminal_id"])
+	target["name"] = str(found.get("name", ""))
+
+
+func _on_registry_changed() -> void:
+	_wake_waiting.call_deferred()
+
+
+## One attempt for every record awaiting its recipient. A wake asked for
+## while one runs makes it go round once more.
+func _wake_waiting() -> void:
+	if _waking:
+		_wake_again = true
+		return
+	_waking = true
+	_wake_again = true
+	while _wake_again:
+		_wake_again = false
+		await _wake_each()
+	_waking = false
+
+
+func _wake_each() -> void:
+	for id: String in _waiting.keys():
+		if not _records.has(id) or str(_records[id]["state"]) != AWAITING:
+			_waiting.erase(id)
+			continue
+		var attempt: Callable = _waiting[id]
+		_records[id]["attempts"] = int(_records[id]["attempts"]) + 1
+		var receipt: Dictionary = await attempt.call()
+		_note_terminal(id, receipt)
+		if not _records.has(id) or bool(_records[id].get("chat_tracked", false)):
+			_waiting.erase(id)
+			continue
+		apply_receipt(id, receipt)
+		var state: String = str(_records[id]["state"])
+		if state == AWAITING:
+			continue
+		_waiting.erase(id)
+		if state == HELD:
+			retain(id, attempt)
+
+
+## While any record awaits its recipient, try again every AWAIT_RECHECK_S.
+func _recheck_waiting() -> void:
+	if _rechecking_waiting:
+		return
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	_rechecking_waiting = true
+	while not _waiting.is_empty():
+		await tree.create_timer(AWAIT_RECHECK_S).timeout
+		await _wake_waiting()
+	_rechecking_waiting = false
 
 
 func _expire(delivery_id: String) -> void:

@@ -17,9 +17,19 @@ extends RefCounted
 ## identity_for_terminal() is the one lookup other code uses to learn which
 ## session a terminal holds; identity_for_container() answers the same for an
 ## agent-container session by name (AgentSessionStore.info uses both).
+##
+## Handover (handover(), driven by SessionHandover) moves a role to a
+## replacement session: every other session holding that role is marked
+## superseded_by the replacement (stored). A superseded session holds no role
+## for routing: role addresses, Docket wake-ups and its container's Docket
+## grant skip it, and a notify addressed to its identity goes to its
+## successor. Registering again does not lift it; only a handover to it does.
 
-## Emitted after any registration, re-binding or forget.
+## Emitted after any registration, re-binding, handover or forget.
 signal changed()
+## Emitted after handover() moved `role` to `to_identity`; `superseded` are
+## the identities that held it until now.
+signal handed_over(role: String, superseded: PackedStringArray, to_identity: String)
 
 const SCRIPT_PATH := "res://Scripts/Services/Terminal/HarnessSessionRegistry.gd"
 const STORE_PATH := "user://harness_sessions.json"
@@ -41,12 +51,23 @@ const UNBOUND := "unbound"
 
 const MAX_FIELD_LENGTH := 64
 
+## resolve() codes for an address whose session is not reachable now; a
+## notification to one waits in NotifyDeliveryLedger instead of failing.
+const SESSION_UNBOUND := "session_unbound"
+const SESSION_UNAVAILABLE := "session_unavailable"
+const ROLE_UNAVAILABLE := "role_unavailable"
+const RECIPIENT_UNAVAILABLE := [SESSION_UNBOUND, SESSION_UNAVAILABLE, ROLE_UNAVAILABLE]
+## Liveness an identity address is delivered to; the rest wait.
+const REACHABLE := [LIVE, UNKNOWN]
+
 static var _shared = null
 
 var store_path: String = STORE_PATH
 
 ## identity key (lower case) -> {identity, role, harness, container, name,
-## registered_at}. `name` is the tab name at registration, for display only.
+## registered_at, superseded_by, superseded_at}. `name` is the tab name at
+## registration, for display only; superseded_by is "" unless a handover
+## replaced this session.
 var _records: Dictionary = {}
 ## identity key -> terminal id it is bound to in this run.
 var _bound: Dictionary = {}
@@ -93,7 +114,8 @@ func container_identities() -> Dictionary:
 	for key: String in _records:
 		var container: String = str(_records[key]["container"])
 		if not container.is_empty():
-			out[container] = {"identity": str(_records[key]["identity"]), "role": str(_records[key]["role"])}
+			out[container] = {"identity": str(_records[key]["identity"]),
+				"role": "" if _superseded(key) else str(_records[key]["role"])}
 	return out
 
 
@@ -104,6 +126,24 @@ func terminal_of(identity: String) -> String:
 
 func is_registered(identity: String) -> bool:
 	return _records.has(identity.strip_edges().to_lower())
+
+
+## Whether `name` is an address that names a role rather than an identity.
+func is_role(name: String) -> bool:
+	var needle: String = name.strip_edges().to_lower()
+	if needle.is_empty() or _records.has(needle):
+		return false
+	for key: String in _records:
+		if str(_records[key]["role"]).to_lower() == needle:
+			return true
+	return false
+
+
+## The identity that answers for `identity` now: itself, or the end of its
+## chain of successors when a handover superseded it. "" when not registered.
+func current_identity(identity: String) -> String:
+	var key: String = _current_key(identity.strip_edges().to_lower())
+	return str(_records[key]["identity"]) if not key.is_empty() else ""
 
 
 ## The identities a Docket `assigned_to` or `directed_to` value names: the
@@ -117,8 +157,13 @@ func identities_addressed_by(principal: String) -> PackedStringArray:
 		return out
 	for key: String in _records:
 		var record: Dictionary = _records[key]
-		if str(record["identity"]) == principal or str(record["role"]) == principal:
-			out.append(str(record["identity"]))
+		var addressed: String = ""
+		if str(record["identity"]) == principal:
+			addressed = str(_records[_current_key(key)]["identity"])
+		elif str(record["role"]) == principal and not _superseded(key):
+			addressed = str(record["identity"])
+		if not addressed.is_empty() and not addressed in out:
+			out.append(addressed)
 	return out
 
 
@@ -137,21 +182,32 @@ func sessions(listing: Array) -> Array[Dictionary]:
 ## Which terminal `to` names when it is a registered identity or a role:
 ##   {}                                   — neither; the caller tries other addresses
 ##   {terminal_id, identity, role}        — exactly one live session
-##   {error, code}                        — an identity that is not bound, or a
-##                                          role with no live session or several
-## An identity outranks a role of the same spelling.
+##   {error, code}                        — an identity whose session is not
+##                                          reachable (RECIPIENT_UNAVAILABLE), or
+##                                          a role with no live session or several
+## An identity outranks a role of the same spelling. A superseded identity
+## resolves to its successor (the reply's `superseded` names the one asked
+## for); a superseded session never counts as holding its role.
 func resolve(to: String, listing: Array) -> Dictionary:
 	bind_containers(listing)
 	var needle: String = to.strip_edges().to_lower()
 	if needle.is_empty():
 		return {}
 	if _records.has(needle):
-		var described: Dictionary = _describe(needle, listing)
-		if str(described["liveness"]) == UNBOUND:
-			return {"code": "session_unbound",
+		var key: String = _current_key(needle)
+		var described: Dictionary = _describe(key, listing)
+		var liveness: String = str(described["liveness"])
+		if liveness == UNBOUND:
+			return {"code": SESSION_UNBOUND,
 				"error": "Session '%s' is registered but no terminal holds it in this Minerva run; it registers again from its tab (minerva_session_register) or its container is attached" % described["identity"]}
-		return {"terminal_id": str(described["terminal_id"]),
+		if not liveness in REACHABLE:
+			return {"code": SESSION_UNAVAILABLE,
+				"error": "Session '%s' is not reachable: its terminal shows %s" % [described["identity"], liveness]}
+		var found: Dictionary = {"terminal_id": str(described["terminal_id"]),
 			"identity": str(described["identity"]), "role": str(described["role"])}
+		if key != needle:
+			found["superseded"] = str(_records[needle]["identity"])
+		return found
 	var members: Array[Dictionary] = []
 	for key: String in _records:
 		if str(_records[key]["role"]).to_lower() == needle:
@@ -161,17 +217,51 @@ func resolve(to: String, listing: Array) -> Dictionary:
 	var live: Array[Dictionary] = []
 	var seen := PackedStringArray()
 	for member: Dictionary in members:
-		seen.append("%s (%s)" % [member["identity"], member["liveness"]])
-		if str(member["liveness"]) == LIVE:
+		var superseded: bool = member.has("superseded_by")
+		seen.append("%s (%s)" % [member["identity"],
+			"superseded by %s" % member["superseded_by"] if superseded else member["liveness"]])
+		if str(member["liveness"]) == LIVE and not superseded:
 			live.append(member)
 	if live.is_empty():
-		return {"code": "role_unavailable",
+		return {"code": ROLE_UNAVAILABLE,
 			"error": "No live session holds role '%s'. Sessions with that role: %s" % [to, ", ".join(seen)]}
 	if live.size() > 1:
 		return {"code": "role_ambiguous",
 			"error": "Role '%s' is held by %d live sessions: %s. Address one by its identity." % [to, live.size(), ", ".join(seen)]}
 	return {"terminal_id": str(live[0]["terminal_id"]),
 		"identity": str(live[0]["identity"]), "role": str(live[0]["role"])}
+
+
+## Every role no live, unsuperseded session holds, described against
+## `listing`: [{role, holders (identity and liveness, or who superseded it),
+## pending}]. `pending` maps an address (lower case) to the notifications
+## waiting for it (NotifyDeliveryLedger.pending_by_address); a role's count
+## is what waits for the role itself plus for each of its current holders.
+func unavailable_roles(listing: Array, pending: Dictionary) -> Array[Dictionary]:
+	bind_containers(listing)
+	var roles: Dictionary = {}
+	for key: String in _records:
+		var role: String = str(_records[key]["role"])
+		if not role.is_empty():
+			(roles.get_or_add(role.to_lower(), {"role": role, "keys": []}) as Dictionary)["keys"].append(key)
+	var out: Array[Dictionary] = []
+	var names: Array = roles.keys()
+	names.sort()
+	for name: String in names:
+		var holders := PackedStringArray()
+		var count: int = int(pending.get(name, 0))
+		var live: bool = false
+		for key: String in roles[name]["keys"]:
+			var described: Dictionary = _describe(key, listing)
+			if described.has("superseded_by"):
+				holders.append("%s (superseded by %s)" % [described["identity"], described["superseded_by"]])
+				continue
+			live = live or str(described["liveness"]) == LIVE
+			holders.append("%s (%s)" % [described["identity"], described["liveness"]])
+			count += int(pending.get(key, 0))
+		if not live:
+			out.append({"role": str(roles[name]["role"]), "holders": Array(holders), "pending": count})
+	return out
 
 
 # ── Registration ───────────────────────────────────────────────────────
@@ -232,6 +322,8 @@ func register(identity: String, role: String, terminal_id: String, container: St
 		"container": container,
 		"name": str(entry.get("name", existing.get("name", ""))),
 		"registered_at": int(existing.get("registered_at", int(Time.get_unix_time_from_system()))),
+		"superseded_by": str(existing.get("superseded_by", "")),
+		"superseded_at": int(existing.get("superseded_at", 0)),
 	}
 	if not terminal_id.is_empty():
 		_bound[key] = terminal_id
@@ -245,7 +337,44 @@ func register(identity: String, role: String, terminal_id: String, container: St
 		reply["rebound_from"] = previous
 	if not displaced.is_empty():
 		reply["displaced"] = Array(displaced)
+	if _superseded(key):
+		reply["note"] = "This identity was superseded by %s in a handover: it holds no role and nothing is dispatched to it. Register under a new identity, or have the role handed back to it (minerva_session_handover)." % _records[key]["superseded_by"]
 	return reply
+
+
+## Move `role` to the registered session `to_identity`: every other session
+## holding it is marked superseded by `to_identity`, and `to_identity` takes
+## the role (leaving any role it held) and stops being superseded itself.
+## Returns {success, role, to, superseded, previous_role} or {success:false,
+## error}. Pending notifications and Docket claims are moved by the caller
+## (SessionHandover).
+func handover(role: String, to_identity: String) -> Dictionary:
+	role = role.strip_edges()
+	var invalid: String = _validate("role", role)
+	if not invalid.is_empty():
+		return _error(invalid)
+	var to_key: String = to_identity.strip_edges().to_lower()
+	if not _records.has(to_key):
+		return _error("No session '%s' is registered; the replacement registers first (minerva_session_register)" % to_identity)
+	var to: Dictionary = _records[to_key]
+	var now: int = int(Time.get_unix_time_from_system())
+	var superseded := PackedStringArray()
+	for key: String in _records:
+		var record: Dictionary = _records[key]
+		if key == to_key or str(record["role"]).to_lower() != role.to_lower() or _superseded(key):
+			continue
+		record["superseded_by"] = str(to["identity"])
+		record["superseded_at"] = now
+		superseded.append(str(record["identity"]))
+	var previous_role: String = str(to["role"])
+	to["role"] = role
+	to["superseded_by"] = ""
+	to["superseded_at"] = 0
+	save_store()
+	changed.emit()
+	handed_over.emit(role, superseded, str(to["identity"]))
+	return {"success": true, "role": role, "to": str(to["identity"]),
+		"superseded": Array(superseded), "previous_role": previous_role}
 
 
 ## Forget a registration. Returns whether one existed.
@@ -299,6 +428,8 @@ func load_store() -> void:
 			"container": str(raw.get("container", "")),
 			"name": str(raw.get("name", "")),
 			"registered_at": int(raw.get("registered_at", 0)),
+			"superseded_by": str(raw.get("superseded_by", "")),
+			"superseded_at": int(raw.get("superseded_at", 0)),
 		}
 
 
@@ -335,7 +466,29 @@ func _describe(key: String, listing: Array) -> Dictionary:
 	}
 	if not str(record["container"]).is_empty():
 		described["container"] = str(record["container"])
+	if _superseded(key):
+		described["superseded_by"] = str(record["superseded_by"])
 	return described
+
+
+func _superseded(key: String) -> bool:
+	return not str(_records[key].get("superseded_by", "")).is_empty()
+
+
+## The key of the session answering for `key` now: `key` itself, or the end
+## of its chain of successors (a successor forgotten since ends the chain at
+## the last one still registered). "" when `key` is not registered.
+func _current_key(key: String) -> String:
+	if not _records.has(key):
+		return ""
+	var seen: Dictionary = {key: true}
+	while _superseded(key):
+		var next: String = str(_records[key]["superseded_by"]).to_lower()
+		if not _records.has(next) or seen.has(next):
+			break
+		seen[next] = true
+		key = next
+	return key
 
 
 func _liveness(record: Dictionary, entry: Dictionary) -> String:

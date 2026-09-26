@@ -26,6 +26,10 @@ extends MCPToolModule
 ##
 ## Addresses: a registered session identity or role (HarnessSessionRegistry)
 ## is tried first, then terminal id, tab name, harness@tab and bare harness.
+## A notification to an identity or role whose session is not reachable is
+## kept as awaiting_recipient and delivered when one is (a registration or a
+## handover); minerva_terminal_list reports such roles as unavailable_roles
+## with their pending counts.
 ## Who may notify whom: any caller may notify any terminal with an agent
 ## harness in front except its own terminal, the one reply_to names (a
 ## terminal id, or a registered identity's bound terminal). Identity and role
@@ -75,6 +79,7 @@ const BUSY_WINDOW_ROWS := 12
 
 ## What a kept notification's receipt tells its sender.
 const RETAINED_NOTE := "Minerva keeps this notification and delivers it when that clears; do not send it again. minerva_terminal_notify_status with this delivery_id shows where it stands."
+const AWAITING_NOTE := "No session that can take it holds this address now. Minerva keeps this notification and delivers it once one does (it registers, or the role is handed over); do not send it again. minerva_terminal_notify_status with this delivery_id shows where it stands."
 
 ## Injectable seam: Callable(PackedStringArray) -> Dictionary of
 ## terminal_id -> watch profile id. Empty Callable uses the agent-relay plugin
@@ -103,7 +108,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_terminal_list",
-		"List all terminal sessions with their IDs, names, and dimensions. A terminal holding a registered harness session also carries its identity and role; `sessions` lists every registered session (minerva_session_register) with identity, role, harness, terminal_id (empty when no terminal holds it this run) and liveness (live, other_harness, no_harness, unknown, exited, unbound). name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable).",
+		"List all terminal sessions with their IDs, names, and dimensions. A terminal holding a registered harness session also carries its identity and role; `sessions` lists every registered session (minerva_session_register) with identity, role, harness, terminal_id (empty when no terminal holds it this run), liveness (live, other_harness, no_harness, unknown, exited, unbound), pending (notifications kept for it) and superseded_by when a handover replaced it; `unavailable_roles` lists every role no live session holds, with its holders and the notifications pending for it. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable).",
 		{"type": "object", "properties": {}}, "terminal")
 
 	server._register_tool("minerva_terminal_write",
@@ -162,7 +167,7 @@ func register_tools() -> void:
 		}, "required": ["terminal_id"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify",
-		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. Any harness terminal may be notified except your own (the one reply_to names); that is refused with code notify_self. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
+		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. Any harness terminal may be notified except your own (the one reply_to names); that is refused with code notify_self. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. A line addressed to a registered identity or role that no reachable session holds is kept too, as 'awaiting_recipient', and delivered once one does (it registers again, or the role is handed over with minerva_session_handover); a superseded identity's line goes to its successor. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'awaiting_recipient' (kept, no session to take it yet), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
 		{"type": "object", "properties": {
 			"to": {"type": "string", "description": "Target: a registered session identity, a role held by exactly one live session, a terminal id, a tab name, 'harness@tab name', or a bare harness ('claude' / 'codex') when exactly one terminal runs it. Identity and role are tried first and survive tab renames and Minerva restarts."},
 			"text": {"type": "string", "description": "The notification, ONE line, at most %d characters. No newlines." % NOTIFY_MAX_TEXT_LENGTH},
@@ -172,7 +177,7 @@ func register_tools() -> void:
 		}, "required": ["to", "text", "from"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify_status",
-		"Where kept notifications stand: one by the delivery_id its minerva_terminal_notify receipt carried, or every one addressed to a terminal (all when terminal_id is omitted). Each record has state (queued, held, sending, handed_to_harness, unconfirmed, failed, dropped), hold_reason, reason, attempts and its state history. A failed one stays readable here.",
+		"Where kept notifications stand: one by the delivery_id its minerva_terminal_notify receipt carried, or every one addressed to a terminal (all when terminal_id is omitted). Each record has state (queued, held, awaiting_recipient, sending, handed_to_harness, unconfirmed, failed, dropped), its target (with the address it is retried under, and retargeted_from after a handover), hold_reason, reason, attempts and its state history. A failed one stays readable here.",
 		{"type": "object", "properties": {
 			"delivery_id": {"type": "string", "description": "The delivery_id from a notify receipt."},
 			"terminal_id": {"type": "string", "description": "List the notifications addressed to this terminal."},
@@ -416,13 +421,17 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 			result.append(entry)
 	# Registered sessions are judged against this same listing, and each
 	# terminal holding one says which.
-	var sessions: Array[Dictionary] = HarnessSessionRegistry.shared().sessions(result)
+	var harness_sessions = HarnessSessionRegistry.shared()
+	var sessions: Array[Dictionary] = harness_sessions.sessions(result)
+	var pending: Dictionary = NotifyDeliveryLedger.shared().pending_by_address()
 	for described: Dictionary in sessions:
+		described["pending"] = int(pending.get(str(described["identity"]).to_lower(), 0))
 		var held_in: Dictionary = _listing_entry(result, str(described["terminal_id"]))
 		if not held_in.is_empty():
 			held_in["identity"] = described["identity"]
 			held_in["role"] = described["role"]
-	return {"success": true, "terminals": result, "count": result.size(), "sessions": sessions}
+	return {"success": true, "terminals": result, "count": result.size(), "sessions": sessions,
+		"unavailable_roles": harness_sessions.unavailable_roles(result, pending)}
 
 
 func _terminal_write(arguments: Dictionary) -> Dictionary:
@@ -792,16 +801,34 @@ func resolve_address(to: String) -> Dictionary:
 ## The MCP tool: one delivery, and when it is held the line is KEPT. The first
 ## look (or looks, within wait_ms) is made here; a held line is then recorded
 ## in the ledger and retried there, one look each time, addressed by session
-## identity when the target has one, else by terminal id, so a renamed tab
-## keeps its line. Chat deliveries are tracked by the chat
-## path itself. A request refused before any target was chosen (bad arguments,
-## no such terminal, no harness) is not a delivery and gets no record.
+## identity (or the role it was sent to) when the target has one, else by
+## terminal id, so a renamed tab keeps its line. A line for a registered
+## identity or role no reachable session holds is recorded as
+## awaiting_recipient and tried again by the ledger when one does. Chat
+## deliveries are tracked by the chat path itself. A request refused before
+## any target was chosen (bad arguments, no such terminal, no harness) is not
+## a delivery and gets no record.
 func _notify_tool(arguments: Dictionary) -> Dictionary:
 	var receipt: Dictionary = await _terminal_notify(arguments, {}, {"hold_busy": true})
 	var target: Dictionary = receipt.get("target", {})
+	var ledger = NotifyDeliveryLedger.shared()
+	var to: String = str(arguments.get("to", "")).strip_edges()
+	var sessions = HarnessSessionRegistry.shared()
+	if str(receipt.get("code", "")) in HarnessSessionRegistry.RECIPIENT_UNAVAILABLE:
+		var awaiting: Dictionary = {"address": to, "terminal_id": "", "name": ""}
+		if sessions.is_registered(to):
+			awaiting["identity"] = sessions.current_identity(to)
+			awaiting["address"] = awaiting["identity"]
+		var waiting_id: String = ledger.open(awaiting, _envelope(arguments), "relay",
+			NotifyDeliveryLedger.AWAITING, {"reason": str(receipt.get("error", ""))})
+		ledger.wait_for_recipient(waiting_id, _retry_attempt(arguments, waiting_id))
+		return {"success": true, "retained": true, "status": NotifyDeliveryLedger.AWAITING,
+			"code": str(receipt["code"]), "reason": str(receipt.get("error", "")),
+			"target": awaiting, "delivery_id": waiting_id, "note": AWAITING_NOTE}
 	if receipt.has("delivery_id") or target.is_empty():
 		return receipt
-	var ledger = NotifyDeliveryLedger.shared()
+	if not str(target.get("identity", "")).is_empty():
+		target["address"] = to if sessions.is_role(to) else str(target["identity"])
 	var envelope: String = _envelope(arguments)
 	var status: String = str(receipt.get("status", ""))
 	if status == NotifyDeliveryLedger.HANDED or status == NotifyDeliveryLedger.UNCONFIRMED:
@@ -812,18 +839,13 @@ func _notify_tool(arguments: Dictionary) -> Dictionary:
 		receipt["delivery_id"] = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.FAILED,
 			{"reason": str(receipt.get("error", status))})
 		return receipt
+	# A registered session is looked for by identity (or the role it was
+	# addressed by) on every retry, so a line kept for it follows it to the
+	# tab it registers from next.
 	var id: String = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.HELD, {
 		"hold_reason": str(receipt.get("hold_reason", "")),
 		"reason": str(receipt.get("reason", ""))})
-	var retry: Dictionary = arguments.duplicate()
-	# A registered session is looked for by identity on every retry, so a line
-	# kept for it follows it to the tab it registers from next.
-	var identity: String = str(target.get("identity", ""))
-	retry["to"] = identity if not identity.is_empty() else str(target.get("terminal_id", ""))
-	retry["wait_ms"] = 0
-	var attempt := func() -> Dictionary:
-		return await _terminal_notify(retry, {}, {"hold_busy": true, "delivery_id": id})
-	ledger.retain(id, attempt)
+	ledger.retain(id, _retry_attempt(arguments, id))
 	var kept: Dictionary = receipt.duplicate()
 	kept.erase("error")
 	kept["success"] = true
@@ -831,6 +853,19 @@ func _notify_tool(arguments: Dictionary) -> Dictionary:
 	kept["delivery_id"] = id
 	kept["note"] = RETAINED_NOTE
 	return kept
+
+
+## One more look for kept delivery `delivery_id`, made by the address its
+## record carries at the time, which a handover may move
+## (NotifyDeliveryLedger.retarget). A Callable for the ledger's retries.
+func _retry_attempt(arguments: Dictionary, delivery_id: String) -> Callable:
+	var retry: Dictionary = arguments.duplicate()
+	retry["wait_ms"] = 0
+	var ledger = NotifyDeliveryLedger.shared()
+	return func() -> Dictionary:
+		var again: Dictionary = retry.duplicate()
+		again["to"] = ledger.address_of(delivery_id)
+		return await _terminal_notify(again, {}, {"hold_busy": true, "delivery_id": delivery_id})
 
 
 ## One record, or the records for a terminal, from the ledger.

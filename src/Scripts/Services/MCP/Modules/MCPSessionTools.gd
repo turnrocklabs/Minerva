@@ -3,14 +3,16 @@ extends MCPToolModule
 ## identity and a role, which minerva_terminal_notify then accepts as its `to`.
 ## The registry itself is HarnessSessionRegistry; the terminal listing it is
 ## judged against is minerva_terminal_list's. minerva_terminal_list reports
-## every registered session with its liveness.
+## every registered session with its liveness. minerva_session_handover moves
+## a role to a replacement session (SessionHandover).
 
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
+const SessionHandover := preload("res://Scripts/Services/Terminal/SessionHandover.gd")
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 
 
 func get_tool_names() -> Array[String]:
-	return ["minerva_session_register", "minerva_session_forget"]
+	return ["minerva_session_register", "minerva_session_forget", "minerva_session_handover"]
 
 
 func register_tools() -> void:
@@ -30,11 +32,21 @@ func register_tools() -> void:
 			"identity": {"type": "string", "description": "The registered identity."},
 		}, "required": ["identity"]}, "terminal")
 
+	server._register_tool("minerva_session_handover",
+		"Hand a role over to a replacement session, e.g. when the coordinator died and a new one registered. to_identity (registered first with minerva_session_register) takes the role; every other session holding it is marked superseded: nothing is dispatched to it any more, a notify addressed to its identity goes to to_identity, and it keeps no role even if it registers again. Notifications kept for the old identities or the role are re-targeted to to_identity and tried at once (`pointers`). W1 claims the old identities hold on Docket items assigned to the role or to them are moved to to_identity with docket_reassign, reason 'handover', recorded in each item's event log; the old holder's next protected write is then refused by Docket (`claims`: reassigned, failed, checked, and error when Docket is unavailable — the role moves regardless). Declared, not verified.",
+		{"type": "object", "properties": {
+			"role": {"type": "string", "description": "The role to hand over, e.g. coordinator."},
+			"to_identity": {"type": "string", "description": "The registered identity of the replacement session."},
+			"actor": {"type": "string", "description": "Who is handing over (your identity), recorded as the actor of each claim move. Default minerva:handover."},
+		}, "required": ["role", "to_identity"]}, "terminal")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_session_register": return _register(arguments)
 		"minerva_session_forget": return _forget(arguments)
+		"minerva_session_handover": return await SessionHandover.run(str(arguments.get("role", "")),
+			str(arguments.get("to_identity", "")), str(arguments.get("actor", "")))
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 

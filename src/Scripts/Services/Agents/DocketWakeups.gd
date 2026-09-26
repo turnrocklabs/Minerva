@@ -30,9 +30,15 @@ extends RefCounted
 ## plugin (embedded DocketManager) it is "<project>|<item id>|<kind>|
 ## <updated_at>|<from>><to>".
 ##
-## A session that is not live (unbound, exited, another program in front) has
-## its pointers kept here and sent when it registers (the registry's changed
-## signal) or, failing that, at the next look every RECHECK_S.
+## A registered session that is not reachable (unbound, exited, another
+## program in front) still gets its pointer sent: the ledger keeps it as
+## awaiting_recipient and delivers it once when the session registers again,
+## so no pending line is held here. Only an identity no longer registered has
+## its pointers kept here, looked at again every RECHECK_S.
+##
+## When a role is handed over (the registry's handed_over), batches and
+## directives not yet sent to a superseded identity move to the replacement;
+## pointers already in the ledger are moved there (NotifyDeliveryLedger.retarget).
 
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
 const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
@@ -69,6 +75,7 @@ var _rechecking: bool = false
 
 func _init() -> void:
 	registry.changed.connect(_flush_all)
+	registry.handed_over.connect(_on_handed_over)
 
 
 ## Take one Docket change of `item_id` in `project` (kind: created,
@@ -232,13 +239,30 @@ func _send(identity: String, line: String, sender: String) -> String:
 	return "" if state == NotifyDeliveryLedger.FAILED else delivery_id
 
 
-# Whether `identity` has a harness session a line can go to now. A foreground
-# that cannot be read (unknown) is left to notify, which holds on it.
+# Whether a line for `identity` can be handed to notify now: it is
+# registered. Notify delivers or holds it, or keeps it awaiting the session.
 func _live(identity: String) -> bool:
-	for session: Dictionary in registry.sessions(tools.list_terminals()):
-		if str(session.identity) == identity:
-			return str(session.liveness) in [HarnessSessionRegistry.LIVE, HarnessSessionRegistry.UNKNOWN]
-	return false
+	return registry.is_registered(identity)
+
+
+# Moves what waits here for each superseded identity to `to_identity`.
+func _on_handed_over(_role: String, superseded: PackedStringArray, to_identity: String) -> void:
+	for old: String in superseded:
+		if _routine.has(old):
+			var batch: Dictionary = _routine[old]
+			_routine.erase(old)
+			batch.armed = false
+			if _routine.has(to_identity):
+				_merge(_routine[to_identity], batch)
+			else:
+				_routine[to_identity] = batch
+		if _inflight.has(old) and not _inflight.has(to_identity):
+			_inflight[to_identity] = _inflight[old]
+			_inflight.erase(old)
+		if _control.has(old):
+			(_control.get_or_add(to_identity, []) as Array).append_array(_control[old])
+			_control.erase(old)
+	_flush_all()
 
 
 func _flush_all() -> void:
