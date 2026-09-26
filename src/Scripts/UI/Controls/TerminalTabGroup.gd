@@ -20,6 +20,8 @@ const _TERMINAL_THEME := preload("res://assets/themes/terminal.tres")
 # Loaded at run time, not preloaded: the ledger reaches the chat queue, and
 # this file stays compilable in isolated script-run harnesses.
 const NOTIFY_LEDGER_PATH := "res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd"
+const SESSION_REGISTRY_PATH := "res://Scripts/Services/Terminal/HarnessSessionRegistry.gd"
+const SESSIONS_DIALOG_PATH := "res://Scenes/HarnessSessionsDialog.tscn"
 
 var _tab_bar: TabBar
 var _panel: PanelContainer
@@ -29,6 +31,9 @@ var _retained_label: Label
 
 # The inline title editor, while a rename is open. Null otherwise.
 var _rename_edit: LineEdit = null
+
+# Set while a tooltip refresh is waiting for the end of the frame.
+var _retained_refresh_queued: bool = false
 
 # Internal signal used to synchronise tab metadata writes with tab_changed.
 signal _tab_metadata_written()
@@ -57,6 +62,9 @@ func _ready() -> void:
 	var ledger = load(NOTIFY_LEDGER_PATH).shared()
 	if not ledger.changed.is_connected(_on_notify_ledger_changed):
 		ledger.changed.connect(_on_notify_ledger_changed)
+	var sessions = load(SESSION_REGISTRY_PATH).shared()
+	if not sessions.changed.is_connected(_queue_retained_refresh):
+		sessions.changed.connect(_queue_retained_refresh)
 	_refresh_retained()
 
 
@@ -86,6 +94,14 @@ func _build_ui() -> void:
 	add_btn.flat = true
 	add_btn.pressed.connect(func() -> void: add_terminal())
 	header.add_child(add_btn)
+
+	var sessions_btn := Button.new()
+	sessions_btn.name = "SessionsButton"
+	sessions_btn.text = "Sessions"
+	sessions_btn.flat = true
+	sessions_btn.tooltip_text = "Register this tab's harness under a stable identity and role; see every registered session and whether it is live."
+	sessions_btn.pressed.connect(open_sessions_dialog)
+	header.add_child(sessions_btn)
 
 	_retained_label = Label.new()
 	_retained_label.name = "RetainedLabel"
@@ -428,10 +444,32 @@ func _on_notify_ledger_changed(_delivery_id: String) -> void:
 	_refresh_retained()
 
 
+## Opens the harness sessions dialog for the current tab's terminal.
+func open_sessions_dialog() -> void:
+	var dialog = load(SESSIONS_DIALOG_PATH).instantiate()
+	var view = get_active_terminal()
+	var session = view.get_session() if view != null else null
+	dialog.terminal_id = str(session.terminal_id) if session != null else ""
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+## The session registry signals while it is read (a container binding itself
+## during the refresh), so its changes refresh the tooltips once, deferred.
+func _queue_retained_refresh() -> void:
+	if _retained_refresh_queued:
+		return
+	_retained_refresh_queued = true
+	_refresh_retained.call_deferred()
+
+
 ## The notifications still open for each tab's terminal: the tab's tooltip
-## lists them with their state and reason, and the header counts them.
+## names the registered session the tab holds and lists them with their state
+## and reason, and the header counts them.
 func _refresh_retained() -> void:
+	_retained_refresh_queued = false
 	var ledger = load(NOTIFY_LEDGER_PATH).shared()
+	var sessions = load(SESSION_REGISTRY_PATH).shared()
 	var total: int = 0
 	for tab in range(_tab_bar.tab_count):
 		var terminal = _tab_bar.get_tab_metadata(tab)
@@ -444,8 +482,11 @@ func _refresh_retained() -> void:
 			lines.append("%s %s%s: %s" % [str(record["delivery_id"]), str(record["state"]),
 				(" (%s)" % why) if not why.is_empty() else "", str(record["text"]).left(80)])
 		total += lines.size()
-		_tab_bar.set_tab_tooltip(tab, "" if lines.is_empty()
-			else "Notifications waiting:\n" + "\n".join(lines))
+		var tip: String = "" if lines.is_empty() else "Notifications waiting:\n" + "\n".join(lines)
+		var identity: String = sessions.identity_for_terminal(str(session.terminal_id))
+		if not identity.is_empty():
+			tip = "Session: %s\n%s" % [identity, tip]
+		_tab_bar.set_tab_tooltip(tab, tip.strip_edges())
 	_retained_label.visible = total > 0
 	_retained_label.text = "%d notification%s waiting" % [total, "" if total == 1 else "s"]
 	_retained_label.tooltip_text = "Minerva is keeping these until the terminal can take them; hover a tab for details."

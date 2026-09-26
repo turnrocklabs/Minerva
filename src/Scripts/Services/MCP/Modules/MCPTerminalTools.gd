@@ -23,6 +23,14 @@ extends MCPToolModule
 ## or it fails, and its receipt carries the delivery id
 ## minerva_terminal_notify_status reads. Host callers (notify()) retry on their
 ## own, so on the direct path they get the one-look receipt as before.
+##
+## Addresses: a registered session identity or role (HarnessSessionRegistry)
+## is tried first, then terminal id, tab name, harness@tab and bare harness.
+## Who may notify whom: any caller may notify any terminal with an agent
+## harness in front except its own terminal, the one reply_to names (a
+## terminal id, or a registered identity's bound terminal). Identity and role
+## are addresses, not grants; the caller's name is declared, not verified.
+## _terminal_notify enforces it.
 
 
 ## The envelope every notification is delivered inside. Shared by convention
@@ -52,6 +60,7 @@ const AGENT_RELAY_PLUGIN_ID := "agent_relay"
 ## reports, so this module still parses in isolated --script harnesses.
 const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
 const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
+const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
 
 ## The hint each harness shows while a turn runs: the host-side twin of the
 ## relay's spinner_glyphs (agent-relay profiles.rs). Change one and change the
@@ -94,7 +103,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_terminal_list",
-		"List all terminal sessions with their IDs, names, and dimensions. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable).",
+		"List all terminal sessions with their IDs, names, and dimensions. A terminal holding a registered harness session also carries its identity and role; `sessions` lists every registered session (minerva_session_register) with identity, role, harness, terminal_id (empty when no terminal holds it this run) and liveness (live, other_harness, no_harness, unknown, exited, unbound). name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME (notify accepts either name). Includes background sessions. visible=true means a person can see this terminal right now: it is has_view AND pane_shown AND selected, reported separately — has_view=false means no UI tab at all (use minerva_terminal_promote to show it), while pane_shown=false or selected=false means the tab exists but nobody is looking at it. alive=false means the shell has exited (scrollback still readable).",
 		{"type": "object", "properties": {}}, "terminal")
 
 	server._register_tool("minerva_terminal_write",
@@ -153,12 +162,12 @@ func register_tools() -> void:
 		}, "required": ["terminal_id"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify",
-		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
+		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. Any harness terminal may be notified except your own (the one reply_to names); that is refused with code notify_self. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
 		{"type": "object", "properties": {
-			"to": {"type": "string", "description": "Target terminal: its terminal id, its tab name, 'harness@tab name', or a bare harness ('claude' / 'codex') when exactly one terminal runs it."},
+			"to": {"type": "string", "description": "Target: a registered session identity, a role held by exactly one live session, a terminal id, a tab name, 'harness@tab name', or a bare harness ('claude' / 'codex') when exactly one terminal runs it. Identity and role are tried first and survive tab renames and Minerva restarts."},
 			"text": {"type": "string", "description": "The notification, ONE line, at most %d characters. No newlines." % NOTIFY_MAX_TEXT_LENGTH},
 			"from": {"type": "string", "description": "Who this is from, self-declared: your harness name, plus '@' and your tab name when you are inside Minerva ($MINERVA_TERMINAL_NAME). Recipients are told to trust the envelope Minerva builds, not the name inside it."},
-			"reply_to": {"type": "string", "description": "Your own terminal id ($MINERVA_TERMINAL_ID) when you are inside Minerva. It is written into the envelope so the recipient can answer you, not a look-alike instance. Omit from a host terminal."},
+			"reply_to": {"type": "string", "description": "Your registered session identity (preferred: it survives restarts) or your own terminal id ($MINERVA_TERMINAL_ID) when you are inside Minerva. It is written into the envelope so the recipient can answer you, not a look-alike instance, and it names the terminal you may not notify. Omit from a host terminal."},
 			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for the harness to take the line before the receipt returns; a line not taken by then is kept either way." % NOTIFY_MAX_WAIT_MS},
 		}, "required": ["to", "text", "from"]}, "terminal")
 
@@ -405,7 +414,15 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 			if not session.launch_cwd.is_empty():
 				entry["cwd"] = session.launch_cwd
 			result.append(entry)
-	return {"success": true, "terminals": result, "count": result.size()}
+	# Registered sessions are judged against this same listing, and each
+	# terminal holding one says which.
+	var sessions: Array[Dictionary] = HarnessSessionRegistry.shared().sessions(result)
+	for described: Dictionary in sessions:
+		var held_in: Dictionary = _listing_entry(result, str(described["terminal_id"]))
+		if not held_in.is_empty():
+			held_in["identity"] = described["identity"]
+			held_in["role"] = described["role"]
+	return {"success": true, "terminals": result, "count": result.size(), "sessions": sessions}
 
 
 func _terminal_write(arguments: Dictionary) -> Dictionary:
@@ -766,8 +783,9 @@ func resolve_address(to: String) -> Dictionary:
 
 ## The MCP tool: one delivery, and when it is held the line is KEPT. The first
 ## look (or looks, within wait_ms) is made here; a held line is then recorded
-## in the ledger and retried there, one look each time, addressed by terminal
-## id so a renamed tab keeps its line. Chat deliveries are tracked by the chat
+## in the ledger and retried there, one look each time, addressed by session
+## identity when the target has one, else by terminal id, so a renamed tab
+## keeps its line. Chat deliveries are tracked by the chat
 ## path itself. A request refused before any target was chosen (bad arguments,
 ## no such terminal, no harness) is not a delivery and gets no record.
 func _notify_tool(arguments: Dictionary) -> Dictionary:
@@ -790,7 +808,10 @@ func _notify_tool(arguments: Dictionary) -> Dictionary:
 		"hold_reason": str(receipt.get("hold_reason", "")),
 		"reason": str(receipt.get("reason", ""))})
 	var retry: Dictionary = arguments.duplicate()
-	retry["to"] = str(target.get("terminal_id", ""))
+	# A registered session is looked for by identity on every retry, so a line
+	# kept for it follows it to the tab it registers from next.
+	var identity: String = str(target.get("identity", ""))
+	retry["to"] = identity if not identity.is_empty() else str(target.get("terminal_id", ""))
 	retry["wait_ms"] = 0
 	var attempt := func() -> Dictionary:
 		return await _terminal_notify(retry, {}, {"hold_busy": true, "delivery_id": id})
@@ -857,10 +878,21 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 	var target: Dictionary = await _resolve_notify_target(to, listing)
 	if not target.get("success", false):
 		return target
-	# A reply address must be a terminal that exists: a typo here would send
-	# every answer to nobody.
-	if not reply_to.is_empty() and _listing_entry(listing, reply_to).is_empty():
-		return MCPToolUtils.error("reply_to '%s' is not a terminal here; pass your own $MINERVA_TERMINAL_ID" % reply_to)
+	# A reply address must be a terminal that exists or a registered session:
+	# a typo here would send every answer to nobody.
+	var sessions = HarnessSessionRegistry.shared()
+	if not reply_to.is_empty() and _listing_entry(listing, reply_to).is_empty() \
+			and not sessions.is_registered(reply_to):
+		return MCPToolUtils.error("reply_to '%s' is neither a terminal here nor a registered session; pass your session identity or your own $MINERVA_TERMINAL_ID" % reply_to)
+	# The permission rule (see the file header): everything but the caller's
+	# own terminal.
+	var own_terminal: String = reply_to if not _listing_entry(listing, reply_to).is_empty() \
+		else sessions.terminal_of(reply_to)
+	if not own_terminal.is_empty() and own_terminal == str(target["terminal_id"]):
+		var own: Dictionary = MCPToolUtils.error("'%s' is your own terminal (reply_to %s); a session does not notify itself" % [
+			str(target["name"]), reply_to])
+		own["code"] = "notify_self"
+		return own
 
 	var envelope: String = _envelope(arguments)
 
@@ -870,6 +902,8 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: D
 		"terminal_id": str(target["terminal_id"]),
 		"name": str(target["name"]),
 	}
+	if not str(target.get("identity", "")).is_empty():
+		receipt_target["identity"] = str(target["identity"])
 
 	var history = _find_passthrough_chat(str(target["terminal_id"]))
 	var expect_chat: String = str(expect.get("chat_id", ""))
@@ -1245,10 +1279,20 @@ func _first_control_char(line: String) -> int:
 ## carries the listing facts delivery needs (harness, foreground process,
 ## last human keystroke). The harness is what the PTY shows in the
 ## foreground; only a terminal whose foreground cannot be read at all
-## (ConPTY) falls back to its watch profile.
+## (ConPTY) falls back to its watch profile. A terminal holding a registered
+## session carries its identity and role (from the listing).
 func _resolve_notify_target(to: String, listing: Array) -> Dictionary:
 	if listing.is_empty():
 		return MCPToolUtils.error("No terminals exist, so '%s' cannot be delivered to" % to)
+	# A registered identity or role pins the terminal; every other form is
+	# matched below. The pinned terminal still goes through the same loop so
+	# it gets the same harness facts.
+	var named: Dictionary = HarnessSessionRegistry.shared().resolve(to, listing)
+	if named.has("error"):
+		var unavailable: Dictionary = MCPToolUtils.error(str(named["error"]))
+		unavailable["code"] = str(named.get("code", ""))
+		return unavailable
+	var pinned: String = str(named.get("terminal_id", ""))
 
 	# The watch profile is asked for only where the foreground is unreadable;
 	# it is one plugin round-trip per terminal.
@@ -1288,7 +1332,9 @@ func _resolve_notify_target(to: String, listing: Array) -> Dictionary:
 			by_harness = harness.to_lower() == needle
 			for address: String in addresses:
 				by_harness = by_harness or needle == "%s@%s" % [harness.to_lower(), address]
-		if tid == to or by_name or by_harness:
+		var hit_here: bool = tid == pinned if not pinned.is_empty() \
+			else (tid == to or by_name or by_harness)
+		if hit_here:
 			var hit: Dictionary = entry.duplicate()
 			hit["terminal_id"] = tid
 			hit["harness"] = harness

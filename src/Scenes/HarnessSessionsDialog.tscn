@@ -1,0 +1,98 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/HarnessSessionsDialog.gd" id="1_dialog"]
+
+[node name="HarnessSessionsDialog" type="Window"]
+title = "Harness Sessions"
+size = Vector2i(760, 460)
+min_size = Vector2i(560, 360)
+script = ExtResource("1_dialog")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="Layout" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="Margin/Layout"]
+layout_mode = 2
+
+[node name="Heading" type="Label" parent="Margin/Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Registered sessions"
+
+[node name="Refresh" type="Button" parent="Margin/Layout/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Refresh"
+
+[node name="Sessions" type="Tree" parent="Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 5
+column_titles_visible = true
+hide_root = true
+select_mode = 1
+
+[node name="ThisTab" type="Label" parent="Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+
+[node name="Form" type="HBoxContainer" parent="Margin/Layout"]
+layout_mode = 2
+
+[node name="IdentityLabel" type="Label" parent="Margin/Layout/Form"]
+layout_mode = 2
+text = "Identity"
+
+[node name="Identity" type="LineEdit" parent="Margin/Layout/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "blank = generate one"
+
+[node name="RoleLabel" type="Label" parent="Margin/Layout/Form"]
+layout_mode = 2
+text = "Role"
+
+[node name="Role" type="LineEdit" parent="Margin/Layout/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "coordinator, worker, reviewer…"
+
+[node name="Register" type="Button" parent="Margin/Layout/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Register this tab"
+
+[node name="Footer" type="HBoxContainer" parent="Margin/Layout"]
+layout_mode = 2
+
+[node name="Status" type="Label" parent="Margin/Layout/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text_overrun_behavior = 3
+
+[node name="Forget" type="Button" parent="Margin/Layout/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Forget selected"
+
+[node name="Close" type="Button" parent="Margin/Layout/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Close"
