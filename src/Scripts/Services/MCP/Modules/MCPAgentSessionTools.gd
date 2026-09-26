@@ -36,11 +36,12 @@ func register_tools() -> void:
 	# from its creation on, so it exists whenever the MCP server does.
 	AgentSessionStore.shared()
 	server._register_tool("minerva_agent_session_create",
-		"Create an agent-container session record: a harness (claude or codex) in a hardened container that mounts the given host folders. A folder that is a git checkout is cloned once into the session's work directory and the clone is mounted (the checkout itself never is); any other folder is mounted as it is. Docket projects default to the .dct files found near the top of the folders. The record survives Minerva restarts. Creating does not start it: call minerva_agent_session_start.",
+		"Create an agent-container session record: a harness (claude or codex) in a hardened container that mounts the given host folders. A folder that is a git checkout is cloned once into the session's work directory and the clone is mounted (the checkout itself never is); any other folder is mounted as it is, read-only unless read_write names it. Docket projects default to the .dct files found near the top of the folders. The record survives Minerva restarts. Creating does not start it: call minerva_agent_session_start.",
 		{"type": "object", "properties": {
 			"name": _NAME,
 			"harness": {"type": "string", "enum": ["claude", "codex"]},
 			"folders": {"type": "array", "items": {"type": "string"}, "description": "Absolute host folder paths to mount (at least one)."},
+			"read_write": {"type": "array", "items": {"type": "string"}, "description": "Plain (non-git) folders among folders to mount read-write. Default: every plain folder mounts read-only; a git checkout's clone is always writable."},
 			"start_in": {"type": "string", "description": "Host folder the harness starts in; inside one of the folders. Default: the first folder."},
 			"projects": {"type": "array", "items": {"type": "string"}, "description": "Docket project names the session may use. Default: discovered from the folders' .dct files."},
 			"mode": {"type": "string", "enum": ["start", "resume", "shell"], "description": "What the session shell runs first: the harness, its resume picker, or nothing. Default start."},
@@ -59,7 +60,7 @@ func register_tools() -> void:
 		{"type": "object", "properties": {"name": _NAME}, "required": ["name"]}, "containers")
 
 	server._register_tool("minerva_agent_session_attach",
-		"Front a running agent-container session in a Minerva terminal tab (the MCP twin of the tab menu's 'Attach agent session here'). Minerva writes the attach command into that tab, which must be at a shell prompt, and the launcher there holds the session's lease and its one tmux client. The newest attach wins: if another tab fronts the session now, this takes it over; that tab's tmux client is detached, it says the session is now attached from another tab and returns to its shell, and notify replies follow the new tab. A takeover that fails leaves the old tab fronting. Refused with a reason when the session is not running, the tab is running anything but a shell (a harness, another session), or a person typed in it within the last 3 s. The session outlives Minerva: after a restart, attach it from any fresh tab and its harness is on screen as it was; grants need no re-binding. Returns {id, terminal_id, took_over_from} (took_over_from is the terminal that held it, or empty), or already_attached when the tab already fronts it.",
+		"Front a running agent-container session in a Minerva terminal tab (the MCP twin of the tab menu's 'Attach agent session here'). Minerva writes the attach command into that tab, which must be at a shell prompt, and the launcher there holds the session's lease and its one tmux client. The newest attach wins: if another tab fronts the session now, this takes it over; that tab's tmux client is detached, it says the session is now attached from another tab and returns to its shell, and notify replies follow the new tab. A takeover that fails leaves the old tab fronting. Refused with a reason when the session is not running, the tab is running anything but a shell (a harness, another session), or a person typed in it within the last 3 s; refused with code attach_terminal_not_visible unless the tab is visible (minerva_terminal_list visible: it has a view, its pane is shown and it is the selected tab), since a shell has no guard against a half-typed line. The session outlives Minerva: after a restart, attach it from any fresh tab and its harness is on screen as it was; grants need no re-binding. Returns {id, terminal_id, took_over_from} (took_over_from is the terminal that held it, or empty), or already_attached when the tab already fronts it.",
 		{"type": "object", "properties": {
 			"name": _NAME,
 			"terminal": {"type": "string", "description": "The tab to attach in: a terminal id or a tab name (minerva_terminal_list)."},
@@ -70,7 +71,7 @@ func register_tools() -> void:
 		{"type": "object", "properties": {"name": _NAME}, "required": ["name"]}, "containers")
 
 	server._register_tool("minerva_agent_session_info",
-		"Inspect one agent-container session without changing it: everything status returns, plus session_identity (the identity registered for it in the harness session registry, the one notify routes by; with the attached terminal's answer and whether they agree), path_mappings (host folder, the path the harness sees, what is mounted; the session home is /agent-home), git_identity (the author git reports in the start folder, measured in the running container) and toolchain_profile (the profile the session was created with: name, selected_by session or default, source, tools with their minimum versions). map_paths answers host paths with the container path the harness sees (null when no session folder holds one).",
+		"Inspect one agent-container session without changing it: everything status returns, plus session_identity (the identity registered for it in the harness session registry, the one notify routes by; with the attached terminal's answer and whether they agree), path_mappings (host folder, the path the harness sees, what is mounted, access rw or ro; the session home is /agent-home), git_identity (the author git reports in the start folder, measured in the running container) and toolchain_profile (the profile the session was created with: name, selected_by session or default, source, tools with their minimum versions). map_paths answers host paths with the container path the harness sees (null when no session folder holds one).",
 		{"type": "object", "properties": {
 			"name": _NAME,
 			"map_paths": {"type": "array", "items": {"type": "string"}, "description": "Host paths to translate into container paths."},
@@ -165,7 +166,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			result = await store.create(name, str(arguments.get("harness", "")),
 				_strings(arguments.get("folders", [])), str(arguments.get("start_in", "")).strip_edges(),
 				_strings(arguments.get("projects", [])), str(arguments.get("mode", "")).strip_edges(),
-				str(arguments.get("profile", "")).strip_edges())
+				str(arguments.get("profile", "")).strip_edges(), _strings(arguments.get("read_write", [])))
 		"minerva_agent_session_start":
 			result = await store.start(name, str(arguments.get("mode", "")).strip_edges())
 		"minerva_agent_session_stop":
@@ -226,7 +227,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		_:
 			return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 	if not bool(result.get("ok", false)):
-		return MCPToolUtils.error(str(result.get("error", "the launcher failed")))
+		var failed: Dictionary = MCPToolUtils.error(str(result.get("error", "the launcher failed")))
+		if result.has("code"):
+			failed["code"] = str(result["code"])
+		return failed
 	result.erase("message")
 	result["success"] = true
 	return result

@@ -14,8 +14,11 @@ their comments and attachments, and add evidence (comments, attachments) to
 them. It may change fields only on direct items, always as `holder` = its
 identity, and a change that touches a protected field (W1 contract, KB
 docket:01a0dc3549bc section 4) additionally needs the item's claim to be held
-by that identity. Nothing else is in scope: with no registered identity,
-nothing is.
+by that identity. One write reaches a chain item too: a docket_update that
+changes nothing but fact tags (FACT_TAG_PREFIXES, the unprotected facts of
+that section 4, recorded by whoever produced the fact, such as a reviewer
+writing review: on the task above its attempt). Nothing else is in scope:
+with no registered identity, nothing is.
 """
 import re
 
@@ -24,6 +27,10 @@ PROTECTED_FIELDS = frozenset({"status", "resolution", "assigned_to", "parent", "
                               "title", "description"})
 PROTECTED_TAG_PREFIXES = ("wr:", "role:", "base:", "head:", "result:", "requires:", "outcome:",
                           "deferred:")
+# Unprotected fact tags: a session may add or remove these on any chain item.
+FACT_TAG_PREFIXES = ("review:", "test:", "integrated:", "released:")
+# The arguments a fact-tag docket_update may carry.
+FACT_UPDATE_ARGS = frozenset({"id", "project", "tags", "if_revision"})
 OBJECTIVE_TAG = "wr:objective"
 ANCESTOR_DEPTH = 8
 ASSIGNED_LIMIT = 200
@@ -136,6 +143,17 @@ class Scope:
                           "read it and add comments or attachments)")
         return self.item(project, hex_id)
 
+    def require_fact_tags(self, item, hex_id, tags):
+        """A chain item's update that sets `tags`: allowed only when every
+        tag it adds or removes is a fact tag; otherwise refused as any other
+        change to an item that is not assigned to the session."""
+        changed = set(item.get("tags") or []) ^ set(tags)
+        if not all(tag.startswith(FACT_TAG_PREFIXES) for tag in changed):
+            raise Refused("docket_out_of_scope",
+                          f"item {hex_id} is not assigned to {self._who()} (it is only on its work chain: "
+                          "read it, add comments or attachments, and add or remove "
+                          + "/".join(FACT_TAG_PREFIXES) + " tags)")
+
     def require_holder(self, item, hex_id):
         holder = item.get("claim_holder") if isinstance(item.get("claim_holder"), str) else ""
         if holder != self.identity:
@@ -143,6 +161,12 @@ class Scope:
             raise Refused("docket_not_holder",
                           f"item {hex_id} is not claimed by {self.identity}; "
                           "protected fields change only under your claim (docket_claim)")
+
+
+def is_fact_update(tool, args):
+    """Whether a call has the shape of a fact-tag update: docket_update with
+    tags and nothing else but the item's address and revision."""
+    return tool == "docket_update" and "tags" in args and set(args) <= FACT_UPDATE_ARGS
 
 
 def touches_protected(tool, args, item):

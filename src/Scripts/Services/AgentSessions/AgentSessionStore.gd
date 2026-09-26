@@ -73,6 +73,13 @@ const SHELLS: PackedStringArray = ["bash", "zsh", "sh", "dash", "fish", "ksh", "
 ## launcher waits up to 10 s for its tmux client, plus docker's own start-up.
 const ATTACH_WAIT_S := 30.0
 const ATTACH_POLL_S := 0.25
+## attach() refuses with this code unless a person can see the tab: a shell
+## has no composer guard, so a draft typed there out of sight would run
+## with the attach command appended to it.
+const ATTACH_NOT_VISIBLE := "attach_terminal_not_visible"
+## Read for its tab-visibility facts (terminal_list's visible); loaded at run
+## time so this file parses in isolated --script harnesses.
+const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 
 const PROFILE_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
 const TOOL_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
@@ -209,8 +216,10 @@ func profiles() -> Dictionary:
 
 
 ## Creates a session record; `profile` "" leaves it on the default profile.
+## Plain (non-git) folders mount read-only unless listed in `read_write`.
 func create(id: String, harness: String, folders: PackedStringArray, start_in: String,
-		projects: PackedStringArray, mode: String, profile: String = "") -> Dictionary:
+		projects: PackedStringArray, mode: String, profile: String = "",
+		read_write: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var problem: String = _check_id(id)
 	if problem.is_empty() and not HARNESSES.has(harness):
 		problem = "harness must be one of: %s" % ", ".join(HARNESSES)
@@ -227,6 +236,8 @@ func create(id: String, harness: String, folders: PackedStringArray, start_in: S
 	var args: PackedStringArray = ["create", id, "--harness=" + harness]
 	for folder: String in folders:
 		args.append("--folder=" + folder)
+	for folder: String in read_write:
+		args.append("--rw=" + folder)
 	if not start_in.is_empty():
 		args.append("--start-in=" + start_in)
 	for project: String in projects:
@@ -378,7 +389,9 @@ static func session_identity(id: String, terminal_id: String) -> Dictionary:
 ## {"ok", "id", "terminal_id", "took_over_from"} ("" when no tab held it), or
 ## {"ok": true, "already_attached": true} when this tab already fronts it.
 ## Refused with a reason when the session is not running, or the tab is
-## running something other than a shell (a harness, another session).
+## running something other than a shell (a harness, another session), and
+## with code ATTACH_NOT_VISIBLE when the tab is not visible at the moment of
+## the write (has a view, its pane shown, it the selected tab).
 func attach(id: String, terminal: TerminalSession, typed_window_ms: int = 0) -> Dictionary:
 	var problem: String = _check_id(id)
 	if problem.is_empty() and (terminal == null or not terminal.is_alive()):
@@ -408,6 +421,10 @@ func attach(id: String, terminal: TerminalSession, typed_window_ms: int = 0) -> 
 		return _error("this tab is running %s, not a shell at its prompt; attach from a tab at a shell prompt"
 			% (program if not program.is_empty() else "something Minerva cannot read"))
 	var previous: String = str(described.get("attached_terminal", ""))
+	if not bool(load(TERMINAL_TOOLS_PATH).new(null)._session_visibility(terminal).get("visible", false)):
+		var hidden: Dictionary = _error("%s: attach from the tab while it is shown, at a clean prompt; this tab is not the one on screen" % ATTACH_NOT_VISIBLE)
+		hidden["code"] = ATTACH_NOT_VISIBLE
+		return hidden
 	var receipt: Dictionary = terminal.begin_write_transaction(command,
 		{"expect_process": int(front.get("pid", 0)), "unless_typed_within_ms": typed_window_ms})
 	if not bool(receipt.get("success", false)):

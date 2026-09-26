@@ -34,6 +34,7 @@ extends SceneTree
 
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
+const NOTIFY_DELIVERY_PATH := "res://Scripts/Services/MCP/Modules/MCPNotifyDelivery.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
 const World := preload("res://test/helpers/notify_world.gd")
 const FAKE_PROVIDER_SRC := World.FAKE_PROVIDER_SRC
@@ -810,9 +811,10 @@ func _test_wiring_is_present() -> void:
 		source.find('"minerva_terminal_notify",') != -1
 			and source.find('server._register_tool("minerva_terminal_notify"') != -1)
 
-	var body_start: = source.find("func _terminal_notify(")
-	var body_end: = source.find("\nfunc ", body_start + 10)
-	var body: = source.substr(body_start, body_end - body_start)
+	# The delivery path itself lives in MCPNotifyDelivery.gd.
+	var delivery_source: = FileAccess.get_file_as_string(NOTIFY_DELIVERY_PATH)
+	check("G2b: MCPNotifyDelivery.gd is readable", not delivery_source.is_empty())
+	var body: = _function_body(delivery_source, "func terminal_notify(")
 	check("G3: notify submits through the SHARED send path, not its own",
 		body.find("MCPToolUtils.submit_user_message(history, envelope") != -1)
 	check("G3b: notify submits as a BACKGROUND message (deferred while a card waits)",
@@ -820,8 +822,25 @@ func _test_wiring_is_present() -> void:
 	check("G4: notify owns no delivery code of its own",
 		body.find("write_input") == -1 and body.find("session.") == -1, body)
 	check("G5: the envelope is built by the host, from the shared prefix",
-		body.find("NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text") != -1
+		body.find("_envelope(arguments)") != -1
+			and _function_body(delivery_source, "func _envelope(").find(
+				"tools.NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text") != -1
 			and source.find('const NOTIFY_ENVELOPE_PREFIX := "[MINERVA NOTIFY from "') != -1)
+
+	# The chat-path handed_to_harness oracle: the harness pane above reports
+	# "handed" itself, so only these lines prove the real provider does. The
+	# FIRST relay reply of a call (before the resume loop) is reported, and a
+	# running, answered or questioning turn is reported as handed.
+	var provider_source: = FileAccess.get_file_as_string(World.PLUGIN_PROVIDER_PATH)
+	var dispatch: = _function_body(provider_source, "func _dispatch_call(")
+	var first_report: = dispatch.find("_report_notify(")
+	check("G9: PluginProvider reports the first relay reply of every call",
+		first_report != -1 and first_report < dispatch.find("while _resumable()"), dispatch)
+	var report: = _function_body(provider_source, "func _report_notify(")
+	check("G9b: and a pending/answer/question reply is reported as handed",
+		report.find('"answer", "question", "pending":') != -1
+			and report.find("note_chat_outcome(owner_history_id, text, NotifyDeliveryLedger.CHAT_HANDED)") != -1,
+		report)
 
 	# The chat tool must keep using the same submit path, or the two MCP send
 	# entry points drift and only one of them honours the outgoing queue.
@@ -844,6 +863,20 @@ func _test_wiring_is_present() -> void:
 	var pane_source: = FileAccess.get_file_as_string(CHATPANE_PATH)
 	check("G8: execute_regular_chat still gates on the outgoing queue",
 		pane_source.find("_queue_if_busy(history, text") != -1)
+
+
+## The text of one top-level function in `source`, from `signature` to the
+## next top-level declaration ("" when absent).
+func _function_body(source: String, signature: String) -> String:
+	var start: = source.find(signature)
+	if start == -1:
+		return ""
+	var ends: = [source.find("\nfunc ", start + 5), source.find("\nstatic func ", start + 5)]
+	var end: = source.length()
+	for e: int in ends:
+		if e != -1 and e < end:
+			end = e
+	return source.substr(start, end - start)
 
 #endregion
 

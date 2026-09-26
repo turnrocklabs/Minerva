@@ -214,6 +214,18 @@ class Test(GatewayCase):
         self.assertDenied(self.call("docket", "docket_transition", {**move, "holder": "worker-b"}))
         self.assertEqual(docket.calls("docket_transition"), [{**move, "holder": IDENT}])
 
+        # A fact tag is recorded on the task it is about, which is only on the
+        # chain: review:/test:/integrated:/released: tags go through as IDENT;
+        # any other change to a chain item is refused.
+        facts = {"id": TASK, "project": "minerva", "tags": ["wr:task", "test:passed"]}
+        self.assertIn("result", self.call("docket", "docket_update", facts))
+        self.assertEqual(docket.calls("docket_update"), [{**facts, "holder": IDENT}])
+        body = self.call("docket", "docket_update",
+                         {"id": TASK, "project": "minerva", "tags": ["wr:task", "requires:review"]})
+        self.assertDenied(body)
+        self.assertIn(f"docket_out_of_scope: item {TASK} is not assigned to {IDENT}", body["error"]["message"])
+        self.assertEqual(len(docket.calls("docket_update")), 1)
+
         # The host reassigns the claim: the next protected write is refused,
         # evidence on the item still goes through.
         docket.items[("minerva", ATTEMPT)]["claim_holder"] = "worker-b"
@@ -227,7 +239,7 @@ class Test(GatewayCase):
         body = self.call("docket", "docket_update", {"id": ATTEMPT, "project": "minerva", "priority": 2})
         self.assertIn(f"docket_out_of_scope: item {ATTEMPT} is not assigned to {IDENT}", body["error"]["message"])
         self.assertEqual(len(docket.calls("docket_transition")), 1)
-        self.assertNotIn("docket_update", docket.tools_called())
+        self.assertEqual(len(docket.calls("docket_update")), 1)
 
     def test_upstream_payloads_are_rebuilt_not_relayed(self):
         nudge, docket = self.stubs["nudge"], self.stubs["docket"]
@@ -419,10 +431,10 @@ class Test(GatewayCase):
         self.assertNotIn("docket_project_list", self.stubs["docket"].tools_called())
 
     def test_grants_changed_mid_session_apply_on_the_next_call(self):
-        # The 2026-09-25 outage: notify was frozen at attach to a terminal
-        # that no longer existed. Grants now change while the session runs,
-        # through the same agent.py writer Minerva calls, and the very next
-        # call follows them. Oracle: the gateway's decision on that call.
+        # A target list frozen at attach can name a terminal that no longer
+        # exists. Grants change while the session runs, through the same
+        # agent.py writer Minerva calls, and the very next call follows them.
+        # Oracle: the gateway's decision on that call.
         def change(add, session=SESSION, **grants):
             with mock.patch.dict(os.environ, {"MINERVA_AGENT_STATE": str(self.state)}):
                 agent.change_grants(session, add, grants.get("read"), grants.get("write"),

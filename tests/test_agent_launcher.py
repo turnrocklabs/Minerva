@@ -42,6 +42,10 @@ if args[0] == "inspect" and "{{.State.Pid}}" in args:
     if args[-1] in data["running"]:
         print(1); sys.exit(0)     # the host's init stands in for the container's
     sys.exit(1)
+if args[0] == "inspect" and any("Config.Labels" in a for a in args):
+    if args[-1] in data["running"]:
+        print(data.get("labels", {}).get(args[-1], "")); sys.exit(0)
+    sys.exit(1)
 if args[0] == "inspect":
     if args[-1] in data["running"]:
         print("true"); sys.exit(0)
@@ -56,6 +60,8 @@ if args[0] == "compose" and "run" in args:
                 sock_dir = args[i + 1].rsplit(":", 1)[0]
                 for s in ("minerva", "docket", "nudge", "proxy"):
                     socket.socket(socket.AF_UNIX).bind(f"{sock_dir}/{s}.sock")
+    if "-l" in args:
+        data.setdefault("labels", {})[name] = args[args.index("-l") + 1].split("=", 1)[1]
     data["running"].append(name); save(); sys.exit(0)
 if args[0] == "exec" and "list-clients" in args:
     if data.get("attaching") and os.environ.get("FAKE_LIST_SLEEP"):
@@ -178,11 +184,12 @@ class LauncherTest(unittest.TestCase):
             f"{run_dir}/sock:/run/minerva-agent/sock",
             f"{run_dir}/sessions.json:/run/minerva-agent/sessions.json:ro",
             f"{state}/sessions/alpha/control:/run/minerva-agent/control:ro"]))
-        # Checkouts are cloned and the clones mounted; the plain folder is mounted as it is.
+        # Checkouts are cloned and the clones mounted read-write; the plain
+        # folder is mounted as it is, read-only unless --rw names it.
         self.assertEqual(sorted(self.mounts(dev)), sorted([
             f"{run_dir}/sock:/run/minerva-agent:ro",
             f"{run_dir}/natives.json:/run/minerva-natives.json:ro",
-            f"{state}/sessions/alpha/home:/agent-home", f"{self.notes}:{self.notes}"]
+            f"{state}/sessions/alpha/home:/agent-home", f"{self.notes}:{self.notes}:ro"]
             + [f"{c}:{c}" for c in clones]))
         self.assertIn("MINERVA_NATIVES_MANIFEST=/run/minerva-natives.json", dev)
         sys.path.insert(0, str(AGENT))
@@ -215,6 +222,23 @@ class LauncherTest(unittest.TestCase):
             objects = [p for p in (c / ".git/objects").rglob("*") if p.is_file()]
             self.assertTrue(objects)
             self.assertTrue(all(p.stat().st_nlink == 1 for p in objects))
+
+    def test_rw_opts_one_plain_folder_into_read_write(self):
+        code, refused = self.answer("create", "beta", "--harness", "claude", *self.folders(),
+                                    "--rw", str(self.app))
+        self.assertEqual(code, 1)
+        self.assertIn("git checkout is cloned", refused["error"])
+        code, created = self.answer("create", "beta", "--harness", "claude", *self.folders(),
+                                    "--rw", str(self.notes))
+        self.assertEqual(code, 0, created)
+        self.assertIn({"host": str(self.notes), "path": str(self.notes), "kind": "mount", "rw": True},
+                      created["folders"])
+        code, info = self.answer("info", "beta")
+        self.assertEqual(code, 0, info)
+        self.assertEqual({m["host"]: m["access"] for m in info["path_mappings"] if m["kind"] != "home"},
+                         {str(self.app): "rw", str(self.lib): "rw", str(self.notes): "rw"})
+        self.assertEqual(self.agent("start", "beta").returncode, 0)
+        self.assertIn(f"{self.notes}:{self.notes}", self.mounts(self.runs()[-1]))
 
     def test_start_hands_the_native_cache_over_read_only(self):
         # No cache yet: the manifest says so and nothing extra is mounted.
@@ -629,6 +653,59 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(stops, [["stop", "minerva-agent-alpha"], ["stop", "minerva-agent-gw-alpha"]])
         after = self.tree()
         self.assertTrue(set(before) <= set(after), set(before) - set(after))
+
+
+    # ── planned jobs ──
+    def test_drain_interrupts_and_a_timed_out_job_claims_no_artifact(self):
+        # Oracle: result.json and the out/ markers on disk; the fake docker
+        # plays the job container (running until stopped, labelled as started).
+        self.start_alpha()
+        jobs_dir = self.home / "state/sessions/alpha/jobs"
+
+        def run_job():
+            code, started = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "make",
+                                        "--artifact", "build/out.bin", "--seconds", "5")
+            self.assertEqual(code, 0, started)
+            self.assertEqual(started["job"]["class"], "running")
+            return started["job"]["job"]
+
+        def result(job_id):
+            return json.loads((jobs_dir / job_id / "result.json").read_text())
+
+        # Drain stops a running job this module started: interrupted, never failed.
+        drained = run_job()
+        code, answer = self.answer("drain", "alpha", "--wait", "0")
+        self.assertEqual(code, 0, answer)
+        self.assertEqual([(j["job"], j["class"]) for j in answer["jobs"]], [(drained, "interrupted")])
+        self.assertEqual(result(drained)["class"], "interrupted")
+        self.assertEqual([a["complete"] for a in result(drained)["artifacts"]], [False])
+        state = json.loads((self.s / "docker-state.json").read_text())
+        self.assertNotIn(f"minerva-agent-job-alpha-{drained}", state["running"])
+        code, refused = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "make")
+        self.assertNotEqual(code, 0)
+        self.assertIn("draining", refused["error"])
+        self.assertEqual(self.answer("drain", "alpha", "--lift")[0], 0)
+
+        # A command stopped at its limit: timed_out, and its artifact, though
+        # copied and marked collected, is not claimed complete.
+        timed = run_job()
+        out = jobs_dir / timed / "out"
+        (out / "artifacts/build").mkdir(parents=True)
+        (out / "artifacts/build/out.bin").write_text("partial")
+        (out / "artifacts.done").write_text("")
+        (out / "ended").write_text("command 124 5\n")
+        (out / "exit").write_text("124 5\n")
+        state = json.loads((self.s / "docker-state.json").read_text())
+        state["running"].remove(f"minerva-agent-job-alpha-{timed}")
+        (self.s / "docker-state.json").write_text(json.dumps(state))
+        code, status = self.answer("job-status", "alpha", timed)
+        self.assertEqual(code, 0, status)
+        self.assertEqual(result(timed)["class"], "timed_out")
+        self.assertEqual([(a["present"], a["complete"]) for a in result(timed)["artifacts"]], [(True, False)])
+        # result.json is written once: markers changed afterwards do not reclassify it.
+        (out / "ended").write_text("command 0 1\n")
+        self.assertEqual(self.answer("job-status", "alpha", timed)[1]["class"], "timed_out")
+        self.assertEqual(result(timed)["class"], "timed_out")
 
 
 class StaticTest(unittest.TestCase):

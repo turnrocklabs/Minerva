@@ -663,11 +663,15 @@ def rule_docket_create(ctx, args):
 def _mutate(tool):
     """docket_update / docket_transition / docket_append: only on a direct
     item, as holder = the session identity; a protected change also needs the
-    item's claim held by that identity."""
+    item's claim held by that identity. A docket_update of fact tags alone
+    may also reach a chain item (docket_scope.is_fact_update)."""
     def rule(ctx, args):
         scope = _scope(ctx)
+        fact = docket_scope.is_fact_update(tool, args)
         args["id"], item = _scoped_item(ctx, scope, args["id"], args["project"], True,
-                                        ctx.policy.mutable_types, direct=True)
+                                        ctx.policy.mutable_types, direct=not fact)
+        if fact and not scope.is_direct(item):
+            scope.require_fact_tags(item, item["id"], args["tags"])
         _check_references(ctx, scope, args)
         if docket_scope.touches_protected(tool, args, item):
             scope.require_holder(item, item["id"])

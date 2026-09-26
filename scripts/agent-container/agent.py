@@ -3,7 +3,7 @@
 
   agent.py build
   agent.py create NAME --harness claude|codex --folder PATH... [--start-in PATH]
-                  [--project P]... [--mode start|resume|shell] [--profile PROFILE]
+                  [--project P]... [--mode start|resume|shell] [--profile PROFILE] [--rw PATH]...
   agent.py start NAME [--mode MODE] [--note-read ID]... [--note-write ID]...
   agent.py attach NAME
   agent.py up NAME [start options] [attach options]     start if needed, then attach
@@ -101,8 +101,9 @@ Folders. A folder that is a git checkout is never mounted itself: the session
 gets an independent clone of it under ${MINERVA_AGENT_WORK:-~/agent-work}/NAME/,
 made once at the first start and mounted at its own absolute path, so the
 host never runs git inside a directory the container can write. Any other
-folder is mounted read-write at its own path; one holding a git checkout
-within a few levels is refused (choose that checkout, which is cloned). The
+folder is mounted at its own path, read-only unless --rw names it (the
+record's folder then carries rw: true); one holding a git checkout within a
+few levels is refused (choose that checkout, which is cloned). The
 start folder is a host path inside one of the folders; the harness starts at
 the matching path inside the container. Docket projects are --project, or
 else discovered from the .dct files near the top of each folder.
@@ -299,9 +300,11 @@ def discover_projects(folders):
     return names
 
 
-def build_record(name, harness, folders, start_in, projects, mode, profile=""):
+def build_record(name, harness, folders, start_in, projects, mode, profile="", rw=()):
     """The record for a new session, from host paths; nothing is written. An
-    empty profile is left out of the record, which then uses the default."""
+    empty profile is left out of the record, which then uses the default.
+    `rw` names plain folders (among `folders`) mounted read-write; every other
+    plain folder is mounted read-only."""
     if harness not in HARNESSES:
         raise Refused(f"harness must be one of {', '.join(HARNESSES)}")
     if mode not in MODES:
@@ -314,9 +317,15 @@ def build_record(name, harness, folders, start_in, projects, mode, profile=""):
             if _within(a, b) or _within(b, a):
                 raise Refused(f"folders {a} and {b} overlap")
     check_layout(hosts)
+    writable = {plain_folder(f) for f in rw or []}
+    stray = sorted(writable - set(hosts))
+    if stray:
+        raise Refused(f"--rw {stray[0]} is not one of the session's folders")
     records, labels = [], set()
     for host in hosts:
         if is_checkout(host):
+            if host in writable:
+                raise Refused(f"--rw {host}: a git checkout is cloned, and its clone is always writable")
             label, n = host.name, 2
             while label in labels:
                 label, n = f"{host.name}-{n}", n + 1
@@ -327,7 +336,8 @@ def build_record(name, harness, folders, start_in, projects, mode, profile=""):
         if nested:
             raise Refused(f"{host} holds the git checkout {Path(nested).parent}: choose that checkout "
                           "(it is cloned) or a folder without one")
-        records.append({"host": str(host), "path": str(host), "kind": "mount"})
+        records.append({"host": str(host), "path": str(host), "kind": "mount",
+                        **({"rw": True} if host in writable else {})})
     start = plain_folder(start_in) if start_in else hosts[0]
     workdir = container_path(records, start)
     if workdir is None:
@@ -345,6 +355,12 @@ def build_record(name, harness, folders, start_in, projects, mode, profile=""):
             raise Refused(str(exc))
         record[PROFILE_KEY] = profile
     return record
+
+
+def folder_writable(folder):
+    """Whether a record folder is mounted read-write: a clone (the session's
+    own copy) and the session home always are, a plain folder only with rw."""
+    return folder["kind"] != "mount" or folder.get("rw") is True
 
 
 def record_profile(record):
@@ -377,8 +393,10 @@ def record_view(name, saved):
                                              and readiness.PROFILE_NAME.fullmatch(saved[PROFILE_KEY]))) \
             and saved["harness"] in HARNESSES and saved["mode"] in MODES \
             and isinstance(saved["folders"], list) and saved["folders"] \
-            and all(isinstance(f, dict) and set(f) == {"host", "path", "kind"}
-                    and f["kind"] in ("clone", "mount") for f in saved["folders"]) \
+            and all(isinstance(f, dict) and set(f) - {"rw"} == {"host", "path", "kind"}
+                    and f["kind"] in ("clone", "mount")
+                    and f.get("rw", True) is True and ("rw" not in f or f["kind"] == "mount")
+                    for f in saved["folders"]) \
             and isinstance(saved["projects"], list):
         return saved
     if isinstance(saved, dict) and LEGACY_KEYS <= set(saved) <= LEGACY_KEYS | {"start_in"} \
@@ -724,18 +742,20 @@ def resolve_record(args):
             raise Refused(f"no session {args.name}: create it first "
                           f"(agent.py create {args.name} --harness H --folder PATH)")
         return build_record(args.name, args.harness, args.folder, args.start_in, args.project,
-                            args.mode or "start", args.profile or ""), True
+                            args.mode or "start", args.profile or "", args.rw), True
     differs = (args.harness and args.harness != saved["harness"]) \
         or (args.task and args.task != saved.get("task")) \
         or (args.profile and args.profile != record_profile(saved)[0])
-    if not differs and (args.folder or args.start_in or args.project):
+    if not differs and (args.folder or args.start_in or args.project or args.rw):
         if saved["version"] != RECORD_VERSION:
             raise Refused(f"session {args.name} was created before folders; its folders cannot be "
                           "given again, start it by name")
         wanted = build_record(args.name, saved["harness"],
                               args.folder or [f["host"] for f in saved["folders"]],
-                              args.start_in, args.project, saved["mode"])
-        differs = (args.folder and wanted["folders"] != saved["folders"]) \
+                              args.start_in, args.project, saved["mode"],
+                              rw=args.rw if args.folder or args.rw else
+                              [f["host"] for f in saved["folders"] if f.get("rw")])
+        differs = ((args.folder or args.rw) and wanted["folders"] != saved["folders"]) \
             or (args.start_in and wanted["start_in"] != saved["start_in"]) \
             or (args.project and wanted["projects"] != saved["projects"])
     if differs:
@@ -799,7 +819,7 @@ def natives_manifest(run_dir):
 def cmd_create(args):
     check_layout()
     record = build_record(args.name, args.harness, args.folder, args.start_in, args.project,
-                          args.mode or "start", args.profile or "")
+                          args.mode or "start", args.profile or "", args.rw)
     with session_lock(args.name):
         saved = load_record(args.name)
         if saved is None:
@@ -867,7 +887,7 @@ def cmd_start(args):
         mounts = bind_mount(sock, "/run/minerva-agent", True) + bind_mount(home, HOME_IN_CONTAINER)
         mounts += native_mounts
         for folder in record["folders"]:   # clones and direct mounts, each at its own path
-            mounts += bind_mount(folder["path"], folder["path"])
+            mounts += bind_mount(folder["path"], folder["path"], not folder_writable(folder))
         started = run(compose(name, "run", "-d", "--rm", "--name", dev, "--workdir", record["start_in"],
                               "-e", f"MINERVA_AGENT_SESSION={name}",
                               # Which image this session runs, so it can tell
@@ -1105,7 +1125,8 @@ def cmd_info(args):
     result = describe(args.name, record)
     home = {"host": str(session_dir(args.name) / "home"), "path": HOME_IN_CONTAINER, "kind": "home"}
     result["path_mappings"] = [{"host": f["host"] or f["path"], "container": f["path"], "kind": f["kind"],
-                                "mounted_from": f["path"]} for f in record["folders"] + [home]]
+                                "mounted_from": f["path"], "access": "rw" if folder_writable(f) else "ro"}
+                               for f in record["folders"] + [home]]
     if args.map:
         result["mapped"] = {p: container_path(record["folders"] + [home], p) for p in args.map}
     if result["state"] == "running":
@@ -1280,6 +1301,8 @@ def parse(argv):
         p.add_argument("--project", action="append", metavar="DOCKET_PROJECT")
         p.add_argument("--mode", choices=MODES)
         p.add_argument("--profile", metavar="PROFILE")
+        p.add_argument("--rw", action="append", metavar="PATH",
+                       help="mount this plain (non-git) folder read-write; others mount read-only")
 
     def start_options(p):
         record_options(p, False)

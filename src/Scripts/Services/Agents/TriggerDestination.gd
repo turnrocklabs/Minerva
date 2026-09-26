@@ -17,6 +17,7 @@ enum Kind { CHAT, TERMINAL }
 # and scripts compiled before the SingletonObject autoload (test harnesses)
 # must not pull in these, which refer to it.
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+const NOTIFY_DELIVERY_PATH := "res://Scripts/Services/MCP/Modules/MCPNotifyDelivery.gd"
 const TOOL_UTILS_PATH := "res://Scripts/Services/MCP/Modules/MCPToolUtils.gd"
 
 ## The MCPTerminalTools that terminal_tools() hands out instead of a fresh
@@ -108,7 +109,7 @@ func availability(listing: Array) -> Dictionary:
 		return {"ok": true} if not now.is_empty() else {"ok": false, "reason": "no harness runs in the terminal of '%s'" % label}
 	if int(entry.get("foreground_pid", 0)) <= 0:
 		return {"ok": false, "reason": "the harness process of '%s' cannot be identified just now" % label}
-	var broken: String = load(TERMINAL_TOOLS_PATH)._expectation_broken(expectation(), now,
+	var broken: String = load(NOTIFY_DELIVERY_PATH)._expectation_broken(expectation(), now,
 		int(entry.get("foreground_pid", 0)), str(entry.get("name", "")))
 	return {"ok": true} if broken.is_empty() else {"ok": false, "reason": broken}
 

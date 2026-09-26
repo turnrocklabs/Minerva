@@ -8,6 +8,9 @@ extends Node
 ## and calls open_at(). It frees itself once the menu and dialog are done.
 
 const AgentSessionStore := preload("res://Scripts/Services/AgentSessions/AgentSessionStore.gd")
+## A keystroke in the tab this recent refuses the attach: the command would be
+## appended to whatever the person was typing at the prompt.
+const TYPED_WINDOW_MS := 1500
 
 ## The tab's terminal session; set before the node enters the tree.
 var terminal: TerminalSession = null
@@ -83,7 +86,7 @@ func _on_id_pressed(item: int) -> void:
 	if item < 0 or item >= _ids.size() or terminal == null:
 		return
 	_attaching = true
-	var answer: Dictionary = await AgentSessionStore.shared().attach(_ids[item], terminal)
+	var answer: Dictionary = await AgentSessionStore.shared().attach(_ids[item], terminal, TYPED_WINDOW_MS)
 	_attaching = false
 	var ok: bool = bool(answer.get("ok", false))
 	if ok and bool(answer.get("pane_readable", true)):

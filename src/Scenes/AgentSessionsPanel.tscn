@@ -221,7 +221,7 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-tooltip_text = "Git checkouts are cloned for the session; other folders are mounted as they are."
+tooltip_text = "Git checkouts are cloned for the session; other folders are mounted at their own path, read-only unless marked read-write."
 
 [node name="FolderButtons" type="HBoxContainer" parent="Form/FolderBox"]
 layout_mode = 2
@@ -236,6 +236,13 @@ unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Remove"
+
+[node name="FolderReadWrite" type="CheckBox" parent="Form/FolderBox/FolderButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Mount the selected folder read-write. Plain folders mount read-only unless checked; a git checkout is cloned and its clone is always writable."
+disabled = true
+text = "Read-write"
 
 [node name="StartInLabel" type="Label" parent="Form"]
 layout_mode = 2

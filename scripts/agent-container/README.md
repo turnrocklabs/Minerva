@@ -16,7 +16,8 @@ check readiness of and list sessions. A packaged Minerva carries this directory 
 
 A session mounts the host folders it was created with. A git checkout is
 cloned once into `~/agent-work/NAME/` and the clone is mounted, never the
-checkout; any other folder is mounted as it is. `--start-in` picks where the
+checkout; any other folder is mounted at its own path, read-only unless
+`--rw PATH` names it. `--start-in` picks where the
 harness starts (default: the first folder). Docket projects are `--project`,
 or else the `.dct` files found near the top of the folders.
 

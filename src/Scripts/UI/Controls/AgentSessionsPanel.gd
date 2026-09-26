@@ -17,6 +17,8 @@ extends VBoxContainer
 
 const AgentSessionStore := preload("res://Scripts/Services/AgentSessions/AgentSessionStore.gd")
 const AgentSessionJobs := preload("res://Scripts/UI/Controls/AgentSessionJobs.gd")
+## Shown after a folder the session mounts read-write.
+const READ_WRITE_SUFFIX := "  (read-write)"
 
 enum Column { ID, HARNESS, STATE, FOLDERS }
 
@@ -47,7 +49,10 @@ var _busy: bool = false
 @onready var _new_name: LineEdit = %NewName
 @onready var _harness: OptionButton = %Harness
 @onready var _mode: OptionButton = %Mode
+## Items carry the folder path as metadata; the text adds "(read-write)".
 @onready var _folders: ItemList = %Folders
+## Mounts the selected plain folder read-write (plain folders mount read-only).
+@onready var _folder_rw: CheckBox = %FolderReadWrite
 @onready var _remove_folder: Button = %RemoveFolder
 @onready var _start_in: OptionButton = %StartIn
 @onready var _projects: LineEdit = %Projects
@@ -89,7 +94,8 @@ func _ready() -> void:
 	_readiness.pressed.connect(_on_readiness_pressed)
 	%AddFolder.pressed.connect(_folder_dialog.popup_centered)
 	_folder_dialog.dir_selected.connect(_on_folder_chosen)
-	_folders.item_selected.connect(func(_index: int) -> void: _remove_folder.disabled = false)
+	_folders.item_selected.connect(_on_folder_selected)
+	_folder_rw.toggled.connect(_on_folder_rw_toggled)
 	_remove_folder.pressed.connect(_on_remove_folder_pressed)
 	_create.pressed.connect(_on_create_pressed)
 	_tree.item_selected.connect(_show_grants)
@@ -307,8 +313,9 @@ static func _info_text(info: Dictionary) -> String:
 	var mappings: Array = info.get("path_mappings", []) if info.get("path_mappings") is Array else []
 	for mapping: Variant in mappings:
 		if mapping is Dictionary:
-			lines.append("  %s → %s (%s)" % [_esc(str(mapping.get("host", ""))),
-				_esc(str(mapping.get("container", ""))), _esc(str(mapping.get("kind", "")))])
+			lines.append("  %s → %s (%s, %s)" % [_esc(str(mapping.get("host", ""))),
+				_esc(str(mapping.get("container", ""))), _esc(str(mapping.get("kind", ""))),
+				_esc(str(mapping.get("access", "")))])
 	return "\n".join(lines)
 
 
@@ -495,9 +502,10 @@ func _on_build_pressed() -> void:
 
 func _on_folder_chosen(path: String) -> void:
 	for index: int in _folders.item_count:
-		if _folders.get_item_text(index) == path:
+		if str(_folders.get_item_metadata(index)) == path:
 			return
-	_folders.add_item(path)
+	var added: int = _folders.add_item(path)
+	_folders.set_item_metadata(added, path)
 	_start_in.add_item(path)
 	if _start_in.selected < 0:
 		_start_in.select(0)
@@ -512,12 +520,32 @@ func _on_remove_folder_pressed() -> void:
 	if _start_in.item_count > 0 and _start_in.selected < 0:
 		_start_in.select(0)
 	_remove_folder.disabled = true
+	_folder_rw.disabled = true
+	_folder_rw.set_pressed_no_signal(false)
+
+
+func _on_folder_selected(index: int) -> void:
+	_remove_folder.disabled = false
+	_folder_rw.disabled = false
+	_folder_rw.set_pressed_no_signal(_folders.get_item_text(index).ends_with(READ_WRITE_SUFFIX))
+
+
+func _on_folder_rw_toggled(on: bool) -> void:
+	var chosen: PackedInt32Array = _folders.get_selected_items()
+	if chosen.is_empty():
+		return
+	var path: String = str(_folders.get_item_metadata(chosen[0]))
+	_folders.set_item_text(chosen[0], path + READ_WRITE_SUFFIX if on else path)
 
 
 func _on_create_pressed() -> void:
 	var folders := PackedStringArray()
+	var read_write := PackedStringArray()
 	for index: int in _folders.item_count:
-		folders.append(_folders.get_item_text(index))
+		var path: String = str(_folders.get_item_metadata(index))
+		folders.append(path)
+		if _folders.get_item_text(index).ends_with(READ_WRITE_SUFFIX):
+			read_write.append(path)
 	var projects := PackedStringArray()
 	for project: String in _projects.text.split(",", false):
 		if not project.strip_edges().is_empty():
@@ -527,11 +555,13 @@ func _on_create_pressed() -> void:
 	_set_busy(true)
 	var result: Dictionary = await _store.create(id, _harness.get_item_text(_harness.selected),
 		folders, start_in, projects, _mode.get_item_text(_mode.selected),
-		str(_profile.get_selected_metadata()) if _profile.selected >= 0 else "")
+		str(_profile.get_selected_metadata()) if _profile.selected >= 0 else "", read_write)
 	_set_busy(false)
 	_report(result, "Created %s. Select it and Start." % id)
 	if bool(result.get("ok", false)):
 		_new_name.clear()
 		_projects.clear()
 		_folders.clear()
+		_folder_rw.disabled = true
+		_folder_rw.set_pressed_no_signal(false)
 		_start_in.clear()
