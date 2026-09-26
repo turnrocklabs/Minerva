@@ -7,11 +7,14 @@ extends VBoxContainer
 ## a session from a name, harness, mode, folders, start folder and optional
 ## Docket projects. Its Grants section shows and changes the selected
 ## session's note grants (from the notes open in Minerva) and notify grant;
-## a change applies to the session's next call, with no re-attach. The GUI twin of minerva_agent_session_*; both drive
+## a change applies to the session's next call, with no re-attach. Its Jobs
+## section (AgentSessionJobs.tscn) lists the selected session's planned jobs
+## and drains them. The GUI twin of minerva_agent_session_*; both drive
 ## AgentSessionStore. Scene: res://Scenes/AgentSessionsPanel.tscn, placed in
 ## Preferences > Containers.
 
 const AgentSessionStore := preload("res://Scripts/Services/AgentSessions/AgentSessionStore.gd")
+const AgentSessionJobs := preload("res://Scripts/UI/Controls/AgentSessionJobs.gd")
 
 enum Column { ID, HARNESS, STATE, FOLDERS }
 
@@ -55,6 +58,7 @@ var _busy: bool = false
 @onready var _grant_write: Button = %GrantWrite
 @onready var _revoke_grant: Button = %RevokeGrant
 @onready var _notify: CheckBox = %Notify
+@onready var _jobs: AgentSessionJobs = %Jobs
 
 
 func _ready() -> void:
@@ -81,6 +85,7 @@ func _ready() -> void:
 	_remove_folder.pressed.connect(_on_remove_folder_pressed)
 	_create.pressed.connect(_on_create_pressed)
 	_tree.item_selected.connect(_show_grants)
+	_tree.item_selected.connect(func() -> void: _jobs.show_session(_selected_id()))
 	_grants.item_selected.connect(func(_index: int) -> void: _update_buttons())
 	_grant_read.pressed.connect(_on_grant_note_pressed.bind(false))
 	_grant_write.pressed.connect(_on_grant_note_pressed.bind(true))
@@ -153,6 +158,7 @@ func _show_listing(listing: Dictionary) -> void:
 	_build_image.disabled = bool(listing.get("building", false))
 	_fill_note_choices()
 	_show_grants()
+	_jobs.show_session(_selected_id())
 	_update_buttons()
 
 

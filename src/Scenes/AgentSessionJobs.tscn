@@ -1,0 +1,70 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/AgentSessionJobs.gd" id="1_jobs"]
+
+[node name="AgentSessionJobs" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+script = ExtResource("1_jobs")
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Heading" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Planned jobs of the selected session: one command at an exact revision of its clone, in its own bounded container."
+mouse_filter = 1
+text = "Jobs of the selected session"
+
+[node name="RefreshJobs" type="Button" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Refresh jobs"
+
+[node name="JobList" type="Tree" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 110)
+layout_mode = 2
+columns = 4
+column_titles_visible = true
+hide_root = true
+select_mode = 1
+
+[node name="JobActions" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="ShowLog" type="Button" parent="JobActions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Show the selected job's result, artifacts and the tail of its log."
+text = "Show log"
+
+[node name="Drain" type="Button" parent="JobActions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Stop new jobs for this session and stop its running jobs (only jobs the job runner started). They end interrupted, never failed, and are not retried. The session keeps running."
+text = "Drain"
+
+[node name="LiftDrain" type="Button" parent="JobActions"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Accept new jobs for this session again."
+text = "Lift drain"
+
+[node name="JobsStatus" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="JobLog" type="RichTextLabel" parent="."]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 160)
+layout_mode = 2
+bbcode_enabled = true
+selection_enabled = true
+scroll_following = true

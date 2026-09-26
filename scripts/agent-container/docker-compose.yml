@@ -8,7 +8,10 @@
 #            config dir, sockets, native build cache read-only) added by
 #            agent.py at `compose run` time.
 #            Minerva terminals attach with `docker exec ... tmux attach`.
-# Both services sit in the "session" profile, so a bare `docker compose up`
+#   job      one planned job (jobs.py, `agent.py run-job`): dev's hardening,
+#            no network, CPU and memory limits set per job by agent.py
+#            (MINERVA_JOB_CPUS, MINERVA_JOB_MEMORY), mounts per job.
+# All three services sit in the "session" profile, so a bare `docker compose up`
 # starts nothing half-configured. Build with `agent.py build`.
 x-hardened: &hardened
   image: "${MINERVA_AGENT_IMAGE:?set by agent.py}"
@@ -50,3 +53,15 @@ services:
     cpus: 4
     restart: "no"
     command: [/opt/minerva-agent/minerva-session]
+
+  job:
+    <<: *hardened
+    network_mode: none
+    tmpfs:
+      - /tmp:size=2g,mode=1777,exec
+      - /home/agent:size=512m,mode=1777,exec
+    pids_limit: 1024
+    cpus: "${MINERVA_JOB_CPUS:-1}"
+    mem_limit: "${MINERVA_JOB_MEMORY:-2g}"
+    memswap_limit: "${MINERVA_JOB_MEMORY:-2g}"
+    restart: "no"

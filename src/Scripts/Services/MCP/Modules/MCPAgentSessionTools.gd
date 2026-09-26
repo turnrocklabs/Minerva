@@ -1,7 +1,8 @@
 extends MCPToolModule
 ## MCP verbs for agent-container sessions: create, start, stop, status, info,
 ## readiness, list, build, grant/revoke (note and notify grants, changed
-## live) and attach (front a session in a terminal tab). Each is the MCP twin
+## live), attach (front a session in a terminal tab), and planned jobs:
+## run_job, job_status, job_log and drain. Each is the MCP twin
 ## of a control in Preferences > Containers > Agent Sessions or of the
 ## terminal tab menu's "Attach agent session here"; all drive
 ## AgentSessionStore, which runs the launcher Minerva ships.
@@ -12,6 +13,9 @@ const AgentSessionStore := preload("res://Scripts/Services/AgentSessions/AgentSe
 ## the command never lands in the middle of their line.
 const ATTACH_TYPED_WINDOW_MS := 3000
 
+## MCP clients give up on a call after about 25 s, so drain waits less.
+const MAX_DRAIN_WAIT_S := 20
+
 const _NAME := {"type": "string", "description": "Session name: 1-32 lowercase letters, digits and -."}
 
 
@@ -21,7 +25,9 @@ func get_tool_names() -> Array[String]:
 		"minerva_agent_session_info", "minerva_agent_session_readiness",
 		"minerva_agent_session_list", "minerva_agent_session_build",
 		"minerva_agent_session_grant", "minerva_agent_session_revoke",
-		"minerva_agent_session_attach"]
+		"minerva_agent_session_attach", "minerva_agent_session_run_job",
+		"minerva_agent_session_job_status", "minerva_agent_session_job_log",
+		"minerva_agent_session_drain"]
 
 
 func register_tools() -> void:
@@ -97,6 +103,45 @@ func register_tools() -> void:
 		"Revoke an agent-container session's grants, running or not: a note_read entry, a note_write entry (the next write to that note is refused, naming the grant it needs) and/or the notify grant. A note still in the other list keeps that access. Applies to the session's next call. Returns the session's grants.",
 		{"type": "object", "properties": grant_properties, "required": ["name"]}, "containers")
 
+	server._register_tool("minerva_agent_session_run_job",
+		"Run one explicitly planned job for an agent-container session: a shell command at an exact revision of the session's clone, in its own container of the session's image (no network, read-only root, host uid) with CPU, memory and time limits. The revision is resolved to a commit and checked out fresh, so uncommitted changes in the clone never reach the job; the result records the resolved commit and whether the clone was dirty (source.dirty, source.untracked). Returns at once with the job id; poll minerva_agent_session_job_status. Classes: succeeded, failed, timed_out (limit reached: partial log, no artifact claimed complete), interrupted (stopped by drain; never failed, never retried), unknown (ended outside the job). Refused while the session drains. Submodules are not checked out.",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"revision": {"type": "string", "description": "Commit to run at: a hash, branch, tag or HEAD-relative name in the session's clone."},
+			"command": {"type": "string", "description": "Shell command, run by bash at the checkout's root."},
+			"env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Environment variables for the command (names not starting MINERVA_JOB_)."},
+			"limits": {"type": "object", "properties": {
+				"cpus": {"type": "number", "description": "CPU limit. Default 2."},
+				"memory": {"type": "string", "description": "Memory limit without swap, such as 512m or 4g. Default 4g."},
+				"seconds": {"type": "integer", "description": "Time limit for the whole job, checkout included. Default 1800."},
+			}},
+			"artifacts": {"type": "array", "items": {"type": "string"}, "description": "Paths in the checkout copied out after the command ends within its time limit."},
+			"folder": {"type": "string", "description": "Which checkout folder of the session (host or container path). Default: the one holding the start folder."},
+		}, "required": ["name", "revision", "command"]}, "containers")
+
+	server._register_tool("minerva_agent_session_job_status",
+		"A job's classification: running, or final succeeded / failed / timed_out / interrupted / unknown, with detail, exit code, elapsed seconds, the requested and resolved revision, source (clone dirty or not) and artifacts [{path, host_path, present, complete}]. Without job, every job of the session, newest first, plus whether the session is draining. A final class never changes.",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"job": {"type": "string", "description": "Job id from minerva_agent_session_run_job. Omit to list the session's jobs."},
+		}, "required": ["name"]}, "containers")
+
+	server._register_tool("minerva_agent_session_job_log",
+		"The tail of a job's log (everything the job printed, partial while it runs or when it timed out), with its class.",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"job": {"type": "string", "description": "Job id."},
+			"tail": {"type": "integer", "description": "Bytes from the end, at most 49152. Default 32768."},
+		}, "required": ["name", "job"]}, "containers")
+
+	server._register_tool("minerva_agent_session_drain",
+		"Drain an agent-container session's jobs: from now on run_job is refused; running jobs get wait_s seconds to end on their own, then each still running is stopped (only containers the job runner started) and ends interrupted — never failed, never retried. Returns every job that was outstanding with its final class. lift: true opens the session to new jobs again. The session itself keeps running.",
+		{"type": "object", "properties": {
+			"name": _NAME,
+			"wait_s": {"type": "integer", "description": "Seconds running jobs may take to end on their own before they are stopped, 0-%d. Default 0." % MAX_DRAIN_WAIT_S},
+			"lift": {"type": "boolean", "description": "true: end the drain; new jobs are accepted again."},
+		}, "required": ["name"]}, "containers")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var store: RefCounted = AgentSessionStore.shared()
@@ -133,6 +178,22 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 				result = await store.grant(name, note_read, note_write, notify)
 			else:
 				result = await store.revoke(name, note_read, note_write, notify)
+		"minerva_agent_session_run_job":
+			var env: Dictionary = arguments.get("env", {}) if arguments.get("env") is Dictionary else {}
+			var limits: Dictionary = arguments.get("limits", {}) if arguments.get("limits") is Dictionary else {}
+			result = await store.run_job(name, str(arguments.get("revision", "")).strip_edges(),
+				str(arguments.get("command", "")), env, limits, _strings(arguments.get("artifacts", [])),
+				str(arguments.get("folder", "")).strip_edges())
+		"minerva_agent_session_job_status":
+			result = await store.job_status(name, str(arguments.get("job", "")).strip_edges())
+		"minerva_agent_session_job_log":
+			result = await store.job_log(name, str(arguments.get("job", "")).strip_edges(),
+				int(arguments.get("tail", 0)))
+		"minerva_agent_session_drain":
+			var wait_s: int = int(arguments.get("wait_s", 0))
+			if wait_s < 0 or wait_s > MAX_DRAIN_WAIT_S:
+				return MCPToolUtils.error("wait_s must be 0-%d" % MAX_DRAIN_WAIT_S)
+			result = await store.drain(name, wait_s, arguments.get("lift", false) == true)
 		"minerva_agent_session_build":
 			if store.building:
 				return MCPToolUtils.error("the agent image is already building")

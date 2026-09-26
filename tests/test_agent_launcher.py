@@ -718,7 +718,7 @@ class StaticTest(unittest.TestCase):
         out = subprocess.run(["docker", "compose", "-f", str(AGENT / "docker-compose.yml"), "--profile", "session",
                               "config", "--format", "json"], env=env, capture_output=True, text=True, check=True)
         services = json.loads(out.stdout)["services"]
-        self.assertEqual(set(services), {"gateway", "dev"})
+        self.assertEqual(set(services), {"gateway", "dev", "job"})
         for name, svc in services.items():
             with self.subTest(name):
                 self.assertTrue(svc["read_only"])
@@ -729,6 +729,7 @@ class StaticTest(unittest.TestCase):
                 self.assertFalse(svc.get("privileged", False))
         self.assertEqual(services["gateway"]["network_mode"], "host")
         self.assertEqual(services["dev"]["network_mode"], "none")
+        self.assertEqual(services["job"]["network_mode"], "none")
         self.assertEqual(services["gateway"]["build"]["args"]["BUILDER_IMAGE"], "minerva-container-build:test")
         self.assertTrue(all(",exec" in t for t in services["dev"]["tmpfs"]), services["dev"]["tmpfs"])
 

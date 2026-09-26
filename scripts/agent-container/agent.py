@@ -16,6 +16,11 @@
   agent.py info NAME [--map HOST_PATH]...
   agent.py readiness NAME [--profile PROFILE]
   agent.py list
+  agent.py run-job NAME --rev REV --command CMD [--env K=V]... [--artifact PATH]...
+                   [--cpus N] [--memory SIZE] [--seconds S] [--folder PATH]
+  agent.py job-status NAME [JOB]
+  agent.py job-log NAME JOB [--tail BYTES]
+  agent.py drain NAME [--wait S] [--lift]
 Every command takes --json: one JSON object on stdout, {"ok": true, ...} or
 {"ok": false, "error": ...}. Minerva drives sessions this way.
 
@@ -107,6 +112,12 @@ folders and the Git identity inside the running container, and the session's
 Docket projects against the Docket service, and lists what is missing. Both
 are read-only (readiness.py).
 
+Jobs. `run-job` runs one planned command at an exact revision of a session
+clone in its own bounded container and classifies how it ended: succeeded,
+failed, timed_out, interrupted or unknown. `drain` stops new jobs and stops
+only the jobs it started, which end interrupted and are never retried.
+jobs.py has the revision, dirty-tree and classification rules.
+
 Records written before folders existed (a task and a list of repository
 names, cloned under the work root's TASK/) still start, stop and attach:
 their folders are the task clones they already have.
@@ -134,6 +145,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE.parent / "container-build"))
 import build as container_build  # noqa: E402  the builder image and native cache
 import readiness  # noqa: E402  profiles and the read-only probe
+import jobs  # noqa: E402  planned jobs and drain
 COMPOSE = HERE / "docker-compose.yml"
 IMAGE_FILES = ["Dockerfile", "forwarder.py", "minerva-session", "agent-env.sh", "agent-bashrc",
                "agent-upgrade", "tmux.conf", "claude-mcp.json", "smoke.py"]
@@ -1134,6 +1146,35 @@ def cmd_list(args):
             "message": "\n".join(s["message"] for s in sessions)}
 
 
+def cmd_run_job(args):
+    return jobs.run_job(HOST, args.name, args.rev, args.job_command, args.env, args.artifact,
+                        args.cpus, args.memory, args.seconds, args.folder)
+
+
+def cmd_job_status(args):
+    return jobs.job_status(HOST, args.name, args.job)
+
+
+def cmd_job_log(args):
+    return jobs.job_log(HOST, args.name, args.job, args.tail)
+
+
+def cmd_drain(args):
+    return jobs.drain(HOST, args.name, args.wait, args.lift)
+
+
+def job_options(p):
+    p.add_argument("--rev", required=True, metavar="REV")
+    # dest differs from the subcommand's own "command".
+    p.add_argument("--command", dest="job_command", required=True, metavar="SHELL_COMMAND")
+    p.add_argument("--env", action="append", metavar="KEY=VALUE")
+    p.add_argument("--artifact", action="append", metavar="PATH")
+    p.add_argument("--cpus", type=float)
+    p.add_argument("--memory", metavar="SIZE")
+    p.add_argument("--seconds", type=int)
+    p.add_argument("--folder", metavar="PATH")
+
+
 def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1178,6 +1219,12 @@ def parse(argv):
                                            lambda p: p.add_argument("--role", default="")]),
                              ("info", [lambda p: p.add_argument("--map", action="append", metavar="HOST_PATH")]),
                              ("readiness", [lambda p: p.add_argument("--profile", metavar="PROFILE")]),
+                             ("run-job", [job_options]),
+                             ("job-status", [lambda p: p.add_argument("job", nargs="?", default="")]),
+                             ("job-log", [lambda p: p.add_argument("job"),
+                                          lambda p: p.add_argument("--tail", type=int, metavar="BYTES")]),
+                             ("drain", [lambda p: p.add_argument("--wait", type=int, metavar="SECONDS"),
+                                        lambda p: p.add_argument("--lift", action="store_true")]),
                              ("list", [])):
         p = sub.add_parser(command)
         p.add_argument("--json", action="store_true", help="answer with one JSON object on stdout")
@@ -1192,7 +1239,11 @@ COMMANDS = {"build": cmd_build, "create": cmd_create, "start": cmd_start, "attac
             "up": cmd_up, "notes": cmd_notes, "grant": cmd_grant, "revoke": cmd_revoke,
             "identity": cmd_identity,
             "stop": cmd_stop, "status": cmd_status,
-            "info": cmd_info, "readiness": cmd_readiness, "list": cmd_list}
+            "info": cmd_info, "readiness": cmd_readiness, "list": cmd_list,
+            "run-job": cmd_run_job, "job-status": cmd_job_status, "job-log": cmd_job_log,
+            "drain": cmd_drain}
+# This module as jobs.py's host: its docker, lock and control-file helpers.
+HOST = sys.modules[__name__]
 
 
 def main(argv=None):

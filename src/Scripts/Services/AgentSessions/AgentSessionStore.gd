@@ -38,6 +38,12 @@ extends RefCounted
 ## after a relaunch any fresh tab attaches it again with its harness as it
 ## was; grants are per-session records, so nothing else re-binds.
 ##
+## Jobs: run_job() runs one planned command at an exact revision of the
+## session's clone in its own bounded container; job_status() and job_log()
+## read its classified result (succeeded, failed, timed_out, interrupted,
+## unknown) and log; drain() stops new jobs and stops only the jobs the
+## launcher started, which end interrupted (agent.py run-job/drain, jobs.py).
+##
 ## The GUI twins are AgentSessionsPanel (Preferences > Containers) and the
 ## terminal tab menu (AgentSessionAttachMenu); the MCP twin is
 ## MCPAgentSessionTools. All share the one instance from shared().
@@ -371,6 +377,85 @@ func _change_grants(command: String, id: String, note_read: PackedStringArray,
 	if not problem.is_empty():
 		return _error(problem)
 	var result: Dictionary = await _run(args, QUICK_TIMEOUT_S)
+	changed.emit()
+	return result
+
+
+## Runs one planned job for session `id` (agent.py run-job, jobs.py): `command`
+## at commit `revision` of the session's clone (`folder`, "" = the one holding
+## the start folder), in its own container with `limits` {cpus: float, memory:
+## String such as "4g", seconds: int} (a missing key takes jobs.py's default),
+## environment `env` (String -> String) and declared `artifacts` (paths in the
+## checkout). Answers {"ok", "job": {job, class, final, ...}}; refused while
+## the session drains.
+func run_job(id: String, revision: String, command: String, env: Dictionary, limits: Dictionary,
+		artifacts: PackedStringArray, folder: String = "") -> Dictionary:
+	var problem: String = _check_id(id)
+	if problem.is_empty() and (revision.is_empty() or command.strip_edges().is_empty()):
+		problem = "a job needs a revision and a command"
+	if not problem.is_empty():
+		return _error(problem)
+	var args: PackedStringArray = ["run-job", id, "--rev=" + revision, "--command=" + command]
+	for key: Variant in env:
+		args.append("--env=%s=%s" % [str(key), str(env[key])])
+	for path: String in artifacts:
+		args.append("--artifact=" + path)
+	if limits.has("cpus"):
+		args.append("--cpus=%s" % str(float(limits["cpus"])))
+	if limits.has("memory"):
+		args.append("--memory=" + str(limits["memory"]))
+	if limits.has("seconds"):
+		args.append("--seconds=%d" % int(limits["seconds"]))
+	if not folder.is_empty():
+		args.append("--folder=" + folder)
+	var result: Dictionary = await _run(args, QUICK_TIMEOUT_S)
+	changed.emit()
+	return result
+
+
+## One job's classification and result when `job` is given, else every job
+## of the session, newest first: {"ok", "draining", "jobs": [{job, class,
+## final, detail, revision, command, limits, ...}]}. Asking finishes a job
+## whose container has ended (its result is written once).
+func job_status(id: String, job: String = "") -> Dictionary:
+	var problem: String = _check_id(id)
+	if not problem.is_empty():
+		return _error(problem)
+	var args: PackedStringArray = ["job-status", id]
+	if not job.is_empty():
+		args.append(job)
+	return await _run(args, QUICK_TIMEOUT_S)
+
+
+## The last `tail` bytes of a job's log (0 = jobs.py's default):
+## {"ok", "class", "final", "size", "truncated", "log"}.
+func job_log(id: String, job: String, tail: int = 0) -> Dictionary:
+	var problem: String = _check_id(id)
+	if problem.is_empty() and job.is_empty():
+		problem = "name the job"
+	if not problem.is_empty():
+		return _error(problem)
+	var args: PackedStringArray = ["job-log", id, job]
+	if tail > 0:
+		args.append("--tail=%d" % tail)
+	return await _run(args, QUICK_TIMEOUT_S)
+
+
+## Drains session `id`: no new jobs from now on; running jobs get `wait_s`
+## seconds to end on their own, then the ones still running (only jobs the
+## launcher started) are stopped and end interrupted, never retried. Answers
+## each outstanding job's final class in "jobs". `lift` opens the session to
+## new jobs again instead.
+func drain(id: String, wait_s: int = 0, lift: bool = false) -> Dictionary:
+	var problem: String = _check_id(id)
+	if not problem.is_empty():
+		return _error(problem)
+	var args: PackedStringArray = ["drain", id]
+	if lift:
+		args.append("--lift")
+	elif wait_s > 0:
+		args.append("--wait=%d" % wait_s)
+	var result: Dictionary = await _run(args, QUICK_TIMEOUT_S + float(wait_s))
 	changed.emit()
 	return result
 

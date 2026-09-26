@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/AgentSessionsPanel.gd" id="1_panel"]
+[ext_resource type="PackedScene" path="res://Scenes/AgentSessionJobs.tscn" id="2_jobs"]
 
 [node name="AgentSessionsPanel" type="VBoxContainer"]
 size_flags_horizontal = 3
@@ -137,6 +138,13 @@ layout_mode = 2
 disabled = true
 tooltip_text = "The session may notify any Minerva tab with a harness in front, except its own."
 text = "May notify harness tabs"
+
+[node name="JobsSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="Jobs" parent="." instance=ExtResource("2_jobs")]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="Separator" type="HSeparator" parent="."]
 layout_mode = 2

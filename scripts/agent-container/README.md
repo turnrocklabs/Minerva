@@ -97,6 +97,27 @@ The last line is the builder image (tag and id) and native cache the session
 was handed (see above). `dev-natives.py` reports, per component, whether it used that
 cache or built locally.
 
+## Planned jobs and drain
+
+A planned job is one command at an exact revision of a session's clone, run
+in its own container of the session's image (the compose `job` service: no
+network, read-only root, host uid) with CPU, memory and time limits:
+
+```bash
+agent.py run-job NAME --rev abc1234 --command 'scripts/dev-test.sh test/test_x.gd' \
+    --seconds 900 --memory 6g --cpus 4 --artifact logs/report.json
+agent.py job-status NAME [JOB]        # running, or succeeded / failed / timed_out / interrupted / unknown
+agent.py job-log NAME JOB
+agent.py drain NAME [--wait S]        # no new jobs; stop the running ones (interrupted, never retried)
+agent.py drain NAME --lift
+```
+
+The revision is checked out fresh, so uncommitted changes in the clone never
+reach a job; the result records the commit that ran and whether the clone was
+dirty. Minerva's twins are `minerva_agent_session_run_job`, `_job_status`,
+`_job_log`, `_drain` and the Jobs section of Preferences > Containers.
+`jobs.py` documents the classification rules.
+
 ## Upgrading Claude Code or Codex in a session
 
 The image's copy of each CLI is read-only, and `claude update` does not work
