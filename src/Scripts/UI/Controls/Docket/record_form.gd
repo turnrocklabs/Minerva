@@ -1359,9 +1359,19 @@ func _save_changes() -> void:
 		if new_type == "secret":
 			changes["surfaced_from"] = _identity_edit.text
 
+	var before: Dictionary = item.duplicate(true)
 	DataModel.update_item(_state.schema, item, changes)
 	var write_back := DataModel.build_write_back(item, changes)
 	item_db.update_item_fields(_current_id, write_back)
+	# The field write logs an event, as docket_update does: docket.app derives
+	# the item revision (if_revision) from the event count, so an event-less
+	# save would leave a stale if_revision able to overwrite this edit.
+	var changed_keys: PackedStringArray = []
+	for key: String in changes:
+		if str(before.get(key, "")) != str(item.get(key, "")):
+			changed_keys.append(key)
+	if not changed_keys.is_empty():
+		item_db.add_event(_current_id, "updated", "user", "Updated: %s" % ", ".join(changed_keys))
 
 	# Save encrypted fields for secret/encrypted_note types
 	if new_type == "secret":
