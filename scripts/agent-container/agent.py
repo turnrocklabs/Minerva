@@ -5,7 +5,7 @@
   agent.py create NAME --harness claude|codex --folder PATH... [--start-in PATH]
                   [--project P]... [--mode start|resume|shell]
   agent.py start NAME [--mode MODE] [--note-read ID]... [--note-write ID]...
-  agent.py attach NAME [--takeover]
+  agent.py attach NAME
   agent.py up NAME [start options] [attach options]     start if needed, then attach
   agent.py grant NAME [--note-read ID]... [--note-write ID]... [--notify]
   agent.py revoke NAME [--note-read ID]... [--note-write ID]... [--notify]
@@ -30,7 +30,9 @@ resume picker, or nothing (--mode). Leaving the harness drops to that shell;
 leaving the shell ends the session. `attach`, run in a Minerva terminal,
 joins the tmux session as its only client. Closing or crashing Minerva only
 detaches; `attach` from any new terminal reconnects to the same shell, never
-starting a new harness or model turn.
+starting a new harness or model turn. Minerva runs it for the owner: the tab
+action "Attach agent session here" and minerva_agent_session_attach write
+this command into a tab at its shell prompt (AgentSessionStore.attach).
 
 Attaching binds the session to that terminal for notify routing: a binding
 file carries the terminal id (the reply address, and the one terminal the
@@ -39,13 +41,23 @@ launcher renews. An attach that dies without cleaning up stops routing once
 its lease lapses. A per-session lock serializes create, start, stop and
 attach ownership; grant changes have a lock of their own.
 
+One tab fronts a session at a time, and the newest attach wins: attaching
+while another tab holds the lease takes the session over. The new client
+attaches with tmux -d, which detaches the old one, and the binding moves to
+the new terminal; the old tab's launcher sees the binding is no longer its
+own, says the session was attached from another tab, and returns that tab to
+its shell. An attach that fails to establish puts the previous holder's
+binding back, so a failed takeover leaves the old tab fronting. Since any
+attach takes over, a lease left by a crashed launcher never blocks one (it
+also lapses on its own), and no recovery flag exists.
+
 Grants. What a session may do beyond the fixed gateway policy is one record,
 control/grants.json: {"version": 1, "note_read": [NOTE_ID...], "note_write":
 [NOTE_ID...], "notify": true|false}. Write implies read. notify lets the
 session notify any Minerva tab with a harness in front except its own; there
 is no per-target list. Minerva changes the record with `grant` and `revoke`
 (GUI and minerva_agent_session_grant/revoke) at any time, running or not,
-with no attach or --takeover; the gateway reads it on every call, so the next
+with no re-attach; the gateway reads it on every call, so the next
 call sees the change. `revoke --note-read` removes only the read entry and
 `revoke --note-write` only the write entry.
 Migration: a session with no grants.json (started by an earlier agent.py)
@@ -795,7 +807,8 @@ def cmd_start(args):
             raise Refused("dev container did not start")
     result = describe(name, record)
     result["message"] = (f"session {name} running ({record['harness']}, mode {mode}); "
-                         f"attach from a Minerva terminal: agent.py attach {name}")
+                         f"attach it from a terminal tab's menu (Attach agent session here) "
+                         f"or run agent.py attach {name} in a Minerva terminal")
     return result
 
 
@@ -816,16 +829,32 @@ class Lease:
         self.launcher = {"generation": self.value["generation"], "launcher_pgid": os.getpgrp(),
                          "container_pid": container[0], "container_start": container[1]}
         self._stop = threading.Event()
+        # The binding and launcher.json this attach replaced (claim_locked).
+        self.previous = ({}, {})
 
-    def claim_locked(self, takeover):
-        """Under the session lock: take the binding unless another live lease holds it."""
-        current = read_json(self.path)
+    def claim_locked(self):
+        """Under the session lock: take the binding, live lease or not (the
+        newest attach wins), remembering the one it replaces for
+        restore_locked. Answers the terminal that held a live lease, or ""."""
+        self.previous = (read_json(self.path), read_json(launcher_path(self.name)))
+        current = self.previous[0]
         live = isinstance(current.get("expires_at"), (int, float)) and current["expires_at"] > time.time()
-        if live and not takeover:
-            raise Refused(f"session {self.name} is attached from terminal {current.get('terminal_id')}; "
-                          "pass --takeover to move it here")
         write_json(launcher_path(self.name), self.launcher)
         self._write()
+        return str(current.get("terminal_id", "")) if live else ""
+
+    def restore_locked(self):
+        """Under the session lock, when this attach failed to establish: put
+        back the binding it replaced, so a holder that is still attached keeps
+        renewing it (a holder that was detached clears it as it exits)."""
+        self._stop.set()
+        if self._mine():
+            write_json(self.path, self.previous[0])
+            write_json(launcher_path(self.name), self.previous[1])
+
+    def taken_over(self):
+        with session_lock(self.name):
+            return not self._mine()
 
     def _write(self):
         self.value["expires_at"] = time.time() + self.seconds
@@ -881,21 +910,32 @@ def cmd_attach(args):
         # this client is really attached, so its -d is what detaches us, never
         # the reverse. -d detaches any other client: one controlling tab.
         with session_lock(name):
-            lease.claim_locked(args.takeover)
-            before = tmux_clients(dev)
-            # The pane-mode title names this attachment (tmux.conf), so Minerva
-            # never takes an earlier attachment's late title for this one's.
-            client = subprocess.Popen(["docker", "exec", "-it", dev, "tmux",
-                                       "set-option", "-g", "@minerva_attachment",
-                                       lease.value["generation"], ";",
-                                       "attach-session", "-d", "-t", "harness"])
-            state = attach_established(dev, before, client)
-            if state == "exited":   # attached and already gone, or tmux refused (its message shown)
-                return client.returncode
-            if state != "attached":
-                raise Refused(f"could not attach to session {name}")
+            previous = lease.claim_locked()
+            try:
+                before = tmux_clients(dev)
+                # The pane-mode title names this attachment (tmux.conf), so Minerva
+                # never takes an earlier attachment's late title for this one's.
+                client = subprocess.Popen(["docker", "exec", "-it", dev, "tmux",
+                                           "set-option", "-g", "@minerva_attachment",
+                                           lease.value["generation"], ";",
+                                           "attach-session", "-d", "-t", "harness"])
+                state = attach_established(dev, before, client)
+                if state == "exited":   # attached and already gone, or tmux refused (its message shown)
+                    lease.restore_locked()
+                    return client.returncode
+                if state != "attached":
+                    raise Refused(f"could not attach to session {name}")
+            except BaseException:
+                lease.restore_locked()
+                raise
+        if previous and previous != terminal:
+            print(f"agent.py: session {name} taken over from terminal {previous}", file=sys.stderr)
         lease.renew_until_released()
-        return client.wait()
+        code = client.wait()
+        if lease.taken_over():
+            print(f"\nagent.py: session {name} is now attached from another tab; this tab is detached "
+                  "(attach it here again from the tab's menu)", file=sys.stderr)
+        return code
     finally:
         if client is not None and client.poll() is None:
             client.kill()
@@ -1084,7 +1124,6 @@ def parse(argv):
         # Only a gateway started before grants.json reads this list; a current
         # gateway lets the session notify any harness tab but its own.
         p.add_argument("--notify-to", action="append", metavar="TERMINAL_ID", help=argparse.SUPPRESS)
-        p.add_argument("--takeover", action="store_true")
 
     for command, options in (("build", []), ("create", [lambda p: record_options(p, True)]),
                              ("start", [start_options, note_options]), ("attach", [attach_options]),

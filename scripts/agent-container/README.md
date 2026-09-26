@@ -30,6 +30,27 @@ Sessions created before folders (a `task` and fixed repository names in
 `session.json`) keep working: they start, stop and attach from the task
 clones they already have, and `--task` still matches them.
 
+## Attaching a session to a tab
+
+Right-click a terminal tab and choose **Attach agent session here**, or call
+`minerva_agent_session_attach` with the session and the terminal. Minerva
+writes the attach command into that tab, which must be at a shell prompt, and
+the launcher there holds the session's lease and its single tmux client.
+
+The newest attach wins: attaching from a second tab takes the session over.
+The first tab's tmux client is detached, it prints that the session is now
+attached from another tab, and it returns to its shell; the binding (the
+reply address notify uses) moves to the new tab. A takeover that fails to
+establish leaves the first tab fronting. There is no `--takeover` flag and
+no recovery command: a lease left by a crash never blocks an attach, and it
+lapses on its own.
+
+The session outlives Minerva. After Minerva exits (its tabs' launchers end
+and release their leases) and relaunches, attach the session from any fresh
+tab: the harness is still running in its tmux pane with its context on
+screen, and its grants are per-session records, so notify works with no
+further step.
+
 ## Dev tests inside a session
 
 The image is built on the native builder image (`scripts/container-build/Dockerfile`),
@@ -131,7 +152,7 @@ python3 scripts/agent-container/agent.py revoke NAME --note-write NOTE_ID
 ```
 
 The gateway reads the record on every call, so the next call follows it; no
-re-attach or `--takeover` is involved. A session started by an earlier
+re-attach is involved. A session started by an earlier
 `agent.py` gets its `grants.json` from its `notes.json` (notify on) when it
 next starts or its grants next change. Until it restarts, its gateway still
 reads `notes.json` (kept in step with every change) and its notify targets

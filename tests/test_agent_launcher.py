@@ -401,11 +401,12 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(json.loads(launcher.read_text()),
                          {"generation": bound["generation"], "launcher_pgid": os.getpgid(first.pid),
                           "container_pid": 1, "container_start": init_start})
-        # A second terminal cannot silently steal a live attach...
-        second = self.agent("attach", "alpha", env={**self.env, "MINERVA_TERMINAL_ID": "9999"})
-        self.assertEqual(second.returncode, 1)
-        self.assertIn("--takeover", second.stderr)
-        self.assertEqual(self.binding()["terminal_id"], "1111")
+        # A second terminal takes the live attach over (the newest attach wins)...
+        second = self.agent("attach", "alpha", env={**self.env, "MINERVA_TERMINAL_ID": "9999",
+                                                    "FAKE_ATTACH_SECONDS": "0.5"})
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("taken over from terminal 1111", second.stderr)
+        self.assertEqual(self.binding(), {})                          # the second released its own
         first.wait(10)
         self.assertEqual(self.binding(), {})                          # detached: nothing to notify
         self.assertEqual(json.loads(launcher.read_text()), {})
@@ -426,7 +427,7 @@ class LauncherTest(unittest.TestCase):
         deadline = time.monotonic() + 5
         while self.binding().get("terminal_id") != "1111" and time.monotonic() < deadline:
             time.sleep(0.05)
-        second = self.agent("attach", "alpha", "--takeover",
+        second = self.agent("attach", "alpha",
                             env={**self.env, "MINERVA_TERMINAL_ID": "9999", "FAKE_ATTACH_SECONDS": "30"},
                             wait=False)
         while self.binding().get("terminal_id") != "9999" and time.monotonic() < deadline + 5:
@@ -463,9 +464,9 @@ class LauncherTest(unittest.TestCase):
         self.assertIsNone(gateway.read_binding(path).terminal_id)   # the gateway treats it as gone
         again = self.agent("attach", "alpha", env={**env, "MINERVA_TERMINAL_ID": "9999",
                                                   "FAKE_ATTACH_SECONDS": "0"})
-        self.assertEqual(again.returncode, 0, again.stderr)          # no --takeover needed
+        self.assertEqual(again.returncode, 0, again.stderr)
 
-    def test_simultaneous_attaches_have_exactly_one_winner(self):
+    def test_simultaneous_attaches_end_with_the_later_one_fronting(self):
         self.start_alpha()
         env = {**self.env, "FAKE_ATTACH_SECONDS": "3"}
         clients = [subprocess.Popen([sys.executable, "-B", str(AGENT / "agent.py"), "attach", "alpha"],
@@ -474,15 +475,18 @@ class LauncherTest(unittest.TestCase):
         results = [(c.wait(10), c.stderr.read()) for c in clients]
         for c in clients:
             c.stderr.close()
-        self.assertEqual(sorted(rc for rc, _ in results), [0, 1], results)
-        self.assertIn("--takeover", next(err for rc, err in results if rc == 1))
+        # Both attach, one after the other under the session lock; the later
+        # one took over, so exactly one reports its tab detached.
+        self.assertEqual([rc for rc, _ in results], [0, 0], results)
+        self.assertEqual(sum("this tab is detached" in err for _, err in results), 1, results)
+        self.assertEqual(self.binding(), {})
 
     def test_a_delayed_attach_cannot_detach_its_successor(self):
         self.start_alpha()
         first = self.agent("attach", "alpha", env={**self.env, "FAKE_ATTACH_DELAY": "1.5",
                                                    "FAKE_ATTACH_SECONDS": "30"}, wait=False)
         time.sleep(0.3)                                   # first is still establishing
-        second = self.agent("attach", "alpha", "--takeover",
+        second = self.agent("attach", "alpha",
                             env={**self.env, "MINERVA_TERMINAL_ID": "9999", "FAKE_ATTACH_SECONDS": "30"},
                             wait=False)
         self.wait_bound("9999", timeout=10)

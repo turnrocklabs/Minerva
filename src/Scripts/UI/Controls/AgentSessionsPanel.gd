@@ -230,7 +230,7 @@ func _on_stop_pressed() -> void:
 func _on_copy_attach_pressed() -> void:
 	var entry: Dictionary = _sessions.get(_selected_id(), {})
 	DisplayServer.clipboard_set(str(entry.get("attach_command", "")))
-	_set_status("Attach command copied: paste it into a Minerva terminal tab.", OK_COLOR)
+	_set_status("Attach command copied. In Minerva, right-click a terminal tab > Attach agent session here does the same.", OK_COLOR)
 
 
 func _on_inspect_pressed() -> void:

@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/AgentSessionAttachMenu.gd" id="1_menu"]
+
+[node name="AgentSessionAttachMenu" type="Node"]
+script = ExtResource("1_menu")
+
+[node name="Menu" type="PopupMenu" parent="."]
+unique_name_in_owner = true
+
+[node name="ResultDialog" type="AcceptDialog" parent="."]
+unique_name_in_owner = true
+title = "Attach agent session"
+dialog_autowrap = true
+size = Vector2i(460, 160)

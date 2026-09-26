@@ -396,7 +396,7 @@ class Test(GatewayCase):
         self.assertEqual(len(self.stubs["minerva"].calls("minerva_update_note")), 1)
 
         # A harness tab opened after the session started (and after attach):
-        # no re-attach, no --takeover, no target list to extend.
+        # no re-attach, no target list to extend.
         late = {"id": "4444", "name": "claude-2", "harness": "claude"}
         self.stubs["minerva"].terminals = TERMINALS + [late]
         notify = {"to": "4444", "text": "see note"}

@@ -22,6 +22,7 @@ const _TERMINAL_THEME := preload("res://assets/themes/terminal.tres")
 const NOTIFY_LEDGER_PATH := "res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd"
 const SESSION_REGISTRY_PATH := "res://Scripts/Services/Terminal/HarnessSessionRegistry.gd"
 const SESSIONS_DIALOG_PATH := "res://Scenes/HarnessSessionsDialog.tscn"
+const ATTACH_MENU_PATH := "res://Scenes/AgentSessionAttachMenu.tscn"
 
 var _tab_bar: TabBar
 var _panel: PanelContainer
@@ -84,7 +85,8 @@ func _build_ui() -> void:
 	_tab_bar.tab_changed.connect(_on_tab_bar_tab_changed)
 	_tab_bar.tab_close_pressed.connect(_on_tab_bar_tab_close_pressed)
 	# The gui_input SIGNAL runs alongside TabBar's own handling, so watching for
-	# the double-click here costs the bar none of its normal clicks or drags.
+	# the double-click (rename) and the right-click (tab menu) here costs the
+	# bar none of its normal clicks or drags.
 	_tab_bar.gui_input.connect(_on_tab_bar_gui_input)
 	header.add_child(_tab_bar)
 
@@ -298,18 +300,33 @@ func _view_exists_for(session) -> bool:
 	return false
 
 
-# ── Inline tab rename ─────────────────────────────────────────────────
+# ── Tab menu and inline rename ─────────────────────────────────────────
 
 func _on_tab_bar_gui_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton):
 		return
 	var mb := event as InputEventMouseButton
-	if not (mb.pressed and mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT):
-		return
 	var tab: int = _tab_bar.get_tab_idx_at_point(mb.position)
-	if tab < 0:
+	if tab < 0 or not mb.pressed:
 		return
-	begin_rename(tab)
+	if mb.button_index == MOUSE_BUTTON_RIGHT:
+		open_attach_menu(tab, Vector2i(get_viewport().get_mouse_position()))
+	elif mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT:
+		begin_rename(tab)
+
+
+## Opens the tab menu of tab *tab* at *at* (viewport coordinates, as
+## Window.popup takes them): "Attach agent session here" for each running
+## agent session (AgentSessionAttachMenu).
+func open_attach_menu(tab: int, at: Vector2i) -> void:
+	var terminal = _tab_bar.get_tab_metadata(tab) if tab >= 0 and tab < _tab_bar.tab_count else null
+	var session = terminal.get_session() if terminal != null and terminal.has_method("get_session") else null
+	if not session is TerminalSession:
+		return
+	var menu = load(ATTACH_MENU_PATH).instantiate()
+	menu.terminal = session
+	add_child(menu)
+	menu.open_at(at)
 
 
 ## Opens the inline title editor over tab *tab* and returns it (null when the

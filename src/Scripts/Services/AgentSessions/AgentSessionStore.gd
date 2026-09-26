@@ -23,8 +23,17 @@ extends RefCounted
 ## gateway reads the record on every call, so the change applies to its next
 ## call with no attach.
 ##
-## The GUI twin is AgentSessionsPanel (Preferences > Containers); the MCP twin
-## is MCPAgentSessionTools. Both share the one instance from shared().
+## attach() fronts a running session in a terminal tab: it writes the attach
+## command into the tab's shell, where the launcher holds the session's lease
+## and its one tmux client. The newest attach wins: attaching while another
+## tab fronts the session takes it over, and that tab's launcher reports it
+## detached and returns it to its shell. The session outlives Minerva, so
+## after a relaunch any fresh tab attaches it again with its harness as it
+## was; grants are per-session records, so nothing else re-binds.
+##
+## The GUI twins are AgentSessionsPanel (Preferences > Containers) and the
+## terminal tab menu (AgentSessionAttachMenu); the MCP twin is
+## MCPAgentSessionTools. All share the one instance from shared().
 
 ## Emitted after a call that may have changed a record or its state.
 signal changed
@@ -34,6 +43,13 @@ const NOTE_ID_PATTERN := "^[0-9a-f]{32,64}$"
 const HARNESSES: PackedStringArray = ["claude", "codex"]
 const MODES: PackedStringArray = ["start", "resume", "shell"]
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
+
+## Programs that count as a tab at its shell prompt, where attach may type.
+const SHELLS: PackedStringArray = ["bash", "zsh", "sh", "dash", "fish", "ksh", "mksh"]
+## How long attach() waits for the tab to show the session in front: the
+## launcher waits up to 10 s for its tmux client, plus docker's own start-up.
+const ATTACH_WAIT_S := 30.0
+const ATTACH_POLL_S := 0.25
 
 const PROFILE_PATTERN := "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
 const PYTHON := "python3"
@@ -206,6 +222,70 @@ static func session_identity(id: String, terminal_id: String) -> Dictionary:
 		described["terminal_identity"] = for_terminal
 		described["consistent"] = for_terminal == identity
 	return described
+
+
+## Fronts running session `id` in `terminal` (a TerminalSession at its shell
+## prompt), taking it over from any tab that fronts it now. Writes the attach
+## command as one guarded write (the shell must still be the foreground, and
+## no person may have typed there within `typed_window_ms`; 0 skips that
+## check), then waits until the tab shows the session in front. Answers
+## {"ok", "id", "terminal_id", "took_over_from"} ("" when no tab held it), or
+## {"ok": true, "already_attached": true} when this tab already fronts it.
+## Refused with a reason when the session is not running, or the tab is
+## running something other than a shell (a harness, another session).
+func attach(id: String, terminal: TerminalSession, typed_window_ms: int = 0) -> Dictionary:
+	var problem: String = _check_id(id)
+	if problem.is_empty() and (terminal == null or not terminal.is_alive()):
+		problem = "that terminal has exited"
+	if problem.is_empty() and not terminal.foreground_supported():
+		problem = "attaching needs a terminal whose foreground Minerva can read (Linux or macOS)"
+	if not problem.is_empty():
+		return _error(problem)
+	var described: Dictionary = await status(id)
+	if not bool(described.get("ok", false)):
+		return described
+	if str(described.get("state", "")) != "running":
+		return _error("session %s is not running; start it first" % id)
+	var command: String = attach_command(id)
+	if command.is_empty():
+		return _error("this Minerva build has no agent-session launcher (agent-kit/agent-container/agent.py)")
+	var terminal_id: String = str(terminal.terminal_id)
+	var front: Dictionary = terminal.get_foreground_process()
+	var fronting: String = str(front.get("container", ""))
+	if fronting == id:
+		return {"ok": true, "id": id, "terminal_id": terminal_id, "already_attached": true,
+			"took_over_from": "", "message": "session %s is already attached in this tab" % id}
+	if not fronting.is_empty():
+		return _error("this tab fronts agent session %s; detach it there (Ctrl+] then d) or use another tab" % fronting)
+	var program: String = TerminalSession.program_of(front)
+	if front.is_empty() or not SHELLS.has(program):
+		return _error("this tab is running %s, not a shell at its prompt; attach from a tab at a shell prompt"
+			% (program if not program.is_empty() else "something Minerva cannot read"))
+	var previous: String = str(described.get("attached_terminal", ""))
+	var receipt: Dictionary = terminal.begin_write_transaction(command,
+		{"expect_process": int(front.get("pid", 0)), "unless_typed_within_ms": typed_window_ms})
+	if not bool(receipt.get("success", false)):
+		return _error(str(receipt.get("error", "the attach command could not be written")))
+	var tree := Engine.get_main_loop() as SceneTree
+	var waited: float = 0.0
+	while waited < ATTACH_WAIT_S and terminal.is_alive():
+		await tree.create_timer(ATTACH_POLL_S).timeout
+		waited += ATTACH_POLL_S
+		if str(terminal.get_foreground_process().get("container", "")) == id:
+			changed.emit()
+			return {"ok": true, "id": id, "terminal_id": terminal_id,
+				"took_over_from": previous if previous != terminal_id else "",
+				"message": "session %s attached in this tab" % id}
+	changed.emit()
+	# The lease can be this tab's while the pane is not readable from the host
+	# (an extra pane or window): attached, but notify into it will hold.
+	var after: Dictionary = await status(id)
+	if str(after.get("attached_terminal", "")) == terminal_id:
+		return {"ok": true, "id": id, "terminal_id": terminal_id,
+			"took_over_from": previous if previous != terminal_id else "", "pane_readable": false,
+			"message": "session %s attached in this tab, but its tmux pane cannot be read from the host" % id}
+	return _error("session %s did not come to the front within %d s; the tab shows the launcher's answer"
+		% [id, int(ATTACH_WAIT_S)])
 
 
 ## Adds grants to session `id`: notes it may read, notes it may write (write
