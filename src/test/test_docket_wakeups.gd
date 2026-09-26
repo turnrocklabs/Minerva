@@ -16,9 +16,11 @@ extends SceneTree
 ##
 ## A docket.app subscription event (DocketSubscriptionFeed, against a scripted
 ## Docket whose call log is the oracle) for a change the embedded path already
-## gave is not sent again, and docket_ack goes out only after the ledger has
-## the pointer handed_to_harness: the log reads subscribe, changes_since,
-## get, then ack, and nothing is acked while the pointer's window is open.
+## gave is not sent again; a feed-only change in the same page joins the same
+## pointer; docket_ack goes out for each event only after the ledger has the
+## pointer handed_to_harness, and nothing is acked while the window is open.
+## A feed event for a change whose embedded pointer ended unconfirmed is
+## never acked.
 ##
 ## Run: godot --headless --path src --script test/test_docket_wakeups.gd
 
@@ -166,9 +168,26 @@ func _test_subscription_dedup(registry) -> void:
 		"assigned_to": "worker-b", "tags": [], "updated_at": stamp,
 		"events": [{"event_type": "transition", "timestamp": stamp, "note": "open → in_progress", "actor": "a"}]}
 	wakeups.take(trig, "minerva", "item-9", "transitioned", "open", "in_progress", item, "")
+	# item-10 changes only in docket.app, so only the feed delivers it. item-11
+	# is seen by the embedded path first, and its pointer ends unconfirmed.
+	var stamp_10 := "2026-09-26T10:00:01"
+	var item_10: Dictionary = {"id": "item-10", "title": "Task item-10", "type": "work_item", "status": "open",
+		"assigned_to": "worker-b", "tags": [], "updated_at": stamp_10, "events": []}
+	var stamp_11 := "2026-09-26T10:05:00"
+	var item_11: Dictionary = {"id": "item-11", "title": "Task item-11", "type": "work_item", "status": "open",
+		"assigned_to": "worker-b", "tags": [], "updated_at": stamp_11, "events": []}
+	var items: Dictionary = {"item-9": item, "item-10": item_10, "item-11": item_11}
 
-	# The same change from docket.app's feed. The scripted Docket logs each call
-	# with the relay sends made before it.
+	# The same changes from docket.app's feed, one page per poll. The scripted
+	# Docket logs each call with the relay sends made before it.
+	var pages: Array = [
+		[{"project": "minerva", "eid": 7, "item_id": "item-9", "kind": "transition",
+			"actor": "a", "timestamp": stamp, "fields": ["status"], "possible_duplicate": false},
+		{"project": "minerva", "eid": 8, "item_id": "item-10", "kind": "typed_update",
+			"actor": "a", "timestamp": stamp_10, "fields": ["title"], "possible_duplicate": false}],
+		[{"project": "minerva", "eid": 9, "item_id": "item-11", "kind": "typed_update",
+			"actor": "a", "timestamp": stamp_11, "fields": ["title"], "possible_duplicate": false}],
+	]
 	var calls: Array = []
 	var served: Array[TriggerDefinition] = [trig]
 	var feed = load(FEED_PATH).new(wakeups, func() -> Array[TriggerDefinition]: return served)
@@ -179,33 +198,58 @@ func _test_subscription_dedup(registry) -> void:
 			"docket_subscribe":
 				return {"subscriber": "sub-1", "name": arguments.get("name", ""), "cursor": "c0"}
 			"docket_changes_since":
-				return {"events": [{"project": "minerva", "eid": 7, "item_id": "item-9", "kind": "transition",
-					"actor": "a", "timestamp": stamp, "fields": ["status"], "possible_duplicate": false}],
-					"next_cursor": "c1", "more": false, "expired": false}
+				var events: Array = pages.pop_front() if not pages.is_empty() else []
+				return {"events": events, "next_cursor": "c%d" % (2 - pages.size()), "more": false, "expired": false}
 			"docket_get":
-				return item
+				return items.get(str(arguments.get("id", "")), {"error": "no such item"})
 			"docket_ack":
 				return {"subscriber": "sub-1", "acked": arguments.get("event_ids", []), "already_acked": [], "pending_count": 0}
 		return {"error": "unexpected %s" % tool}
 	await feed.poll_once()
 	var tools: Array = calls.map(func(entry: Dictionary) -> String: return str(entry.tool))
 	check("D1: the feed subscribes under the installation identity, reads, and has not acked while the pointer waits",
-		tools == ["docket_subscribe", "docket_changes_since", "docket_get"]
+		tools == ["docket_subscribe", "docket_changes_since", "docket_get", "docket_get"]
 			and str(calls[0].arguments.name).begins_with("minerva@install-") and module.relay_calls.is_empty(),
 		str(calls))
 
-	await _wait_for(func() -> bool: return calls.size() >= 4, 6000)
+	await _wait_for(func() -> bool: return _acks(calls).size() >= 2, 6000)
 	await _settle(1500)
 	var sent: Array = module.relay_calls.filter(func(relayed: Dictionary) -> bool: return str(relayed.get("text", "")).contains("item-9"))
-	check("D2: the subscription's copy of the change is deduped: ONE pointer, counting one change",
-		sent.size() == 1 and str(sent[0].get("text", "")).contains("1 change on"), str(module.relay_calls))
-	var ack: Dictionary = calls[3] if calls.size() >= 4 else {}
-	check("D3: docket_ack is the last call, names the event, and follows the pointer's delivery",
-		calls.size() == 4 and str(ack.get("tool", "")) == "docket_ack" and int(ack.get("relayed", 0)) >= 1
-			and str(ack.arguments.get("subscriber", "")) == "sub-1"
-			and ack.arguments.get("event_ids", []) == [{"project": "minerva", "eid": 7}],
+	check("D2: the embedded change and the feed-only change are ONE pointer; the feed's copy of item-9 is not counted again",
+		module.relay_calls.size() == 1 and sent.size() == 1 and str(sent[0].get("text", "")).contains("2 changes on")
+			and str(sent[0].get("text", "")).contains("minerva:item-10"), str(module.relay_calls))
+	var acked: Array = []
+	var after_delivery: bool = true
+	for ack: Dictionary in _acks(calls):
+		acked.append_array(ack.arguments.get("event_ids", []))
+		after_delivery = after_delivery and int(ack.get("relayed", 0)) >= 1 and str(ack.arguments.get("subscriber", "")) == "sub-1"
+	check("D3: docket_ack follows the pointer's delivery and names each event of the page once",
+		after_delivery and acked.size() == 2 and acked.has({"project": "minerva", "eid": 7})
+			and acked.has({"project": "minerva", "eid": 8}) and str(calls[-1].get("tool", "")) == "docket_ack",
 		str(calls))
 	check("D4: the feed saved the cursor after the page", feed.cursor == "c1", feed.cursor)
+
+	# item-11: the embedded path's pointer is typed but never confirmed.
+	module.relay_reply = {"ok": true, "submit": {"state": "typed", "evidence": ""}}
+	var relayed_before: int = module.relay_calls.size()
+	wakeups.take(trig, "minerva", "item-11", "updated", "", "", item_11, "")
+	await _wait_for(func() -> bool: return module.relay_calls.size() > relayed_before, 4000)
+	await _settle(1000)
+	var unconfirmed: Array = load(LEDGER_PATH).shared().list().filter(func(record: Dictionary) -> bool: return str(record.get("text", "")).contains("item-11") and str(record.get("state", "")) == "unconfirmed")
+	check("D5: the embedded pointer for item-11 settled unconfirmed", unconfirmed.size() == 1,
+		str(load(LEDGER_PATH).shared().list()))
+	var calls_before: int = calls.size()
+	await feed.poll_once()
+	await _settle(1500)
+	var late: Array = calls.slice(calls_before)
+	check("D6: the feed's copy of a change whose pointer was never handed over is not acked, nor sent again",
+		_acks(late).is_empty() and late.map(func(entry: Dictionary) -> String: return str(entry.tool)) == ["docket_changes_since", "docket_get"]
+			and module.relay_calls.size() == relayed_before + 1, str(late))
+
+
+# The docket_ack calls in a scripted Docket call log.
+func _acks(calls: Array) -> Array:
+	return calls.filter(func(entry: Dictionary) -> bool: return str(entry.tool) == "docket_ack")
 
 
 func _ledger_classes() -> Array:

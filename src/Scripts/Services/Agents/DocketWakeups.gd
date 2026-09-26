@@ -46,7 +46,10 @@ extends RefCounted
 ## carrying the change is handed_to_harness in the ledger; a change this
 ## session already took holds it until that earlier pointer settles. A pointer
 ## that ends unconfirmed (or whose record is gone) abandons the receipt, so it
-## never fires. A change that wakes nobody holds nothing.
+## never fires. The outcome stays with the change key once the pointer settles,
+## so a receipt that arrives later for a change whose pointer was not handed
+## over is abandoned too, while one whose pointer was handed over holds
+## nothing. A change that wakes nobody holds nothing.
 
 const HarnessSessionRegistry := preload("res://Scripts/Services/Terminal/HarnessSessionRegistry.gd")
 const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
@@ -54,6 +57,9 @@ const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDel
 const CONTROL_PREFIX := "control:"
 ## Change keys remembered for dedup; the oldest are forgotten first.
 const WOKEN_LIMIT := 4096
+## Outcome a change key keeps in _woken once its pointer settles.
+const KEY_HANDED := "handed"
+const KEY_ABANDONED := "abandoned"
 ## How often pointers kept for an absent session are looked at again.
 const RECHECK_S := 10.0
 const MIN_WINDOW_S := 1.0
@@ -74,7 +80,8 @@ var _inflight: Dictionary = {}
 # identity -> Array of {line, sender, delivery_id, sending}: directives, each
 # its own pointer, kept until the ledger says the harness took it.
 var _control: Dictionary = {}
-# "<identity>|<change key>" -> true, in arrival order.
+# "<identity>|<change key>" -> true while its pointer is unsettled, then
+# KEY_HANDED or KEY_ABANDONED; in arrival order.
 var _woken: Dictionary = {}
 # "<identity>|<project>|<item id>" -> the item's control tags last seen.
 var _control_seen: Dictionary = {}
@@ -157,6 +164,8 @@ func take(trig: TriggerDefinition, project: String, item_id: String, kind: Strin
 			if receipt != null and _pending.has(key):
 				receipt.hold()
 				(_pending[key] as Array).append(receipt)
+			elif receipt != null and str(_woken.get(key, "")) == KEY_ABANDONED:
+				receipt.abandon()
 			continue
 		_pending[key] = []
 		if receipt != null:
@@ -288,11 +297,14 @@ func _send_controls(identity: String) -> void:
 
 
 # The changes `keys` left the ledger in `state`: their receipts are released
-# when it is handed_to_harness, abandoned otherwise.
+# when it is handed_to_harness, abandoned otherwise, and the key keeps that
+# outcome for receipts that arrive later.
 func _settle(keys: Array, state: String) -> void:
 	for key: String in keys:
 		var receipts: Array = _pending.get(key, [])
 		_pending.erase(key)
+		if _woken.has(key):
+			_woken[key] = KEY_HANDED if state == NotifyDeliveryLedger.HANDED else KEY_ABANDONED
 		for receipt: Receipt in receipts:
 			if state == NotifyDeliveryLedger.HANDED:
 				receipt.release()

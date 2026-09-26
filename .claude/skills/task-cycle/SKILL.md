@@ -29,12 +29,12 @@ set. Do not push until the batch closes.
 - A gated stage — review, test execution, push — runs only when a standing
   authorization covers it (see Authority). A missing one stops the batch; it is
   never skipped silently.
-- Owner rulings on the campaign anchor minerva:01a0dc2bf96e bind every batch:
-  static gates, syntax checks and exploratory experiments are always allowed,
-  test execution only at step 7 (#2183); fix rounds per review boundary are
-  capped (#2184's approved tables — the default configuration's `rounds`); no
-  finding is dropped — it is resolved, placed on an owning task, or filed with
-  a blast-radius priority (#2191, scale #2192).
+- Static gates, syntax checks and exploratory experiments are always allowed.
+  Tests run only at step 7, after review, on a named set the owner approved.
+- Fix rounds per review boundary are capped by the configuration's `rounds`,
+  never more than 3; past the cap the owner is asked.
+- No finding is dropped: each is resolved, placed on an owning task, or filed
+  with a priority set by its blast radius.
 - Every stage leaves its Docket work record (see Work records).
 
 
@@ -81,9 +81,10 @@ reconciled first. The pinned `HEAD` becomes the first attempt's `base:` tag.
 
 The process is configured by a record, not by editing this skill or host code.
 It is a `kb` item tagged `process-config` whose `key` is
-`process-config/task-cycle`, in the objective's project; an objective tagged
-`config:<item id>` uses that item instead. The default lives in project
-minerva as minerva:01a0dda7bf4c. Its `article` holds one fenced JSON object:
+`process-config/task-cycle`. An objective tagged `config:<item id>` uses that
+item. Otherwise find it with `docket_query` for that type, tag and key in the
+objective's project, then, if none is there, in project minerva. Its `article`
+holds one fenced JSON object:
 
 ```json
 {
@@ -122,9 +123,10 @@ minerva as minerva:01a0dda7bf4c. Its `article` holds one fenced JSON object:
 
 Every key is required except `principal` and `notes`. Validate the whole
 object before dispatch. A key not listed here (for example a per-task review
-switch), a missing key, a wrong type, a count below 1, `serial: false`, or a
-cross reviewer with the reviewer's provider while `cross_provider` is on stops
-pre-flight with a message naming the key path and what was wrong. Changing a
+switch), a missing key, a wrong type, a count below 1, a `rounds` count above
+3, `serial: false`, or a cross reviewer with the reviewer's provider while
+`cross_provider` is on stops pre-flight with a message naming the key path and
+what was wrong. Changing a
 role's provider or model in the record changes the next attempt dispatched
 for that role; nothing else needs editing.
 
