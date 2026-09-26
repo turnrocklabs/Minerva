@@ -12,6 +12,7 @@ extends RefCounted
 ## attempt that owns it.
 
 const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
+const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
 const RETRY_S := 2.0
 ## A delivery still held after this long is given up and reported failed.
 const HOLD_LIMIT_S := 600.0
@@ -82,12 +83,20 @@ func cancel(trigger_id: String) -> void:
 
 
 ## The latest outcome for `trigger_id`, or {} when it has never delivered:
-## status is sending, held, queued, written, dispatched, dropped, unknown,
-## failed, cancelled or withdrawn, with the reason, target and time. A direct
+## status is sending, held, queued, handed_to_harness, unconfirmed, dropped,
+## unknown, failed, cancelled or withdrawn (see NotifyDeliveryLedger), with
+## the reason, target and time. A chat delivery is read on from its ledger
+## record, which follows it past its queue to the relay's answer. A direct
 ## write also carries pane_mode_check (see TerminalInputArbiter).
 func receipt(trigger_id: String) -> Dictionary:
 	_is_outstanding(trigger_id)
-	return _receipts.get(trigger_id, {}).duplicate()
+	var delivery_receipt: Dictionary = _receipts.get(trigger_id, {})
+	var delivery_id: String = str(delivery_receipt.get("delivery_id", ""))
+	if not delivery_id.is_empty() and not _outstanding.has(trigger_id):
+		var state: String = str(NotifyDeliveryLedger.shared().get_record(delivery_id).get("state", ""))
+		if not state.is_empty():
+			delivery_receipt["status"] = state
+	return delivery_receipt.duplicate()
 
 
 ## `message` as one deliverable line: control characters and line breaks
@@ -142,7 +151,8 @@ func _send_until_settled(trig: TriggerDefinition, line: String, attempt: int, ti
 				MCPToolUtils.withdraw_outgoing(int(sent.get("entry_id", 0)))
 				return
 			_outstanding[trig.id].entry_id = int(sent.get("entry_id", 0))
-			_record(trig, {"status": "queued", "target": target})
+			_record(trig, {"status": "queued", "target": target,
+				"delivery_id": str(sent.get("delivery_id", ""))})
 			return
 		if status != "held":
 			# A write that happened is recorded even if a cancel landed
@@ -158,6 +168,8 @@ func _send_until_settled(trig: TriggerDefinition, line: String, attempt: int, ti
 				"reason": reason, "target": target}
 			if sent.has("pane_mode_check"):
 				outcome["pane_mode_check"] = sent["pane_mode_check"]
+			if sent.has("delivery_id"):
+				outcome["delivery_id"] = str(sent["delivery_id"])
 			_record(trig, outcome)
 			return
 		if not _current(trig.id, attempt):
@@ -194,7 +206,7 @@ func _finish(trig: TriggerDefinition, fields: Dictionary) -> void:
 ## `fresh` starts a new attempt's receipt, carrying nothing from the last one.
 func _record(trig: TriggerDefinition, fields: Dictionary, fresh: bool = false) -> void:
 	var delivery_receipt: Dictionary = {} if fresh or not _receipts.has(trig.id) else _receipts[trig.id]
-	for key in ["reason", "hold_reason", "pane_mode_check"]:
+	for key in ["reason", "hold_reason", "pane_mode_check", "delivery_id"]:
 		delivery_receipt.erase(key)
 	delivery_receipt.merge(fields, true)
 	delivery_receipt["destination"] = trig.destination.label

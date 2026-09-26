@@ -38,6 +38,8 @@ Behaviour:
 - `<any line>`      → busy screen, ~1.5s, `MOCK-ANSWER: <input reversed>`, idle.
 - `trigger-dialog`  → busy, then the permission dialog; block on ONE raw key;
                        print `DIALOG-ANSWERED: <key>` + idle.
+- `slow-turn…`      → like any line, but busy for ~6s, so a test can act while
+                       the busy screen is up.
 - `exit`            → goodbye line, exit 0.
 
 No LLM anywhere in the loop — possible because the passthrough transport has no

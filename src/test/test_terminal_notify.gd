@@ -67,6 +67,10 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var sent: ChatHistoryItem = history.HistoryItemList[history.HistoryItemList.size() - 1]
 	real_generates.append(sent.Message)
+	# Stands in for PluginProvider._report_notify: this request IS the harness
+	# here, so reaching it is the harness taking the line.
+	load("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd").shared().note_chat_outcome(
+		history.HistoryId, sent.Message, "handed")
 	while blocked:
 		await get_tree().process_frame
 	return null
@@ -134,8 +138,11 @@ func _make_module(terminals: Array, profiles: Dictionary) -> Object:
 	return World.make_module(terminals, profiles)
 
 
+## The one-look host entry (notify): a held line comes back held and is not
+## kept. The MCP tool's keeping of held lines is exercised end to end, against
+## the real relay, in test_notify_e2e.
 func _notify(module: Object, args: Dictionary) -> Dictionary:
-	return await module.handle("minerva_terminal_notify", args)
+	return await module.notify(args)
 
 
 func _run() -> void:
@@ -272,8 +279,8 @@ func _test_resolution() -> void:
 				and str(receipt.get("target", {}).get("chat_id", ""))
 					== str(w["claude"].HistoryId),
 			str(receipt))
-		check("B: an idle chat dispatches at once (%s)" % addressing[1],
-			str(receipt.get("status", "")) == "dispatched"
+		check("B: an idle chat's harness takes it at once (%s)" % addressing[1],
+			str(receipt.get("status", "")) == "handed_to_harness"
 				and int(receipt.get("queue_position", -1)) == 0, str(receipt))
 		check("B: the envelope is what the target receives (%s)" % addressing[1],
 			str(provider.texts_for("Claude Session"))
@@ -425,7 +432,7 @@ func _test_unbound_terminal() -> void:
 	var direct: Dictionary = await _notify(module,
 		{"to": "Codex Bare", "from": "claude", "text": "review posted", "wait_ms": 1500})
 	check("D3: an unbound codex terminal is written through the relay",
-		direct.get("success", false) and str(direct.get("status", "")) == "written"
+		direct.get("success", false) and str(direct.get("status", "")) == "handed_to_harness"
 			and str(direct.get("submit", "")) == "submitted", str(direct))
 	check("D4: the relay is told the harness, no arming, ONE look, and the write-time typing guard",
 		module.relay_calls.size() == 1
@@ -630,8 +637,8 @@ func _test_wait_ms() -> void:
 		if runner.done:
 			break
 		await process_frame
-	check("F2: wait_ms returns once the queued line is dispatched",
-		runner.done and str(runner.result.get("status", "")) == "dispatched"
+	check("F2: wait_ms returns once the queued line is taken by the harness",
+		runner.done and str(runner.result.get("status", "")) == "handed_to_harness"
 			and int(runner.result.get("queue_position", -1)) == 0,
 		str(runner.result))
 	check("F3: and the line really did become the next turn",
@@ -932,8 +939,8 @@ func _test_receipt_follows_the_entry() -> void:
 	var first_entry = queue3.enqueue(claude3.HistoryId, "evicted line")
 	var first_id: int = first_entry.id
 	queue3.pop_next(claude3.HistoryId)
-	check("H7: a freshly dispatched entry IS reported as dispatched",
-		module3.notify_status(first_id, 0) == "dispatched")
+	check("H7: a freshly promoted entry no delivery follows is reported as sending, never as taken",
+		module3.notify_status(first_id, 0) == "sending")
 
 	# Push it out of the ring: OUTCOME_HISTORY newer outcomes.
 	for _i in range(queue3.OUTCOME_HISTORY):
@@ -941,7 +948,7 @@ func _test_receipt_follows_the_entry() -> void:
 		queue3.pop_next(claude3.HistoryId)
 	check("H8: the ring really evicted it",
 		queue3.outcome_of(first_id) == queue3.Outcome.UNKNOWN)
-	check("H9: an evicted entry is NOT reported as dispatched",
+	check("H9: an evicted entry is NOT reported as sending",
 		module3.notify_status(first_id, 0) == "unknown",
 		module3.notify_status(first_id, 0))
 
@@ -952,9 +959,10 @@ func _test_receipt_follows_the_entry() -> void:
 
 #region K — the receipt against the REAL executor
 
-## "dispatched" is read off the queue's record, which is written when the entry
-## leaves the queue — before the executor has done anything with it. So the
-## receipt is only honest if the executor really sends what it was handed. The
+## Leaving the queue is written on the queue's record before the executor has
+## done anything with the entry, so the receipt reads handed_to_harness only
+## once the request itself has the line (the stand-in for PluginProvider's
+## report). The receipt is only honest if the executor really sends it. The
 ## case that broke it: the target chat's newest history item is a USER message
 ## (its previous turn errored or was cancelled after that item landed), which
 ## execute_regular_chat's "last item is user" guard used to bail on.
@@ -988,8 +996,8 @@ func _test_the_receipt_is_honest_on_an_unanswered_user_message() -> void:
 	check("K2: the envelope really became a request",
 		str(pane.real_generates) == str(PackedStringArray([envelope])),
 		str(pane.real_generates))
-	check("K3: and the receipt that says dispatched is telling the truth",
-		runner.done and str(runner.result.get("status", "")) == "dispatched"
+	check("K3: and the receipt that says handed_to_harness is telling the truth",
+		runner.done and str(runner.result.get("status", "")) == "handed_to_harness"
 			and int(runner.result.get("queue_position", -1)) == 0,
 		str(runner.result))
 
@@ -1028,8 +1036,12 @@ func _test_an_idle_chat_on_an_unanswered_user_message_is_still_notified() -> voi
 	check("L1: the envelope really became a request",
 		str(pane.real_generates) == str(PackedStringArray([envelope])),
 		str(pane.real_generates))
-	check("L2: and the dispatched receipt is telling the truth",
-		str(receipt.get("status", "")) == "dispatched", str(receipt))
+	check("L2: the receipt said sending when it returned, before the request was reached",
+		str(receipt.get("status", "")) == "sending", str(receipt))
+	var record: Dictionary = module._notify_status_tool(
+		{"delivery_id": str(receipt.get("delivery_id", ""))}).get("delivery", {})
+	check("L2b: and the ledger reads handed_to_harness once the request had the line",
+		str(record.get("state", "")) == "handed_to_harness", str(record))
 	check("L3: the chat is busy with that turn, not left idle",
 		claude_chat.is_request_active)
 

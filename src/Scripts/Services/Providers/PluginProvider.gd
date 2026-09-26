@@ -30,6 +30,9 @@ extends BaseProvider
 ## turn comes back "pending" rather than as a transport timeout.
 const RESUME_MARGIN_SEC := 10.0
 
+## Told what became of a notification this chat carried (see _report_notify).
+const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
+
 ## Registry key this provider was configured from ("plugin:<plugin_id>:<entry_id>").
 var entry_key: String = ""
 var plugin_id: String = ""
@@ -124,6 +127,7 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 	var entry := ModelResolver.plugin_entry(entry_key)
 	if entry.is_empty():
 		bot.error = "Plugin chat entry '%s' is not registered." % entry_key
+		_report_unsent(prompt, bot.error)
 		SingletonObject.chat_completed.emit(bot)
 		return bot
 	configure_from_entry(entry)
@@ -132,12 +136,14 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 	var pm = _get_plugin_manager()
 	if pm == null:
 		bot.error = "Plugin chat provider unavailable: plugin manager not found."
+		_report_unsent(prompt, bot.error)
 		SingletonObject.chat_completed.emit(bot)
 		return bot
 
 	var conn = pm.get_connection(plugin_id)
 	if conn == null:
 		bot.error = "Plugin '%s' is not running; cannot generate a response." % plugin_id
+		_report_unsent(prompt, bot.error)
 		SingletonObject.chat_completed.emit(bot)
 		return bot
 	var operation_token := "%s:%s:%s" % [str(get_instance_id()), str(Time.get_ticks_usec()), str(generation)]
@@ -236,6 +242,7 @@ func _dispatch_call(args: Dictionary, timeout_sec: float, generation: int) -> vo
 	var raw = await _generate(args, timeout_sec, generation)
 	if _interrupted_unsent == generation:
 		raw = {"error": "Interrupted before the message was sent to the plugin; nothing was sent."}
+	_report_notify(str(args.get("text", "")), raw, generation)
 	# A turn longer than one call comes back "pending" under this call's own
 	# operation token: keep waiting on that same operation (nothing is re-sent)
 	# until it ends, while this generation is still the live, uncancelled one.
@@ -364,6 +371,42 @@ func _newest_user_text(prompt: Array) -> String:
 		if item is String:
 			return item
 	return ""
+
+
+## Tell the notify ledger whether the harness took the text this call carried,
+## from the call's FIRST reply: a running (pending), answered or questioning
+## turn means the relay wrote it and the harness took it; a refusal marked
+## held means nothing was written; any other error, or a transport failure
+## after the call was sent, proves neither. The ledger ignores text that no
+## notification of this chat is waiting on.
+func _report_notify(text: String, raw, generation: int) -> void:
+	var result: Dictionary = _unwrap_tool_result(raw)
+	var ledger = NotifyDeliveryLedger.shared()
+	if result.get("__transport_error__", false):
+		var why: String = str(result.get("__transport_message__", ""))
+		ledger.note_chat_outcome(owner_history_id, text,
+			NotifyDeliveryLedger.CHAT_UNCONFIRMED if _sent_generation >= generation \
+				else NotifyDeliveryLedger.CHAT_FAILED, why)
+		return
+	match str(result.get("kind", "")).strip_edges():
+		"answer", "question", "pending":
+			ledger.note_chat_outcome(owner_history_id, text, NotifyDeliveryLedger.CHAT_HANDED)
+		"error":
+			if bool(result.get("held", false)):
+				ledger.note_chat_outcome(owner_history_id, text, NotifyDeliveryLedger.CHAT_HELD,
+					str(result.get("text", "")), str(result.get("hold_reason", "")))
+			else:
+				ledger.note_chat_outcome(owner_history_id, text, NotifyDeliveryLedger.CHAT_UNCONFIRMED,
+					str(result.get("text", "")))
+		_:
+			ledger.note_chat_outcome(owner_history_id, text, NotifyDeliveryLedger.CHAT_UNCONFIRMED,
+				"unrecognised reply")
+
+
+## A generate that ended before anything was sent to the plugin.
+func _report_unsent(prompt: Array, why: String) -> void:
+	NotifyDeliveryLedger.shared().note_chat_outcome(owner_history_id, _newest_user_text(prompt),
+		NotifyDeliveryLedger.CHAT_FAILED, why)
 
 
 ## Normalize call_tool output. Returns the plugin's payload Dictionary, OR a

@@ -17,9 +17,15 @@ signal became_empty()
 signal focus_requested()
 
 const _TERMINAL_THEME := preload("res://assets/themes/terminal.tres")
+# Loaded at run time, not preloaded: the ledger reaches the chat queue, and
+# this file stays compilable in isolated script-run harnesses.
+const NOTIFY_LEDGER_PATH := "res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd"
 
 var _tab_bar: TabBar
 var _panel: PanelContainer
+# Shows the notifications Minerva is keeping for this group's terminals, so a
+# person can see a line waiting on their draft, a dialog or a busy turn.
+var _retained_label: Label
 
 # The inline title editor, while a rename is open. Null otherwise.
 var _rename_edit: LineEdit = null
@@ -48,6 +54,10 @@ func _ready() -> void:
 	# already visible needs an initial sync (deferred past this add_child).
 	if is_visible_in_tree():
 		call_deferred("_adopt_viewless_sessions")
+	var ledger = load(NOTIFY_LEDGER_PATH).shared()
+	if not ledger.changed.is_connected(_on_notify_ledger_changed):
+		ledger.changed.connect(_on_notify_ledger_changed)
+	_refresh_retained()
 
 
 func _build_ui() -> void:
@@ -76,6 +86,12 @@ func _build_ui() -> void:
 	add_btn.flat = true
 	add_btn.pressed.connect(func() -> void: add_terminal())
 	header.add_child(add_btn)
+
+	_retained_label = Label.new()
+	_retained_label.name = "RetainedLabel"
+	_retained_label.visible = false
+	_retained_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	header.add_child(_retained_label)
 
 	# ── Body: PanelContainer holds the terminal nodes ─────────────────
 	_panel = PanelContainer.new()
@@ -406,3 +422,30 @@ func _on_tab_bar_tab_changed(tab: int) -> void:
 
 func _on_tab_bar_tab_close_pressed(tab: int) -> void:
 	close_terminal(tab)
+
+
+func _on_notify_ledger_changed(_delivery_id: String) -> void:
+	_refresh_retained()
+
+
+## The notifications still open for each tab's terminal: the tab's tooltip
+## lists them with their state and reason, and the header counts them.
+func _refresh_retained() -> void:
+	var ledger = load(NOTIFY_LEDGER_PATH).shared()
+	var total: int = 0
+	for tab in range(_tab_bar.tab_count):
+		var terminal = _tab_bar.get_tab_metadata(tab)
+		var session = terminal.get_session() if terminal != null and terminal.has_method("get_session") else null
+		if session == null or not is_instance_valid(session) or not "terminal_id" in session:
+			continue
+		var lines := PackedStringArray()
+		for record: Dictionary in ledger.list(str(session.terminal_id), true):
+			var why: String = str(record.get("hold_reason", ""))
+			lines.append("%s %s%s: %s" % [str(record["delivery_id"]), str(record["state"]),
+				(" (%s)" % why) if not why.is_empty() else "", str(record["text"]).left(80)])
+		total += lines.size()
+		_tab_bar.set_tab_tooltip(tab, "" if lines.is_empty()
+			else "Notifications waiting:\n" + "\n".join(lines))
+	_retained_label.visible = total > 0
+	_retained_label.text = "%d notification%s waiting" % [total, "" if total == 1 else "s"]
+	_retained_label.tooltip_text = "Minerva is keeping these until the terminal can take them; hover a tab for details."

@@ -27,6 +27,9 @@ REPL contract (one line of input per turn, read from stdin under a PTY):
   * "trigger-dialog"        -> print the permission-dialog screen, then block on
                                a SINGLE raw keystroke (read(1), no newline), then
                                print "DIALOG-ANSWERED: <key>" + idle screen.
+  * "slow-turn<anything>"   -> the same as any line, but busy for SLOW_TURN_S,
+                               long enough for a test to act while the busy
+                               screen is up.
   * "exit"                  -> print a goodbye line and exit 0.
 
 The viewport the plugin reads is only ~24 rows tall, so each turn pads with
@@ -97,6 +100,9 @@ PERMISSION = _load("codex_permission.txt")
 # the busy chrome while keeping the answer line within the recent scrollback the
 # plugin's read_turn extracts (turn boundaries use total_scrollback_rows).
 VIEWPORT_EVICT = "\n" * 6
+
+# How long a "slow-turn" line keeps the busy screen up.
+SLOW_TURN_S = 6.0
 
 
 def emit(text: str) -> None:
@@ -196,7 +202,7 @@ def main() -> int:
         # Normal turn: busy -> work -> deterministic answer -> idle.
         sys.stdout.write(BUSY)
         sys.stdout.flush()
-        time.sleep(1.5)
+        time.sleep(SLOW_TURN_S if cmd.startswith("slow-turn") else 1.5)
         answer = cmd[::-1] if cmd else "(empty)"
         emit("MOCK-ANSWER: %s" % answer)
         emit_idle()

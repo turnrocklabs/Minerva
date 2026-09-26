@@ -17,6 +17,12 @@ extends MCPToolModule
 ## same path the send button uses, so the line inherits the per-chat outgoing
 ## queue) or, when no chat is bound, asks the agent-relay plugin to type it —
 ## either way the relay's own hold, lock and confirmation apply.
+##
+## Through the MCP tool, a notification that cannot be delivered yet is KEPT:
+## NotifyDeliveryLedger records it and looks again until the harness takes it
+## or it fails, and its receipt carries the delivery id
+## minerva_terminal_notify_status reads. Host callers (notify()) retry on their
+## own, so on the direct path they get the one-look receipt as before.
 
 
 ## The envelope every notification is delivered inside. Shared by convention
@@ -45,6 +51,21 @@ const AGENT_RELAY_PLUGIN_ID := "agent_relay"
 ## Preloaded (not class_name) for the harness-check constants a write receipt
 ## reports, so this module still parses in isolated --script harnesses.
 const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
+const NotifyDeliveryLedger := preload("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd")
+
+## The hint each harness shows while a turn runs: the host-side twin of the
+## relay's spinner_glyphs (agent-relay profiles.rs). Change one and change the
+## other. Both harnesses draw it on their status row while working.
+const BUSY_MARKERS := {
+	"claude": ["esc to interrupt"],
+	"codex": ["esc to interrupt"],
+}
+
+## How far up from the last drawn row the busy hint is looked for.
+const BUSY_WINDOW_ROWS := 12
+
+## What a kept notification's receipt tells its sender.
+const RETAINED_NOTE := "Minerva keeps this notification and delivers it when that clears; do not send it again. minerva_terminal_notify_status with this delivery_id shows where it stands."
 
 ## Injectable seam: Callable(PackedStringArray) -> Dictionary of
 ## terminal_id -> watch profile id. Empty Callable uses the agent-relay plugin
@@ -67,6 +88,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_terminal_promote",
 		"minerva_terminal_demote",
 		"minerva_terminal_notify",
+		"minerva_terminal_notify_status",
 	]
 
 
@@ -131,14 +153,22 @@ func register_tools() -> void:
 		}, "required": ["terminal_id"]}, "terminal")
 
 	server._register_tool("minerva_terminal_notify",
-		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way the relay's rules apply: nothing is written while a dialog or menu owns the keyboard, and never while a person is typing there. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
+		"Deliver ONE line to the agent harness running in another Minerva terminal, foreground or background, passthrough or not. When the terminal has a passthrough chat the line is posted there as a user message; otherwise it is typed into the harness by the relay. Either way nothing is written while a dialog or menu owns the keyboard, while a person is typing there or has a draft in the harness's input box, or (typed path) while the harness is busy with a turn. Such a line is KEPT and delivered when that clears: its receipt says 'held' with retained=true and a delivery_id — do not send it again. Receipt status: 'handed_to_harness' (the harness took it), 'queued' (waiting in its chat's queue), 'held' (kept, hold_reason says why), 'sending' (offered, no answer yet), 'unconfirmed' (typed, but nothing confirmed the harness took it; never retyped), 'failed' or 'dropped'. Taking the line is not reading it: no receipt claims the recipient read it. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or no harness is in the foreground.",
 		{"type": "object", "properties": {
 			"to": {"type": "string", "description": "Target terminal: its terminal id, its tab name, 'harness@tab name', or a bare harness ('claude' / 'codex') when exactly one terminal runs it."},
 			"text": {"type": "string", "description": "The notification, ONE line, at most %d characters. No newlines." % NOTIFY_MAX_TEXT_LENGTH},
 			"from": {"type": "string", "description": "Who this is from, self-declared: your harness name, plus '@' and your tab name when you are inside Minerva ($MINERVA_TERMINAL_NAME). Recipients are told to trust the envelope Minerva builds, not the name inside it."},
 			"reply_to": {"type": "string", "description": "Your own terminal id ($MINERVA_TERMINAL_ID) when you are inside Minerva. It is written into the envelope so the recipient can answer you, not a look-alike instance. Omit from a host terminal."},
-			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for the line to land: on the chat path, for a QUEUED line to be dispatched; on the direct path, for a held screen to clear. The receipt returns either way with status 'written', 'held' (with hold_reason), 'queued', 'dispatched', 'dropped' or 'unknown'." % NOTIFY_MAX_WAIT_MS},
+			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for the harness to take the line before the receipt returns; a line not taken by then is kept either way." % NOTIFY_MAX_WAIT_MS},
 		}, "required": ["to", "text", "from"]}, "terminal")
+
+	server._register_tool("minerva_terminal_notify_status",
+		"Where kept notifications stand: one by the delivery_id its minerva_terminal_notify receipt carried, or every one addressed to a terminal (all when terminal_id is omitted). Each record has state (queued, held, sending, handed_to_harness, unconfirmed, failed, dropped), hold_reason, reason, attempts and its state history. A failed one stays readable here.",
+		{"type": "object", "properties": {
+			"delivery_id": {"type": "string", "description": "The delivery_id from a notify receipt."},
+			"terminal_id": {"type": "string", "description": "List the notifications addressed to this terminal."},
+			"open_only": {"type": "boolean", "description": "Leave out the ones that are settled (handed_to_harness, unconfirmed, failed, dropped)."},
+		}}, "terminal")
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
@@ -151,7 +181,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_terminal_wait": return await _terminal_wait(arguments)
 		"minerva_terminal_promote": return _terminal_promote(arguments)
 		"minerva_terminal_demote": return _terminal_demote(arguments)
-		"minerva_terminal_notify": return await _terminal_notify(arguments)
+		"minerva_terminal_notify": return await _notify_tool(arguments)
+		"minerva_terminal_notify_status": return _notify_status_tool(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -733,11 +764,82 @@ func resolve_address(to: String) -> Dictionary:
 	return target
 
 
+## The MCP tool: one delivery, and when it is held the line is KEPT. The first
+## look (or looks, within wait_ms) is made here; a held line is then recorded
+## in the ledger and retried there, one look each time, addressed by terminal
+## id so a renamed tab keeps its line. Chat deliveries are tracked by the chat
+## path itself. A request refused before any target was chosen (bad arguments,
+## no such terminal, no harness) is not a delivery and gets no record.
+func _notify_tool(arguments: Dictionary) -> Dictionary:
+	var receipt: Dictionary = await _terminal_notify(arguments, {}, {"hold_busy": true})
+	var target: Dictionary = receipt.get("target", {})
+	if receipt.has("delivery_id") or target.is_empty():
+		return receipt
+	var ledger = NotifyDeliveryLedger.shared()
+	var envelope: String = _envelope(arguments)
+	var status: String = str(receipt.get("status", ""))
+	if status == NotifyDeliveryLedger.HANDED or status == NotifyDeliveryLedger.UNCONFIRMED:
+		receipt["delivery_id"] = ledger.open(target, envelope, "relay", status,
+			{"submit": receipt.get("submit", "")})
+		return receipt
+	if status != NotifyDeliveryLedger.HELD:
+		receipt["delivery_id"] = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.FAILED,
+			{"reason": str(receipt.get("error", status))})
+		return receipt
+	var id: String = ledger.open(target, envelope, "relay", NotifyDeliveryLedger.HELD, {
+		"hold_reason": str(receipt.get("hold_reason", "")),
+		"reason": str(receipt.get("reason", ""))})
+	var retry: Dictionary = arguments.duplicate()
+	retry["to"] = str(target.get("terminal_id", ""))
+	retry["wait_ms"] = 0
+	var attempt := func() -> Dictionary:
+		return await _terminal_notify(retry, {}, {"hold_busy": true, "delivery_id": id})
+	ledger.retain(id, attempt)
+	var kept: Dictionary = receipt.duplicate()
+	kept.erase("error")
+	kept["success"] = true
+	kept["retained"] = true
+	kept["delivery_id"] = id
+	kept["note"] = RETAINED_NOTE
+	return kept
+
+
+## One record, or the records for a terminal, from the ledger.
+func _notify_status_tool(arguments: Dictionary) -> Dictionary:
+	var ledger = NotifyDeliveryLedger.shared()
+	var id: String = str(arguments.get("delivery_id", "")).strip_edges()
+	if not id.is_empty():
+		var record: Dictionary = ledger.get_record(id)
+		if record.is_empty():
+			return MCPToolUtils.error("No notification '%s' is on record (ids are per Minerva run; the oldest settled ones are dropped past %d)" % [
+				id, NotifyDeliveryLedger.RECORDS_KEPT])
+		return {"success": true, "delivery": record}
+	var records: Array[Dictionary] = ledger.list(str(arguments.get("terminal_id", "")).strip_edges(),
+		bool(arguments.get("open_only", false)))
+	return {"success": true, "deliveries": records, "count": records.size()}
+
+
+## The envelope every notification is delivered inside, built from the tool's
+## arguments. The envelope, not the name inside it, is what recipients are told
+## to trust: only the host writes this prefix. The reply address rides inside
+## it so the recipient answers this instance and not a look-alike.
+static func _envelope(arguments: Dictionary) -> String:
+	var from: String = str(arguments.get("from", "")).strip_edges()
+	var reply_to: String = str(arguments.get("reply_to", "")).strip_edges()
+	var text: String = str(arguments.get("text", "")).strip_edges()
+	var reply_suffix: String = "" if reply_to.is_empty() else " (reply to: %s)" % reply_to
+	return "%s%s%s] %s" % [NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text]
+
+
 ## One line from one harness to another. The host resolves the target, holds
 ## while a person is typing there, then hands the envelope to whichever
 ## delivery path the target has: its passthrough chat (queue + bubble) or the
-## relay's gated send straight into the harness.
-func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}) -> Dictionary:
+## relay's gated send straight into the harness. `options`:
+##   hold_busy   — on the direct path, hold while the harness shows a turn
+##                 running (BUSY_MARKERS) instead of typing into it
+##   delivery_id — the ledger record a chat delivery is tracked into; without
+##                 it the chat path opens one of its own
+func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}, options: Dictionary = {}) -> Dictionary:
 	var to: String = str(arguments.get("to", "")).strip_edges()
 	var text: String = str(arguments.get("text", "")).strip_edges()
 	var from: String = str(arguments.get("from", "")).strip_edges()
@@ -760,11 +862,7 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}) -> Diction
 	if not reply_to.is_empty() and _listing_entry(listing, reply_to).is_empty():
 		return MCPToolUtils.error("reply_to '%s' is not a terminal here; pass your own $MINERVA_TERMINAL_ID" % reply_to)
 
-	# The envelope, not the name inside it, is what recipients are told to
-	# trust: only the host writes this prefix. The reply address rides inside
-	# it so the recipient answers this instance and not a look-alike.
-	var reply_suffix: String = "" if reply_to.is_empty() else " (reply to: %s)" % reply_to
-	var envelope: String = "%s%s%s] %s" % [NOTIFY_ENVELOPE_PREFIX, from, reply_suffix, text]
+	var envelope: String = _envelope(arguments)
 
 	var wait_ms: int = clampi(
 		MCPToolUtils.coerce_int(arguments.get("wait_ms", 0)), 0, NOTIFY_MAX_WAIT_MS)
@@ -781,7 +879,8 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}) -> Diction
 		return _changed(receipt_target, "'%s' now has a passthrough chat; its session is not the one this was meant for" % str(target["name"]))
 	if history == null:
 		# The direct path paces its own holds within wait_ms.
-		return await _notify_direct(target, receipt_target, envelope, wait_ms, expect)
+		return await _notify_direct(target, receipt_target, envelope, wait_ms, expect,
+			bool(options.get("hold_busy", false)))
 
 	# The chat path queues, so its holds are decided once, now. A person
 	# mid-sentence in the target outranks any agent: the write would submit
@@ -805,25 +904,44 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}) -> Diction
 	# A notification is never urgent enough to take a turn the chat's agent is
 	# blocked on: while a question card is unanswered this queues (deferred)
 	# rather than starting a generate, so the human's answer goes first.
+	# The ledger follows the line past the chat's queue to the relay's answer:
+	# leaving the queue is not the harness taking it. The record goes to the
+	# chat before the submit, because an idle chat starts the turn inside it.
+	var ledger = NotifyDeliveryLedger.shared()
+	var delivery_id: String = str(options.get("delivery_id", ""))
+	if delivery_id.is_empty():
+		delivery_id = ledger.open(receipt_target, envelope, "chat", NotifyDeliveryLedger.SENDING)
+	ledger.begin_chat(delivery_id, str(history.HistoryId))
 	var submitted: Dictionary = MCPToolUtils.submit_user_message(history, envelope, {}, true)
 	if not submitted.get("success", false):
+		ledger.update(delivery_id, NotifyDeliveryLedger.FAILED,
+			{"reason": str(submitted.get("error", "the chat refused it"))})
+		submitted["delivery_id"] = delivery_id
+		submitted["status"] = NotifyDeliveryLedger.FAILED
+		submitted["target"] = receipt_target
 		return submitted
 
 	# The receipt follows the QUEUE ENTRY, not the text: two identical
 	# notifications are two entries, and an entry that vanishes from the queue
 	# may have been cancelled rather than run.
 	var entry_id: int = MCPToolUtils.coerce_int(submitted.get("entry_id", 0))
-	var position: int = MCPToolUtils.outgoing_queue_position(entry_id)
-	if position > 0 and wait_ms > 0:
-		position = await _await_notify_dispatch(entry_id, wait_ms)
-
-	return {
+	ledger.track_chat_entry(delivery_id, entry_id)
+	if wait_ms > 0:
+		await _await_notify_taken(delivery_id, wait_ms)
+	var record: Dictionary = ledger.get_record(delivery_id)
+	var receipt: Dictionary = {
 		"success": true,
 		"target": receipt_target,
-		"status": notify_status(entry_id, position),
-		"queue_position": position,
+		"status": str(record.get("state", "")),
+		"queue_position": MCPToolUtils.outgoing_queue_position(entry_id),
 		"entry_id": entry_id,
+		"delivery_id": delivery_id,
 	}
+	if not str(record.get("hold_reason", "")).is_empty():
+		receipt["hold_reason"] = str(record["hold_reason"])
+		receipt["retained"] = true
+		receipt["note"] = RETAINED_NOTE
+	return receipt
 
 
 ## Delivery to a terminal with no passthrough chat: the relay types the
@@ -837,7 +955,7 @@ func _terminal_notify(arguments: Dictionary, expect: Dictionary = {}) -> Diction
 ## a dialog would write the instant a person's keystroke cleared it, which is
 ## exactly when that person is at the keyboard.
 func _notify_direct(target: Dictionary, receipt_target: Dictionary,
-		envelope: String, wait_ms: int, expect: Dictionary = {}) -> Dictionary:
+		envelope: String, wait_ms: int, expect: Dictionary = {}, hold_busy: bool = false) -> Dictionary:
 	var harness: String = str(target.get("harness", ""))
 	var pid: int = int(target.get("foreground_pid", 0))
 	var tid: String = str(target["terminal_id"])
@@ -885,6 +1003,9 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 		elif hold.is_empty() and int(expect.get("process", 0)) > 0 and pid <= 0:
 			hold = _held(receipt_target, "process_unknown",
 				"the foreground process of '%s' cannot be identified just now, so it cannot be confirmed as the expected session; nothing was written" % str(target["name"]))
+		elif hold.is_empty() and hold_busy and _busy_turn_shown(session, harness):
+			hold = _held(receipt_target, "busy_turn",
+				"%s in '%s' is in the middle of a turn; nothing was written" % [harness, str(target["name"])])
 		elif hold.is_empty():
 			var changed: String = _expectation_broken(expect, harness, pid, str(target["name"]))
 			if not changed.is_empty():
@@ -906,10 +1027,15 @@ func _notify_direct(target: Dictionary, receipt_target: Dictionary,
 			if classified.get("ok", false):
 				var sent: Dictionary = classified.get("result", {})
 				var submit = sent.get("submit", null)
+				var submit_state: String = str(submit.get("state", "")) if submit is Dictionary else ""
+				# The relay's own confirmation is the only evidence the harness
+				# took the line; any other outcome typed it and proved nothing.
 				var written: Dictionary = {
-					"success": true, "target": receipt_target, "status": "written",
+					"success": true, "target": receipt_target,
+					"status": NotifyDeliveryLedger.HANDED if submit_state == "submitted" \
+						else NotifyDeliveryLedger.UNCONFIRMED,
 					"harness": harness,
-					"submit": str(submit.get("state", "")) if submit is Dictionary else "",
+					"submit": submit_state,
 				}
 				# The host's pane-mode verdict ("unknown": the container does not
 				# report it, so nothing could hold this for it); absent from an
@@ -985,6 +1111,7 @@ func _held(receipt_target: Dictionary, hold_reason: String, why: String) -> Dict
 	var held: Dictionary = MCPToolUtils.error("%s. Send again in a moment." % why)
 	held["status"] = "held"
 	held["hold_reason"] = hold_reason
+	held["reason"] = why
 	held["target"] = receipt_target
 	return held
 
@@ -1025,6 +1152,9 @@ func _relay_hold_reason(raw, reason: String) -> String:
 		return outcome.trim_prefix("refused_")
 	if reason.contains(TerminalInputArbiter.COMPOSER_HOLD_PHRASE):
 		return "composer_not_empty"
+	# The relay's own slot: its previous prompt's turn has not ended.
+	if reason.contains("still in flight"):
+		return "busy_turn"
 	return "screen"
 
 
@@ -1218,40 +1348,70 @@ func _watch_profiles(terminal_ids: PackedStringArray) -> Dictionary:
 	return profiles
 
 
-## 1-based place of this envelope in the chat's outgoing queue, or 0 when it is
-## not queued (the turn started immediately, or it has already been promoted).
-## What the receipt says happened, from the queue's own record:
-##   queued     — still waiting, position says where
-##   dispatched — promoted to a turn (or started straight away: no entry)
-##   dropped    — removed or discarded before it ran (a cancel, a closed bubble)
-##   unknown    — the entry left the queue but its outcome is no longer on
-##                record: the outcome ring is finite, so a burst evicts older
-##                entries. "dispatched" is the one answer that must never be
-##                guessed, so only a recorded DISPATCHED earns it.
+## What became of the chat delivery that used queue entry `entry_id`, for a
+## caller that holds only the entry (TriggerHarnessDelivery):
+##   queued      — still waiting, `position` says where
+##   the ledger's state for the delivery, when one used this entry (see
+##               NotifyDeliveryLedger: sending, held, handed_to_harness, ...)
+##   sending     — promoted to a turn (or started straight away: no entry)
+##               with no ledger record to say whether the harness took it
+##   dropped     — removed or discarded before it ran (a cancel, a closed bubble)
+##   unknown     — the entry left the queue but its outcome is no longer on
+##               record: the outcome ring is finite.
+## Leaving the queue is never reported as the harness taking the line; only
+## the ledger, told by the relay's reply, says handed_to_harness.
 static func notify_status(entry_id: int, position: int) -> String:
 	if position > 0:
-		return "queued"
+		return NotifyDeliveryLedger.QUEUED
+	var recorded: String = NotifyDeliveryLedger.shared().state_of_entry(entry_id)
+	if not recorded.is_empty():
+		return recorded
 	# No entry at all means no queue was involved: the turn started on the spot.
 	if entry_id <= 0:
-		return "dispatched"
+		return NotifyDeliveryLedger.SENDING
 	match MCPToolUtils.outgoing_queue_outcome(entry_id):
 		ChatOutgoingQueue.Outcome.DROPPED:
-			return "dropped"
+			return NotifyDeliveryLedger.DROPPED
 		ChatOutgoingQueue.Outcome.DISPATCHED:
-			return "dispatched"
+			return NotifyDeliveryLedger.SENDING
 		_:
 			return "unknown"
 
 
-## Poll until this entry leaves the queue or the budget lapses, then report its
-## position either way — the receipt never lies about what happened.
-func _await_notify_dispatch(entry_id: int, wait_ms: int) -> int:
+## Wait until the harness takes this chat delivery, it is held, or it settles
+## otherwise — or until the budget lapses. The receipt then reports the
+## ledger's state either way.
+func _await_notify_taken(delivery_id: String, wait_ms: int) -> void:
 	var deadline: int = Time.get_ticks_msec() + wait_ms
-	var position: int = MCPToolUtils.outgoing_queue_position(entry_id)
 	var tree: SceneTree = SingletonObject.get_tree()
 	if tree == null:
-		return position
-	while position > 0 and Time.get_ticks_msec() < deadline:
+		return
+	var ledger = NotifyDeliveryLedger.shared()
+	while Time.get_ticks_msec() < deadline:
+		var state: String = str(ledger.get_record(delivery_id).get("state", ""))
+		if state != NotifyDeliveryLedger.QUEUED and state != NotifyDeliveryLedger.SENDING:
+			return
 		await tree.process_frame
-		position = MCPToolUtils.outgoing_queue_position(entry_id)
-	return position
+
+
+## Whether the harness in this session shows a turn running: its busy hint
+## (BUSY_MARKERS) on one of the last BUSY_WINDOW_ROWS rows of the visible
+## screen, blank rows at the foot left out. Both harnesses draw the hint just
+## above their input box; a hint further up is an old screen scrolling away
+## (a dialog drawn after it, say). A session that cannot be read is not judged
+## busy here; the relay's own gate still classifies it.
+func _busy_turn_shown(session, harness: String) -> bool:
+	if session == null or not session.has_method("read_viewport_text"):
+		return false
+	var markers: Array = Array(BUSY_MARKERS.get(harness, []))
+	if markers.is_empty():
+		return false
+	var rows: PackedStringArray = str(session.read_viewport_text()).split("\n")
+	var last: int = rows.size() - 1
+	while last >= 0 and rows[last].strip_edges().is_empty():
+		last -= 1
+	for row in range(maxi(0, last - BUSY_WINDOW_ROWS + 1), last + 1):
+		for marker: String in markers:
+			if rows[row].contains(marker):
+				return true
+	return false

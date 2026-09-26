@@ -21,11 +21,19 @@ extends SceneTree
 ##     and answered by the mock (it reverses its prompt), with no watch and no
 ##     chat ever created for either terminal;
 ##   - a bare "codex" with two codex tabs is refused, naming both ids;
-##   - while the mock shows its permission dialog the notification is held
-##     with nothing written, and lands once the dialog is answered;
-##   - a human keystroke in the target holds it with reason human_typing;
 ##   - a keystroke injected WHILE a notification is being delivered lands after
 ##     that line's Enter, as its own separate input.
+##
+## BLOCKED DELIVERIES (E6 dialog, E10 busy turn, E11 human draft; E7 typing).
+## The oracle is the target's TRANSCRIPT and, for the draft, the DRAFT'S
+## BYTES — never the receipt alone:
+##   - the mock answers every line it is given with the line reversed, so an
+##     envelope answered in the scrollback is an envelope the harness took,
+##     and a draft answered exactly is a draft nothing was typed into;
+##   - while blocked, the receipt says held (retained, with a delivery_id) and
+##     the transcript holds no answer to the envelope;
+##   - once the block clears, the ledger reads handed_to_harness and the
+##     transcript holds exactly ONE answer to the envelope.
 
 const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
 const TerminalInputArbiter := preload("res://Scripts/Services/Terminal/TerminalInputArbiter.gd")
@@ -184,8 +192,8 @@ func _run() -> void:
 	var receipt: Dictionary = await tools.handle("minerva_terminal_notify",
 		{"to": "notify-b", "from": "codex@notify-a", "reply_to": tid_a,
 			"text": line, "wait_ms": 8000})
-	check("E3: the notification is written through the relay", receipt.get("success", false)
-		and str(receipt.get("status", "")) == "written", str(receipt))
+	check("E3: the harness took the notification", receipt.get("success", false)
+		and str(receipt.get("status", "")) == "handed_to_harness", str(receipt))
 	var expected := "[MINERVA NOTIFY from codex@notify-a (reply to: %s)] %s" % [tid_a, line]
 	# The answer has scrolled above the viewport by the time the idle screen
 	# is back, so the whole scrollback is read; its echo wraps at the PTY's 80
@@ -222,20 +230,14 @@ func _run() -> void:
 	check("E6: the mock shows its permission dialog", dialog_up, b.read_viewport_text().right(300))
 	var held: Dictionary = await tools.handle("minerva_terminal_notify",
 		{"to": tid_b, "from": "codex@notify-a", "text": "held-line"})
-	check("E6: the notification is held with the screen as the reason",
-		not held.get("success", true) and str(held.get("status", "")) == "held"
+	check("E6: the notification is kept, held with the screen as the reason",
+		held.get("success", false) and str(held.get("status", "")) == "held"
+			and bool(held.get("retained", false)) and not str(held.get("delivery_id", "")).is_empty()
 			and str(held.get("hold_reason", "")) == "screen", str(held))
-	check("E6: nothing was typed into the dialog", b.get_plain_text().find("held-line") == -1,
-		b.read_viewport_text().right(300))
-	b.write_input("y")
-	var released: bool = await _wait_until(func() -> bool:
-		return b.get_plain_text().find("DIALOG-ANSWERED: y") != -1 and _idle(b))
-	check("E6: the dialog was answered by the human keystroke, not by the relay", released,
-		b.get_plain_text().right(300))
-	var after: Dictionary = await tools.handle("minerva_terminal_notify",
-		{"to": tid_b, "from": "codex@notify-a", "text": "after-dialog", "wait_ms": 8000})
-	check("E6: the next notification lands once the dialog is gone",
-		after.get("success", false) and str(after.get("status", "")) == "written", str(after))
+	await _check_block_clears(tools, b, "E6", held, "held-line",
+		func() -> void: b.write_input("y"))
+	check("E6: the dialog was answered by the person's keystroke, not by the relay",
+		b.get_plain_text().find("DIALOG-ANSWERED: y") != -1, b.get_plain_text().right(300))
 
 	# ── E7: a person typing in the target outranks the agent ──────────────
 	var b_idle: bool = await _wait_until(func() -> bool: return _idle(b))
@@ -243,9 +245,10 @@ func _run() -> void:
 	b.note_human_input()
 	var typing: Dictionary = await tools.handle("minerva_terminal_notify",
 		{"to": tid_b, "from": "codex@notify-a", "text": "while-typing"})
-	check("E7: a keystroke moments ago holds with reason human_typing",
-		not typing.get("success", true) and str(typing.get("hold_reason", "")) == "human_typing",
-		str(typing))
+	check("E7: a keystroke moments ago holds with reason human_typing, and the line is kept",
+		typing.get("success", false) and str(typing.get("status", "")) == "held"
+			and bool(typing.get("retained", false))
+			and str(typing.get("hold_reason", "")) == "human_typing", str(typing))
 	check("E7: and nothing reached the terminal", b.get_plain_text().find("while-typing") == -1)
 	# The same keystroke stops the RELAY's own write: the host refuses the
 	# body at write time and the relay reports it as a hold.
@@ -270,6 +273,14 @@ func _run() -> void:
 	check("E8: a write expecting the wrong harness is held at the write boundary",
 		not wrong.get("ok", true) and str(wrong.get("error", "")).contains("not claude"), str(wrong))
 	check("E8: and typed nothing", b.get_plain_text().find("wrong-harness") == -1)
+	# The typing stamps are clear now, so the line E7 kept is delivered; it
+	# must have landed before the interleave leg starts on the same terminal.
+	var e7_taken: bool = await _wait_until(func() -> bool:
+		return _delivery_state(tools, str(typing.get("delivery_id", ""))) == "handed_to_harness" \
+			and _answered_count(b, "while-typing") == 1 and _idle(b))
+	check("E7: once the person stopped typing, the kept line was taken exactly once", e7_taken,
+		"%s | %s" % [_delivery_state(tools, str(typing.get("delivery_id", ""))),
+			_rows_containing(b, "MOCK-ANSWER")])
 
 	# ── E9: a keystroke DURING a delivery lands after that line's Enter ───
 	# The synchronisation is the arbiter's own phase signal, never a sleep:
@@ -299,8 +310,8 @@ func _run() -> void:
 	var raced: Dictionary = await tools.handle("minerva_terminal_notify",
 		{"to": tid_b, "from": "codex@notify-a", "reply_to": tid_a,
 			"text": race_line, "wait_ms": 8000})
-	check("E9: the notification is written through the relay", raced.get("success", false)
-		and str(raced.get("status", "")) == "written", str(raced))
+	check("E9: the harness took the notification", raced.get("success", false)
+		and str(raced.get("status", "")) == "handed_to_harness", str(raced))
 	check("E9: the keystroke was queued by the arbiter mid-transaction",
 		bool(race["injected"]) and bool((race["receipt"] as Dictionary).get("queued", false)),
 		str(race))
@@ -324,7 +335,97 @@ func _run() -> void:
 			and str(record.get("outcome", "")) == TerminalInputArbiter.OUTCOME_COMMITTED
 			and int(record.get("released", -1)) == 1, str(record))
 
+	# ── E10: a busy turn holds the line; the turn's end releases it ───────
+	var busy_idle: bool = await _wait_until(func() -> bool:
+		return _idle(b) and _has_row_ending(b, "MOCK-ANSWER: x"))
+	check("E10: target idle before the busy leg", busy_idle)
+	b.write_input("slow-turn\r")
+	var busy_up: bool = await _wait_until(func() -> bool:
+		return b.read_viewport_text().find("esc to interrupt") != -1, 5000)
+	check("E10: the mock shows its busy screen", busy_up, b.read_viewport_text().right(300))
+	var busy: Dictionary = await tools.handle("minerva_terminal_notify",
+		{"to": tid_b, "from": "codex@notify-a", "text": "busy-line"})
+	check("E10: a turn in progress holds the line with reason busy_turn, and it is kept",
+		busy.get("success", false) and str(busy.get("status", "")) == "held"
+			and bool(busy.get("retained", false))
+			and str(busy.get("hold_reason", "")) == "busy_turn", str(busy))
+	# Nothing is done to clear it: the mock's own turn ends.
+	await _check_block_clears(tools, b, "E10", busy, "busy-line", Callable())
+	check("E10: the turn it waited for was answered first",
+		_rows_containing(b, "MOCK-ANSWER").find("MOCK-ANSWER: nrut-wols") != -1,
+		_rows_containing(b, "MOCK-ANSWER"))
+
+	# ── E11: a person's unsent draft holds the line; submitting it releases
+	# The draft is typed as a person types it and left in the input line (the
+	# PTY echoes it, drawn plain, where the composer guard reads). The typing
+	# stamps are then cleared: the person has stopped typing, so only the
+	# draft itself is left to hold the line.
+	var draft_idle: bool = await _wait_until(func() -> bool: return _idle(b))
+	check("E11: target idle before the draft leg", draft_idle)
+	var draft := "keep my draft exactly"
+	b.write_human_input(draft)
+	var draft_shown: bool = await _wait_until(func() -> bool:
+		return b.read_viewport_text().find(draft) != -1, 5000)
+	check("E11: the draft shows in the target", draft_shown, b.read_viewport_text().right(300))
+	b.last_input_ms = 0
+	b.last_input_ticks_ms = 0
+	var drafted: Dictionary = await tools.handle("minerva_terminal_notify",
+		{"to": tid_b, "from": "codex@notify-a", "text": "draft-line"})
+	check("E11: the draft holds the line with reason composer_not_empty, and it is kept",
+		drafted.get("success", false) and str(drafted.get("status", "")) == "held"
+			and bool(drafted.get("retained", false))
+			and str(drafted.get("hold_reason", "")) == "composer_not_empty", str(drafted))
+	await _check_block_clears(tools, b, "E11", drafted, "draft-line",
+		func() -> void: b.write_human_input("\r"))
+	# Oracle: the draft's bytes. The mock answers the submitted line reversed,
+	# so an answer that is exactly the draft reversed proves nothing was typed
+	# into it or after it before its Enter.
+	check("E11: the draft was submitted byte for byte, with nothing stapled to it",
+		_has_row_ending(b, "MOCK-ANSWER: " + _reverse(draft)), _rows_containing(b, "MOCK-ANSWER"))
+
 	await _teardown(pm, sessions, [a, b])
+
+
+## One blocked delivery, from held to taken. While the block stands, the
+## receipt's record must say held and the transcript must hold no answer to
+## the line; `clear` (when valid) is what a person does to lift the block;
+## afterwards the record must read handed_to_harness and the transcript must
+## answer the line exactly once.
+func _check_block_clears(tools, session, leg: String, receipt: Dictionary, line: String,
+		clear: Callable) -> void:
+	var id: String = str(receipt.get("delivery_id", ""))
+	await create_timer(1.5).timeout
+	var still_held: bool = _delivery_state(tools, id) == "held" and _answered_count(session, line) == 0
+	check("%s: while blocked the record says held and the transcript has no answer to the line" % leg,
+		still_held, "%s | %s" % [_delivery_state(tools, id), _rows_containing(session, "MOCK-ANSWER")])
+	if clear.is_valid():
+		clear.call()
+	var taken: bool = await _wait_until(func() -> bool:
+		return _delivery_state(tools, id) == "handed_to_harness" and _answered_count(session, line) == 1,
+		30000)
+	check("%s: once the block cleared the record says handed_to_harness and the transcript answers the line once" % leg,
+		taken, "%s | %s" % [_delivery_state(tools, id), _rows_containing(session, "MOCK-ANSWER")])
+	await _wait_until(func() -> bool: return _idle(session))
+
+
+## The ledger's state for a delivery, as minerva_terminal_notify_status reports
+## it (its handler, called directly so predicates can stay synchronous).
+func _delivery_state(tools, delivery_id: String) -> String:
+	var got: Dictionary = tools._notify_status_tool({"delivery_id": delivery_id})
+	return str((got.get("delivery", {}) as Dictionary).get("state", ""))
+
+
+## How many of the mock's answers are the reversal of an envelope whose text
+## ends with `line`: the envelope reversed starts with the line reversed.
+func _answered_count(session, line: String) -> int:
+	var count: int = 0
+	var needle: String = "MOCK-ANSWER: " + _reverse(line)
+	var text: String = _scrollback(session)
+	var at: int = text.find(needle)
+	while at != -1:
+		count += 1
+		at = text.find(needle, at + needle.length())
+	return count
 
 
 func _harness_of(tools, tid: String) -> String:

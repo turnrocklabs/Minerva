@@ -66,6 +66,10 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, _pr
 	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
 		return
 	var turn_token: int = _begin_chat_turn(history)
+	# Stands in for PluginProvider._report_notify: the fake provider IS the
+	# harness here, so the turn starting is the harness taking the line.
+	load("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd").shared().note_chat_outcome(
+		history.HistoryId, text, "handed")
 	var answer = await provider.generate_content(history.HistoryName, text)
 	# The real turn finalizes by appending the bot's ChatHistoryItem, carrying
 	# the passthrough question options when the turn ended in a question. That

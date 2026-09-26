@@ -159,9 +159,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	# T2 — a timer fire reaches exactly the named terminal, and nothing is spawned.
 	var to_bare := await _harness_trigger(tm, "night watch", "codex@Codex Bare", "T2 check the build")
 	tm._on_timer_fired(to_bare.id)
-	var r2: Dictionary = await _await_receipt(tm, to_bare.id, ["written", "failed"])
+	var r2: Dictionary = await _await_receipt(tm, to_bare.id, ["handed_to_harness", "failed"])
 	check("T2: the line is written into that terminal, in the trigger's envelope",
-		r2.get("status") == "written" and module.relay_calls.size() == 1
+		r2.get("status") == "handed_to_harness" and module.relay_calls.size() == 1
 			and str(module.relay_calls[0].get("terminal_id")) == "505"
 			and str(module.relay_calls[0].get("text")) == "[MINERVA NOTIFY from trigger night watch] T2 check the build",
 		str(r2) + " " + str(module.relay_calls))
@@ -171,9 +171,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	var to_claude := await _harness_trigger(tm, "reviewer", "claude", "T3 look at the diff")
 	var envelope3 := "[MINERVA NOTIFY from trigger reviewer] T3 look at the diff"
 	tm._fire_trigger(to_claude.id)
-	var r3: Dictionary = await _await_receipt(tm, to_claude.id, ["dispatched", "failed"])
+	var r3: Dictionary = await _await_receipt(tm, to_claude.id, ["handed_to_harness", "failed"])
 	check("T3: an idle chat's next turn is the envelope",
-		r3.get("status") == "dispatched" and str(r3.get("target", {}).get("chat_id")) == str(claude_chat.HistoryId)
+		r3.get("status") == "handed_to_harness" and str(r3.get("target", {}).get("chat_id")) == str(claude_chat.HistoryId)
 			and str(provider.texts_for("Claude Session")) == str(PackedStringArray([envelope3])),
 		str(r3) + " " + str(provider.calls))
 	provider.release("Claude Session", envelope3)
@@ -196,7 +196,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		await process_frame
 	check("T4: it becomes the chat's next turn exactly once, and the receipt follows",
 		str(provider.texts_for("Claude Session")) == str(PackedStringArray([envelope3, "T4 mid-turn", envelope3]))
-			and tm.harness_delivery.receipt(to_claude.id).get("status") == "dispatched",
+			and tm.harness_delivery.receipt(to_claude.id).get("status") == "handed_to_harness",
 		str(provider.calls) + " " + str(tm.harness_delivery.receipt(to_claude.id)))
 	provider.release("Claude Session", envelope3)
 	for _i in range(4):
@@ -210,9 +210,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	var coalesced: bool = not tm._fire_trigger(held.id)
 	var calls_at_clear: int = module.relay_calls.size()
 	module.relay_reply = OK_REPLY
-	var r5b: Dictionary = await _await_receipt(tm, held.id, ["written", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
+	var r5b: Dictionary = await _await_receipt(tm, held.id, ["handed_to_harness", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
 	check("T5: a dialog holds it, a fire meanwhile is coalesced, and the next look writes it once",
-		r5.get("status") == "held" and coalesced and r5b.get("status") == "written"
+		r5.get("status") == "held" and coalesced and r5b.get("status") == "handed_to_harness"
 			and module.relay_calls.size() == calls_at_clear + 1, str([r5, r5b]))
 
 	# T6 — disabling abandons a held delivery.
@@ -253,7 +253,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	module.terminals = terminals_before.filter(func(t: Dictionary) -> bool: return t.id != "505")
 	var calls_at_gone: int = module.relay_calls.size()
 	tm._fire_trigger(gone.id)
-	var r8: Dictionary = await _await_receipt(tm, gone.id, ["failed", "written"])
+	var r8: Dictionary = await _await_receipt(tm, gone.id, ["failed", "handed_to_harness"])
 	module.terminals = terminals_before
 	var earlier := await _harness_trigger(tm, "earlier", "codex@Codex Bare", "T8 earlier")
 	earlier.destination.run_id = "an-earlier-run"
@@ -300,8 +300,8 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		_so.plugin_event_broker.plugin_event.emit("t10plugin", "ping", {})
 	for trig in [note_trig, time_trig, docket_trig, plugin_trig, timer_trig]:
 		var seconds: float = 8.0 if trig == timer_trig else 3.0
-		var got: Dictionary = await _await_receipt(tm, trig.id, ["written", "failed"], seconds)
-		check("T10: the %s source delivers" % trig.name, got.get("status") == "written", str(got))
+		var got: Dictionary = await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"], seconds)
+		check("T10: the %s source delivers" % trig.name, got.get("status") == "handed_to_harness", str(got))
 	check("T10: the docket and plugin events arrive as one line each",
 		_sent_containing(module, "Docket event in project 't10project'") == 1
 			and _sent_containing(module, "T10 plugin ping") == 1, str(module.relay_calls))
@@ -357,12 +357,12 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	var moved_listing: Dictionary = _listed(await tools.handle("minerva_list_triggers", {}), created_id)
 	var calls_at_fire: int = module.relay_calls.size()
 	var fired: Dictionary = await tools.handle("minerva_fire_trigger", {"trigger_id": created_id})
-	var fire_receipt: Dictionary = await _await_receipt(_so.trigger_manager, created_id, ["written", "failed"])
+	var fire_receipt: Dictionary = await _await_receipt(_so.trigger_manager, created_id, ["handed_to_harness", "failed"])
 	check("T12: update moves the destination, and fire reports whether a delivery started and its receipt",
 		moved.get("success", false) and moved_listing.get("destination", {}).get("label") == "codex@Codex Bare"
 			and moved_listing.get("destination", {}).get("kind") == "terminal"
 			and fired.get("success", false) and fired.get("started") == true and fired.has("delivery")
-			and fire_receipt.get("status") == "written" and module.relay_calls.size() == calls_at_fire + 1
+			and fire_receipt.get("status") == "handed_to_harness" and module.relay_calls.size() == calls_at_fire + 1
 			and _sent_containing(module, "T12 marker") == 1,
 		str([moved, moved_listing, fired, fire_receipt]))
 	var orphaned: Dictionary = await tools.handle("minerva_update_trigger", {"trigger_id": created_id, "destination": ""})
@@ -416,7 +416,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 
 	# T13 — a person typing holds it on both paths; it lands once they stop.
 	var now_ms := func() -> int: return int(Time.get_unix_time_from_system() * 1000.0)
-	for case: Array in [["codex@Codex Bare", "505", "written"], ["claude", "101", "dispatched"]]:
+	for case: Array in [["codex@Codex Bare", "505", "handed_to_harness"], ["claude", "101", "handed_to_harness"]]:
 		var entry: Dictionary = module.terminals.filter(func(t: Dictionary) -> bool: return t.id == case[1])[0]
 		entry["last_input_ms"] = now_ms.call() - 3000
 		var typed := await _harness_trigger(tm, "typed " + case[1], case[0], "T13 after typing")
@@ -465,7 +465,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	bare_entry["harness"] = "claude"
 	var calls_at_swap: int = module.relay_calls.size()
 	tm._fire_trigger(swapped.id)
-	var r15: Dictionary = await _await_receipt(tm, swapped.id, ["failed", "written"])
+	var r15: Dictionary = await _await_receipt(tm, swapped.id, ["failed", "handed_to_harness"])
 	bare_entry["harness"] = "codex"
 	check("T15: a terminal whose harness changed is refused, naming both",
 		r15.get("status") == "failed" and "now runs claude, not codex" in str(r15.get("reason"))
@@ -491,9 +491,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		int(tm._plugin_event_consecutive_counts.get(limited.id, 0)) == 1 and not tm._plugin_event_paused.has(limited.id),
 		str(tm._plugin_event_consecutive_counts))
 	module.relay_reply = OK_REPLY
-	await _await_receipt(tm, limited.id, ["written", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
+	await _await_receipt(tm, limited.id, ["handed_to_harness", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
 	_so.plugin_event_broker.plugin_event.emit("t16plugin", "e3", {})
-	await _await_receipt(tm, limited.id, ["written", "failed"])
+	await _await_receipt(tm, limited.id, ["handed_to_harness", "failed"])
 	var calls_at_limit: int = module.relay_calls.size()
 	_so.plugin_event_broker.plugin_event.emit("t16plugin", "e4", {})
 	await process_frame
@@ -502,7 +502,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	tm.set_trigger_enabled(limited.id, false)
 	tm.set_trigger_enabled(limited.id, true)
 	_so.plugin_event_broker.plugin_event.emit("t16plugin", "e5", {})
-	await _await_receipt(tm, limited.id, ["written", "failed"])
+	await _await_receipt(tm, limited.id, ["handed_to_harness", "failed"])
 	check("T16: re-enabling resumes it", module.relay_calls.size() == calls_at_limit + 1
 		and _sent_containing(module, "T16 e5") == 1, str(module.relay_calls.size()))
 
@@ -536,7 +536,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	_so.note_changed.emit(null)
 	_so.docket_manager.item_created.emit("t17item", "bug", "t17project")
 	for trig: TriggerDefinition in [once_note, twin_note, once_docket, twin_docket]:
-		await _await_receipt(tm, trig.id, ["written", "failed"])
+		await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"])
 	check("T17: each trigger delivers each event exactly once",
 		_sent_containing(module, "T17 note") == 1 and _sent_containing(module, "T17 twin") == 1
 			and _sent_containing(module, "t17item") == 2, str(module.relay_calls))
@@ -545,7 +545,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	_so.note_changed.emit(null)
 	_so.docket_manager.item_created.emit("t17gone", "bug", "t17project")
 	for trig: TriggerDefinition in [twin_note, twin_docket]:
-		await _await_receipt(tm, trig.id, ["written", "failed"])
+		await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"])
 	check("T17: deleting one removes only its handler; the other still delivers",
 		handlers_are.call(1) and _sent_containing(module, "T17 note") == 1
 			and _sent_containing(module, "T17 twin") == 2 and _sent_containing(module, "t17gone") == 1, str(module.relay_calls))
@@ -663,7 +663,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	# what the next look sees (a live session would be read afresh instead).
 	bare_now["harness"] = "claude"
 	profiles_gate[0] = false
-	var r19a: Dictionary = await _await_receipt(tm, retargeted.id, ["failed", "written"])
+	var r19a: Dictionary = await _await_receipt(tm, retargeted.id, ["failed", "handed_to_harness"])
 	bare_now["harness"] = "codex"
 	check("T19: a harness that changes while the send waits is refused at the write, nothing sent",
 		r19a.get("status") == "failed" and "now runs claude, not codex" in str(r19a.get("reason"))
@@ -676,7 +676,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	claude_chat.provider.entry_id = "terminal-707"
 	codex_chat.provider.entry_id = "terminal-101"
 	profiles_gate[0] = false
-	var r19b: Dictionary = await _await_receipt(tm, rebound.id, ["failed", "dispatched", "queued"])
+	var r19b: Dictionary = await _await_receipt(tm, rebound.id, ["failed", "handed_to_harness", "queued"])
 	claude_chat.provider.entry_id = "terminal-101"
 	codex_chat.provider.entry_id = "terminal-202"
 	check("T19: a chat rebound while the send waits is refused; the chat now on that terminal gets nothing",
@@ -687,7 +687,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	replaced.destination.process = 5050
 	var r19c_available: Dictionary = replaced.destination.availability(module.list_terminals())
 	tm._fire_trigger(replaced.id)
-	var r19c: Dictionary = await _await_receipt(tm, replaced.id, ["failed", "written"])
+	var r19c: Dictionary = await _await_receipt(tm, replaced.id, ["failed", "handed_to_harness"])
 	bare_now["foreground_pid"] = 5050
 	check("T19: a codex started again in the same terminal is another session: unavailable, refused, nothing sent",
 		not r19c_available.ok and "was replaced" in str(r19c_available.reason)
@@ -720,14 +720,14 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	second_edit.initial_message = "T20 second"
 	tm.update_trigger(generations.id, second_edit)
 	tm._fire_trigger(generations.id)
-	var r20b: Dictionary = await _await_receipt(tm, generations.id, ["written", "failed"])
+	var r20b: Dictionary = await _await_receipt(tm, generations.id, ["handed_to_harness", "failed"])
 	relay_gate[0] = false
 	for _i in range(6):
 		await process_frame
 	var r20: Dictionary = tm.harness_delivery.receipt(generations.id)
 	module.relay_send_source = plain_relay
 	check("T20: the finished newer receipt keeps its status, line and target after the old send returns",
-		r20b.get("status") == "written" and r20.get("status") == "written" and r20.get("line") == "T20 second"
+		r20b.get("status") == "handed_to_harness" and r20.get("status") == "handed_to_harness" and r20.get("line") == "T20 second"
 			and str(r20.get("target", {}).get("terminal_id")) == "505" and r20.get("at") == r20b.get("at"),
 		str([r20b, r20]))
 	# The same when the newer fire fails at once (its destination unresolved).
@@ -765,13 +765,13 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	var missed_fire: String = daily.last_fired_at
 	_so.ChatList.insert(claude_index, claude_chat)
 	tm._on_schedule_check()
-	var r22: Dictionary = await _await_receipt(tm, daily.id, ["dispatched", "failed"])
+	var r22: Dictionary = await _await_receipt(tm, daily.id, ["handed_to_harness", "failed"])
 	tm._on_schedule_check()
 	for _i in range(4):
 		await process_frame
 	var daily_envelope := "[MINERVA NOTIFY from trigger daily] T22 daily"
 	check("T22: unavailable, the occurrence stays unfired; available, it is delivered once and recorded",
-		missed_fire.is_empty() and r22.get("status") == "dispatched" and not daily.last_fired_at.is_empty()
+		missed_fire.is_empty() and r22.get("status") == "handed_to_harness" and not daily.last_fired_at.is_empty()
 			and provider.texts_for("Claude Session").count(daily_envelope) == 1,
 		str([missed_fire, r22, daily.last_fired_at]))
 	provider.release("Claude Session", daily_envelope)
@@ -787,7 +787,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	await _await_receipt(tm, patient.id, ["held", "failed"])
 	module.relay_reply = OK_REPLY
 	var calls_at_clear_23: int = module.relay_calls.size()
-	var r23: Dictionary = await _await_receipt(tm, patient.id, ["failed", "written"], 3.0 * tm.harness_delivery.RETRY_S)
+	var r23: Dictionary = await _await_receipt(tm, patient.id, ["failed", "handed_to_harness"], 3.0 * tm.harness_delivery.RETRY_S)
 	tm.harness_delivery.hold_limit_s = tm.harness_delivery.HOLD_LIMIT_S
 	check("T23: a hold that clears after the limit sends nothing; the delivery fails, saying so",
 		r23.get("status") == "failed" and "held for over" in str(r23.get("reason"))
@@ -825,8 +825,8 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	session_node.pid = 6060
 	bare_24["foreground_pid"] = 6060
 	in_relay[0] = false
-	var r24_host: Dictionary = await _await_receipt(tm, restarted.id, ["held", "failed", "written"])
-	var r24a: Dictionary = await _await_receipt(tm, restarted.id, ["failed", "written"], 3.0 * tm.harness_delivery.RETRY_S)
+	var r24_host: Dictionary = await _await_receipt(tm, restarted.id, ["held", "failed", "handed_to_harness"])
+	var r24a: Dictionary = await _await_receipt(tm, restarted.id, ["failed", "handed_to_harness"], 3.0 * tm.harness_delivery.RETRY_S)
 	session_node.pid = 5050
 	bare_24["foreground_pid"] = 5050
 	check("T24: a harness restarted during the relay's round trip is refused by the host at the write (held on the process guard)",
@@ -849,9 +849,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		str(tm.harness_delivery.receipt(withdrawn.id)))
 	tm.set_trigger_enabled(withdrawn.id, true)
 	tm._fire_trigger(withdrawn.id)
-	var r24b: Dictionary = await _await_receipt(tm, withdrawn.id, ["written", "failed"])
+	var r24b: Dictionary = await _await_receipt(tm, withdrawn.id, ["handed_to_harness", "failed"])
 	check("T24: the next delivery goes through, with its own receipt",
-		r24b.get("status") == "written" and host_writes.size() == 1 and host_writes[0].contains("T24 withdrawn"), str(r24b))
+		r24b.get("status") == "handed_to_harness" and host_writes.size() == 1 and host_writes[0].contains("T24 withdrawn"), str(r24b))
 	module.relay_send_source = plain_relay_24
 
 	# T27 — a container pane in a mode holds the delivery at the host's write,
@@ -875,16 +875,16 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	session_node.pane = "unknown"
 	var unreported := await _harness_trigger(tm, "unreported", "codex@Codex Bare", "T27 unreported")
 	tm._fire_trigger(unreported.id)
-	var r27u: Dictionary = await _await_receipt(tm, unreported.id, ["written", "failed", "held"])
+	var r27u: Dictionary = await _await_receipt(tm, unreported.id, ["handed_to_harness", "failed", "held"])
 	check("T27: a container that does not report its mode is written to, and the receipt says unknown",
-		r27u.get("status") == "written" and r27u.get("pane_mode_check") == "unknown" and writes_27.size() == 1,
+		r27u.get("status") == "handed_to_harness" and r27u.get("pane_mode_check") == "unknown" and writes_27.size() == 1,
 		str(r27u))
 	session_node.pane = "in_mode"
 	var dropped_27 := await _harness_trigger(tm, "dropped while held", "codex@Codex Bare", "T27 dropped")
 	var kept_27 := await _harness_trigger(tm, "kept while held", "codex@Codex Bare", "T27 kept")
 	tm._fire_trigger(dropped_27.id)
 	tm._fire_trigger(kept_27.id)
-	var r27h: Dictionary = await _await_receipt(tm, kept_27.id, ["held", "written", "failed"])
+	var r27h: Dictionary = await _await_receipt(tm, kept_27.id, ["held", "handed_to_harness", "failed"])
 	await create_timer(2.5 * tm.harness_delivery.RETRY_S).timeout
 	var r27still: Dictionary = tm.harness_delivery.receipt(kept_27.id)
 	check("T27: in a mode both deliveries are held on it across retries, nothing written",
@@ -892,10 +892,10 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 			and r27still.get("status") == "held" and writes_27.size() == 1, "%s / %s" % [str(r27h), str(r27still)])
 	tm.set_trigger_enabled(dropped_27.id, false)
 	session_node.pane = "live"
-	var r27k: Dictionary = await _await_receipt(tm, kept_27.id, ["written", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
+	var r27k: Dictionary = await _await_receipt(tm, kept_27.id, ["handed_to_harness", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
 	await create_timer(1.5 * tm.harness_delivery.RETRY_S).timeout
 	check("T27: leaving the mode delivers the still-active attempt exactly once, its receipt saying live",
-		r27k.get("status") == "written" and r27k.get("pane_mode_check") == "live"
+		r27k.get("status") == "handed_to_harness" and r27k.get("pane_mode_check") == "live"
 			and writes_27.filter(func(t: String) -> bool: return t.contains("T27 kept")).size() == 1, str(r27k))
 	check("T27: the attempt cancelled while held writes nothing, even after the mode ends",
 		tm.harness_delivery.receipt(dropped_27.id).get("status") == "cancelled"
@@ -927,9 +927,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		str(module.relay_calls.size() - calls_at_25))
 	tm.set_trigger_enabled(to_bare_25.id, true)
 	tm._fire_trigger(to_bare_25.id)
-	var r25: Dictionary = await _await_receipt(tm, to_bare_25.id, ["written", "failed"])
+	var r25: Dictionary = await _await_receipt(tm, to_bare_25.id, ["handed_to_harness", "failed"])
 	check("T25: re-enabled, the next delivery is written with its own receipt",
-		r25.get("status") == "written" and _sent_containing(module, "T25 bare") == 1, str(r25))
+		r25.get("status") == "handed_to_harness" and _sent_containing(module, "T25 bare") == 1, str(r25))
 
 	# T26 — an identity that cannot be established is not assumed.
 	var no_pid := {"id": "606", "name": "Codex Unknown", "harness": "codex", "foreground_process": "codex", "alive": true}
@@ -941,19 +941,19 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	var calls_at_26: int = module.relay_calls.size()
 	var unknown_now: Dictionary = paused.destination.availability(module.list_terminals())
 	tm._fire_trigger(paused.id)
-	var r26: Dictionary = await _await_receipt(tm, paused.id, ["held", "failed", "written"])
+	var r26: Dictionary = await _await_receipt(tm, paused.id, ["held", "failed", "handed_to_harness"])
 	bare_24["foreground_pid"] = 5050
-	var r26b: Dictionary = await _await_receipt(tm, paused.id, ["written", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
+	var r26b: Dictionary = await _await_receipt(tm, paused.id, ["handed_to_harness", "failed"], 3.0 * tm.harness_delivery.RETRY_S)
 	check("T26: a terminal whose harness process cannot be read cannot be picked",
 		unidentified.has("error") and "cannot be identified" in str(unidentified.error), str(unidentified))
 	check("T26: a picked terminal whose process cannot be read now is unavailable and held, then written once readable",
 		not unknown_now.ok and r26.get("status") == "held" and r26.get("hold_reason") == "process_unknown"
-			and r26b.get("status") == "written" and module.relay_calls.size() == calls_at_26 + 1, str([unknown_now, r26, r26b]))
+			and r26b.get("status") == "handed_to_harness" and module.relay_calls.size() == calls_at_26 + 1, str([unknown_now, r26, r26b]))
 	# A terminal destination whose terminal has since gained a passthrough chat.
 	var chatted := await _harness_trigger(tm, "chatted", "codex@Codex Bare", "T26 chatted")
 	codex_chat.provider.entry_id = "terminal-505"
 	tm._fire_trigger(chatted.id)
-	var r26c: Dictionary = await _await_receipt(tm, chatted.id, ["failed", "dispatched", "queued"])
+	var r26c: Dictionary = await _await_receipt(tm, chatted.id, ["failed", "handed_to_harness", "queued"])
 	codex_chat.provider.entry_id = "terminal-202"
 	check("T26: a terminal destination whose terminal now has a chat is refused; that chat gets nothing",
 		r26c.get("status") == "failed" and "now has a passthrough chat" in str(r26c.get("reason"))
