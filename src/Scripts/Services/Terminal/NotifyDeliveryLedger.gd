@@ -104,6 +104,9 @@ var retry_s: float = RETRY_S
 var hold_limit_s: float = HOLD_LIMIT_S
 var await_recheck_s: float = AWAIT_RECHECK_S
 var await_max_age_s: float = AWAIT_MAX_AGE_S
+## The millisecond clock every hold, backoff and age is measured on: a
+## Callable taking no arguments that returns an int. A test sets its own.
+var clock: Callable = Callable(Time, &"get_ticks_msec")
 
 ## delivery id -> record. Records are Dictionaries so a receipt can carry a
 ## copy as is.
@@ -218,8 +221,8 @@ func open(target: Dictionary, envelope: String, path: String, state: String, fie
 		"reason": "",
 		"attempts": 0,
 		"accepted_at": now,
-		"accepted_ticks": Time.get_ticks_msec(),
-		"available_ticks": Time.get_ticks_msec(),
+		"accepted_ticks": _now_ms(),
+		"available_ticks": _now_ms(),
 		"entry_id": 0,
 		"class": NotifyDeliveryClass.ROUTINE,
 		"mechanism": "",
@@ -401,11 +404,11 @@ func _set_state(delivery_id: String, state: String, fields: Dictionary) -> void:
 	var moved: bool = str(record["state"]) != state
 	# Time spent waiting for a recipient does not count toward hold_limit_s.
 	if str(record["state"]) == AWAITING and moved:
-		record["available_ticks"] = Time.get_ticks_msec()
+		record["available_ticks"] = _now_ms()
 	if state == AWAITING and moved:
-		record["awaiting_ticks"] = Time.get_ticks_msec()
+		record["awaiting_ticks"] = _now_ms()
 		record["await_gap_s"] = await_recheck_s
-		record["next_try_ticks"] = Time.get_ticks_msec() + int(await_recheck_s * 1000.0)
+		record["next_try_ticks"] = _now_ms() + int(await_recheck_s * 1000.0)
 	record["state"] = state
 	record["updated_at"] = Time.get_datetime_string_from_system(false, true)
 	var history: Array = record["history"]
@@ -417,9 +420,13 @@ func _set_state(delivery_id: String, state: String, fields: Dictionary) -> void:
 	changed.emit(delivery_id)
 
 
+func _now_ms() -> int:
+	return int(clock.call())
+
+
 func _held_too_long(delivery_id: String) -> bool:
 	var available: int = int(_records[delivery_id]["available_ticks"])
-	return Time.get_ticks_msec() - available > int(hold_limit_s * 1000.0)
+	return _now_ms() - available > int(hold_limit_s * 1000.0)
 
 
 ## The terminal an attempt's receipt found for a record, kept in its target
@@ -463,7 +470,7 @@ func _wake_each(due_only: bool) -> void:
 			_waiting.erase(id)
 			continue
 		var record: Dictionary = _records[id]
-		var now: int = Time.get_ticks_msec()
+		var now: int = _now_ms()
 		if now - int(record["awaiting_ticks"]) > int(await_max_age_s * 1000.0):
 			update(id, FAILED_UNAVAILABLE, {"reason": "no recipient for over %d s: %s" % [
 				int(await_max_age_s), str(record.get("reason", ""))]})
@@ -483,7 +490,7 @@ func _wake_each(due_only: bool) -> void:
 		if state == AWAITING:
 			var gap: float = minf(float(_records[id]["await_gap_s"]) * 2.0, AWAIT_BACKOFF_MAX_S)
 			_records[id]["await_gap_s"] = gap
-			_records[id]["next_try_ticks"] = Time.get_ticks_msec() + int(gap * 1000.0)
+			_records[id]["next_try_ticks"] = _now_ms() + int(gap * 1000.0)
 			continue
 		_waiting.erase(id)
 		if state == HELD:

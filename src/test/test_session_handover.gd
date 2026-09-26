@@ -50,6 +50,8 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 var _pass := 0
 var _fail := 0
 var _so: Node = null
+## The test clock the ledger reads in H9/H10 (milliseconds).
+var _fake_ms: int = 0
 
 
 func _init() -> void:
@@ -171,17 +173,46 @@ func _test_handover(registry, host) -> void:
 
 	# A recipient that never comes back: the pointer is retried on a doubling
 	# gap and given up as failed_unavailable once it has waited past the bound.
+	# The ledger runs on a test clock that only moves in STEP_MS steps, and
+	# every change of the record is logged with that clock's time.
+	const STEP_MS := 10
+	_fake_ms = Time.get_ticks_msec()
+	ledger.clock = func() -> int: return _fake_ms
 	ledger.await_recheck_s = 0.1
-	ledger.await_max_age_s = 1.0
+	ledger.await_max_age_s = 3.0
 	module.terminals[1]["alive"] = false
-	# Taken before the send, so the measured wait is never shorter than the awaited age.
-	var stranded_at: int = Time.get_ticks_msec()
+	var changes: Array[Dictionary] = []
+	var on_changed := func(id: String) -> void:
+		var rec: Dictionary = ledger.get_record(id)
+		changes.append({"id": id, "state": str(rec.get("state", "")),
+			"attempts": int(rec.get("attempts", 0)), "at": _fake_ms})
+	ledger.changed.connect(on_changed)
 	var stranded: Dictionary = await module.notify_retained(
 		{"to": "worker-b", "from": "codex@lead", "text": "H9 never delivered"})
 	var stranded_id: String = str(stranded.get("delivery_id", ""))
-	await _wait_for(func() -> bool:
-		return str(ledger.get_record(stranded_id).get("state", "")) == "failed_unavailable", 4000)
-	var stranded_ms: int = Time.get_ticks_msec() - stranded_at
+	var limit_ms: int = _fake_ms + int(ledger.await_max_age_s * 1000.0) + 2000
+	while _fake_ms < limit_ms \
+			and str(ledger.get_record(stranded_id).get("state", "")) != "failed_unavailable":
+		_fake_ms += STEP_MS
+		await ledger._wake_waiting(true)
+		await _wait_for(func() -> bool: return not ledger._waking, 1000)
+	# Entry into AWAITING, each retry, and the give-up, on the test clock.
+	var entered_ms: int = -1
+	var failed_ms: int = -1
+	var retry_ms: Array[int] = []
+	var seen_attempts: int = 0
+	for entry: Dictionary in changes:
+		if str(entry["id"]) != stranded_id:
+			continue
+		if entered_ms < 0 and str(entry["state"]) == "awaiting_recipient":
+			entered_ms = int(entry["at"])
+		if int(entry["attempts"]) > seen_attempts:
+			seen_attempts = int(entry["attempts"])
+			retry_ms.append(int(entry["at"]))
+		if failed_ms < 0 and str(entry["state"]) == "failed_unavailable":
+			failed_ms = int(entry["at"])
+	ledger.changed.disconnect(on_changed)
+	ledger.clock = Callable(Time, &"get_ticks_msec")
 	var given_up: Dictionary = ledger.get_record(stranded_id)
 	check("H9: a pointer awaiting past the bound ends failed_unavailable, counted apart from pending",
 		str(given_up.get("state", "")) == "failed_unavailable"
@@ -189,13 +220,27 @@ func _test_handover(registry, host) -> void:
 			and int(ledger.pending_by_address().get("worker-b", 0)) == 0
 			and not _texts_to(module, "606").has("[MINERVA NOTIFY from codex@lead] H9 never delivered"),
 		str(given_up))
-	# Gaps 0.1, 0.2, 0.4, 0.8 s fit in the 1 s bound; a fixed 0.1 s gap would try ~10 times.
-	check("H10: retries back off: few attempts before the bound",
-		int(given_up.get("attempts", 0)) <= 5, str(given_up.get("attempts", 0)))
-	# Giving up on the first miss would show one attempt and a wait far under the bound.
-	check("H10b: it retried and was given up no sooner than the bound",
-		int(given_up.get("attempts", 0)) >= 2 and stranded_ms >= int(ledger.await_max_age_s * 1000.0),
-		"attempts=%s waited_ms=%d" % [str(given_up.get("attempts", 0)), stranded_ms])
+	# Gaps from AWAITING entry: 100, 200, 400, 800 ms (retries at +100, +300,
+	# +700, +1500; the next, +3100, is past the 3 s bound). A constant gap
+	# gives equal gaps and fails; every gap stays under the backoff cap.
+	var gaps: Array[int] = []
+	var previous: int = entered_ms
+	for at: int in retry_ms:
+		gaps.append(at - previous)
+		previous = at
+	var increasing: bool = gaps.size() >= 3
+	for i in range(1, gaps.size()):
+		increasing = increasing and gaps[i] > gaps[i - 1]
+	for gap: int in gaps:
+		increasing = increasing and gap <= int(load(LEDGER_PATH).AWAIT_BACKOFF_MAX_S * 1000.0) + STEP_MS
+	check("H10: retry gaps grow strictly from one retry to the next, up to the cap",
+		entered_ms >= 0 and increasing, "entered=%d retries=%s gaps=%s" % [entered_ms, str(retry_ms), str(gaps)])
+	# Giving up on the first miss would show one attempt and a wait far under
+	# the bound; the wait is measured from entry into AWAITING to the give-up.
+	check("H10b: it retried and was given up no sooner than the bound after entering AWAITING",
+		int(given_up.get("attempts", 0)) >= 2 and entered_ms >= 0 and failed_ms >= 0
+			and failed_ms - entered_ms >= int(ledger.await_max_age_s * 1000.0),
+		"attempts=%s entered=%d failed=%d" % [str(given_up.get("attempts", 0)), entered_ms, failed_ms])
 
 
 ## The lines the relay was asked to type into `terminal_id`, in order.
