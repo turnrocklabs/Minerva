@@ -40,10 +40,19 @@ class Entry:
 		length = p_length
 
 
+## How many recent append request_ids each log remembers (see
+## [method find_request]). Memory only: the window also ends when the note is
+## reloaded or Minerva restarts.
+const REQUEST_MEMORY: int = 256
+
 var revision: int = 0
 
 var _body: String = ""
 var _entries: Array[Entry] = []
+
+# request_id -> {"entry_id": String, "revision": int}, oldest first in _request_order.
+var _requests: Dictionary[String, Dictionary] = {}
+var _request_order: Array[String] = []
 
 
 func get_body() -> String:
@@ -73,6 +82,74 @@ func append(text: String, author: String) -> Entry:
 	_entries.append(e)
 	revision += 1
 	return e
+
+
+## The {"entry_id", "revision"} an earlier append with [param request_id]
+## produced, or {} when the id is empty or no longer remembered.
+func find_request(request_id: String) -> Dictionary:
+	if request_id.is_empty():
+		return {}
+	return _requests.get(request_id, {})
+
+
+## Records that [param request_id] produced [param entry]; the oldest id is
+## forgotten once more than [constant REQUEST_MEMORY] are held.
+func remember_request(request_id: String, entry: Entry) -> void:
+	if request_id.is_empty() or _requests.has(request_id):
+		return
+	_requests[request_id] = {"entry_id": entry.id, "revision": revision}
+	_request_order.append(request_id)
+	while _request_order.size() > REQUEST_MEMORY:
+		_requests.erase(_request_order.pop_front())
+
+
+## Reads the entries after [param cursor], oldest first.[br]
+## A cursor is "<entry id>:<digest>" where digest covers the ids of every entry
+## up to and including that one, so it stays valid across appends and across
+## edits that only touch later entries. When the entry is gone or anything at or
+## before it was edited, removed or inserted, the result has reset=true, no
+## entries and next_cursor "" (read again from ""). An empty cursor reads from
+## the start.[br]
+## At most [param limit] entries are returned, fewer when their JSON would pass
+## [param byte_budget]; an entry that alone exceeds it is returned with its text
+## cut short and truncated=true.[br]
+## Returns {entries, next_cursor, has_more, reset, reset_reason}.
+func read_since(cursor: String, limit: int, byte_budget: int) -> Dictionary:
+	var start: = 0
+	if not cursor.is_empty():
+		var parts: = cursor.split(":")
+		if parts.size() != 2:
+			return _reset("malformed_cursor")
+		var at: = _index_of(parts[0])
+		if at < 0:
+			return _reset("cursor_entry_changed")
+		if _ids_digest(at) != parts[1]:
+			return _reset("earlier_entries_changed")
+		start = at + 1
+
+	var texts: = get_entry_texts()
+	var out: Array[Dictionary] = []
+	var used: = 0
+	var k: = start
+	while k < _entries.size() and out.size() < limit:
+		var e: Entry = _entries[k]
+		var item: = {"id": e.id, "created_at": e.created_at, "author": e.author, "text": texts[k]}
+		var size: = JSON.stringify(item).to_utf8_buffer().size()
+		if used + size > byte_budget:
+			if not out.is_empty():
+				break
+			# 8 bytes per character covers 4-byte UTF-8 plus JSON escaping.
+			item["text"] = texts[k].left(byte_budget / 8)
+			item["truncated"] = true
+			item["chars"] = texts[k].length()
+			size = byte_budget
+		out.append(item)
+		used += size
+		k += 1
+
+	var next: = cursor if out.is_empty() else "%s:%s" % [_entries[k - 1].id, _ids_digest(k - 1)]
+	return {"entries": out, "next_cursor": next, "has_more": k < _entries.size(),
+		"reset": false, "reset_reason": ""}
 
 
 ## Replaces the whole body. Returns false when [param new_body] equals the
@@ -186,6 +263,26 @@ func restore(index: Array, saved_revision: int) -> bool:
 	_entries = parsed
 	revision = saved_revision
 	return true
+
+
+func _index_of(id: String) -> int:
+	for k: int in _entries.size():
+		if _entries[k].id == id:
+			return k
+	return -1
+
+
+# First 16 hex chars of the sha256 of the ids of entries 0..last, comma-joined.
+func _ids_digest(last: int) -> String:
+	var ids: = PackedStringArray()
+	for k: int in last + 1:
+		ids.append(_entries[k].id)
+	return ",".join(ids).sha256_text().left(16)
+
+
+static func _reset(reason: String) -> Dictionary:
+	return {"entries": [] as Array[Dictionary], "next_cursor": "", "has_more": false,
+		"reset": true, "reset_reason": reason}
 
 
 static func _new_id() -> String:

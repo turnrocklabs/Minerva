@@ -26,6 +26,7 @@ func _init() -> void:
 func _run_tests() -> void:
 	print("=== note entry log round trip ===\n")
 	await test_entries_survive_save_and_reload()
+	await test_mcp_append_read_since_and_if_revision()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -98,3 +99,77 @@ func test_entries_survive_save_and_reload() -> void:
 
 	note.queue_free()
 	reloaded.queue_free()
+
+
+## MCP verbs over one note, called through the tool modules' handle() as the
+## MCP server dispatches them (errors are {"error": ...}, which the wire turns
+## into isError:true).
+##
+## ORACLE: the entry_ids the append calls returned, captured in call order.
+## Two appenders interleave five appends each (one retried with the same
+## request_id); the note must then hold the seed entry plus exactly those ten
+## ids, all distinct. Three read_since pages (limit 4) must concatenate to that
+## same id list with no gap or overlap. A stale if_revision must leave the
+## serialized note byte-identical. Editing an entry the reader has already seen
+## must make the next read reset, and re-reading from "" must return the edited
+## log.
+func test_mcp_append_read_since_and_if_revision() -> void:
+	print("test_mcp_append_read_since_and_if_revision:")
+	var entry_tools: = MCPNoteEntryTools.new(null)
+	var notes_tools: = MCPNotesTools.new(null)
+	var note: Note = await _add(Note.create_text_note("mcp verbs", "seed"))
+	var id: = note.uuid
+	var controls: = note.get_controls_container() as NoteTextControls
+
+	var returned: = PackedStringArray()
+	for i: int in 5:
+		for who: String in ["a", "b"]:
+			var args: = {"note_id": id, "text": "%s-%d" % [who, i], "request_id": "%s-%d" % [who, i], "author": who}
+			var res: Dictionary = entry_tools.handle("minerva_append_note", args)
+			returned.append(str(res.get("entry_id", "")))
+			if who == "a" and i == 2:
+				var retry: Dictionary = entry_tools.handle("minerva_append_note", args)
+				_check("retry returns the same entry_id", retry.get("entry_id") == res.get("entry_id"))
+				_check("retry reports deduplicated", retry.get("deduplicated") == true and retry.get("revision") == res.get("revision"))
+	var ids: = _ids(controls.entry_log)
+	_check("seed + 2N entries, retry added none", ids.size() == 11)
+	_check("log holds exactly the returned ids in order", ids.slice(1) == returned)
+	_check("all ids distinct", Array(ids).all(func(i: String) -> bool: return ids.count(i) == 1))
+
+	var paged: = PackedStringArray()
+	var cursor: = ""
+	var sizes: Array[int] = []
+	for page: int in 3:
+		var res: Dictionary = entry_tools.handle("minerva_read_note_since", {"note_id": id, "cursor": cursor, "limit": 4})
+		_check("page %d is not a reset" % page, res.get("reset") == false)
+		for e: Dictionary in res.get("entries", []):
+			paged.append(str(e["id"]))
+		sizes.append((res.get("entries", []) as Array).size())
+		cursor = str(res.get("next_cursor", ""))
+	_check("three pages of 4, 4, 3", sizes == [4, 4, 3])
+	_check("pages concatenate to the log with no gap or overlap", paged == ids)
+	var tail_read: Dictionary = entry_tools.handle("minerva_read_note_since", {"note_id": id, "cursor": cursor, "limit": 4})
+	_check("read at the end returns nothing and keeps the cursor",
+		(tail_read.get("entries", []) as Array).is_empty() and tail_read.get("next_cursor") == cursor and tail_read.get("reset") == false)
+
+	var stale_revision: = controls.entry_log.revision
+	entry_tools.handle("minerva_append_note", {"note_id": id, "text": "late", "request_id": "c-0"})
+	var before: = JSON.stringify(note.serialize())
+	var stale: Dictionary = notes_tools.handle("minerva_update_note",
+		{"note_id": id, "content": "overwrite", "title": "overwrite", "if_revision": stale_revision})
+	_check("stale if_revision is an error", stale.has("error") and stale.get("success") == false)
+	_check("stale if_revision leaves the note byte-identical", JSON.stringify(note.serialize()) == before)
+	var fresh: Dictionary = notes_tools.handle("minerva_update_note",
+		{"note_id": id, "content": controls.content.replace("a-1", "a-1 edited"), "if_revision": controls.entry_log.revision})
+	_check("current if_revision applies", fresh.get("success") == true and controls.content.contains("a-1 edited"))
+
+	var reset: Dictionary = entry_tools.handle("minerva_read_note_since", {"note_id": id, "cursor": cursor})
+	_check("read after an edit of seen entries resets", reset.get("reset") == true and not str(reset.get("reset_reason", "")).is_empty())
+	_check("reset returns no entries and cursor \"\"", (reset.get("entries", []) as Array).is_empty() and reset.get("next_cursor") == "")
+	var recovered: Dictionary = entry_tools.handle("minerva_read_note_since", {"note_id": id, "cursor": ""})
+	var texts: = PackedStringArray()
+	for e: Dictionary in recovered.get("entries", []):
+		texts.append(str(e["text"]))
+	_check("re-read from \"\" returns the edited log", "\n".join(texts) == controls.content and texts.has("a-1 edited"))
+
+	note.queue_free()

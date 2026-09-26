@@ -208,7 +208,8 @@ func register_tools() -> void:
 	, "notes")
 
 	server._register_tool("minerva_update_note",
-		"Update a note's content and/or title in-place by its ID. Requires note_id from minerva_list_notes or minerva_create_note.",
+		"Update a note's content and/or title in-place by its ID. Requires note_id from minerva_list_notes or minerva_create_note. Replacing content rewrites the whole body; to add text use minerva_append_note instead.\n\n"
+		+ "Stale-write guard: text notes report a revision (minerva_get_note, minerva_append_note, minerva_read_note_since, and this tool's reply), which rises on every change. Pass if_revision with the revision you last read; if the note has changed since, the call fails and nothing (title or content) is written — re-read, merge and retry. Without if_revision the update is applied unconditionally. A content replace invalidates minerva_read_note_since cursors that cover edited entries.",
 		{
 			"type": "object",
 			"properties": {
@@ -223,6 +224,10 @@ func register_tools() -> void:
 				"title": {
 					"type": "string",
 					"description": "New title for the note. If omitted, title is unchanged."
+				},
+				"if_revision": {
+					"type": "integer",
+					"description": "Optional. Apply only if the text note's revision still equals this value."
 				}
 			},
 			"required": ["note_id"]
@@ -614,6 +619,8 @@ func _get_note(args: Dictionary) -> Dictionary:
 		"enabled": note.enabled,
 		"type": _type_name(note),
 	}
+	if controls_container is NoteTextControls:
+		result["revision"] = controls_container.entry_log.revision
 
 	# For image-backed notes, export the PNG and surface its path + dimensions so
 	# plugins/agents can consume the actual image (e.g. flf2v keyframes), not just
@@ -691,6 +698,17 @@ func _update_note(args: Dictionary) -> Dictionary:
 	if not note or not (note is Note):
 		return MCPToolUtils.error("Note not found: %s" % note_id)
 
+	var controls_container = note.get_controls_container()
+	if args.has("if_revision") and args["if_revision"] != null:
+		if not (controls_container is NoteTextControls):
+			return MCPToolUtils.error("if_revision applies only to text notes")
+		var expected := MCPToolUtils.coerce_int(args["if_revision"], -1)
+		var current: int = controls_container.entry_log.revision
+		if expected != current:
+			return MCPToolUtils.error("Stale revision: note %s is at revision %d, not %d; nothing was written" % [note_id, current, expected])
+	if args.has("content") and not (controls_container is NoteTextControls):
+		return MCPToolUtils.error("Note is not a text note, cannot update content")
+
 	var updated_fields: Array[String] = []
 
 	if args.has("title"):
@@ -698,18 +716,17 @@ func _update_note(args: Dictionary) -> Dictionary:
 		updated_fields.append("title")
 
 	if args.has("content"):
-		var controls_container = note.get_controls_container()
-		if controls_container is NoteTextControls:
-			controls_container.content = args["content"]
-			updated_fields.append("content")
-		else:
-			return MCPToolUtils.error("Note is not a text note, cannot update content")
+		controls_container.content = args["content"]
+		updated_fields.append("content")
 
-	return {
+	var result := {
 		"success": true,
 		"note_id": note_id,
 		"updated": updated_fields
 	}
+	if controls_container is NoteTextControls:
+		result["revision"] = controls_container.entry_log.revision
+	return result
 
 
 func _link_note_to_chat(args: Dictionary) -> Dictionary:

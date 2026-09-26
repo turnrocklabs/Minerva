@@ -95,6 +95,7 @@ func _init_modules() -> void:
 	_modules = [
 		MCPChatTools.new(self),
 		MCPNotesTools.new(self),
+		MCPNoteEntryTools.new(self),
 		MCPEditorTools.new(self),
 		MCPSpreadsheetTools.new(self),
 		MCPKanbanTools.new(self),
