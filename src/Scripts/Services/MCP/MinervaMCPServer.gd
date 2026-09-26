@@ -100,6 +100,7 @@ func _init_modules() -> void:
 		MCPNoteEntryTools.new(self),
 		MCPEditorTools.new(self),
 		MCPSpreadsheetTools.new(self),
+		preload("res://Scripts/Services/MCP/Modules/MCPSpreadsheetFilterTools.gd").new(self),
 		MCPKanbanTools.new(self),
 		MCPVideoTools.new(self),
 		MCPAgentTools.new(self),
