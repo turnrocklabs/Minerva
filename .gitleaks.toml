@@ -2,3 +2,12 @@ title = "Minerva secret history policy"
 
 [extend]
 useDefault = true
+
+# Docket hint records in Docs/*.dct carry a `key` field such as
+# "key":"campaign-01a0dc2bf96e-pickup"; the default generic-api-key rule reads
+# that slug as a credential. Only a matched SECRET shaped like a hyphenated
+# slug is allowed; hex, base64 and ghp_-style tokens carry no hyphens and
+# still fail the scan wherever they appear.
+[allowlist]
+regexTarget = "secret"
+regexes = ['''^[a-z0-9]+(-[a-z0-9]+)+$''']
