@@ -15,6 +15,7 @@ const ChartCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/
 const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
 const AutoFilterUIScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterUI.gd")
 const AutoFilterActionsScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterActions.gd")
+const RowGeometry := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetRowGeometry.gd")
 
 signal content_changed()
 signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: int)
@@ -1089,22 +1090,21 @@ func _delete_selection() -> void:
 	if all_rects.is_empty():
 		all_rects = [Rect2i(current_col, current_row, 1, 1)]
 
-	# Process each selection rect
+	# Process each selection rect; rows hidden by the AutoFilter are skipped.
+	# Rows are listed before clearing, which can change what the filter shows.
 	for sel_rect in all_rects:
+		var rows := RowGeometry.shown_rows_in(spreadsheet_data, sel_rect.position.y, sel_rect.end.y)
 		# Capture old cells for history
 		var old_cells: Dictionary = {}
-		for row in range(sel_rect.position.y, sel_rect.end.y):
+		for row in rows:
 			for col in range(sel_rect.position.x, sel_rect.end.x):
 				var cell = spreadsheet_data.get_cell_if_exists(row, col)
 				if cell and not cell.is_empty():
 					var key := SpreadsheetDataScript.cell_key(row, col)
 					old_cells[key] = cell.to_dict()
 
-		# Clear the range
-		spreadsheet_data.clear_range(
-			sel_rect.position.y, sel_rect.position.x,
-			sel_rect.end.y - 1, sel_rect.end.x - 1
-		)
+		for row in rows:
+			spreadsheet_data.clear_range(row, sel_rect.position.x, row, sel_rect.end.x - 1)
 
 		# Record in history
 		if not old_cells.is_empty():
@@ -1132,18 +1132,20 @@ func _copy_selection() -> void:
 	DisplayServer.clipboard_set("\n".join(lines))
 
 
-## Fill Down - copy formulas/values from top row of selection to rows below
+## Fill Down - copy formulas/values from the top shown row of the selection to
+## the shown rows below it; rows hidden by the AutoFilter are left untouched.
 ## Adjusts relative cell references (row numbers) automatically
 func _fill_down() -> void:
 	var sel_rect: Rect2i = cells_canvas.get_selection_rect()
 	if sel_rect.size == Vector2i.ZERO:
 		return  # Nothing selected
 
-	# Need at least 2 rows to fill down
-	if sel_rect.size.y < 2:
+	# Need a source row and at least one target row, all shown
+	var rows := RowGeometry.shown_rows_in(spreadsheet_data, sel_rect.position.y, sel_rect.end.y)
+	if rows.size() < 2:
 		return
 
-	var source_row: int = sel_rect.position.y
+	var source_row: int = rows[0]
 	var start_col: int = sel_rect.position.x
 	var end_col: int = sel_rect.end.x
 
@@ -1163,7 +1165,7 @@ func _fill_down() -> void:
 			source_value = source_cell.value
 
 		# Fill down to each row below the source
-		for target_row in range(source_row + 1, sel_rect.end.y):
+		for target_row in rows.slice(1):
 			var row_offset: int = target_row - source_row
 			var key := SpreadsheetDataScript.cell_key(target_row, col)
 

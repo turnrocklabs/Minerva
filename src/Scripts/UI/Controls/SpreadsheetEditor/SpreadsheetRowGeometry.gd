@@ -4,7 +4,8 @@ extends RefCounted
 ## row headers. Rows hidden by the sheet's AutoFilter are skipped: they take
 ## no height, so the next shown row starts where the hidden run began. Every
 ## function takes and returns underlying row indices, so hit-tests, scrolling,
-## selection and editing keep addressing the real rows.
+## selection and editing keep addressing the real rows. Bulk edits over a
+## selection use shown_rows_in() so they leave hidden rows untouched.
 ##
 ## All y values are in content space (before scroll offset is subtracted).
 
@@ -67,6 +68,15 @@ static func last_shown_row(data: SpreadsheetDataScript) -> int:
 		if is_row_shown(data, row):
 			return row
 	return -1
+
+
+## Shown rows in [from_row, to_row), ascending.
+static func shown_rows_in(data: SpreadsheetDataScript, from_row: int, to_row: int) -> PackedInt32Array:
+	var rows := PackedInt32Array()
+	for row in range(from_row, to_row):
+		if is_row_shown(data, row):
+			rows.append(row)
+	return rows
 
 
 ## Number of rows shown.

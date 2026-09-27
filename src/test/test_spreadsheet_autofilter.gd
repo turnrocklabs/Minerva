@@ -1,6 +1,7 @@
 extends SceneTree
-## Spreadsheet AutoFilter: filter model, shared row geometry, save/reopen and
-## a structural edit under an active filter.
+## Spreadsheet AutoFilter: filter model, shared row geometry, save/reopen, a
+## structural edit under an active filter, and editor bulk edits (delete,
+## fill-down) over a selection that spans hidden rows.
 ##
 ## ORACLE: the fixture below is a plain array of row strings. The expected
 ## visible rows are computed in this file by applying the two criteria to
@@ -9,7 +10,10 @@ extends SceneTree
 ## are likewise summed here from the fixture's own row heights over the
 ## expected-visible rows. After a row insert, the expected sheet is the
 ## fixture with a blank row spliced in, and every fixture row must be found
-## with its values and bold flag on its shifted row.
+## with its values and bold flag on its shifted row. For bulk edits, hidden
+## rows must still hold their fixture strings, shown rows in the selection
+## must be blank (delete) or carry the top shown row's value (fill-down), and
+## undo must bring back the fixture strings.
 ##
 ## Run:
 ##   godot --headless --path ~/github/Minerva/src --script test/test_spreadsheet_autofilter.gd
@@ -18,6 +22,7 @@ const SpreadsheetDataScript := preload("res://Scripts/UI/Controls/SpreadsheetEdi
 const RowGeometry := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetRowGeometry.gd")
 const CellsCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/CellsCanvas.gd")
 const RowHeadersScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/RowHeaders.gd")
+const SpreadsheetEditorScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd")
 
 const ROWS := 20
 const COLS := 4
@@ -55,6 +60,7 @@ func _init() -> void:
 func _run_tests() -> void:
 	print("=== spreadsheet autofilter ===\n")
 	await test_filter_geometry_persistence_and_insert()
+	await test_bulk_edits_skip_hidden_rows()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -242,3 +248,57 @@ func test_filter_geometry_persistence_and_insert() -> void:
 		_actual_hidden(reopened) == expected_after)
 	_check("visible_count after insert",
 		reopened.autofilter.visible_count() == reopened.row_count - expected_after.size())
+
+
+func test_bulk_edits_skip_hidden_rows() -> void:
+	print("test_bulk_edits_skip_hidden_rows:")
+	var data := _build_sheet()
+	_apply_filters(data)
+	var hidden := _expected_hidden(FIXTURE)
+	var editor := SpreadsheetEditorScript.new()
+	editor.spreadsheet_data = data
+	root.add_child(editor)
+	await process_frame
+
+	# Delete over rows 1..5, columns 0..2 (the rectangle spans hidden rows).
+	var first := 1
+	var last := 5
+	_check("delete rectangle spans a hidden and a shown row",
+		range(first, last + 1).any(func(r: int) -> bool: return hidden.has(r)) \
+		and range(first, last + 1).any(func(r: int) -> bool: return not hidden.has(r)))
+	editor.cells_canvas.select_range(first, 0, last, 2)
+	editor._delete_selection()
+	var hidden_intact := true
+	var shown_cleared := true
+	for r in range(first, last + 1):
+		for c in range(3):
+			var text := data.get_cell_display(r, c)
+			if hidden.has(r):
+				hidden_intact = hidden_intact and text == str(FIXTURE[r][c])
+			else:
+				shown_cleared = shown_cleared and text.is_empty()
+	_check("delete leaves hidden rows' values intact", hidden_intact)
+	_check("delete clears the shown rows in the selection", shown_cleared)
+
+	editor.undo()
+	var restored := true
+	for r in range(FIXTURE.size()):
+		for c in range(3):
+			restored = restored and data.get_cell_display(r, c) == str(FIXTURE[r][c])
+	_check("undo restores every cleared row", restored)
+
+	# Fill down column 0 over rows 5..8: the top shown row fills the shown
+	# rows below it; hidden rows keep their names.
+	var fill_first := 5
+	var fill_last := 8
+	editor.cells_canvas.select_range(fill_first, 0, fill_last, 0)
+	editor._fill_down()
+	var fill_ok := true
+	for r in range(fill_first + 1, fill_last + 1):
+		var expected: String = FIXTURE[r][0] if hidden.has(r) else FIXTURE[fill_first][0]
+		fill_ok = fill_ok and data.get_cell_display(r, 0) == expected
+	_check("fill-down writes shown rows only (hidden rows keep their names)", fill_ok)
+	_check("fill-down range spans a hidden row",
+		range(fill_first + 1, fill_last + 1).any(func(r: int) -> bool: return hidden.has(r)))
+	editor.queue_free()
+	await process_frame
