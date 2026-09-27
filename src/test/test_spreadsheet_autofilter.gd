@@ -24,7 +24,9 @@ const SpreadsheetDataScript := preload("res://Scripts/UI/Controls/SpreadsheetEdi
 const RowGeometry := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetRowGeometry.gd")
 const CellsCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/CellsCanvas.gd")
 const RowHeadersScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/RowHeaders.gd")
-const SpreadsheetEditorScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd")
+## SpreadsheetEditor names the SingletonObject autoload, so it is load()ed at
+## runtime: a --script test compiles before autoloads register.
+const SPREADSHEET_EDITOR_PATH := "res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd"
 
 const ROWS := 20
 const COLS := 4
@@ -301,7 +303,7 @@ func test_bulk_edits_skip_hidden_rows() -> void:
 	var data := _build_sheet()
 	_apply_filters(data)
 	var hidden := _expected_hidden(FIXTURE)
-	var editor := SpreadsheetEditorScript.new()
+	var editor = load(SPREADSHEET_EDITOR_PATH).new()
 	editor.spreadsheet_data = data
 	root.add_child(editor)
 	await process_frame
