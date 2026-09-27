@@ -8,7 +8,9 @@ extends SceneTree
 ## ORACLE: expected visible rows are computed in this file from the fixture
 ## strings and the criteria active at each step. A second fixture sheet driven
 ## through SpreadsheetAutoFilterActions (the UI path) must give the same
-## criteria and visible rows. Every read must carry the scope field.
+## criteria and visible rows. Every read must carry the scope field. Range
+## and criterion-type rejections expect the error strings written here from
+## the fixture's dimensions.
 ##
 ## Run:
 ##   godot --headless --path ~/github/Minerva/src --script test/test_mcp_spreadsheet_filter_tools.gd
@@ -197,6 +199,28 @@ func test_set_read_clear_round_trip() -> void:
 	err = tools.handle("minerva_spreadsheet_autofilter_get", {"editor_name": "Nope"})
 	_check("unknown editor is an error",
 		err.get("error", "") == "Spreadsheet editor not found: Nope")
+
+	# Explicit ranges must fit the fixture sheet (ROWS x COLS); criterion
+	# inputs must be strings. Each rejection leaves the filter unchanged.
+	var outside_col := SpreadsheetDataScript.get_column_label(COLS) + "1:" \
+		+ SpreadsheetDataScript.get_column_label(COLS) + "10"
+	err = tools.handle("minerva_spreadsheet_autofilter_enable", {"editor_name": EDITOR, "range": outside_col})
+	_check("range %s past the last column is an error: %s" % [outside_col, err.get("error", "")],
+		err.get("error", "") == "Range %s is outside the sheet (%d rows, %d columns)" % [outside_col, ROWS, COLS])
+	var outside_row := "A1:C%d" % (ROWS + 1)
+	err = tools.handle("minerva_spreadsheet_autofilter_enable", {"editor_name": EDITOR, "range": outside_row})
+	_check("range %s past the last row is an error" % outside_row,
+		err.get("error", "") == "Range %s is outside the sheet (%d rows, %d columns)" % [outside_row, ROWS, COLS])
+	_check("rejected ranges left the filter off", not data.autofilter.is_active())
+	tools.handle("minerva_spreadsheet_autofilter_enable", {"editor_name": EDITOR, "range": "A1:C10"})
+	err = tools.handle("minerva_spreadsheet_autofilter_set",
+		{"editor_name": EDITOR, "column": STATUS_COL + 1, "values": [null]})
+	_check("values [null] is an error", err.get("error", "") == "values must be an array of strings")
+	err = tools.handle("minerva_spreadsheet_autofilter_set",
+		{"editor_name": EDITOR, "column": NOTE_COL + 1, "contains": 123})
+	_check("contains 123 is an error", err.get("error", "") == "contains must be a string")
+	_check("rejected criteria added none", data.autofilter.filtered_columns().is_empty())
+	tools.handle("minerva_spreadsheet_autofilter_clear", {"editor_name": EDITOR, "remove": true})
 
 	# Cell values are untouched by every step.
 	var intact := true

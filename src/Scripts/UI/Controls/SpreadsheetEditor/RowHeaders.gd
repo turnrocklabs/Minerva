@@ -199,8 +199,18 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 			queue_redraw()
 
 
+## Row whose bottom boundary is under `screen_y`, or -1. Frozen rows are drawn
+## without the scroll offset, so the frozen band is hit-tested in screen space
+## and only frozen rows can match there; below it, content space applies and
+## only scrollable rows can match.
 func _get_resize_handle_row(screen_y: float) -> int:
-	return RowGeometry.row_bottom_near_y(data, screen_y + scroll_offset_y, resize_handle_height / 2.0)
+	var tolerance := resize_handle_height / 2.0
+	var frozen_rows := data.frozen_rows
+	if frozen_rows > 0 and screen_y <= _get_row_y(frozen_rows) + tolerance:
+		var frozen_row := RowGeometry.row_bottom_near_y(data, screen_y, tolerance)
+		return frozen_row if frozen_row < frozen_rows else -1
+	var row := RowGeometry.row_bottom_near_y(data, screen_y + scroll_offset_y, tolerance)
+	return row if row >= frozen_rows else -1
 
 
 func _get_row_at_y(y: float) -> int:

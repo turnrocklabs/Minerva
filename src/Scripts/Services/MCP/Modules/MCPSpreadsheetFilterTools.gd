@@ -138,6 +138,9 @@ func _enable_filter(target: SheetTarget, editor_name: String, args: Dictionary) 
 		filter_range = _parse_range(range_str)
 		if filter_range.size.x <= 0:
 			return MCPToolUtils.error("Invalid range: %s" % range_str)
+		if filter_range.end.x > data.column_count or filter_range.end.y > data.row_count:
+			return MCPToolUtils.error("Range %s is outside the sheet (%d rows, %d columns)"
+				% [range_str, data.row_count, data.column_count])
 		if filter_range.size.y < 2:
 			return MCPToolUtils.error("Range %s needs a header row and at least one data row" % range_str)
 	return _after_change(target, editor_name, Actions.enable(data, target.history, filter_range))
@@ -157,7 +160,9 @@ func _set_criterion(target: SheetTarget, editor_name: String, args: Dictionary) 
 	if has_values == has_contains:
 		return MCPToolUtils.error("Provide exactly one of values or contains")
 	if has_contains:
-		var needle := str(args["contains"])
+		if not args["contains"] is String:
+			return MCPToolUtils.error("contains must be a string")
+		var needle: String = args["contains"]
 		if needle.is_empty():
 			return MCPToolUtils.error("contains must not be empty; use minerva_spreadsheet_autofilter_clear to drop the criterion")
 		return _after_change(target, editor_name, Actions.set_text(data, target.history, col, needle))
@@ -165,7 +170,9 @@ func _set_criterion(target: SheetTarget, editor_name: String, args: Dictionary) 
 		return MCPToolUtils.error("values must be an array of strings")
 	var allowed := PackedStringArray()
 	for v: Variant in args["values"]:
-		allowed.append(str(v))
+		if not v is String:
+			return MCPToolUtils.error("values must be an array of strings")
+		allowed.append(v)
 	return _after_change(target, editor_name, Actions.set_values(data, target.history, col, allowed))
 
 

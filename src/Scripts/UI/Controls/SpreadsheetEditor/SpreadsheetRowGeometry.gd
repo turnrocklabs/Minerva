@@ -29,8 +29,10 @@ static func row_y(data: SpreadsheetDataScript, row: int) -> float:
 	return y
 
 
-## Shown row containing `y`. Coordinates past the last shown row return that
-## row (so scrolling past the end still resolves); -1 when no row is shown.
+## Shown row containing `y`. Coordinates above the first shown row return that
+## row and coordinates past the last shown row return that row (so dragging
+## outside the grid and scrolling past the end still resolve); -1 when no row
+## is shown.
 static func row_at_y(data: SpreadsheetDataScript, y: float) -> int:
 	var current_y := 0.0
 	var last_shown := -1
@@ -38,7 +40,7 @@ static func row_at_y(data: SpreadsheetDataScript, y: float) -> int:
 		if not is_row_shown(data, row):
 			continue
 		var height := data.get_row_height(row)
-		if y >= current_y and y < current_y + height:
+		if y < current_y + height:
 			return row
 		current_y += height
 		last_shown = row

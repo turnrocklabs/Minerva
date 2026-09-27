@@ -13,7 +13,9 @@ extends SceneTree
 ## with its values and bold flag on its shifted row. For bulk edits, hidden
 ## rows must still hold their fixture strings, shown rows in the selection
 ## must be blank (delete) or carry the top shown row's value (fill-down), and
-## undo must bring back the fixture strings.
+## undo must bring back the fixture strings. Boundary rows for row_at_y and
+## the rows a resize handle picks under a frozen row while scrolled are
+## derived from the fixture's hidden set and row heights.
 ##
 ## Run:
 ##   godot --headless --path ~/github/Minerva/src --script test/test_spreadsheet_autofilter.gd
@@ -204,6 +206,50 @@ func test_filter_geometry_persistence_and_insert() -> void:
 	selected.clear()
 	_click(canvas, Vector2(5.0, 2.0))
 	_check("frozen header row still resolves to row 0", selected.size() == 1 and selected[0] == Vector2i(0, 0))
+
+	# row_at_y at the boundaries: above the grid clamps to the first shown row,
+	# an exact row edge belongs to the row below it, past the end clamps to the
+	# last shown row. Expected rows come from the fixture's hidden set.
+	var first_shown := -1
+	var last_shown := -1
+	for r in range(ROWS):
+		if not expected_hidden.has(r):
+			if first_shown < 0:
+				first_shown = r
+			last_shown = r
+	var after_first := first_shown + 1
+	while expected_hidden.has(after_first):
+		after_first += 1
+	_check("row_at_y(-1) is the first shown row %d" % first_shown,
+		RowGeometry.row_at_y(data, -1.0) == first_shown)
+	_check("row_at_y at the first shown row's bottom edge is row %d" % after_first,
+		RowGeometry.row_at_y(data, _height_of(first_shown)) == after_first)
+	_check("row_at_y past the end is the last shown row %d" % last_shown,
+		RowGeometry.row_at_y(data, y + 100.0) == last_shown)
+
+	# Resize handles with frozen row 0 while scrolled: the frozen row's bottom
+	# edge sits at its own height on screen, and a scrollable row's bottom edge
+	# sits at its content bottom minus the scroll. The scroll is chosen so the
+	# target row's content bottom maps onto row 0's screen edge.
+	var target_bottom := 0.0
+	for r in range(target + 1):
+		if not expected_hidden.has(r):
+			target_bottom += _height_of(r)
+	var next_shown := target + 1
+	while expected_hidden.has(next_shown):
+		next_shown += 1
+	var next_bottom := target_bottom + _height_of(next_shown)
+	var scroll := target_bottom - _height_of(0)
+	headers.set_scroll_offset(scroll)
+	var resized: Array[int] = []
+	headers.row_resize_started.connect(func(row: int) -> void: resized.append(row))
+	_click(headers, Vector2(10, _height_of(0)))
+	_check("scrolled by %.0f, row 0's bottom edge resizes frozen row 0: %s" % [scroll, resized],
+		resized == [0])
+	resized.clear()
+	_click(headers, Vector2(10, next_bottom - scroll))
+	_check("scrolled by %.0f, row %d's bottom edge resizes row %d: %s" % [scroll, next_shown, next_shown, resized],
+		resized == [next_shown])
 	canvas.queue_free()
 	headers.queue_free()
 	await process_frame
