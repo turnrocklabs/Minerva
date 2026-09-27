@@ -466,8 +466,12 @@ func _test_unbound_terminal() -> void:
 		not held.get("success", true) and str(held.get("status", "")) == "held"
 			and str(held.get("hold_reason", "")) == "screen", str(held))
 	var looks: int = module.relay_calls.size() - looks_before
+	# 250 ms pacing in a 600 ms wait is 3 looks, plus at most one: a SceneTree
+	# timer made outside a timer callback is charged its frame's whole delta,
+	# so on a slow runner the first pause can end early; later pauses are
+	# made in timer callbacks and keep pace. A busy loop would make hundreds.
 	check("D7b: the host keeps looking within the wait, one-shot each time, and never after it",
-		looks >= 2 and looks <= 3
+		looks >= 2 and looks <= 4
 			and int(module.relay_calls[-1].get("gate_budget_ms", -1)) == 0
 			and int(module.relay_call_times[-1]) <= started + 600,
 		"%d looks, last at +%d ms" % [looks, int(module.relay_call_times[-1]) - started])
