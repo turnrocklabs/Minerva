@@ -1,0 +1,125 @@
+# Runner execution and recovery
+
+Read before using Workflow mode or resuming interrupted work. These are
+requirements for an adapter, not claims that a particular tool implements them.
+
+## Pilot and later runners
+
+The first pilot uses Claude Code's Workflow tool where its available
+capabilities support this guide. Confirm the real tool interface, command
+execution, structured results, records access, and recovery before dispatch.
+If commands need a fixed-command agent, use the configured gate role.
+
+The next candidate is a small standalone CLI that reads the exported manifest,
+executes gates/tests, records evidence through Docket, and checks readiness.
+State whether agent dispatch and finding decisions still belong to the
+orchestrating harness. A CLI command executor is not automatically the whole
+autonomous orchestrator.
+
+Bundling the worker and run controls with Docket is a later, measured step.
+Do not expand the pilot into that product build.
+
+## Choosing execution mode
+
+Suggest Workflow mode for a standard single-repository batch with serial
+writers, explicit groups, and known review requirements. Record the reason and
+reuse the owner's explicit authorization for the objective or batch.
+
+Use orchestrator-stepped mode when a group outcome may change later goals.
+The manifest and evidence requirements are identical in either mode.
+Capability gaps are reported explicitly; never simulate a green command or
+computed readiness with a model's assertion.
+
+## Execution phases
+
+Expose the main guide's five phases: Prepare, Implement, Review, Repair, Accept.
+Keep mechanical commands inside their phase so they do not each require an
+orchestrator turn.
+
+Workflow may use two runs separated by a decision checkpoint:
+
+1. Implement, gate, commit, group tests, freeze, independent reviews; return receipts.
+2. From finding decisions: repair, gates, affected tests, repair review, final
+   checks, readiness; return evidence for authorized push.
+
+The checkpoint belongs to the orchestrator; the configured autonomy mode
+determines whether the owner is needed. It is not necessarily a human pause.
+New findings loop through the same decision and repair rules.
+
+Every agent returns a defined result shape. Parse that structure, not free-text
+reports. All required reviewers use independent read-only execution; writers
+remain serial. Respect both total dispatch allowance and runtime concurrency
+limits. Do not run another agent merely to summarize a structured result.
+
+## Commands, failures, and limits
+
+Generate command invocations from the approved profile. Use its isolation,
+timeouts, forbidden resources, and environment identity. Gate audit checks
+structure; goal fit and semantic scope remain review judgments.
+
+Record failures as:
+
+| Class | Next action |
+|---|---|
+| `assertion` | Give a fixer the exact assertion and relevant context |
+| `timeout` | Check whether the command remained alive and diagnose before retry |
+| `missing_dependency` | Identify the missing capability; do not change product code blindly |
+| `invocation` | Correct a known invocation problem within approved procedure |
+| `unknown` | Preserve output and obtain diagnosis |
+
+A known operational failure may receive one mechanical retry after its cause
+is understood and no prior process remains active. Otherwise stop or diagnose.
+An unknown error is not automatically an assertion failure. Repairs return
+through gates, affected tests, review, and final checks.
+
+Count group repairs, repair-review rounds, and final-test repairs against their
+separate config limits; all agent dispatches count toward `max_agents`.
+Attempt allowances yield incomplete results. Batch round/dispatch limits stop
+the batch incomplete and record remaining work. Autonomous mode does not
+remove those limits.
+
+## Records access
+
+An adapter capable of calling Docket writes start/completion checkpoints
+directly. Otherwise an identified orchestrator or fixed-command agent writes
+them before and after each consequential action. Specify that responsibility
+before dispatch. Never assume the Workflow script has or lacks MCP access
+without checking the actual tool.
+
+Store command outputs as artifacts with structured evidence. Session caches
+may accelerate pickup but cannot replace durable records.
+
+## Exclusive execution
+
+Acquire exclusive ownership for the run and repository before any writer or
+consequential command. The adapter must identify a verified atomic mechanism,
+held for the execution lifetime, with explicit release and stale-owner recovery.
+It must refuse a competing executor. Record its owner in Docket.
+
+An `executor:<run-id>` tag is an informational mirror. A check followed by a
+tag write, a declared holder, or a task claim does not prove execution
+exclusivity over processes and Git operations.
+
+If the adapter cannot provide exclusive acquisition, report the missing
+capability and stop automatic execution. This document does not implement a
+lock. Reconcile evidence before replacing a stale owner; never clear it solely
+because a session is absent.
+
+## Recovery checks
+
+Exercise these boundaries during the pilot:
+
+- Commit succeeds but completion recording fails.
+- Review completes but its returned result is lost.
+- Push succeeds but acknowledgment is lost.
+- UI closes, server disconnects, or a child command dies.
+
+For each case, identify the real repo/remote/process state before retrying.
+Stop starting consequential actions while evidence cannot be recorded.
+Do not spawn a duplicate child or push blindly from an absent completion.
+Recompute missing evidence using [record rules](records.md#rebuilding-state).
+
+For readiness, mechanically check results at the candidate SHA, each required
+reviewer's coverage, finding completion, current authority, frozen inputs, and
+environment identity. Produce a list of missing or failed checks. Readiness is
+never a verdict requested from an LLM.

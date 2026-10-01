@@ -64,7 +64,7 @@ Facts kill options and change their costs. Do this deliberately: walk each optio
 
 ### 4 — Score
 
-The 7-axis rubric lives in `orchestrator` §4 — reliability, durability, performance, debuggability, cost, discoverable, user-visible. Name the **decisive axis**, which is usually one axis rather than the sum.
+The rubric is the owner's Docket item `minerva:01a0b15a3cad7827bbc821e1b9d29b21` (nine axes, Determinism first as the pivot; see `orchestrator` §4 for how it is recorded). Read the item rather than a restatement. Name the **decisive axis**, which is usually one axis rather than the sum.
 
 **A score that rests on an unverified claim is inadmissible.** Mark the option, present it, and do not recommend it.
 

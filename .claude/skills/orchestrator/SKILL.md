@@ -203,7 +203,7 @@ Decide deliberately, and record the decision where its constraint will be read.
 
 **When the facts the choice rests on are not established, use the `decider` skill** and bring back a package. This section owns how a decision is RECORDED and when to escalate; `decider` owns how one is PRODUCED when the premises are still open. Do not score options here on facts you have not checked — a rubric formalizes the comparison, not the premises, and the arithmetic will launder an unverified claim into a recommendation.
 
-**Score options on the 7-axis rubric** — reliability, durability, performance, debuggability, cost, discoverable, user-visible. Record the winning total and the **decisive axis**, which is usually one axis rather than the sum.
+**Score options on the owner's rubric**, Docket item `minerva:01a0b15a3cad7827bbc821e1b9d29b21` — nine axes with Determinism as the pivot (then reliability, durability, performance, debuggability, DRY, cost, discoverable, user-visible), plus the owner's weightings. Read the item; do not restate it here, it changes by owner ruling. Record the winning total and the **decisive axis**, which is usually one axis rather than the sum.
 
 **Score against measurement, not plausibility.** Before scoring an axis, ask what you would have to open to know — then open it. An axis scored on reasoning about how code probably behaves is the most likely source of a wrong decision, because the score looks identical either way.
 

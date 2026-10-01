@@ -13,14 +13,18 @@ set. Do not push until the batch closes.
 
 - No parallel tasks, integration branches, or worktrees.
 - One task base → one task → one commit.
-- Tests are authored but not run during implementation.
+- Tests are authored but never run by the implementer. The configured tester
+  runs a test group's named set when the group's last task commits, and the
+  union of every group on the exact final `HEAD` before the push.
 - Static checks may run before committing.
 - Out-of-scope discoveries are filed, not fixed.
-- Nothing is pushed until review and scoped execution finish.
+- Nothing is pushed until review and the final scoped run on the final `HEAD`
+  finish.
 - The full suite is deferred to its scheduled run.
 - Comments should be salient.
-- Reviews should be at batch end, not item-by-item. There is no per-task or
-  per-slice review gate, and the configuration has no key for one.
+- Reviews are at batch end, not item-by-item, unless a test group is declared a
+  review boundary on the dispatch table because later groups depend on a
+  contract it changes. Review fixes are separate commits, never folds.
 - The cross-provider reviewer runs serially after the batch review's rounds
   close, as the final check.
 - Who fills each role, how many reviewers and fix rounds each boundary gets,
@@ -29,13 +33,19 @@ set. Do not push until the batch closes.
 - A gated stage — review, test execution, push — runs only when a standing
   authorization covers it (see Authority). A missing one stops the batch; it is
   never skipped silently.
-- Static gates, syntax checks and exploratory experiments are always allowed.
-  Tests run only at step 7, after review, on a named set the owner approved.
+- Static gates, syntax checks and experiments that answer a design question
+  are always allowed. Experiments that stand in for tests — probe scripts and
+  mutation checks written to gain confidence in one's own change — are not:
+  the tester's group runs and the final run on a named set the owner approved
+  are where confidence comes from.
 - Fix rounds per review boundary are capped by the configuration record's
   `rounds` value; when the cap is reached the owner is asked.
 - No finding is dropped: each is resolved, placed on an owning task, or filed
   with a priority set by its blast radius.
 - Every stage leaves its Docket work record (see Work records).
+- The stage transitions may be run by a workflow script, but only on the
+  owner's explicit words, and judgement points — dispositions, filing, the
+  push — stay with the orchestrator (see Consider a workflow).
 
 
 ## Terminology and shared controls
@@ -100,7 +110,8 @@ holds one fenced JSON object:
                 "testex": true, "push": true},
   "reviewers": {"batch_review": 1, "cross_provider": 1},
   "rounds":    {"batch_review": 3, "cross_provider": 1, "testex": 3},
-  "queue":     {"serial": true}
+  "queue":     {"serial": true},
+  "budgets":   {"implementer_tool_calls": 30, "reviewer_tool_calls": 20}
 }
 ```
 
@@ -120,8 +131,15 @@ holds one fenced JSON object:
   asked; for `testex`, retries of one failure.
 - `queue.serial` — tasks dispatch one at a time, the next only after the
   previous commit. This template implements only `true`; `false` is refused.
+- `budgets.<role>_tool_calls` — optional; the tool-call allowance stated in an
+  implementer's or reviewer's brief (defaults 30 and 20). Verification is
+  testex's job: an implementer that cannot run tests will otherwise build its
+  own harness from probe scripts and mutation checks, and a reviewer will do
+  the same, which has cost more than the testex round it replaces. When the
+  allowance is reached the agent stops and reports what it has, listing what
+  the first test run should settle.
 
-Every key is required except `principal` and `notes`. Validate the whole
+Every key is required except `principal`, `notes` and `budgets`. Validate the whole
 object before dispatch. A key not listed here (for example a per-task review
 switch), a missing key, a wrong type, a count below 1,
 `serial: false`, or a cross reviewer with the reviewer's provider while
@@ -228,6 +246,8 @@ Prepare one dispatch table per task:
   Stages        batch_review on/off; cross_provider on/off; testex on/off;
                 push on/off   (queue serial)
   Authority     review <record id or MISSING>; execute-tests <…>; push <…>
+  Execution     orchestrator-stepped | workflow (needs the owner's explicit words)
+  Test group    <group> = {<tasks>} → <classes> after <last task> commits
   Tests         authored / none — oracle: <what would show this wrong>
   Constraints   <constraints in the brief>
   Not in scope  <what this task deliberately does not touch>
@@ -244,6 +264,62 @@ Wait for owner approval before spawning any agent. The owner must confirm:
 2. the stated oracle could genuinely fail if the task were wrong.
 
 Any goal change requires a new dispatch table and renewed approval.
+
+### Test groups
+
+Within a batch, tasks belong to test groups. A group names its tasks, its
+scoped test set (the classes that validate those tasks plus touched modules
+and direct callers) and its trigger: the group runs once the last of its tasks
+has committed. A task alone is a group of one, tested right after its gate;
+related tasks that share a primitive are one group tested once, so one run
+also covers their interaction. The orchestrator proposes the groups on the
+dispatch table and the owner approves or redraws them with the goals.
+
+Signals for proposing a group: two tasks whose planned test sets share a
+class; a dependency or `follow_up` link between tasks; tasks touching the
+same module or persisted contract (from the scout's map on a large repository).
+Without a signal each task is its own group; when the owner has called tasks
+related, they are one.
+
+Grouping is early feedback, not the gate: the final scoped run (step 7) covers
+the union of every group on the exact final `HEAD`, so a group drawn too wide
+delays feedback and one drawn too narrow defers an interaction to that run —
+neither affects correctness. A group boundary may also be a review boundary
+when a later group depends on a contract the earlier one changes
+(`review: per-group`); the default is one review at batch end.
+
+**Records.** Each task carries `test-group:<name>`. A group run is a
+`role:tester` attempt naming its tasks and classes; its result sets
+`test:passed` or `test:failed` on each task in the group. The trigger is a
+fact a workflow runner can evaluate: every task tagged with the group has a
+`head:`.
+
+### Consider a workflow
+
+The stage transitions below are mechanical: implement → static gate → commit
+→ cold review → bounded fix rounds → cross review → scoped tests → bounded
+retries. Stepped by the orchestrator, each arrow is a turn that waits for a
+notification, re-reads the whole conversation and writes the next brief; on
+a small change those gaps have cost about a third of the process time. A
+workflow script can run the arrows and return only at the judgement points.
+
+When the batch is small or medium and the chain is the standard one, ask the
+owner on the dispatch table whether to run it as a workflow. A workflow runs
+only on the owner's explicit words in reply (for example "run it as a
+workflow"); approval of the table alone is not that, and the orchestrator
+never assumes it.
+
+A workflow run keeps the invariants above: tasks strictly serial, one commit
+per task, the configured roles and round caps, static gates before commits,
+no test run before step 7. It may spawn and chain the implementer, gate,
+reviewer, fixer, cross-reviewer and tester agents, and must STOP and return to
+the orchestrator at: a `must_fix` the reviewer flags as judgement-dependent,
+a `reject`, a round cap reached, anything that needs filing, and before the
+push — the orchestrator dispositions, files, writes the records and pushes.
+Reviewer agents therefore return findings in a shape that carries that flag.
+Evidence the agents gather goes into the records as in an orchestrator-stepped
+run, written either by the agents themselves or by the orchestrator once at
+close-out.
 
 **Records.** The batch's objective is the existing plan item tagged
 `wr:objective`, or a new one. Each table row is a `wr:task` under it: Goal,
@@ -268,7 +344,14 @@ Include this sentence verbatim:
 The brief must also state:
 
 - out-of-scope discoveries follow file-don't-fix;
-- tests must be authored but not run;
+- tests must be authored but not run, and not stood in for: static gates only,
+  no probe scripts or mutation checks to gain confidence in the change — a
+  scoped run follows review and is where confidence comes from. An experiment
+  that answers a design question (how does this path behave today?) is fine;
+- the tool-call allowance from `budgets.implementer_tool_calls`; at the
+  allowance the implementer stops and reports what it has;
+- the report ends with "What the first test run should settle", one line per
+  thing the implementer could not verify;
 - the implementer may refuse an instruction believed to be wrong and must
   explain why.
 
@@ -311,6 +394,13 @@ local commit. Do not push.
 
 Pin the new `HEAD`; it becomes the next task's base.
 
+If this commit completes a test group, the configured tester runs that group's
+classes now (`execute-tests` authority checked first; the implementer never
+runs them). A failure returns to the owning task as a new implementer attempt
+with the failing assertion, and the group re-runs; retries are capped by
+`rounds.testex`. Reviewers at step 5 are given the group results, so they
+spend their attention on what a test cannot see.
+
 **Records.** The audit (`git status --porcelain`, `git diff --stat`) is an
 evidence comment. The attempt gets `head:` = the commit, `result:completed`
 and a one-line `resolution`, and moves to `done`. The task gets
@@ -330,7 +420,11 @@ git status --porcelain
 ```
 
 Do not provide implementer explanations or prior discussion. Tell the reviewer
-that tests have not been run.
+that tests have not been run, that it reviews by reading (static checks
+allowed, no probe scripts or mutation checks — anything only a run can decide
+goes under "what the first test run should settle"), and its tool-call
+allowance from `budgets.reviewer_tool_calls`. Ask it to mark each `must_fix`
+as resolvable or judgement-dependent, so a workflow run knows where to stop.
 
 Review the batch as one body of work. Judge:
 
@@ -375,14 +469,17 @@ Allowed dispositions:
 - **reject** — return the work to the responsible implementer with the review as
   context. A second rejection escalates to the owner.
 
-Fold each fix into the commit of the task that caused it. If attribution to one
-task is impossible, create a clearly named batch-review fix commit.
+Each fix round is its own commit on top of the current `HEAD`, named for the
+review that asked for it (`review: …`). Fixes are not folded into the task
+commit: a fold rewrites every later SHA and invalidates the `head:` and
+`requires:` evidence already recorded, while a separate commit keeps the
+history of what the review changed readable.
 
 **Records.** A disposition is the finding comment accepted or rejected, with
 the reason as a reply (reject records no reason of its own). A fix is a new
-implementer attempt under the owning task with `base:` = the current `HEAD`. A
-fold rewrites every later commit, so each affected task's `requires:` moves to
-its new SHA. A finding left unresolved becomes a filed item linked `surfaced`
+implementer attempt under the owning task with `base:` = the current `HEAD`
+and `head:` = the fix commit; the owning task's `requires:` moves to that
+commit. A finding left unresolved becomes a filed item linked `surfaced`
 from the task. When every finding on a task is disposed, it moves to
 `review:accepted` — a fact, not a gate.
 
@@ -396,6 +493,12 @@ Before running anything, name:
 
 Record the set and its justification. Runs when `stages.testex` is on; check
 `execute-tests` authority, then the configured tester runs only that set.
+
+This is the gate the push depends on, and it is evaluated against the exact
+final `HEAD`: the union of every test group's set runs once more after the last
+review fix commit, whatever the group runs showed earlier. Any later code
+change invalidates it; push eligibility is never inferred from the fact that
+tests and reviews both happened at some point.
 
 A failure returns to the responsible task with the failing assertion as context.
 Retry the same failure at most `rounds.testex` times, then escalate.
@@ -416,13 +519,13 @@ The configured cross reviewer — a different provider from the batch reviewer �
 is the final double-check of code the batch review believes is finally good.
 It runs when `stages.cross_provider` is on, after `review` authority is
 checked, SERIALLY: only after every batch-review find/fix round has closed and
-every must_fix is folded in — never in parallel with the batch review, and
+every must_fix is fixed and committed — never in parallel with the batch review, and
 never on a diff that still has open findings. Follow the role's `notes` for how
 to feed it the diff.
 
 Disposition its findings the same way as step 6. A must_fix goes back through a
 fix round judged by the batch reviewer, then the cross reviewer re-checks the
-fold; past `rounds.cross_provider` rounds, escalate to the owner. A small batch
+fix commit; past `rounds.cross_provider` rounds, escalate to the owner. A small batch
 may skip the stage by saying so, with the reason, on its dispatch table.
 
 **Records.** As step 5: one `role:reviewer` attempt per cross reviewer, with
