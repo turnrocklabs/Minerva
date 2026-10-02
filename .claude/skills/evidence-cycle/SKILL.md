@@ -52,6 +52,32 @@ parallel; code-changing agents never do.
   completion afterward. Verify exclusive execution before dispatching work.
   [Runner details](references/runner.md) define these requirements.
 
+## Batch size and scope
+
+Ceremony — preparation, review rounds, acceptance and release — costs about
+the same per batch whatever the batch contains, and reviewers stop converging
+after about three rounds. So size is decided per batch, by rule:
+
+- **Floor.** Expected implementation work is at least twice the profile's
+  measured ceremony. Below it, intake pulls more ready items; a batch is never
+  run for one small item while ready items wait.
+- **Ceiling.** One release, one shared-primitive seam, and a diff a cold
+  reviewer can cover in three rounds — the profile's `batch` limits on commits
+  and changed lines. Above it, split before admission.
+- **Size tag.** Every task carries `size:S`, `size:M` or `size:L`. An `L` is
+  never dispatched whole: splitting it into children that each have an oracle
+  is itself a task. Estimates are poor, so each task records estimate against
+  actual (commits, files, minutes); the profile's ceremony and size limits are
+  revised from actuals, not from opinion.
+- **Readiness.** A task is ready when it has a DONE WHEN, an oracle, a size
+  tag, no blocker and no other claim. Intake takes ready items in priority
+  order until the floor is met. An unready item goes to shaping — write the
+  oracle, split the `L` — which is dispatchable work, not a reason to stop.
+- **Declared touch-set.** Each manifest task names the paths it expects to
+  change. The commit audit compares `git diff --stat` against that list; a path
+  outside it is a finding — filed, or justified in one line in the attempt's
+  evidence. "It felt related" is how scope arrives disguised as discovery.
+
 ## Decisions, approval, and authority
 
 Default to autonomous decisions within already-approved goals. Read the
@@ -94,9 +120,11 @@ by the selected mode. A changed goal reopens plan approval.
    the profile's size threshold or missing test map warrants it. Discovery
    must already be within approved scope; obtain bounded discovery approval
    only if it is not. The scout supplies navigation and test pointers.
-4. Build the manifest: goals, non-goals, oracles, task order, test groups,
-   affected contracts, reviewers, budgets, and execution mode. Distinguish
-   tasks that must precede others from tasks useful to test together.
+4. Build the manifest: goals, non-goals, oracles, sizes, touch-sets, task
+   order, test groups, affected contracts, reviewers, budgets, and execution
+   mode. Check the batch against the floor and ceiling and record the check.
+   Distinguish tasks that must precede others from tasks useful to test
+   together.
 5. Freeze the actual config, profile, and rubric contents with hashes. Retain
    those contents so another session can retrieve them.
 6. In owner-approval mode, present the completed plan and wait. In
@@ -132,8 +160,10 @@ manifest order; executor for gates and tests.
    out-of-scope discoveries without fixing them, and may refuse an instruction
    with a reason. End its report with **What the first run should settle**.
 3. Run the profile's static gates in the prescribed scratch environment.
-   Check intended paths and generated files; commit the task and record its
-   commit. A gate failure returns to a bounded repair attempt.
+   Check intended paths and generated files against the task's touch-set;
+   commit the task and record its commit with the actual commits, files and
+   minutes beside the estimate. A gate failure returns to a bounded repair
+   attempt; a path outside the touch-set is a finding for Review and decide.
 4. When every task in a group has a completed implementation attempt and a
    verified commit reachable from the batch head, execute its named tests with
    the profile's isolation.

@@ -87,9 +87,18 @@ paths or transient findings.
   "ci": {"workflow": "<workflow name>", "full_suite_on_push": true},
   "release": {"tag_pattern": "<tag pattern>", "workflow": "<workflow name>", "install": "<procedure>"},
   "scale": {"scout_above_files": 400, "god_file_lines": 1500},
+  "batch": {"ceremony_minutes": 18, "size_minutes": {"S": 10, "M": 30, "L": 90},
+            "max_commits": 6, "max_changed_lines": 600},
   "quirks": ["<repository-specific fact needed to resume>"]
 }
 ```
+
+`batch` holds the measured numbers behind the floor and ceiling in the main
+guide: `ceremony_minutes` is the batch's fixed overhead from the last runs,
+`size_minutes` the expected implementation time per size tag, and the two
+limits bound one reviewable batch. The floor check is
+`sum(size_minutes[task.size]) >= 2 * ceremony_minutes`. Revise these from
+recorded actuals at close-out, as a proposed profile revision.
 
 `classes` and `one_class` retain the pilot field names but identify the
 project's named test targets; they need not be language-level classes. Use
@@ -130,6 +139,8 @@ records; approved run-specific overrides are explicit.
       "id": "<task id>",
       "goal": "<approved goal>",
       "oracle": "<independent observation that could fail>",
+      "size": "S",
+      "touch_set": ["<path or directory the task is expected to change>"],
       "constraints": [],
       "non_goals": [],
       "contracts": [],
@@ -147,6 +158,9 @@ records; approved run-specific overrides are explicit.
 ```
 
 - `execution` is `workflow` or `orchestrator-stepped`.
+- `size` is the task item's `size:` tag; a manifest never carries an `L`.
+  `touch_set` is what the commit audit compares the diff against; an empty
+  list is refused.
 - Task array order is execution order. `must_precede` lists tasks that this
   task must precede; reject missing references or a contradictory order.
 - Each task belongs to one named group. Membership comes from the approved
