@@ -3,7 +3,9 @@ extends ProviderModelManager
 ## Discovers ChatGPT/Codex models available to the signed-in ChatGPT account.
 
 const CHATGPT_MODELS_URL := "https://chatgpt.com/backend-api/codex/models"
-const CLIENT_VERSION := "0.0.0"
+# The server hides models whose minimal_client_version exceeds this, so it
+# tracks a current Codex CLI release; bump it when new models stay missing.
+const CLIENT_VERSION := "0.160.0"
 const CHATGPT_MODEL_ID_BASE := 60000
 
 
