@@ -22,7 +22,7 @@ its contents with the plan.
 | Phase | Responsible | Result needed to continue |
 |---|---|---|
 | Prepare | Orchestrator; owner where required | Complete, approved manifest and available execution controls |
-| Implement | Serial implementers; command executor | Task commits and passing group tests |
+| Implement | One implementer per batch, tasks in series; command executor | Task commits and passing group tests |
 | Review | Independent reviewers; orchestrator | A decision for every finding |
 | Repair | Serial fixer; executor; reviewers | Checks pass and required reviewers cover the repaired code |
 | Accept | Executor; authorized integrator | Final evidence matches the candidate; push and CI are recorded |
@@ -117,11 +117,16 @@ Missing facts or failed preconditions stop preparation with a precise reason.
 
 ## 2. Implement and check
 
-**Responsible:** one implementer at a time; executor for gates and tests.
-**Inputs:** manifest, current task base, generated task brief.
+**Responsible:** one implementer for the whole batch, working the tasks in
+manifest order; executor for gates and tests.
+**Inputs:** manifest, current task base, one generated batch brief.
 
-1. Give a fresh implementer the goal, oracle, verified pointers, constraints,
-   non-goals, forbidden resources, and budget. Include:
+1. Give a fresh implementer the batch: every task's goal, oracle, verified
+   pointers, constraints, non-goals, forbidden resources, and the budget for
+   the batch. It carries context between related tasks but still makes one
+   commit per task and commits each before starting the next. A new
+   implementer is dispatched only for a different batch or after this one
+   returns incomplete. Include:
    > If something I state as fact is wrong when you measure it, say so — that is a success, not an embarrassment.
 2. The implementer writes code and the smallest useful broad tests. It reports
    out-of-scope discoveries without fixing them, and may refuse an instruction

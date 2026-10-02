@@ -25,7 +25,7 @@ otherwise search its project, then `minerva`. Multiple matches are an error.
     "integrator": {"provider": "<provider>", "model": "<model>", "principal": "<principal>"}
   },
   "rounds": {"group_retries": 3, "repair_review": 2, "final_retries": 3},
-  "budgets": {"implementer_tool_calls": 30, "reviewer_tool_calls": 20, "implementer_minutes": 20},
+  "budgets": {"implementer_tool_calls": 60, "reviewer_tool_calls": 20, "implementer_minutes": 30},
   "autonomy": {
     "manifest_approval": "ratified-items",
     "judgement": "escalate-on-triggers-only",
@@ -42,7 +42,7 @@ otherwise search its project, then `minerva`. Multiple matches are an error.
 | `access` | `repo` allows independent navigation; `diff` requires supplied source and targeted requests |
 | `gate` | Fixed-command agent used only when the runner cannot execute commands directly |
 | `rounds` | Hard batch limits for group repairs, repair review rounds, and final-test repairs |
-| `budgets` | Per-attempt allowances; exhaustion returns incomplete under the main guide's rules |
+| `budgets` | Per-attempt allowances; the implementer attempt covers a whole batch, so its allowance scales with the task count; exhaustion returns incomplete under the main guide's rules |
 | `max_agents` | Total agent dispatch allowance for this batch, including retries; parallel calls also respect runtime capacity |
 | `workflow` | Permit suggesting Workflow mode; explicit owner authorization is still required |
 
@@ -142,7 +142,7 @@ records; approved run-specific overrides are explicit.
     {"name": "G1", "tasks": ["<task id>"], "classes": ["<test target>"], "review_boundary": false}
   ],
   "review": {"reviewers": ["behavior", "contracts"], "widen_on_contract": true},
-  "budgets": {"implementer_tool_calls": 30, "reviewer_tool_calls": 20, "implementer_minutes": 20}
+  "budgets": {"implementer_tool_calls": 60, "reviewer_tool_calls": 20, "implementer_minutes": 30}
 }
 ```
 
