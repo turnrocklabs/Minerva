@@ -3,12 +3,22 @@ extends ProviderModelManager
 ## Discovers ChatGPT/Codex models available to the signed-in ChatGPT account.
 
 const CHATGPT_MODELS_URL := "https://chatgpt.com/backend-api/codex/models"
-const CLIENT_VERSION := "0.0.0"
+# The server hides models whose minimal_client_version exceeds the version we
+# send, so the default tracks a current Codex CLI release. Users can override it
+# in Preferences → Providers when new models stay missing.
+const DEFAULT_CLIENT_VERSION := "0.160.0"
 const CHATGPT_MODEL_ID_BASE := 60000
 
 
 func _init() -> void:
 	super("user://chatgpt_models.json", CHATGPT_MODEL_ID_BASE)
+
+
+## The user's client version from preferences, or the default when unset or blank.
+static func get_client_version() -> String:
+	var config: ConfigFile = SingletonObject.preferences_popup.config_file
+	var version: String = str(config.get_value("CHATGPT", "client_version", "")).strip_edges()
+	return version if not version.is_empty() else DEFAULT_CLIENT_VERSION
 
 
 func fetch_available_models(scene_tree: SceneTree) -> Dictionary:
@@ -24,7 +34,7 @@ func fetch_available_models(scene_tree: SceneTree) -> Dictionary:
 
 	var http := HTTPRequest.new()
 	scene_tree.root.add_child(http)
-	var url := "%s?client_version=%s" % [CHATGPT_MODELS_URL, CLIENT_VERSION.uri_encode()]
+	var url := "%s?client_version=%s" % [CHATGPT_MODELS_URL, get_client_version().uri_encode()]
 	var headers: Array[String] = [
 		"Authorization: Bearer %s" % chatgpt_auth.access_token,
 		"ChatGPT-Account-ID: %s" % chatgpt_auth.account_id,
