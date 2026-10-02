@@ -648,6 +648,21 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "ChatGPT"
 
+[node name="ChatGPTClientVersionHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ChatGPTClientVersionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/ChatGPTClientVersionHBox"]
+layout_mode = 2
+tooltip_text = "Codex client version sent when discovering models. ChatGPT hides models that need a newer client, so raise this if new models are missing."
+mouse_filter = 1
+text = "Client version:"
+
+[node name="leChatGPTClientVersion" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/ChatGPTClientVersionHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+
 [node name="ChatGPTHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 10

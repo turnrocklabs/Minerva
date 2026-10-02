@@ -66,6 +66,8 @@ const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionBut
 	"hcp_auth_base_url": %leAuthBaseUrl, # Authentication HTTP Base URL
 	"hcp_username": %leUsername,
 	"hcp_password": %lePassword,
+
+	"chatgpt_client_version": %leChatGPTClientVersion,
 }
 
 @onready var theme_option_button: OptionButton = %ThemeOptionButton
@@ -204,6 +206,10 @@ func set_field_values():
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
 
+	# Blank shows the default as placeholder; ChatGPTModelManager falls back to it.
+	_fields["chatgpt_client_version"].placeholder_text = ChatGPTModelManager.DEFAULT_CLIENT_VERSION
+	_fields["chatgpt_client_version"].text = config_file.get_value("CHATGPT", "client_version", "")
+
 	var selected_services_data = config_file.get_value("HCP", "selected_services", [])
 	
 	service_selection_window.load_saved_selected_services(selected_services_data)
@@ -265,6 +271,7 @@ func _save_confirmed_preferences() -> void:
 	config_file.set_value("HCP", "password", _fields["hcp_password"].text)
 	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
 	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_data())
+	config_file.set_value("CHATGPT", "client_version", _fields["chatgpt_client_version"].text.strip_edges())
 	_apply_staged_stt_transport()
 	_apply_staged_voice_enabled()
 
