@@ -58,9 +58,11 @@ Ceremony — preparation, review rounds, acceptance and release — costs about
 the same per batch whatever the batch contains, and reviewers stop converging
 after about three rounds. So size is decided per batch, by rule:
 
-- **Floor.** Expected implementation work is at least twice the profile's
-  measured ceremony. Below it, intake pulls more ready items; a batch is never
-  run for one small item while ready items wait.
+- **Fill to the ceiling.** Ceremony is paid once per batch whatever it holds,
+  and writer time is a small fraction of it (batch 4: 7 of 48 minutes), so
+  there is no time floor. Intake keeps adding ready items until the next one
+  would breach the ceiling; a batch is never run for one small item while
+  ready items wait.
 - **Ceiling.** One release, one shared-primitive seam, and a diff a cold
   reviewer can cover in three rounds — the profile's `batch` limits on commits
   and changed lines. Above it, split before admission.
@@ -71,7 +73,7 @@ after about three rounds. So size is decided per batch, by rule:
   revised from actuals, not from opinion.
 - **Readiness.** A task is ready when it has a DONE WHEN, an oracle, a size
   tag, no blocker and no other claim. Intake takes ready items in priority
-  order until the floor is met. An unready item goes to shaping — write the
+  order up to the ceiling. An unready item goes to shaping — write the
   oracle, split the `L` — which is dispatchable work, not a reason to stop.
 - **Declared touch-set.** Each manifest task names the paths it expects to
   change. The commit audit compares `git diff --stat` against that list; a path
@@ -122,7 +124,7 @@ by the selected mode. A changed goal reopens plan approval.
    only if it is not. The scout supplies navigation and test pointers.
 4. Build the manifest: goals, non-goals, oracles, sizes, touch-sets, task
    order, test groups, affected contracts, reviewers, budgets, and execution
-   mode. Check the batch against the floor and ceiling and record the check.
+   mode. Check the batch against the ceiling and record the check.
    Distinguish tasks that must precede others from tasks useful to test
    together.
 5. Freeze the actual config, profile, and rubric contents with hashes. Retain

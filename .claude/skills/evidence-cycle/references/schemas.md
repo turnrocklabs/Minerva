@@ -87,17 +87,18 @@ paths or transient findings.
   "ci": {"workflow": "<workflow name>", "full_suite_on_push": true},
   "release": {"tag_pattern": "<tag pattern>", "workflow": "<workflow name>", "install": "<procedure>"},
   "scale": {"scout_above_files": 400, "god_file_lines": 1500},
-  "batch": {"ceremony_minutes": 18, "size_minutes": {"S": 10, "M": 30, "L": 90},
-            "max_commits": 6, "max_changed_lines": 600},
+  "batch": {"ceremony_minutes": 40, "size_minutes": {"S": 2, "M": 8, "L": 25},
+            "repair_round_minutes": 7, "max_commits": 6, "max_changed_lines": 600},
   "quirks": ["<repository-specific fact needed to resume>"]
 }
 ```
 
-`batch` holds the measured numbers behind the floor and ceiling in the main
-guide: `ceremony_minutes` is the batch's fixed overhead from the last runs,
-`size_minutes` the expected implementation time per size tag, and the two
-limits bound one reviewable batch. The floor check is
-`sum(size_minutes[task.size]) >= 2 * ceremony_minutes`. Revise these from
+`batch` holds the measured numbers behind the ceiling in the main guide:
+`ceremony_minutes` is go-to-push minus writer time from the last runs,
+`size_minutes` the expected implementer *writer* minutes per size tag,
+`repair_round_minutes` the cost of one review-repair round, and the two
+limits bound one reviewable batch. There is no time floor; the numbers exist
+to forecast the batch and to compare estimate with actual. Revise them from
 recorded actuals at close-out, as a proposed profile revision.
 
 `classes` and `one_class` retain the pilot field names but identify the
