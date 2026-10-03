@@ -423,19 +423,15 @@ func test_unsaved_knowledge_retry() -> void:
 	var docket = ctx.docket
 	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
 	await Knowledge.apply(await Knowledge.plan(_knowledge_def("notes", [_kb("Red to red."), _hint("9600")]), docket), {}, docket)
-	# A version that drops both deprecates them, while a directory stands
-	# where the project's file goes. The file's bytes are put back after, as
-	# they were: a .dct gone or changed since load is refused (write_refusal),
-	# so the blocker must be transient, not an external edit.
+	# Keep the canonical file readable: a missing file is refused before mutation.
+	# A directory at the atomic temp path blocks saving after the cache changes.
 	var dropped := _knowledge_def("notes", [])
-	var on_disk := FileAccess.get_file_as_bytes(path)
-	DirAccess.remove_absolute(path)
-	DirAccess.make_dir_absolute(path)
+	var blocked_temp := path + ".tmp.%d" % OS.get_process_id()
+	DirAccess.make_dir_absolute(blocked_temp)
 	var failed: Dictionary = await Knowledge.apply(await Knowledge.plan(dropped, docket), {}, docket)
 	var retry_plan: Dictionary = await Knowledge.plan(dropped, docket)
 	var retried: Dictionary = await Knowledge.apply(retry_plan, {}, docket)
-	DirAccess.remove_absolute(path)
-	FileAccess.open(path, FileAccess.WRITE).store_buffer(on_disk)
+	DirAccess.remove_absolute(blocked_temp)
 	var saved: Dictionary = await Knowledge.apply(await Knowledge.plan(dropped, docket), {}, docket)
 	var stored_deprecated := 0
 	for line in FileAccess.get_file_as_string(path).split("\n", false):
