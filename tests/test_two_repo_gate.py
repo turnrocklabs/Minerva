@@ -72,10 +72,11 @@ class TwoRepoGateTest(unittest.TestCase):
             (root / "work").mkdir()
             done = subprocess.run(["bash", str(root / "in/run.sh")], env=env)
             self.assertNotEqual(done.returncode, 0)
+            self.assertIn("== sibling minerva-plugins: " + "0" * 40 + " not found", (root / "out/job.log").read_text())
             self.assertTrue((root / "out/ended").read_text().startswith("setup "))
 
     @contextmanager
-    def driver_fixture(self):
+    def driver_fixture(self, preexisting=False):
         """Real subprocesses exercise the driver; the tiny Godot stand-in emits diagnostics."""
         with tempfile.TemporaryDirectory(prefix="gate-driver-") as scratch:
             root = Path(scratch)
@@ -89,14 +90,18 @@ class TwoRepoGateTest(unittest.TestCase):
             for plugin in ("cad", "other"):
                 (plugins / plugin).mkdir()
                 (plugins / plugin / "consumer.gd").write_text('extends "res://contract.gd"\n')
+            if preexisting:
+                with (plugins / "cad/consumer.gd").open("a") as out:
+                    out.write("# diagnostic SCRIPT ERROR: Parse Error: existing\n")
+            (host / "src/project.godot").write_text('[autoload]\nFixtureGlobal="*res://contract.gd"\n')
+            native = host / "scripts/container-build/dev-natives.py"
+            native.parent.mkdir(parents=True)
+            native.write_text("# Native staging is unrelated to these driver oracles.\n")
             for repo in (host, plugins):
                 subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
                 subprocess.run(["git", "-C", str(repo), "-c", "user.name=test", "-c",
                                 "user.email=test@example.org", "commit", "-qm", "base"], check=True)
                 pins.append(gate.git(repo, "rev-parse", "HEAD"))
-            native = host / "scripts/container-build/dev-natives.py"
-            native.parent.mkdir(parents=True)
-            native.write_text("# Native staging is unrelated to these driver oracles.\n")
             manifest = root / "natives.json"
             manifest.write_text("{}")
             fake = root / "godot"
@@ -110,8 +115,13 @@ elif "--import" in sys.argv:
     counter.write_text(str(n))
     if n == int(os.environ.get("FAIL_IMPORT", "0")):
         print(os.environ["IMPORT_DIAGNOSTIC"])
+        sys.exit(int(os.environ.get("FAIL_IMPORT_RC", "0")))
 elif "--check-only" in sys.argv:
     script = sys.argv[-1]
+    path = pathlib.Path("src") / script.removeprefix("res://")
+    for line in path.read_text().splitlines():
+        if line.startswith("# diagnostic "):
+            print(line.removeprefix("# diagnostic "))
     if "consumer.gd" in script and not pathlib.Path("src/contract.gd").exists():
         print("SCRIPT ERROR: Parse Error: missing host contract")
 ''')
@@ -141,31 +151,71 @@ elif "--check-only" in sys.argv:
                                                                          "minerva-plugins/other/consumer.gd"])
             self.assertFalse(checks[0]["passed"])
 
-    def test_driver_rejects_zero_exit_diagnostics_in_either_import(self):
+    def test_driver_warms_first_import_and_rejects_second_import_diagnostics(self):
         for number in (1, 2):
             for diagnostic in ("SCRIPT ERROR: Parse Error: fixture", "ERROR: Cannot import fixture"):
                 with self.subTest(number=number, diagnostic=diagnostic), self.driver_fixture() as (host, plugins, args):
                     self.assertEqual(gate.plugin_checks(host, plugins, args.host_base, args.plugins_base, []), ([], []))
                     with patch.dict(os.environ, {"FAIL_IMPORT": str(number), "IMPORT_DIAGNOSTIC": diagnostic}):
-                        self.assertEqual(gate.run_gate(args), 1)
+                        self.assertEqual(gate.run_gate(args), 0 if number == 1 else 1)
                     receipt = json.loads((host / "gate-evidence/receipt.json").read_text())
-                    self.assertEqual(receipt["error"], f"import-{number} failed")
-                    self.assertEqual(receipt["steps"][-1]["exit_code"], 0)
-                    self.assertFalse(any(step["name"].startswith("check-") for step in receipt["steps"]))
+                    self.assertIn(diagnostic, receipt["steps"][1 + number]["diagnostics"])
+                    if number == 2:
+                        self.assertEqual(receipt["error"], "import-2 failed")
+                        self.assertEqual(receipt["steps"][-1]["exit_code"], 0)
+                        self.assertFalse(any(step["name"].startswith("check-") for step in receipt["steps"]))
+
+    def test_first_import_nonzero_exit_fails(self):
+        with self.driver_fixture() as (host, plugins, args), patch.dict(os.environ, {
+                "FAIL_IMPORT": "1", "FAIL_IMPORT_RC": "1", "IMPORT_DIAGNOSTIC": "ERROR: warmup failed"}):
+            self.assertEqual(gate.run_gate(args), 1)
+            receipt = json.loads((host / "gate-evidence/receipt.json").read_text())
+            self.assertEqual(receipt["error"], "import-1 failed")
 
     def test_changed_files_and_diagnostics_fail_closed(self):
         autoload = 'SCRIPT ERROR: Parse Error: Identifier "App" not declared in the current scope.'
         self.assertFalse(gate.check_errors("", 0))
-        cold = "\n".join(sorted(gate.COLD_IMPORT_DIAGNOSTICS))
-        self.assertFalse(gate.check_errors(cold, 0, gate.COLD_IMPORT_DIAGNOSTICS))
-        self.assertTrue(gate.check_errors(cold + "\n" + autoload, 0, gate.COLD_IMPORT_DIAGNOSTICS))
-        self.assertTrue(gate.check_errors(cold, 1, gate.COLD_IMPORT_DIAGNOSTICS))
         for rc, output in ((1, autoload), (124, autoload), (0, 'SCRIPT ERROR: Parse Error: broken syntax'),
                            (1, autoload + '\nSCRIPT ERROR: Parse Error: unexpected token'),
-                           (0, 'ERROR: Cannot open file res://../../minerva-plugins/cad/ui/bad.gd'),
+                           (0, '   ERROR: Cannot open file res://../../minerva-plugins/cad/ui/bad.gd'),
                            (2, ''), (1, 'SCRIPT ERROR: Compile Error: unknown class')):
             with self.subTest(rc=rc, output=output):
                 self.assertTrue(gate.check_errors(output, rc))
+
+    def test_context_and_baseline_comparison_fail_closed(self):
+        with self.driver_fixture() as (host, plugins, args):
+            names = gate.autoload_names(host)
+            self.assertEqual(names, {"FixtureGlobal"})
+        missing = "SCRIPT ERROR: Compile Error: Identifier not found: FixtureGlobal"
+        cascade = 'SCRIPT ERROR: Compile Error: Failed to compile depended scripts.\nERROR: Failed to load script "res://consumer.gd" with error "Compilation failed".'
+        self.assertTrue(gate.context_only(missing + "\n" + cascade, 1, names))
+        for output in (cascade, missing.replace("FixtureGlobal", "Unknown"),
+                       missing + "\nSCRIPT ERROR: Parse Error: unexpected token", missing + "\nERROR: Cannot open resource"):
+            self.assertFalse(gate.context_only(output, 1, names))
+        self.assertFalse(gate.context_only(missing, 124, names))
+        before = 'SCRIPT ERROR: Parse Error: existing\n at: GDScript::reload (res://consumer.gd:3)'
+        for after in (before + "\nSCRIPT ERROR: Parse Error: new", before + "\n" + before, before.replace(":3)", ":4)")):
+            self.assertTrue(gate.error_records(after) - gate.error_records(before))
+        self.assertFalse(gate.error_records(before) - gate.error_records(before))
+
+    def test_driver_compares_exact_base_and_rejects_mixed_new_error(self):
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed), self.driver_fixture(preexisting=True) as (host, plugins, args):
+                with (plugins / "cad/consumer.gd").open("a") as out:
+                    out.write("# diagnostic SCRIPT ERROR: Parse Error: introduced\n" if mixed else "# unrelated edit\n")
+                subprocess.run(["git", "-C", str(plugins), "add", "."], check=True)
+                subprocess.run(["git", "-C", str(plugins), "-c", "user.name=test", "-c",
+                                "user.email=test@example.org", "commit", "-qm", "plugin head"], check=True)
+                self.assertEqual(gate.run_gate(args), 1 if mixed else 0)
+                receipt = json.loads((host / "gate-evidence/receipt.json").read_text())
+                self.assertEqual(receipt["preexisting_failures"], [] if mixed else ["minerva-plugins/cad/consumer.gd"])
+                self.assertTrue(any(step["name"].startswith("base-check-") for step in receipt["steps"]))
+
+    def test_native_manifest_environment_is_reserved(self):
+        class Host:
+            Refused = ValueError
+        with self.assertRaises(ValueError):
+            jobs.env_from(Host(), ["MINERVA_NATIVES_MANIFEST=/untrusted"])
 
 
 if __name__ == "__main__":

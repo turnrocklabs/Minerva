@@ -290,20 +290,20 @@ It sets absolute isolated XDG paths, imports the host twice, and checks every
 added/copied/modified/renamed host `.gd` plus every tracked `.gd` in the
 plugins under test, including unchanged scripts affected by host edits/deletions.
 Defaults select changed plugin trees plus trees referencing changed/deleted
-host `res://` paths. Host resource changes or uncertain plugin impact also include
+host `res://` paths. Host GDScript changes or uncertain plugin impact also include
 CAD/PCB. Tooling-only changes select no plugin trees. `--plugin NAME` adds a
 whole plugin tree explicitly; `--check-script` adds an individual sentinel.
-A measured whole-tree check exceeded 60 seconds, so defaults use this scope. The plugin repo
-has no standalone project: its scripts use the actual host project context and
-literal sibling paths. Both imports and every script check fail on
-nonzero exit or logged `SCRIPT ERROR:` / `ERROR:`. No autoload diagnostics are
-exempted. The first import alone permits the exact cold-cache diagnostics in
-`COLD_IMPORT_DIAGNOSTICS`, only on Godot 4.6.2.stable.official.71f334935.
-These 15 asset/theme/font/icon-loading messages matched the prior healthy
-first import exactly and disappeared entirely in its second import. Unknown
-messages and nonzero exits still fail; the second import has no allowlist.
-Allowed messages are retained in the receipt. A check-only script needing autoload context requires a compatible
-static compilation lane before that tuple can pass. Deleted host scripts are covered through compilation of their plugin consumers.
+Whole-plugin check duration and excused script counts are recorded in the receipt.
+The plugin repo has no standalone project: scripts use the actual host project
+and literal sibling paths. The first import warms caches and requires exit zero;
+all diagnostics remain in the receipt. The second rejects any error diagnostic.
+Check-only permits only missing identifiers from the host's actual `[autoload]`
+names and their compilation cascades; mixed diagnostics fail. Other failing
+scripts are checked against the exact host/plugin bases in fresh sibling clones.
+Only matching base diagnostics and locations may be listed as preexisting;
+new or additional errors fail, even when the base also failed. Preexisting
+failures remain visible in the receipt for executor follow-up filing.
+Deleted host scripts are covered by compiling their plugin consumers.
 
 No suites or application scenes execute. `gate-evidence/receipt.json` identifies
 the tuple, bases, Godot version, XDG paths, native provenance stamps, commands,

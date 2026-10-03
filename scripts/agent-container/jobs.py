@@ -121,7 +121,8 @@ while IFS=$'\t' read -r name pinned; do
     [ -n "$name" ] || continue
     git --no-optional-locks -C "/sources/$name" status --porcelain > "/out/source-status-$name" || ended setup 94
     git clone -q --shared --no-checkout "/sources/$name" "/tmp/job/$name" || ended setup 95
-    git -C "/tmp/job/$name" checkout -q --detach "$pinned" || ended setup 96
+    git -C "/tmp/job/$name" checkout -q --detach "$pinned" \
+        || { echo "== sibling $name: $pinned not found"; ended setup 96; }
     actual="$(git -C "/tmp/job/$name" rev-parse HEAD)"
     [ "$actual" = "$pinned" ] || ended setup 97
     printf '%s\t%s\n' "$name" "$actual" >> /out/revisions
@@ -212,8 +213,8 @@ def env_from(host, pairs):
         key, sep, value = pair.partition("=")
         if not sep or not ENV_NAME.fullmatch(key):
             raise host.Refused(f"--env takes KEY=VALUE with a shell variable name, got {pair!r}")
-        if key.startswith(RESERVED_ENV):
-            raise host.Refused(f"{RESERVED_ENV}* variables are the job runner's own")
+        if key.startswith(RESERVED_ENV) or key == "MINERVA_NATIVES_MANIFEST":
+            raise host.Refused(f"{key} is the job runner's own")
         if "\0" in value:
             raise host.Refused(f"--env {key} holds a NUL byte")
         env[key] = value

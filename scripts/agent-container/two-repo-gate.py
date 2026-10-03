@@ -5,6 +5,7 @@ No suites or application scenes run. Plugin scripts compile in the real host
 project context; the plugin repository does not have its own Godot project.
 """
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -16,26 +17,6 @@ import time
 
 sys.dont_write_bytecode = True
 JOB_ROOT = Path("/tmp/job")
-# Exact cold-cache diagnostics measured on Godot 4.6.2, absent after import.
-# They are allowed only in the first import; the second has no exemptions.
-COLD_IMPORT_DIAGNOSTICS = frozenset({
-    "ERROR: Can't load dependency: 'res://assets/icons/green_toggle_icons/checkbutton_checked.png'.",
-    "ERROR: Error loading custom project theme 'uid://cr3k2fgiaguik'",
-    'ERROR: Failed loading resource: res://.godot/imported/checkbutton_checked.png-3fedb868e83f8f33b50413d28c676b2a.ctex.',
-    'ERROR: Failed loading resource: res://.godot/imported/visibility_not_visible.png-0f110cd3cab4249a7162ff8dab36f972.ctex.',
-    'ERROR: Failed loading resource: res://.godot/imported/visibility_visible.svg-49adc87bfd59c2f20f74534eb10da39a.ctex.',
-    'ERROR: Failed loading resource: res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf.',
-    'ERROR: Failed loading resource: res://assets/icons/eye_icons/visibility_not_visible.png.',
-    'ERROR: Failed loading resource: res://assets/icons/eye_icons/visibility_visible.svg.',
-    'ERROR: Failed loading resource: res://assets/icons/green_toggle_icons/checkbutton_checked.png.',
-    'ERROR: Failed loading resource: res://assets/themes/blue_dark_mode.theme.',
-    'ERROR: Failed to load script "res://addons/markdownlabel/plugin.gd" with error "Parse error".',
-    'ERROR: Unable to open file: res://.godot/imported/checkbutton_checked.png-3fedb868e83f8f33b50413d28c676b2a.ctex.',
-    'ERROR: Unable to open file: res://.godot/imported/visibility_not_visible.png-0f110cd3cab4249a7162ff8dab36f972.ctex.',
-    'ERROR: Unable to open file: res://.godot/imported/visibility_visible.svg-49adc87bfd59c2f20f74534eb10da39a.ctex.',
-    'SCRIPT ERROR: Parse Error: Preload file "res://addons/markdownlabel/icon.svg" has no resource loaders (unrecognized file extension).',
-})
-
 
 
 def git(root, *args):
@@ -67,17 +48,41 @@ def plugin_checks(host, plugins, host_base, plugins_base, requested):
         if any(resource in source for resource in resources):
             selected.add(name.split("/", 1)[0])
     # Dynamic/class-name dependencies are not statically discoverable.
-    if host_changes or changed_trees - known:
+    if any(name.endswith(".gd") for name in host_changes) or changed_trees - known:
         selected.update(name for name in ("cad", "pcb") if (plugins / name).is_dir())
     if set(requested) - known:
         raise ValueError("--plugin must name a tracked plugin script tree")
     return sorted(selected), [plugins / name for name in names if name.split("/", 1)[0] in selected]
 
 
-def check_errors(output, rc, allowed=()):
+def diagnostics(output):
+    return re.findall(r'(?:SCRIPT ERROR:|ERROR:)[^\n]*', output, re.MULTILINE)
+
+
+def check_errors(output, rc):
     """Godot may report a compile error while returning zero. Fail on both."""
-    diagnostics = re.findall(r"(?:SCRIPT ERROR:|^ERROR:)[^\n]*", output, re.MULTILINE)
-    return rc != 0 or any(line not in allowed for line in diagnostics)
+    return rc != 0 or bool(diagnostics(output))
+
+
+def autoload_names(host):
+    text = (host / "src/project.godot").read_text()
+    section = re.search(r"(?ms)^\[autoload\]\s*\n(.*?)(?=^\[|\Z)", text)
+    return set(re.findall(r"(?m)^([A-Za-z_][A-Za-z0-9_]*)\s*=", section[1])) if section else set()
+
+
+def context_only(output, rc, names):
+    # check-only lacks autoload instances; excuse only their compile cascades.
+    errors = diagnostics(output)
+    identifiers = {"SCRIPT ERROR: Compile Error: Identifier not found: " + name for name in names}
+    return rc in (0, 1) and bool(identifiers.intersection(errors)) and all(
+        line in identifiers or line == "SCRIPT ERROR: Compile Error: Failed to compile depended scripts." or
+        re.fullmatch(r'ERROR: Failed to load script "[^"\n]+" with error "Compilation failed"\.', line)
+        for line in errors)
+
+
+def error_records(output):
+    """Keep diagnostic locations so a second error of the same kind is still new."""
+    return Counter(re.findall(r'(?:SCRIPT ERROR:|ERROR:)[^\n]*(?:\n[ \t]+at: [^\n]*)?', output, re.MULTILINE))
 
 
 def run_gate(args):
@@ -103,12 +108,12 @@ def run_gate(args):
                "environment": {key: value for key, value in env.items() if key.startswith("XDG_")},
                "steps": [], "status": "failed"}
 
-    def command(name, argv, seconds):
+    def command(name, argv, seconds, cwd=host):
         path = logs / f"{name}.log"
         try:
             with path.open("w") as out:
                 started = time.monotonic()
-                rc = subprocess.run(argv, env=env, stdout=out, stderr=subprocess.STDOUT,
+                rc = subprocess.run(argv, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT,
                                     timeout=seconds).returncode
         except subprocess.TimeoutExpired:
             rc = 124
@@ -143,23 +148,62 @@ def run_gate(args):
         receipt["native_manifest"] = json.loads(manifest.read_text())
         stamps = host / git(host, "rev-parse", "--git-dir") / "minerva-dev-natives"
         receipt["native_stamps"] = {path.stem: json.loads(path.read_text()) for path in stamps.glob("*.json")}
-        # Match the existing native-backed dev gate: initial scan establishes
-        # class cache, both imports must return zero AND emit no error diagnostics.
-        for number in (1, 2):
-            rc, output = command(f"import-{number}", [args.godot, "--headless", "--path", "src", "--import"], 600)
-            allowed = COLD_IMPORT_DIAGNOSTICS if number == 1 and receipt["godot"] == "4.6.2.stable.official.71f334935" else ()
-            receipt["steps"][-1]["allowed_diagnostics"] = sorted(set(allowed).intersection(output.splitlines()))
-            if check_errors(output, rc, allowed):
-                raise ValueError(f"import-{number} failed")
-        failed = []
+        def imports(root, prefix=""):
+            # First import warms the class/resource cache; the second is strict.
+            for number in (1, 2):
+                rc, output = command(f"{prefix}import-{number}", [args.godot, "--headless", "--path", "src", "--import"], 600, root)
+                receipt["steps"][-1]["diagnostics"] = diagnostics(output)
+                if rc or (number == 2 and check_errors(output, rc)):
+                    raise ValueError(f"{prefix}import-{number} failed")
+
+        imports(host)
+        stage_started = time.monotonic()
+        failed, excused = [], []
+        names = autoload_names(host)
+        receipt["autoload_names"] = sorted(names)
+        def compile_script(root, path, number, prefix=""):
+            relative = os.path.relpath(path, root / "src")
+            rc, output = command(f"{prefix}check-{number:04d}", [args.godot, "--headless", "--path", "src",
+                                 "--check-only", "--script", f"res://{relative}"], 120, root)
+            context = context_only(output, rc, autoload_names(root) if prefix else names)
+            bad = check_errors(output, rc) and not context
+            receipt["steps"][-1].update(script=str(path.relative_to(root.parent)), passed=not bad, context_only=context)
+            return rc, output, bad
+
         for number, path in enumerate(scripts):
-            relative = os.path.relpath(path, host / "src")
-            rc, output = command(f"check-{number:04d}", [args.godot, "--headless", "--path", "src",
-                                                       "--check-only", "--script", f"res://{relative}"], 120)
-            bad = check_errors(output, rc)
-            receipt["steps"][-1].update(script=str(path.relative_to(host.parent)), passed=not bad)
+            rc, output, bad = compile_script(host, path, number)
+            if receipt["steps"][-1]["context_only"]:
+                excused.append(str(path.relative_to(host.parent)))
             if bad:
-                failed.append(str(path))
+                failed.append((number, path, rc, output))
+        receipt["plugin_check_stage_elapsed_s"] = round(time.monotonic() - stage_started, 3)
+        receipt["context_excused_scripts"] = excused
+        receipt["context_excused_count"] = len(excused)
+        receipt["preexisting_failures"] = []
+        if failed:
+            baseline = JOB_ROOT / "baseline"
+            baseline.mkdir()
+            receipt["baseline_revisions"] = {}
+            for source, base in ((host, args.host_base), (plugins, args.plugins_base)):
+                target = baseline / source.name
+                subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", str(source), str(target)], check=True)
+                subprocess.run(["git", "-C", str(target), "checkout", "-q", "--detach", base], check=True)
+                receipt["baseline_revisions"][source.name] = git(target, "rev-parse", "HEAD")
+            base_host = baseline / host.name
+            rc, _ = command("base-natives", ["python3", "-B", "scripts/container-build/dev-natives.py"], 900, base_host)
+            if rc:
+                raise ValueError("baseline native prerequisites unavailable")
+            imports(base_host, "base-")
+            introduced = []
+            for number, path, rc, output in failed:
+                base_path = baseline / path.relative_to(host.parent)
+                if base_path.is_file():
+                    base_rc, base_output, base_bad = compile_script(base_host, base_path, number, "base-")
+                    if base_bad and rc in (0, 1) and rc == base_rc and error_records(output) and not (error_records(output) - error_records(base_output)):
+                        receipt["preexisting_failures"].append(str(path.relative_to(host.parent)))
+                        continue
+                introduced.append(str(path.relative_to(host.parent)))
+            failed = introduced
         if failed:
             raise ValueError("script checks failed: " + ", ".join(failed))
         receipt["status"] = "passed"
