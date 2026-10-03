@@ -73,7 +73,7 @@ func _run() -> void:
 	check("stored DKT prefix is preserved", saved.meta.get("id_prefix") == "DKT")
 	check("canonical text survives a later real edit", saved.items[0].description == "literal\\n\\t")
 	check("ordinary input still normalizes", saved.items[0].title == "Input\nnormalized\t")
-	var missing := JSONLParser.parse_file(nameless).meta
+	var missing: Dictionary = JSONLParser.parse_file(nameless).meta
 	check("missing name/prefix materialize only on real edit", missing.get("project") == "nameless" and missing.get("id_prefix") == DocketDB._derive_prefix("nameless"))
 	# A missing shipped record really merges and persists; its canonical text survives.
 	write_file(master, '{"_type":"meta","version":"1.0.0","counter":0,"id_prefix":"MST","project":"master"}\n'.to_utf8_buffer())

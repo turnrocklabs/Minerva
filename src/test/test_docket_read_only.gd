@@ -1,5 +1,9 @@
 extends SceneTree
 ## Full MCP envelope + direct UI/core edits against real future-format files.
+# Load autoload-dependent scripts after the first frame, as in the integration suite.
+const MANAGER := "res://Scripts/Services/Docket/DocketManager.gd"
+const MCP_MODULE := "res://Scripts/Services/MCP/Modules/MCPDocketTools.gd"
+const PANEL := "res://Scripts/UI/Controls/Docket/app_shell_base.gd"
 var _failed := 0
 var _dir: String
 
@@ -14,8 +18,9 @@ func check(label: String, ok: bool) -> void:
 func _run() -> void:
 	_dir = OS.get_cache_dir().path_join("docket_read_only_%d" % randi())
 	DirAccess.make_dir_recursive_absolute(_dir)
-	var old_manager: DocketManager = SingletonObject.docket_manager
-	var module := MCPDocketTools.new()
+	var singleton: Node = root.get_node("SingletonObject")
+	var old_manager: Node = singleton.docket_manager
+	var module: RefCounted = load(MCP_MODULE).new()
 	for case in ["2.0.0", "3.0.0", "unknown_type", "1.0.0"]:
 		var path := _dir.path_join(case + ".dct")
 		var version: String = case if case != "unknown_type" else "1.0.0"
@@ -27,13 +32,13 @@ func _run() -> void:
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		f.store_buffer(original)
 		f.close()
-		var dm: DocketManager = load("res://Scripts/Services/Docket/DocketManager.gd").new()
+		var dm: Node = load(MANAGER).new()
 		dm._load_schema()
 		check(case + " opens", not dm.open_project(path).has("error"))
-		var db := dm.get_db("guard")
+		var db: DocketDB = dm.get_db("guard")
 		dm._master_db = db
 		dm._init_tool_registry()
-		SingletonObject.docket_manager = dm
+		singleton.docket_manager = dm
 		check(case + " known item readable via MCP", not (await module.handle("minerva_docket_get", {"id":"TST-0001", "project":"guard"})).has("error"))
 		var result: Dictionary = await module.handle("minerva_docket_update", {"id":"TST-0001", "project":"guard", "title":"Edited"})
 		if case == "1.0.0":
@@ -45,14 +50,14 @@ func _run() -> void:
 			check(case + " rejects before cache changes", not db.dirty and db.get_item("TST-0001").title == "Original")
 			# Every mutation family goes through the shared dispatch precheck.
 			for tool in ["create", "transition", "delete", "link", "hint_set", "attach", "detach", "comment", "quality", "secret_set", "secret_delete", "persist"]:
-				var refused := dm.call_tool("docket_" + tool, {"project":"guard", "id":"TST-0001"})
+				var refused: Dictionary = dm.call_tool("docket_" + tool, {"project":"guard", "id":"TST-0001"})
 				check(case + " refuses " + tool, str(refused.get("error", "")).contains(reason))
 			for action in [["saved_query", "save"], ["project_meta", "set"]]:
 				check(case + " refuses " + action[0], dm.call_tool("docket_" + action[0], {"project":"guard", "action":action[1]}).has("error"))
 			for tool in ["move", "mirror"]:
 				check(case + " refuses " + tool, dm.call_tool("docket_" + tool, {"id":"TST-0001", "target_project":"guard"}).has("error"))
 			# Use the actual existing status surface without constructing a whole UI.
-			var panel := DocketPanel.new()
+			var panel: Control = load(PANEL).new()
 			panel._dm = dm
 			panel._file_label = Label.new()
 			panel.add_child(panel._file_label)
@@ -73,7 +78,7 @@ func _run() -> void:
 			check(case + " write-through DB rejects before mutation", not wrapper.insert_item("NEW-1", {"title":"Lost"}).is_empty() and not wrapper.has_item("NEW-1"))
 			wrapper.close()
 			check(case + " wrapper preserves bytes", FileAccess.get_file_as_bytes(path) == original)
-	SingletonObject.docket_manager = old_manager
+	singleton.docket_manager = old_manager
 	for filename in DirAccess.get_files_at(_dir):
 		DirAccess.remove_absolute(_dir.path_join(filename))
 	DirAccess.remove_absolute(_dir)

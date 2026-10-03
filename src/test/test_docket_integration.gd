@@ -196,30 +196,28 @@ func test_unsaved_change_is_an_error() -> void:
 	registry.init(JSON.parse_string(sf.get_as_text()), db)
 	sf.close()
 	var item_id := str(registry.call_tool("docket_create", {"type": "bug", "title": "Saved"}).get("id", ""))
-	# A directory where the file goes: the write fails. The retry restores the
-	# last saved bytes first, since a .dct that vanished since load is refused.
-	var saved_bytes := FileAccess.get_file_as_bytes(path)
-	DirAccess.remove_absolute(path)
-	DirAccess.make_dir_absolute(path)
+	# Keep the canonical file readable: removing it is an upfront refusal.
+	# A directory at the atomic temp path instead fails after the cache edit.
+	var blocked_temp := path + ".tmp.%d" % OS.get_process_id()
+	check("update write fault is installed", DirAccess.make_dir_absolute(blocked_temp) == OK)
 	var failed := registry.call_tool("docket_update", {"id": item_id, "title": "Unsaved"})
-	check("an update that could not be saved is an error", failed.has("error"))
-	DirAccess.remove_absolute(path)
-	_write_bytes(path, saved_bytes)
+	check("an update that could not be saved is an error", failed.has("error")
+		and db.get_item(item_id).get("title", "") == "Unsaved"
+		and not FileAccess.get_file_as_string(path).contains("Unsaved"))
+	DirAccess.remove_absolute(blocked_temp)
 	var retried := registry.call_tool("docket_update", {"id": item_id, "title": "Unsaved"})
 	check("repeating it saves the change the cache already holds",
 		retried.get("status", "") == "unchanged" and FileAccess.get_file_as_string(path).contains("Unsaved"))
 	# A delete that could not be saved leaves nothing in the cache to retry;
 	# the save barrier reports it until the file holds the deletion.
-	saved_bytes = FileAccess.get_file_as_bytes(path)
-	DirAccess.remove_absolute(path)
-	DirAccess.make_dir_absolute(path)
+	check("delete write fault is installed", DirAccess.make_dir_absolute(blocked_temp) == OK)
 	var delete_failed := registry.call_tool("docket_delete", {"id": item_id})
 	var still_unsaved := registry.call_tool("docket_persist", {})
-	DirAccess.remove_absolute(path)
-	_write_bytes(path, saved_bytes)
+	DirAccess.remove_absolute(blocked_temp)
 	var saved := registry.call_tool("docket_persist", {})
 	check("an unsaved delete fails its barrier until the file is written",
-		delete_failed.has("error") and still_unsaved.has("error") and saved.get("status", "") == "saved"
+		delete_failed.has("error") and still_unsaved.has("error") and not db.has_item(item_id)
+		and saved.get("status", "") == "saved"
 		and not FileAccess.get_file_as_string(path).contains("Unsaved"))
 	db.close()
 
