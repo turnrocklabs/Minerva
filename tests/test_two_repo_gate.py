@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import importlib.util
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -47,7 +48,8 @@ class TwoRepoGateTest(unittest.TestCase):
             # Relocate only container mount paths; the real setup shell is run.
             for old, new in (("/tmp/job", str(root / "work")), ("/sources", str(root / "sources")),
                              ("/src", str(source)), ("/job", str(root / "in")), ("/out", str(root / "out"))):
-                script = script.replace(old, new)
+                script = re.sub(re.escape(old) + r'(?=/|["\s;])', lambda _: new, script)
+            self.assertIn(f"exec >>{root / 'out/job.log'} 2>&1", script)
             (root / "in/run.sh").write_text(script)
             (root / "in/siblings.tsv").write_text(f"minerva-plugins\t{pins[1]}\n")
             (root / "in/artifacts.txt").write_text("")

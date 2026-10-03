@@ -283,6 +283,8 @@ python3 scripts/agent-container/agent.py run-job testex1 --folder /home/imran/gi
   --seconds 2400 --memory 8g --cpus 4 --artifact gate-evidence --json
 ```
 
+Single-repo jobs also export the runner-owned `MINERVA_NATIVES_MANIFEST`.
+
 The helper stages all existing native recipes, including the JSON schema helper,
 using verified source-built cache entries or their source/official-channel build
 recipes. A missing prerequisite fails; no binaries are copied from `/src`.
@@ -301,7 +303,8 @@ Check-only permits only missing identifiers from the host's actual `[autoload]`
 names and their compilation cascades; mixed diagnostics fail. Other failing
 scripts are checked against the exact host/plugin bases in fresh sibling clones.
 Only matching base diagnostics and locations may be listed as preexisting;
-new or additional errors fail, even when the base also failed. Preexisting
+a script already failing at base is listed as pre-existing; later errors in it
+may be masked (check-only reports the first error). Preexisting
 failures remain visible in the receipt for executor follow-up filing.
 Deleted host scripts are covered by compiling their plugin consumers.
 
