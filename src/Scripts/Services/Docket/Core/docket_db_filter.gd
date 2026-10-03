@@ -1,8 +1,7 @@
 extends RefCounted
 class_name DocketDBFilter
 ## SQL filter/sort translation for Docket queries.
-## Pure functions: take filter dicts, return {where: String, bindings: Array}.
-## Extracted verbatim from DocketDB to keep the query engine logic separate.
+## Pure functions: return SQL fragments and bindings, or a visible validation error.
 
 
 static func translate_filter(filter: Dictionary) -> Dictionary:
@@ -11,6 +10,12 @@ static func translate_filter(filter: Dictionary) -> Dictionary:
 
 	for key in filter:
 		var value = filter[key]
+		var field_name := str(key)
+		if field_name.ends_with("__ne") or field_name.ends_with("__in"):
+			field_name = field_name.left(-4)
+		var failure := "" if key == "tags_contains" else _validate_field(field_name, [])
+		if not failure.is_empty():
+			return {"error": failure}
 
 		if key == "tags_contains":
 			conditions.append("EXISTS (SELECT 1 FROM item_tags WHERE item_tags.item_id=items.id AND item_tags.tag=?)")
@@ -69,6 +74,8 @@ static func translate_conditions(conditions: Array) -> Dictionary:
 		var and_parts := PackedStringArray()
 		for cond in group:
 			var translated := _condition_to_sql(cond)
+			if translated.has("error"):
+				return translated
 			var sql_str: String = translated["sql"]
 			if not sql_str.is_empty():
 				and_parts.append(sql_str)
@@ -92,53 +99,43 @@ static func translate_conditions(conditions: Array) -> Dictionary:
 
 ## Translate a nested $and/$or boolean tree to SQL.
 static func translate_tree(tree: Dictionary) -> Dictionary:
-	if tree.has("$or"):
-		var parts := PackedStringArray()
-		var bindings: Array = []
-		for child in tree["$or"]:
-			var t: Dictionary
-			if child is Dictionary and (child.has("$or") or child.has("$and")):
-				t = translate_tree(child)
-			else:
-				t = _condition_to_sql(child)
-			var sql_str: String = t.get("sql", t.get("where", ""))
-			if not sql_str.is_empty():
-				parts.append(sql_str)
-				bindings.append_array(t["bindings"])
-		if parts.size() == 0:
-			return {"where": "", "bindings": []}
-		if parts.size() == 1:
-			return {"where": parts[0], "bindings": bindings}
-		return {"where": "(%s)" % " OR ".join(parts), "bindings": bindings}
-
-	elif tree.has("$and"):
-		var parts := PackedStringArray()
-		var bindings: Array = []
-		for child in tree["$and"]:
-			var t: Dictionary
-			if child is Dictionary and (child.has("$or") or child.has("$and")):
-				t = translate_tree(child)
-			else:
-				t = _condition_to_sql(child)
-			var sql_str: String = t.get("sql", t.get("where", ""))
-			if not sql_str.is_empty():
-				parts.append(sql_str)
-				bindings.append_array(t["bindings"])
-		if parts.size() == 0:
-			return {"where": "", "bindings": []}
-		if parts.size() == 1:
-			return {"where": parts[0], "bindings": bindings}
-		return {"where": "(%s)" % " AND ".join(parts), "bindings": bindings}
-
-	else:
-		# Single condition at tree root
-		var c := _condition_to_sql(tree)
-		return {"where": c["sql"], "bindings": c["bindings"]}
+	# Only the documented $and/$or keys are boolean containers.
+	if not tree.has("$or") and not tree.has("$and"):
+		var leaf := _condition_to_sql(tree)
+		if leaf.has("error"):
+			return leaf
+		return {"where": leaf.sql, "bindings": leaf.bindings}
+	if tree.has("field"):
+		var failure := _validate_field(str(tree.field), ["tags", "has_attachment"])
+		if not failure.is_empty():
+			return {"error": failure}
+	var key := "$or" if tree.has("$or") else "$and"
+	if not tree[key] is Array:
+		return {"error": "Boolean filter must contain an array"}
+	var parts := PackedStringArray()
+	var bindings: Array = []
+	for child in tree[key]:
+		if not child is Dictionary:
+			return {"error": "Filter condition must be an object"}
+		var translated := translate_tree(child)
+		if translated.has("error"):
+			return translated
+		if not str(translated.where).is_empty():
+			parts.append(translated.where)
+			bindings.append_array(translated.bindings)
+	var conjunction := " OR " if key == "$or" else " AND "
+	var where := conjunction.join(parts)
+	if parts.size() > 1:
+		where = "(%s)" % where
+	return {"where": where, "bindings": bindings}
 
 
 ## Translate a single condition dict to SQL fragment + bindings.
 static func _condition_to_sql(cond: Dictionary) -> Dictionary:
 	var field: String = str(cond.get("field", ""))
+	var failure := _validate_field(field, ["tags", "has_attachment"])
+	if not failure.is_empty():
+		return {"error": failure}
 	var op: String = str(cond.get("op", "eq"))
 	var value = cond.get("value")
 
@@ -242,30 +239,11 @@ static func _translate_wildcards(pattern: String) -> String:
 	return result
 
 
-## Validate every identifier before translation can produce executable SQL.
-static func validate_filter(filter: Dictionary) -> String:
-	if filter.has("conditions") or filter.has("$and") or filter.has("$or"):
-		for key in ["conditions", "$and", "$or"]:
-			for child in filter.get(key, []):
-				var failure := validate_filter(child)
-				if not failure.is_empty():
-					return failure
-		return ""
-	if filter.has("field"):
-		return _validate_field(str(filter.field), ["tags", "has_attachment"])
-	for key in filter:
-		var field := str(key)
-		if field == "tags_contains":
-			continue
-		if field.ends_with("__ne") or field.ends_with("__in"):
-			field = field.left(-4)
-		var failure := _validate_field(field, [])
-		if not failure.is_empty():
-			return failure
-	return ""
-
-
 static func _validate_field(field: String, pseudo: Array) -> String:
-	if field == "id" or field in DocketDB._ITEM_COLS or field in pseudo:
+	if is_item_field(field) or field in pseudo:
 		return ""
 	return "Invalid filter field: '%s'" % field
+
+
+static func is_item_field(field: String) -> bool:
+	return field == "id" or field in DocketDB._ITEM_COLS

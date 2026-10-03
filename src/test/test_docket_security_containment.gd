@@ -28,18 +28,46 @@ func _run() -> void:
 	registry.init(schema, source, {"source": source, "target": target})
 	var id := "01a00000000070008000000000000001"
 	var other := "01a00000000070008000000000000002"
-	source.insert_item(id, DataModel.create_item(schema, "work_item", {"title": "Source candidate"}))
+	source.insert_item(id, DataModel.create_item(schema, "work_item", {"title": "Source candidate", "tags": ["security"]}))
 	target.insert_item(other, DataModel.create_item(schema, "work_item", {"title": "Target candidate"}))
-	for filter in [{"title); DROP TABLE items;--": "x"}, {"unknown__in": ["x"]}, {"conditions": [{"field": "title OR 1=1", "value": "x"}]}, {"$or": [{"field": "unknown", "value": "x"}]}]:
-		var reads := source.query_reads
+	for filter in [
+		{"title); DROP TABLE items;--": "x"}, {"unknown__in": ["x"]},
+		{"conditions": [{"field": "title OR 1=1", "value": "x"}]},
+		{"$or": [{"field": "unknown", "value": "x"}]},
+		{"field": "title", "value": "x", "1=1 OR id": 0},
+		{"conditions": [{"$or": [], "field": "title OR 1=1", "value": "x"}]},
+		{"$and": [{"conditions": [], "field": "title); DROP TABLE items;--"}]},
+		{"OR": [{"field": "title", "value": "x"}]},
+	]:
 		var refused: Dictionary = registry.call_tool("docket_query", {"filter": filter})
-		check("invalid filter refused before query SQL", refused.has("error") and source.query_reads == reads)
+		check("invalid filter refused with item table intact", refused.has("error") and source.has_item(id) and source.get_item(id).title == "Source candidate")
+	for filter in [
+		{"status__in": [source.get_item(id).status], "tags_contains": "security"},
+		{"$and": [{"field": "tags", "value": "security"}, {"$or": [{"field": "title", "value": "Source candidate"}]}]},
+		{"conditions": [{"field": "tags", "value": "security"}, {"conj": "AND", "field": "title", "value": "Source candidate"}]},
+	]:
+		var valid: Dictionary = registry.call_tool("docket_query", {"filter": filter})
+		check("valid filters still return rows", not valid.has("error") and valid.get("count", 0) == 1)
+	var unique_id := "02b00000000070008000000000000003"
+	source.insert_item(unique_id, DataModel.create_item(schema, "work_item", {"title": "Unique prefix"}))
+	var unique: Dictionary = registry.call_tool("docket_get", {"id": "02b0"})
+	check("unique prefix resolves", not unique.has("error") and str(unique).contains(unique_id))
 	var ambiguity: Dictionary = registry.call_tool("docket_get", {"id": "01a0"})
 	check("ambiguity names both projects and items", ambiguity.get("error", "").contains("Source candidate") and ambiguity.get("error", "").contains("Target candidate") and ambiguity.error.contains("source:") and ambiguity.error.contains("target:"))
 	var before := FileAccess.get_file_as_bytes(source.get_path())
 	var writes := source.writes
 	var unknown: Dictionary = registry.call_tool("docket_mirror", {"source_id": id, "target_id": id, "target_project": "missing", "fields": {"title": "Corrupted"}})
 	check("unknown mirror project writes nothing", unknown.has("error") and source.writes == writes and FileAccess.get_file_as_bytes(source.get_path()) == before and source.get_item(id).title == "Source candidate")
+	for number in range(12):
+		var crowded_id := "03c000000000700080000000%08x" % number
+		target.insert_item(crowded_id, DataModel.create_item(schema, "work_item", {"title": "Crowded candidate"}))
+	var crowded: Dictionary = registry.call_tool("docket_get", {"id": "03c0"})
+	check("large ambiguity stays bounded", crowded.get("error", "").begins_with("Ambiguous ID") and str(crowded.error).length() < 1000)
+	# The primary can be named even when it is absent from project_dbs.
+	registry.init(schema, source, {"target": target})
+	var named_primary: Dictionary = registry.call_tool("docket_mirror", {"source_id": unique_id, "target_id": unique_id, "target_project": source.get_project_name(), "fields": {"title": "Unique prefix"}})
+	check("named primary mirror works", not named_primary.has("error") and source.get_item(unique_id).title == "Unique prefix")
+	registry.init(schema, source, {"source": source, "target": target})
 	# Different salts force real destination re-encryption, including history.
 	var password := "temporary-test-password"
 	for db in [source, target]:
@@ -64,6 +92,26 @@ func _run() -> void:
 	var refused_move: Dictionary = registry.call_tool("docket_move", {"id": id, "target_project": "future", "vault_password": password})
 	check("readonly destination retains source", refused_move.has("error") and source.has_item(id) and not readonly.has_item(id))
 	readonly.close()
+	registry.init(schema, source, {"source": source, "target": target})
+	# Fail after initializing a previously vaultless destination inside import.
+	var vaultless := DocketDBJsonl.create_new_jsonl(folder.path_join("vaultless.jsonl"))
+	var orphan := VaultCrypto.encrypt("collision", VaultCrypto.derive_key(password, source.get_vault_salt()))
+	vaultless.set_secret(id, orphan.ciphertext, orphan.iv, orphan.mac)
+	var vaultless_bytes := FileAccess.get_file_as_bytes(vaultless.get_path())
+	var vaultless_meta := vaultless._exec_select("SELECT key, value FROM docket_meta ORDER BY key;").duplicate(true)
+	registry.init(schema, source, {"source": source, "vaultless": vaultless})
+	var late_failure: Dictionary = registry.call_tool("docket_move", {"id": id, "target_project": "vaultless", "vault_password": password})
+	check("failed move rolls back SQL and JSONL vault metadata", late_failure.has("error") and vaultless._exec_select("SELECT key, value FROM docket_meta ORDER BY key;") == vaultless_meta and FileAccess.get_file_as_bytes(vaultless.get_path()) == vaultless_bytes and not vaultless.has_vault() and not vaultless.has_item(id))
+	check("late import failure preserves source", source.has_item(id) and decrypt(source, id, password) == "current " + id)
+	vaultless.delete_secret(id)
+	source.set_secret(unique_id, orphan.ciphertext, orphan.iv, orphan.mac)
+	var first_vault_move: Dictionary = registry.call_tool("docket_move", {"id": unique_id, "target_project": "vaultless", "vault_password": password})
+	check("first destination vault commits with readable ciphertext", not first_vault_move.has("error") and vaultless.has_vault() and not source.has_item(unique_id) and decrypt(vaultless, unique_id, password) == "collision")
+	vaultless.close()
+	DirAccess.remove_absolute(folder.path_join("vaultless.jsonl.cache"))
+	vaultless = DocketDBJsonl.open_jsonl(folder.path_join("vaultless.jsonl"))
+	check("first destination vault persists", decrypt(vaultless, unique_id, password) == "collision")
+	vaultless.close()
 	registry.init(schema, source, {"source": source, "target": target})
 	# An import collision must roll back instead of deleting the source.
 	target.insert_item(id, DataModel.create_item(schema, "work_item", {"title": "Collision"}))

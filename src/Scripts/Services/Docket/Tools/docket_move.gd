@@ -68,26 +68,20 @@ func execute(args: Dictionary, _schema: Dictionary, _primary_db: DocketDB, proje
 		return {"error": vault_failure}
 	var refs_updated := 0
 
-	if DocketDB._is_uuid7(item_id):
-		# UUID7 items keep their ID — globally unique, no rewrite needed
-		new_id = item_id
-		var failure := target_db.import_item_full(new_id, exported)
-		if not failure.is_empty():
-			return {"error": "Move import failed: " + failure}
-		var unsaved := target_db.persist()
-		if not unsaved.is_empty():
-			return {"error": "Move destination save failed: " + unsaved}
-		source_db.delete_item(item_id)
-	else:
-		# Legacy items get upgraded to UUID7 on move
-		var failure := target_db.import_item_full(new_id, exported)
-		if not failure.is_empty():
-			return {"error": "Move import failed: " + failure}
-		var unsaved := target_db.persist()
-		if not unsaved.is_empty():
-			return {"error": "Move destination save failed: " + unsaved}
-		source_db.delete_item(item_id)
-		# Rewrite cross-project references in ALL projects
+	var failure := target_db.import_item_full(new_id, exported)
+	if not failure.is_empty():
+		return {"error": "Move import failed: " + failure}
+	var unsaved := target_db.persist()
+	if not unsaved.is_empty():
+		return {"error": "Move destination save failed: " + unsaved}
+	source_db.delete_item(item_id)
+	if not source_db.write_error.is_empty() or source_db.has_item(item_id):
+		return {"error": "Move destination saved, but source deletion failed: " + source_db.write_error}
+	unsaved = source_db.persist()
+	if not unsaved.is_empty():
+		return {"error": "Move destination saved, but source save failed: " + unsaved}
+	if not DocketDB._is_uuid7(item_id):
+		# Legacy IDs need cross-project references rewritten after deletion.
 		var old_qualified := "%s:%s" % [source_name, item_id]
 		var new_qualified := "%s:%s" % [canonical_target, new_id]
 		for proj_name in project_dbs:
@@ -145,5 +139,5 @@ func _prepare_vault(args: Dictionary, source: DocketDB, target: DocketDB, old_id
 		record.merge(encrypted, true)
 		exported["secret_versions" if record.has("version") else "secrets"].append(record)
 	if not target.has_vault():
-		target.init_vault(target_key, salt)
+		exported["vault_init"] = {"key": target_key, "salt": salt}
 	return ""

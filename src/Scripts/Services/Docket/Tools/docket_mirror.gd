@@ -41,11 +41,10 @@ func execute(args: Dictionary, schema: Dictionary, primary_db: DocketDB, project
 	var note: String = str(args.get("note", ""))
 
 	# Resolve DBs
-	var source_db := _resolve_project_db(source_project, primary_db, project_dbs)
-	var target_db := _resolve_project_db(target_project, primary_db, project_dbs)
+	var source_db := resolve_project_db(source_project, primary_db, project_dbs)
+	var target_db := resolve_project_db(target_project, primary_db, project_dbs)
 
-	if source_db == null or target_db == null:
-		return {"error": "Unknown project: %s" % (source_project if source_db == null else target_project)}
+	# Registry precheck resolves explicit project names before dispatch.
 
 	# Build payload from pull or push mode
 	var payload := {}
@@ -127,8 +126,8 @@ func execute(args: Dictionary, schema: Dictionary, primary_db: DocketDB, project
 	return result
 
 
-func _resolve_project_db(name: String, primary_db: DocketDB, project_dbs: Dictionary) -> DocketDB:
-	if name.is_empty():
+static func resolve_project_db(name: String, primary_db: DocketDB, project_dbs: Dictionary) -> DocketDB:
+	if name.is_empty() or name.to_lower() == primary_db.get_project_name().to_lower():
 		return primary_db
 	# Case-insensitive lookup
 	for proj_name in project_dbs:

@@ -18,7 +18,6 @@ var dirty: bool = false
 ## into the call's error (persist), so a change that was not stored is never
 ## reported as made.
 var writes: int = 0
-var query_reads: int = 0
 var write_error: String = ""
 var canonical_path: String = ""
 var read_only_reason: String = ""
@@ -199,21 +198,6 @@ static func generate_uuid7() -> String:
 func next_uuid7_id() -> String:
 	## Generate a new UUID7 ID for this DB instance.
 	return generate_uuid7()
-
-
-func resolve_short_id(prefix: String) -> String:
-	## Resolve a short hex prefix (min 4 chars) to a full UUID7 ID.
-	## Returns "" if ambiguous or not found.
-	if prefix.length() < 4:
-		return ""
-	# Exact match first
-	if has_item(prefix):
-		return prefix
-	# Prefix match via LIKE
-	var rows := _exec_select("SELECT id FROM items WHERE id LIKE ? LIMIT 2;", [prefix + "%"])
-	if rows.size() == 1:
-		return str(rows[0].id)
-	return ""
 
 
 func short_id(full_id: String) -> String:
@@ -607,6 +591,9 @@ func import_item_full(new_id: String, exported: Dictionary) -> String:
 			 size_bytes, att_data, str(att.get("created_at", "")),
 			 str(att.get("description", ""))])
 
+	# Initialize vault metadata within this transaction, without a JSONL flush.
+	if exported.has("vault_init"):
+		init_vault(exported.vault_init.key, exported.vault_init.salt, true)
 	# Vault rows were authenticated and re-encrypted by the move tool.
 	for secret in exported.get("secrets", []):
 		_exec_checked("INSERT INTO docket_secrets (handle, ciphertext, iv, mac, created_at, updated_at, requires_2fa) VALUES (?, ?, ?, ?, ?, ?, ?);", [secret.handle, secret.ciphertext, secret.iv, secret.mac, ts, ts, secret.requires_2fa])
@@ -776,9 +763,6 @@ func get_links(item_id: String) -> Array:
 
 func execute_query(query: Dictionary, detail: String = "full") -> Array:
 	var filter = query.get("filter", {})
-	var invalid := DocketDBFilter.validate_filter(filter if filter is Dictionary else {})
-	if not invalid.is_empty():
-		return [{"_error": invalid}]
 	var sort_spec: Array = query.get("sort", [])
 	var limit: int = int(query.get("limit", 0))
 
@@ -789,6 +773,8 @@ func execute_query(query: Dictionary, detail: String = "full") -> Array:
 		translated = DocketDBFilter.translate_tree(filter)
 	else:
 		translated = DocketDBFilter.translate_filter(filter if filter is Dictionary else {})
+	if translated.has("error"):
+		return [{"_error": translated.error}]
 	var where_clause: String = translated.where
 	var bindings: Array = translated.bindings
 
@@ -797,22 +783,6 @@ func execute_query(query: Dictionary, detail: String = "full") -> Array:
 		sql += " WHERE " + where_clause
 
 	# Sort — validate field names against the items table columns
-	const SORTABLE_FIELDS := [
-		"id", "type", "status", "title", "description",
-		"created_at", "updated_at", "created_by", "assigned_to", "directed_to",
-		"priority", "severity", "resolution", "environment", "repro_steps",
-		"assumed", "corrected", "findings", "answer",
-		"occurred_at", "detected_at", "reported_at",
-		"why_chain", "significant_events", "contributing_factors",
-		"value", "component", "key", "topic", "subtopic", "confidence",
-		"surprise", "surfaced_from", "retrieval_count", "research_cost",
-		"blocked_by", "parent",
-		"test_setup", "test_steps", "expected_result",
-		"quality", "last_reviewed",
-		"command", "usage", "prompt_text", "preconditions",
-		"summary", "article", "parameters",
-		"steps", "outcome",
-	]
 	if sort_spec.size() > 0:
 		var order_parts := PackedStringArray()
 		for spec in sort_spec:
@@ -822,8 +792,8 @@ func execute_query(query: Dictionary, detail: String = "full") -> Array:
 				dir = "ASC"
 			if field.is_empty():
 				continue
-			if field not in SORTABLE_FIELDS:
-				return [{"_error": "Invalid sort field: '%s'. Valid fields: %s" % [field, ", ".join(SORTABLE_FIELDS)]}]
+			if not DocketDBFilter.is_item_field(field):
+				return [{"_error": "Invalid sort field: '%s'" % field}]
 			order_parts.append("%s %s" % [field, dir])
 		if order_parts.size() > 0:
 			sql += " ORDER BY " + ",".join(order_parts)
@@ -1124,10 +1094,14 @@ func has_vault() -> bool:
 	return rows.size() > 0 and not str(rows[0].value).is_empty()
 
 
-func init_vault(key: PackedByteArray, salt: PackedByteArray) -> void:
+func init_vault(key: PackedByteArray, salt: PackedByteArray, transactional: bool = false) -> void:
 	## Store vault salt and verification hash. Call once when creating first secret.
-	set_meta_value("vault_salt", Marshalls.raw_to_base64(salt))
-	set_meta_value("vault_verify", Marshalls.raw_to_base64(VaultCrypto.compute_verify_hash(key)))
+	var metadata := {"vault_salt": Marshalls.raw_to_base64(salt), "vault_verify": Marshalls.raw_to_base64(VaultCrypto.compute_verify_hash(key))}
+	for field in metadata:
+		if transactional:
+			_exec_checked("INSERT OR REPLACE INTO docket_meta (key, value) VALUES (?, ?);", [field, metadata[field]])
+		else:
+			set_meta_value(field, metadata[field])
 
 
 func get_vault_salt() -> PackedByteArray:
@@ -1326,7 +1300,6 @@ func _exec_checked(sql: String, bindings: Array = []) -> String:
 
 
 func _exec_select(sql: String, bindings: Array = []) -> Array:
-	query_reads += 1
 	var ok: bool
 	if bindings.is_empty():
 		ok = _db.query(sql)

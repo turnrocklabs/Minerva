@@ -129,12 +129,8 @@ func _mutation_precheck(name: String, args: Dictionary) -> String:
 	var targets: Array[DocketDB] = [_resolve_db(args)]
 	if name == "docket_mirror":
 		for field in ["source_project", "target_project"]:
-			var requested := str(args.get(field, ""))
-			var found := requested.is_empty()
-			for project in _project_dbs:
-				found = found or project.to_lower() == requested.to_lower()
-			if not found:
-				return "Unknown project: %s" % requested
+			if DocketMirror.resolve_project_db(str(args.get(field, "")), _db, _project_dbs) == null:
+				return "Unknown project: %s" % args[field]
 		var target := str(args.get("target_project", ""))
 		targets = [_db]
 		for project in _project_dbs:
@@ -171,8 +167,11 @@ func _resolve_id_args(args: Dictionary) -> String:
 		var candidates: Array = []
 		for project in projects:
 			var db: DocketDB = projects[project]
-			for item in db.execute_query({"filter": {"conditions": [{"field": "id", "value": val}]}}):
-				candidates.append({"id": item.id, "name": "%s:%s (%s)" % [project, item.id, item.get("title", "")]})
+			for item in db.execute_query({"filter": {"conditions": [{"field": "id", "value": val}]}, "limit": 3}, "lean"):
+				if candidates.size() < 6:
+					candidates.append({"id": item.id, "name": "%s:%s (%s)" % [project, item.id, str(item.get("title", "")).left(80)]})
+			if candidates.size() >= 6:
+				break
 		if candidates.size() > 1:
 			var names := PackedStringArray()
 			for candidate in candidates:
