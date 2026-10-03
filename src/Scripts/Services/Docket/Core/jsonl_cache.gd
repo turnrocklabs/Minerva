@@ -26,6 +26,9 @@ static func write_refusal(db: DocketDB, jsonl_path: String) -> String:
 	## digest no longer matches the stored jsonl_hash, or the file is gone),
 	## (2) lines the parser skipped and (3) keys inside known records this
 	## build does not store. Callers must not write when this is non-empty.
+	var version := db.get_meta_value("jsonl_version", JSONLSerializer.JSONL_VERSION)
+	if version != JSONLSerializer.JSONL_VERSION:
+		return "%s uses format %s; this Docket writes only %s. Edit it in docket.app." % [jsonl_path, version, JSONLSerializer.JSONL_VERSION]
 	var skipped := db.get_meta_value(UNKNOWN_TYPES_META, "")
 	if not skipped.is_empty():
 		return "%s holds records this Docket cannot write (%s); saving would drop them. Nothing was written; edit it in docket.app." % [jsonl_path, skipped]
@@ -56,7 +59,7 @@ static func guarded_write(db: DocketDB, jsonl_path: String, text: String) -> Str
 		failure = "could not write %s" % jsonl_path
 	lock.release()
 	if failure.is_empty():
-		db.set_meta_value("jsonl_hash", text.sha256_text())
+		db._db.query_with_bindings("INSERT OR REPLACE INTO docket_meta (key, value) VALUES (?, ?);", ["jsonl_hash", text.sha256_text()])
 	return failure
 
 
@@ -67,6 +70,8 @@ static func open_or_rebuild(jsonl_path: String) -> DocketDB:
 	if is_cache_valid(jsonl_path, cache_path):
 		var db := DocketDB.new()
 		if db.open(cache_path):
+			db.canonical_path = jsonl_path
+			db.mutation_refusal()
 			return db
 		push_warning("JSONLCache: could not open existing cache %s — rebuilding" % cache_path)
 	return rebuild_cache(jsonl_path, cache_path)
@@ -121,6 +126,8 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 	if dropped_events > 0:
 		print("JSONLCache: dropped %d duplicate event line(s) from cache for %s" % [
 			dropped_events, jsonl_path.get_file()])
+	db.canonical_path = jsonl_path
+	db.mutation_refusal()
 	return db
 
 

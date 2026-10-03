@@ -558,6 +558,23 @@ func _update_file_label() -> void:
 		_file_label.text = projects[0]
 	else:
 		_file_label.text = "%d projects" % projects.size()
+	var refusals := PackedStringArray()
+	for project in projects:
+		var db := _dm.get_db(project)
+		if not db.mutation_refused.is_connected(_on_mutation_refused):
+			db.mutation_refused.connect(_on_mutation_refused)
+		var reason := db.mutation_refusal()
+		if not reason.is_empty():
+			refusals.append("%s: %s" % [project, reason])
+	if not refusals.is_empty():
+		_file_label.text += " (read-only: %d)" % refusals.size()
+	_file_label.tooltip_text = "\n".join(refusals)
+
+
+func _on_mutation_refused(reason: String) -> void:
+	_file_label.text = reason
+	_file_label.clip_text = true
+	_file_label.tooltip_text = reason
 
 
 func _save_session() -> void:
@@ -578,6 +595,7 @@ func _update_project_menu() -> void:
 	for proj_name in _state.get_project_dbs():
 		names.append(proj_name)
 	_menu_builder.set_project_list(names)
+	_update_file_label()
 
 
 

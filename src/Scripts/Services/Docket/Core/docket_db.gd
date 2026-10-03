@@ -3,6 +3,8 @@ class_name DocketDB
 ## SQLite-backed storage replacing FileManager + QueryEngine + IdGenerator.
 ## Returns Dictionaries in the same format as the old in-memory dicts.
 
+signal mutation_refused(reason: String)
+
 var _db: SQLite
 var _path: String
 var _is_open: bool = false
@@ -17,6 +19,8 @@ var dirty: bool = false
 ## reported as made.
 var writes: int = 0
 var write_error: String = ""
+var canonical_path: String = ""
+var read_only_reason: String = ""
 
 # Routing defaults are session state; existing canonical metadata wins on save.
 var _session_project: String = ""
@@ -501,6 +505,8 @@ func export_item_full(id: String) -> Dictionary:
 
 func import_item_full(new_id: String, exported: Dictionary) -> void:
 	## Import a full item export under a new ID. Adds a "moved" event.
+	if not ensure_writable():
+		return
 	var item_data: Dictionary = exported.get("item", {})
 	item_data["id"] = new_id
 
@@ -923,6 +929,8 @@ func list_queries() -> Array:
 const MAX_ATTACHMENT_BYTES: int = 5 * 1024 * 1024  # 5 MB
 
 func attach_file(item_id: String, filename: String, data: PackedByteArray, mime: String = "application/octet-stream", desc: String = "") -> Dictionary:
+	if not ensure_writable():
+		return {"error": write_error}
 	var size_bytes: int = data.size()
 	if size_bytes > MAX_ATTACHMENT_BYTES:
 		push_error("DocketDB: attachment too large: %d bytes (max %d)" % [size_bytes, MAX_ATTACHMENT_BYTES])
@@ -1198,9 +1206,24 @@ func persist() -> String:
 	return write_error
 
 
+func mutation_refusal() -> String:
+	read_only_reason = JSONLCache.write_refusal(self, canonical_path) if not canonical_path.is_empty() else ""
+	return read_only_reason
+
+
+func ensure_writable() -> bool:
+	if mutation_refusal().is_empty():
+		return true
+	write_error = "Read-only: " + read_only_reason
+	mutation_refused.emit(write_error)
+	return false
+
+
 func _exec_checked(sql: String, bindings: Array = []) -> String:
 	## Like _exec but returns "" on success, error message on failure.
 	if not sql.begins_with("PRAGMA"):
+		if not ensure_writable():
+			return write_error
 		dirty = true
 		writes += 1
 	var ok: bool

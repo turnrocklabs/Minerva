@@ -90,6 +90,9 @@ func call_tool(name: String, arguments: Dictionary) -> Dictionary:
 		return err
 	# Pre-resolve short ID prefixes to full IDs before dispatching
 	_resolve_id_args(arguments)
+	var refusal := _mutation_precheck(name, arguments)
+	if not refusal.is_empty():
+		return {"error": refusal}
 	# These tools need access to all project DBs for cross-project operations
 	var result: Dictionary
 	if name in ["docket_move", "docket_mirror", "docket_link"]:
@@ -112,6 +115,34 @@ func call_tool(name: String, arguments: Dictionary) -> Dictionary:
 	if result.has("error"):
 		_log_error(name, arguments, result)
 	return result
+
+
+func _mutation_precheck(name: String, args: Dictionary) -> String:
+	if name in ["docket_get", "docket_query", "docket_context", "docket_transition_report", "docket_error_report", "docket_secret_get", "docket_secret_list", "docket_project_list", "docket_project_add", "docket_project_remove", "docket_gui_open", "docket_get_state_machine", "docket_skill_list", "docket_skill_get"] or name in _COUNTING_READS:
+		return ""
+	if name == "docket_comment" and args.get("action", "") == "list":
+		return ""
+	if name in ["docket_saved_query", "docket_project_meta"] and args.get("action", "") != "set" and args.get("action", "") != "save":
+		return ""
+	var targets: Array[DocketDB] = [_resolve_db(args)]
+	if name == "docket_mirror":
+		var target := str(args.get("target_project", ""))
+		targets = [_db]
+		for project in _project_dbs:
+			if project.to_lower() == target.to_lower():
+				targets = [_project_dbs[project]]
+	elif name == "docket_move":
+		targets.clear()
+		var id := str(args.get("id", ""))
+		var target := str(args.get("target_project", ""))
+		for project in _project_dbs:
+			var db: DocketDB = _project_dbs[project]
+			if not DocketDB._is_uuid7(id) or db.has_item(id) or project.to_lower() == target.to_lower():
+				targets.append(db)
+	for db in targets:
+		if not db.ensure_writable():
+			return db.write_error
+	return ""
 
 
 func _log_error(tool_name: String, args: Dictionary, result: Dictionary) -> void:

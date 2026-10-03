@@ -51,6 +51,8 @@ static func open_jsonl(path: String) -> DocketDBJsonl:
 	wrapper._db = cache_db._db
 	wrapper._path = cache_db._path
 	wrapper._is_open = true
+	wrapper.canonical_path = path
+	wrapper.mutation_refusal()
 
 	# Detach the temp DocketDB so it doesn't close our connection
 	cache_db._db = null
@@ -77,6 +79,7 @@ static func create_new_jsonl(path: String) -> DocketDBJsonl:
 	wrapper._db = cache_db._db
 	wrapper._path = cache_db._path
 	wrapper._is_open = true
+	wrapper.canonical_path = path
 	cache_db._db = null
 	cache_db._is_open = false
 

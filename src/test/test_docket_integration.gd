@@ -427,13 +427,14 @@ func test_external_writer_refuses_embedded_save() -> void:
 	_write_bytes(path, external.to_utf8_buffer())
 	db.update_item_fields("EXT-0001", {"title": "Minerva"})
 	var refusal: String = dm.save_project("ext")
-	check("an equal-length external change refuses the save",
-		not refusal.is_empty() and FileAccess.get_file_as_string(path) == external)
+	check("an equal-length external change refuses the edit up front",
+		db.write_error.contains("changed on disk") and not db.dirty and FileAccess.get_file_as_string(path) == external)
 
 	DirAccess.remove_absolute(path)
+	db.update_item_fields("EXT-0001", {"title": "After deletion"})
 	refusal = dm.save_project("ext")
-	check("a .dct deleted since load refuses the save and is not recreated",
-		not refusal.is_empty() and not FileAccess.file_exists(path))
+	check("a .dct deleted since load refuses edits and is not recreated",
+		db.write_error.contains("removed") and not FileAccess.file_exists(path))
 	db.close()
 	dm.free()
 
@@ -449,8 +450,9 @@ func test_unknown_record_keys_refuse_embedded_save() -> void:
 	var db: DocketDB = dm._project_dbs["ext"]
 	db.update_item_fields("EXT-0001", {"title": "Edited"})
 	var refusal: String = dm.save_project("ext")
-	check("unknown event keys refuse the save and name them",
-		refusal.contains("event.eid") and refusal.contains("event.fields"))
+	check("unknown event keys refuse the edit up front and name them",
+		db.write_error.contains("event.eid") and db.write_error.contains("event.fields") and not db.dirty)
+	check("an untouched read-only docket needs no save", refusal.is_empty())
 	check("the file keeps its eid/fields line unchanged", FileAccess.get_file_as_bytes(path) == original)
 	db.close()
 	dm.free()

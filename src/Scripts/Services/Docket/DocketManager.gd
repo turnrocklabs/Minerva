@@ -120,6 +120,8 @@ func _init_master(user_path: String = "", shipped_path: String = MASTER_DCT_RES,
 func _merge_shipped_master(shipped_path: String = MASTER_DCT_RES, hash_path: String = MASTER_SHIPPED_HASH) -> void:
 	## Compare shipped res://master.dct against a stored hash. If changed,
 	## add missing shipped items to the user:// DB (preserving existing items).
+	if not _master_db.mutation_refusal().is_empty():
+		return
 	var res_path := ProjectSettings.globalize_path(shipped_path)
 
 	# Compute hash of shipped file + schema columns so that adding a column
