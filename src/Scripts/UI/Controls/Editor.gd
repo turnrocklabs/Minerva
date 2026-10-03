@@ -2358,34 +2358,9 @@ func _create_plugin_scene_screenshot_note(default_title: String) -> Note:
 	return Note.create_image_note(title, img)
 
 
-## Synchronous-feeling viewport capture for the plugin scene root. Uses the
-## RenderingServer.frame_post_draw signal to ensure GPU work is flushed
-## before get_image() — without this the texture can be stale and produce
-## a partially-rendered note.
+## Shared asynchronous capture preserves the panel-only crop used by notes.
 func _capture_plugin_scene_image() -> Image:
-	if plugin_scene_root == null or not is_instance_valid(plugin_scene_root):
-		return null
-	var vp: Viewport = plugin_scene_root.get_viewport()
-	if vp == null:
-		return null
-	# Wait one post-draw cycle so the latest frame is on the GPU.
-	await RenderingServer.frame_post_draw
-	var tex: ViewportTexture = vp.get_texture()
-	if tex == null:
-		return null
-	var img: Image = tex.get_image()
-	if img == null:
-		return null
-	# Crop to the panel rect so the note is just the plugin's own content,
-	# not the surrounding chrome / other tabs.
-	var rect: Rect2 = plugin_scene_root.get_global_rect()
-	var x: int = max(0, int(rect.position.x))
-	var y: int = max(0, int(rect.position.y))
-	var w: int = min(int(rect.size.x), img.get_width() - x)
-	var h: int = min(int(rect.size.y), img.get_height() - y)
-	if w > 0 and h > 0 and (x > 0 or y > 0 or w < img.get_width() or h < img.get_height()):
-		img = img.get_region(Rect2i(x, y, w, h))
-	return img
+	return await PanelServices.capture(PanelServices.capture_target({"panel": plugin_scene_root}))
 
 
 ## Toast-and-log surface for chrome-action errors specific to PLUGIN_SCENE.

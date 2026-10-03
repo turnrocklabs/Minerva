@@ -129,3 +129,13 @@ func get_annotation_host() -> RefCounted:
 ## A pushed update could not be delivered. The previous state is preserved.
 func on_ipc_error(channel: String, error: Dictionary) -> void:
 	push_warning("[%s] %s: %s" % [name, channel, error.get("error_message", "IPC error")])
+
+
+## Named render slots for host snapshots. "active" remains the visible panel.
+func get_viewports() -> Dictionary[String, SubViewport]:
+	return {}
+
+
+## Optional snapshot metadata; host reply fields take precedence over extras.
+func snapshot_extra(_slot: String) -> Dictionary:
+	return {}

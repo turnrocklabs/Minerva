@@ -694,35 +694,14 @@ func _prepare_panel_call(plugin_id: String, tool_name: String,
 		return {"ok": false, "error_result":
 			PluginErrors.editor_name_required(plugin_id, tool_name)}
 	var broker = _resolve_scene_panel_broker()
-	var panel: Object = broker.get_panel_for_editor(editor_name) \
-		if broker != null and broker.has_method("get_panel_for_editor") else null
-	var broker_bound := panel != null
-	if panel == null:
-		var registry = _annotation_host_registry()
-		if registry != null:
-			var host = registry.get_host(editor_name)
-			if host != null and host.has_method("get_panel"):
-				panel = host.get_panel()
-	if panel == null or not is_instance_valid(panel):
-		var known: Array = broker.list_panel_editor_names() \
-			if broker != null and broker.has_method("list_panel_editor_names") else []
-		var registry = _annotation_host_registry()
-		if registry != null:
-			for name in registry.list_editor_names():
-				if not known.has(name):
-					known.append(name)
-		var dead: Array = []
-		if broker != null and broker.has_method("list_dead_panel_editor_names"):
-			for name in broker.list_dead_panel_editor_names():
-				if not known.has(name) and not dead.has(name):
-					dead.append(name)
+	var resolved := PanelServices.resolve(editor_name, broker, [], true)
+	if not resolved.ok or resolved.panel == null:
 		return {"ok": false, "error_result":
-			PluginErrors.editor_not_found(plugin_id, editor_name, known, dead)}
-	var owner_id := ""
-	if broker != null and broker.has_method("get_panel_owner"):
-		owner_id = str(broker.get_panel_owner(editor_name))
-	if owner_id.is_empty() and "plugin_id" in panel:
-		owner_id = str(panel.get("plugin_id"))
+			PluginErrors.editor_not_found(plugin_id, editor_name, resolved.get("known", []),
+				resolved.get("dead", []))}
+	var panel: Object = resolved.panel
+	var broker_bound: bool = resolved.broker_bound
+	var owner_id: String = resolved.plugin_id
 	if owner_id != plugin_id:
 		return {"ok": false, "error_result":
 			PluginErrors.panel_not_owned(plugin_id, editor_name, owner_id)}

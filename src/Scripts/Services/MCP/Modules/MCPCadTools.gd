@@ -878,46 +878,11 @@ func _cad_snapshot(args: Dictionary) -> Dictionary:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-## Resolve args.editor_name to the CAD panel's annotation host.
-##
-## Every name that reaches a live CAD panel is accepted: the render tab's own
-## title (including the "(1)" Minerva appends when a second tab opens on one
-## file), the document's bare file name, and its absolute path. The name-keyed
-## registry is consulted first, but a paired document registers TWO hosts on one
-## file — the text tab's plain buffer host under the bare name, the render tab's
-## CAD host under the "(1)" name — so a host that cannot answer a CAD question
-## is not the one the caller meant: the scene-panel broker, which resolves a
-## document to the panel rendering it, is asked before giving up.
+## Injection is retained for CAD tests; live routing belongs to PanelServices.
 func _resolve_host(args: Dictionary) -> AnnotationHost:
 	if args.has("_cad_host"):
 		return args["_cad_host"]
-	var editor_name: String = str(args.get("editor_name", ""))
-	if editor_name.is_empty():
-		return null
-	# get_mesh_data is the CAD host's discriminator: CadAnnotationHost (the cad
-	# plugin's AnnotationHost subclass, which every verb below calls into)
-	# declares it and a plain text-buffer host does not.
-	var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
-	if host != null and host.has_method("get_mesh_data"):
-		return host
-	var panel_host: AnnotationHost = AnnotationHostRegistry.get_panel_host(editor_name)
-	if panel_host != null:
-		return panel_host
-	# Legacy name locators can point at the paired source tab. Resolve its
-	# canonical buffer to the one CAD render view before refusing the call.
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	var pane = SingletonObject.editor_pane
-	var broker = SingletonObject.plugin_scene_panel_broker
-	if editor != null and pane != null and broker != null:
-		var panel_view = DocumentIdentity.owning_plugin_view(editor, broker,
-			pane.get_open_editors(), DocumentIdentity.buffer_for(editor, broker))
-		if panel_view != null and "plugin_id" in panel_view \
-				and str(panel_view.plugin_id) == "cad":
-			panel_host = AnnotationHostRegistry.get_panel_host(
-				str(panel_view.plugin_panel_key))
-			if panel_host != null:
-				return panel_host
-	return null
+	return PanelServices.resolve_cad_host(str(args.get("editor_name", "")))
 
 
 ## Build a structured error for a missing host, listing the names that DO
