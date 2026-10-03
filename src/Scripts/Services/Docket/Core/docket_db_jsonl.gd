@@ -173,8 +173,8 @@ func persist() -> String:
 # Each override: call super (SQLite), then flush JSONL.
 
 
-func insert_item(id: String, item: Dictionary) -> String:
-	var result := super.insert_item(id, item)
+func insert_item(id: String, item: Dictionary, canonical: bool = false) -> String:
+	var result := super.insert_item(id, item, canonical)
 	if result.is_empty():  # success
 		_flush_jsonl()
 	return result

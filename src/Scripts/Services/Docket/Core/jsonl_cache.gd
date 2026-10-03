@@ -112,17 +112,14 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 
 	# Store a fingerprint so we can validate freshness later
 	db.set_meta_value("jsonl_hash", _bytes_sha256(bytes))
+	db.set_meta_value("canonical_text_revision", "1")
 
 	db._commit()
 
-	# A rebuild reproduces the file's own content — nothing to save back...
-	if dropped_events == 0:
-		db.dirty = false
-	else:
-		# ...UNLESS dedupe dropped redundant event lines. Leaving the DB dirty
-		# makes the next save_all rewrite the JSONL compacted — self-healing
-		# for files bloated by the duplicate-audit-event bug (2026-07-03).
-		print("JSONLCache: dropped %d duplicate event line(s) from %s — will compact on next save" % [
+	# Dedupe changes only the disposable cache, never the untouched source.
+	db.dirty = false
+	if dropped_events > 0:
+		print("JSONLCache: dropped %d duplicate event line(s) from cache for %s" % [
 			dropped_events, jsonl_path.get_file()])
 	return db
 
@@ -137,9 +134,10 @@ static func is_cache_valid(jsonl_path: String, cache_path: String) -> bool:
 		return false
 
 	var stored := db.get_meta_value("jsonl_hash", "")
+	var text_revision := db.get_meta_value("canonical_text_revision", "")
 	db.close()
 
-	if stored.is_empty():
+	if stored.is_empty() or text_revision != "1":
 		return false
 
 	var current := _file_fingerprint(jsonl_path)
@@ -190,8 +188,7 @@ static func _insert_meta(db: DocketDB, meta: Dictionary) -> void:
 	db.set_id_prefix(id_prefix)
 
 	var project: String = str(meta.get("project", ""))
-	if not project.is_empty():
-		db.set_project_name(project)
+	db.set_project_name(project)
 
 	# vault_salt and vault_verify are stored directly as base64 strings
 	var vault_salt: String = str(meta.get("vault_salt", ""))
@@ -220,7 +217,7 @@ static func _insert_items(db: DocketDB, items: Array) -> void:
 			continue
 		# insert_item() accepts the parsed dict directly.
 		# Tags are in item["tags"]; events/links arrays are empty (loaded separately).
-		var err := db.insert_item(id, item)
+		var err := db.insert_item(id, item, true)
 		if not err.is_empty():
 			push_warning("JSONLCache: insert_item failed for %s: %s" % [id, err])
 

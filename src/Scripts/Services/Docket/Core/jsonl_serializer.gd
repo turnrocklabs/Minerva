@@ -59,10 +59,10 @@ static func serialize_meta(db: DocketDB) -> String:
 	d["_type"] = "meta"
 	d["version"] = JSONL_VERSION
 	d["counter"] = db.get_counter()
-	d["id_prefix"] = db.get_id_prefix()
+	d["id_prefix"] = db.get_id_prefix(true)
 
 	# Optional fields
-	var project := db.get_project_name()
+	var project := db.get_project_name(true)
 	if not project.is_empty():
 		d["project"] = project
 

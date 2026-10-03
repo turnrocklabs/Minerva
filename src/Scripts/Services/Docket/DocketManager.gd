@@ -89,41 +89,42 @@ func _load_schema() -> void:
 		push_warning("DocketManager: could not load schema.json")
 
 
-func _init_master() -> void:
-	var user_path := ProjectSettings.globalize_path(MASTER_DCT_USER)
+func _init_master(user_path: String = "", shipped_path: String = MASTER_DCT_RES, hash_path: String = MASTER_SHIPPED_HASH) -> void:
+	if user_path.is_empty():
+		user_path = ProjectSettings.globalize_path(MASTER_DCT_USER)
 	# Copy from res:// on first run
-	if not FileAccess.file_exists(MASTER_DCT_USER):
-		if FileAccess.file_exists(MASTER_DCT_RES):
-			var res_path := ProjectSettings.globalize_path(MASTER_DCT_RES)
+	if not FileAccess.file_exists(user_path):
+		if FileAccess.file_exists(shipped_path):
+			var res_path := ProjectSettings.globalize_path(shipped_path)
 			DirAccess.copy_absolute(res_path, user_path)
 			# Also copy .cache if it exists
-			if FileAccess.file_exists(MASTER_DCT_RES + ".cache"):
+			if FileAccess.file_exists(shipped_path + ".cache"):
 				DirAccess.copy_absolute(res_path + ".cache", user_path + ".cache")
-	if FileAccess.file_exists(MASTER_DCT_USER):
+	if FileAccess.file_exists(user_path):
 		_master_db = JSONLCache.open_or_rebuild(user_path)
 		if _master_db:
-			_master_db.set_project_name("master")
+			_master_db.set_session_project_name("master", true)
 	else:
 		# No shipped master.dct — create empty
 		_master_db = DocketDB.create_new(user_path + ".cache")
 		if _master_db:
-			_master_db.set_project_name("master")
+			_master_db.set_session_project_name("master", true)
 	if _master_db:
 		_project_dbs["master"] = _master_db
 		_project_paths["master"] = user_path
 		# Merge any shipped updates from res://master.dct into user://
-		if FileAccess.file_exists(MASTER_DCT_RES):
-			_merge_shipped_master()
+		if FileAccess.file_exists(shipped_path):
+			_merge_shipped_master(shipped_path, hash_path)
 
 
-func _merge_shipped_master() -> void:
+func _merge_shipped_master(shipped_path: String = MASTER_DCT_RES, hash_path: String = MASTER_SHIPPED_HASH) -> void:
 	## Compare shipped res://master.dct against a stored hash. If changed,
-	## upsert shipped items into the user:// DB (preserving user-created items).
-	var res_path := ProjectSettings.globalize_path(MASTER_DCT_RES)
+	## add missing shipped items to the user:// DB (preserving existing items).
+	var res_path := ProjectSettings.globalize_path(shipped_path)
 
 	# Compute hash of shipped file + schema columns so that adding a column
 	# forces a re-merge even when the JSONL content hasn't changed.
-	var f := FileAccess.open(MASTER_DCT_RES, FileAccess.READ)
+	var f := FileAccess.open(shipped_path, FileAccess.READ)
 	if not f:
 		return
 	var content := f.get_as_text()
@@ -133,8 +134,8 @@ func _merge_shipped_master() -> void:
 
 	# Compare with stored hash
 	var stored_hash := ""
-	if FileAccess.file_exists(MASTER_SHIPPED_HASH):
-		var hf_read := FileAccess.open(MASTER_SHIPPED_HASH, FileAccess.READ)
+	if FileAccess.file_exists(hash_path):
+		var hf_read := FileAccess.open(hash_path, FileAccess.READ)
 		if hf_read:
 			stored_hash = hf_read.get_as_text().strip_edges()
 			hf_read.close()
@@ -148,51 +149,36 @@ func _merge_shipped_master() -> void:
 	if shipped_items.is_empty():
 		return
 
-	# Upsert each shipped item into the master DB
-	var updated := 0
+	# Existing records belong to the user. Merge only missing shipped items.
 	var inserted := 0
 	for item: Dictionary in shipped_items:
 		var id: String = str(item.get("id", ""))
-		if id.is_empty():
+		if id.is_empty() or _master_db.has_item(id):
 			continue
-		if _master_db.has_item(id):
-			# Update existing — overwrite with shipped version.
-			# Only include fields that exist as SQLite columns (_ITEM_COLS) + tags.
-			var changes := {}
-			for key in item:
-				if key in DocketDB._ITEM_COLS or key == "tags":
-					changes[key] = item[key]
-			# Tags are comma-separated strings in JSONL but update_item_fields expects Array
-			if changes.has("tags") and changes["tags"] is String:
-				var tag_str: String = changes["tags"]
-				changes["tags"] = Array(tag_str.split(",")) if not tag_str.is_empty() else []
-			_master_db.update_item_fields(id, changes)
-			updated += 1
-		else:
-			# Insert new shipped item
-			_master_db.insert_item(id, item)
+		if _master_db.insert_item(id, item, true).is_empty():
 			inserted += 1
 
 	# Save the hash so we don't re-merge next startup
-	var hf := FileAccess.open(MASTER_SHIPPED_HASH, FileAccess.WRITE)
+	var hf := FileAccess.open(hash_path, FileAccess.WRITE)
 	if hf:
 		hf.store_string(current_hash)
 		hf.close()
 
-	if updated > 0 or inserted > 0:
-		print("[DocketManager] Merged shipped master.dct: %d updated, %d inserted" % [updated, inserted])
+	if inserted > 0:
+		print("[DocketManager] Merged shipped master.dct: %d inserted" % inserted)
 		invalidate_prompt_cache()
 		# Persist merged content to JSONL immediately so that save_all() on exit
 		# doesn't clobber the merge with stale pre-merge data from a prior session.
 		_save_project_to_jsonl("master")
 
 
-func _init_personal() -> void:
-	var user_path := ProjectSettings.globalize_path(PERSONAL_DCT_USER)
-	if FileAccess.file_exists(PERSONAL_DCT_USER):
+func _init_personal(user_path: String = "") -> void:
+	if user_path.is_empty():
+		user_path = ProjectSettings.globalize_path(PERSONAL_DCT_USER)
+	if FileAccess.file_exists(user_path):
 		_personal_db = JSONLCache.open_or_rebuild(user_path)
 		if _personal_db:
-			_personal_db.set_project_name("personal")
+			_personal_db.set_session_project_name("personal", true)
 			_project_dbs["personal"] = _personal_db
 			_project_paths["personal"] = user_path
 
@@ -212,7 +198,7 @@ func _ensure_personal() -> DocketDB:
 	if not _personal_db:
 		_personal_db = DocketDB.create_new(user_path + ".cache")
 	if _personal_db:
-		_personal_db.set_project_name("personal")
+		_personal_db.set_session_project_name("personal", true)
 		_project_dbs["personal"] = _personal_db
 		_project_paths["personal"] = user_path
 	return _personal_db
@@ -259,7 +245,7 @@ func open_project(dct_path: String) -> Dictionary:
 	var proj_name := db.get_project_name()
 	if proj_name.is_empty():
 		proj_name = abs_path.get_file().get_basename()
-		db.set_project_name(proj_name)
+		db.set_session_project_name(proj_name)
 	# Close existing if same name
 	if _project_dbs.has(proj_name) and _project_dbs[proj_name] != db:
 		_project_dbs[proj_name].close()

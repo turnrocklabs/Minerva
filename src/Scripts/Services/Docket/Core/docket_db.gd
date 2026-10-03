@@ -18,6 +18,11 @@ var dirty: bool = false
 var writes: int = 0
 var write_error: String = ""
 
+# Routing defaults are session state; existing canonical metadata wins on save.
+var _session_project: String = ""
+var _session_prefix: String = ""
+var _session_project_override: bool = false
+
 
 # -- Lifecycle ----------------------------------------------------------------
 
@@ -35,12 +40,9 @@ func open(path: String) -> bool:
 	_is_open = true
 	DocketDBSchema.migrate_schema(self)
 
-	# Auto-derive project name and ID prefix from filename if still defaults
-	var basename := path.get_file().get_basename()
-	if get_project_name().is_empty() and not basename.is_empty():
-		set_project_name(basename)
-	if get_id_prefix() == "DKT" and not basename.is_empty() and basename != "docket":
-		set_id_prefix(_derive_prefix(basename))
+	var basename := path.get_file().trim_suffix(".cache").get_basename()
+	set_session_project_name(basename)
+	dirty = false # Cache migrations are not canonical content edits.
 
 	return true
 
@@ -78,10 +80,11 @@ static func create_new(path: String) -> DocketDB:
 	db._is_open = true
 
 	# Default project name and ID prefix from filename
-	var basename := path.get_file().get_basename()
-	if db.get_project_name().is_empty() and not basename.is_empty():
+	var basename := path.get_file().trim_suffix(".cache").get_basename()
+	db.set_session_project_name(basename)
+	if db.get_meta_value("project", "").is_empty() and not basename.is_empty():
 		db.set_project_name(basename)
-	if db.get_id_prefix() == "DKT" and not basename.is_empty():
+	if db.get_meta_value("id_prefix", "DKT") == "DKT" and not basename.is_empty():
 		db.set_id_prefix(_derive_prefix(basename))
 
 	return db
@@ -110,8 +113,11 @@ func next_id() -> String:
 		return "%s-%d" % [prefix, counter]
 
 
-func get_id_prefix() -> String:
-	return get_meta_value("id_prefix", "DKT")
+func get_id_prefix(canonical: bool = false) -> String:
+	var stored := get_meta_value("id_prefix", "")
+	if canonical and not stored.is_empty():
+		return stored
+	return (_session_prefix if not _session_prefix.is_empty() else "DKT") if stored.is_empty() or stored == "DKT" else stored
 
 
 func set_id_prefix(prefix: String) -> void:
@@ -231,8 +237,17 @@ func set_meta_value(meta_key: String, val: String) -> void:
 	_exec("INSERT OR REPLACE INTO docket_meta (key, value) VALUES (?, ?);", [meta_key, val])
 
 
-func get_project_name() -> String:
-	return get_meta_value("project", "")
+func get_project_name(canonical: bool = false) -> String:
+	var stored := get_meta_value("project", "")
+	if not stored.is_empty() and (canonical or not _session_project_override):
+		return stored
+	return _session_project if not _session_project.is_empty() else stored
+
+
+func set_session_project_name(name: String, override_stored: bool = false) -> void:
+	_session_project_override = override_stored
+	_session_project = name
+	_session_prefix = _derive_prefix(name)
 
 
 func set_project_name(name: String) -> void:
@@ -324,7 +339,7 @@ const _ITEM_COLS: Array = [
 ]
 
 
-func insert_item(id: String, item: Dictionary) -> String:
+func insert_item(id: String, item: Dictionary, canonical: bool = false) -> String:
 	## Inserts an item into the database. Returns "" on success, error message on failure.
 	# Insert main row
 	var cols := PackedStringArray(["id"])
@@ -334,7 +349,7 @@ func insert_item(id: String, item: Dictionary) -> String:
 		if item.has(col):
 			cols.append(col)
 			placeholders.append("?")
-			bindings.append(_normalize_text(item[col]))
+			bindings.append(item[col] if canonical and item[col] is String else _normalize_text(item[col]))
 	var sql := "INSERT INTO items (%s) VALUES (%s);" % [",".join(cols), ",".join(placeholders)]
 	var err := _exec_checked(sql, bindings)
 	if not err.is_empty():
