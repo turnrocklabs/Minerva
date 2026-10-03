@@ -65,7 +65,7 @@ static func resolve(editor_name: String, broker: Variant = null,
 					dead.append(title)
 		return {"ok": false, "error": "Unknown or ambiguous editor '%s'" % editor_name,
 			"known": known, "dead": dead, "views": ["active"]}
-	var broker_bound := is_instance_valid(panel) and panel == broker_panel
+	var broker_bound: bool = is_instance_valid(panel) and panel == broker_panel
 	var owner := str(broker.get_panel_owner(editor_name)) if broker_bound and broker.has_method("get_panel_owner") else ""
 	if owner.is_empty() and panel != null and "plugin_id" in panel:
 		owner = str(panel.get("plugin_id"))
