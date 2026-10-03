@@ -121,6 +121,7 @@ func _init_modules() -> void:
 		annotation_tools,
 		_MCPAnnotationReplyToolsScript.new(self, annotation_tools),
 		MCPCadTools.new(self),
+		MCPSnapshotTools.new(self),
 		# PCB panel surface — MCPPcbPanelTools.gd deleted (DCR 019f6c3d0e3d, C3
 		# round docket 019f6c4604ba): every minerva_pcb_* tool is now
 		# executor:"panel" in the pcb plugin's own manifest.json, dispatched
