@@ -201,9 +201,12 @@ func delete_item(id: String) -> void:
 	_flush_jsonl()
 
 
-func import_item_full(new_id: String, exported: Dictionary) -> void:
-	super.import_item_full(new_id, exported)
+func import_item_full(new_id: String, exported: Dictionary) -> String:
+	var failure := super.import_item_full(new_id, exported)
+	if not failure.is_empty():
+		return failure
 	_flush_jsonl()
+	return persist()
 
 
 func rewrite_refs(old_qualified: String, new_qualified: String, old_bare_id: String, new_qualified_for_bare: String) -> int:
@@ -346,12 +349,7 @@ func set_secret_2fa(handle: String, requires: bool) -> void:
 	_flush_jsonl()
 
 
-# -- Retrieval bump -----------------------------------------------------------
-
-func bump_retrieval(id: String) -> void:
-	super.bump_retrieval(id)
-	_flush_jsonl()
-
+# Retrieval bumps stay in the cache until a real canonical mutation.
 
 # -- Transition/error logs (NOT serialized to JSONL per spec) -----------------
 # log_transition() and log_mcp_error() are intentionally NOT overridden.

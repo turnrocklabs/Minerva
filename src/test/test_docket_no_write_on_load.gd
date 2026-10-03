@@ -2,6 +2,7 @@ extends SceneTree
 ## Real-file load/save/close oracle. Executor must use isolated user/cache dirs.
 
 const MANAGER := "res://Scripts/Services/Docket/DocketManager.gd"
+const MCP_MODULE := "res://Scripts/Services/MCP/Modules/MCPDocketTools.gd"
 const FIXTURE := "res://test/fixtures/master_verbatim.jsonl"
 const MASTER_HASH := "07c0b10058c98388889d246aa1f82270eef56bef5e304dcb4a806f26377c3431"
 const ITEM := "019d5c00000000000000000000000003"
@@ -24,6 +25,9 @@ func write_file(path: String, bytes: PackedByteArray) -> void:
 func _run() -> void:
 	_dir = OS.get_cache_dir().path_join("docket_no_write_%d" % randi())
 	DirAccess.make_dir_recursive_absolute(_dir)
+	var singleton: Node = root.get_node("SingletonObject")
+	var old_manager: Node = singleton.docket_manager
+	var module: RefCounted = load(MCP_MODULE).new()
 	var original := FileAccess.get_file_as_bytes(FIXTURE)
 	check("fixture is the frozen shipped master", FileAccess.get_sha256(FIXTURE) == MASTER_HASH)
 	var master := _dir.path_join("master.dct")
@@ -55,6 +59,16 @@ func _run() -> void:
 			check("load leaves %s clean (cycle %d)" % [name, cycle], not dm.get_db(name).dirty)
 		dm._merge_shipped_master(FIXTURE, _dir.path_join("force_merge_%d" % cycle))
 		check("no-op merge does not dirty master", not db.dirty)
+		dm._load_schema()
+		dm._init_tool_registry()
+		singleton.docket_manager = dm
+		var writes := db.writes
+		check("failed MCP get reports miss", (await module.handle("minerva_docket_get", {"id":"absent", "project":"master"})).has("error"))
+		check("failed MCP skill title reports miss", (await module.handle("minerva_docket_skill_get", {"title":"Missing skill title", "project":"master"})).has("error"))
+		db.log_transition("skill", "active", "invalid", false)
+		db.bump_retrieval(ITEM)
+		check("read bookkeeping leaves master clean", not db.dirty and db.writes == writes)
+		singleton.docket_manager = old_manager
 		check("save_all has no refusal", dm.save_all().is_empty())
 		check("close_all has no refusal", dm.close_all().is_empty())
 		dm.free()
@@ -64,7 +78,7 @@ func _run() -> void:
 	edit._init_personal(personal)
 	edit.open_project(nameless)
 	var personal_db: DocketDB = edit.get_db("personal")
-	personal_db.update_item_fields("KEEP-1", {"title":"Input\\nnormalized\\t"})
+	personal_db.update_item_fields("KEEP-1", {"title":"Input\\nnormalized\\t", "description":personal_db.get_item("KEEP-1").description})
 	edit.get_db("nameless").update_item_fields("KEEP-1", {"title":"Saved"})
 	check("real edit saves", edit.close_all().is_empty())
 	edit.free()
@@ -80,8 +94,18 @@ func _run() -> void:
 	var merge: Node = load(MANAGER).new()
 	merge._init_master(master, FIXTURE, _dir.path_join("missing_merge_hash"))
 	check("missing shipped item persists", JSONLParser.parse_file(master).items.size() == JSONLParser.parse_file(FIXTURE).items.size())
+	var updated_ship := _dir.path_join("updated_shipped.jsonl")
+	write_file(updated_ship, original.get_string_from_utf8().replace("Agent Supervision", "Updated Agent Supervision").to_utf8_buffer())
+	merge._merge_shipped_master(updated_ship, _dir.path_join("updated_merge_hash"))
+	check("changed shipped field updates existing skill", merge.get_db("master").get_item("019d5c00000000000000000000000001").title == "Updated Agent Supervision")
+	check("changed shipped field is persisted", FileAccess.get_file_as_string(master).contains("Updated Agent Supervision"))
+	var merged_bytes := FileAccess.get_file_as_bytes(master)
+	var merged_writes: int = merge.get_db("master").writes
+	merge._merge_shipped_master(updated_ship, _dir.path_join("identical_updated_hash"))
+	check("identical updated shipment performs no writes", merge.get_db("master").writes == merged_writes and FileAccess.get_file_as_bytes(master) == merged_bytes)
 	merge.close_all()
 	merge.free()
+	singleton.docket_manager = old_manager
 	for filename in DirAccess.get_files_at(_dir):
 		DirAccess.remove_absolute(_dir.path_join(filename))
 	DirAccess.remove_absolute(_dir)

@@ -21,6 +21,7 @@ var writes: int = 0
 var write_error: String = ""
 var canonical_path: String = ""
 var read_only_reason: String = ""
+var _refusal_stamp: String = ""
 
 # Routing defaults are session state; existing canonical metadata wins on save.
 var _session_project: String = ""
@@ -32,6 +33,9 @@ var _session_project_override: bool = false
 
 func open(path: String) -> bool:
 	_path = path
+	_refusal_stamp = ""
+	canonical_path = ""
+	read_only_reason = ""
 	_db = SQLite.new()
 	_db.path = path
 	_db.verbosity_level = SQLite.QUIET
@@ -399,19 +403,27 @@ func has_item(id: String) -> bool:
 func update_item_fields(id: String, changes: Dictionary) -> void:
 	if changes.is_empty():
 		return
+	var stored := get_item(id)
+	if stored.is_empty():
+		return
 	var sets := PackedStringArray()
 	var bindings: Array = []
 	for col in changes:
 		if col in ["tags", "events", "links", "id"]:
 			continue
+		if not col in _ITEM_COLS or changes[col] == stored.get(col):
+			continue
+		var value = _normalize_text(changes[col])
+		if value == stored.get(col):
+			continue
 		sets.append("%s=?" % col)
-		bindings.append(_normalize_text(changes[col]))
+		bindings.append(value)
 	if sets.size() > 0:
 		bindings.append(id)
 		_exec("UPDATE items SET %s WHERE id=?;" % ",".join(sets), bindings)
 
 	# Handle tags replacement
-	if changes.has("tags"):
+	if changes.has("tags") and changes.tags != stored.get("tags", []):
 		_exec("DELETE FROM item_tags WHERE item_id=?;", [id])
 		var tags: Array = changes["tags"]
 		for tag in tags:
@@ -503,10 +515,14 @@ func export_item_full(id: String) -> Dictionary:
 	return exported
 
 
-func import_item_full(new_id: String, exported: Dictionary) -> void:
-	## Import a full item export under a new ID. Adds a "moved" event.
+func import_item_full(new_id: String, exported: Dictionary) -> String:
+	## Import atomically; callers must retain the source on failure.
 	if not ensure_writable():
-		return
+		return write_error
+	write_error = ""
+	var was_dirty := dirty
+	if not _db.query("BEGIN TRANSACTION;"):
+		return "Could not begin import: " + _db.error_message
 	var item_data: Dictionary = exported.get("item", {})
 	item_data["id"] = new_id
 
@@ -525,7 +541,11 @@ func import_item_full(new_id: String, exported: Dictionary) -> void:
 		placeholders.append("?")
 		bindings.append(title)
 	var sql := "INSERT INTO items (%s) VALUES (%s);" % [",".join(cols), ",".join(placeholders)]
-	_exec(sql, bindings)
+	var failure := _exec_checked(sql, bindings)
+	if not failure.is_empty():
+		_db.query("ROLLBACK;")
+		dirty = was_dirty
+		return failure
 
 	# Tags
 	var tags: Array = exported.get("tags", [])
@@ -566,7 +586,7 @@ func import_item_full(new_id: String, exported: Dictionary) -> void:
 	for att in attachments:
 		var att_data = att.get("data", PackedByteArray())
 		var size_bytes: int = att_data.size() if att_data is PackedByteArray else 0
-		_db.query_with_bindings(
+		_exec_checked(
 			"INSERT INTO attachments (item_id, filename, mime_type, size_bytes, data, created_at, description) VALUES (?, ?, ?, ?, ?, ?, ?);",
 			[new_id, str(att.get("filename", "")), str(att.get("mime_type", "")),
 			 size_bytes, att_data, str(att.get("created_at", "")),
@@ -574,6 +594,16 @@ func import_item_full(new_id: String, exported: Dictionary) -> void:
 
 	# Update timestamp
 	_exec("UPDATE items SET updated_at=? WHERE id=?;", [ts, new_id])
+	if not write_error.is_empty():
+		_db.query("ROLLBACK;")
+		dirty = was_dirty
+		return write_error
+	if not _db.query("COMMIT;"):
+		_db.query("ROLLBACK;")
+		dirty = was_dirty
+		write_error = _db.error_message
+		return write_error if not write_error.is_empty() else "Import commit failed"
+	return ""
 
 
 func delete_item(id: String) -> void:
@@ -596,6 +626,8 @@ func rewrite_refs(old_qualified: String, new_qualified: String, old_bare_id: Str
 	## Rewrite parent and blocked_by references from old to new.
 	## Returns the total number of rows updated.
 	var count := 0
+	if _exec_select("SELECT 1 FROM items WHERE parent IN (?, ?) OR blocked_by IN (?, ?) LIMIT 1;", [old_qualified, old_bare_id, old_qualified, old_bare_id]).is_empty():
+		return 0
 
 	# Rewrite qualified parent refs
 	_exec("UPDATE items SET parent=? WHERE parent=?;", [new_qualified, old_qualified])
@@ -648,7 +680,7 @@ func get_events(item_id: String) -> Array:
 
 func log_transition(item_type: String, from_state: String, attempted_to: String, succeeded: bool, valid_transitions: Array = []) -> void:
 	var ts := Time.get_datetime_string_from_system(true)
-	_exec("INSERT INTO transition_log (timestamp, item_type, from_state, attempted_to, succeeded, valid_transitions) VALUES (?, ?, ?, ?, ?, ?);",
+	_db.query_with_bindings("INSERT INTO transition_log (timestamp, item_type, from_state, attempted_to, succeeded, valid_transitions) VALUES (?, ?, ?, ?, ?, ?);",
 		[ts, item_type, from_state, attempted_to, 1 if succeeded else 0, ",".join(valid_transitions)])
 
 
@@ -676,7 +708,7 @@ func get_transition_report() -> Array:
 
 func log_mcp_error(tool_name: String, error_message: String, arg_keys: String = "") -> void:
 	var ts := Time.get_datetime_string_from_system(true)
-	_exec("INSERT INTO mcp_error_log (timestamp, tool_name, error_message, arg_keys) VALUES (?, ?, ?, ?);",
+	_db.query_with_bindings("INSERT INTO mcp_error_log (timestamp, tool_name, error_message, arg_keys) VALUES (?, ?, ?, ?);",
 		[ts, tool_name, error_message, arg_keys])
 
 
@@ -854,8 +886,8 @@ func query_hints(args: Dictionary, detail: String = "full") -> Array:
 
 
 func bump_retrieval(id: String) -> void:
-	var ts := Time.get_datetime_string_from_system(true)
-	_exec("UPDATE items SET retrieval_count=retrieval_count+1, updated_at=? WHERE id=?;", [ts, id])
+	# Read bookkeeping must not dirty or rewrite the canonical docket.
+	_db.query_with_bindings("UPDATE items SET retrieval_count=retrieval_count+1 WHERE id=?;", [id])
 
 
 # -- Context ------------------------------------------------------------------
@@ -1207,7 +1239,28 @@ func persist() -> String:
 
 
 func mutation_refusal() -> String:
-	read_only_reason = JSONLCache.write_refusal(self, canonical_path) if not canonical_path.is_empty() else ""
+	if canonical_path.is_empty():
+		_refusal_stamp = ""
+		read_only_reason = ""
+		return ""
+	var file := FileAccess.open(canonical_path, FileAccess.READ)
+	if file == null:
+		_refusal_stamp = ""
+		read_only_reason = "%s cannot be read; reopen the project before editing." % canonical_path
+		return read_only_reason
+	# Stat reuse avoids whole-file hashing on every SQL statement/UI refresh.
+	# Same-size writes within one mtime tick are caught by guarded_write.
+	var modified := FileAccess.get_modified_time(canonical_path)
+	if modified == 0:
+		file.close()
+		_refusal_stamp = ""
+		read_only_reason = "%s modification time is unavailable; reopen before editing." % canonical_path
+		return read_only_reason
+	var stamp := "%s:%s:%s" % [canonical_path, file.get_length(), modified]
+	file.close()
+	if stamp != _refusal_stamp:
+		read_only_reason = JSONLCache.write_refusal(self, canonical_path)
+		_refusal_stamp = stamp
 	return read_only_reason
 
 

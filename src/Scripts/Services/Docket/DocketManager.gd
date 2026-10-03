@@ -119,7 +119,7 @@ func _init_master(user_path: String = "", shipped_path: String = MASTER_DCT_RES,
 
 func _merge_shipped_master(shipped_path: String = MASTER_DCT_RES, hash_path: String = MASTER_SHIPPED_HASH) -> void:
 	## Compare shipped res://master.dct against a stored hash. If changed,
-	## add missing shipped items to the user:// DB (preserving existing items).
+	## merge changed shipped fields and missing items into the user:// DB.
 	if not _master_db.mutation_refusal().is_empty():
 		return
 	var res_path := ProjectSettings.globalize_path(shipped_path)
@@ -151,14 +151,36 @@ func _merge_shipped_master(shipped_path: String = MASTER_DCT_RES, hash_path: Str
 	if shipped_items.is_empty():
 		return
 
-	# Existing records belong to the user. Merge only missing shipped items.
-	var inserted := 0
+	var changed := 0
 	for item: Dictionary in shipped_items:
 		var id: String = str(item.get("id", ""))
-		if id.is_empty() or _master_db.has_item(id):
+		if id.is_empty():
 			continue
-		if _master_db.insert_item(id, item, true).is_empty():
-			inserted += 1
+		if not _master_db.has_item(id):
+			if _master_db.insert_item(id, item, true).is_empty():
+				changed += 1
+			continue
+		var rows := _master_db._exec_select("SELECT * FROM items WHERE id=?;", [id])
+		var sets := PackedStringArray()
+		var values: Array = []
+		for field in DocketDB._ITEM_COLS:
+			if item.has(field):
+				var value = item[field] if item[field] is String else DocketDB._normalize_text(item[field])
+				if value != rows[0].get(field):
+					sets.append("%s=?" % field)
+					values.append(value)
+		var shipped_tags: Array = item.get("tags", []).duplicate()
+		var stored_tags: Array = _master_db.get_item(id).get("tags", []).duplicate()
+		shipped_tags.sort()
+		stored_tags.sort()
+		var tags_changed := item.has("tags") and shipped_tags != stored_tags
+		if not sets.is_empty():
+			values.append(id)
+			if _master_db._exec_checked("UPDATE items SET %s WHERE id=?;" % ",".join(sets), values).is_empty():
+				changed += 1
+		if tags_changed:
+			_master_db.update_item_fields(id, {"tags":item.tags})
+			changed += 1
 
 	# Save the hash so we don't re-merge next startup
 	var hf := FileAccess.open(hash_path, FileAccess.WRITE)
@@ -166,8 +188,8 @@ func _merge_shipped_master(shipped_path: String = MASTER_DCT_RES, hash_path: Str
 		hf.store_string(current_hash)
 		hf.close()
 
-	if inserted > 0:
-		print("[DocketManager] Merged shipped master.dct: %d inserted" % inserted)
+	if changed > 0:
+		print("[DocketManager] Merged shipped master.dct: %d changed" % changed)
 		invalidate_prompt_cache()
 		# Persist merged content to JSONL immediately so that save_all() on exit
 		# doesn't clobber the merge with stale pre-merge data from a prior session.

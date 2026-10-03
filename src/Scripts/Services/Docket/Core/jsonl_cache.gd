@@ -51,6 +51,7 @@ static func guarded_write(db: DocketDB, jsonl_path: String, text: String) -> Str
 	## taken). The refusal check runs under the .lock immediately before the
 	## atomic rename, and on success jsonl_hash becomes the digest of `text`,
 	## the new baseline for the next write.
+	db._refusal_stamp = "" # A guarded write always checks the full digest under the lock.
 	var lock := FileLock.acquire(jsonl_path)
 	if lock == null:
 		return "could not lock %s (another writer holds its .lock). Nothing was written; try again." % jsonl_path

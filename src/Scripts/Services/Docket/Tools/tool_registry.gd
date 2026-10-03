@@ -137,7 +137,7 @@ func _mutation_precheck(name: String, args: Dictionary) -> String:
 		var target := str(args.get("target_project", ""))
 		for project in _project_dbs:
 			var db: DocketDB = _project_dbs[project]
-			if not DocketDB._is_uuid7(id) or db.has_item(id) or project.to_lower() == target.to_lower():
+			if db.has_item(id) or project.to_lower() == target.to_lower():
 				targets.append(db)
 	for db in targets:
 		if not db.ensure_writable():

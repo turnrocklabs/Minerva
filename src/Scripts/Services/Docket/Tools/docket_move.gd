@@ -64,12 +64,16 @@ func execute(args: Dictionary, _schema: Dictionary, _primary_db: DocketDB, proje
 	if DocketDB._is_uuid7(item_id):
 		# UUID7 items keep their ID — globally unique, no rewrite needed
 		new_id = item_id
-		target_db.import_item_full(new_id, exported)
+		var failure := target_db.import_item_full(new_id, exported)
+		if not failure.is_empty():
+			return {"error": "Move import failed: " + failure}
 		source_db.delete_item(item_id)
 	else:
 		# Legacy items get upgraded to UUID7 on move
 		new_id = target_db.next_uuid7_id()
-		target_db.import_item_full(new_id, exported)
+		var failure := target_db.import_item_full(new_id, exported)
+		if not failure.is_empty():
+			return {"error": "Move import failed: " + failure}
 		source_db.delete_item(item_id)
 		# Rewrite cross-project references in ALL projects
 		var old_qualified := "%s:%s" % [source_name, item_id]
