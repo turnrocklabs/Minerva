@@ -75,6 +75,9 @@ after about three rounds. So size is decided per batch, by rule:
   tag, no blocker and no other claim. Intake takes ready items in priority
   order up to the ceiling. An unready item goes to shaping — write the
   oracle, split the `L` — which is dispatchable work, not a reason to stop.
+  A project with an active `policy` tagged `intake:parked` is skipped
+  entirely; with `intake:parked-before:<date>`, its items not updated since
+  that date are skipped. Only the owner archives a park.
 - **Declared touch-set.** Each manifest task names the paths it expects to
   change. The commit audit compares `git diff --stat` against that list; a path
   outside it is a finding — filed, or justified in one line in the attempt's
