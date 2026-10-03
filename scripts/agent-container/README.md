@@ -287,12 +287,23 @@ The helper stages all existing native recipes, including the JSON schema helper,
 using verified source-built cache entries or their source/official-channel build
 recipes. A missing prerequisite fails; no binaries are copied from `/src`.
 It sets absolute isolated XDG paths, imports the host twice, and checks every
-added/copied/modified/renamed `.gd` in both revision ranges. The plugin repo
+added/copied/modified/renamed host `.gd` plus every tracked `.gd` in the
+plugins under test, including unchanged scripts affected by host edits/deletions.
+Defaults select changed plugin trees plus trees referencing changed/deleted
+host `res://` paths. Host resource changes or uncertain plugin impact also include
+CAD/PCB. Tooling-only changes select no plugin trees. `--plugin NAME` adds a
+whole plugin tree explicitly; `--check-script` adds an individual sentinel.
+A measured whole-tree check exceeded 60 seconds, so defaults use this scope. The plugin repo
 has no standalone project: its scripts use the actual host project context and
-literal sibling paths. The final import and every changed-script check fail on
+literal sibling paths. Both imports and every script check fail on
 nonzero exit or logged `SCRIPT ERROR:` / `ERROR:`. No autoload diagnostics are
-exempted; a check-only script needing autoload context requires a compatible
-static compilation lane before that tuple can pass. Deletions need no parse.
+exempted. The first import alone permits the exact cold-cache diagnostics in
+`COLD_IMPORT_DIAGNOSTICS`, only on Godot 4.6.2.stable.official.71f334935.
+These 15 asset/theme/font/icon-loading messages matched the prior healthy
+first import exactly and disappeared entirely in its second import. Unknown
+messages and nonzero exits still fail; the second import has no allowlist.
+Allowed messages are retained in the receipt. A check-only script needing autoload context requires a compatible
+static compilation lane before that tuple can pass. Deleted host scripts are covered through compilation of their plugin consumers.
 
 No suites or application scenes execute. `gate-evidence/receipt.json` identifies
 the tuple, bases, Godot version, XDG paths, native provenance stamps, commands,
