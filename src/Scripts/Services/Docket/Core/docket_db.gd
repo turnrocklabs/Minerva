@@ -304,19 +304,25 @@ static func parse_qualified_ref(ref: String) -> Dictionary:
 
 # -- Text normalization -------------------------------------------------------
 
-## Replace literal \n and \t escape sequences with real characters.
-## Defends against MCP clients that pass escaped text instead of actual newlines.
-static func _normalize_text(val) -> Variant:
+## SQLite binding representation shared by change detection and writes.
+static func _encode_item_value(val) -> Variant:
+	if val is bool:
+		return int(val)
 	if val is Array:
 		return JSON.stringify(val)
 	if val is Dictionary:
 		return JSON.stringify(val)
-	if val is String:
-		var s: String = val
-		s = s.replace("\\n", "\n")
-		s = s.replace("\\t", "\t")
-		return s
 	return val
+
+
+## Normalize escaped MCP/UI text, while encoding structured SQL bindings.
+static func _normalize_text(val) -> Variant:
+	if not val is String:
+		return _encode_item_value(val)
+	var s: String = val
+	s = s.replace("\\n", "\n")
+	s = s.replace("\\t", "\t")
+	return s
 
 
 # -- Item CRUD ----------------------------------------------------------------
@@ -411,10 +417,14 @@ func update_item_fields(id: String, changes: Dictionary) -> void:
 	for col in changes:
 		if col in ["tags", "events", "links", "id"]:
 			continue
-		if not col in _ITEM_COLS or changes[col] == stored.get(col):
+		if not col in _ITEM_COLS:
+			continue
+		var previous = _encode_item_value(stored.get(col))
+		# Preserve untouched canonical text before input escape normalization.
+		if _encode_item_value(changes[col]) == previous:
 			continue
 		var value = _normalize_text(changes[col])
-		if value == stored.get(col):
+		if value == previous:
 			continue
 		sets.append("%s=?" % col)
 		bindings.append(value)
@@ -517,12 +527,15 @@ func export_item_full(id: String) -> Dictionary:
 
 func import_item_full(new_id: String, exported: Dictionary) -> String:
 	## Import atomically; callers must retain the source on failure.
+	var prior_error := write_error
 	if not ensure_writable():
-		return write_error
-	write_error = ""
+		var refusal := write_error
+		write_error = prior_error if not prior_error.is_empty() else refusal
+		return refusal
 	var was_dirty := dirty
 	if not _db.query("BEGIN TRANSACTION;"):
 		return "Could not begin import: " + _db.error_message
+	write_error = ""
 	var item_data: Dictionary = exported.get("item", {})
 	item_data["id"] = new_id
 
@@ -545,6 +558,7 @@ func import_item_full(new_id: String, exported: Dictionary) -> String:
 	if not failure.is_empty():
 		_db.query("ROLLBACK;")
 		dirty = was_dirty
+		write_error = prior_error if not prior_error.is_empty() else failure
 		return failure
 
 	# Tags
@@ -595,14 +609,18 @@ func import_item_full(new_id: String, exported: Dictionary) -> String:
 	# Update timestamp
 	_exec("UPDATE items SET updated_at=? WHERE id=?;", [ts, new_id])
 	if not write_error.is_empty():
+		failure = write_error
 		_db.query("ROLLBACK;")
 		dirty = was_dirty
-		return write_error
+		write_error = prior_error if not prior_error.is_empty() else failure
+		return failure
 	if not _db.query("COMMIT;"):
+		failure = _db.error_message if not _db.error_message.is_empty() else "Import commit failed"
 		_db.query("ROLLBACK;")
 		dirty = was_dirty
-		write_error = _db.error_message
-		return write_error if not write_error.is_empty() else "Import commit failed"
+		write_error = prior_error if not prior_error.is_empty() else failure
+		return failure
+	write_error = prior_error
 	return ""
 
 
@@ -1243,13 +1261,18 @@ func mutation_refusal() -> String:
 		_refusal_stamp = ""
 		read_only_reason = ""
 		return ""
+	if not FileAccess.file_exists(canonical_path):
+		_refusal_stamp = ""
+		read_only_reason = JSONLCache.write_refusal(self, canonical_path)
+		return read_only_reason
 	var file := FileAccess.open(canonical_path, FileAccess.READ)
 	if file == null:
 		_refusal_stamp = ""
 		read_only_reason = "%s cannot be read; reopen the project before editing." % canonical_path
 		return read_only_reason
 	# Stat reuse avoids whole-file hashing on every SQL statement/UI refresh.
-	# Same-size writes within one mtime tick are caught by guarded_write.
+	# Rehash during the current mtime second; older same-tick edits still
+	# require guarded_write's independent digest check under the lock.
 	var modified := FileAccess.get_modified_time(canonical_path)
 	if modified == 0:
 		file.close()
@@ -1258,7 +1281,7 @@ func mutation_refusal() -> String:
 		return read_only_reason
 	var stamp := "%s:%s:%s" % [canonical_path, file.get_length(), modified]
 	file.close()
-	if stamp != _refusal_stamp:
+	if stamp != _refusal_stamp or modified >= int(Time.get_unix_time_from_system()):
 		read_only_reason = JSONLCache.write_refusal(self, canonical_path)
 		_refusal_stamp = stamp
 	return read_only_reason
