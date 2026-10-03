@@ -15,7 +15,7 @@ func get_viewports() -> Dictionary[String, SubViewport]:
 	return {"detail": slot}
 
 func snapshot_extra(view: String) -> Dictionary:
-	return {"projection": view, "width": -1, "path": "wrong", "base64": "wrong"}
+	return {"projection": view, "width": -1, "path": "wrong", "base64": "wrong", "image_base64": "wrong"}
 
 func handle_tool(tool_name: String, args: Dictionary) -> Dictionary:
 	return {"tool": tool_name, "editor_name": args.editor_name}

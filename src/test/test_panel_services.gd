@@ -4,11 +4,19 @@ var failures: int = 0
 
 class ProbeEditor extends Control:
 	var tab_title: String = "Duplicate"
+	var plugin_scene_root: Control
+
+class ServicesRoot extends Node:
+	var plugin_scene_panel_broker: Object
 
 class FallbackHost extends AnnotationHost:
 	var panel: Control
 	func get_panel() -> Control:
 		return panel
+
+func close_before_draw(node: Node) -> void:
+	node.free()
+	RenderingServer.frame_post_draw.emit()
 
 func check(ok: bool, label: String) -> void:
 	if not ok:
@@ -33,6 +41,24 @@ func _init() -> void:
 	var active: Dictionary = services.capture_target(resolved)
 	check(active.ok and active.viewport == root and active.surface == panel,
 		"active capture selects visible panel crop on main viewport")
+	var hidden_parent := Control.new()
+	root.add_child(hidden_parent)
+	panel.reparent(hidden_parent)
+	hidden_parent.hide()
+	for slot in ["active", "detail"]:
+		var hidden: Dictionary = services.capture_target(resolved, slot)
+		check(not hidden.ok and hidden.error.contains("not visible") and panel.visible and not hidden_parent.visible,
+			"hidden active/named panel refuses without selecting it")
+	panel.reparent(root)
+	hidden_parent.free()
+	for close_surface in [false, true]:
+		var doomed: Node = Control.new() if close_surface else SubViewport.new()
+		root.add_child(doomed)
+		var lifetime := {"ok": true, "viewport": root if close_surface else doomed,
+			"surface": doomed if close_surface else null}
+		close_before_draw.call_deferred(doomed)
+		var closed_image: Image = await services.capture(lifetime)
+		check(closed_image == null, "freed surface/viewport readback refuses")
 	var missing: Dictionary = services.capture_target(resolved, "missing")
 	check(not missing.ok and missing.views.has("detail"), "unknown view lists slots")
 	check(not services.resolve("missing", broker, [], true).ok, "unknown editor refuses")
@@ -50,9 +76,33 @@ func _init() -> void:
 	var second := ProbeEditor.new()
 	check(not services.resolve("Duplicate", broker, [first, second]).ok,
 		"duplicate exact editor titles refuse")
-	first.free()
+	var replacement = load("res://test/fixtures/panel_probe/PanelProbe.gd").new()
+	replacement.plugin_id = "other"
+	root.add_child(replacement)
+	first.tab_title = "Probe"
+	first.plugin_scene_root = replacement
 	second.free()
+	var exact: Dictionary = services.resolve("Probe", broker, [second, first])
+	check(exact.panel == replacement and not exact.broker_bound and exact.plugin_id == "other",
+		"final exact panel owns resolution; dead editor is skipped in both loops")
+	first.free()
+	replacement.free()
 	var fallback := FallbackHost.new()
+	var singleton = root.get_node_or_null("SingletonObject")
+	var created_singleton := singleton == null
+	if created_singleton:
+		singleton = ServicesRoot.new()
+		singleton.name = "SingletonObject"
+		root.add_child(singleton)
+	var prior_broker = singleton.get("plugin_scene_panel_broker")
+	singleton.set("plugin_scene_panel_broker", broker)
+	AnnotationHostRegistry.register("Probe", fallback)
+	check(services.resolve_cad_host("Probe") == panel.host,
+		"explicit panel-host fallback precedes registry host with no live panel")
+	AnnotationHostRegistry.deregister("Probe", fallback)
+	singleton.set("plugin_scene_panel_broker", prior_broker)
+	if created_singleton:
+		singleton.free()
 	fallback.panel = panel
 	AnnotationHostRegistry.register("Fallback", fallback)
 	check(registry._prepare_panel_call("probe", "echo", {"editor_name": "Fallback"}).ok,

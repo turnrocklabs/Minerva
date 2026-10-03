@@ -4,6 +4,7 @@ var failures: int = 0
 var ctx: Dictionary
 var last_target: Dictionary
 var captures: int = 0
+var close_panel_during_capture := false
 
 class Surface extends Control:
 	var tab_title: String
@@ -21,6 +22,8 @@ func readback(target: Dictionary) -> Image:
 	last_target = target
 	captures += 1
 	await process_frame
+	if close_panel_during_capture:
+		target.surface.free()
 	return Image.create(24, 12, false, Image.FORMAT_RGBA8)
 
 func check(ok: bool, label: String) -> void:
@@ -63,7 +66,7 @@ func _init() -> void:
 		"max edge preserves aspect ratio and authoritative dimensions/view")
 	check(str(named.get("path", "")).begins_with("user://snapshots/")
 		and FileAccess.file_exists(named.get("path", "")), "PNG written in snapshot directory")
-	check(named.get("projection") == "detail" and not named.has("base64"),
+	check(named.get("projection") == "detail" and not named.has("image_base64") and not named.has("base64"),
 		"extras merged without overriding path/dimensions or adding unsolicited base64")
 	var png := Image.load_from_file(named.get("path", ""))
 	check(png != null and png.get_size() == Vector2i(12, 6), "saved image matches reply")
@@ -71,7 +74,7 @@ func _init() -> void:
 		"editor_name": "Probe", "return_base64": true})
 	check(last_target.surface == panel and active.get("view") == "active",
 		"omitted view captures current visible panel")
-	check(Marshalls.base64_to_raw(active.get("base64", "")) == FileAccess.get_file_as_bytes(active.path),
+	check(Marshalls.base64_to_raw(active.get("image_base64", "")) == FileAccess.get_file_as_bytes(active.path),
 		"requested base64 represents the saved PNG")
 	for surface in [text, sheet]:
 		var reply: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": surface.tab_title})
@@ -82,16 +85,30 @@ func _init() -> void:
 		"panel tools retain broker preference for the same source-tab alias")
 	var before_errors := captures
 	var bad_view: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "Probe", "view": "unknown"})
-	check(bad_view.isError and bad_view.available_views == ["active", "detail"],
-		"unknown slot isError lists available slots")
+	check(bad_view.success == false and not bad_view.has("isError") and bad_view.available_views == ["active", "detail"],
+		"canonical application error lists available slots")
 	var bad_editor: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "missing"})
-	check(bad_editor.isError and bad_editor.available_editors.has("Probe")
+	check(bad_editor.success == false and bad_editor.available_editors.has("Probe")
 		and bad_editor.available_views == ["active"], "unknown editor reports choices")
+	var http = load("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd").new()
+	var wire: Dictionary = http._public_result_from_outcome(MCPToolCallOutcome.from_error(bad_editor), false)
+	var wire_error: Dictionary = JSON.parse_string(wire.content[0].text)
+	check(wire.get("isError", false) and wire_error == bad_editor,
+		"canonical application error becomes wire isError with editor/view choices")
+	http.free()
+	text.hide()
+	var hidden: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "Text"})
+	check(hidden.success == false and hidden.error.contains("not visible") and not text.visible,
+		"hidden exact editor refuses without layout mutation")
+	text.show()
 	var bad_limit: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "Probe", "max_edge": 0})
-	check(bad_limit.isError and captures == before_errors, "invalid requests never read back")
+	check(bad_limit.success == false and captures == before_errors, "invalid requests never read back")
 	DirAccess.remove_absolute(named.path)
 	DirAccess.remove_absolute(active.path)
-	panel.free()
+	close_panel_during_capture = true
+	var closed: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "Probe"})
+	check(closed.success == false and closed.error == "Panel closed during capture",
+		"post-await panel closure returns structured error before typed assignment")
 	text.free()
 	sheet.free()
 	print("MCPSnapshotTools: %d failures" % failures)

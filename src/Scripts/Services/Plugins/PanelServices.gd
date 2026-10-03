@@ -22,7 +22,7 @@ static func resolve(editor_name: String, broker: Object = null,
 			if not known.has(title):
 				known.append(title)
 	var matches: Array[Object] = []
-	for candidate: Object in editors:
+	for candidate in editors:
 		if not is_instance_valid(candidate):
 			continue
 		var title := str(candidate.get("tab_title"))
@@ -35,7 +35,7 @@ static func resolve(editor_name: String, broker: Object = null,
 			matches.append(candidate)
 	var editor: Object = matches[0] if matches.size() == 1 else null
 	var panel: Object = broker.get_panel_for_editor(editor_name) if broker != null and broker.has_method("get_panel_for_editor") else null
-	var broker_bound := panel != null
+	var broker_panel := panel
 	if not prefer_panel or panel == null:
 		if matches.size() > 1:
 			return {"ok": false, "error": "Ambiguous editor '%s'" % editor_name,
@@ -48,8 +48,8 @@ static func resolve(editor_name: String, broker: Object = null,
 	if panel != null and not is_instance_valid(panel):
 		panel = null
 	if panel != null:
-		for candidate: Object in editors:
-			if "plugin_scene_root" in candidate and candidate.get("plugin_scene_root") == panel:
+		for candidate in editors:
+			if is_instance_valid(candidate) and "plugin_scene_root" in candidate and candidate.get("plugin_scene_root") == panel:
 				editor = candidate
 				break
 		if panel.has_method("get_annotation_host"):
@@ -62,7 +62,8 @@ static func resolve(editor_name: String, broker: Object = null,
 					dead.append(title)
 		return {"ok": false, "error": "Unknown or ambiguous editor '%s'" % editor_name,
 			"known": known, "dead": dead, "views": ["active"]}
-	var owner := str(broker.get_panel_owner(editor_name)) if broker != null and panel != null and broker.has_method("get_panel_owner") else ""
+	var broker_bound := is_instance_valid(panel) and panel == broker_panel
+	var owner := str(broker.get_panel_owner(editor_name)) if broker_bound and broker.has_method("get_panel_owner") else ""
 	if owner.is_empty() and panel != null and "plugin_id" in panel:
 		owner = str(panel.get("plugin_id"))
 	return {"ok": true, "editor": editor, "panel": panel, "host": host,
@@ -73,6 +74,9 @@ static func resolve_cad_host(editor_name: String) -> AnnotationHost:
 	var host := AnnotationHostRegistry.get_host(editor_name)
 	if host != null and host.has_method("get_mesh_data"):
 		return host
+	var panel_host := AnnotationHostRegistry.get_panel_host(editor_name)
+	if panel_host != null:
+		return panel_host
 	var ctx := context()
 	var resolved := resolve(editor_name, ctx.broker, ctx.editors, true)
 	if resolved.ok and resolved.host != null and resolved.panel != null:
@@ -102,6 +106,8 @@ static func capture_target(resolved: Dictionary, slot: String = "active") -> Dic
 	if not available.has(slot):
 		return {"ok": false, "error": "Unknown view '%s'" % slot, "views": available}
 	var surface: Control = panel as Control if is_instance_valid(panel) else resolved.get("editor") as Control
+	if not is_instance_valid(surface) or not surface.is_visible_in_tree():
+		return {"ok": false, "error": "View '%s' is not visible in the tree" % slot, "views": available}
 	var viewport: Viewport = null
 	if slot == "active":
 		viewport = surface.get_viewport() if is_instance_valid(surface) else null
@@ -116,10 +122,11 @@ static func capture(target: Dictionary) -> Image:
 	if not target.get("ok", false):
 		return null
 	await RenderingServer.frame_post_draw
+	if not is_instance_valid(target.get("viewport")) or (target.get("surface") != null
+			and not is_instance_valid(target.surface)):
+		return null
 	var viewport: Viewport = target.viewport
 	var surface: Control = target.surface
-	if not is_instance_valid(viewport) or (surface != null and not is_instance_valid(surface)):
-		return null
 	var texture := viewport.get_texture()
 	var image: Image = texture.get_image() if texture != null else null
 	if image != null and surface != null:

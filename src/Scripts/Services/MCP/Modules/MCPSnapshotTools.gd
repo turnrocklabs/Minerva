@@ -53,9 +53,9 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var image: Image = await _image_capture.call(target)
 	if image == null or image.is_empty():
 		return _error("View '%s' did not produce an image" % view, available)
-	var panel: Object = resolved.panel
-	if panel != null and not is_instance_valid(panel):
+	if resolved.panel != null and not is_instance_valid(resolved.panel):
 		return _error("Panel closed during capture", available)
+	var panel: Object = resolved.panel
 	var extras: Variant = {}
 	if panel != null and panel.has_method("snapshot_extra"):
 		extras = panel.snapshot_extra(view)
@@ -78,13 +78,15 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"height": image.get_height(), "view": view}
 	# Extras are metadata, never a second authority for response or wire fields.
 	for key in extras:
-		if key not in ["success", "path", "width", "height", "view", "base64",
+		if key not in ["success", "path", "width", "height", "view", "base64", "image_base64",
 				"isError", "error", "error_message", "content", "structuredContent"]:
 			reply[key] = extras[key]
 	if bool(arguments.get("return_base64", false)):
-		reply["base64"] = Marshalls.raw_to_base64(image.save_png_to_buffer())
+		reply["image_base64"] = Marshalls.raw_to_base64(image.save_png_to_buffer())
 	return reply
 
 
 static func _error(message: String, available: Array = ["active"]) -> Dictionary:
-	return {"success": false, "isError": true, "error": message, "available_views": available}
+	var result := MCPToolUtils.error(message)
+	result["available_views"] = available
+	return result
