@@ -15,7 +15,8 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-SUITES = ("policy_owner", "skill_owner", "trigger_feed", "prompt_and_session")
+SUITES = {"policy_owner": 30, "skill_owner": 21, "trigger_feed": 40,
+          "prompt_and_session": 22}
 JOB_ROOT = Path("/tmp/job")
 
 
@@ -56,7 +57,8 @@ def run(args):
                "repositories": {"Minerva": git(host, "rev-parse", "HEAD"),
                                 "minerva-plugins": git(plugins, "rev-parse", "HEAD")},
                "suites": [{"suite": suite, "status": "not_executed", "passed": 0,
-                           "failed": 0, "skipped": 0} for suite in SUITES], "steps": []}
+                           "failed": 0, "skipped": 0, "expected_minimum_passed": minimum}
+                          for suite, minimum in SUITES.items()], "steps": []}
 
     def command(name, argv, env, seconds):
         path = logs / f"{name}.log"
@@ -127,22 +129,26 @@ def run(args):
             passed = len(re.findall(r"^PASS: ", output, re.MULTILINE))
             failed = len(re.findall(r"^FAIL: ", output, re.MULTILINE))
             failure_marker = bool(re.search(r"^FAILURES:", output, re.MULTILINE))
-            skipped = len(re.findall(r"\bSKIP(?:PED)?\b", output, re.IGNORECASE))
-            script_errors = re.findall(r"SCRIPT ERROR:[^\n]*", output)
-            # Failure-path tests intentionally log engine errors; retain them as evidence.
+            skipped = len(re.findall(r"^SKIP(?:PED)?\b[^\n]*", output, re.MULTILINE | re.IGNORECASE))
+            script_errors = re.findall(r"^SCRIPT ERROR:[^\n]*", output, re.MULTILINE)
+            # Engine errors are nonfatal: failure tests emit them intentionally, and headless
+            # scenes lack main UI nodes expected by singleton_object @onready. Keep evidence.
             engine_diagnostics = {}
             for level in ("ERROR", "WARNING"):
                 lines = re.findall(rf"^{level}:[^\n]*", output, re.MULTILINE)
                 engine_diagnostics[level] = {"count": len(lines), "first_lines": lines[:5]}
             valid = (rc == 0 and not script_errors and skipped == 0 and failed == 0
                      and not failure_marker and len(summaries) == 1 and int(summaries[0][0]) == passed
-                     and passed > 0 and int(summaries[0][1]) == 0)
+                     and passed >= suite["expected_minimum_passed"] and int(summaries[0][1]) == 0)
+            if passed < suite["expected_minimum_passed"]:
+                suite["error"] = (f"{name}: expected at least {suite['expected_minimum_passed']} "
+                                  f"passed assertions, actual {passed}")
             suite.update(status="passed" if valid else "failed", passed=passed,
                          failed=failed, skipped=skipped, summaries=summaries, command=argv,
                          script_errors=script_errors, engine_diagnostics=engine_diagnostics,
                          exit_code=rc, log=step["log"], log_sha256=step["log_sha256"])
         if not all(suite["status"] == "passed" for suite in receipt["suites"]):
-            raise ValueError("four-owner oracle failed: every suite must execute with positive passes, no failures/script errors/skips")
+            raise ValueError("four-owner oracle failed: every suite must execute with its pinned minimum passes, no failures/script errors/skips")
         receipt["status"] = "passed"
     except (ValueError, OSError, subprocess.CalledProcessError, KeyError) as error:
         receipt["error"] = str(error)
