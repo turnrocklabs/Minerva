@@ -331,8 +331,9 @@ The suite's empty-session/user-directory guards remain active.
 
 Success requires all four scenes to execute: exit zero, exactly one summary,
 a positive pass count matching the printed assertions, no failed assertion,
-no skip and no Godot error diagnostic. No check-only autoload exemption is
-applied to scenario logs. Receipts include both revisions, Godot version,
+no skip and no SCRIPT ERROR diagnostic. Engine ERROR/WARNING lines are evidence:
+failure-path tests intentionally log errors. Each suite records their counts
+and first five lines; complete logs remain hashed. Receipts include both revisions, Godot version,
 native manifest/stamps, helper hash, profiles, commands, counts and log hashes.
 The launcher job result also records the container image identity.
 

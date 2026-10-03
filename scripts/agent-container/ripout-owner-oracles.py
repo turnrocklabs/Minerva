@@ -89,6 +89,8 @@ def run(args):
         rc, _, _ = command("natives", ["python3", "-B", "scripts/container-build/dev-natives.py"], env, 900)
         if rc:
             raise ValueError("native/schema prerequisites unavailable; see natives.log")
+        if not env.get("MINERVA_NATIVES_MANIFEST"):
+            raise ValueError("MINERVA_NATIVES_MANIFEST prerequisite unavailable")
         manifest = Path(env["MINERVA_NATIVES_MANIFEST"])
         receipt["native_manifest"] = json.loads(manifest.read_text())
         receipt["native_manifest_sha256"] = digest(manifest)
@@ -126,14 +128,21 @@ def run(args):
             failed = len(re.findall(r"^FAIL: ", output, re.MULTILINE))
             failure_marker = bool(re.search(r"^FAILURES:", output, re.MULTILINE))
             skipped = len(re.findall(r"\bSKIP(?:PED)?\b", output, re.IGNORECASE))
-            valid = (rc == 0 and not step["diagnostics"] and skipped == 0 and failed == 0
+            script_errors = re.findall(r"SCRIPT ERROR:[^\n]*", output)
+            # Failure-path tests intentionally log engine errors; retain them as evidence.
+            engine_diagnostics = {}
+            for level in ("ERROR", "WARNING"):
+                lines = re.findall(rf"^{level}:[^\n]*", output, re.MULTILINE)
+                engine_diagnostics[level] = {"count": len(lines), "first_lines": lines[:5]}
+            valid = (rc == 0 and not script_errors and skipped == 0 and failed == 0
                      and not failure_marker and len(summaries) == 1 and int(summaries[0][0]) == passed
                      and passed > 0 and int(summaries[0][1]) == 0)
             suite.update(status="passed" if valid else "failed", passed=passed,
                          failed=failed, skipped=skipped, summaries=summaries, command=argv,
+                         script_errors=script_errors, engine_diagnostics=engine_diagnostics,
                          exit_code=rc, log=step["log"], log_sha256=step["log_sha256"])
         if not all(suite["status"] == "passed" for suite in receipt["suites"]):
-            raise ValueError("four-owner oracle failed: every suite must execute with positive passes, no failures/errors/skips")
+            raise ValueError("four-owner oracle failed: every suite must execute with positive passes, no failures/script errors/skips")
         receipt["status"] = "passed"
     except (ValueError, OSError, subprocess.CalledProcessError, KeyError) as error:
         receipt["error"] = str(error)
