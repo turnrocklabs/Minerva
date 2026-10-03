@@ -1,4 +1,5 @@
 #include "subprocess.h"
+#include <chrono>
 #include "common/utf8_line_buffer.h"
 #include "common/env_overrides.h"
 #include <godot_cpp/core/class_db.hpp>
@@ -141,6 +142,7 @@ void SubProcess::_bind_methods()
     ClassDB::bind_method(D_METHOD("start_with_env", "command", "args", "extra_env"), &SubProcess::start_with_env);
     ClassDB::bind_static_method("SubProcess", D_METHOD("os_account_name"), &SubProcess::os_account_name);
     ClassDB::bind_method(D_METHOD("stop"), &SubProcess::stop);
+    ClassDB::bind_method(D_METHOD("stop_gracefully", "grace_ms", "process_name"), &SubProcess::stop_gracefully, DEFVAL(10000), DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("write_data", "data"), &SubProcess::write_data);
     ClassDB::bind_method(D_METHOD("has_io_overflow"), &SubProcess::has_io_overflow);
     ClassDB::bind_method(D_METHOD("_emit_output_ready"), &SubProcess::_emit_output_ready);
@@ -157,6 +159,7 @@ void SubProcess::_bind_methods()
     ADD_SIGNAL(MethodInfo("stderr_ready"));
     ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
     ADD_SIGNAL(MethodInfo("io_overflow"));
+    ADD_SIGNAL(MethodInfo("shutdown_escalated", PropertyInfo(Variant::STRING, "process_name"), PropertyInfo(Variant::STRING, "reason")));
 }
 
 SubProcess::SubProcess()
@@ -301,6 +304,10 @@ bool SubProcess::start_with_env(const String &command, const PackedStringArray &
     _stderr_rd = stderr_rd;
     _child_process = pi.hProcess;
 
+    _closing = false;
+    _stdout_done = false;
+    _stderr_done = false;
+    _exit_code = -1;
     _running = true;
     _io_overflow = false;
 	_output_notification_pending = false;
@@ -328,42 +335,81 @@ bool SubProcess::start_with_env(const String &command, const PackedStringArray &
     return true;
 }
 
+int SubProcess::_poll_exit()
+{
+    std::lock_guard<std::mutex> lock(_exit_mutex);
+    if (_exit_code >= 0) return _exit_code;
+    if (_child_process != nullptr && WaitForSingleObject(_child_process, 0) == WAIT_OBJECT_0) {
+        DWORD code = 0;
+        if (GetExitCodeProcess(_child_process, &code)) _exit_code = static_cast<int>(code);
+    }
+    if (_exit_code >= 0) call_deferred("emit_signal", "process_exited", _exit_code.load());
+    return _exit_code;
+}
+
 void SubProcess::stop()
 {
-    if (!_running)
-        return;
+    _stop(0, String());
+}
 
-    _running = false;
-	_write_ready.notify_all();
-	if (_write_thread.joinable()) {
-		HANDLE writer = static_cast<HANDLE>(_write_thread.native_handle());
-		while (WaitForSingleObject(writer, 10) == WAIT_TIMEOUT)
-			CancelSynchronousIo(writer);
-		_write_thread.join();
-	}
+int SubProcess::stop_gracefully(int grace_ms, const String &process_name)
+{
+    return _stop(grace_ms > 0 ? (grace_ms > 10000 ? 10000 : grace_ms) : 0, process_name);
+}
 
-    // Close stdin to signal EOF to child (many stdio servers exit on stdin EOF).
+int SubProcess::_stop(int grace_ms, const String &process_name)
+{
+    if (!_running) return _exit_code;
+    _closing = true;
+    // Legacy stop still interrupts readers immediately; EOF shutdown leaves
+    // them draining until the owned child exits or the deadline expires.
+    if (grace_ms == 0) _running = false;
+    _write_ready.notify_all();
+    if (_write_thread.joinable()) {
+        HANDLE writer = static_cast<HANDLE>(_write_thread.native_handle());
+        while (WaitForSingleObject(writer, 10) == WAIT_TIMEOUT) CancelSynchronousIo(writer);
+        _write_thread.join();
+    }
+    {
+        std::lock_guard<std::mutex> lock(_write_mutex);
+        while (!_write_queue.empty()) _write_queue.pop();
+        _queued_write_bytes = 0;
+    }
     close_handle(_stdin_wr);
-
-    // Give the process a moment to exit gracefully, then force it. Terminating
-    // (or a graceful exit) closes the child's stdout/stderr write ends, which is
-    // what unblocks the reader threads sitting in ReadFile below.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(grace_ms);
+    while (grace_ms > 0 && _poll_exit() < 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (grace_ms > 0 && _poll_exit() < 0) {
+        const String reason = "stdin EOF grace expired after " + String::num_int64(grace_ms) + " ms; terminating owned child";
+        UtilityFunctions::push_warning("SubProcess [" + process_name + "]: " + reason);
+        call_deferred("emit_signal", "shutdown_escalated", process_name, reason);
+    }
     if (_child_process != nullptr) {
-        if (WaitForSingleObject(_child_process, 100) != WAIT_OBJECT_0) {
+        const DWORD legacy_wait = grace_ms == 0 ? 100 : 0;
+        if (WaitForSingleObject(_child_process, legacy_wait) != WAIT_OBJECT_0) {
             TerminateProcess(_child_process, 1);
             WaitForSingleObject(_child_process, 2000);
         }
+        _poll_exit();
     }
-
-    // Reader threads own _stdout_rd / _stderr_rd; join BEFORE closing them.
-    if (_read_thread.joinable())
-        _read_thread.join();
-    if (_stderr_thread.joinable())
-        _stderr_thread.join();
-
+    if (grace_ms > 0) {
+        const auto drain_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        while ((!_stdout_done || !_stderr_done) && std::chrono::steady_clock::now() < drain_deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    _running = false;
+    // Descendants may inherit pipes: interrupt readers rather than waiting
+    // for every inherited write handle to close after the owned child exits.
+    for (std::thread *reader : {&_read_thread, &_stderr_thread}) {
+        if (!reader->joinable()) continue;
+        HANDLE handle = static_cast<HANDLE>(reader->native_handle());
+        while (WaitForSingleObject(handle, 10) == WAIT_TIMEOUT) CancelSynchronousIo(handle);
+        reader->join();
+    }
     close_handle(_stdout_rd);
     close_handle(_stderr_rd);
     close_handle(_child_process);
+    return _exit_code;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +426,7 @@ void SubProcess::_read_loop()
         BOOL ok = ReadFile(_stdout_rd, buffer, sizeof(buffer) - 1, &bytes_read, nullptr);
 
         if (ok && bytes_read > 0) {
+            if (_closing) { line_buffer.clear(); continue; }
             line_buffer.append(buffer, bytes_read);
             if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); _record_overflow(); }
             String line;
@@ -388,6 +435,7 @@ void SubProcess::_read_loop()
                 bool queued = false;
                 {
                     std::lock_guard<std::mutex> lock(_output_mutex);
+                    if (_closing) { line_buffer.clear(); break; }
                     size_t bytes = static_cast<size_t>(line.utf8().length());
                     if (_output_queue.size() >= MAX_QUEUED_LINES || _queued_output_bytes + bytes > MAX_QUEUED_BYTES) {
                         _record_overflow();
@@ -407,14 +455,8 @@ void SubProcess::_read_loop()
         }
     }
 
-    // Report exit code if the process has already terminated (non-blocking,
-    // mirroring the unix waitpid(WNOHANG) behavior).
-    if (_child_process != nullptr) {
-        DWORD code = 0;
-        if (GetExitCodeProcess(_child_process, &code) && code != STILL_ACTIVE) {
-            call_deferred("emit_signal", "process_exited", static_cast<int>(code));
-        }
-    }
+    _poll_exit();
+    _stdout_done = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,7 +474,7 @@ void SubProcess::_stderr_read_loop()
 
         if (ok && bytes_read > 0) {
             line_buffer.append(buffer, bytes_read);
-            if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); _record_overflow(); }
+            if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); if (!_closing) _record_overflow(); }
             String line;
             while (line_buffer.pop_line(line, true)) {
 
@@ -440,8 +482,13 @@ void SubProcess::_stderr_read_loop()
                 {
                     std::lock_guard<std::mutex> lock(_stderr_mutex);
                     size_t bytes = static_cast<size_t>(line.utf8().length());
+                    while (_closing && !_stderr_queue.empty() &&
+                            (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES)) {
+                        _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
+                        _stderr_queue.pop();
+                    }
                     if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
-                        _record_overflow();
+                        if (!_closing) _record_overflow();
                     } else {
                         _queued_stderr_bytes += bytes;
                         _stderr_queue.push(line);
@@ -461,13 +508,21 @@ void SubProcess::_stderr_read_loop()
     if (!tail.is_empty()) {
         std::lock_guard<std::mutex> lock(_stderr_mutex);
         size_t bytes = static_cast<size_t>(tail.utf8().length());
-        if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) _record_overflow();
+        while (_closing && !_stderr_queue.empty() &&
+                (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES)) {
+            _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
+            _stderr_queue.pop();
+        }
+        if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
+            if (!_closing) _record_overflow();
+        }
         else {
             _queued_stderr_bytes += bytes;
             _stderr_queue.push(tail);
             if (!_stderr_notification_pending.exchange(true)) call_deferred("_emit_stderr_ready");
         }
     }
+    _stderr_done = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,7 +531,7 @@ void SubProcess::_stderr_read_loop()
 
 bool SubProcess::write_data(const String &data)
 {
-    if (!_running || _stdin_wr == nullptr || data.is_empty())
+    if (!_running || _closing || _stdin_wr == nullptr || data.is_empty())
         return false;
 
     CharString utf8 = data.utf8();
@@ -494,24 +549,24 @@ bool SubProcess::write_data(const String &data)
 
 void SubProcess::_write_loop()
 {
-    while (_running) {
+    while (_running && !_closing) {
         std::string data;
         {
             std::unique_lock<std::mutex> lock(_write_mutex);
-            _write_ready.wait(lock, [this]() { return !_running || !_write_queue.empty(); });
-            if (!_running) break;
+            _write_ready.wait(lock, [this]() { return !_running || _closing || !_write_queue.empty(); });
+            if (!_running || _closing) break;
             data = std::move(_write_queue.front());
             _queued_write_bytes -= data.size();
             _write_queue.pop();
         }
         size_t sent = 0;
-        while (_running && sent < data.size()) {
+        while (_running && !_closing && sent < data.size()) {
             DWORD written = 0;
             if (!WriteFile(_stdin_wr, data.data() + sent, static_cast<DWORD>(data.size() - sent), &written, nullptr) || written == 0)
                 break;
             sent += written;
         }
-        if (_running && sent != data.size()) _record_overflow();
+        if (_running && !_closing && sent != data.size()) _record_overflow();
     }
 }
 

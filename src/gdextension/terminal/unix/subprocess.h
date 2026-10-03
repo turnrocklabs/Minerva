@@ -25,6 +25,11 @@ private:
     pid_t _child_pid;
 
     std::atomic<bool> _running{false};
+    std::atomic<bool> _closing{false};
+    std::atomic<bool> _stdout_done{false};
+    std::atomic<bool> _stderr_done{false};
+    std::atomic<int> _exit_code{-1};
+    std::mutex _exit_mutex;
     std::thread _read_thread;
     std::thread _stderr_thread;
     std::thread _write_thread;
@@ -49,6 +54,8 @@ private:
     static constexpr size_t MAX_QUEUED_BYTES = 40u * 1024u * 1024u;
     static constexpr size_t MAX_QUEUED_WRITE_BYTES = 72u * 1024u * 1024u;
 
+    int _poll_exit();
+    int _stop(int grace_ms, const String &process_name);
     void _read_loop();
     void _stderr_read_loop();
     void _write_loop();
@@ -79,6 +86,10 @@ public:
 
     /// Stop the subprocess
     void stop();
+
+    /// Close stdin, drain/discard stdout and retain bounded stderr while waiting
+    /// for EOF shutdown; returns actual exit code (-1 if unavailable). Blocks.
+    int stop_gracefully(int grace_ms = 10000, const String &process_name = String());
 
     /// Admit data to the bounded stdin writer without blocking the caller.
     bool write_data(const String &data);

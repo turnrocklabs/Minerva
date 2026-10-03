@@ -238,10 +238,13 @@ func disconnect_from_server() -> void:
 		disconnected_websocket.close()
 	if disconnected_process:
 		SingletonObject.verbose_log("[MCP %s] Stopping subprocess..." % server_name)
-		# Just stop the subprocess - don't try to free it.
-		# The subprocess destructor will call stop() again (safely, as it checks _running).
-		# Godot will clean up the node when the scene tree is destroyed.
-		disconnected_process.stop()
+		# Native pipe readers keep draining while stdin EOF lets the server settle.
+		# This bounded synchronous wait also works while the scene tree is quitting.
+		var exit_code: int = disconnected_process.stop_gracefully(10000, server_name)
+		var shutdown_stderr: String = disconnected_process.read_all_stderr()
+		if not shutdown_stderr.is_empty():
+			print("[MCP %s] Shutdown stderr:\n%s" % [server_name, shutdown_stderr])
+		SingletonObject.verbose_log("[MCP %s] Subprocess exited: %d" % [server_name, exit_code])
 		# Note: We intentionally don't queue_free() here because during shutdown,
 		# the subprocess read thread may have pending deferred calls that would
 		# crash if the object is freed too soon.
