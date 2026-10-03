@@ -53,9 +53,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var image: Image = await _image_capture.call(target)
 	if image == null or image.is_empty():
 		return _error("View '%s' did not produce an image" % view, available)
-	if resolved.panel != null and not is_instance_valid(resolved.panel):
+	var raw_panel: Variant = resolved.get("panel")
+	if not is_instance_valid(raw_panel) and typeof(raw_panel) != TYPE_NIL:
 		return _error("Panel closed during capture", available)
-	var panel: Object = resolved.panel
+	var panel: Object = raw_panel
 	var extras: Variant = {}
 	if panel != null and panel.has_method("snapshot_extra"):
 		extras = panel.snapshot_extra(view)

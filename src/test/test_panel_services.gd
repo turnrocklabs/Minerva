@@ -51,14 +51,20 @@ func _init() -> void:
 			"hidden active/named panel refuses without selecting it")
 	panel.reparent(root)
 	hidden_parent.free()
-	for close_surface in [false, true]:
-		var doomed: Node = Control.new() if close_surface else SubViewport.new()
+	for slot in ["active", "detail", "editor"]:
+		var doomed: Control = ProbeEditor.new() if slot == "editor" else load("res://test/fixtures/panel_probe/PanelProbe.gd").new()
 		root.add_child(doomed)
-		var lifetime := {"ok": true, "viewport": root if close_surface else doomed,
-			"surface": doomed if close_surface else null}
+		if slot != "editor":
+			broker.register_panel(doomed, "probe", "Doomed", PackedStringArray())
+		var lifetime: Dictionary = services.resolve("Duplicate" if slot == "editor" else "Doomed", broker,
+			[doomed] if slot == "editor" else [], slot != "editor")
+		var selected: Dictionary = services.capture_target(lifetime, "active" if slot == "editor" else slot)
+		check(selected.ok, "live panel/editor selects capture before closure")
 		close_before_draw.call_deferred(doomed)
-		var closed_image: Image = await services.capture(lifetime)
-		check(closed_image == null, "freed surface/viewport readback refuses")
+		var closed_image: Image = await services.capture(selected)
+		check(closed_image == null, "same selected panel/editor target refuses after closure")
+		check(not services.capture_target(lifetime).ok and services.views(doomed) == ["active"],
+			"stale resolution and raw panel argument refuse after closure")
 	var missing: Dictionary = services.capture_target(resolved, "missing")
 	check(not missing.ok and missing.views.has("detail"), "unknown view lists slots")
 	check(not services.resolve("missing", broker, [], true).ok, "unknown editor refuses")
@@ -85,8 +91,10 @@ func _init() -> void:
 	var exact: Dictionary = services.resolve("Probe", broker, [second, first])
 	check(exact.panel == replacement and not exact.broker_bound and exact.plugin_id == "other",
 		"final exact panel owns resolution; dead editor is skipped in both loops")
-	first.free()
 	replacement.free()
+	check(services.resolve("Probe", broker, [first]).panel == null,
+		"live editor with freed scene root resolves without typed assignment")
+	first.free()
 	var fallback := FallbackHost.new()
 	var singleton = root.get_node_or_null("SingletonObject")
 	var created_singleton := singleton == null
@@ -114,6 +122,9 @@ func _init() -> void:
 	AnnotationHostRegistry.deregister("Fallback", fallback)
 	unowned.free()
 	panel.free()
+	var dead_broker := Node.new()
+	dead_broker.free()
+	check(not services.resolve("missing", dead_broker).ok, "raw freed broker parameter refuses")
 	check(not services.resolve("Probe", broker, [], true).ok, "freed panel refuses")
 	print("PanelServices: %d failures" % failures)
 	quit(1 if failures else 0)
