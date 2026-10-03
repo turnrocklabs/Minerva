@@ -37,6 +37,7 @@ private:
     std::atomic<bool> _stdout_done{false};
     std::atomic<bool> _stderr_done{false};
     std::atomic<int> _exit_code{-1};
+    std::atomic<bool> _exited{false};
     std::mutex _exit_mutex;
     std::thread _read_thread;
     std::thread _stderr_thread;
@@ -66,6 +67,8 @@ private:
     int _stop(int grace_ms, const String &process_name);
     void _read_loop();
     void _stderr_read_loop();
+    void _trim_stderr(size_t incoming_bytes);
+    String _shutdown_stderr_tail();
     void _write_loop();
     void _record_overflow();
     void _emit_output_ready();
@@ -104,7 +107,7 @@ public:
     bool has_io_overflow() const { return _io_overflow; }
 
     /// Check if subprocess is running
-    bool is_running() const { return _running; }
+    bool is_running() const { return _running && !_exited; }
 
     /// Check if output is available
     bool has_output();

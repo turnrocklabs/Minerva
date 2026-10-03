@@ -58,6 +58,8 @@ private:
     int _stop(int grace_ms, const String &process_name);
     void _read_loop();
     void _stderr_read_loop();
+    void _trim_stderr(size_t incoming_bytes);
+    String _shutdown_stderr_tail();
     void _write_loop();
     void _record_overflow();
     void _emit_output_ready();

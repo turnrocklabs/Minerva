@@ -241,9 +241,6 @@ func disconnect_from_server() -> void:
 		# Native pipe readers keep draining while stdin EOF lets the server settle.
 		# This bounded synchronous wait also works while the scene tree is quitting.
 		var exit_code: int = disconnected_process.stop_gracefully(10000, server_name)
-		var shutdown_stderr: String = disconnected_process.read_all_stderr()
-		if not shutdown_stderr.is_empty():
-			print("[MCP %s] Shutdown stderr:\n%s" % [server_name, shutdown_stderr])
 		SingletonObject.verbose_log("[MCP %s] Subprocess exited: %d" % [server_name, exit_code])
 		# Note: We intentionally don't queue_free() here because during shutdown,
 		# the subprocess read thread may have pending deferred calls that would

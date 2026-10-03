@@ -159,7 +159,6 @@ void SubProcess::_bind_methods()
     ADD_SIGNAL(MethodInfo("stderr_ready"));
     ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
     ADD_SIGNAL(MethodInfo("io_overflow"));
-    ADD_SIGNAL(MethodInfo("shutdown_escalated", PropertyInfo(Variant::STRING, "process_name"), PropertyInfo(Variant::STRING, "reason")));
 }
 
 SubProcess::SubProcess()
@@ -308,6 +307,7 @@ bool SubProcess::start_with_env(const String &command, const PackedStringArray &
     _stdout_done = false;
     _stderr_done = false;
     _exit_code = -1;
+    _exited = false;
     _running = true;
     _io_overflow = false;
 	_output_notification_pending = false;
@@ -338,12 +338,13 @@ bool SubProcess::start_with_env(const String &command, const PackedStringArray &
 int SubProcess::_poll_exit()
 {
     std::lock_guard<std::mutex> lock(_exit_mutex);
-    if (_exit_code >= 0) return _exit_code;
+    if (_exited) return _exit_code;
     if (_child_process != nullptr && WaitForSingleObject(_child_process, 0) == WAIT_OBJECT_0) {
         DWORD code = 0;
         if (GetExitCodeProcess(_child_process, &code)) _exit_code = static_cast<int>(code);
+        _exited = true;
+        call_deferred("emit_signal", "process_exited", _exit_code.load());
     }
-    if (_exit_code >= 0) call_deferred("emit_signal", "process_exited", _exit_code.load());
     return _exit_code;
 }
 
@@ -377,12 +378,11 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
     }
     close_handle(_stdin_wr);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(grace_ms);
-    while (grace_ms > 0 && _poll_exit() < 0 && std::chrono::steady_clock::now() < deadline)
+    while (grace_ms > 0 && (_poll_exit(), !_exited) && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    if (grace_ms > 0 && _poll_exit() < 0) {
+    if (grace_ms > 0 && (_poll_exit(), !_exited)) {
         const String reason = "stdin EOF grace expired after " + String::num_int64(grace_ms) + " ms; terminating owned child";
-        UtilityFunctions::push_warning("SubProcess [" + process_name + "]: " + reason);
-        call_deferred("emit_signal", "shutdown_escalated", process_name, reason);
+        UtilityFunctions::push_warning("SubProcess [" + process_name + "]: " + reason + "\n" + _shutdown_stderr_tail());
     }
     if (_child_process != nullptr) {
         const DWORD legacy_wait = grace_ms == 0 ? 100 : 0;
@@ -463,6 +463,29 @@ void SubProcess::_read_loop()
 // stderr reader
 // ---------------------------------------------------------------------------
 
+// Caller holds _stderr_mutex. Keep the newest bounded diagnostics on shutdown.
+void SubProcess::_trim_stderr(size_t incoming_bytes)
+{
+    while (_closing && !_stderr_queue.empty() &&
+            (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + incoming_bytes > MAX_QUEUED_BYTES)) {
+        _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
+        _stderr_queue.pop();
+    }
+}
+
+String SubProcess::_shutdown_stderr_tail()
+{
+    std::lock_guard<std::mutex> lock(_stderr_mutex);
+    auto lines = _stderr_queue;
+    String tail;
+    while (!lines.empty()) {
+        // At most 1024 Unicode codepoints, hence at most 4096 UTF-8 bytes.
+        tail = (tail + "\n" + lines.front().right(1024)).right(1024);
+        lines.pop();
+    }
+    return tail;
+}
+
 void SubProcess::_stderr_read_loop()
 {
     char buffer[4096];
@@ -482,11 +505,7 @@ void SubProcess::_stderr_read_loop()
                 {
                     std::lock_guard<std::mutex> lock(_stderr_mutex);
                     size_t bytes = static_cast<size_t>(line.utf8().length());
-                    while (_closing && !_stderr_queue.empty() &&
-                            (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES)) {
-                        _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
-                        _stderr_queue.pop();
-                    }
+                    _trim_stderr(bytes);
                     if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
                         if (!_closing) _record_overflow();
                     } else {
@@ -508,11 +527,7 @@ void SubProcess::_stderr_read_loop()
     if (!tail.is_empty()) {
         std::lock_guard<std::mutex> lock(_stderr_mutex);
         size_t bytes = static_cast<size_t>(tail.utf8().length());
-        while (_closing && !_stderr_queue.empty() &&
-                (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES)) {
-            _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
-            _stderr_queue.pop();
-        }
+        _trim_stderr(bytes);
         if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
             if (!_closing) _record_overflow();
         }
