@@ -263,3 +263,42 @@ python3 scripts/agent-container/agent.py attach NAME
 If the old Minerva has already closed, the attach already ended with it: just
 re-attach. The dev container keeps running throughout; nothing inside it
 restarts.
+
+### Pinned host + plugin gates
+
+`run-job --sibling FOLDER=SHA` adds a session clone at a full immutable commit.
+`FOLDER` is its host or session clone path, already registered in the session;
+no arbitrary host directory can be mounted. With siblings the primary keeps
+its basename (for example `/tmp/job/Minerva`) and the sibling keeps its basename
+(`/tmp/job/minerva-plugins`). Duplicate names are refused. Without siblings the
+existing `/tmp/job/src` working directory remains. Dirty files are excluded.
+`result.json` records the assembled revisions and each source's dirty state.
+
+Run the committed static helper from the fresh Minerva checkout:
+
+```bash
+python3 scripts/agent-container/agent.py run-job testex1 --folder /home/imran/github/Minerva \
+  --rev HOST_SHA --sibling /home/imran/github/minerva-plugins=PLUGIN_SHA \
+  --command 'python3 -B scripts/agent-container/two-repo-gate.py --host-base HOST_BASE --plugins-base PLUGIN_BASE' \
+  --seconds 2400 --memory 8g --cpus 4 --artifact gate-evidence --json
+```
+
+The helper stages all existing native recipes, including the JSON schema helper,
+using verified source-built cache entries or their source/official-channel build
+recipes. A missing prerequisite fails; no binaries are copied from `/src`.
+It sets absolute isolated XDG paths, imports the host twice, and checks every
+added/copied/modified/renamed `.gd` in both revision ranges. The plugin repo
+has no standalone project: its scripts use the actual host project context and
+literal sibling paths. The final import and every changed-script check fail on
+nonzero exit or logged `SCRIPT ERROR:` / `ERROR:`. No autoload diagnostics are
+exempted; a check-only script needing autoload context requires a compatible
+static compilation lane before that tuple can pass. Deletions need no parse.
+
+No suites or application scenes execute. `gate-evidence/receipt.json` identifies
+the tuple, bases, Godot version, XDG paths, native provenance stamps, commands,
+exit statuses and log hashes. Logs remain available on failure as artifacts.
+Optional `--check-script minerva-plugins/cad/ui/scripts/orbit_camera.gd` checks
+a static sentinel even when no plugin scripts changed, proving sibling path
+resolution. It must name a `.gd` inside one of the assembled trees.
+Focused runner tests are `python3 -B -m unittest discover -s tests -p test_two_repo_gate.py`
+(run separately by the authorized executor).

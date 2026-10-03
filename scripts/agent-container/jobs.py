@@ -18,6 +18,11 @@ bound one command's CPU or memory, and stopping it could reach the agent's
 own processes; a container per job can be bounded and stopped whole. The
 session itself may be running or stopped.
 
+With --sibling FOLDER=SHA, additional session clones are mounted read-only
+and checked out at exact full SHAs beside the primary, retaining their literal
+directory names. The result records each requested pin and source dirty state;
+/out/revisions attests the assembled tuple. Without siblings, cwd stays src.
+
 Revision. The job mounts the session's clone read-only at /src, resolves
 --rev there to a commit, and checks that commit out into a fresh shared
 clone on the job's /tmp, as container-build/build.py builds a revision
@@ -108,8 +113,19 @@ echo "== job $MINERVA_JOB_ID: $MINERVA_JOB_REV of $MINERVA_JOB_FOLDER"
 sha="$(git --no-optional-locks -C /src rev-parse --verify --end-of-options "$MINERVA_JOB_REV^{commit}")" \
 	|| { echo "== revision $MINERVA_JOB_REV not found"; ended setup 90; }
 git --no-optional-locks -C /src status --porcelain > /out/source-status || ended setup 91
-git clone -q --shared --no-checkout /src /tmp/job/src || ended setup 92
-cd /tmp/job/src && git checkout -q --detach "$sha" || ended setup 93
+primary="${MINERVA_JOB_PRIMARY:-src}"
+git clone -q --shared --no-checkout /src "/tmp/job/$primary" || ended setup 92
+cd "/tmp/job/$primary" && git checkout -q --detach "$sha" || ended setup 93
+printf '%s\t%s\n' "$primary" "$sha" > /out/revisions
+while IFS=$'\t' read -r name pinned; do
+    [ -n "$name" ] || continue
+    git --no-optional-locks -C "/sources/$name" status --porcelain > "/out/source-status-$name" || ended setup 94
+    git clone -q --shared --no-checkout "/sources/$name" "/tmp/job/$name" || ended setup 95
+    git -C "/tmp/job/$name" checkout -q --detach "$pinned" || ended setup 96
+    actual="$(git -C "/tmp/job/$name" rev-parse HEAD)"
+    [ "$actual" = "$pinned" ] || ended setup 97
+    printf '%s\t%s\n' "$name" "$actual" >> /out/revisions
+done < /job/siblings.tsv
 printf '%s\n' "$sha" > /out/revision
 echo "== revision: $sha"
 echo "== command: $(cat /job/command.sh)"
@@ -235,7 +251,26 @@ def source_clone(host, record, folder):
 
 # ── starting ─────────────────────────────────────────────────────────────
 
-def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, seconds, folder):
+def siblings_from(host, record, primary, pairs):
+    """Select only session clones; sibling commits must be full, immutable SHAs."""
+    selected = []
+    names = {Path(primary["path"]).name}
+    for pair in pairs or []:
+        folder, sep, revision = pair.rpartition("=")
+        if not sep or not SHA.fullmatch(revision):
+            raise host.Refused("--sibling takes FOLDER=full-commit-SHA")
+        source = source_clone(host, record, folder)
+        name = Path(source["path"]).name
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name) or name in names:
+            raise host.Refused(f"duplicate or unsafe sibling directory {name!r}")
+        names.add(name)
+        selected.append({"name": name, "folder": source["path"], "revision": revision})
+    if selected and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", Path(primary["path"]).name):
+        raise host.Refused("primary checkout has an unsafe directory name")
+    return selected
+
+
+def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, seconds, folder, sibling_pairs=None):
     host.check_layout()
     record = host.load_record(name)
     if record is None:
@@ -249,6 +284,7 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
     env = env_from(host, env_pairs)
     artifacts = artifacts_from(host, artifact_paths)
     source = source_clone(host, record, folder)
+    siblings = siblings_from(host, record, source, sibling_pairs)
     tag = host.image_tag()
     if not host.image_built(tag):
         raise host.Refused(f"image {tag} is not built: run `agent.py build` first")
@@ -261,18 +297,23 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
         out = host.private_dir(directory / "out")
         given = host.private_dir(directory / "in")
         for file, text in (("run.sh", IN_JOB), ("command.sh", command + "\n"),
-                           ("artifacts.txt", "".join(a + "\n" for a in artifacts))):
+                           ("artifacts.txt", "".join(a + "\n" for a in artifacts)),
+                           ("siblings.tsv", "".join(f"{s['name']}\t{s['revision']}\n" for s in siblings))):
             (given / file).write_text(text)
         mounts = host.natives_manifest(directory) + host.bind_mount(source["path"], "/src", True) \
             + host.bind_mount(given, "/job", True) + host.bind_mount(out, "/out")
+        for sibling in siblings:
+            mounts += host.bind_mount(sibling["folder"], f"/sources/{sibling['name']}", True)
         job = {"version": 1, "id": job_id, "session": name, "revision_requested": rev,
-               "folder": source["path"], "command": command, "env": env, "limits": limits,
+               "folder": source["path"], "siblings": siblings, "command": command, "env": env, "limits": limits,
                "artifacts": artifacts, "container": container_name(name, job_id), "image": tag,
                "started_at": time.time()}
         host.write_json(directory / "job.json", job)
         variables = {"MINERVA_JOB_ID": job_id, "MINERVA_JOB_REV": rev, "MINERVA_JOB_FOLDER": source["path"],
                      "MINERVA_JOB_SECONDS": str(limits["seconds"]),
-                     "MINERVA_JOB_DEADLINE": str(limits["seconds"] + KILL_GRACE_S), **env}
+                     "MINERVA_JOB_DEADLINE": str(limits["seconds"] + KILL_GRACE_S),
+                     "MINERVA_JOB_PRIMARY": Path(source["path"]).name if siblings else "src",
+                     "MINERVA_NATIVES_MANIFEST": host.NATIVES_MANIFEST, **env}
         env_args = [arg for key, value in variables.items() for arg in ("-e", f"{key}={value}")]
         started = subprocess.run(
             host.compose(name, "run", "-d", "--rm", "--name", job["container"],
@@ -329,9 +370,9 @@ def classify(job, out):
         outer[0] if outer and len(outer) == 2 else None, outer[1] if outer and len(outer) == 2 else None
 
 
-def _source(out):
+def _source(out, filename="source-status"):
     try:
-        lines = (out / "source-status").read_text(errors="replace").splitlines()
+        lines = (out / filename).read_text(errors="replace").splitlines()
     except OSError:
         return {"known": False, "dirty": None, "modified": None, "untracked": None}
     untracked = sum(1 for line in lines if line.startswith("??"))
@@ -355,6 +396,19 @@ def _artifacts(job, out, cls):
     return listed
 
 
+def assembled_revisions(out):
+    try:
+        lines = (out / "revisions").read_text().splitlines()
+    except OSError:
+        return {}
+    revisions = {}
+    for line in lines:
+        name, sep, sha = line.partition("\t")
+        if sep and SHA.fullmatch(sha):
+            revisions[name] = sha
+    return revisions
+
+
 def finish(host, directory, job, cls, detail, exit_code=None, elapsed=None):
     """Write result.json once; an existing one is kept and returned."""
     existing = host.read_json(directory / "result.json")
@@ -367,7 +421,10 @@ def finish(host, directory, job, cls, detail, exit_code=None, elapsed=None):
         revision = ""
     result = {"class": cls, "detail": detail, "exit_code": exit_code, "elapsed_s": elapsed,
               "revision": revision if SHA.fullmatch(revision) else "",
-              "revision_requested": job["revision_requested"], "source": {"folder": job["folder"], **_source(out)},
+              "revision_requested": job["revision_requested"],
+              "assembled_revisions": assembled_revisions(out),
+              "siblings": [{**s, "source": _source(out, f"source-status-{s['name']}")}
+                           for s in job.get("siblings", [])], "source": {"folder": job["folder"], **_source(out)},
               "artifacts": _artifacts(job, out, cls), "finished_at": time.time()}
     host.write_json(directory / "result.json", result)
     return result

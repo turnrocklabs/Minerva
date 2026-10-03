@@ -1257,7 +1257,7 @@ def cmd_list(args):
 
 def cmd_run_job(args):
     return jobs.run_job(HOST, args.name, args.rev, args.job_command, args.env, args.artifact,
-                        args.cpus, args.memory, args.seconds, args.folder)
+                        args.cpus, args.memory, args.seconds, args.folder, args.sibling)
 
 
 def cmd_job_status(args):
@@ -1282,6 +1282,8 @@ def job_options(p):
     p.add_argument("--memory", metavar="SIZE")
     p.add_argument("--seconds", type=int)
     p.add_argument("--folder", metavar="PATH")
+    p.add_argument("--sibling", action="append", metavar="FOLDER=SHA",
+                   help="assemble another session clone at an exact commit beside the primary")
 
 
 def parse(argv):
