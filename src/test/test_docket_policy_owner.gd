@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of the master policy as Minerva's governed calls meet it
 ## when the Docket plugin owns Minerva's projects: a policy blocks a call
 ## before it runs, a person's approval lets an agent retire it, a policy that
@@ -15,7 +15,7 @@ extends SceneTree
 ## repository root:
 ##   ( source scripts/lib/test-profile.sh && root="$(mktemp -d)" && seed_test_profile "$root" \
 ##     && MINERVA_TEST_PROFILE_ROOT="$root" timeout 300 \
-##        "${GODOT:-godot}" --headless --path src --script test/test_docket_policy_owner.gd )
+##        "${GODOT:-godot}" --headless --path src res://test/helpers/docket_owner_scene.tscn -- policy_owner )
 ## The test fails at once unless Godot's user directory is under
 ## MINERVA_TEST_PROFILE_ROOT and holds none of the files DocketHost writes.
 ## The plugin-tool dispatch validates its arguments with the JSON Schema
@@ -225,7 +225,7 @@ var _host = null
 const MAX_FRAMES := 300
 
 
-func _init() -> void:
+func _ready() -> void:
 	print("=== Docket policy owner ===\n")
 	await _run()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
@@ -328,7 +328,7 @@ func _test_policy_owner() -> void:
 	var manager = _make(PLUGIN_MANAGER_SRC)
 	if connection == null or authority == null or manager == null:
 		return
-	connection.tree = self
+	connection.tree = get_tree()
 	connection.items = {"POL-1": _policy("POL-1", "active")}
 	authority.connection = connection
 	manager.connection = connection

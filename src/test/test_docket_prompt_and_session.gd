@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of Minerva's side of the Docket plugin: the agent system
 ## prompt read from it, and the session DocketHost keeps there.
 ##
@@ -7,7 +7,7 @@ extends SceneTree
 ## script runs), from the repository root:
 ##   ( source scripts/lib/test-profile.sh && root="$(mktemp -d)" && seed_test_profile "$root" \
 ##     && MINERVA_TEST_PROFILE_ROOT="$root" timeout 300 \
-##        "${GODOT:-godot}" --headless --path src --script test/test_docket_prompt_and_session.gd )
+##        "${GODOT:-godot}" --headless --path src res://test/helpers/docket_owner_scene.tscn -- prompt_and_session )
 ## The test fails at once unless Godot's user directory is under
 ## MINERVA_TEST_PROFILE_ROOT and holds none of the files it writes.
 ##
@@ -150,7 +150,7 @@ var _made_chats: Array = []
 const MAX_FRAMES := 300
 
 
-func _init() -> void:
+func _ready() -> void:
 	print("=== Docket prompt and session ===\n")
 	await _run()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])

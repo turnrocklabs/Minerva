@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of Docket triggers (DOCKET_POLL) under the Docket plugin,
 ## the embedded DocketManager set aside: item_changed events enter as stdio
 ## frames the Docket plugin's connection reads (MCPServerConnection's own
@@ -23,7 +23,7 @@ extends SceneTree
 ## repository root:
 ##   ( source scripts/lib/test-profile.sh && root="$(mktemp -d)" && seed_test_profile "$root" \
 ##     && MINERVA_TEST_PROFILE_ROOT="$root" timeout 300 \
-##        "${GODOT:-godot}" --headless --path src --script test/test_docket_trigger_feed.gd )
+##        "${GODOT:-godot}" --headless --path src res://test/helpers/docket_owner_scene.tscn -- trigger_feed )
 ## The connection validates each frame's numbers with the JSON Schema helper
 ## (res://bin/minerva-json-schema-helper); without it every event is dropped.
 ##
@@ -118,7 +118,7 @@ var _arrived := 0
 const MAX_FRAMES := 300
 
 
-func _init() -> void:
+func _ready() -> void:
 	print("=== Docket trigger feed ===\n")
 	await _run()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])

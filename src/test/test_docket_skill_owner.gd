@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of Docket skills as Minerva's skill tools meet them when the
 ## Docket plugin owns Minerva's projects (the embedded DocketManager set
 ## aside), through the public server dispatch and its execution context:
@@ -24,7 +24,7 @@ extends SceneTree
 ## repository root:
 ##   ( source scripts/lib/test-profile.sh && root="$(mktemp -d)" && seed_test_profile "$root" \
 ##     && MINERVA_TEST_PROFILE_ROOT="$root" timeout 300 \
-##        "${GODOT:-godot}" --headless --path src --script test/test_docket_skill_owner.gd )
+##        "${GODOT:-godot}" --headless --path src res://test/helpers/docket_owner_scene.tscn -- skill_owner )
 ## The plugin-tool dispatch validates its arguments with the JSON Schema
 ## helper (res://bin/minerva-json-schema-helper, from
 ## scripts/build-extensions.sh --helper-only); without it the writes fail.
@@ -228,7 +228,7 @@ var _host = null
 const MAX_FRAMES := 300
 
 
-func _init() -> void:
+func _ready() -> void:
 	print("=== Docket skill owner ===\n")
 	await _run()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
@@ -346,7 +346,7 @@ func _set_up() -> bool:
 	var host = _make("extends \"res://Scripts/Services/DocketHost/DocketHost.gd\"")
 	if _store == null or authority == null or host_manager == null or running == null or wire == null or host == null:
 		return false
-	_store.tree = self
+	_store.tree = get_tree()
 	_store.work.path = WORK_PATH
 	_store.items = {
 		FULL: _skill(FULL, "master", "Full probe", {"prompt_text": "Section zero: read everything first.",

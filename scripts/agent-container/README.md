@@ -316,3 +316,29 @@ a static sentinel even when no plugin scripts changed, proving sibling path
 resolution. It must name a `.gd` inside one of the assembled trees.
 Focused runner tests are `python3 -B -m unittest discover -s tests -p test_two_repo_gate.py`
 (run separately by the authorized executor).
+
+### Four Docket owner scenarios
+
+`ripout-owner-oracles.py` is an independent scenario runner for the policy,
+skill, trigger-feed and prompt/session owner suites. Run it in the same pinned
+Minerva + minerva-plugins assembly as the static gate above, with command
+`python3 -B scripts/agent-container/ripout-owner-oracles.py`, timeout 3600 and
+artifact `owner-oracle-evidence`. It reuses the native/schema staging recipe;
+each suite gets a separate seeded absolute XDG profile before Godot starts.
+An explicit test scene replaces MainScene and loads a suite as a Node after
+project autoloads have started. Assertions still use the actual SceneTree.
+The suite's empty-session/user-directory guards remain active.
+
+Success requires all four scenes to execute: exit zero, exactly one summary,
+a positive pass count matching the printed assertions, no failed assertion,
+no skip and no Godot error diagnostic. No check-only autoload exemption is
+applied to scenario logs. Receipts include both revisions, Godot version,
+native manifest/stamps, helper hash, profiles, commands, counts and log hashes.
+The launcher job result also records the container image identity.
+
+In a **separate fresh job**, use command
+`python3 -B scripts/agent-container/ripout-owner-oracles.py --missing-helper`.
+This controlled negative checks an absent helper path after normal staging,
+leaves the source-built cache untouched, executes no suites, and must exit
+nonzero with a named prerequisite failure. These runtime oracles are run by
+the independent executor; an author's clean static gate does not prove them.
