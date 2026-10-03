@@ -40,7 +40,7 @@ func _run() -> void:
 		{"OR": [{"field": "title", "value": "x"}]},
 	]:
 		var refused: Dictionary = registry.call_tool("docket_query", {"filter": filter})
-		check("invalid filter refused with item table intact", refused.has("error") and source.has_item(id) and source.get_item(id).title == "Source candidate")
+		check("invalid filter refused with item table intact", str(refused.get("error", "")).contains("Invalid filter field") and source.has_item(id) and source.get_item(id).title == "Source candidate")
 	for filter in [
 		{"status__in": [source.get_item(id).status], "tags_contains": "security"},
 		{"$and": [{"field": "tags", "value": "security"}, {"$or": [{"field": "title", "value": "Source candidate"}]}]},

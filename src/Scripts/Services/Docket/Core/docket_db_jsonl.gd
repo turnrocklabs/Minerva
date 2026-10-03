@@ -316,12 +316,13 @@ func save_query(name: String, query_dict: Dictionary) -> void:
 
 # -- Secrets ------------------------------------------------------------------
 
-func init_vault(key: PackedByteArray, salt: PackedByteArray) -> void:
-	# init_vault calls set_meta_value twice internally.
+func init_vault(key: PackedByteArray, salt: PackedByteArray, transactional: bool = false) -> void:
+	# Coalesce ordinary metadata writes; transactional imports flush after commit.
 	_flush_depth += 1
-	super.init_vault(key, salt)
+	super.init_vault(key, salt, transactional)
 	_flush_depth -= 1
-	_flush_jsonl()
+	if not transactional:
+		_flush_jsonl()
 
 
 func set_secret(handle: String, ciphertext: PackedByteArray, iv: PackedByteArray, mac: PackedByteArray, requires_2fa: bool = false) -> void:
