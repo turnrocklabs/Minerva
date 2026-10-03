@@ -44,6 +44,9 @@ func execute(args: Dictionary, schema: Dictionary, primary_db: DocketDB, project
 	var source_db := _resolve_project_db(source_project, primary_db, project_dbs)
 	var target_db := _resolve_project_db(target_project, primary_db, project_dbs)
 
+	if source_db == null or target_db == null:
+		return {"error": "Unknown project: %s" % (source_project if source_db == null else target_project)}
+
 	# Build payload from pull or push mode
 	var payload := {}
 	var field_list: PackedStringArray = []
@@ -131,7 +134,7 @@ func _resolve_project_db(name: String, primary_db: DocketDB, project_dbs: Dictio
 	for proj_name in project_dbs:
 		if proj_name.to_lower() == name.to_lower():
 			return project_dbs[proj_name]
-	return primary_db
+	return null
 
 
 func _primary_name(primary_db: DocketDB, project_dbs: Dictionary) -> String:

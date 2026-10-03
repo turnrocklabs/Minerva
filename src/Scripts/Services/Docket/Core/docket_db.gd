@@ -18,6 +18,7 @@ var dirty: bool = false
 ## into the call's error (persist), so a change that was not stored is never
 ## reported as made.
 var writes: int = 0
+var query_reads: int = 0
 var write_error: String = ""
 var canonical_path: String = ""
 var read_only_reason: String = ""
@@ -606,6 +607,11 @@ func import_item_full(new_id: String, exported: Dictionary) -> String:
 			 size_bytes, att_data, str(att.get("created_at", "")),
 			 str(att.get("description", ""))])
 
+	# Vault rows were authenticated and re-encrypted by the move tool.
+	for secret in exported.get("secrets", []):
+		_exec_checked("INSERT INTO docket_secrets (handle, ciphertext, iv, mac, created_at, updated_at, requires_2fa) VALUES (?, ?, ?, ?, ?, ?, ?);", [secret.handle, secret.ciphertext, secret.iv, secret.mac, ts, ts, secret.requires_2fa])
+	for version in exported.get("secret_versions", []):
+		_exec_checked("INSERT INTO docket_secret_versions (handle, version, ciphertext, iv, mac, created_at, rotated_by) VALUES (?, ?, ?, ?, ?, ?, ?);", [version.handle, version.version, version.ciphertext, version.iv, version.mac, version.created_at, version.rotated_by])
 	# Update timestamp
 	_exec("UPDATE items SET updated_at=? WHERE id=?;", [ts, new_id])
 	if not write_error.is_empty():
@@ -770,6 +776,9 @@ func get_links(item_id: String) -> Array:
 
 func execute_query(query: Dictionary, detail: String = "full") -> Array:
 	var filter = query.get("filter", {})
+	var invalid := DocketDBFilter.validate_filter(filter if filter is Dictionary else {})
+	if not invalid.is_empty():
+		return [{"_error": invalid}]
 	var sort_spec: Array = query.get("sort", [])
 	var limit: int = int(query.get("limit", 0))
 
@@ -1317,6 +1326,7 @@ func _exec_checked(sql: String, bindings: Array = []) -> String:
 
 
 func _exec_select(sql: String, bindings: Array = []) -> Array:
+	query_reads += 1
 	var ok: bool
 	if bindings.is_empty():
 		ok = _db.query(sql)

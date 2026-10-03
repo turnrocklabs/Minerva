@@ -240,3 +240,32 @@ static func _translate_wildcards(pattern: String) -> String:
 			_:
 				result += c
 	return result
+
+
+## Validate every identifier before translation can produce executable SQL.
+static func validate_filter(filter: Dictionary) -> String:
+	if filter.has("conditions") or filter.has("$and") or filter.has("$or"):
+		for key in ["conditions", "$and", "$or"]:
+			for child in filter.get(key, []):
+				var failure := validate_filter(child)
+				if not failure.is_empty():
+					return failure
+		return ""
+	if filter.has("field"):
+		return _validate_field(str(filter.field), ["tags", "has_attachment"])
+	for key in filter:
+		var field := str(key)
+		if field == "tags_contains":
+			continue
+		if field.ends_with("__ne") or field.ends_with("__in"):
+			field = field.left(-4)
+		var failure := _validate_field(field, [])
+		if not failure.is_empty():
+			return failure
+	return ""
+
+
+static func _validate_field(field: String, pseudo: Array) -> String:
+	if field == "id" or field in DocketDB._ITEM_COLS or field in pseudo:
+		return ""
+	return "Invalid filter field: '%s'" % field

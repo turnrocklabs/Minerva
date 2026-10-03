@@ -10,6 +10,8 @@ func get_definition() -> Dictionary:
 			"type": "object",
 			"properties": {
 				"id": {"type": "string", "description": "Full ID or short prefix (min 4 chars)"},
+				"vault_password": {"type": "string", "description": "Optional vault password for re-encryption; defaults to Preferences"},
+				"secondary_password": {"type": "string", "description": "Required to move 2FA vault content"},
 				"target_project": {"type": "string", "description": "Name of the target project"},
 			},
 			"required": ["id", "target_project"],
@@ -53,12 +55,17 @@ func execute(args: Dictionary, _schema: Dictionary, _primary_db: DocketDB, proje
 	if source_db == target_db:
 		return {"error": "Item is already in project '%s'" % canonical_target}
 
+	source_db.write_error = ""
+	target_db.write_error = ""
 	# Export full item (data + events + comments + attachments)
 	var exported := source_db.export_item_full(item_id)
 	if exported.is_empty():
 		return {"error": "Failed to export item %s" % item_id}
 
-	var new_id: String
+	var new_id: String = item_id if DocketDB._is_uuid7(item_id) else target_db.next_uuid7_id()
+	var vault_failure := _prepare_vault(args, source_db, target_db, item_id, new_id, exported)
+	if not vault_failure.is_empty():
+		return {"error": vault_failure}
 	var refs_updated := 0
 
 	if DocketDB._is_uuid7(item_id):
@@ -67,13 +74,18 @@ func execute(args: Dictionary, _schema: Dictionary, _primary_db: DocketDB, proje
 		var failure := target_db.import_item_full(new_id, exported)
 		if not failure.is_empty():
 			return {"error": "Move import failed: " + failure}
+		var unsaved := target_db.persist()
+		if not unsaved.is_empty():
+			return {"error": "Move destination save failed: " + unsaved}
 		source_db.delete_item(item_id)
 	else:
 		# Legacy items get upgraded to UUID7 on move
-		new_id = target_db.next_uuid7_id()
 		var failure := target_db.import_item_full(new_id, exported)
 		if not failure.is_empty():
 			return {"error": "Move import failed: " + failure}
+		var unsaved := target_db.persist()
+		if not unsaved.is_empty():
+			return {"error": "Move destination save failed: " + unsaved}
 		source_db.delete_item(item_id)
 		# Rewrite cross-project references in ALL projects
 		var old_qualified := "%s:%s" % [source_name, item_id]
@@ -89,3 +101,49 @@ func execute(args: Dictionary, _schema: Dictionary, _primary_db: DocketDB, proje
 		"new_project": canonical_target,
 		"refs_updated": refs_updated,
 	}
+
+
+## Re-encrypt before import; never copy source ciphertext under a new vault salt.
+func _prepare_vault(args: Dictionary, source: DocketDB, target: DocketDB, old_id: String, new_id: String, exported: Dictionary) -> String:
+	var records: Array = []
+	for suffix in ["", ":notes"]:
+		var handle: String = old_id + suffix
+		var current := source.get_secret_raw(handle)
+		if not current.is_empty():
+			current["handle"] = new_id + suffix
+			records.append(current)
+		for version in source.get_secret_versions(handle):
+			version["handle"] = new_id + suffix
+			version["requires_2fa"] = current.get("requires_2fa", false)
+			records.append(version)
+	if records.is_empty():
+		return ""
+	var password := str(args.get("vault_password", ""))
+	if password.is_empty():
+		password = UserPrefs.load_vault_password()
+	var source_key := VaultCrypto.derive_key(password, source.get_vault_salt())
+	if password.is_empty() or not source.verify_vault(source_key):
+		return "Move requires the source vault password"
+	var salt := target.get_vault_salt() if target.has_vault() else VaultCrypto.generate_salt()
+	var target_key := VaultCrypto.derive_key(password, salt)
+	if target.has_vault() and not target.verify_vault(target_key):
+		return "Destination vault password does not match"
+	exported["secrets"] = []
+	exported["secret_versions"] = []
+	for record in records:
+		var plain := VaultCrypto.decrypt(record.ciphertext, record.iv, record.mac, source_key)
+		if record.requires_2fa:
+			var secondary := str(args.get("secondary_password", ""))
+			if secondary.is_empty():
+				return "Move requires secondary_password for 2FA vault content"
+			plain = VaultCrypto.decrypt_2fa(record.ciphertext, record.iv, record.mac, source_key, VaultCrypto.derive_key(secondary, source.get_vault_salt()))
+		if plain.is_empty():
+			return "Move vault authentication failed; source retained"
+		var encrypted := VaultCrypto.encrypt(plain, target_key)
+		if record.requires_2fa:
+			encrypted = VaultCrypto.encrypt_2fa(plain, target_key, VaultCrypto.derive_key(str(args.secondary_password), salt))
+		record.merge(encrypted, true)
+		exported["secret_versions" if record.has("version") else "secrets"].append(record)
+	if not target.has_vault():
+		target.init_vault(target_key, salt)
+	return ""

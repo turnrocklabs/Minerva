@@ -89,7 +89,9 @@ func call_tool(name: String, arguments: Dictionary) -> Dictionary:
 		_log_error(name, arguments, err)
 		return err
 	# Pre-resolve short ID prefixes to full IDs before dispatching
-	_resolve_id_args(arguments)
+	var resolution_error := _resolve_id_args(arguments)
+	if not resolution_error.is_empty():
+		return {"error": resolution_error}
 	var refusal := _mutation_precheck(name, arguments)
 	if not refusal.is_empty():
 		return {"error": refusal}
@@ -126,6 +128,13 @@ func _mutation_precheck(name: String, args: Dictionary) -> String:
 		return ""
 	var targets: Array[DocketDB] = [_resolve_db(args)]
 	if name == "docket_mirror":
+		for field in ["source_project", "target_project"]:
+			var requested := str(args.get(field, ""))
+			var found := requested.is_empty()
+			for project in _project_dbs:
+				found = found or project.to_lower() == requested.to_lower()
+			if not found:
+				return "Unknown project: %s" % requested
 		var target := str(args.get("target_project", ""))
 		targets = [_db]
 		for project in _project_dbs:
@@ -151,35 +160,27 @@ func _log_error(tool_name: String, args: Dictionary, result: Dictionary) -> void
 		_db.log_mcp_error(tool_name, str(result.error), arg_keys)
 
 
-func _resolve_id_args(args: Dictionary) -> void:
-	## Try to resolve short hex prefixes in ID fields to full IDs.
+func _resolve_id_args(args: Dictionary) -> String:
 	for field in _ID_FIELDS:
-		if not args.has(field):
+		var val := str(args.get(field, ""))
+		if val.length() < 4 or DocketDB._is_uuid7(val) or not val.is_valid_hex_number(false):
 			continue
-		var val: String = str(args[field])
-		if val.is_empty():
-			continue
-		# Skip if it's already a full UUID7 or a known legacy ID
-		if DocketDB._is_uuid7(val):
-			continue
-		# Skip legacy-format IDs (PREFIX-NNNN) — they use exact match
-		if val.contains("-"):
-			continue
-		# Try resolving as a short hex prefix (min 4 chars)
-		if val.length() >= 4 and val.is_valid_hex_number(false):
-			var resolved := ""
-			# Search across all project DBs
-			for proj_name in _project_dbs:
-				var pdb: DocketDB = _project_dbs[proj_name]
-				var r := pdb.resolve_short_id(val)
-				if not r.is_empty():
-					resolved = r
-					break
-			# Fallback to primary DB
-			if resolved.is_empty():
-				resolved = _db.resolve_short_id(val)
-			if not resolved.is_empty():
-				args[field] = resolved
+		var projects := _project_dbs.duplicate()
+		if not projects.values().has(_db):
+			projects[_db.get_project_name()] = _db
+		var candidates: Array = []
+		for project in projects:
+			var db: DocketDB = projects[project]
+			for item in db.execute_query({"filter": {"conditions": [{"field": "id", "value": val}]}}):
+				candidates.append({"id": item.id, "name": "%s:%s (%s)" % [project, item.id, item.get("title", "")]})
+		if candidates.size() > 1:
+			var names := PackedStringArray()
+			for candidate in candidates:
+				names.append(candidate.name)
+			return "Ambiguous ID '%s': %s" % [val, ", ".join(names)]
+		if candidates.size() == 1:
+			args[field] = candidates[0].id
+	return ""
 
 
 func _resolve_db(arguments: Dictionary) -> DocketDB:
