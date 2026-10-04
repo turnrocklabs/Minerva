@@ -505,6 +505,7 @@ func _refresh_vault_status() -> void:
 		%VaultLabel.text = "[b]Unlock Existing Master Vault[/b]\nPassword stays in memory for this session; resent privately after Docket restarts. New vault creation is unavailable here."
 		%VaultPasswordLabel.text = "Password:"
 		%SetVaultPasswordButton.text = "Unlock for Session"
+		_vault_confirm.get_parent().hide()
 		_vault_hint.editable = false
 		_vault_hint.text = ""
 		_vault_password.text = ""
@@ -535,12 +536,11 @@ func _refresh_vault_status() -> void:
 func _on_set_vault_password_pressed() -> void:
 	if SingletonObject.docket_manager == null:
 		var password := _vault_password.text
-		var matches := password == _vault_confirm.text
 		_vault_password.text = ""
 		_vault_confirm.text = ""
 		_vault_hint.text = ""
-		if password.is_empty() or not matches:
-			_vault_message.text = "Enter a nonempty matching password."
+		if password.is_empty():
+			_vault_message.text = "Enter a nonempty password."
 			return
 		%SetVaultPasswordButton.disabled = true
 		var host := SingletonObject.docket_host

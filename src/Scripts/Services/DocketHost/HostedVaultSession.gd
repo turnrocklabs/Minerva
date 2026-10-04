@@ -19,14 +19,12 @@ func lost(host: Node, exiting: bool = false) -> void:
 
 
 func status(host: Node) -> String:
-	if not _unlocked.is_empty() and host._vault_binding() != _unlocked:
-		_unlocked = {}
-		message = "Vault: locked (session password retained)."
+	observe(host)
 	return message
 
 
 func observe(host: Node) -> void:
-	if not _unlocked.is_empty() and host._vault_binding() != _unlocked:
+	if not _unlocked.is_empty() and host._vault_identity() != _unlocked:
 		_unlocked = {}
 		message = "Vault: locked (session password retained)."
 		host.vault_changed.emit()
@@ -34,7 +32,7 @@ func observe(host: Node) -> void:
 
 
 func resume(host: Node) -> void:
-	if not _password.is_empty() and not _busy:
+	if not _password.is_empty() and _unlocked.is_empty() and not _busy and not host._vault_binding().is_empty():
 		await unlock(host, _password)
 
 
@@ -104,5 +102,5 @@ func unlock(host: Node, password: String) -> String:
 	if _descriptor(answer) != descriptor or answer.get("result", {}).get("unlocked") != true:
 		return _finish(host, epoch, "Vault unlock refused; check the existing vault password.")
 	_password = password
-	_unlocked = binding
+	_unlocked = host._vault_identity()
 	return _finish(host, epoch, "Vault: unlocked for this session only (password kept in memory).")

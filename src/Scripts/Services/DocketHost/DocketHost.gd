@@ -162,15 +162,22 @@ func _exit_tree() -> void:
 	_vault_session.lost(self, true)
 
 
-# Snapshot process, master opening and session activity across every vault await.
-func _vault_binding() -> Dictionary:
-	if not state in ["ready", "degraded"] or _stale(_connection, _generation) or _changing or _reconciling:
+# Settled unlock identity ignores ordinary project/session activity.
+func _vault_identity() -> Dictionary:
+	if not state in ["ready", "degraded"] or _stale(_connection, _generation):
 		return {}
 	var master := master_project()
 	if master.is_empty():
 		return {}
-	return {"process": [_connection, _generation], "opening": _layer_openings([master]),
-		"session_changes": _session_changes, "changes": _changes}
+	return {"process": [_connection, _generation], "opening": _layer_openings([master])}
+
+
+# Full operation snapshot remains strict across every vault await.
+func _vault_binding() -> Dictionary:
+	var identity := _vault_identity()
+	if identity.is_empty() or _changing or _reconciling:
+		return {}
+	return identity.merged({"session_changes": _session_changes, "changes": _changes})
 
 
 ## The active system prompt `key` for `model_id` ("" for none), read from
@@ -1087,7 +1094,6 @@ func _prepare() -> void:
 		_setup_problems.append(listed)
 	_reconciled_paths = _open_paths()
 	_publish()
-	_vault_session.resume(self)
 
 
 # Opens the existing project at `path` (never creating it): its descriptor,
@@ -1272,6 +1278,7 @@ func _publish(more: Array = []) -> void:
 		now.append(saved)
 	problems = now
 	_set_state("degraded" if not problems.is_empty() else "ready")
+	_vault_session.resume.call_deferred(self)
 
 
 # Writes the session when it differs from the one last saved: "" or why it

@@ -160,7 +160,7 @@ func set_backend_tool_guard(_id: String, _guard: Callable) -> void:
 """
 
 const VAULT_PASSWORD := "D3a-private-session-sentinel"
-## Real Preferences methods, constructed without unrelated tabs or startup.
+## Real Preferences scene and inherited methods; only unrelated popup startup is skipped.
 const PREFS_SRC := """
 extends "res://Scripts/UI/Views/PreferencesPopup.gd"
 func _ready() -> void:
@@ -436,21 +436,14 @@ func _test_session() -> void:
 # -- Hosted vault: real host/helper/UI, explicitly fake private backend --------
 
 func _vault_form():
-	var form = _make(PREFS_SRC)
-	for spec in [["VaultLabel", RichTextLabel], ["VaultPasswordLabel", Label],
-			["SetVaultPasswordButton", Button]]:
-		var widget = spec[1].new()
-		widget.name = spec[0]
-		form.add_child(widget)
-		widget.owner = form
-		widget.unique_name_in_owner = true
-	form._vault_password = LineEdit.new()
-	form._vault_confirm = LineEdit.new()
-	form._vault_hint = LineEdit.new()
-	form._vault_status_label = Label.new()
-	form._vault_message = Label.new()
-	for widget in [form._vault_password, form._vault_confirm, form._vault_hint, form._vault_status_label, form._vault_message]:
-		form.add_child(widget)
+	var form = load("res://Scenes/windows/PreferencesPopup.tscn").instantiate()
+	var fixture := GDScript.new()
+	fixture.source_code = PREFS_SRC
+	check("G: real Preferences scene fixture compiles", fixture.reload() == OK)
+	form.set_script(fixture)
+	form.visible = false
+	_made_nodes.append(form)
+	root.add_child(form)
 	return form
 
 
@@ -458,6 +451,13 @@ func _fill_vault(form, password: String) -> void:
 	form._vault_password.text = password
 	form._vault_confirm.text = password
 	form._vault_hint.text = password
+
+
+func _submit_vault(form, hosted: bool = true) -> void:
+	form._vault_message.text = ""
+	form.get_node("%SetVaultPasswordButton").pressed.emit()
+	check("G: real Preferences scene button completes its vault attempt",
+		await _wait(func() -> bool: return not form.get_node("%SetVaultPasswordButton").disabled and (not hosted or not form._vault_message.text.is_empty())))
 
 
 func _vault_attempt(host) -> Dictionary:
@@ -502,35 +502,43 @@ func _test_vault() -> void:
 	form._refresh_vault_status()
 	check("G: hosted Preferences does not load legacy password/hint and labels session unlock",
 		form._vault_hint.text.is_empty() and not form._vault_hint.editable
-		and form.get_node("%SetVaultPasswordButton").text == "Unlock for Session")
+		and form.get_node("%SetVaultPasswordButton").text == "Unlock for Session"
+		and not form._vault_confirm.get_parent().visible)
 	_fill_vault(form, "wrong-password")
-	await form._on_set_vault_password_pressed()
+	await _submit_vault(form)
 	check("G: wrong password visibly refuses and clears every credential widget",
 		form._vault_message.text == "Vault unlock refused; check the existing vault password."
 		and form._vault_password.text.is_empty() and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty()
 		and host._vault_session._password.is_empty())
 	authority.initialized = false
 	_fill_vault(form, VAULT_PASSWORD)
-	await form._on_set_vault_password_pressed()
+	await _submit_vault(form)
 	check("G: an uninitialized vault visibly refuses without retaining the password",
 		form._vault_message.text == "Vault refused: an initialized, readable existing vault is required."
 		and host._vault_session._password.is_empty())
 	authority.initialized = true
 	_fill_vault(form, VAULT_PASSWORD)
-	await form._on_set_vault_password_pressed()
-	check("G: correct password privately unlocks the exact existing opening for this session",
+	form._vault_confirm.text = ""
+	await _submit_vault(form)
+	check("G: correct single password privately unlocks the exact existing opening for this session",
 		host.vault_status() == "Vault: unlocked for this session only (password kept in memory)."
 		and host._vault_session._password == VAULT_PASSWORD
 		and authority.private_methods.slice(-2) == ["vault_challenge", "vault_unlock"])
 	check("G: successful hosted UI clears widgets and preserves existing plaintext preferences byte-for-byte",
 		form._vault_password.text.is_empty() and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty()
 		and FileAccess.get_file_as_bytes("user://docket_prefs.json") == before)
-	_fill_vault(form, VAULT_PASSWORD)
-	form._vault_confirm.text = "mismatch"
-	await form._on_set_vault_password_pressed()
-	check("G: mismatched hosted input refuses and clears the form",
-		form._vault_message.text == "Enter a nonempty matching password." and form._vault_password.text.is_empty()
+	_fill_vault(form, "")
+	await _submit_vault(form)
+	check("G: empty hosted input refuses and clears the form",
+		form._vault_message.text == "Enter a nonempty password." and form._vault_password.text.is_empty()
 		and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty())
+	await host.unlock_vault(VAULT_PASSWORD)
+	var settled_calls: int = authority.private_methods.size()
+	connection.open_project("/p/vault-session.dct")
+	manager.backend_tool_called.emit("docket", "docket_project_add")
+	check("G: ordinary session project reconciliation preserves settled unlocked state without resending",
+		await _wait(func() -> bool: return not host._reconciling)
+		and host.vault_status().begins_with("Vault: unlocked") and authority.private_methods.size() == settled_calls)
 	check("G: oversized UTF-8 input is refused locally", await host.unlock_vault("é".repeat(513)) == "Vault refused: enter a password of at most 1024 UTF-8 bytes.")
 	# Hold old responses across each lifecycle boundary, never printing payloads.
 	for method in ["vault_challenge", "vault_unlock"]:
@@ -562,17 +570,34 @@ func _test_vault() -> void:
 	var restarted = _make(CONNECTION_SRC)
 	restarted.generation = 99
 	manager.connection = restarted
+	authority = _make(AUTHORITY_SRC)
 	authority.connection = restarted
+	manager.authority = authority
 	var count: int = authority.private_methods.size()
 	manager.plugin_ready.emit("docket")
-	check("I: new connection automatically resends only after a fresh private challenge",
+	check("I: new connection and new authority receive automatic fresh challenge then resend",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
 		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
 	# A new opening seen by a real refresh also re-challenges automatically.
+	count = authority.private_methods.size()
 	restarted.open[host.master_path].open_generation += "-next"
 	await host._refresh(restarted, restarted.generation)
 	check("I: a new master opening automatically re-challenges before unlock",
-		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked")))
+		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
+		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
+	count = authority.private_methods.size()
+	host._reconciling = true
+	restarted.open[host.master_path].open_generation += "-busy"
+	await host._refresh(restarted, restarted.generation)
+	await process_frame
+	check("I: a resume during reconciliation waits without losing the retained credential",
+		authority.private_methods.size() == count and not host.vault_status().begins_with("Vault: unlocked")
+		and host._vault_session._password == VAULT_PASSWORD)
+	host._reconciling = false
+	host._publish()
+	check("I: settled publish re-arms a resume deferred by reconciliation",
+		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
+		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
 	var public_clean := not JSON.stringify(connection.public_calls + restarted.public_calls).contains(VAULT_PASSWORD)
 	var history_clean := true
 	for chat in _made_chats:
@@ -588,7 +613,7 @@ func _test_vault() -> void:
 	embedded._refresh_vault_status()
 	check("J: embedded Preferences still loads the existing hint", embedded._vault_hint.text == "legacy-hint")
 	_fill_vault(embedded, "embedded-password")
-	await embedded._on_set_vault_password_pressed()
+	await _submit_vault(embedded, false)
 	check("J: embedded Preferences still persists its password and hint",
 		UserPrefs.load_vault_password() == "embedded-password" and UserPrefs.load_vault_password_hint() == "embedded-password")
 
