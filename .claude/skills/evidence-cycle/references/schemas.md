@@ -37,14 +37,23 @@ otherwise search its project, then `minerva`. Multiple matches are an error.
 
 | Field | Meaning |
 |---|---|
-| `roles` | Harness and model for each role; never infer them from memory |
+| `roles` | Harness and model for each role; `implementer` and `fixer` execute approved gates/tests by default; never infer models from memory |
 | `reviewers` | All listed reviewers are required during the pilot; emphasis does not prohibit other findings |
 | `access` | `repo` allows independent navigation; `diff` requires supplied source and targeted requests |
-| `gate` | Fixed-command agent used only when the runner cannot execute commands directly |
+| `gate` | Approved command lane or fixed-command role for a runner capability gap; not exclusive test ownership |
+| `tester` | Optional independent result classifier; writer runs remain acceptance evidence, with one orchestrator cold spot-check per pack and cold reruns after a failure |
 | `rounds` | Hard batch limits for group repairs, repair review rounds, and final-test repairs |
-| `budgets` | Per-attempt allowances; the implementer attempt covers a whole batch, so its allowance scales with the task count; exhaustion returns incomplete under the main guide's rules |
+| `budgets` | Explicit per-attempt minutes and/or tool-call allowances; the implementer attempt covers a whole batch and scales with task count; exhaustion returns incomplete |
 | `max_agents` | Total agent dispatch allowance for this batch, including retries; parallel calls also respect runtime capacity |
 | `workflow` | Permit suggesting Workflow mode; explicit owner authorization is still required |
+
+Use existing role `notes` and article notes for review timing, test ownership
+and the one-handoff-per-pack spot-check rule; no new config schema is needed.
+Reviewer `when` and `roles.delta_reviews`, when present, define the required
+initial, delta and final coverage schedule without removing any reviewer.
+Keep `access` as `repo` or `diff`; put tool and delivery details in `notes`.
+Optional allocation notes (`claude_keeps`, `claude_cost_controls`, `orchestration`)
+describe responsibilities and channels; they do not grant authority.
 
 Autonomy values:
 
@@ -56,9 +65,13 @@ Autonomy values:
   an already-authorized release once that candidate's CI passes.
 
 Omitted `autonomy` uses the autonomous values in the example; it does not grant
-authority. Other required fields must be explicit. Document an attended-mode
-exception in the config article. Validate types, allowed enum values, unique
-reviewer names, and positive limits; name the offending field on refusal.
+authority. Keep release conditions and repository-specific permission notes
+outside the enum value. Other required fields must be explicit. Each dispatched
+role needs a positive minutes and/or tool-call allowance in the config or an
+approved run-specific brief; omitted budget keys are not zero. Document an
+attended-mode exception in the config article. Validate types, allowed enums,
+unique reviewer names and every supplied positive limit; name the offending
+field on refusal.
 
 ## Project profile
 
@@ -100,6 +113,13 @@ paths or transient findings.
 limits bound one reviewable batch. There is no time floor; the numbers exist
 to forecast the batch and to compare estimate with actual. Revise them from
 recorded actuals at close-out, as a proposed profile revision.
+
+Ceilings belong to the selected repository profile, not the generic example:
+Docket's approved rev 6 uses 900 changed lines / 8 commits; Minerva's approved
+profile retains 600 / 6. Count handed-off preserved commits. An unhanded writer
+commit may be amended; delivered, reviewed or integrated commits may not.
+Keep `batch.basis` for the actual measurement and owner-decision provenance;
+do not describe an owner-selected ceiling as a measured throughput result.
 
 `classes` and `one_class` retain the pilot field names but identify the
 project's named test targets; they need not be language-level classes. Use
@@ -168,6 +188,8 @@ records; approved run-specific overrides are explicit.
   manifest, not mutable tags. Reject unknown tasks, duplicate names, or missing
   targets. When no useful automated oracle exists, record the gap explicitly;
   approval must state the alternative evidence and deferred human check.
+  A static-only docs/config task explicitly records no runtime targets and
+  names its required static gates; it must not invent or run Godot classes.
 - A review-boundary group must finish its required review before dependent
   implementation proceeds. Use orchestrator-stepped mode if its outcome may
   change later goals.
@@ -231,3 +253,13 @@ Other agent results identify role, manifest, input/output commit, result,
 evidence references, discoveries, and remaining uncertainties. A command
 result also records command, environment, exit status, timeout, log identity,
 and failure classification. Missing or malformed results are incomplete.
+
+Use those existing fields for two distinct receipts: the early static-PASS
+pointer includes SHA, gate job and runtime status; the final acceptance handoff
+includes that exact SHA, PASS job, full named targets and environment. A changed
+candidate marks old pointers/receipts superseded. Acceptance requires the
+writer's exact-SHA PASS job and the pack's cold spot-check; a failed spot-check
+requires cold reruns and revalidation, never acceptance on older evidence.
+Add a short report and actual usage ledger, not source tars or hash indexes.
+Retained approved-input contents and hashes above remain required. Record
+GO-to-push lead time and pre/post final-handoff defects instead of lines/hour.

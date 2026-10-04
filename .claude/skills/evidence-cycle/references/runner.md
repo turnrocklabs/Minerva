@@ -38,13 +38,27 @@ orchestrator turn.
 
 Workflow may use two runs separated by a decision checkpoint:
 
-1. Implement, gate, commit, group tests, freeze, independent reviews; return receipts.
-2. From finding decisions: repair, gates, affected tests, repair review, final
-   checks, readiness; return evidence for authorized push.
+1. Writer implements and runs focused targets, commits and gates the exact SHA,
+   posts the static-PASS pointer, then runs the full named set while independent
+   reviews proceed. Return separate review-pointer and final PASS receipts.
+2. From finding decisions: serial repair and focused checks, replacement
+   static-PASS pointer, required review alongside the final named run, pack
+   cold spot-check and readiness. Return evidence for authorized push.
 
 The checkpoint belongs to the orchestrator; the configured autonomy mode
 determines whether the owner is needed. It is not necessarily a human pause.
 New findings loop through the same decision and repair rules.
+
+Post the SHA and gate job immediately at static PASS, with runtime in progress
+until its final job finishes. A replacement SHA explicitly supersedes earlier
+pointers and receipts. Preserve those receipts as feedback; never treat them
+as proof for the replacement. Read-only planning for pack N+1 may proceed
+while N is under review, without dispatching a second code writer.
+
+The writer runs gates and tests by default. A fixed-command role handles an
+explicit runner capability gap only within recorded authority and isolation.
+Ask questions, then wait for answers before dependent commits. Neither a
+timeout nor an unanswered notification supplies approval or missing facts.
 
 Every agent returns a defined result shape. Parse that structure, not free-text
 reports. All required reviewers use independent read-only execution; writers
@@ -78,6 +92,13 @@ Attempt allowances yield incomplete results. Batch round/dispatch limits stop
 the batch incomplete and record remaining work. Autonomous mode does not
 remove those limits.
 
+Acceptance uses the writer's exact-SHA PASS job and named targets. The
+orchestrator cold-runs one handoff per pack; if it fails, revert that pack to
+cold reruns, classify the failure, fix and revalidate. Older evidence cannot
+support acceptance. The spot-check is an execution check, not just a SHA audit.
+An approved static-only task records its exception and executes no runtime
+classes; the spot-check covers its required gates.
+
 ## Records access
 
 An adapter capable of calling Docket writes start/completion checkpoints
@@ -88,6 +109,16 @@ without checking the actual tool.
 
 Store command outputs as artifacts with structured evidence. Session caches
 may accelerate pickup but cannot replace durable records.
+
+The handoff dossier contains SHA, job IDs, a short report and actual usage;
+omit source tars and source hash indexes. Approved input contents and hashes
+remain required for reproducibility. Count handed-off preserved commits against
+the cap; amend only the writer's own unhanded commit. Never rewrite delivered,
+reviewed or integrated commits, and mark replaced feedback receipts superseded.
+Measure GO-to-push lead time and defects before and after final handoff; the
+early review pointer remains a separate event. Secret-handling fixtures report
+only exception class, line number and fixed stage label, never secret payloads
+or representations. No broad logging framework is needed.
 
 ## Exclusive execution
 

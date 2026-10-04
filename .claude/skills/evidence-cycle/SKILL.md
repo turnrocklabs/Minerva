@@ -10,7 +10,7 @@ testing, and an authorized push. Release when the run's authority and settings
 include it. This replaces `task-cycle` and `work-cycle` for new batches.
 
 The **manifest** is the approved execution plan. The **candidate** is the commit
-being considered for push. Decisions use the owner's authoritative nine-axis
+being considered for push. Decisions use the owner's authoritative ten-axis
 rubric, Docket item `minerva:01a0b15a3cad7827bbc821e1b9d29b21` (read it through
 Docket; with only a browser, fetch
 https://raw.githubusercontent.com/turnrocklabs/Minerva/development/Docs/minerva.dct
@@ -22,26 +22,34 @@ its contents with the plan.
 | Phase | Responsible | Result needed to continue |
 |---|---|---|
 | Prepare | Orchestrator; owner where required | Complete, approved manifest and available execution controls |
-| Implement | One implementer per batch, tasks in series; command executor | Task commits and passing group tests |
-| Review | Independent reviewers; orchestrator | A decision for every finding |
-| Repair | Serial fixer; executor; reviewers | Checks pass and required reviewers cover the repaired code |
-| Accept | Executor; authorized integrator | Final evidence matches the candidate; push and CI are recorded |
+| Implement | One writer, tasks in series | Focused checks during iteration; exact-SHA static PASS starts review and the final named run |
+| Review | Independent reviewers; orchestrator | Review runs alongside final tests; every finding gets a decision |
+| Repair | Serial fixer; required reviewers | Repaired candidate passes checks and has required review coverage |
+| Accept | Orchestrator; authorized integrator | Writer's exact-SHA PASS job, pack spot-check and reviews support push; CI is recorded |
 
-The executor runs commands. Agents implement and exercise judgment. The
-orchestrator owns decisions and recovery. Read-only reviewers may run in
-parallel; code-changing agents never do.
+The writer (implementer or fixer) executes the profile's gates and tests in its
+approved isolation. The orchestrator owns decisions, spot-checks and recovery.
+Read-only review and planning may run in parallel; code-changing agents stay
+serial. A separate command executor is an exception for a runner capability
+gap, recorded before dispatch; it does not remove the writer's check obligations.
 
 ## Rules that apply throughout
 
 - Generate briefs and commands from the manifest and profile. Keep code
   changes within the approved goals and non-goals.
-- Implementers author tests but never execute them or build substitute probe
-  or mutation harnesses. Design-question experiments are allowed.
+- Writers author useful tests, run focused affected targets while iterating,
+  and run the full named set once on the immutable final SHA. Use the approved
+  profile commands, not substitute probe or mutation harnesses.
+- Ask questions before dependent work, then wait for actual answers before a
+  dependent commit. A timeout is not an answer; return incomplete if needed.
 - Initial reviews are independent: every configured reviewer gets the same
   candidate and context, without implementer explanations or prior reviews.
   Keep all configured reviewers during the pilot.
-- Give each task one implementation commit. Repairs are separate
-  `review:` commits; never fold or rewrite commits named by evidence.
+- Give each task one implementation commit. Count handed-off preserved commits
+  toward the cap. Pre-handoff corrections may amend the writer's own unhanded
+  commit; never rewrite commits already delivered, reviewed or integrated.
+  Later repairs are separate `review:` commits. Keep temporary feedback SHAs
+  and job receipts visible, marked superseded when replaced.
 - Record command and review results against their actual commit. Older group
   results are useful feedback, not proof that the final candidate passes.
 - At an attempt's tool-call or time allowance, return **incomplete** with
@@ -51,6 +59,12 @@ parallel; code-changing agents never do.
 - Write a durable start checkpoint before a consequential action and its
   completion afterward. Verify exclusive execution before dispatching work.
   [Runner details](references/runner.md) define these requirements.
+- Keep dossiers compact: SHA, job IDs, short report and actual usage ledger.
+  No source tars or source hash indexes. Retain approved input contents and
+  hashes for reproducibility; those are distinct from the source dossier.
+- Secret-handling fixtures emit only exception class, line number and a fixed
+  stage label. Never emit payloads or secret representations; do not introduce
+  a broad secret-logging framework.
 
 ## Batch size and scope
 
@@ -90,7 +104,7 @@ configured autonomy mode; an explicit owner instruction overrides skill
 defaults. Autonomy does not grant permission to review, run tests, push, or
 release.
 
-In autonomous mode, measure the relevant facts, compare options using all nine
+In autonomous mode, measure the relevant facts, compare options using all ten
 rubric axes, and record the decisive axis, chosen default, and what would
 disprove it. The owner may veto that default. Ask the owner when:
 
@@ -151,7 +165,7 @@ Missing facts or failed preconditions stop preparation with a precise reason.
 ## 2. Implement and check
 
 **Responsible:** one implementer for the whole batch, working the tasks in
-manifest order; executor for gates and tests.
+manifest order, including gates and tests.
 **Inputs:** manifest, current task base, one generated batch brief.
 
 1. Give a fresh implementer the batch: every task's goal, oracle, verified
@@ -163,32 +177,44 @@ manifest order; executor for gates and tests.
    > If something I state as fact is wrong when you measure it, say so — that is a success, not an embarrassment.
 2. The implementer writes code and the smallest useful broad tests. It reports
    out-of-scope discoveries without fixing them, and may refuse an instruction
-   with a reason. End its report with **What the first run should settle**.
-3. Run the profile's static gates in the prescribed scratch environment.
-   Check intended paths and generated files against the task's touch-set;
-   commit the task and record its commit with the actual commits, files and
-   minutes beside the estimate. A gate failure returns to a bounded repair
-   attempt; a path outside the touch-set is a finding for Review and decide.
+   with a reason. End its report with **What the reviewer should settle**.
+3. Check intended paths and generated files against the task's touch-set;
+   commit the task and run the profile's static gates on that exact SHA in
+   the prescribed isolation. Record actual commits, files and
+   minutes beside the estimate. A gate failure returns to bounded repair;
+   a path outside the touch-set is a finding for Review and decide.
 4. When every task in a group has a completed implementation attempt and a
-   verified commit reachable from the batch head, execute its named tests with
-   the profile's isolation.
+   verified commit reachable from the batch head, the writer executes its
+   named tests with the profile's isolation. Focused affected targets also
+   run during iteration; feedback receipts retain their actual SHA. When the
+   group completes the final candidate, use step 6 for the full named set
+   rather than running that same final set twice.
 5. A failing group blocks further implementation. An assertion goes to a fixer
    with the exact failure. Other failures are classified before deciding
    whether to retry the command or change code. Recheck gates after any repair.
+6. At final static PASS, immediately post the immutable candidate SHA and gate
+   job ID. Start independent review before waiting for the final runtime run;
+   mark runtime in progress. Run the full named target set once at this SHA
+   and hand off its PASS job ID and targets when complete. A changed SHA
+   explicitly supersedes the pointer and requires new gates, tests and review
+   coverage. The early pointer grants neither runtime PASS nor acceptance.
 
 Command failure handling and retry limits are in
 [runner details](references/runner.md). File discoveries as separate items.
 
 **Exit:** all tasks are committed and their group tests pass. Results identify
-the actual tested commits; an incomplete or refused attempt remains visible.
+the actual tested commits; final handoff names the exact-SHA PASS job and
+targets. An incomplete or refused attempt remains visible. An explicitly
+approved static-only task records that scope and runs no runtime classes.
 
 ## 3. Review and decide
 
 **Responsible:** all configured reviewers; orchestrator for finding decisions.
-**Inputs:** frozen review candidate, diff, test results, profile contracts.
+**Inputs:** static-PASS candidate, diff, available results, profile contracts.
 
-1. Freeze the current head. Run the test union now, or state which earlier
-   commits were tested and what remains unverified at this head.
+1. Start review from the writer's static-PASS pointer while its final named
+   run proceeds. State earlier tested SHAs and current runtime status; add
+   the final job receipt when it finishes. Never imply an in-progress run passed.
 2. Give reviewers the same compact context: goal, diff, affected contracts,
    test results, known gaps, and navigation pointers. Include callers and
    contract text for a diff-only reviewer; allow targeted source requests.
@@ -202,20 +228,26 @@ the actual tested commits; an incomplete or refused attempt remains visible.
 Use the [review receipt format](references/schemas.md#review-receipt).
 Apply the decision rules above to rejected designs and unresolved judgment.
 
+While pack N is under review, plan pack N+1 read-only. Resolve pointers,
+oracles and scope without code changes or dependent dispatch; one code writer
+remains serial and the next pack still needs its approved manifest.
+
 **Exit:** every finding has a decision. Accepted fixes still require repair;
 they are not yet recorded as applied, and review acceptance remains pending.
 
 ## 4. Repair and validate
 
-**Responsible:** serial fixer; executor; required reviewers.
+**Responsible:** serial fixer, including checks; required reviewers.
 **Inputs:** accepted findings and the current candidate.
 
 1. Give a fresh fixer the findings, relevant code, and acceptance condition
    for each. Resume the implementer only for a design-level change.
 2. Apply accepted fixes in one pass where practical; split conflicting repairs.
    Create separate repair commits and record which findings they address.
-3. Rerun relevant gates and affected test groups. Every required reviewer checks
-   the changes from its last reviewed commit to the new candidate.
+3. Run focused affected targets while repairing. At exact-SHA static PASS,
+   post the replacement pointer and start required repair reviews alongside
+   the final named run. Every required reviewer covers the new candidate
+   according to its configured initial, delta and final review schedule.
 4. Widen review when repairs alter contracts, expand scope, or leave uncertainty.
    New findings return to Review and decide, within the configured round caps.
 
@@ -228,16 +260,22 @@ current candidate. If no code changed, initial approval already supplies coverag
 
 ## 5. Accept, push, and close
 
-**Responsible:** executor; authorized integrator; orchestrator for close-out.
+**Responsible:** orchestrator for acceptance; authorized integrator for push.
 **Inputs:** candidate, complete evidence, current authority.
 
-Run every required gate and the final test union on the exact candidate.
-A failure returns to Repair and validate; any subsequent code change requires
-updated gates, review coverage, and final tests.
+Use the writer's passing job at the exact candidate as acceptance evidence;
+verify its named targets and environment rather than cold-rerunning every job.
+The orchestrator cold spot-checks one handoff per pack in the approved isolation.
+A SHA-only audit does not replace that run. Any spot-check failure reverts the
+pack to cold reruns: classify, fix and revalidate through Repair and validate.
+Never accept using older evidence. Any code change requires updated gates,
+review coverage and a final named run at the replacement SHA.
 
 **A commit may be pushed only when:**
 
-- Required gates and the final scoped tests pass at this commit.
+- Required gates and the final named targets pass at this commit, with the
+  writer's job ID recorded; the pack's cold spot-check passes. An approved
+  static-only task requires its named gates instead of runtime targets.
 - Every required reviewer covers the code through the latest repair.
 - Every finding is applied and validated, rejected with a reason, or explicitly
   deferred to a filed item.
@@ -252,8 +290,11 @@ the profile only when authorized; never move a release tag.
 
 **Exit:** record the remote integration result, CI status, release result if
 requested, remaining human checks, and outcome. Do not mark unreleased work as
-released. Record metrics and propose profile changes; do not silently apply
-them. Emit one completion line; notification failure does not block reporting.
+released. Measure velocity as GO-to-push lead time and pre- versus post-handoff
+defects, not lines per hour. Distinguish the early review pointer from the final
+runtime-PASS acceptance handoff. Record actual usage and propose profile changes;
+do not silently apply them. Emit one completion line; notification failure
+does not block reporting.
 
 ## Supporting details
 

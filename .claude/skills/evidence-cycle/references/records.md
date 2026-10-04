@@ -106,10 +106,10 @@ input is a stated evidence gap; a hash cannot replace its contents.
 
 ## Decisions and metrics
 
-Use the authoritative rubric frozen with the run. Record all nine axes:
-Determinism, Reliability, Durability, Performance, Debuggability, DRY, Cost,
-Discoverable, User-visible. Include measured facts, the decisive axis, chosen
-default, and its falsifier. Preserve owner wording for a ruling.
+Use the authoritative rubric frozen with the run. Record all ten axes:
+Determinism, Reliability, Durability, Performance, Debuggability, LLM Ergonomics,
+DRY, Cost, Discoverable, User-visible. Include measured facts, the decisive
+axis, chosen default, and its falsifier. Preserve owner wording for a ruling.
 
 At close-out, record one stage table with elapsed minutes, actor, tool calls,
 input/cached/output tokens where reported, retries, findings and consequential
