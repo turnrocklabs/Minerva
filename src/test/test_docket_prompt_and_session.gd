@@ -460,10 +460,10 @@ func _submit_vault(form, hosted: bool = true) -> void:
 		await _wait(func() -> bool: return not form.get_node("%SetVaultPasswordButton").disabled and (not hosted or not form._vault_message.text.is_empty())))
 
 
-func _vault_attempt(host) -> Dictionary:
+func _vault_attempt(host, password: String = VAULT_PASSWORD) -> Dictionary:
 	var outcome := {}
 	var run := func() -> void:
-		outcome.message = await host.unlock_vault(VAULT_PASSWORD)
+		outcome.message = await host.unlock_vault(password)
 		outcome.done = true
 	run.call()
 	return outcome
@@ -608,6 +608,8 @@ func _test_vault() -> void:
 	restarted.open_project("/p/during-unlock.dct")
 	manager.backend_tool_called.emit("docket", "docket_project_add")
 	await process_frame
+	check("I: actual deferred publish resume ran before held unlock finishes",
+		host._vault_session._resume_pending and host._vault_session._busy and not busy_attempt.get("done", false))
 	authority.hold = ""
 	authority.gate_open = true
 	check("I: actual reconciliation expires held unlock while retaining the successful credential",
@@ -615,6 +617,30 @@ func _test_vault() -> void:
 		and busy_attempt.get("message") == "Vault request expired; try again." and host._vault_session._password == VAULT_PASSWORD)
 	check("I: publication during busy unlock eventually re-challenges retained credential",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked")))
+	# A requested resume must not turn an ordinary password refusal into a loop.
+	authority.hold = "vault_unlock"
+	authority.gate_open = false
+	busy_entered = authority.entered
+	var wrong_attempt := _vault_attempt(host, "wrong-password")
+	check("I: wrong-password unlock reaches the held backend",
+		await _wait(func() -> bool: return authority.entered > busy_entered and authority.private_methods.back() == "vault_unlock"))
+	host._publish()
+	await process_frame
+	var refused_calls: int = authority.private_methods.size()
+	authority.hold = ""
+	authority.gate_open = true
+	check("I: ordinary wrong-password refusal completes",
+		await _wait(func() -> bool: return wrong_attempt.get("done", false))
+		and wrong_attempt.get("message") == "Vault unlock refused; check the existing vault password.")
+	await process_frame
+	check("I: pending resume is discarded after wrong-password refusal with no retry loop",
+		authority.private_methods.size() == refused_calls and not host._vault_session._resume_pending)
+	manager.authority = null
+	var no_channel: String = await host.unlock_vault(VAULT_PASSWORD)
+	await process_frame
+	check("I: no-channel refusal does not automatically retry",
+		no_channel == "Vault unavailable: no private host channel." and authority.private_methods.size() == refused_calls)
+	manager.authority = authority
 	var public_clean := not JSON.stringify(connection.public_calls + restarted.public_calls).contains(VAULT_PASSWORD)
 	var history_clean := true
 	for chat in _made_chats:
