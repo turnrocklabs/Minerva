@@ -1050,14 +1050,17 @@ func test_marketplace_lane_applied_while_parsing_staged_manifest() -> void:
 
 func test_process_authority_contract() -> void:
 	var manifest := _minimal_manifest()
-	manifest["panel_authority"] = PluginDefinition_.PANEL_AUTHORITY_V1.duplicate()
+	manifest["panel_authority"] = {"protocol": "docket_panel_v1",
+		"method_prefix": "docket/panel/", "secret_env": "DOCKET_PANEL_SECRET"}
 	var def = PluginDefinition_._from_dict_internal(manifest)
 	check("process authority: parses without a panel", def != null)
 	if def == null:
 		return
 	check("process authority: valid stdio backend", def.validate().is_empty())
 	check_eq("process authority: exact config survives round trip",
-		PluginDefinition_.from_dict(def.to_dict()).panel_authority, PluginDefinition_.PANEL_AUTHORITY_V1)
+		PluginDefinition_.from_dict(def.to_dict()).panel_authority,
+		{"protocol": "docket_panel_v1", "method_prefix": "docket/panel/",
+		"secret_env": "DOCKET_PANEL_SECRET"})
 	for backend in [{"transport": "http", "entrypoint": "server.py"},
 			{"transport": "stdio", "entrypoint": ""}]:
 		var malformed := manifest.duplicate(true)
@@ -1069,7 +1072,9 @@ func test_process_authority_contract() -> void:
 		malformed.panel_authority[field] = "other"
 		check("process authority: altered %s rejected" % field,
 			not PluginDefinition_._from_dict_internal(malformed).validate().is_empty())
-	for authority in [{}, "docket_panel_v1", {"extra": true}]:
+	for authority in [{}, "docket_panel_v1", {"extra": true},
+			{"protocol": "docket_panel_v1", "method_prefix": "docket/panel/",
+			"secret_env": "DOCKET_PANEL_SECRET", "extra": true}]:
 		var malformed := manifest.duplicate(true)
 		malformed.panel_authority = authority
 		check("process authority: malformed declaration rejected",
