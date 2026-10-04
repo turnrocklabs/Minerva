@@ -77,6 +77,7 @@ var failing_types := []
 var holds := {}
 var reached := {}
 var writes := []
+var secrets := {}
 var next_id := 100
 var policy_reads := 0
 var hold_policy_read := 0
@@ -114,6 +115,15 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 			await tree.process_frame
 	var project := _in_project(arguments)
 	match tool:
+		"docket_secret_set":
+			writes.append([tool, arguments.duplicate(true)])
+			secrets[arguments.handle] = arguments.value
+			return {"success": true, "handle": arguments.handle}
+		"docket_secret_get":
+			return {"success": true, "handle": arguments.handle, "value": secrets[arguments.handle]} if secrets.has(arguments.handle) else {"error": "Secret not found"}
+		"docket_secret_delete":
+			secrets.erase(arguments.handle)
+			return {"success": true}
 		"docket_project_list":
 			return {"success": true, "projects": [master, work]}
 		"docket_query":
@@ -314,6 +324,7 @@ func _run() -> void:
 	if await _set_up():
 		await _test_skill_contract()
 		await _test_interleavings()
+		await _test_secret_route()
 	index.unregister_tool(CREATE_DEP)
 	_server().tool_budget_manager.reset()
 	_so.docket_manager = saved_manager
@@ -374,10 +385,10 @@ func _set_up() -> bool:
 
 	wire.store = _store
 	var object_schema := {"type": "object", "properties": {"project": {"type": "string"},
-		"id": {"type": "string"}, "title": {"type": "string"}, "tool_deps": {"type": "array"},
+		"id": {"type": "string"}, "handle": {"type": "string"}, "value": {"type": "string"}, "title": {"type": "string"}, "tool_deps": {"type": "array"},
 		"optimization": {"type": "object"}}}
 	var tools := []
-	for name in ["docket_create", "docket_update", "docket_transition"]:
+	for name in ["docket_create", "docket_update", "docket_transition", "docket_secret_get", "docket_secret_set", "docket_secret_delete"]:
 		tools.append(MCPToolDefinition.from_dict({"name": name, "description": name, "inputSchema": object_schema}))
 	wire.tools = tools
 	running.connection = wire
@@ -611,3 +622,21 @@ func _held_reached() -> bool:
 		if _store.reached.get(key.get_slice("#", 0), 0) >= int(key.get_slice("#", 1)):
 			return true
 	return false
+
+
+func _test_secret_route() -> void:
+	var policy := PluginPolicy.new()
+	var broker := CapabilityBroker.new(policy)
+	for plugin in ["secret-a", "secret-b"]:
+		for op in ["get", "set", "delete"]:
+			policy.grant_capability(plugin, "secrets:%s:entry" % op)
+		var written: Dictionary = await broker.dispatch(plugin, "secrets:set:entry", {"value": plugin})
+		check("broker secret routed to canonical master", written.get("success", false)
+			and _store.writes.back()[1].get("project") == "master")
+	var read: Dictionary = await broker.dispatch("secret-a", "secrets:get:entry", {})
+	check("broker secret namespaces and handle envelope", read.get("result", {}).get("value") == "secret-a"
+		and read.get("result", {}).get("handle") == "entry")
+	await broker.dispatch("secret-a", "secrets:delete:entry", {})
+	var missing: Dictionary = await broker.dispatch("secret-a", "secrets:get:entry", {})
+	check("broker missing secret envelope", missing.get("success", false)
+		and missing.get("result", {}).get("exists") == false and missing.result.get("value", "unexpected") == null)

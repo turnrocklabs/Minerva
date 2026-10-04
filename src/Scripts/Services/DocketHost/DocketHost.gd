@@ -943,6 +943,10 @@ func call_bound(target: Dictionary, tool: String, arguments: Dictionary) -> Dict
 	return answered
 
 
+## Recheck a completed capability call against its original opening.
+func fresh_target_problem(target: Dictionary) -> String:
+	return await _fresh_problem(target)
+
 # target_problem against the open projects listed afresh on `target`'s
 # process (the list cannot be had: a problem too).
 func _fresh_problem(target: Dictionary) -> String:

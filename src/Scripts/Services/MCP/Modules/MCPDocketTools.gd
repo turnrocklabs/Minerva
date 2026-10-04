@@ -12,6 +12,8 @@ var _tool_names: Array[String] = []
 
 
 func get_tool_names() -> Array[String]:
+	if SingletonObject.docket_manager == null:
+		return []
 	# If tools weren't registered at startup (DocketManager was null), try now.
 	if _tool_names.size() <= 1 and SingletonObject.docket_manager:
 		register_tools()
