@@ -261,6 +261,7 @@ layout_mode = 2
 layout_mode = 2
 
 [node name="VaultLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 56)
 bbcode_enabled = true
@@ -277,6 +278,7 @@ text = "Vault: not configured"
 layout_mode = 2
 
 [node name="VaultPasswordLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultPasswordHBox"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3

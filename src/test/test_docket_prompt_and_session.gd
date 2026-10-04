@@ -72,6 +72,7 @@ func system_prompt(_key: String, _model_id: String = "") -> Dictionary:
 ## that fail to open, and a listing that can be made to fail.
 const CONNECTION_SRC := """
 extends RefCounted
+var public_calls := []
 var generation := 1
 var open := {}
 var prompts := {}
@@ -87,6 +88,7 @@ func open_project(path: String) -> Dictionary:
 			"path": path, "open_generation": str(_next)}
 	return open[path]
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
+	public_calls.append(JSON.stringify({"tool": tool, "arguments": arguments}))
 	match tool:
 		"docket_project_list":
 			return {"error": "listing failed"} if listing_fails else {"success": true, "projects": open.values()}
@@ -114,7 +116,25 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 const AUTHORITY_SRC := """
 extends RefCounted
 var connection = null
+var initialized := true
+var hold := ""
+var gate_open := true
+var entered := 0
+var private_methods := []
 func host_request(name: String, params: Dictionary) -> Dictionary:
+	if name.begins_with("vault_"):
+		entered += 1
+		private_methods.append(name)
+		var project: Dictionary = connection.open.get(params.path, {})
+		var descriptor := {"path": params.path, "open_generation": project.get("open_generation", ""), "fingerprint": "fixed-vault-fingerprint"}
+		var reply := {"result": descriptor.merged({"unlocked": name == "vault_unlock"})}
+		if not initialized or project.is_empty():
+			reply = {"error": {"message": "Vault request refused"}}
+		elif name == "vault_unlock" and (params.get("password") != "D3a-private-session-sentinel" or params.open_generation != descriptor.open_generation or params.fingerprint != descriptor.fingerprint):
+			reply = {"error": {"message": "Vault unlock refused"}}
+		while name == hold and not gate_open:
+			await Engine.get_main_loop().process_frame
+		return reply
 	if name == "declare_schema":
 		return {"result": {"version": params.version}}
 	var project: Dictionary = connection.open_project(str(params.path))
@@ -136,6 +156,14 @@ func get_panel_authority(_id: String):
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": true}
 func set_backend_tool_guard(_id: String, _guard: Callable) -> void:
+	pass
+"""
+
+const VAULT_PASSWORD := "D3a-private-session-sentinel"
+## Real Preferences methods, constructed without unrelated tabs or startup.
+const PREFS_SRC := """
+extends "res://Scripts/UI/Views/PreferencesPopup.gd"
+func _ready() -> void:
 	pass
 """
 
@@ -200,6 +228,8 @@ func _run() -> void:
 	await _test_prompt()
 	_so.docket_host = previous_host
 	await _test_session()
+	await _test_vault()
+	_so.docket_host = previous_host
 	for chat in _made_chats:
 		_so.ChatList.erase(chat)
 	for node in _made_nodes:
@@ -401,6 +431,166 @@ func _test_session() -> void:
 	var joined: Dictionary = await host.system_prompt("agentic-base")
 	check("F: a project opened by someone else joins the session and its prompt counts",
 		joined.get("prompt") == "NEW" and "/p/new.dct" in _saved_session(), "%s %s" % [joined, _saved_session()])
+
+
+# -- Hosted vault: real host/helper/UI, explicitly fake private backend --------
+
+func _vault_form():
+	var form = _make(PREFS_SRC)
+	for spec in [["VaultLabel", RichTextLabel], ["VaultPasswordLabel", Label],
+			["SetVaultPasswordButton", Button]]:
+		var widget = spec[1].new()
+		widget.name = spec[0]
+		form.add_child(widget)
+		widget.owner = form
+		widget.unique_name_in_owner = true
+	form._vault_password = LineEdit.new()
+	form._vault_confirm = LineEdit.new()
+	form._vault_hint = LineEdit.new()
+	form._vault_status_label = Label.new()
+	form._vault_message = Label.new()
+	for widget in [form._vault_password, form._vault_confirm, form._vault_hint, form._vault_status_label, form._vault_message]:
+		form.add_child(widget)
+	return form
+
+
+func _fill_vault(form, password: String) -> void:
+	form._vault_password.text = password
+	form._vault_confirm.text = password
+	form._vault_hint.text = password
+
+
+func _vault_attempt(host) -> Dictionary:
+	var outcome := {}
+	var run := func() -> void:
+		outcome.message = await host.unlock_vault(VAULT_PASSWORD)
+		outcome.done = true
+	run.call()
+	return outcome
+
+
+func _profile_has_password(path: String) -> bool:
+	for file in DirAccess.get_files_at(path):
+		if FileAccess.get_file_as_string(path.path_join(file)).contains(VAULT_PASSWORD):
+			return true
+	for directory in DirAccess.get_directories_at(path):
+		if _profile_has_password(path.path_join(directory)):
+			return true
+	return false
+
+
+func _test_vault() -> void:
+	_clear_user_files()
+	var connection = _make(CONNECTION_SRC)
+	var authority = _make(AUTHORITY_SRC)
+	authority.connection = connection
+	var manager: Node = _make(PLUGIN_MANAGER_SRC)
+	manager.connection = connection
+	manager.authority = authority
+	root.add_child(manager)
+	var host: Node = load(DOCKET_HOST_PATH).new()
+	_made_nodes.append(host)
+	root.add_child(host)
+	host.start(manager, false)
+	check("G: fake-backed hosted master is ready", await _wait(func() -> bool: return host.state == "ready"))
+	var previous_dm = _so.docket_manager
+	_so.docket_manager = null
+	_so.docket_host = host
+	var form = _vault_form()
+	_write("user://docket_prefs.json", JSON.stringify({"vault_password": "legacy-untouched", "vault_password_hint": "legacy-hint"}))
+	var before := FileAccess.get_file_as_bytes("user://docket_prefs.json")
+	form._refresh_vault_status()
+	check("G: hosted Preferences does not load legacy password/hint and labels session unlock",
+		form._vault_hint.text.is_empty() and not form._vault_hint.editable
+		and form.get_node("%SetVaultPasswordButton").text == "Unlock for Session")
+	_fill_vault(form, "wrong-password")
+	await form._on_set_vault_password_pressed()
+	check("G: wrong password visibly refuses and clears every credential widget",
+		form._vault_message.text == "Vault unlock refused; check the existing vault password."
+		and form._vault_password.text.is_empty() and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty()
+		and host._vault_session._password.is_empty())
+	authority.initialized = false
+	_fill_vault(form, VAULT_PASSWORD)
+	await form._on_set_vault_password_pressed()
+	check("G: an uninitialized vault visibly refuses without retaining the password",
+		form._vault_message.text == "Vault refused: an initialized, readable existing vault is required."
+		and host._vault_session._password.is_empty())
+	authority.initialized = true
+	_fill_vault(form, VAULT_PASSWORD)
+	await form._on_set_vault_password_pressed()
+	check("G: correct password privately unlocks the exact existing opening for this session",
+		host.vault_status() == "Vault: unlocked for this session only (password kept in memory)."
+		and host._vault_session._password == VAULT_PASSWORD
+		and authority.private_methods.slice(-2) == ["vault_challenge", "vault_unlock"])
+	check("G: successful hosted UI clears widgets and preserves existing plaintext preferences byte-for-byte",
+		form._vault_password.text.is_empty() and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty()
+		and FileAccess.get_file_as_bytes("user://docket_prefs.json") == before)
+	_fill_vault(form, VAULT_PASSWORD)
+	form._vault_confirm.text = "mismatch"
+	await form._on_set_vault_password_pressed()
+	check("G: mismatched hosted input refuses and clears the form",
+		form._vault_message.text == "Enter a nonempty matching password." and form._vault_password.text.is_empty()
+		and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty())
+	check("G: oversized UTF-8 input is refused locally", await host.unlock_vault("é".repeat(513)) == "Vault refused: enter a password of at most 1024 UTF-8 bytes.")
+	# Hold old responses across each lifecycle boundary, never printing payloads.
+	for method in ["vault_challenge", "vault_unlock"]:
+		for boundary in ["process", "opening", "session"]:
+			authority.hold = method
+			authority.gate_open = false
+			var entered: int = authority.entered
+			var pending := _vault_attempt(host)
+			check("H: held private request reached fake backend", await _wait(func() -> bool: return authority.entered > entered and authority.private_methods.back() == method))
+			if boundary == "process":
+				manager.plugin_stopped.emit("docket")
+				connection.generation += 1
+			elif boundary == "opening":
+				connection.open[host.master_path].open_generation += "-reopened"
+			else:
+				host._session_changes += 1
+			authority.gate_open = true
+			check("H: held private request finishes", await _wait(func() -> bool: return pending.get("done", false)))
+			check("H: stale %s after %s change cannot publish unlocked state" % [method, boundary],
+				pending.get("message") == "Vault request expired; try again." and host._vault_session._unlocked.is_empty())
+			authority.hold = ""
+			if boundary == "process":
+				manager.plugin_ready.emit("docket")
+				check("H: restart automatically re-challenges retained password", await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked")))
+	var retained: String = host._vault_session._password
+	manager.plugin_crashed.emit("docket")
+	check("I: child loss clears unlocked status but retains successful session credential",
+		host._vault_session._unlocked.is_empty() and retained == VAULT_PASSWORD and host._vault_session._password == retained)
+	var restarted = _make(CONNECTION_SRC)
+	restarted.generation = 99
+	manager.connection = restarted
+	authority.connection = restarted
+	var count: int = authority.private_methods.size()
+	manager.plugin_ready.emit("docket")
+	check("I: new connection automatically resends only after a fresh private challenge",
+		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
+		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
+	# A new opening seen by a real refresh also re-challenges automatically.
+	restarted.open[host.master_path].open_generation += "-next"
+	await host._refresh(restarted, restarted.generation)
+	check("I: a new master opening automatically re-challenges before unlock",
+		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked")))
+	var public_clean := not JSON.stringify(connection.public_calls + restarted.public_calls).contains(VAULT_PASSWORD)
+	var history_clean := true
+	for chat in _made_chats:
+		for item in chat.HistoryItemList:
+			history_clean = history_clean and not item.Message.contains(VAULT_PASSWORD)
+	check("J: password absent from new profile/session/log files, public tool calls and chat history",
+		not _profile_has_password("user://") and public_clean and history_clean)
+	host._exit_tree()
+	check("J: explicit host exit drops retained credential and unlocked references",
+		host._vault_session._password.is_empty() and host._vault_session._unlocked.is_empty())
+	_so.docket_manager = previous_dm
+	var embedded = _vault_form()
+	embedded._refresh_vault_status()
+	check("J: embedded Preferences still loads the existing hint", embedded._vault_hint.text == "legacy-hint")
+	_fill_vault(embedded, "embedded-password")
+	await embedded._on_set_vault_password_pressed()
+	check("J: embedded Preferences still persists its password and hint",
+		UserPrefs.load_vault_password() == "embedded-password" and UserPrefs.load_vault_password_hint() == "embedded-password")
 
 
 func _failed_paths(host) -> Array:

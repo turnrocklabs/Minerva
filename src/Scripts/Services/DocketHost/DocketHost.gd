@@ -31,6 +31,7 @@ extends Node
 ## The embedded DocketManager owns the same files, so the host stays
 ## inactive while it exists: the two never run together.
 
+signal vault_changed
 signal state_changed(state: String)
 
 const PLUGIN_ID := "docket"
@@ -75,6 +76,8 @@ var personal_path := ""
 ## The open projects as the plugin last listed them: [{name, display_name,
 ## path, open_generation, ...}]. Valid for the current process only.
 var projects: Array = []
+
+var _vault_session := preload("res://Scripts/Services/DocketHost/HostedVaultSession.gd").new()
 
 var _plugin_manager
 # The process the current state belongs to: its connection and generation.
@@ -144,6 +147,30 @@ func session_projects() -> Array:
 ## The master's open descriptor, or {} when it is not open.
 func master_project() -> Dictionary:
 	return _descriptor_of(master_path) if not master_path.is_empty() else {}
+
+
+## Hosted vault state and private unlock; no credential enters session persistence.
+func vault_status() -> String:
+	return _vault_session.status(self)
+
+
+func unlock_vault(password: String) -> String:
+	return await _vault_session.unlock(self, password)
+
+
+func _exit_tree() -> void:
+	_vault_session.lost(self, true)
+
+
+# Snapshot process, master opening and session activity across every vault await.
+func _vault_binding() -> Dictionary:
+	if not state in ["ready", "degraded"] or _stale(_connection, _generation) or _changing or _reconciling:
+		return {}
+	var master := master_project()
+	if master.is_empty():
+		return {}
+	return {"process": [_connection, _generation], "opening": _layer_openings([master]),
+		"session_changes": _session_changes, "changes": _changes}
 
 
 ## The active system prompt `key` for `model_id` ("" for none), read from
@@ -956,6 +983,7 @@ func _on_plugin_ready(id: String) -> void:
 
 func _on_plugin_gone(id: String) -> void:
 	if id == PLUGIN_ID:
+		_vault_session.lost(self)
 		_connection = null
 		_generation = -1
 		projects = []
@@ -971,6 +999,7 @@ func _prepare() -> void:
 	var generation: int = connection.process_generation()
 	if connection == _connection and generation == _generation:
 		return  # already set up, or being set up, for this process
+	_vault_session.lost(self)
 	_connection = connection
 	_generation = generation
 	_setup_problems.clear()
@@ -1058,6 +1087,7 @@ func _prepare() -> void:
 		_setup_problems.append(listed)
 	_reconciled_paths = _open_paths()
 	_publish()
+	_vault_session.resume(self)
 
 
 # Opens the existing project at `path` (never creating it): its descriptor,
@@ -1081,6 +1111,7 @@ func _refresh(connection, generation: int) -> String:
 	if listed.has("error") or not listed.value.get("projects") is Array:
 		return "the open projects could not be listed: %s" % listed.get("error", "no list")
 	projects = listed.value.projects
+	_vault_session.observe(self)
 	return ""
 
 

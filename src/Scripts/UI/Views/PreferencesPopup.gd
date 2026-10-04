@@ -497,6 +497,19 @@ func _on_hcp_logs_button_pressed() -> void:
 func _refresh_vault_status() -> void:
 	if _vault_status_label == null:
 		return
+	if SingletonObject.docket_manager == null:
+		var host := SingletonObject.docket_host
+		_vault_status_label.text = host.vault_status() if host != null else "Vault: unavailable."
+		if host != null and not host.vault_changed.is_connected(_refresh_vault_status):
+			host.vault_changed.connect(_refresh_vault_status)
+		%VaultLabel.text = "[b]Unlock Existing Master Vault[/b]\nPassword stays in memory for this session; resent privately after Docket restarts. New vault creation is unavailable here."
+		%VaultPasswordLabel.text = "Password:"
+		%SetVaultPasswordButton.text = "Unlock for Session"
+		_vault_hint.editable = false
+		_vault_hint.text = ""
+		_vault_password.text = ""
+		_vault_confirm.text = ""
+		return
 	var has_pw: bool = not UserPrefs.load_vault_password().is_empty()
 	var dm = SingletonObject.docket_manager if "docket_manager" in SingletonObject else null
 	var has_data := false
@@ -520,6 +533,23 @@ func _refresh_vault_status() -> void:
 ## Save the vault password from the form. Validates match + non-empty,
 ## warns if it would invalidate an existing initialized vault.
 func _on_set_vault_password_pressed() -> void:
+	if SingletonObject.docket_manager == null:
+		var password := _vault_password.text
+		var matches := password == _vault_confirm.text
+		_vault_password.text = ""
+		_vault_confirm.text = ""
+		_vault_hint.text = ""
+		if password.is_empty() or not matches:
+			_vault_message.text = "Enter a nonempty matching password."
+			return
+		%SetVaultPasswordButton.disabled = true
+		var host := SingletonObject.docket_host
+		var result := await host.unlock_vault(password) if host != null else "Vault: unavailable."
+		password = ""
+		%SetVaultPasswordButton.disabled = false
+		_refresh_vault_status()
+		_vault_message.text = result
+		return
 	var new_pw: String = _vault_password.text
 	var confirm: String = _vault_confirm.text
 	var hint: String = _vault_hint.text
