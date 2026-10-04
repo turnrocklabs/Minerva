@@ -598,6 +598,23 @@ func _test_vault() -> void:
 	check("I: settled publish re-arms a resume deferred by reconciliation",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
 		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
+	# A real reconcile publishes while a held unlock is still busy.
+	authority.hold = "vault_unlock"
+	authority.gate_open = false
+	var busy_entered: int = authority.entered
+	var busy_attempt := _vault_attempt(host)
+	check("I: held unlock starts before actual session reconciliation",
+		await _wait(func() -> bool: return authority.entered > busy_entered and authority.private_methods.back() == "vault_unlock"))
+	restarted.open_project("/p/during-unlock.dct")
+	manager.backend_tool_called.emit("docket", "docket_project_add")
+	await process_frame
+	authority.hold = ""
+	authority.gate_open = true
+	check("I: actual reconciliation expires held unlock while retaining the successful credential",
+		await _wait(func() -> bool: return busy_attempt.get("done", false))
+		and busy_attempt.get("message") == "Vault request expired; try again." and host._vault_session._password == VAULT_PASSWORD)
+	check("I: publication during busy unlock eventually re-challenges retained credential",
+		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked")))
 	var public_clean := not JSON.stringify(connection.public_calls + restarted.public_calls).contains(VAULT_PASSWORD)
 	var history_clean := true
 	for chat in _made_chats:
