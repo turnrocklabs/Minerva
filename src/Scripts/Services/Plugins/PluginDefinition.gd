@@ -584,8 +584,8 @@ func validate() -> Array[String]:
 	if _panel_authority_given != null:
 		if panel_authority.is_empty():
 			errors.append("'panel_authority' must be exactly %s" % JSON.stringify(PANEL_AUTHORITY_V1))
-		elif not ui_panels.any(func(panel: Dictionary) -> bool: return panel.get("kind", "") == "godot_scene"):
-			errors.append("'panel_authority' needs a godot_scene panel to serve")
+		# Authority belongs to the stdio process; embedded panels are optional.
+		# The backend and any declared panels still undergo normal validation.
 	if not id.is_empty():
 		errors.append_array(PluginKnowledgeSeeder.validate_manifest(knowledge, knowledge_project, id,
 			skills.map(func(skill) -> String: return str(skill.get("id", "")))))

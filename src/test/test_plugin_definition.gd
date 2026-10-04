@@ -72,6 +72,7 @@ func _init() -> void:
 	test_editor_items_good_panel_ref_passes_validate()
 	test_duplicate_panel_names_fail_validate()
 	test_from_dict_does_not_duplicate_top_level_arrays()
+	test_process_authority_contract()
 
 	print("\n-- render_mode + layout_hint (DCR 019dfa66 §T5) --")
 	test_render_mode_defaults_to_single()
@@ -1045,3 +1046,39 @@ func test_marketplace_lane_applied_while_parsing_staged_manifest() -> void:
 		check("marketplace lane is applied during parsing",
 			def.install_lane == PluginDefinition_.LANE_MARKETPLACE)
 		check("prebuilt marketplace binary needs no setup recipe", def.setup.is_empty())
+
+
+func test_process_authority_contract() -> void:
+	var manifest := _minimal_manifest()
+	manifest["panel_authority"] = PluginDefinition_.PANEL_AUTHORITY_V1.duplicate()
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("process authority: parses without a panel", def != null)
+	if def == null:
+		return
+	check("process authority: valid stdio backend", def.validate().is_empty())
+	check_eq("process authority: exact config survives round trip",
+		PluginDefinition_.from_dict(def.to_dict()).panel_authority, PluginDefinition_.PANEL_AUTHORITY_V1)
+	for backend in [{"transport": "http", "entrypoint": "server.py"},
+			{"transport": "stdio", "entrypoint": ""}]:
+		var malformed := manifest.duplicate(true)
+		malformed.backend = backend
+		check("process authority: malformed backend rejected",
+			not PluginDefinition_._from_dict_internal(malformed).validate().is_empty())
+	for field in ["protocol", "method_prefix", "secret_env"]:
+		var malformed := manifest.duplicate(true)
+		malformed.panel_authority[field] = "other"
+		check("process authority: altered %s rejected" % field,
+			not PluginDefinition_._from_dict_internal(malformed).validate().is_empty())
+	for authority in [{}, "docket_panel_v1", {"extra": true}]:
+		var malformed := manifest.duplicate(true)
+		malformed.panel_authority = authority
+		check("process authority: malformed declaration rejected",
+			not PluginDefinition_._from_dict_internal(malformed).validate().is_empty())
+	var embedded := manifest.duplicate(true)
+	embedded.ui.panels = [{"name": "main", "kind": "godot_scene",
+		"entry_scene": "panel.tscn", "scripts": ["panel.gd"]}]
+	check("process authority: embedded panel remains compatible",
+		PluginDefinition_._from_dict_internal(embedded).validate().is_empty())
+	embedded.ui.panels[0].scripts = []
+	check("process authority: malformed embedded panel remains rejected",
+		PluginDefinition_._from_dict_internal(embedded) == null)
