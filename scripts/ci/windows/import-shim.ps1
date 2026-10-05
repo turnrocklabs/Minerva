@@ -3,7 +3,9 @@ Set-Location (Resolve-Path (Join-Path $PSScriptRoot '../../..'))
 # Generate a native MSVC import library from the DLL exports; Zig's library
 # breaks default-library resolution when consumed by MSVC.
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vsPath = & $vswhere -latest -property installationPath
+# Include standalone Build Tools, which vswhere's default product filter excludes.
+$vsPath = & $vswhere -products '*' -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if ($LASTEXITCODE -ne 0 -or -not $vsPath) { throw "No Visual Studio installation with C++ tools found." }
 Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
 Enter-VsDevShell -VsInstallPath $vsPath -DevCmdArguments "-arch=x64 -host_arch=x64" -SkipAutomaticLocation | Out-Null
 
