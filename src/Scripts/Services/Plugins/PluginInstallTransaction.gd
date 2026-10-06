@@ -614,6 +614,7 @@ static func content_pending(staging_root: String) -> Array:
 			live[_content_name(staging_root.path_join(name))] = true
 	var pending := []
 	var dir := staging_root.path_join(CONTENT_PENDING)
+	if not DirAccess.dir_exists_absolute(dir): return pending
 	for file in DirAccess.get_files_at(dir):
 		if live.has(file.get_basename()):
 			continue
@@ -636,6 +637,7 @@ static func queue_cleanup(staging_root: String, id: String, journal: Dictionary,
 	return path if requeue_content(path, id, journal, false, reason) else ""
 
 
+## Retain an approved manifest-lane install until Docket can seed its content.
 static func queue_install(staging_root: String, id: String, journal: Dictionary) -> String:
 	var dir := staging_root.path_join(CONTENT_PENDING)
 	DirAccess.make_dir_recursive_absolute(dir)

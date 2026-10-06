@@ -119,6 +119,7 @@ func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> 
 	return evaluate(tool_name, arguments, caller_id)
 
 
+## A startup retry remains a refusal; policy is never skipped.
 func unavailable_result(why: String) -> Dictionary:
 	var host = _get_docket_host()
 	var retryable: bool = host != null and host.has_method("pickup_pending") and host.pickup_pending()

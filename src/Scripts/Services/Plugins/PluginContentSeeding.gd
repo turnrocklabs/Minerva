@@ -37,8 +37,8 @@ const SKILL_CONTENT := Knowledge.SKILL_CONTENT
 ## install transaction (consent.journal_dir) the operation's Docket journal
 ## is saved first, so a rollback unseeds what this seeds; if it cannot be,
 ## nothing is seeded.
-static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) -> Dictionary:
-	var docket_caller := docket()
+static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary, operation: SeedingDocket = null) -> Dictionary:
+	var docket_caller := operation if operation != null else docket()
 	var resolved: Array = SkillSeeder.resolve_deps(def, available_tools(manager))
 	var accepted: bool = bool(consent.get("seed", false)) if consent.get("collected", false) else auto_confirm
 	if not auto_confirm and not consent.get("collected", false):
@@ -66,7 +66,7 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) 
 	}
 	# The master's new skills are settled in its file (a failed save shows).
 	var failed: int = materialised.get("failed", 0)
-	if (materialised.get("seeded", 0) > 0 or failed > 0) and not await docket_caller.settle(""):
+	if (materialised.get("seeded", 0) > 0 or failed > 0 or consent.has("journal_path")) and not await docket_caller.settle(""):
 		failed += 1
 	if failed > 0:
 		seeded["skills_failed"] = failed
@@ -561,6 +561,8 @@ static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool
 	var path := str(consent.get("journal_path", ""))
 	if not path.is_empty():
 		journal["deferred_install"] = true
+		if consent.has("bound_paths"):
+			journal["paths"] = consent.bound_paths.duplicate(true)
 		consent["saved_journal"] = journal
 		return Txn.requeue_content(path, def.id, journal, true)
 	var journal_dir := str(consent.get("journal_dir", ""))

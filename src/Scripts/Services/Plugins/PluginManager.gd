@@ -476,6 +476,8 @@ func reconcile_recovered() -> void:
 			if _content_busy.has(recovered.id):
 				continue
 			var journal: Dictionary = recovered.journal
+			if journal.get("stale", false):
+				continue
 			var attempted = PluginDefinition.from_dict(journal.attempted) if journal.get("attempted") is Dictionary \
 				else _db.get_by_id(recovered.id)
 			var done := true
@@ -487,9 +489,19 @@ func reconcile_recovered() -> void:
 							or current.knowledge != attempted.knowledge or current.knowledge_project != attempted.knowledge_project:
 						done = false
 						reason = "The installed manifest changed; deferred content needs review."
+						journal["stale"] = true
 					else:
 						var consent := {"collected": true, "seed": true, "journal_path": recovered.path}
-						var seeded: Dictionary = await Seeding.seed_install(self, current, true, consent)
+						var operation := Seeding.docket()
+						if journal.has("paths"):
+							consent["bound_paths"] = journal.paths
+							await operation.pin(journal, ["", current.knowledge_project] if not current.knowledge.is_empty() else [""])
+						var seeded: Dictionary
+						if not operation.incomplete().is_empty() or operation.was_missing("") \
+								or (not current.knowledge.is_empty() and operation.was_missing(current.knowledge_project)):
+							seeded = {"content_incomplete": "The previously bound Docket project is unavailable."}
+						else:
+							seeded = await Seeding.seed_install(self, current, true, consent, operation)
 						done = Seeding.complete(seeded)
 						journal = consent.get("saved_journal", journal)
 						reason = Seeding.unfinished_reason(seeded)
@@ -1347,6 +1359,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"id": id,
 		"name": def.name,
 		"version": def.version,
+		"content_pending": load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)).filter(func(entry): return entry.id == id).map(func(entry): return {"stale": entry.journal.get("stale", false), "reason": entry.reason}),
 		"state": def.state,
 		"state_name": [
 			"INSTALLED", "STARTING", "RUNNING", "STOPPED", "ERROR", "CRASH_LOOP",
@@ -1457,23 +1470,25 @@ func person_stops(id: String) -> int:
 	return _person_stops.get(id, 0)
 
 
-## At launch: queue installs of missing required plugins (RequiredPlugins,
-## alongside), start the autostart plugins, then queue the opted-in updates
-## (PluginAutoUpdater), so an update of a plugin that just started must start
-## again before it commits. Minerva does not wait on this.
 var _required_pickup := false
+var _launch_autostart := false
 
 func docket_pickup_pending() -> bool:
 	var def = _db.get_by_id("docket")
 	return _required_pickup or (install_queue != null and install_queue.pending_for("docket") != null) \
-		or (def != null and def.state == S_STARTING)
+		or (def != null and (def.state == S_STARTING or (_launch_autostart and def.autostart)))
 
 func _ensure_required_plugins() -> void:
 	_required_pickup = true
 	await RequiredPlugins.ensure(self)
 	_required_pickup = false
 
+## At launch: queue installs of missing required plugins (RequiredPlugins,
+## alongside), start the autostart plugins, then queue the opted-in updates
+## (PluginAutoUpdater), so an update of a plugin that just started must start
+## again before it commits. Minerva does not wait on this.
 func start_plugins_at_launch(registry_url: String = "") -> void:
+	_launch_autostart = true
 	# Not awaited: autostart does not wait on the network. Source/editor runs
 	# need required plugins too; ensure never replaces a manifest-lane copy.
 	RequiredPlugins.move_legacy_relay_state()
@@ -1482,6 +1497,7 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 	await reconcile_recovered()
 	_ensure_required_plugins()
 	await start_autostart_plugins()
+	_launch_autostart = false
 	if not _shutting_down:
 		await AutoUpdater.run(self, registry_url)
 

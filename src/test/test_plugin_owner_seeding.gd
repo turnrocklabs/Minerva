@@ -569,6 +569,10 @@ func _test_interruptions() -> void:
 	var other := _def("seedlate", "1.0.0", "Work", "1. late", "late", "late tip")
 	_db.plugins[other.id] = other
 	var skipped: Dictionary = await Seeding.seed_install(_pm, other, true, {})
+	var skill_only := _def("seedskills", "1.0.0", "", "1. later", "", "")
+	skill_only.knowledge.clear()
+	_db.plugins[skill_only.id] = skill_only
+	await Seeding.seed_install(_pm, skill_only, true, {})
 	var removed: Dictionary = await _pm.remove_plugin(id)
 	var waiting := _pending(id)
 	check("with the plugin stopped, an install defers and an uninstall says its content was not done",
@@ -587,13 +591,30 @@ func _test_interruptions() -> void:
 	_host_manager.plugin_ready.emit("docket")
 	await _wait(func(): return _host.state in ["ready", "degraded"])
 	other.version = "2.0.0"
+	_store.failing_flush = ["master"]
 	await _pm.reconcile_recovered()
-	check("a changed manifest cannot replay old approved content", _pending(other.id).size() == 1 and _record("minerva_seedlate_guide").is_empty())
+	check("a changed manifest is visibly stale and cannot replay old content", _pending(other.id).size() == 1 \
+		and _pm.get_plugin_status(other.id).content_pending[0].stale and _record("minerva_seedlate_guide").is_empty())
+	var flushes := _store.reached.get("docket_flush", 0)
+	await _pm.reconcile_recovered()
+	check("a skills-only retry confirms the failed save even when records already exist",
+		_pending(skill_only.id).size() == 1 and _store.reached.get("docket_flush", 0) > flushes)
+	_store.failing_flush = []
 	other.version = "1.0.0"
-	_store.failing_query_types = ["kb"]
+	var reviewed: Dictionary = _pending(other.id)[0]
+	reviewed.journal.erase("stale")
+	load(TXN_GD).requeue_content(reviewed.path, other.id, reviewed.journal, true)
+	_store.failing_flush = ["work"]
 	await _pm.reconcile_recovered()
-	check("a failed deferred read retains its intent", _pending(other.id).size() == 1)
-	_store.failing_query_types = []
+	check("a failed deferred save retains its file bindings", _pending(other.id).size() == 1 and _pending(other.id)[0].journal.has("paths"))
+	_store.failing_flush = []
+	_store.projects[1] = _project("work", WORK_B)
+	var before_rebind := _store.sent.size()
+	await _pm.reconcile_recovered()
+	check("reopened project names cannot redirect a deferred retry",
+		_pending(other.id).size() == 1 and _pending(other.id)[0].journal.paths.Work == WORK_A \
+		and _store.sent.slice(before_rebind).all(func(call): return call[0] in ["docket_query", "docket_get", "docket_flush"]))
+	_store.projects[1] = _project("work", WORK_A)
 	await _pm.reconcile_recovered()
 	check("Docket readiness applies approved skills and knowledge and drains the intent",
 		_pending(other.id).is_empty() and not _record("minerva_seedlate_note").is_empty() and _record("minerva_seedlate_guide").get("article") == "late")
@@ -606,3 +627,11 @@ func _test_interruptions() -> void:
 	Txn.requeue_content(abandoned_path, other.id, abandoned, false)
 	await _pm.reconcile_recovered()
 	check("an uncommitted never-applied intent is discarded without writes", _pending(other.id).is_empty() and _store.sent.size() == sent)
+	var docket := _def("docket", "1.0.0", "", "", "", "")
+	docket.autostart = true
+	_db.plugins[docket.id] = docket
+	_pm._launch_autostart = true
+	check("a reused profile remains retriable before Docket autostart reaches it", _pm.docket_pickup_pending())
+	docket.autostart = false
+	check("a deliberately stopped Docket is not waiting for autostart", not _pm.docket_pickup_pending())
+	_pm._launch_autostart = false
