@@ -1,0 +1,4 @@
+# Exact-fingerprint false positives (commit:file:rule:line). Each entry is one
+# reviewed finding; never add rule- or path-wide suppressions here.
+8fc0f7641cf9a8d6f7eb5d36220976c01a3d9a5e:Docs/minerva.dct:generic-api-key:14275
+8fc0f7641cf9a8d6f7eb5d36220976c01a3d9a5e:Docs/minerva.dct:generic-api-key:18254
