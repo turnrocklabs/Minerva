@@ -53,12 +53,8 @@ func _run() -> void:
 		return
 	RequiredPlugins.releases_url = "http://127.0.0.1:%d/releases.json" % port
 	offer(OLD)
-	var queued: Dictionary = await RequiredPlugins.ensure(manager)
-	check("launch pickup queues Docket from official-format release", queued.has("docket"))
-	if not queued.has("docket"):
-		await finish()
-		return
-	await until(func(): return queued.docket.state == queued.docket.State.DONE and host.state == "ready")
+	manager.start_plugins_at_launch()
+	await until(func(): return host.state == "ready" and manager.get_db().has_plugin("docket"))
 	var definition = manager.get_db().get_by_id("docket")
 	check("first install is marketplace, autostarts and enables updates", definition != null and definition.version == OLD and definition.autostart and definition.auto_update and definition.install_lane == PluginDefinition.LANE_MARKETPLACE)
 	check("starting was visible and ready clears the message", progress.any(func(text: String): return text.contains("Docket is starting")) and host.availability_message().is_empty())

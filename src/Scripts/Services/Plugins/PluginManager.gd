@@ -1449,15 +1449,13 @@ func person_stops(id: String) -> int:
 ## (PluginAutoUpdater), so an update of a plugin that just started must start
 ## again before it commits. Minerva does not wait on this.
 func start_plugins_at_launch() -> void:
-	# Not awaited: autostart does not wait on the network. An editor run (a
-	# developer's checkout, and the test harness) never fetches by itself; the
-	# plugin panel's "Install required plugins" does it on request.
+	# Not awaited: autostart does not wait on the network. Source/editor runs
+	# need required plugins too; ensure never replaces a manifest-lane copy.
 	RequiredPlugins.move_legacy_relay_state()
 	# Installs a crash left half-done were rolled back before Docket was
 	# loaded; their seeded skills and knowledge follow now.
 	await reconcile_recovered()
-	if not OS.has_feature("editor"):
-		RequiredPlugins.ensure(self)
+	RequiredPlugins.ensure(self)
 	await start_autostart_plugins()
 	if not _shutting_down:
 		await AutoUpdater.run(self)
