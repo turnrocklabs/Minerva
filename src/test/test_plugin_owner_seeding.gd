@@ -576,9 +576,10 @@ func _test_interruptions() -> void:
 	var empty := _def("seedempty", "1.0.0", "", "", "", "")
 	empty.skills.clear()
 	empty.knowledge.clear()
-	await Seeding.seed_install(_pm, empty, true, {})
-	await Seeding.reconcile(_pm, empty, empty, {"collected": true}, true)
-	check("unavailable content-free installs and updates create no repair intent", _pending(empty.id).is_empty() and _store.reached == reached_before)
+	var empty_seed: Dictionary = await Seeding.seed_install(_pm, empty, true, {})
+	var empty_update: Dictionary = await Seeding.reconcile(_pm, empty, empty, {"collected": true}, true)
+	check("unavailable content-free installs and updates complete without a repair intent",
+		Seeding.complete(empty_seed) and Seeding.complete(empty_update) and _pending(empty.id).is_empty() and _store.reached == reached_before)
 	var removed: Dictionary = await _pm.remove_plugin(id)
 	var waiting := _pending(id)
 	check("with the plugin stopped, an install defers and an uninstall says its content was not done",
