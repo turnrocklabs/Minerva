@@ -204,12 +204,13 @@ signal backend_tool_called(id: String, tool: String)
 var connection = null
 var authority = null
 var guard := Callable()
+var running := true
 func get_connection(_id: String):
 	return connection
 func get_panel_authority(_id: String):
 	return authority
 func get_plugin_status(_id: String) -> Dictionary:
-	return {"running": true}
+	return {"running": running}
 func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
 	guard = backend_guard
 """
@@ -407,6 +408,16 @@ func _test_policy_owner() -> void:
 	check("startup refuses immediately with observable retryability and no governed execution",
 		startup.get("error_code") == "docket_not_ready" and startup.get("retryable", false) \
 		and not _ran(startup) and status.get("error_code") == "docket_not_ready", str(startup))
+	host.state = "unavailable"
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("RUNNING before plugin_ready remains retryable", status.get("retryable", false) and status.get("error_code") == "docket_not_ready", str(status))
+	manager.running = false
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("a stopped plugin remains non-retryable", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
+	manager.running = true
+	host.state = "failed"
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("failed setup remains non-retryable even with a running plugin", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
 	host.state = "ready"
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("the ungoverned readiness probe succeeds once Docket is ready", status.get("success", false), str(status))

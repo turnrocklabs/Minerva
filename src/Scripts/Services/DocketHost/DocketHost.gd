@@ -253,7 +253,8 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 
 func pickup_pending() -> bool:
 	return state == "starting" or (_plugin_manager != null \
-		and _plugin_manager.has_method("docket_pickup_pending") and _plugin_manager.docket_pickup_pending())
+		and ((state == "unavailable" and _plugin_manager.get_plugin_status(PLUGIN_ID).get("running", false)) \
+			or (_plugin_manager.has_method("docket_pickup_pending") and _plugin_manager.docket_pickup_pending())))
 
 
 ## The master's policies, read from the plugin afresh: {items} (its items

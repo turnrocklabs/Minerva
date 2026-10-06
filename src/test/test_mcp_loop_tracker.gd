@@ -33,6 +33,25 @@ func _init() -> void:
 	tracker.check("export", {}, {"success": true})
 	tracker.check("export", {}, {"error": "bad source"})
 	check("success resets error streak", tracker._streaks["export"].consecutive_error_count == 1)
+	var not_ready := {"success": false, "error": "Docket is being installed/started — retry shortly",
+		"error_code": "docket_not_ready", "retryable": true}
+	for retry in [not_ready, {"success": true, "result": not_ready}]:
+		tracker = Tracker.new()
+		var clean := true
+		for i in range(32):
+			reply = tracker.check("minerva_policy_reload", {}, retry.duplicate(true))
+			clean = clean and reply == retry and not tracker._streaks.has("minerva_policy_reload")
+		check("32 readiness retries preserve the result without loop accounting", clean)
+		for i in range(25):
+			reply = tracker.check("minerva_policy_reload", {},
+				{"success": false, "error": "Docket failed", "error_code": "policy_unavailable", "retryable": false})
+			if i == 4:
+				check("non-retryable failures still block at the existing fifth call", reply.get("blocked", false))
+		check("25 non-retryable failures remain blocked with their original classification",
+			reply.get("blocked", false) and reply.error_code == "policy_unavailable" and not reply.retryable)
+		tracker.check("minerva_policy_reload", {}, not_ready.duplicate(true))
+		reply = tracker.check("minerva_policy_reload", {}, {"error": "Docket failed"})
+		check("an explicit retry clears only that tool's prior failure streak", not reply.has("warning") and not reply.has("blocked"))
 	for pending in [
 		{"status": "pending", "job_id": "export-1"},
 		{"success": true, "result": {"status": "running", "ticket": "design-1"}},

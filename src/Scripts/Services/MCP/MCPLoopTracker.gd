@@ -19,8 +19,9 @@ var _streaks: Dictionary[String, ToolStreak] = {}
 
 ## Check for duplicate calls and inject warning if detected
 func check(tool_name: String, arguments: Dictionary, result: Dictionary) -> Dictionary:
-	# Pending is a nonterminal protocol result, not an unsuccessful attempt.
-	if _is_pending(tool_name, result):
+	# Pending and explicit retries ask for another call, not a failed repetition.
+	if _is_pending(tool_name, result) or result.get("retryable", false) == true \
+			or _payload(result).get("retryable", false) == true:
 		_streaks.erase(tool_name)
 		return result
 	# The internal agent loop handles explicit non-retryable document refusals
