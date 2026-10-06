@@ -60,9 +60,8 @@ func reload() -> void:
 
 
 ## Brings the rules up to date with their owner: "" when they are, else why
-## they could not be read. The embedded Docket's rules are current as
-## reloaded; the plugin's are read now (again when the read overlapped a
-## change to Docket, or a newer read was taken first), and compiled again
+## they could not be read. Hosted rules are read now (again when the read
+## overlapped a change to Docket, or a newer read was taken first), and compiled again
 ## only when the items changed. Nothing is awaited between taking the items
 ## and returning, so the caller evaluates the rules just read.
 func refresh() -> String:
