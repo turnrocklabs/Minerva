@@ -234,6 +234,7 @@ var _so: Node = null
 var _made: Array[Node] = []
 var _store = null
 var _host = null
+var _saved_write_definitions: Dictionary = {}
 ## The longest any wait here may take, in frames: a wait that runs out fails.
 const MAX_FRAMES := 300
 
@@ -330,6 +331,12 @@ func _run() -> void:
 	_so.docket_manager = saved_manager
 	_so.docket_host = saved_host
 	_so.plugin_tool_registry = saved_registry
+	for name in _saved_write_definitions:
+		if _saved_write_definitions[name] == null:
+			_server().mcp_manager.tool_registry.erase(name)
+		else:
+			_server().mcp_manager.tool_registry[name] = _saved_write_definitions[name]
+	_saved_write_definitions.clear()
 	if docket_tools != null:
 		docket_tools._tool_names.assign(saved_names)
 	_server().policy_engine.reload()
@@ -398,6 +405,11 @@ func _set_up() -> bool:
 	var registry = load(REGISTRY_PATH).new(running)
 	var published: Dictionary = registry.publish_backend_tools("docket", wire)
 	_so.plugin_tool_registry = registry
+	# Match the host's tools_registered wiring: coercion uses the published schema.
+	for entry in registry.get_plugin_tools("docket"):
+		var name: String = entry.name
+		_saved_write_definitions[name] = _server().mcp_manager.tool_registry.get(name)
+		_server().mcp_manager.tool_registry[name] = MCPToolDefinition.from_dict(entry.mcp_definition, "minerva")
 
 	var local := SkillDefinition.new()
 	local.id = LOCAL_ID
