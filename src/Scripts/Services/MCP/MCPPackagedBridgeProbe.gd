@@ -70,7 +70,7 @@ func run() -> void:
 	manager.connect_minerva_server()
 	# Startup downloads are asynchronous; a loaded browser does not prove
 	# the master policy is ready to admit the probe's governed call.
-	var readiness_deadline := Time.get_ticks_msec() + 30000
+	var readiness_deadline := Time.get_ticks_msec() + 60000
 	while true:
 		var readiness: Dictionary = await manager.minerva_server.call_tool("minerva_policy_reload", {})
 		if readiness.get("success", false): break
