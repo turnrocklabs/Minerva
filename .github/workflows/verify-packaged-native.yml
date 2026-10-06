@@ -160,10 +160,7 @@ jobs:
                   extracted/Minerva.x86_64 --bridge
               ;;
             windows)
-              unzip -q packaged/Minerva-Windows.zip -d extracted
-              scripts/test-packaged-mcp-helper.sh windows-x86_64 extracted/mcp-runtime/windows-x86_64
-              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe
-              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe --bridge
+              scripts/ci/windows/verify-packaged.sh
               ;;
             macos)
               ditto -x -k packaged/Minerva-macOS.zip extracted
@@ -190,7 +187,8 @@ jobs:
           set -euo pipefail
           mkdir -p extracted-debug
           if [ "${{ matrix.platform }}" = windows ]; then
-            unzip -q packaged-debug/Minerva-Windows-Debug.zip -d extracted-debug
+            scripts/ci/windows/verify-packaged.sh packaged-debug/Minerva-Windows-Debug.zip extracted-debug
+            exit 0
           else
             tar -xzf packaged-debug/Minerva-Linux-Debug.tar.gz -C extracted-debug
           fi
