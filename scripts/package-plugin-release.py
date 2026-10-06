@@ -124,6 +124,13 @@ def tool_name(plugin_id: str, raw: str) -> str:
     return raw if raw.startswith(prefix) else prefix + raw.replace(".", "_")
 
 
+def verify_docket_bundle(root: Path) -> None:
+    apps = list(root.glob("official/*/Docket.app"))
+    if len(apps) != 1:
+        raise SystemExit("Docket macOS package must contain one official app bundle")
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(apps[0])], check=True)
+
+
 def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
     """Run the extracted release's entrypoint and compare tools/list with the
     manifest's tools."""
@@ -138,8 +145,13 @@ def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
     if manifest.get("panel_authority"):
         env[manifest["panel_authority"]["secret_env"]] = secrets.token_hex(32)
         env["MINERVA_PLUGIN_DATA_DIR"] = str(root.parent / "probe-data")
+    argv = [command, *backend.get("args", [])]
+    mac_docket = sys.platform == "darwin" and manifest["id"] == "docket"
+    if mac_docket:
+        verify_docket_bundle(root)
+        argv.append("--headless")
     process = subprocess.Popen(
-        [command, *backend.get("args", [])], cwd=root,
+        argv, cwd=root,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
         text=True, encoding="utf-8", env=env)
     assert process.stdin is not None and process.stdout is not None
@@ -191,6 +203,8 @@ def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
             process.kill()
             process.wait(timeout=5)
         stderr.close()
+        if mac_docket:
+            verify_docket_bundle(root)
     tools = listed.get("result", {}).get("tools", [])
     if discover:
         return [{"name": tool_name(manifest["id"], t["name"]), "description": t.get("description", ""),

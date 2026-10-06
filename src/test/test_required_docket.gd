@@ -35,6 +35,8 @@ func offer(version: String) -> void:
 	file.close()
 
 func _run() -> void:
+	var updater = load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
+	check("wrapper revision advances but next upstream candidate wins", updater.compare_versions("0.3.0-rc.23.plugin.1", OLD) > 0 and updater.compare_versions(NEW, "0.3.0-rc.23.plugin.1") > 0)
 	for url in ["http://127.0.0.1?@evil.example/r.json", "http://127.0.0.1@evil.example/r.json",
 			"http://user@localhost/r.json", "http://localhost#@evil.example/r.json", "https://localhost.evil/r.json"]:
 		check("reject remote or ambiguous fixture authority", RequiredPlugins._initial_releases_url(url) == "https://api.github.com/repos/%s/releases" % RequiredPlugins.REPO)

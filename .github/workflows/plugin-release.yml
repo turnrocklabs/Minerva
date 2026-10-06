@@ -15,6 +15,7 @@ on:
       - 'docket-v*'
     branches:
       - development
+      - 'release/docket-plugin-*'
     paths:
       - 'src/plugins/agent-relay/**'
       - 'src/plugins/voice/**'
@@ -30,7 +31,7 @@ permissions:
 jobs:
   agent-relay:
     name: Agent Relay (${{ matrix.target }})
-    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'agent_relay-v')
+    if: github.ref_name == 'development' || startsWith(github.ref_name, 'agent_relay-v')
     strategy:
       fail-fast: false
       matrix:
@@ -71,7 +72,7 @@ jobs:
 
   voice:
     name: Voice Support (${{ matrix.target }})
-    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'voice-v')
+    if: github.ref_name == 'development' || startsWith(github.ref_name, 'voice-v')
     strategy:
       fail-fast: false
       matrix:
@@ -133,7 +134,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: imrans-lab/minerva-plugins
-          ref: 1a74ea6af2adbf3d30b0dcde521b818ddd1ee7d4
+          ref: d7c09906d344d70a8e5443622ed76c45c79e2544
           path: minerva-plugins
       - uses: actions/setup-python@v5
         with:
