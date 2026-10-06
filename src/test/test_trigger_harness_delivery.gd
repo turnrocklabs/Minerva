@@ -297,7 +297,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		{"interval_seconds": 5.0})
 	_so.note_changed.emit(null)
 	tm._on_schedule_check()
-	_hosted_docket.emit_created("t10project", "t10item")
+	await _hosted_docket.emit_created("t10project", "t10item", tm.docket_feed)
 	if _so.plugin_event_broker != null:
 		_so.plugin_event_broker.plugin_event.emit("t10plugin", "ping", {})
 	for trig in [note_trig, time_trig, docket_trig, plugin_trig, timer_trig]:
@@ -534,7 +534,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		tm.set_trigger_enabled(trig.id, true)
 	check("T17: after two edits and a re-enable each trigger is served exactly once", handlers_are.call(2))
 	_so.note_changed.emit(null)
-	_hosted_docket.emit_created("t17project", "t17item")
+	await _hosted_docket.emit_created("t17project", "t17item", tm.docket_feed)
 	for trig: TriggerDefinition in [once_note, twin_note, once_docket, twin_docket]:
 		await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"])
 	check("T17: each trigger delivers each event exactly once",
@@ -543,7 +543,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	tm.remove_trigger(once_note.id)
 	tm.remove_trigger(once_docket.id)
 	_so.note_changed.emit(null)
-	_hosted_docket.emit_created("t17project", "t17gone")
+	await _hosted_docket.emit_created("t17project", "t17gone", tm.docket_feed)
 	for trig: TriggerDefinition in [twin_note, twin_docket]:
 		await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"])
 	check("T17: deleting one removes only its handler; the other still delivers",

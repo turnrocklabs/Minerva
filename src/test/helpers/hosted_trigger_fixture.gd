@@ -36,7 +36,7 @@ func install(so: Node) -> void:
 	so.plugin_manager = _plugins
 	so.plugin_event_broker = _broker
 
-func emit_created(project_name: String, id: String) -> void:
+func emit_created(project_name: String, id: String, feed: RefCounted) -> void:
 	var project: Dictionary = _wire.listed.filter(func(p): return p.name == project_name)[0]
 	_wire.items[project_name + "/" + id] = {"id": id, "type": "bug", "title": id, "status": "new"}
 	_sequence += 1
@@ -45,12 +45,19 @@ func emit_created(project_name: String, id: String) -> void:
 		"cause": "mutation", "origin": "", "operation_id": "", "stream": "harness-test", "sequence": _sequence,
 		"baseline": {"kind": "created", "item_type": "bug"}})
 
+	for frame in 300:
+		if not feed._working and feed._queue.is_empty():
+			return
+		await Engine.get_main_loop().process_frame
+	assert(false, "hosted trigger feed did not settle")
+
 func restore() -> void:
 	for key in _previous:
 		_so.set(key, _previous[key])
 	_wire._subprocess = null
-	for node in [_wire, _plugins, _host]:
+	for node in [_plugins, _host]:
 		node.free()
+	_wire = null
 
 func _make(source: String):
 	var script := GDScript.new()
