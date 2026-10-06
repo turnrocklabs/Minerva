@@ -4,14 +4,12 @@ extends RefCounted
 ##
 ## Usage:
 ##   var engine := PolicyEngine.new()
-##   engine.reload()                         # fetch rules from the embedded Docket
+##   engine.reload()                         # clear cached rules
 ##   var result := await engine.admit("minerva_bash", {"command": "git push --force"})
 ##   if not result["allowed"]:
 ##       print(result["error"])
 ##
-## The rules belong to whichever Docket owns Minerva's projects: the embedded
-## DocketManager (rules as last reloaded), else the Docket plugin through
-## DocketHost (the master's policies, read afresh for each admission). A
+## The master's policies are read through DocketHost for each admission. A
 ## governed call is admitted only against rules that were read: when there is
 ## no owner or the read fails, admit() refuses it.
 

@@ -779,8 +779,7 @@ func _skill_write_target(project_name: String) -> Dictionary:
 
 
 # Sends Docket write `tool` ("create", "update" or "transition") with
-# `arguments`: as the
-# agent tool minerva_docket_<tool> through the governed dispatch with the
+# `arguments`: as minerva_docket_<tool> through the governed dispatch with the
 # caller's `context`, bound (a write_binding for this call only) to `target`
 # (DocketHost.skill_target or skill_lookup), so it is refused rather than
 # sent to another project that took its project's name meanwhile. Once it is

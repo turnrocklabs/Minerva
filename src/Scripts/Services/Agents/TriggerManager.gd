@@ -55,7 +55,7 @@ var _revision_counter: int = 0
 ## Delivery to triggers' harness destinations (TriggerDestination).
 var harness_delivery := TriggerHarnessDelivery.new()
 
-## DOCKET_POLL triggers' events under the Docket plugin (no DocketManager).
+## DOCKET_POLL triggers' events under the Docket plugin.
 var docket_feed := DocketTriggerFeed.new(self)
 ## Wake-up pointers for DOCKET_POLL triggers in wake mode.
 var docket_wakeups := DocketWakeups.new()
@@ -957,7 +957,7 @@ func _on_schedule_check() -> void:
 		if _fire_trigger(trig.id):
 			trig.last_fired_at = scheduled_occurrence
 
-	# DOCKET_POLL triggers now use direct DocketManager signals — no polling needed
+	# DOCKET_POLL triggers use the Docket plugin's event feed.
 
 
 ## Return the scheduled occurrence string if the trigger should fire now, else "".

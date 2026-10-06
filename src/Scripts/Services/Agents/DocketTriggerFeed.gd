@@ -1,10 +1,8 @@
 class_name DocketTriggerFeed
 extends RefCounted
-## DOCKET_POLL triggers under the Docket plugin, when no embedded
-## DocketManager runs. The plugin's item_changed events that carry a baseline
+## DOCKET_POLL triggers under the Docket plugin. Its item_changed events carry a baseline
 ## descriptor (one per ordinary create, transition, update, comment, delete,
-## hint_set or quality call) fire them as DocketManager's signal for that
-## call did: created, transitioned, updated or comment_added.
+## hint_set or quality call) and fire created, transitioned, updated or comment_added.
 ##
 ## A trigger's project name is bound once to one open project's path ("master"
 ## to the master's); until it names exactly one, the trigger watches nothing.
