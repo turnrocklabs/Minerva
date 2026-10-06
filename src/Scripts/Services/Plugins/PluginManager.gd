@@ -484,11 +484,11 @@ func reconcile_recovered() -> void:
 			var reason := ""
 			if journal.get("deferred_install", false):
 				var current = _db.get_by_id(recovered.id)
-				if recovered.committed and current != null:
-					if attempted == null or current.version != attempted.version or current.skills != attempted.skills \
-							or current.knowledge != attempted.knowledge or current.knowledge_project != attempted.knowledge_project:
+				if recovered.committed:
+					if current == null or attempted == null or current.version != attempted.version or current.skills != attempted.skills \
+							or current.knowledge != attempted.knowledge or (not current.knowledge.is_empty() and current.knowledge_project != attempted.knowledge_project):
 						done = false
-						reason = "The installed manifest changed; deferred content needs review."
+						reason = "The installed manifest is missing or changed; deferred content needs review."
 						journal["stale"] = true
 					else:
 						var consent := {"collected": true, "seed": true, "journal_path": recovered.path}
