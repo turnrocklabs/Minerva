@@ -131,6 +131,7 @@ func _run() -> void:
 	so.Chats = pane
 	so.ChatList.assign([history])
 	var server = so.get_mcp_manager().minerva_server
+	server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 	var inspect: Dictionary = await server.execute_tool_for_http("minerva_get_generation_options", {"chat_id": history.HistoryId})
 	check("MCP inspects effective defaults and schema", inspect.success and inspect.effective_options.temperature == 0.7 and inspect.schema.has("max_tokens"))
 	var model_set: Dictionary = await server.execute_tool_for_http("minerva_set_generation_options", {"model_spec": spec, "options": {"max_tokens": 200}})

@@ -74,10 +74,15 @@ func _run() -> void:
 	check("S0: the SingletonObject autoload is live", _so != null)
 	if _so == null:
 		return
+	# Signal-only legacy fixture, kept off-tree so it opens no files.
+	var signal_owner = load("res://Scripts/Services/Docket/DocketManager.gd").new()
+	_so.docket_manager = signal_owner
 	_saved_chats = _so.Chats
 	_host_render.install(_so)
 	await _test_triggers_deliver_to_harness_sessions()
 	_host_render.restore()
+	_so.docket_manager = null
+	signal_owner.free()
 
 
 func check(label: String, ok: bool, detail: String = "") -> void:

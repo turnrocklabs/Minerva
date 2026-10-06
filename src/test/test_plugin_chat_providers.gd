@@ -214,6 +214,7 @@ func _run() -> void:
 	_real_tool_registry = so.plugin_tool_registry
 	check("the host's plugin tool registry and tool server are up",
 		_real_tool_registry != null and so.get_mcp_manager().minerva_server != null)
+	so.get_mcp_manager().minerva_server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 
 	_test_registry_unit()
 	await _test_provider_generate(so)

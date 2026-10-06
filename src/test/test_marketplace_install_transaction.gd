@@ -116,6 +116,7 @@ var _h
 var _temp := ""
 var _base_url := ""
 var _fail := 0
+var _content_db: RefCounted
 
 
 func _init() -> void:
@@ -132,6 +133,12 @@ func _init() -> void:
 		_finish(1)
 		return
 	_temp = "%s/test_install_txn_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
+	DirAccess.make_dir_recursive_absolute(_temp)
+	_content_db = load("res://Scripts/Services/Docket/Core/docket_db.gd").create_new(_temp.path_join("content.db"))
+	var content_registry = load("res://test/helpers/content_registry_fixture.gd").new()
+	var schema: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://Scripts/Services/Docket/Core/data/schema.json"))
+	content_registry.init(schema, _content_db, {"master": _content_db})
+	load("res://Scripts/Services/Plugins/PluginContentSeeding.gd").docket_override = content_registry
 	var packed: bool = _pack("v1", "1.0.0", 0) and _pack("v2", "2.0.0", 0) and _pack("big", "3.0.0", BIG_BYTES) \
 		and _pack_crafted()
 	var port: int = _h.random_high_port()
@@ -702,6 +709,9 @@ func _check(ok: bool, what: String) -> bool:
 
 
 func _finish(code: int) -> void:
+	load("res://Scripts/Services/Plugins/PluginContentSeeding.gd").docket_override = null
+	if _content_db != null:
+		_content_db.close()
 	var db = load(PLUGINDB_GD).new()
 	for id in [ID, FRESH_ID]:
 		if db.has_plugin(id):

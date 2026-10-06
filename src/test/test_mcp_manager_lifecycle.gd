@@ -48,6 +48,7 @@ func _run() -> void:
 	root.add_child(manager)
 	await process_frame
 	var server: Variant = manager.minerva_server
+	server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 	var parked := ParkedModule.new(server)
 	server._modules.append(parked)
 	server._register_tool("minerva_lifecycle_parked", "Lifecycle test operation.",
