@@ -570,8 +570,10 @@ static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool
 	if not path.is_empty():
 		journal["deferred_install"] = true
 		if consent.has("bound_paths"):
+			var paths: Dictionary = journal.get("paths", {})
 			for name: String in consent.bound_paths:
-				if not str(consent.bound_paths[name]).is_empty(): journal.paths[name] = consent.bound_paths[name]
+				if not str(consent.bound_paths[name]).is_empty(): paths[name] = consent.bound_paths[name]
+			journal["paths"] = paths
 		consent["saved_journal"] = journal
 		return Txn.requeue_content(path, def.id, journal, true)
 	var journal_dir := str(consent.get("journal_dir", ""))
