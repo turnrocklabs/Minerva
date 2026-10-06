@@ -4,7 +4,7 @@ extends MCPToolModule
 ##
 ## Tools:
 ##   minerva_open_file — open an absolute file path in the appropriate editor.
-##   minerva_open_docket — open Docket's panel (SingletonObject.open_docket_panel).
+##   minerva_open_docket — open/focus the upstream Docket window.
 ##
 ## Implements the MCPToolModule duck-typed interface (get_tool_names, can_handle,
 ## register_tools, handle).  Calls SingletonObject.open_file_at_path() which
@@ -24,9 +24,8 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_open_docket",
-		"Open Docket's panel (from the Docket plugin) in Minerva. Optionally open a specific project docket (.dct) by path. "
-		+ "Returns {success, message, editor_name}, or an error such as docket_plugin_unavailable, "
-		+ "plugin_not_running:<id>, not_a_docket_project:<path> or file_not_found:<path>.",
+		"Open or focus the Docket plugin's upstream window. Optionally open a specific project docket (.dct) by path. "
+		+ "Returns {success, message, pid}, or a visible plugin, project or window-opening error.",
 		{
 			"type": "object",
 			"properties": {
@@ -96,19 +95,22 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_create_plugin_editor":
 			return _create_plugin_editor(arguments)
 		"minerva_open_docket":
-			return _open_docket(arguments)
+			return await _open_docket(arguments)
 	return MCPToolUtils.error("Unknown general tool: %s" % tool_name)
 
 
 # ── Tool implementation ───────────────────────────────────────────────────────
 
-# The Docket plugin's panel, on `dct_path` when given; its refusal is the
+# The Docket plugin's window, on `dct_path` when given; its refusal is the
 # tool's error.
-func _open_docket(args: Dictionary) -> Dictionary:
-	var opened := SingletonObject.open_docket_panel(str(args.get("dct_path", "")).strip_edges())
+func handle_with_context(tool_name: String, args: Dictionary, context: MCPExecutionContext) -> Dictionary:
+	return await _open_docket(args, context) if tool_name == "minerva_open_docket" else await handle(tool_name, args)
+
+func _open_docket(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
+	var opened := await SingletonObject.open_docket_panel(str(args.get("dct_path", "")).strip_edges(), context)
 	if not opened.ok:
 		return MCPToolUtils.error(", ".join(PackedStringArray(opened.errors)))
-	return {"success": true, "message": "Docket panel opened.", "editor_name": opened.get("editor_name", "")}
+	return {"success": true, "message": "Docket window opened.", "pid": opened.get("pid", 0)}
 
 
 func _open_file(args: Dictionary) -> Dictionary:

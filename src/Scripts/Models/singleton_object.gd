@@ -1024,58 +1024,40 @@ func open_docket_tab() -> void:
 	ep.add(Editor.Type.DOCKET, null, "Docket")
 
 
-## Opens Docket's panel from the plugin that claims .dct files
-## (PluginEditorRegistry): on the project at `dct_path` when given, else a
-## panel with no file of its own, showing whatever projects the plugin has
-## open. A tab already showing that panel on that file (or on none) is
-## brought forward rather than opened again; a tab of any other kind on the
-## same file is not the panel and is left alone. No project file is created.
-## {ok: true, editor_kind, editor_name, plugin_id, panel_name}, or
-## {ok: false, errors} when no running plugin provides the panel, the path
-## is not a .dct that exists, or the panel failed to load (its tab shows
-## why); there is no other Docket to fall back to.
-func open_docket_panel(dct_path: String = "") -> Dictionary:
-	var panel: Dictionary = plugin_editor_registry.resolve_extension(".dct") if plugin_editor_registry != null else {}
-	if panel.is_empty():
-		return {"ok": false, "errors": ["docket_plugin_unavailable: no installed plugin opens .dct projects"]}
-	var p_id: String = panel.get("plugin_id", "")
-	var p_name: String = panel.get("panel_name", "")
-	if plugin_manager == null or not plugin_manager.get_plugin_status(p_id).get("running", false):
-		return {"ok": false, "errors": ["plugin_not_running: %s" % p_id]}
-	var path := ""
+## Open/focus the upstream Docket window, optionally opening an existing project.
+## The plugin owns the files; failures stay visible to both people and MCP callers.
+func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = null) -> Dictionary:
+	if plugin_manager == null or not plugin_manager.get_plugin_status("docket").get("running", false) \
+			or plugin_tool_registry == null:
+		return {"ok": false, "errors": ["docket_plugin_unavailable: install and start Docket in the Plugin Manager"]}
+	if docket_host == null or not docket_host.state in ["ready", "degraded"]:
+		return {"ok": false, "errors": ["Docket is not ready: %s" % (docket_host.state if docket_host != null else "unavailable")]}
 	if not dct_path.is_empty():
 		if dct_path.get_extension().to_lower() != "dct":
 			return {"ok": false, "errors": ["not_a_docket_project: %s" % dct_path]}
-		# Resolved as open_file_at_path resolves a relative path.
-		path = dct_path if dct_path.is_absolute_path() else ProjectSettings.globalize_path(dct_path)
+		var path := dct_path if dct_path.is_absolute_path() else ProjectSettings.globalize_path(dct_path)
 		if not FileAccess.file_exists(path):
 			return {"ok": false, "errors": ["file_not_found: %s" % path]}
-	if editor_pane == null:
-		return {"ok": false, "errors": ["editor_pane not available"]}
-	var opened: Editor = null
-	for editor: Editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.PLUGIN_SCENE and editor.plugin_id == p_id \
-				and editor.panel_name == p_name and editor.file == path:
-			opened = editor
-			editor_pane.Tabs.current_tab = editor_pane.Tabs.get_tab_idx_from_control(editor)
-			break
-	if opened == null:
-		opened = editor_pane.add_plugin_scene_editor(p_id, p_name, path if not path.is_empty() else null, "Docket")
-	# A panel that could not be mounted is a placeholder saying why.
-	if opened == null or not is_instance_valid(opened.plugin_scene_root) \
-			or not opened.plugin_scene_root.get_meta("_minerva_plugin_panel_load_ok", false):
-		return {"ok": false, "errors": ["docket_panel_failed_to_load: %s" % p_id]}
-	return {"ok": true, "editor_kind": "PLUGIN_SCENE", "editor_name": opened.tab_title, "plugin_id": p_id, "panel_name": p_name}
+		var listed := await docket_host.open_projects()
+		if not listed.get("projects") is Array:
+			return {"ok": false, "errors": [str(listed.get("error", listed.get("message", "Docket projects are unavailable")))]}
+		if not listed.projects.any(func(project: Dictionary) -> bool: return project.get("path") == path):
+			var added: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_project_add", {"path": path}, context)
+			if added.has("error") or added.get("success", true) == false:
+				return {"ok": false, "errors": [str(added.get("error", "Docket could not open the project"))]}
+	var focused: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_gui_open", {"focus": true}, context)
+	if focused.has("error") or focused.get("success", true) == false:
+		return {"ok": false, "errors": [str(focused.get("error", "Docket could not focus its window"))]}
+	return {"ok": true, "pid": focused.get("pid", 0)}
 
 
 ## open_docket_panel for a person's menu choice: a refusal is shown to them.
 func open_docket_panel_for_user() -> void:
-	var opened := open_docket_panel()
+	var opened := await open_docket_panel()
 	if opened.ok or not (is_instance_valid(errorPopup) and is_instance_valid(errorTitle) and is_instance_valid(errorText)):
 		return
 	var why := ", ".join(PackedStringArray(opened.errors))
-	var advice := "Its tab says why it could not load." if why.begins_with("docket_panel_failed_to_load") \
-		else "Check that the Docket plugin is installed and running in the Plugin Manager."
+	var advice := "Check that the Docket plugin is installed and running in the Plugin Manager."
 	ErrorDisplay("Docket unavailable", "Docket could not be opened: %s\n\n%s" % [why, advice])
 #endregion Docket
 
@@ -1474,8 +1456,7 @@ func _ready():
 	# Defer to avoid add_child errors during scene tree setup
 	initialize_mcp.call_deferred()
 
-	# Initialize docket (master + personal dockets, tool registry)
-	_init_docket()
+	# DocketHost takes ownership when the plugin starts; no embedded file owner.
 
 	# Initialize agent system (registry + trigger manager)
 	_init_agent_system()

@@ -509,6 +509,11 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.worker_status_panel = panel
 
 		Editor.Type.DOCKET:
+			if SingletonObject.docket_manager == null:
+				var notice := Label.new()
+				notice.text = "Docket uses its own window. Open it with File > Docket."
+				vbox_container.add_child(notice)
+				return editor
 			vbox_container.clip_contents = true
 			var new_docket_panel = DocketPanel.new()
 			new_docket_panel.use_host_ui_settings(

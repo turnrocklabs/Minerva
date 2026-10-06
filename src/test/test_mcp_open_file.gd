@@ -54,9 +54,10 @@ func _init() -> void:
 	test_txt_returns_editor_pane_not_available()
 
 	print("\n-- MCPGeneralTools: argument validation --")
-	test_general_tools_missing_path_arg()
-	test_general_tools_file_not_found()
-	test_general_tools_directory()
+	await test_general_tools_missing_path_arg()
+	await test_general_tools_file_not_found()
+	await test_general_tools_directory()
+	await test_docket_c1_startup_and_refusals()
 
 	print("\n-- open_file_at_path: logic unit tests (mock SingletonObject) --")
 	test_open_file_logic_txt()
@@ -208,7 +209,7 @@ func test_txt_returns_editor_pane_not_available() -> void:
 func test_general_tools_missing_path_arg() -> void:
 	var GeneralToolsScript = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd")
 	var tools = GeneralToolsScript.new(null)
-	var r: Dictionary = tools.handle("minerva_open_file", {})
+	var r: Dictionary = await tools.handle("minerva_open_file", {})
 	check("missing path: success=false", r.get("success", true) == false)
 	check("missing path: has error key", r.has("error"))
 
@@ -217,7 +218,7 @@ func test_general_tools_file_not_found() -> void:
 	var GeneralToolsScript = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd")
 	var tools = GeneralToolsScript.new(null)
 	var missing: String = _tmp_dir.path_join("nowhere.txt")
-	var r: Dictionary = tools.handle("minerva_open_file", {"path": missing})
+	var r: Dictionary = await tools.handle("minerva_open_file", {"path": missing})
 	check("file_not_found via tools: success=false", r.get("success", true) == false)
 	check("file_not_found via tools: has errors key", r.has("errors") or r.has("error"))
 
@@ -225,7 +226,7 @@ func test_general_tools_file_not_found() -> void:
 func test_general_tools_directory() -> void:
 	var GeneralToolsScript = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd")
 	var tools = GeneralToolsScript.new(null)
-	var r: Dictionary = tools.handle("minerva_open_file", {"path": _tmp_dir})
+	var r: Dictionary = await tools.handle("minerva_open_file", {"path": _tmp_dir})
 	check("directory via tools: success=false", r.get("success", true) == false)
 
 
@@ -234,6 +235,56 @@ func test_general_tools_directory() -> void:
 # We construct a lightweight mock that reimplements only open_file_at_path's
 # internal contract:  the extension-dispatch table and idempotency check.
 # This lets us verify the routing logic without a live Godot UI.
+
+class DocketWindowRegistry extends RefCounted:
+	var refusal := ""
+	var calls: Array = []
+	func handle_tool_call(name: String, args: Dictionary, _context: MCPExecutionContext = null) -> Dictionary:
+		calls.append([name, args])
+		return {"error": refusal} if not refusal.is_empty() else {"success": true, "pid": 123}
+
+class RunningDocket extends RefCounted:
+	func get_plugin_status(_id: String) -> Dictionary:
+		return {"running": true}
+
+func test_docket_c1_startup_and_refusals() -> void:
+	var so = root.get_node("SingletonObject")
+	for i in 30:
+		if so.plugin_tool_registry != null: break
+		await process_frame
+	check("C1 startup has no embedded Docket file owner", so.docket_manager == null)
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	var legacy = editor_script.create(editor_script.Type.DOCKET)
+	check("Restored Docket tabs do not construct an embedded panel", legacy.docket_editor == null)
+	legacy.free()
+	var registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd").new(null)
+	registry.set_builtin_tool_names(so.mcp_manager.tool_registry.keys().filter(func(name: String) -> bool: return not so.plugin_tool_registry.is_plugin_tool(name)))
+	var entry := {"name":"minerva_docket_get", "description":"fixture", "input_schema":{"type":"object"}}
+	check("Docket backend name is not a built-in collision", not registry.register_plugin_tools("docket", [entry]).has("error"))
+	registry.register_plugin_tools("docket", [entry])
+	check("Docket names stay unique across discovery", registry.get_all_plugin_tools().size() == 1)
+	var saved := [so.plugin_manager, so.plugin_tool_registry, so.docket_host]
+	so.plugin_manager = null
+	var tools = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd").new(null)
+	var missing: Dictionary = await tools.handle("minerva_open_docket", {})
+	check("Missing plugin is visible to the MCP caller", missing.get("success") == false and "docket_plugin_unavailable" in str(missing.get("error", "")))
+	var host = load("res://Scripts/Services/DocketHost/DocketHost.gd").new()
+	host.state = "ready"
+	var window := DocketWindowRegistry.new()
+	so.plugin_manager = RunningDocket.new()
+	so.plugin_tool_registry = window
+	so.docket_host = host
+	var opened: Dictionary = await tools.handle("minerva_open_docket", {})
+	check("Docket opens its upstream window", opened.get("success") == true and opened.get("pid") == 123)
+	check("Open routes through existing plugin dispatch", window.calls == [["minerva_docket_gui_open", {"focus":true}]])
+	window.refusal = "Fixture window focus refused"
+	var refused: Dictionary = await tools.handle("minerva_open_docket", {})
+	check("Window-opening errors reach the caller verbatim", refused.get("success") == false and refused.get("error") == window.refusal)
+	so.plugin_manager = saved[0]
+	so.plugin_tool_registry = saved[1]
+	so.docket_host = saved[2]
+	host.free()
+
 
 class MockEditor:
 	var file: String = ""

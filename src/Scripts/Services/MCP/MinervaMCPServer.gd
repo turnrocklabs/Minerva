@@ -116,7 +116,6 @@ func _init_modules() -> void:
 		MCPTerminalTools.new(self),
 		_MCPSessionToolsScript.new(self),
 		MCPWebviewTools.new(self),
-		MCPDocketTools.new(self),
 		MCPHttpTools.new(self),
 		annotation_tools,
 		_MCPAnnotationReplyToolsScript.new(self, annotation_tools),
