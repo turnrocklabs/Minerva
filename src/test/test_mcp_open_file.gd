@@ -255,7 +255,9 @@ func test_docket_c1_startup_and_refusals() -> void:
 	check("C1 startup has no embedded Docket file owner", so.docket_manager == null)
 	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
 	var legacy = editor_script.create(editor_script.Type.DOCKET)
-	check("Restored Docket tabs do not construct an embedded panel", legacy.docket_editor == null)
+	check("Restored Docket tabs show the upstream-window notice without an embedded panel member",
+		not "docket_editor" in legacy and legacy.find_children("*", "Label", true, false).any(
+			func(label: Label) -> bool: return label.text == "Docket uses its own window. Open it with File > Docket."))
 	legacy.free()
 	var registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd").new(null)
 	registry.set_builtin_tool_names(so.mcp_manager.tool_registry.keys().filter(func(name: String) -> bool: return not so.plugin_tool_registry.is_plugin_tool(name)))

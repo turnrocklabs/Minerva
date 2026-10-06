@@ -1001,32 +1001,9 @@ var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
 #endregion Plugin Editor Registry
 
 #region Docket
-var docket_manager: DocketManager = null
+var docket_manager = null
 ## Minerva's side of the Docket plugin, set up with the plugins.
 var docket_host: DocketHost = null
-
-func _init_docket() -> void:
-	docket_manager = DocketManager.new()
-	docket_manager.name = "DocketManager"
-	add_child(docket_manager)
-	print("[SingletonObject] Docket initialized (%d projects)" % docket_manager.get_loaded_projects().size())
-
-
-func open_docket_tab() -> void:
-	## Open (or switch to) a docket tab in the editor pane.
-	var ep: EditorPane = null
-	if editor_container != null:
-		ep = editor_container.editor_pane
-	if not ep:
-		return
-	# Check if a docket tab already exists — switch to it
-	for editor: Editor in ep.Tabs.get_children():
-		if editor is Editor and editor.type == Editor.Type.DOCKET:
-			ep.Tabs.current_tab = ep.Tabs.get_tab_idx_from_control(editor)
-			return
-	# Create new docket tab
-	ep.add(Editor.Type.DOCKET, null, "Docket")
-
 
 ## Open/focus the upstream Docket window, optionally opening an existing project.
 ## The plugin owns the files; failures stay visible to both people and MCP callers.

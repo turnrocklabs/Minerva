@@ -85,7 +85,6 @@ var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid ci
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
 var worker_status_panel  # WorkerStatusPanel - type annotation removed to avoid circular dependency
-var docket_editor  # DocketEditorPanel - type annotation removed to avoid circular dependency
 var plugin_scene_root: Control  ## Mounted scene root for PLUGIN_SCENE editors.
 
 ## Set by caller before Editor.create(Type.PLUGIN_SCENE) to identify the panel.
@@ -509,25 +508,9 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.worker_status_panel = panel
 
 		Editor.Type.DOCKET:
-			if SingletonObject.docket_manager == null:
-				var notice := Label.new()
-				notice.text = "Docket uses its own window. Open it with File > Docket."
-				vbox_container.add_child(notice)
-				return editor
-			vbox_container.clip_contents = true
-			var new_docket_panel = DocketPanel.new()
-			new_docket_panel.use_host_ui_settings(
-				Callable(SingletonObject, "increment_scale_ui"),
-				Callable(SingletonObject, "decrement_ui_scale"),
-				Callable(SingletonObject, "reset_ui_scale"),
-			)
-			new_docket_panel.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_docket_panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
-			var dm: DocketManager = SingletonObject.docket_manager
-			if dm:
-				new_docket_panel.init(dm)
-			vbox_container.add_child(new_docket_panel)
-			editor.docket_editor = new_docket_panel
+			var notice := Label.new()
+			notice.text = "Docket uses its own window. Open it with File > Docket."
+			vbox_container.add_child(notice)
 
 		Editor.Type.PLUGIN_SCENE:
 			# PLUGIN_SCENE editors must be created via Editor.create_plugin_scene()
