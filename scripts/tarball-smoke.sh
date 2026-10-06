@@ -99,7 +99,7 @@ mcp_call() {
     local body
     body=$(printf '{"jsonrpc":"2.0","id":"%d","method":"tools/call","params":{"name":"%s","arguments":%s}}' \
         "$_mcp_id" "$tool" "$args_json")
-    curl -sS --max-time 120 -X POST "${MCP_URL}" \
+    curl -sS --max-time "${3:-120}" -X POST "${MCP_URL}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json, text/event-stream" \
         -H "MCP-Protocol-Version: 2025-06-18" \
@@ -236,6 +236,20 @@ if grep -Eq '\[GodotCef\] Failed to set executable permissions|\[CefTexture\] Fa
     fail "packaged CEF initialization failed — see $MINERVA_LOG"
 fi
 mcp_initialize
+
+# Policy reload is ungoverned; success proves the required Docket can serve
+# policies. HTTP initialization alone does not imply plugin pickup finished.
+deadline=$((SECONDS + INSTALL_TIMEOUT_S))
+while true; do
+    remaining=$((deadline - SECONDS))
+    (( remaining > 0 )) || fail "required Docket readiness timed out"
+    result=$(mcp_call "minerva_policy_reload" '{}' "$((remaining < 20 ? remaining : 20))" | mcp_unwrap)
+    readiness=$(echo "$result" | python3 -c 'import json,sys; r=json.load(sys.stdin); print("ready" if r.get("success") else ("retry" if r.get("error_code")=="docket_not_ready" and r.get("retryable") else "failed"))')
+    [[ "$readiness" == ready ]] && break
+    [[ "$readiness" == retry ]] || fail "required Docket unavailable: $result"
+    sleep 1
+done
+echo "Required Docket ready for governed calls"
 
 echo "::group::Step 1: marketplace install (scansort)"
 # auto_confirm_skills=true: this is a headless, programmatic caller — there is no

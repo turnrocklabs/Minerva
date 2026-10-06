@@ -39,15 +39,17 @@ const SKILL_CONTENT := Knowledge.SKILL_CONTENT
 ## nothing is seeded.
 static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) -> Dictionary:
 	var docket_caller := docket()
-	var why := docket_caller.unavailable()
-	if not why.is_empty():
-		return {"content_skipped": _unreached(def, "seeded", why)}
 	var resolved: Array = SkillSeeder.resolve_deps(def, available_tools(manager))
 	var accepted: bool = bool(consent.get("seed", false)) if consent.get("collected", false) else auto_confirm
 	if not auto_confirm and not consent.get("collected", false):
 		accepted = await SkillConsent.ask_seed(manager, def, resolved)
 	if not accepted:
 		return {"skills_seeded": 0, "skills_skipped": 0, "skills_deferred_to_update": 0, "skills_declined": true}
+	var why := docket_caller.unavailable()
+	if not why.is_empty():
+		if not _save_journal(consent, def, {"attempted": def.to_dict(), "deferred_install": true}):
+			return {"content_skipped": _skipped(def, consent)}
+		return {"content_deferred": "Content will be added when Docket is ready."}
 
 	var knowledge_plan: Dictionary = await Knowledge.plan(def, docket_caller) if not def.knowledge.is_empty() else {}
 	var journal := _journal(def, {}, knowledge_plan, {}, "")
@@ -335,7 +337,7 @@ static func _consent_holds(seen: Dictionary, action: Dictionary, knowledge_proje
 static func complete(result: Dictionary) -> bool:
 	var knowledge: Dictionary = result.get("knowledge", {})
 	var retired: Dictionary = result.get("knowledge_retired", {})
-	return not result.has("content_skipped") and not result.has("content_incomplete") \
+	return not result.has("content_deferred") and not result.has("content_skipped") and not result.has("content_incomplete") \
 		and result.get("reconcile", {}).get("failed", 0) == 0 \
 		and knowledge.get("failed", 0) == 0 and not knowledge.has("missing_project") \
 		and not result.has("knowledge_missing_project") \
@@ -346,6 +348,8 @@ static func complete(result: Dictionary) -> bool:
 ## Why a result that is not complete() did not finish, for the person.
 static func unfinished_reason(result: Dictionary) -> String:
 	var reasons: Array[String] = []
+	if result.has("content_deferred"):
+		reasons.append(str(result.content_deferred))
 	if result.has("content_skipped"):
 		reasons.append(str(result.content_skipped))
 	if result.has("content_incomplete"):
@@ -554,7 +558,14 @@ static func _journal(def, plan: Dictionary, knowledge_plan: Dictionary, decision
 ## Save `journal` as the Docket journal of the install transaction in
 ## consent.journal_dir (none: nothing to save). Returns whether it is saved.
 static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool:
+	var path := str(consent.get("journal_path", ""))
+	if not path.is_empty():
+		journal["deferred_install"] = true
+		consent["saved_journal"] = journal
+		return Txn.requeue_content(path, def.id, journal, true)
 	var journal_dir := str(consent.get("journal_dir", ""))
+	if journal_dir.is_empty() and journal.get("deferred_install", false):
+		return not Txn.queue_install(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), def.id, journal).is_empty()
 	return journal_dir.is_empty() or Txn.save_content(journal_dir, def.id, journal)
 
 

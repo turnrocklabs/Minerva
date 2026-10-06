@@ -480,7 +480,20 @@ func reconcile_recovered() -> void:
 				else _db.get_by_id(recovered.id)
 			var done := true
 			var reason := ""
-			if recovered.committed:
+			if journal.get("deferred_install", false):
+				var current = _db.get_by_id(recovered.id)
+				if recovered.committed and current != null:
+					if attempted == null or current.version != attempted.version or current.skills != attempted.skills \
+							or current.knowledge != attempted.knowledge or current.knowledge_project != attempted.knowledge_project:
+						done = false
+						reason = "The installed manifest changed; deferred content needs review."
+					else:
+						var consent := {"collected": true, "seed": true, "journal_path": recovered.path}
+						var seeded: Dictionary = await Seeding.seed_install(self, current, true, consent)
+						done = Seeding.complete(seeded)
+						journal = consent.get("saved_journal", journal)
+						reason = Seeding.unfinished_reason(seeded)
+			elif recovered.committed:
 				reason = await Seeding.content_committed_problem(journal)
 				done = reason.is_empty()
 			elif journal.get("removal", false) == true and _db.has_plugin(recovered.id):
@@ -1448,6 +1461,18 @@ func person_stops(id: String) -> int:
 ## alongside), start the autostart plugins, then queue the opted-in updates
 ## (PluginAutoUpdater), so an update of a plugin that just started must start
 ## again before it commits. Minerva does not wait on this.
+var _required_pickup := false
+
+func docket_pickup_pending() -> bool:
+	var def = _db.get_by_id("docket")
+	return _required_pickup or (install_queue != null and install_queue.pending_for("docket") != null) \
+		or (def != null and def.state == S_STARTING)
+
+func _ensure_required_plugins() -> void:
+	_required_pickup = true
+	await RequiredPlugins.ensure(self)
+	_required_pickup = false
+
 func start_plugins_at_launch(registry_url: String = "") -> void:
 	# Not awaited: autostart does not wait on the network. Source/editor runs
 	# need required plugins too; ensure never replaces a manifest-lane copy.
@@ -1455,7 +1480,7 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 	# Installs a crash left half-done were rolled back before Docket was
 	# loaded; their seeded skills and knowledge follow now.
 	await reconcile_recovered()
-	RequiredPlugins.ensure(self)
+	_ensure_required_plugins()
 	await start_autostart_plugins()
 	if not _shutting_down:
 		await AutoUpdater.run(self, registry_url)

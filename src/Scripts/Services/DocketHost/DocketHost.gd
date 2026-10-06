@@ -260,9 +260,14 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 ## read again. The master is checked against a fresh list before the read,
 ## so nothing is awaited after it. Policies are the master's only; the
 ## session's projects never count. No items is a successful read.
+func pickup_pending() -> bool:
+	return state == "starting" or (_plugin_manager != null \
+		and _plugin_manager.has_method("docket_pickup_pending") and _plugin_manager.docket_pickup_pending())
+
+
 func policy_items() -> Dictionary:
-	while state == "starting":
-		await state_changed
+	if not state in ["ready", "degraded"] and pickup_pending():
+		return {"error": "Docket is being installed/started — retry shortly"}
 	if not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
 	var connection = _connection

@@ -400,6 +400,16 @@ func _test_policy_owner() -> void:
 	# With no policy in force the call runs.
 	var allowed := await _governed_call()
 	check("once no policy is in force the call runs", _ran(allowed), str(allowed).left(200))
+	host.state = "starting"
+	var startup: Dictionary = await _governed_call()
+	var server = _so.get_mcp_manager().minerva_server
+	var status: Dictionary = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("startup refuses immediately with observable retryability and no governed execution",
+		startup.get("error_code") == "docket_not_ready" and startup.get("retryable", false) \
+		and not _ran(startup) and status.get("error_code") == "docket_not_ready", startup)
+	host.state = "ready"
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("the ungoverned readiness probe succeeds once Docket is ready", status.get("success", false), status)
 
 	# A policy that cannot be read refuses the call rather than allow it.
 	connection.query_fails = true

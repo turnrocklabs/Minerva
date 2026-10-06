@@ -335,8 +335,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 		policy_engine.reload()
 		var unread := await policy_engine.refresh()
 		if not unread.is_empty():
-			return {"success": false, "error": "Policy unavailable: %s" % unread,
-				"error_code": "policy_unavailable"}
+			return policy_engine.unavailable_result(unread)
 		return {"success": true, "rules_loaded": policy_engine.rule_count()}
 
 	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks

@@ -566,15 +566,43 @@ func _test_interruptions() -> void:
 	_host_manager.connection = null
 	_host_manager.plugin_stopped.emit("docket")
 	var reached_before: Dictionary = _store.reached.duplicate()
-	var other := _def("seedlate", "1.0.0", "Work", "", "late", "late tip")
+	var other := _def("seedlate", "1.0.0", "Work", "1. late", "late", "late tip")
+	_db.plugins[other.id] = other
 	var skipped: Dictionary = await Seeding.seed_install(_pm, other, true, {})
 	var removed: Dictionary = await _pm.remove_plugin(id)
 	var waiting := _pending(id)
-	check("with the plugin stopped, an install and an uninstall say their content was not done",
-		"unavailable" in skipped.get("content_skipped", "") and removed.get("ok", false)
+	check("with the plugin stopped, an install defers and an uninstall says its content was not done",
+		skipped.has("content_deferred") and removed.get("ok", false)
 		and "unavailable" in removed.get("content_skipped", ""), [skipped, removed])
 	check("neither reached Docket, and the uninstall keeps its cleanup, its open projects unknown",
 		_store.reached == reached_before and waiting.size() == 1 and waiting[0].journal.get("enumerated") == null,
 		waiting)
 	for entry in waiting:
 		load(TXN_GD).content_done(entry.path)
+	check("approved deferred content is retained without reaching Docket",
+		_pending(other.id).size() == 1 and _pending(other.id)[0].committed and _store.reached == reached_before)
+	var declined: Dictionary = await Seeding.seed_install(_pm, other, false, {"collected": true, "seed": false})
+	check("declining content while unavailable creates no additional intent", declined.get("skills_declined", false) and _pending(other.id).size() == 1)
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	other.version = "2.0.0"
+	await _pm.reconcile_recovered()
+	check("a changed manifest cannot replay old approved content", _pending(other.id).size() == 1 and _record("minerva_seedlate_guide").is_empty())
+	other.version = "1.0.0"
+	_store.failing_query_types = ["kb"]
+	await _pm.reconcile_recovered()
+	check("a failed deferred read retains its intent", _pending(other.id).size() == 1)
+	_store.failing_query_types = []
+	await _pm.reconcile_recovered()
+	check("Docket readiness applies approved skills and knowledge and drains the intent",
+		_pending(other.id).is_empty() and not _record("minerva_seedlate_note").is_empty() and _record("minerva_seedlate_guide").get("article") == "late")
+	var sent := _store.sent.size()
+	await _pm.reconcile_recovered()
+	check("a drained intent does not seed twice", _store.sent.size() == sent)
+	var abandoned := {"attempted": other.to_dict(), "deferred_install": true}
+	var Txn = load(TXN_GD)
+	var abandoned_path: String = Txn.queue_install(_staging, other.id, abandoned)
+	Txn.requeue_content(abandoned_path, other.id, abandoned, false)
+	await _pm.reconcile_recovered()
+	check("an uncommitted never-applied intent is discarded without writes", _pending(other.id).is_empty() and _store.sent.size() == sent)

@@ -109,21 +109,29 @@ func refresh() -> String:
 
 ## The policy decision for a governed call, taken on the rules as they stand
 ## now (see refresh()). When they could not be read, a refusal whose
-## error_code is "policy_unavailable" and whose error says why; rules read
+## error_code is "docket_not_ready" (retriable pickup/start) or
+## "policy_unavailable" and whose error says why; rules read
 ## successfully with none among them allow the call.
 func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> Dictionary:
 	var why := await refresh()
 	if not why.is_empty():
-		return {
+		return unavailable_result(why)
+	return evaluate(tool_name, arguments, caller_id)
+
+
+func unavailable_result(why: String) -> Dictionary:
+	var host = _get_docket_host()
+	var retryable: bool = host != null and host.has_method("pickup_pending") and host.pickup_pending()
+	return {
 			"allowed": false,
 			"effect": "unavailable",
 			"reason": why,
 			"allowed_next_actions": [],
 			"success": false,
 			"error": "Policy unavailable, so the call was not made: %s" % why,
-			"error_code": "policy_unavailable",
+			"error_code": "docket_not_ready" if retryable else "policy_unavailable",
+			"retryable": retryable,
 		}
-	return evaluate(tool_name, arguments, caller_id)
 
 
 ## Evaluate a tool call against all loaded rules.

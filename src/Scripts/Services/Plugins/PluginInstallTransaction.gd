@@ -636,6 +636,13 @@ static func queue_cleanup(staging_root: String, id: String, journal: Dictionary,
 	return path if requeue_content(path, id, journal, false, reason) else ""
 
 
+static func queue_install(staging_root: String, id: String, journal: Dictionary) -> String:
+	var dir := staging_root.path_join(CONTENT_PENDING)
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := dir.path_join("install_%s_%d.json" % [id, Time.get_ticks_usec()])
+	return path if requeue_content(path, id, journal, true) else ""
+
+
 static func content_done(path: String) -> void:
 	if not path.is_empty():
 		DirAccess.remove_absolute(path)
