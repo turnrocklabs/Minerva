@@ -254,9 +254,12 @@ func test_docket_c1_startup_and_refusals() -> void:
 		await process_frame
 	check("C1 startup has no embedded Docket file owner", so.docket_manager == null)
 	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	var host_scale_before := root.content_scale_factor
+	var host_font_before := root.get_theme_font_size("font_size")
 	var legacy = editor_script.create(editor_script.Type.DOCKET)
-	check("Restored Docket tabs show the upstream-window notice without an embedded panel member",
-		not "docket_editor" in legacy and legacy.find_children("*", "Label", true, false).any(
+	check("Restored Docket tabs show the notice, preserve host settings and have no embedded panel member",
+		is_equal_approx(root.content_scale_factor, host_scale_before) and root.get_theme_font_size("font_size") == host_font_before
+		and not "docket_editor" in legacy and legacy.find_children("*", "Label", true, false).any(
 			func(label: Label) -> bool: return label.text == "Docket uses its own window. Open it with File > Docket."))
 	legacy.free()
 	var registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd").new(null)
