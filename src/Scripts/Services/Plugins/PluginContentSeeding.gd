@@ -47,6 +47,7 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary, 
 		return {"skills_seeded": 0, "skills_skipped": 0, "skills_deferred_to_update": 0, "skills_declined": true}
 	var why := docket_caller.unavailable()
 	if not why.is_empty():
+		if def.skills.is_empty() and def.knowledge.is_empty(): return {"content_skipped": _unreached(def, "seeded", why)}
 		if not _save_journal(consent, def, {"attempted": def.to_dict(), "deferred_install": true}):
 			return {"content_skipped": _skipped(def, consent)}
 		return {"content_deferred": "Content will be added when Docket is ready."}
@@ -103,6 +104,8 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
 		if consent.get("rollback", false): return {"content_skipped": why}
+		if def.skills.is_empty() and def.knowledge.is_empty() and previous_def.skills.is_empty() and previous_def.knowledge.is_empty():
+			return {"content_skipped": _unreached(def, "updated", why)}
 		var recorded := {}
 		for field in ["collected", "seed_new", "update_decisions", "update_seen"]:
 			if consent.has(field): recorded[field] = consent[field]

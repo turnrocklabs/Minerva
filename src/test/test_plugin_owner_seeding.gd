@@ -573,6 +573,12 @@ func _test_interruptions() -> void:
 	skill_only.knowledge.clear()
 	_db.plugins[skill_only.id] = skill_only
 	await Seeding.seed_install(_pm, skill_only, true, {})
+	var empty := _def("seedempty", "1.0.0", "", "", "", "")
+	empty.skills.clear()
+	empty.knowledge.clear()
+	await Seeding.seed_install(_pm, empty, true, {})
+	await Seeding.reconcile(_pm, empty, empty, {"collected": true}, true)
+	check("unavailable content-free installs and updates create no repair intent", _pending(empty.id).is_empty() and _store.reached == reached_before)
 	var removed: Dictionary = await _pm.remove_plugin(id)
 	var waiting := _pending(id)
 	check("with the plugin stopped, an install defers and an uninstall says its content was not done",
