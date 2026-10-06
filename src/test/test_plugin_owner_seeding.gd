@@ -81,6 +81,8 @@ var fail_after := {}
 var failed_at := -1
 var after_call := Callable()
 var next_id := 100
+var create_defaults := {}
+var failing_tools := []
 func process_generation() -> int:
 	return generation
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
@@ -90,6 +92,8 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 		after_call.call(tool, arguments)
 	return answer
 func _handle(tool: String, arguments: Dictionary) -> Dictionary:
+	if tool in failing_tools:
+		return {"error": "injected write failure"}
 	if tool == "docket_project_list":
 		return {"success": true, "projects": projects.duplicate(true)}
 	if not tool in ["docket_flush", "docket_query", "docket_get", "docket_create", "docket_update",
@@ -124,7 +128,7 @@ func _handle(tool: String, arguments: Dictionary) -> Dictionary:
 		"docket_create":
 			next_id += 1
 			id = "019f0000aaaabbbbccccddddeee%05d" % next_id
-			var created := arguments.duplicate(true)
+			var created := create_defaults.merged(arguments, true)
 			created.erase("project")
 			created.merge({"id": id, "status": "draft", "_path": path}, true)
 			items[id] = created

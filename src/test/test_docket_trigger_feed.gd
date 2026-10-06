@@ -76,6 +76,8 @@ func call_tool(tool_name: String, arguments: Dictionary, _timeout_sec: float = 1
 	await Engine.get_main_loop().process_frame
 	if tool_name == "docket_project_list":
 		return {"projects": listed.duplicate(true)}
+	if tool_name == "docket_query":
+		return {"items": []}
 	reads += 1
 	if hold:
 		await released

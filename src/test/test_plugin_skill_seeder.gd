@@ -132,16 +132,9 @@ func _cleanup_tmp() -> void:
 
 
 func _new_docket() -> Dictionary:
-	# Returns {db, registry, docket} — a self-contained in-memory docket for one
-	# test; docket is the registry as seeding reaches it.
-	var db_path := _tmp_dir.path_join("seeder_%d.db" % randi())
-	var db := DocketDB.create_new(db_path)
-	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
-	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
-	sf.close()
-	var registry := ToolRegistry.new()
-	registry.init(schema, db)
-	return {"db": db, "registry": registry, "docket": PluginSeedingDocket.new(registry, false)}
+	# Each test gets its own plugin protocol store and real hosted bindings.
+	var registry = load("res://test/helpers/content_registry_fixture.gd").new(_tmp_dir.path_join("seeder_%d.dct" % randi()))
+	return {"registry": registry, "docket": registry.docket}
 
 
 func _make_def(plugin_id: String, skills: Array, tools: Array = []) -> PluginDefinitionScript:
@@ -164,7 +157,7 @@ func _skill(plugin_id: String, short_id: String, deps: Array = ["minerva_core_an
 		"summary": "Test skill.",
 		"system_prompt": "You are testing.",
 		"outcome": "Test passes.",
-		"preconditions": "DocketDB available.",
+		"preconditions": "Docket plugin available.",
 		"steps": "1. Run.",
 		"tool_deps": deps,
 		"target": "all",
@@ -317,7 +310,7 @@ func test_find_existing_returns_empty_when_none() -> void:
 	var found: Dictionary = await PluginSkillSeederScript.find_existing_record(
 		"demo", "minerva_demo_nonexistent", ctx.docket)
 	check("empty dict when no match", found.is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_materialize_fresh_install_creates_records() -> void:
@@ -338,7 +331,7 @@ func test_materialize_fresh_install_creates_records() -> void:
 		"demo", "minerva_demo_alpha", ctx.docket)
 	check("alpha record found", not found_alpha.is_empty())
 	check("alpha source is 'plugin:demo'", str(found_alpha.get("source", "")) == "plugin:demo")
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_materialize_idempotent_on_same_hash() -> void:
@@ -357,7 +350,7 @@ func test_materialize_idempotent_on_same_hash() -> void:
 	check("re-install seeds 0", second.get("seeded", 0) == 0)
 	check("re-install skips 1 (idempotent)", second.get("skipped", 0) == 1)
 	check("re-install defers 0", second.get("deferred_to_update", 0) == 0)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_materialize_defers_when_content_changed() -> void:
@@ -383,7 +376,7 @@ func test_materialize_defers_when_content_changed() -> void:
 		"demo", "minerva_demo_alpha", ctx.docket)
 	check("original record's steps unchanged",
 		str(found.get("steps", "")) != "CHANGED")
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_materialize_distinguishes_plugins() -> void:
@@ -413,7 +406,7 @@ func test_materialize_distinguishes_plugins() -> void:
 	var cross := await PluginSkillSeederScript.find_existing_record(
 		"demo", "minerva_other_alpha", ctx.docket)
 	check("cross-plugin lookup misses", cross.is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_materialize_skips_skill_without_id() -> void:
@@ -426,7 +419,7 @@ func test_materialize_skips_skill_without_id() -> void:
 	var result: Dictionary = await PluginSkillSeederScript.materialize("demo", resolved, ctx.docket)
 	check("seeded 0 when skill id empty", result.get("seeded", 0) == 0)
 	check("no error raised", not result.has("error"))
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_materialize_empty_resolved() -> void:
@@ -436,7 +429,7 @@ func test_materialize_empty_resolved() -> void:
 	check("seeded 0", result.get("seeded", 0) == 0)
 	check("skipped 0", result.get("skipped", 0) == 0)
 	check("deferred 0", result.get("deferred_to_update", 0) == 0)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +443,7 @@ func test_unseed_no_records_returns_zero() -> void:
 	check("deleted 0", r.get("deleted", 0) == 0)
 	check("kept 0", r.get("kept", 0) == 0)
 	check("kept_skill_ids empty", (r.get("kept_skill_ids", []) as Array).is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_unseed_pristine_records_deleted() -> void:
@@ -470,7 +463,7 @@ func test_unseed_pristine_records_deleted() -> void:
 	# Verify records are gone.
 	var found := await PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.docket)
 	check("alpha record gone", found.is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_unseed_customised_records_converted_to_user() -> void:
@@ -495,7 +488,7 @@ func test_unseed_customised_records_converted_to_user() -> void:
 	check("record still exists", not post.has("error"))
 	check("source flipped to 'user'", str(post.get("source", "")) == "user")
 	check("user edits preserved", str(post.get("steps", "")) == "user-edited")
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_unseed_mixed_pristine_and_customised() -> void:
@@ -541,7 +534,7 @@ func test_unseed_clears_pristine_metadata_on_kept() -> void:
 	check("post: pristine_content cleared",
 		(post.get("pristine_content") is Dictionary)
 		and (post.get("pristine_content") as Dictionary).is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_unseed_distinguishes_plugins() -> void:
@@ -563,7 +556,7 @@ func test_unseed_distinguishes_plugins() -> void:
 	var still := await PluginSkillSeederScript.find_existing_record("plugin_b", "minerva_plugin_b_beta", ctx.docket)
 	check("plugin_b's skill still exists", not still.is_empty())
 	check("plugin_b's source unchanged", str(still.get("source", "")) == "plugin:plugin_b")
-	ctx.db.close()
+	ctx.registry.close()
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +570,7 @@ func test_recompute_no_skills_returns_zero() -> void:
 	check("updated 0", r.get("updated", 0) == 0)
 	check("now_satisfied 0", r.get("now_satisfied", 0) == 0)
 	check("now_unsatisfied 0", r.get("now_unsatisfied", 0) == 0)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_recompute_clears_now_satisfied() -> void:
@@ -603,7 +596,7 @@ func test_recompute_clears_now_satisfied() -> void:
 	var post := await PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.docket)
 	check("post: unsatisfied is empty",
 		(post.get("unsatisfied_deps", []) as Array).is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_recompute_marks_now_unsatisfied() -> void:
@@ -629,7 +622,7 @@ func test_recompute_marks_now_unsatisfied() -> void:
 	var post := await PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.docket)
 	check("post: unsatisfied has the missing dep",
 		(post.get("unsatisfied_deps", []) as Array).has("minerva_external_dep"))
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_recompute_no_op_when_unchanged() -> void:
@@ -643,7 +636,7 @@ func test_recompute_no_op_when_unchanged() -> void:
 	var r: Dictionary = await PluginSkillSeederScript.recompute_unsatisfied(
 		{"minerva_dep": true}, ctx.docket)
 	check("updated 0 when set unchanged", r.get("updated", 0) == 0)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_plan_seeds_new_skills() -> void:
@@ -661,7 +654,7 @@ func test_plan_seeds_new_skills() -> void:
 		actions[0].action == PluginSkillSeederScript.RECONCILE_SEED
 		and actions[1].action == PluginSkillSeederScript.RECONCILE_SEED)
 	check("no deprecations", (plan.get("deprecate_record_ids", []) as Array).is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_plan_no_change_on_matching_hash() -> void:
@@ -678,7 +671,7 @@ func test_plan_no_change_on_matching_hash() -> void:
 	check("1 action", actions.size() == 1)
 	check("action is no_change",
 		actions[0].action == PluginSkillSeederScript.RECONCILE_NO_CHANGE)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_plan_silent_update_on_pristine_hash_change() -> void:
@@ -696,7 +689,7 @@ func test_plan_silent_update_on_pristine_hash_change() -> void:
 	check("1 action", actions.size() == 1)
 	check("action is silent_update",
 		actions[0].action == PluginSkillSeederScript.RECONCILE_SILENT_UPDATE)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_plan_prompt_required_on_customised_hash_change() -> void:
@@ -720,7 +713,7 @@ func test_plan_prompt_required_on_customised_hash_change() -> void:
 	check("action carries existing record",
 		actions[0].has("existing")
 		and (actions[0].existing as Dictionary).get("customised") == true)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_plan_deprecates_records_absent_from_new_manifest() -> void:
@@ -741,7 +734,7 @@ func test_plan_deprecates_records_absent_from_new_manifest() -> void:
 	var beta := await PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_beta", ctx.docket)
 	check("deprecate id matches beta",
 		deprecate_ids[0] == str(beta.get("id", "")))
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_plan_does_not_re_deprecate_already_deprecated() -> void:
@@ -758,7 +751,7 @@ func test_plan_does_not_re_deprecate_already_deprecated() -> void:
 	var plan: Dictionary = await PluginSkillSeederScript.plan_reconcile(def_v2, {}, ctx.docket)
 	check("already-deprecated not re-listed",
 		(plan.get("deprecate_record_ids", []) as Array).is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_apply_silent_update_writes_new_content() -> void:
@@ -781,7 +774,7 @@ func test_apply_silent_update_writes_new_content() -> void:
 	check("pristine_hash matches new",
 		str(post.get("pristine_hash", ""))
 		== PluginSkillRecordScript.compute_hash(skill_v2))
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_apply_prompted_accept_overwrites() -> void:
@@ -809,7 +802,7 @@ func test_apply_prompted_accept_overwrites() -> void:
 	var post := await PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.docket)
 	check("user edits overwritten", str(post.get("steps", "")) == "upstream v2 steps")
 	check("customised flag preserved (user fork lineage)", post.get("customised") == true)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_apply_prompted_decline_keeps_user_edits() -> void:
@@ -836,7 +829,7 @@ func test_apply_prompted_decline_keeps_user_edits() -> void:
 	# pristine_content refreshed for later diff.
 	check("pristine_content has upstream's new steps",
 		str((post.get("pristine_content", {}) as Dictionary).get("steps", "")) == "upstream v2 steps")
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_apply_prompted_missing_decision_declines() -> void:
@@ -860,7 +853,7 @@ func test_apply_prompted_missing_decision_declines() -> void:
 	check("missing decision counts as declined",
 		result.get("prompted_declined", 0) == 1
 		and result.get("prompted_accepted", 0) == 0)
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_apply_deprecate_marks_records() -> void:
@@ -879,7 +872,7 @@ func test_apply_deprecate_marks_records() -> void:
 	var beta := await PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_beta", ctx.docket)
 	check("beta marked deprecated", beta.get("deprecated") == true)
 	check("beta record still exists (not deleted)", not beta.is_empty())
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_recompute_partial_dep_satisfaction() -> void:
@@ -906,4 +899,4 @@ func test_recompute_partial_dep_satisfaction() -> void:
 	check("post: only 'minerva_b' remains unsatisfied",
 		(post.get("unsatisfied_deps", []) as Array).size() == 1
 		and (post.get("unsatisfied_deps", []) as Array)[0] == "minerva_b")
-	ctx.db.close()
+	ctx.registry.close()
