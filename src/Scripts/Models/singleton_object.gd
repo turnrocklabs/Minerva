@@ -1001,7 +1001,7 @@ var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
 #endregion Plugin Editor Registry
 
 #region Docket
-var docket_manager = null
+var docket_manager: DocketManager = null
 ## Minerva's side of the Docket plugin, set up with the plugins.
 var docket_host: DocketHost = null
 
