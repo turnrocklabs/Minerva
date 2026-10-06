@@ -2,3 +2,5 @@
 # reviewed finding; never add rule- or path-wide suppressions here.
 8fc0f7641cf9a8d6f7eb5d36220976c01a3d9a5e:Docs/minerva.dct:generic-api-key:14275
 8fc0f7641cf9a8d6f7eb5d36220976c01a3d9a5e:Docs/minerva.dct:generic-api-key:18254
+1214af9dba9c990d045aa2ff37cb0050582885b3:Docs/minerva.dct:generic-api-key:19197
+1214af9dba9c990d045aa2ff37cb0050582885b3:Docs/minerva.dct:generic-api-key:19959
