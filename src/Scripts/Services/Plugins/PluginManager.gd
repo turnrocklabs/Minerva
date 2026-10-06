@@ -514,6 +514,9 @@ func reconcile_recovered() -> void:
 						done = Seeding.complete(seeded)
 						journal = consent.get("saved_journal", journal)
 						reason = Seeding.unfinished_reason(seeded)
+						if done and not update.is_empty():
+							reason = await Seeding.content_committed_problem(journal)
+							done = reason.is_empty()
 			elif recovered.committed:
 				reason = await Seeding.content_committed_problem(journal)
 				done = reason.is_empty()

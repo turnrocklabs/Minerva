@@ -660,6 +660,37 @@ func _test_interruptions() -> void:
 	await _pm.reconcile_recovered()
 	check("an approved update replays reconciliation of existing pristine content", _pending(other.id).is_empty() \
 		and _record("minerva_seedlate_note").get("steps") == "1. new" and _record("minerva_seedlate_guide").get("article") == "new")
+	var guide := _record("minerva_seedlate_guide", WORK_A)
+	guide.article = "MY LATE GUIDE"
+	var moved := _def(other.id, "3.0.0", "Other", "1. new", "moved", "moved tip")
+	_db.plugins[moved.id] = moved
+	_host_manager.connection = null
+	_host_manager.plugin_stopped.emit("docket")
+	await Seeding.reconcile(_pm, newer, moved, {"collected": true, "seed_new": true}, true)
+	var rollback := {"attempted": newer.to_dict(), "knowledge_written": false, "entries": [],
+		"paths": {"": _store.master.path, "Work": WORK_A, "Other": OTHER}}
+	var rollback_path: String = Txn.queue_install(_staging, other.id, rollback)
+	Txn.requeue_content(rollback_path, other.id, rollback, false)
+	var pending_count: int = _pending(other.id).size()
+	var rolled_back: Dictionary = await Seeding.reconcile_after_rollback(_pm, newer, rollback)
+	check("an unavailable rollback retains its original intent without queuing a forward update",
+		not Seeding.complete(rolled_back) and _pending(other.id).size() == pending_count \
+		and Txn.content_pending(_staging).any(func(entry: Dictionary) -> bool: return entry.path == rollback_path and not entry.committed and entry.journal.paths.Work == WORK_A))
+	Txn.content_done(rollback_path)
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	_store.after_call = func(tool: String, args: Dictionary):
+		if tool == "docket_flush" and args.get("project") == "other": _store.failing_flush = ["work"]
+	await _pm.reconcile_recovered()
+	check("a deferred move retains its journal when committed cleanup cannot save", _pending(other.id).size() == 1 and not str(_pending(other.id)[0].get("reason", "")).is_empty())
+	_store.after_call = Callable()
+	_store.failing_flush = []
+	await _pm.reconcile_recovered()
+	check("a deferred committed move cleans Work and preserves the person's article",
+		_pending(other.id).is_empty() and _record("minerva_seedlate_tip", WORK_A).is_empty() \
+		and guide.get("source") == "user" and guide.article == "MY LATE GUIDE" and guide.get("deprecated") == false \
+		and _record("minerva_seedlate_guide", OTHER).get("article") == "moved")
 	var stale := {"attempted": other.to_dict(), "deferred_install": true, "stale": true}
 	var prior_path: String = Txn.queue_install(_staging, other.id, stale)
 	var prior: Dictionary = _pending(other.id)[0]

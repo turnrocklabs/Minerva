@@ -102,6 +102,7 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 	var result := {}
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
+		if consent.get("rollback", false): return {"content_skipped": why}
 		var recorded := {}
 		for field in ["collected", "seed_new", "update_decisions", "update_seen"]:
 			if consent.has(field): recorded[field] = consent[field]
