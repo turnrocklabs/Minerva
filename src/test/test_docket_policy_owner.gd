@@ -406,10 +406,10 @@ func _test_policy_owner() -> void:
 	var status: Dictionary = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("startup refuses immediately with observable retryability and no governed execution",
 		startup.get("error_code") == "docket_not_ready" and startup.get("retryable", false) \
-		and not _ran(startup) and status.get("error_code") == "docket_not_ready", startup)
+		and not _ran(startup) and status.get("error_code") == "docket_not_ready", str(startup))
 	host.state = "ready"
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
-	check("the ungoverned readiness probe succeeds once Docket is ready", status.get("success", false), status)
+	check("the ungoverned readiness probe succeeds once Docket is ready", status.get("success", false), str(status))
 
 	# A policy that cannot be read refuses the call rather than allow it.
 	connection.query_fails = true

@@ -595,7 +595,7 @@ func _test_interruptions() -> void:
 	await _pm.reconcile_recovered()
 	check("a changed manifest is visibly stale and cannot replay old content", _pending(other.id).size() == 1 \
 		and _pm.get_plugin_status(other.id).content_pending[0].stale and _record("minerva_seedlate_guide").is_empty())
-	var flushes := _store.reached.get("docket_flush", 0)
+	var flushes: int = _store.reached.get("docket_flush", 0)
 	await _pm.reconcile_recovered()
 	check("a skills-only retry confirms the failed save even when records already exist",
 		_pending(skill_only.id).size() == 1 and _store.reached.get("docket_flush", 0) > flushes)
@@ -609,7 +609,7 @@ func _test_interruptions() -> void:
 	check("a failed deferred save retains its file bindings", _pending(other.id).size() == 1 and _pending(other.id)[0].journal.has("paths"))
 	_store.failing_flush = []
 	_store.projects[1] = _project("work", WORK_B)
-	var before_rebind := _store.sent.size()
+	var before_rebind: int = _store.sent.size()
 	await _pm.reconcile_recovered()
 	check("reopened project names cannot redirect a deferred retry",
 		_pending(other.id).size() == 1 and _pending(other.id)[0].journal.paths.Work == WORK_A \
@@ -618,7 +618,7 @@ func _test_interruptions() -> void:
 	await _pm.reconcile_recovered()
 	check("Docket readiness applies approved skills and knowledge and drains the intent",
 		_pending(other.id).is_empty() and not _record("minerva_seedlate_note").is_empty() and _record("minerva_seedlate_guide").get("article") == "late")
-	var sent := _store.sent.size()
+	var sent: int = _store.sent.size()
 	await _pm.reconcile_recovered()
 	check("a drained intent does not seed twice", _store.sent.size() == sent)
 	var abandoned := {"attempted": other.to_dict(), "deferred_install": true}
