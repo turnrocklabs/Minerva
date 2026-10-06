@@ -1338,6 +1338,13 @@ func _fail(why: String) -> void:
 	_set_state("failed")
 
 
+func availability_message() -> String:
+	if state == "starting":
+		return "Docket is starting. Features that need it will be available when setup finishes."
+	if state in ["unavailable", "failed"]:
+		return RequiredPlugins.missing_message(PLUGIN_ID, "; ".join(problems) if not problems.is_empty() else "not ready")
+	return ""
+
 func _set_state(new_state: String) -> void:
 	state = new_state
 	state_changed.emit(state)
