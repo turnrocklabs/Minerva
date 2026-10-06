@@ -1582,7 +1582,7 @@ jobs:
       needs.verify-packaged-native.result == 'success' &&
       needs.functional-tests.result == 'success' &&
       (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) &&
-      ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
+      ((github.event_name == 'push' && github.ref == 'refs/heads/development' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
        (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' &&
         ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
          (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') ||
