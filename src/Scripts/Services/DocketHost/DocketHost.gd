@@ -1341,6 +1341,11 @@ func _fail(why: String) -> void:
 func availability_message() -> String:
 	if state == "starting":
 		return "Docket is starting. Features that need it will be available when setup finishes."
+	if state == "unavailable" and _plugin_manager != null:
+		if _plugin_manager.install_queue.pending_for(PLUGIN_ID) != null:
+			return "Docket is being installed or updated. Features that need it will return when setup finishes."
+		if _plugin_manager.get_plugin_status(PLUGIN_ID).get("state_name", "") in ["INSTALLED", "STOPPED"]:
+			return "Docket is stopped. Open Plugins and press Start for Docket to use features that need it."
 	if state in ["unavailable", "failed"]:
 		return RequiredPlugins.missing_message(PLUGIN_ID, "; ".join(problems) if not problems.is_empty() else "not ready")
 	return ""

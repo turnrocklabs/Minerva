@@ -35,6 +35,11 @@ func offer(version: String) -> void:
 	file.close()
 
 func _run() -> void:
+	for url in ["http://127.0.0.1?@evil.example/r.json", "http://127.0.0.1@evil.example/r.json",
+			"http://user@localhost/r.json", "http://localhost#@evil.example/r.json", "https://localhost.evil/r.json"]:
+		check("reject remote or ambiguous fixture authority", RequiredPlugins._initial_releases_url(url) == "https://api.github.com/repos/%s/releases" % RequiredPlugins.REPO)
+	for url in ["http://127.0.0.1:9/r.json", "http://[::1]:9/r.json", "https://localhost/r.json"]:
+		check("accept exact loopback fixture authority", RequiredPlugins._initial_releases_url(url) == url)
 	helpers = load("res://test/marketplace_test_helpers.gd").new(self)
 	fixture = OS.get_environment("MINERVA_REQUIRED_DOCKET_FIXTURE")
 	manager = await helpers.bootstrap_plugin_manager(true)
@@ -53,7 +58,7 @@ func _run() -> void:
 		return
 	RequiredPlugins.releases_url = "http://127.0.0.1:%d/releases.json" % port
 	offer(OLD)
-	manager.start_plugins_at_launch()
+	manager.start_plugins_at_launch("http://127.0.0.1:%d/registry.json" % port)
 	await until(func(): return host.state == "ready" and manager.get_db().has_plugin("docket"))
 	var definition = manager.get_db().get_by_id("docket")
 	check("first install is marketplace, autostarts and enables updates", definition != null and definition.version == OLD and definition.autostart and definition.auto_update and definition.install_lane == PluginDefinition.LANE_MARKETPLACE)
@@ -72,9 +77,12 @@ func _run() -> void:
 		await until(func(): return updates.docket.state == updates.docket.State.DONE and host.state == "ready")
 	definition = manager.get_db().get_by_id("docket")
 	check("new version committed with restarted actual child", definition.version == NEW and definition.state == PluginDefinition.State.RUNNING and manager.get_connection("docket") != before)
+	check("update announces recovery without repair advice", progress.any(func(text: String): return text.contains("Docket is being installed or updated")))
 	var recovered: Dictionary = (await host.call_tool("docket_get", {"project": host.master_project().name, "id": created.get("id", "")})).get("value", {})
 	check("update preserves real master data", recovered.get("title") == "Required update marker")
 	check("required Docket cannot be removed", (await manager.remove_plugin("docket")).has("error"))
+	await manager.stop_plugin("docket", true)
+	check("person-stopped plugin offers Start instead of repair", host.availability_message().contains("Docket is stopped") and not host.availability_message().contains("Install required plugins"))
 	await finish()
 
 func finish() -> void:

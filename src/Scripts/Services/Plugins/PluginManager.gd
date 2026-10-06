@@ -1448,7 +1448,7 @@ func person_stops(id: String) -> int:
 ## alongside), start the autostart plugins, then queue the opted-in updates
 ## (PluginAutoUpdater), so an update of a plugin that just started must start
 ## again before it commits. Minerva does not wait on this.
-func start_plugins_at_launch() -> void:
+func start_plugins_at_launch(registry_url: String = "") -> void:
 	# Not awaited: autostart does not wait on the network. Source/editor runs
 	# need required plugins too; ensure never replaces a manifest-lane copy.
 	RequiredPlugins.move_legacy_relay_state()
@@ -1458,7 +1458,7 @@ func start_plugins_at_launch() -> void:
 	RequiredPlugins.ensure(self)
 	await start_autostart_plugins()
 	if not _shutting_down:
-		await AutoUpdater.run(self)
+		await AutoUpdater.run(self, registry_url)
 
 
 ## Start all plugins whose autostart flag is true.

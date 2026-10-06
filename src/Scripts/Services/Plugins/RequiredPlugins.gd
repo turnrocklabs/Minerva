@@ -29,7 +29,7 @@ const REPO := "turnrocklabs/Minerva"
 ## release that lacks one is refused at start: host_tools_missing). Keep them
 ## in step with the callers: MCPTerminalTools, PassthroughLaunchDialog and
 ## BundledVoiceDetectorAdapter, DocketHost/PluginSeedingDocket,
-## DocketSubscriptionFeed, DocketCapabilityRoute and open_docket_panel.
+## DocketSubscriptionFeed, DocketCapabilityRoute, SessionHandover and open_docket_panel.
 const PLUGINS := {
 	"agent_relay": {"name": "Agent Relay", "host_tools": [
 		"minerva_agent_relay_watch_start", "minerva_agent_relay_watch_status", "minerva_agent_relay_send"]},
@@ -37,6 +37,7 @@ const PLUGINS := {
 	"docket": {"name": "Docket", "auto_update": true, "host_tools": [
 		"minerva_docket_query", "minerva_docket_get", "minerva_docket_comment",
 		"minerva_docket_create", "minerva_docket_update", "minerva_docket_transition", "minerva_docket_delete",
+		"minerva_docket_reassign",
 		"minerva_docket_project_list", "minerva_docket_project_add", "minerva_docket_project_remove",
 		"minerva_docket_flush", "minerva_docket_gui_open",
 		"minerva_docket_secret_get", "minerva_docket_secret_set", "minerva_docket_secret_delete",
@@ -44,7 +45,7 @@ const PLUGINS := {
 }
 ## The GitHub Releases API listing the pickup reads, newest first, a page at a
 ## time (tests point it at a local fixture).
-static var releases_url := _initial_releases_url()
+static var releases_url := _initial_releases_url(OS.get_environment("MINERVA_REQUIRED_RELEASES_URL"))
 ## App builds share the listing, so a rarely released plugin can sit many pages
 ## back; the pickup stops at a short page, once every required plugin has a
 ## release, or after this many pages.
@@ -52,11 +53,10 @@ const MAX_RELEASE_PAGES := 10
 const RELEASES_PER_PAGE := 100
 
 
-static func _initial_releases_url() -> String:
-	var override := OS.get_environment("MINERVA_REQUIRED_RELEASES_URL")
+static func _initial_releases_url(override: String) -> String:
 	if not override.is_empty():
 		var loopback := RegEx.new()
-		loopback.compile("^https?://(?:127[.]0[.]0[.]1|localhost|\\[::1\\])(?::[0-9]+)?(?:[/?#]|$)")
+		loopback.compile("^https?://(?:127[.]0[.]0[.]1|localhost|\\[::1\\])(?::[0-9]+)?(?:/|$)")
 		if loopback.search(override.to_lower()) != null:
 			return override
 		push_warning("[RequiredPlugins] Ignoring non-loopback MINERVA_REQUIRED_RELEASES_URL")
