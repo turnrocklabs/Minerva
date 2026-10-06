@@ -130,7 +130,8 @@ $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 if (-not (Test-Path $vswhere)) {
     throw "Install Visual Studio 2022 with 'Desktop development with C++'."
 }
-$vsPath = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+# Include standalone Build Tools, which vswhere's default product filter excludes.
+$vsPath = & $vswhere -products '*' -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 Assert-NativeSuccess "Locate Visual Studio"
 if (-not $vsPath) { throw "No Visual Studio installation with C++ tools found." }
 Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
