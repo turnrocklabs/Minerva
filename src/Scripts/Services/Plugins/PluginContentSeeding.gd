@@ -500,23 +500,15 @@ static func available_tools(manager) -> Dictionary:
 	return available
 
 
-## Tests point this at their own Docket (a ToolRegistry, or a
-## PluginSeedingDocket over whatever stands in for it).
+## Tests supply a PluginSeedingDocket over their own hosted protocol fixture.
 static var docket_override = null
 
 
-## Docket as seeding reaches it (PluginSeedingDocket), from whichever owns
-## Docket's files: the embedded DocketManager while it exists, else the
-## Docket plugin through DocketHost, even while that cannot be reached (the
-## seeding is then reported, never done in the embedded one's place).
+## Docket as seeding reaches it through DocketHost. An unavailable owner
+## is reported; no other owner is used in its place.
 static func docket() -> SeedingDocket:
 	if docket_override is SeedingDocket:
 		return docket_override
-	if docket_override != null:
-		return SeedingDocket.new(docket_override, false)
-	if typeof(SingletonObject) != TYPE_NIL and "docket_manager" in SingletonObject \
-			and SingletonObject.docket_manager != null:
-		return SeedingDocket.new(SingletonObject.docket_manager, false)
 	var host = SingletonObject.get("docket_host") if typeof(SingletonObject) != TYPE_NIL else null
 	if host != null and host.state != "inactive":
 		return SeedingDocket.new(host, true)

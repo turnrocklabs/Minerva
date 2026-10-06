@@ -733,7 +733,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 			var message := docket_host.availability_message()
 			if not message.is_empty():
 				create_toast_notification(message, ToastNotification.Type.INFO, false))
-	docket_host.start(plugin_manager, docket_manager != null)
+	docket_host.start(plugin_manager, false)
 
 	# Autostart plugins (like SCM services with auto-start flag), then any
 	# opted-in plugin updates
@@ -1001,14 +1001,14 @@ var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
 #endregion Plugin Editor Registry
 
 #region Docket
-var docket_manager: DocketManager = null
+var docket_manager = null
 ## Minerva's side of the Docket plugin, set up with the plugins.
 var docket_host: DocketHost = null
 
 ## Open/focus the upstream Docket window, optionally opening an existing project.
 ## The plugin owns the files; failures stay visible to both people and MCP callers.
 func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = null) -> Dictionary:
-	if plugin_manager == null or not plugin_manager.get_plugin_status("docket").get("running", false) \
+	if plugin_manager == null or not plugin_manager.get_plugin_status(DocketHost.PLUGIN_ID).get("running", false) \
 			or plugin_tool_registry == null:
 		return {"ok": false, "errors": ["docket_plugin_unavailable: install and start Docket in the Plugin Manager"]}
 	if docket_host == null or not docket_host.state in ["ready", "degraded"]:
@@ -1017,12 +1017,13 @@ func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = nul
 		if dct_path.get_extension().to_lower() != "dct":
 			return {"ok": false, "errors": ["not_a_docket_project: %s" % dct_path]}
 		var path := dct_path if dct_path.is_absolute_path() else ProjectSettings.globalize_path(dct_path)
+		path = path.simplify_path()
 		if not FileAccess.file_exists(path):
 			return {"ok": false, "errors": ["file_not_found: %s" % path]}
 		var listed := await docket_host.open_projects()
 		if not listed.get("projects") is Array:
 			return {"ok": false, "errors": [str(listed.get("error", listed.get("message", "Docket projects are unavailable")))]}
-		if not listed.projects.any(func(project: Dictionary) -> bool: return project.get("path") == path):
+		if not listed.projects.any(func(project: Dictionary) -> bool: return str(project.get("path", "")).simplify_path() == path):
 			var added: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_project_add", {"path": path}, context)
 			if added.has("error") or added.get("success", true) == false:
 				return {"ok": false, "errors": [str(added.get("error", "Docket could not open the project"))]}

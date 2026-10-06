@@ -240,8 +240,7 @@ func resolve_skills(skill_names: Array[String]) -> Dictionary:
 ## instructions} or {status: "error", code, message, skill, candidates?}.
 ## A qualified reference (SkillRef) names its origin; a legacy name that is a
 ## SkillManager id is that local skill (so local skills work while Docket is
-## unavailable); any other legacy name is looked up in Docket, through the
-## embedded DocketManager while it exists, else through DocketHost. A Docket
+## unavailable); any other legacy name is looked up in Docket, through DocketHost. A Docket
 ## failure is never answered from SkillManager.
 func _resolve_skill(skill_name: String) -> Dictionary:
 	var failed := func(code: String, why: String) -> Dictionary:
@@ -282,56 +281,16 @@ func _resolve_skill(skill_name: String) -> Dictionary:
 	return refused
 
 
-## The Docket skill `selector` names (as DocketHost.skill_lookup: a
-## qualified reference, else id then title), through the embedded
-## DocketManager while it exists (the first loaded project holding it by id,
-## else by title), else through DocketHost: {status: "found", item: skill
-## record (DocketHost.skill_record), ref}, {status: "missing"}, or {status:
-## "error", code, message, candidates?}. A `project_name` limits the search
-## to that project.
+## The Docket skill `selector` through DocketHost, bound to its open project.
 func docket_skill(selector: String, project_name: String = "") -> Dictionary:
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm != null:
-		if not project_name.is_empty() and not dm.is_project_loaded(project_name):
-			return {"status": "error", "code": "unknown_project", "message": "%s is not open" % project_name}
-		var qualified := SkillRef.parse(selector)
-		var only := str(qualified.get("project_path", ""))
-		for proj_name in dm.get_loaded_projects():
-			var path := dm.get_project_path(proj_name)
-			if (not only.is_empty() and path != only) or (not project_name.is_empty() and proj_name != project_name):
-				continue
-			var project := {"name": proj_name, "display_name": proj_name, "path": path}
-			var tries: Array = [{"id": qualified.id}] if not qualified.is_empty() \
-				else [{"id": selector}, {"title": selector}]
-			for args in tries:
-				var got: Dictionary = dm.call_tool("docket_skill_get", args.merged({"project": proj_name}))
-				if not got.has("error"):
-					var record := DocketHost.skill_record(got, project)
-					return {"status": "found", "item": record, "ref": record.ref}
-		return {"status": "missing", "selector": selector}
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
 		return {"status": "error", "code": "unavailable", "message": "no Docket owns Minerva's projects"}
 	return await host.skill_lookup(selector, project_name)
 
 
-## The active Docket skills of every open project, for choosing among them:
-## {status: "ok", skills: [skill records]} or {status: "error", code,
-## message}. Through the embedded DocketManager while it exists (a skill
-## whose full record cannot be read is left out, never listed without its
-## tool_deps), else through DocketHost.
+## The active Docket skills of every open project through DocketHost.
 func docket_skill_catalog() -> Dictionary:
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm != null:
-		var skills := []
-		for proj_name in dm.get_loaded_projects():
-			var project := {"name": proj_name, "display_name": proj_name, "path": dm.get_project_path(proj_name)}
-			var listed: Dictionary = dm.call_tool("docket_skill_list", {"project": proj_name})
-			for entry in listed.get("skills", []):
-				var got: Dictionary = dm.call_tool("docket_skill_get", {"id": str(entry.get("id", "")), "project": proj_name})
-				if not got.has("error"):
-					skills.append(DocketHost.skill_record(got, project))
-		return {"status": "ok", "skills": skills}
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
 		return {"status": "error", "code": "unavailable", "message": "no Docket owns Minerva's projects"}
@@ -773,11 +732,10 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	# read (the lookup's target), never to whatever holds that name now.
 	var project := str(record.project)
 	var target := {}
-	if SingletonObject.docket_manager == null:
-		target = found.get("target", {})
-		if target.is_empty():
-			return MCPToolUtils.error("Skill %s cannot be updated: where it was read is not known" % id)
-		project = str(target.project.get("name", ""))
+	target = found.get("target", {})
+	if target.is_empty():
+		return MCPToolUtils.error("Skill %s cannot be updated: where it was read is not known" % id)
+	project = str(target.project.get("name", ""))
 	update_args["project"] = project
 	update_args["id"] = record.id
 
@@ -809,14 +767,8 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	return result
 
 
-# Where a new skill is written: {project (its name), target} or an error
-# result. With the embedded DocketManager, `project_name` or "master";
-# through the Docket plugin, the open project `project_name` names, else the
-# master (DocketHost.skill_target, whose answer is the `target` its writes
-# are held to).
+# Where a new skill is written, bound through DocketHost.skill_target.
 func _skill_write_target(project_name: String) -> Dictionary:
-	if SingletonObject.docket_manager != null:
-		return {"project": project_name if not project_name.is_empty() else "master", "target": {}}
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
 		return MCPToolUtils.error("no Docket owns Minerva's projects")
@@ -827,7 +779,7 @@ func _skill_write_target(project_name: String) -> Dictionary:
 
 
 # Sends Docket write `tool` ("create", "update" or "transition") with
-# `arguments`: to the embedded DocketManager while it exists, else as the
+# `arguments`: as the
 # agent tool minerva_docket_<tool> through the governed dispatch with the
 # caller's `context`, bound (a write_binding for this call only) to `target`
 # (DocketHost.skill_target or skill_lookup), so it is refused rather than
@@ -839,9 +791,6 @@ func _skill_write_target(project_name: String) -> Dictionary:
 # before it was sent is simply its failure.
 func _docket_write(tool: String, arguments: Dictionary, context: ExecutionContext, target: Dictionary,
 		sent: Dictionary) -> Dictionary:
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm != null:
-		return {"result": dm.call_tool("docket_" + tool, arguments)}
 	var host: DocketHost = SingletonObject.docket_host
 	# Coerced now as the dispatch will coerce them (a caller's JSON-string
 	# object, say), so the bound arguments are the ones the guard is shown.
@@ -962,9 +911,7 @@ func _list_voices(arguments: Dictionary) -> Dictionary:
 ## "error", message}. Components come from the skill's tags and the prefixes
 ## of its tool_deps; each is queried in the skill's project (at most 10 of
 ## each type). None, when the chat's model is unknown or the skill has no
-## components, is a successful empty result. Through the embedded
-## DocketManager a failed query counts as no items, as before; through the
-## Docket plugin it is an error.
+## components, is a successful empty result. A failed Docket query is an error.
 func _targeted_knowledge(record: Dictionary, caller_chat_id: String) -> Dictionary:
 	var identity := ModelTargeting.identify_from_chat(caller_chat_id)
 	if identity.is_empty():
@@ -985,28 +932,15 @@ func _targeted_knowledge(record: Dictionary, caller_chat_id: String) -> Dictiona
 
 	# Query hints and insights for each component
 	var raw_items: Array[Dictionary] = []
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm != null:
-		for component in components:
-			for item_type in ["hint", "insight"]:
-				var query_result: Dictionary = dm.call_tool("docket_query", {
-					"project": record.project,
-					"filter": {"type": item_type, "component": component},
-					"limit": 10,
-				})
-				for item in query_result.get("items", []):
-					if item is Dictionary and not item.get("target", "").is_empty():
-						raw_items.append(item)
-	else:
-		var host: DocketHost = SingletonObject.docket_host
-		if host == null:
-			return {"status": "error", "message": "no Docket owns Minerva's projects"}
-		var read := await host.skill_knowledge(record.project_path, components)
-		if read.status != "ok":
-			return {"status": "error", "message": read.message}
-		for item in read.items:
-			if item is Dictionary and not str(item.get("target", "")).is_empty():
-				raw_items.append(item)
+	var host: DocketHost = SingletonObject.docket_host
+	if host == null:
+		return {"status": "error", "message": "no Docket owns Minerva's projects"}
+	var read := await host.skill_knowledge(record.project_path, components)
+	if read.status != "ok":
+		return {"status": "error", "message": read.message}
+	for item in read.items:
+		if item is Dictionary and not str(item.get("target", "")).is_empty():
+			raw_items.append(item)
 
 	# Filter by model target
 	var targeted := ModelTargeting.filter_items(raw_items, identity)

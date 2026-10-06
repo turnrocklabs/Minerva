@@ -38,7 +38,7 @@ const PLUGIN_ID := "docket"
 const MASTER_RES := "res://Data/master.dct"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"
-const SCHEMA_RES := "res://Scripts/Services/Docket/Core/data/schema.json"
+const SCHEMA_RES := "res://Data/docket_schema.json"
 ## Where DocketHost keeps the session: {"version": SESSION_VERSION,
 ## "paths": [...]}.
 const SESSION_PATH := "user://docket_host_session.json"

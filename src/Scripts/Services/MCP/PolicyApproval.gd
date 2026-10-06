@@ -3,9 +3,7 @@ extends RefCounted
 ## When an agent's change to a Docket item needs a person's approval, and the
 ## dialog that asks for it. Policy items gate asymmetrically: raising
 ## enforcement is free; lowering it (suspending or archiving a policy,
-## editing its rule, deleting it) needs a person. Used by the embedded
-## Docket's tools (MCPDocketTools) and by the Docket plugin's host
-## (DocketHost), so both ask the same thing.
+## editing its rule, deleting it) needs a person. Used by DocketHost.
 
 ## The Docket tools that can lower a policy's enforcement.
 const TOOLS := ["docket_transition", "docket_update", "docket_delete"]

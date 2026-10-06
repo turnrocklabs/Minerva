@@ -93,7 +93,7 @@ func status(trigger_id: String) -> Dictionary:
 
 
 func _on_event(plugin_id: String, event_name: String, payload: Dictionary) -> void:
-	if plugin_id != PLUGIN_ID or event_name != EVENT or SingletonObject.docket_manager != null:
+	if plugin_id != PLUGIN_ID or event_name != EVENT:
 		return
 	var generation := _process_generation()
 	if not _continuous(generation, payload):
@@ -113,12 +113,12 @@ func _on_event(plugin_id: String, event_name: String, payload: Dictionary) -> vo
 
 
 func _on_dropped(plugin_id: String, reason: String) -> void:
-	if plugin_id == PLUGIN_ID and SingletonObject.docket_manager == null:
+	if plugin_id == PLUGIN_ID:
 		_interrupt("a Docket change was not delivered: %s" % reason)
 
 
 func _on_gone(plugin_id: String) -> void:
-	if plugin_id == PLUGIN_ID and SingletonObject.docket_manager == null:
+	if plugin_id == PLUGIN_ID:
 		_queue.clear()
 		_interrupt("the Docket plugin stopped")
 

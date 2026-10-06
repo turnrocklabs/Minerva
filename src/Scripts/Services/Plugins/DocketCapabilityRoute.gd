@@ -79,8 +79,6 @@ static func secrets(server: MinervaMCPServer, plugin_id: String, capability: Str
 
 static func _call(server: MinervaMCPServer, tool: String, arguments: Dictionary,
 		context: ExecutionContext) -> Dictionary:
-	if SingletonObject.docket_manager != null:
-		return await server.call_tool(tool, arguments, context)
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
 		return {"error": "Docket is unavailable"}

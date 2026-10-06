@@ -652,13 +652,6 @@ func _test_vault() -> void:
 	check("J: explicit host exit drops retained credential and unlocked references",
 		host._vault_session._password.is_empty() and host._vault_session._unlocked.is_empty())
 	_so.docket_manager = previous_dm
-	var embedded = _vault_form()
-	embedded._refresh_vault_status()
-	check("J: embedded Preferences still loads the existing hint", embedded._vault_hint.text == "legacy-hint")
-	_fill_vault(embedded, "embedded-password")
-	await _submit_vault(embedded, false)
-	check("J: embedded Preferences still persists its password and hint",
-		UserPrefs.load_vault_password() == "embedded-password" and UserPrefs.load_vault_password_hint() == "embedded-password")
 
 
 func _failed_paths(host) -> Array:

@@ -53,29 +53,10 @@ func _init() -> void:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-## Clear and recompile all rules from the embedded Docket.
-## Results in zero rules if docket_manager is null; with the Docket plugin
-## as owner, admit() and refresh() read the rules instead.
+## Clear cached rules; the next admit/refresh reads the hosted owner.
 func reload() -> void:
 	_rules.clear()
 	_compiled_from = ""
-
-	var dm = _get_docket_manager()
-	if dm == null:
-		return
-
-	# Query proposed and active policy items separately
-	# (flat dict filter doesn't support __in suffix)
-	var items: Array = []
-	for status in ["proposed", "active"]:
-		var result: Dictionary = dm.call_tool(
-			"docket_query",
-			{"filter": {"type": "policy", "status": status}}
-		)
-		var found = result.get("items", [])
-		if found is Array:
-			items.append_array(found)
-	_rules = _compile_all(items)
 
 
 ## Brings the rules up to date with their owner: "" when they are, else why
@@ -85,8 +66,6 @@ func reload() -> void:
 ## only when the items changed. Nothing is awaited between taking the items
 ## and returning, so the caller evaluates the rules just read.
 func refresh() -> String:
-	if _get_docket_manager() != null:
-		return ""
 	var host = _get_docket_host()
 	if host == null:
 		return "no Docket owns Minerva's projects"
@@ -524,10 +503,6 @@ func _make_scope_key(scope_name: String, caller_id: String) -> String:
 	if caller_id.is_empty():
 		return scope_name
 	return scope_name + ":" + caller_id
-
-
-func _get_docket_manager() -> Variant:
-	return _singleton_member("docket_manager")
 
 
 func _get_docket_host() -> Variant:
