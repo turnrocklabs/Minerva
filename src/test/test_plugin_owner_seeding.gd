@@ -660,8 +660,8 @@ func _test_interruptions() -> void:
 	await _pm.reconcile_recovered()
 	check("an approved update replays reconciliation of existing pristine content", _pending(other.id).is_empty() \
 		and _record("minerva_seedlate_note").get("steps") == "1. new" and _record("minerva_seedlate_guide").get("article") == "new")
-	var guide := _record("minerva_seedlate_guide", WORK_A)
-	guide.article = "MY LATE GUIDE"
+	var move_guide := _record("minerva_seedlate_guide", WORK_A)
+	move_guide.article = "MY LATE GUIDE"
 	var moved := _def(other.id, "3.0.0", "Other", "1. new", "moved", "moved tip")
 	_db.plugins[moved.id] = moved
 	_host_manager.connection = null
@@ -689,7 +689,7 @@ func _test_interruptions() -> void:
 	await _pm.reconcile_recovered()
 	check("a deferred committed move cleans Work and preserves the person's article",
 		_pending(other.id).is_empty() and _record("minerva_seedlate_tip", WORK_A).is_empty() \
-		and guide.get("source") == "user" and guide.article == "MY LATE GUIDE" and guide.get("deprecated") == false \
+		and move_guide.get("source") == "user" and move_guide.article == "MY LATE GUIDE" and move_guide.get("deprecated") == false \
 		and _record("minerva_seedlate_guide", OTHER).get("article") == "moved")
 	var stale := {"attempted": other.to_dict(), "deferred_install": true, "stale": true}
 	var prior_path: String = Txn.queue_install(_staging, other.id, stale)
