@@ -635,3 +635,39 @@ func _test_interruptions() -> void:
 	docket.autostart = false
 	check("a deliberately stopped Docket is not waiting for autostart", not _pm.docket_pickup_pending())
 	_pm._launch_autostart = false
+	_host_manager.connection = null
+	_host_manager.plugin_stopped.emit("docket")
+	var missing := _def("seedmissing", "1.0.0", "Later", "", "later", "later tip")
+	_db.plugins[missing.id] = missing
+	await Seeding.seed_install(_pm, missing, true, {})
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	await _pm.reconcile_recovered()
+	check("a never-opened project retains an explicitly unbound path", _pending(missing.id).size() == 1 and _pending(missing.id)[0].journal.paths.Later == "")
+	_store.projects.append(_project("later", WORK_C, "Later"))
+	await _pm.reconcile_recovered()
+	check("a never-bound path can bind once its project opens", _pending(missing.id).is_empty() and _record("minerva_seedmissing_guide", WORK_C).get("article") == "later")
+	_host_manager.connection = null
+	_host_manager.plugin_stopped.emit("docket")
+	var newer := _def(other.id, "2.0.0", "Work", "1. new", "new", "new tip")
+	_db.plugins[newer.id] = newer
+	var deferred: Dictionary = await Seeding.reconcile(_pm, other, newer, {"collected": true, "seed_new": false}, true)
+	check("an unavailable update retains its recorded consent and prior manifest", deferred.has("content_deferred") and _pending(other.id)[0].journal.deferred_update.consent.seed_new == false)
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	await _pm.reconcile_recovered()
+	check("an approved update replays reconciliation of existing pristine content", _pending(other.id).is_empty() \
+		and _record("minerva_seedlate_note").get("steps") == "1. new" and _record("minerva_seedlate_guide").get("article") == "new")
+	var stale := {"attempted": other.to_dict(), "deferred_install": true, "stale": true}
+	var prior_path: String = Txn.queue_install(_staging, other.id, stale)
+	var prior: Dictionary = _pending(other.id)[0]
+	check("only a newer approved version supersedes a stale intent", Txn.can_supersede(prior, "3.0.0", true, "2.0.0") \
+		and not Txn.can_supersede(prior, "3.0.0", false) and not Txn.can_supersede(prior, "1.0.0", true))
+	var op_path := _staging.path_join("op_supersede")
+	var before_supersede: Dictionary = _store.items.duplicate(true)
+	Txn.save_content(op_path, other.id, {"attempted": newer.to_dict(), "not_applied": true, "superseded_content": [prior_path]})
+	check("before commit the earlier partial-content intent stays live", not _pending(other.id)[0].journal.has("superseded"))
+	check("commit supersedes while preserving the prior journal for review", Txn.mark_committed(op_path) \
+		and _store.items == before_supersede and Txn.content_pending(_staging).any(func(entry: Dictionary) -> bool: return entry.path == prior_path and entry.journal.has("superseded")))

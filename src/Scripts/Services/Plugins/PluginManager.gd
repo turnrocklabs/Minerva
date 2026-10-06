@@ -323,7 +323,8 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 	# finish goes first: a new install would be taken for it (as MarketplaceClient).
 	if check_def != null and load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(
 			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)).any(
-			func(entry: Dictionary) -> bool: return entry.id == check_def.id):
+			func(entry: Dictionary) -> bool: return entry.id == check_def.id and not entry.journal.has("superseded") \
+				and entry.path not in consent.get("superseded_content", [])):
 		return {"error": "Plugin '%s' has Docket content still to be repaired from an earlier install or removal; install it once that finishes" % check_def.id}
 	var def = _db.install(manifest_path, lane)
 	if def == null:
@@ -482,7 +483,9 @@ func reconcile_recovered() -> void:
 				else _db.get_by_id(recovered.id)
 			var done := true
 			var reason := ""
-			if journal.get("deferred_install", false):
+			if journal.get("not_applied", false):
+				pass
+			elif journal.get("deferred_install", false):
 				var current = _db.get_by_id(recovered.id)
 				if recovered.committed:
 					if current == null or attempted == null or current.version != attempted.version or current.skills != attempted.skills \
@@ -492,16 +495,22 @@ func reconcile_recovered() -> void:
 						journal["stale"] = true
 					else:
 						var consent := {"collected": true, "seed": true, "journal_path": recovered.path}
+						var update: Dictionary = journal.get("deferred_update", {})
+						if not update.is_empty():
+							consent.merge(update.consent, true)
+							consent["collected"] = true
+							consent["deferred_update"] = update
 						var operation := Seeding.docket()
 						if journal.has("paths"):
 							consent["bound_paths"] = journal.paths
-							await operation.pin(journal, ["", current.knowledge_project] if not current.knowledge.is_empty() else [""])
+							await operation.pin(journal, ["", current.knowledge_project] if not current.knowledge.is_empty() else [""], false, true)
 						var seeded: Dictionary
 						if not operation.incomplete().is_empty() or operation.was_missing("") \
 								or (not current.knowledge.is_empty() and operation.was_missing(current.knowledge_project)):
 							seeded = {"content_incomplete": "The previously bound Docket project is unavailable."}
 						else:
-							seeded = await Seeding.seed_install(self, current, true, consent, operation)
+							seeded = await Seeding.reconcile(self, PluginDefinition.from_dict(update.previous), current, consent, true, operation) \
+								if not update.is_empty() else await Seeding.seed_install(self, current, true, consent, operation)
 						done = Seeding.complete(seeded)
 						journal = consent.get("saved_journal", journal)
 						reason = Seeding.unfinished_reason(seeded)
@@ -1359,7 +1368,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"id": id,
 		"name": def.name,
 		"version": def.version,
-		"content_pending": load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)).filter(func(entry): return entry.id == id).map(func(entry): return {"stale": entry.journal.get("stale", false), "reason": entry.reason}),
+		"content_pending": _pending_content_status(id),
 		"state": def.state,
 		"state_name": [
 			"INSTALLED", "STARTING", "RUNNING", "STOPPED", "ERROR", "CRASH_LOOP",
@@ -1470,6 +1479,15 @@ func person_stops(id: String) -> int:
 	return _person_stops.get(id, 0)
 
 
+func _pending_content_status(id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for entry: Dictionary in load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)):
+		if entry.id == id:
+			result.append({"stale": entry.journal.get("stale", false), "reason": entry.reason, "superseded": entry.journal.get("superseded", "")})
+	return result
+
+
+# Covers asynchronous release pickup and the reused-profile autostart window.
 var _required_pickup := false
 var _launch_autostart := false
 

@@ -599,8 +599,27 @@ static func mark_committed(op_dir: String) -> bool:
 	var entry = _read_json(content_path(op_dir))
 	if not entry is Dictionary:
 		return not FileAccess.file_exists(content_path(op_dir))
-	return entry.get("committed", false) == true or requeue_content(content_path(op_dir),
-		str(entry.get("id", "")), entry.get("journal", {}) if entry.get("journal") is Dictionary else {}, true)
+	if not entry.get("journal", {}) is Dictionary: return false
+	var journal: Dictionary = entry.get("journal", {})
+	if not entry.get("committed", false) and not requeue_content(content_path(op_dir), str(entry.id), journal, true): return false
+	for path in journal.get("superseded_content", []):
+		if not path is String or path.get_base_dir() != content_path(op_dir).get_base_dir() or path == content_path(op_dir): return false
+		var prior = _read_json(path)
+		if prior == null: continue
+		if not prior is Dictionary or not prior.get("journal") is Dictionary or prior.get("id") != entry.id: return false
+		if prior.journal.has("superseded"): continue
+		if not prior.journal.get("stale", false) or not journal.get("attempted") is Dictionary: return false
+		prior.journal["superseded"] = str(journal.attempted.version)
+		if not requeue_content(path, str(entry.id), prior.journal, true, "Superseded by approved version %s; prior partial content retained." % journal.attempted.version): return false
+	return true
+
+
+static func can_supersede(entry: Dictionary, version: String, approved: bool, installed_version := "") -> bool:
+	var journal: Dictionary = entry.journal
+	if not approved or not entry.committed or not journal.get("stale", false) or not journal.get("deferred_install", false) or not journal.get("attempted") is Dictionary: return false
+	var comparator = load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
+	return comparator.compare_versions(version, str(journal.attempted.get("version", ""))) > 0 \
+		and (installed_version.is_empty() or comparator.compare_versions(version, installed_version) > 0)
 
 
 ## Every entry whose operation has ended (no operation directory's record

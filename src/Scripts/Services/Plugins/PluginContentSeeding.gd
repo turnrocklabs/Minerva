@@ -102,7 +102,13 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 	var result := {}
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
-		return {"content_skipped": _unreached(def, "updated", why)}
+		var recorded := {}
+		for field in ["collected", "seed_new", "update_decisions", "update_seen"]:
+			if consent.has(field): recorded[field] = consent[field]
+		var journal := {"attempted": def.to_dict(), "deferred_install": true,
+			"deferred_update": {"previous": previous_def.to_dict(), "consent": recorded}}
+		if not _save_journal(consent, def, journal): return {"content_skipped": _skipped(def, consent)}
+		return {"content_deferred": "Content will be added when Docket is ready."}
 
 	# Phase 1: classify each skill and knowledge action (no docket writes yet).
 	var plan: Dictionary = await SkillSeeder.plan_reconcile(def, available_tools(manager), docket_caller)
@@ -558,11 +564,14 @@ static func _journal(def, plan: Dictionary, knowledge_plan: Dictionary, decision
 ## Save `journal` as the Docket journal of the install transaction in
 ## consent.journal_dir (none: nothing to save). Returns whether it is saved.
 static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool:
+	for field in ["superseded_content", "deferred_update"]:
+		if consent.has(field): journal[field] = consent[field]
 	var path := str(consent.get("journal_path", ""))
 	if not path.is_empty():
 		journal["deferred_install"] = true
 		if consent.has("bound_paths"):
-			journal["paths"] = consent.bound_paths.duplicate(true)
+			for name: String in consent.bound_paths:
+				if not str(consent.bound_paths[name]).is_empty(): journal.paths[name] = consent.bound_paths[name]
 		consent["saved_journal"] = journal
 		return Txn.requeue_content(path, def.id, journal, true)
 	var journal_dir := str(consent.get("journal_dir", ""))

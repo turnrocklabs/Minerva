@@ -46,6 +46,7 @@ var _missing: Dictionary = {}
 # no other name being bound once it has.
 var _pinned: Array = []
 var _recovery := false
+var _unbound: Array[String] = []
 # Under the embedded owner: the names found open, for bound_paths.
 var _embedded_names: Dictionary = {}
 var _stopped := ""
@@ -141,7 +142,7 @@ func binding_key(project: String) -> String:
 ## retry, which reaches every project it listed), a journal must also list
 ## those projects' files, even as none. Nothing is done under the embedded
 ## owner, whose recovery goes by name.
-func pin(journal: Dictionary, required: Array, enumerating := false) -> void:
+func pin(journal: Dictionary, required: Array, enumerating := false, allow_unbound := false) -> void:
 	if not _plugin_owner:
 		return
 	var recorded = journal.get("paths")
@@ -152,6 +153,9 @@ func pin(journal: Dictionary, required: Array, enumerating := false) -> void:
 		names["" if str(name) == MASTER else str(name)] = true
 	for key in names:
 		if str(paths.get(key, paths.get(MASTER, "") if key.is_empty() else "")).is_empty():
+			if allow_unbound:
+				_unbound.append(str(key))
+				continue
 			_stopped = "its Docket record does not say which file project '%s' is, so it is not repaired automatically" % [
 				MASTER if key.is_empty() else key]
 			return
@@ -168,6 +172,7 @@ func pin(journal: Dictionary, required: Array, enumerating := false) -> void:
 		_stopped = why
 		return
 	for key in names:
+		if key in _unbound: continue
 		var found := await _target_of(OpenProject.new(str(paths.get(key, paths.get(MASTER, "")))))
 		if found.has("error"):
 			_missing[key] = found
@@ -314,7 +319,7 @@ func _target_of(project) -> Dictionary:
 		return _bound[key]
 	if _missing.has(key):
 		return _missing[key]
-	if _recovery and key is String:
+	if _recovery and key is String and key not in _unbound:
 		_stopped = "Docket project '%s' is not among the files its record names" % project
 		return {"error": _stopped}
 	if key is OpenProject and key.path.is_empty():

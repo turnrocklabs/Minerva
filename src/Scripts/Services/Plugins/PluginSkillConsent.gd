@@ -29,6 +29,7 @@ static func collect(host: Node, db, available_tools: Dictionary, docket_caller, 
 		auto_confirm: bool, op = null) -> Dictionary:
 	var consent := {"collected": true}
 	var unattended: bool = op != null and bool(op.get("unattended"))
+	consent["seed_new"] = not unattended
 	var keep_customised: bool = unattended or (op != null and bool(op.get("repair_only")))
 	var def = PluginDefinition.from_manifest(manifest_path, PluginDefinition.LANE_MARKETPLACE)
 	if def == null:
