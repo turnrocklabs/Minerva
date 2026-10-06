@@ -44,12 +44,23 @@ const PLUGINS := {
 }
 ## The GitHub Releases API listing the pickup reads, newest first, a page at a
 ## time (tests point it at a local fixture).
-static var releases_url := "https://api.github.com/repos/%s/releases" % REPO
+static var releases_url := _initial_releases_url()
 ## App builds share the listing, so a rarely released plugin can sit many pages
 ## back; the pickup stops at a short page, once every required plugin has a
 ## release, or after this many pages.
 const MAX_RELEASE_PAGES := 10
 const RELEASES_PER_PAGE := 100
+
+
+static func _initial_releases_url() -> String:
+	var override := OS.get_environment("MINERVA_REQUIRED_RELEASES_URL")
+	if not override.is_empty():
+		var loopback := RegEx.new()
+		loopback.compile("^https?://(?:127[.]0[.]0[.]1|localhost|\\[::1\\])(?::[0-9]+)?(?:[/?#]|$)")
+		if loopback.search(override.to_lower()) != null:
+			return override
+		push_warning("[RequiredPlugins] Ignoring non-loopback MINERVA_REQUIRED_RELEASES_URL")
+	return "https://api.github.com/repos/%s/releases" % REPO
 
 
 static func has(plugin_id: String) -> bool:

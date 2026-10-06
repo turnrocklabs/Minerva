@@ -62,7 +62,7 @@ func _run() -> void:
 		await finish()
 		return
 	var before = manager.get_connection("docket")
-	var created: Dictionary = await host.call_tool("docket_create", {"project": host.master_project().name, "type": "kb", "title": "Required update marker"})
+	var created: Dictionary = (await host.call_tool("docket_create", {"project": host.master_project().name, "type": "kb", "title": "Required update marker"})).get("value", {})
 	check("real child wrote marker", not str(created.get("id", "")).is_empty())
 	await host.call_tool("docket_flush", {"project": host.master_project().name})
 	offer(NEW)
@@ -72,7 +72,7 @@ func _run() -> void:
 		await until(func(): return updates.docket.state == updates.docket.State.DONE and host.state == "ready")
 	definition = manager.get_db().get_by_id("docket")
 	check("new version committed with restarted actual child", definition.version == NEW and definition.state == PluginDefinition.State.RUNNING and manager.get_connection("docket") != before)
-	var recovered: Dictionary = await host.call_tool("docket_get", {"project": host.master_project().name, "id": created.get("id", "")})
+	var recovered: Dictionary = (await host.call_tool("docket_get", {"project": host.master_project().name, "id": created.get("id", "")})).get("value", {})
 	check("update preserves real master data", recovered.get("title") == "Required update marker")
 	check("required Docket cannot be removed", (await manager.remove_plugin("docket")).has("error"))
 	await finish()
