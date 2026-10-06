@@ -62,6 +62,8 @@ plugins/elgato/node_modules/
 *.dct.cache-wal
 *.dct.lock
 *.dct.tmp.*
+# Docket write-ahead sidecar; settled into the .dct, then deleted.
+*.dct.log
 # Hand-made rescue copies of a docket file. These are LOCAL artifacts of a
 # recovery session, routinely multi-megabyte, and they duplicate content that
 # already lives in the tracked .dct. Two of them were swept into the repo by a
