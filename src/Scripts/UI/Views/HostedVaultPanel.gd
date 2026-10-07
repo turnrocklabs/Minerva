@@ -7,6 +7,7 @@ class_name HostedVaultPanel
 @onready var _button: Button = %SetVaultPasswordButton
 @onready var _message: Label = %VaultMessageLabel
 var _host: Node
+var _host_state := ""
 var _mode := "unavailable"
 var _busy := false
 var _view_epoch := 0
@@ -19,11 +20,22 @@ func _ready() -> void:
 
 func bind_host(host: Node) -> void:
 	if _host == host: return
-	if is_instance_valid(_host) and _host.vault_changed.is_connected(refresh):
-		_host.vault_changed.disconnect(refresh)
+	if is_instance_valid(_host):
+		if _host.vault_changed.is_connected(refresh): _host.vault_changed.disconnect(refresh)
+		if _host.state_changed.is_connected(_host_state_changed): _host.state_changed.disconnect(_host_state_changed)
 	_host = host
-	if is_instance_valid(_host): _host.vault_changed.connect(refresh)
+	_host_state = str(_host.state) if is_instance_valid(_host) else ""
+	if is_instance_valid(_host):
+		_host.vault_changed.connect(refresh)
+		_host.state_changed.connect(_host_state_changed)
 	clear_inputs()
+
+
+func _host_state_changed(state: String) -> void:
+	# Reading details republishes unchanged host state; only transitions refresh.
+	if state == _host_state: return
+	_host_state = state
+	refresh.call_deferred()
 
 
 func clear_inputs() -> void:

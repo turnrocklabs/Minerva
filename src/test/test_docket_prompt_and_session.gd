@@ -146,6 +146,8 @@ func host_request(name: String, params: Dictionary) -> Dictionary:
 			await Engine.get_main_loop().process_frame
 		return reply
 	if name == "declare_schema":
+		while name == hold and not gate_open:
+			await Engine.get_main_loop().process_frame
 		return {"result": {"version": params.version}}
 	var project: Dictionary = connection.open_project(str(params.path))
 	return {"result": {"status": "installed", "path": project.path, "project": project, "conflicts": [], "capability_gaps": []}}
@@ -490,7 +492,51 @@ func _profile_has_password(path: String) -> bool:
 	return false
 
 
+func _test_vault_panel_startup(initialized: bool) -> void:
+	_clear_user_files()
+	var connection = _make(CONNECTION_SRC)
+	var authority = _make(AUTHORITY_SRC)
+	authority.connection = connection
+	authority.initialized = initialized
+	authority.hint = "00123" if initialized else ""
+	authority.hold = "declare_schema"
+	authority.gate_open = false
+	var manager: Node = _make(PLUGIN_MANAGER_SRC)
+	manager.connection = connection
+	manager.authority = authority
+	root.add_child(manager)
+	var host: Node = load(DOCKET_HOST_PATH).new()
+	_made_nodes.append(host)
+	root.add_child(host)
+	_so.docket_host = host
+	var form = _vault_form()
+	host.start(manager)
+	form.refresh()
+	await process_frame
+	check("G: startup panel is unavailable while master preparation is held", form._mode == "unavailable" and form._button.disabled)
+	authority.gate_open = true
+	var mode := "unlock" if initialized else "create"
+	check("G: startup panel becomes %s without reopening" % mode,
+		await _wait(func() -> bool: return form._mode == mode and not form._button.disabled))
+	check("G: ready panel has accurate status and optional plain hint",
+		form.get_node("%VaultStatusLabel").text.begins_with("Vault: locked" if initialized else "Vault: not created.")
+		and (not initialized or form.get_node("%VaultStatusLabel").text.contains("00123")))
+	var calls: int = authority.private_methods.size()
+	for repeat in range(3):
+		host.state_changed.emit(host.state)
+		await process_frame
+	check("G: identical host state emissions do not loop through private details", authority.private_methods.size() == calls)
+	form.bind_host(null)
+	var epoch: int = form._view_epoch
+	host.state_changed.emit("unavailable")
+	host.vault_changed.emit()
+	await process_frame
+	check("G: unbound host signals cannot refresh the panel", form._view_epoch == epoch and authority.private_methods.size() == calls)
+
+
 func _test_vault() -> void:
+	for initialized in [false, true]:
+		await _test_vault_panel_startup(initialized)
 	_clear_user_files()
 	var connection = _make(CONNECTION_SRC)
 	var authority = _make(AUTHORITY_SRC)
@@ -519,6 +565,9 @@ func _test_vault() -> void:
 		form._message.text == "Vault unlock refused; check the existing vault password."
 		and form._password.text.is_empty() and form._confirm.text.is_empty() and form._hint.text.is_empty()
 		and host._vault_session._password.is_empty())
+	await form.refresh()
+	check("G: ambient refresh preserves a specific password refusal",
+		form.get_node("%VaultStatusLabel").text == "Vault unlock refused; check the existing vault password.")
 	authority.initialized = false
 	form.refresh()
 	check("G: absent master selects Create mode", await _wait(func() -> bool: return form._mode == "create") and form._confirm.get_parent().visible)
@@ -538,7 +587,7 @@ func _test_vault() -> void:
 	check("G: empty hosted input refuses and clears the form",
 		form._message.text == "Enter a nonempty password." and form._password.text.is_empty()
 		and form._confirm.text.is_empty() and form._hint.text.is_empty())
-	if host.vault_changed.is_connected(form.refresh): host.vault_changed.disconnect(form.refresh)
+	form.bind_host(null)
 	await host.unlock_vault(VAULT_PASSWORD)
 	var settled_calls: int = authority.private_methods.size()
 	connection.open_project("/p/vault-session.dct")

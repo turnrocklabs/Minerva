@@ -81,8 +81,11 @@ func details(host: Node) -> Dictionary:
 	if not _current(host, binding, epoch): return unavailable
 	var descriptor := _descriptor(answer)
 	if descriptor.is_empty() or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""): return unavailable
+	var display_message := message
+	if descriptor.initialized and message in ["Vault: unavailable.", "Vault: unavailable (session password retained)."]:
+		display_message = "Vault: locked — unlock an existing vault for this session only."
 	return {"mode":"unlock" if descriptor.initialized else "create", "hint":descriptor.hint,
-		"message":message if descriptor.initialized else "Vault: not created.", "busy":false}
+		"message":display_message if descriptor.initialized else "Vault: not created.", "busy":false}
 
 
 func _finish(host: Node, epoch: int, text: String, invalidated: bool = false) -> String:
