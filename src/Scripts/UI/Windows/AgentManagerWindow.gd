@@ -1581,7 +1581,7 @@ func _refresh_trigger_list() -> void:
 		var batch_str = " [%d params]" % trig.batch_params.size() if not trig.batch_params.is_empty() else ""
 		var chain_str = " -> chain" if not trig.chain_trigger_id.is_empty() else ""
 		var pending_str = " [PENDING]" if trig.pending_approval else ""
-		if trig.trigger_type == TriggerDefinition.TriggerType.DOCKET_POLL and SingletonObject.docket_manager == null:
+		if trig.trigger_type == TriggerDefinition.TriggerType.DOCKET_POLL:
 			var docket_problem := str(tm.docket_feed.status(trig.id).problem)
 			if not docket_problem.is_empty():
 				pending_str += " [Docket: %s]" % docket_problem

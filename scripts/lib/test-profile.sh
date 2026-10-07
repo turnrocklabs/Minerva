@@ -10,6 +10,7 @@
 # and can consume the shared schema helper's bounded admission slots mid-test.
 seed_test_profile() {
 	local root="$1" user_dir
+	export MINERVA_REQUIRED_RELEASES_URL="http://127.0.0.1:9/required-releases.json"
 	case "$(uname -s)" in
 	Darwin)
 		unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME

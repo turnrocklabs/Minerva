@@ -1439,7 +1439,7 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 			entry["docket_filter_item_ids"] = trig.docket_filter_item_ids
 			entry["docket_filter_types"] = trig.docket_filter_types
 			# Under the Docket plugin: why it cannot be relied on now, if it cannot.
-			if SingletonObject.docket_manager == null and tm.docket_feed != null:
+			if tm.docket_feed != null:
 				entry["docket_status"] = tm.docket_feed.status(trig.id)
 		elif trig.trigger_type == TriggerDefinition.TriggerType.PLUGIN_EVENT:
 			entry["plugin_id"] = trig.plugin_id

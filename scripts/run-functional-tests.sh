@@ -10,6 +10,7 @@
 #   scripts/run-functional-tests.sh --all     # + per-plugin tier
 #   scripts/run-functional-tests.sh --pcb-guard  # PCB-migration regression guard only
 #   scripts/run-functional-tests.sh --test test/path.gd  # one registered test
+#   scripts/run-functional-tests.sh --required-docket PATH.tar.gz  # existing packager output
 #
 # The per-plugin tier (CAD / presentation / scansort) is heavy and/or networked
 # — it needs built plugin binaries, build123d, and a reachable model-chat
@@ -134,6 +135,7 @@ QUARANTINED_TESTS=(
 	# bug 019fbd21a8717702931647025aae6be7 — see comment above.
 	test/test_host_capability_terminal_io.gd
 )
+REQUIRED_DOCKET_TESTS=(test/test_required_docket.gd)
 PLUGIN_TESTS=(
 	test/test_cad_evaluate_render.gd
 	test/test_presentation_deck_render.gd
@@ -167,7 +169,10 @@ PCB_GUARD_TESTS=(
 
 tests=("${HERMETIC_TESTS[@]}")
 strict=false
-if [[ "${1:-}" == "--platform-gate" ]]; then
+if [[ "${1:-}" == "--required-docket" ]]; then
+	tests=("${REQUIRED_DOCKET_TESTS[@]}")
+	MINERVA_REQUIRED_DOCKET_ARCHIVE="${2:-}"
+elif [[ "${1:-}" == "--platform-gate" ]]; then
 	tests=("${PLATFORM_GATE_TESTS[@]}")
 	strict=true
 elif [[ "${1:-}" == "--all" ]]; then
@@ -188,7 +193,7 @@ elif [[ "${1:-}" == "--test" ]]; then
 	fi
 	registered=false
 	for registered_test in "${HERMETIC_TESTS[@]}" "${QUARANTINED_TESTS[@]}" \
-			"${PLUGIN_TESTS[@]}" "${PCB_GUARD_TESTS[@]}" "${PLATFORM_GATE_TESTS[@]}"; do
+			"${PLUGIN_TESTS[@]}" "${PCB_GUARD_TESTS[@]}" "${PLATFORM_GATE_TESTS[@]}" "${REQUIRED_DOCKET_TESTS[@]}"; do
 		if [[ "$requested_test" == "$registered_test" ]]; then
 			registered=true
 			break
@@ -202,6 +207,25 @@ elif [[ "${1:-}" == "--test" ]]; then
 elif [[ -n "${1:-}" ]]; then
 	echo "unknown functional test option: $1" >&2
 	exit 2
+fi
+
+if [[ "${tests[*]}" == "${REQUIRED_DOCKET_TESTS[*]}" ]]; then
+	export MINERVA_REQUIRED_DOCKET_FIXTURE="$MINERVA_FUNCTIONAL_PROFILE_ROOT/required-docket"
+	python3 - "${MINERVA_REQUIRED_DOCKET_ARCHIVE:?use --required-docket with a packager archive}" "$MINERVA_REQUIRED_DOCKET_FIXTURE" "$REPO_ROOT" <<'PY' || exit 1
+import importlib.util,json,re,sys,tarfile,tempfile
+from pathlib import Path
+archive,fixture,repo=map(Path,sys.argv[1:]);fixture.mkdir()
+target=re.search(r'-(linux-x86_64|windows-x86_64|macos-amd64|macos-arm64)\.tar\.gz$',archive.name).group(1)
+spec=importlib.util.spec_from_file_location('pack',repo/'scripts/package-plugin-release.py');pack=importlib.util.module_from_spec(spec);spec.loader.exec_module(pack)
+with tempfile.TemporaryDirectory() as temporary:
+ root=Path(temporary)
+ with tarfile.open(archive) as bundled: bundled.extractall(root,filter='tar')
+ manifest=json.loads((root/'manifest.json').read_text())
+ for version in ('0.3.0-rc.23','0.3.0-rc.24'):
+  manifest['version']=version;(root/'manifest.json').write_text(json.dumps(manifest));pack.write_sums(root)
+  pack.pack(root,fixture/f'docket-{version}-{target}.tar.gz')
+(fixture/'registry.json').write_text('{"plugins":[]}')
+PY
 fi
 
 # Tests run headless unless the caller supplies a display: dev-test.sh

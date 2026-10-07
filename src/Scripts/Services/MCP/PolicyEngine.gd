@@ -4,14 +4,12 @@ extends RefCounted
 ##
 ## Usage:
 ##   var engine := PolicyEngine.new()
-##   engine.reload()                         # fetch rules from the embedded Docket
+##   engine.reload()                         # clear cached rules
 ##   var result := await engine.admit("minerva_bash", {"command": "git push --force"})
 ##   if not result["allowed"]:
 ##       print(result["error"])
 ##
-## The rules belong to whichever Docket owns Minerva's projects: the embedded
-## DocketManager (rules as last reloaded), else the Docket plugin through
-## DocketHost (the master's policies, read afresh for each admission). A
+## The master's policies are read through DocketHost for each admission. A
 ## governed call is admitted only against rules that were read: when there is
 ## no owner or the read fails, admit() refuses it.
 
@@ -53,40 +51,18 @@ func _init() -> void:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-## Clear and recompile all rules from the embedded Docket.
-## Results in zero rules if docket_manager is null; with the Docket plugin
-## as owner, admit() and refresh() read the rules instead.
+## Clear cached rules; the next admit/refresh reads the hosted owner.
 func reload() -> void:
 	_rules.clear()
 	_compiled_from = ""
 
-	var dm = _get_docket_manager()
-	if dm == null:
-		return
-
-	# Query proposed and active policy items separately
-	# (flat dict filter doesn't support __in suffix)
-	var items: Array = []
-	for status in ["proposed", "active"]:
-		var result: Dictionary = dm.call_tool(
-			"docket_query",
-			{"filter": {"type": "policy", "status": status}}
-		)
-		var found = result.get("items", [])
-		if found is Array:
-			items.append_array(found)
-	_rules = _compile_all(items)
-
 
 ## Brings the rules up to date with their owner: "" when they are, else why
-## they could not be read. The embedded Docket's rules are current as
-## reloaded; the plugin's are read now (again when the read overlapped a
-## change to Docket, or a newer read was taken first), and compiled again
+## they could not be read. Hosted rules are read now (again when the read
+## overlapped a change to Docket, or a newer read was taken first), and compiled again
 ## only when the items changed. Nothing is awaited between taking the items
 ## and returning, so the caller evaluates the rules just read.
 func refresh() -> String:
-	if _get_docket_manager() != null:
-		return ""
 	var host = _get_docket_host()
 	if host == null:
 		return "no Docket owns Minerva's projects"
@@ -109,21 +85,30 @@ func refresh() -> String:
 
 ## The policy decision for a governed call, taken on the rules as they stand
 ## now (see refresh()). When they could not be read, a refusal whose
-## error_code is "policy_unavailable" and whose error says why; rules read
+## error_code is "docket_not_ready" (retriable pickup/start) or
+## "policy_unavailable" and whose error says why; rules read
 ## successfully with none among them allow the call.
 func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> Dictionary:
 	var why := await refresh()
 	if not why.is_empty():
-		return {
+		return unavailable_result(why)
+	return evaluate(tool_name, arguments, caller_id)
+
+
+## A startup retry remains a refusal; policy is never skipped.
+func unavailable_result(why: String) -> Dictionary:
+	var host = _get_docket_host()
+	var retryable: bool = host != null and host.has_method("pickup_pending") and host.pickup_pending()
+	return {
 			"allowed": false,
 			"effect": "unavailable",
 			"reason": why,
 			"allowed_next_actions": [],
 			"success": false,
 			"error": "Policy unavailable, so the call was not made: %s" % why,
-			"error_code": "policy_unavailable",
+			"error_code": "docket_not_ready" if retryable else "policy_unavailable",
+			"retryable": retryable,
 		}
-	return evaluate(tool_name, arguments, caller_id)
 
 
 ## Evaluate a tool call against all loaded rules.
@@ -515,10 +500,6 @@ func _make_scope_key(scope_name: String, caller_id: String) -> String:
 	if caller_id.is_empty():
 		return scope_name
 	return scope_name + ":" + caller_id
-
-
-func _get_docket_manager() -> Variant:
-	return _singleton_member("docket_manager")
 
 
 func _get_docket_host() -> Variant:

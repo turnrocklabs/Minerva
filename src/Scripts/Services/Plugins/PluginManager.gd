@@ -323,7 +323,8 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 	# finish goes first: a new install would be taken for it (as MarketplaceClient).
 	if check_def != null and load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(
 			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)).any(
-			func(entry: Dictionary) -> bool: return entry.id == check_def.id):
+			func(entry: Dictionary) -> bool: return entry.id == check_def.id and not entry.journal.has("superseded") \
+				and entry.path not in consent.get("superseded_content", [])):
 		return {"error": "Plugin '%s' has Docket content still to be repaired from an earlier install or removal; install it once that finishes" % check_def.id}
 	var def = _db.install(manifest_path, lane)
 	if def == null:
@@ -476,11 +477,47 @@ func reconcile_recovered() -> void:
 			if _content_busy.has(recovered.id):
 				continue
 			var journal: Dictionary = recovered.journal
+			if journal.get("stale", false):
+				continue
 			var attempted = PluginDefinition.from_dict(journal.attempted) if journal.get("attempted") is Dictionary \
 				else _db.get_by_id(recovered.id)
 			var done := true
 			var reason := ""
-			if recovered.committed:
+			if journal.get("not_applied", false):
+				pass
+			elif journal.get("deferred_install", false):
+				var current = _db.get_by_id(recovered.id)
+				if recovered.committed:
+					if current == null or attempted == null or current.version != attempted.version or current.skills != attempted.skills \
+							or current.knowledge != attempted.knowledge or (not current.knowledge.is_empty() and current.knowledge_project != attempted.knowledge_project):
+						done = false
+						reason = "The installed manifest is missing or changed; deferred content needs review."
+						journal["stale"] = true
+					else:
+						var consent := {"collected": true, "seed": true, "journal_path": recovered.path}
+						var update: Dictionary = journal.get("deferred_update", {})
+						if not update.is_empty():
+							consent.merge(update.consent, true)
+							consent["collected"] = true
+							consent["deferred_update"] = update
+						var operation := Seeding.docket()
+						if journal.has("paths"):
+							consent["bound_paths"] = journal.paths
+							await operation.pin(journal, ["", current.knowledge_project] if not current.knowledge.is_empty() else [""], false, true)
+						var seeded: Dictionary
+						if not operation.incomplete().is_empty() or operation.was_missing("") \
+								or (not current.knowledge.is_empty() and operation.was_missing(current.knowledge_project)):
+							seeded = {"content_incomplete": "The previously bound Docket project is unavailable."}
+						else:
+							seeded = await Seeding.reconcile(self, PluginDefinition.from_dict(update.previous), current, consent, true, operation) \
+								if not update.is_empty() else await Seeding.seed_install(self, current, true, consent, operation)
+						done = Seeding.complete(seeded)
+						journal = consent.get("saved_journal", journal)
+						reason = Seeding.unfinished_reason(seeded)
+						if done and not update.is_empty():
+							reason = await Seeding.content_committed_problem(journal)
+							done = reason.is_empty()
+			elif recovered.committed:
 				reason = await Seeding.content_committed_problem(journal)
 				done = reason.is_empty()
 			elif journal.get("removal", false) == true and _db.has_plugin(recovered.id):
@@ -1334,6 +1371,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"id": id,
 		"name": def.name,
 		"version": def.version,
+		"content_pending": _pending_content_status(id),
 		"state": def.state,
 		"state_name": [
 			"INSTALLED", "STARTING", "RUNNING", "STOPPED", "ERROR", "CRASH_LOOP",
@@ -1444,23 +1482,45 @@ func person_stops(id: String) -> int:
 	return _person_stops.get(id, 0)
 
 
+func _pending_content_status(id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for entry: Dictionary in load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)):
+		if entry.id == id:
+			result.append({"stale": entry.journal.get("stale", false), "reason": entry.reason, "superseded": entry.journal.get("superseded", "")})
+	return result
+
+
+# Covers asynchronous release pickup and the reused-profile autostart window.
+var _required_pickup := false
+var _launch_autostart := false
+
+func docket_pickup_pending() -> bool:
+	var def = _db.get_by_id("docket")
+	return _required_pickup or (install_queue != null and install_queue.pending_for("docket") != null) \
+		or (def != null and (def.state == S_STARTING or (_launch_autostart and def.autostart)))
+
+func _ensure_required_plugins() -> void:
+	_required_pickup = true
+	await RequiredPlugins.ensure(self)
+	_required_pickup = false
+
 ## At launch: queue installs of missing required plugins (RequiredPlugins,
 ## alongside), start the autostart plugins, then queue the opted-in updates
 ## (PluginAutoUpdater), so an update of a plugin that just started must start
 ## again before it commits. Minerva does not wait on this.
-func start_plugins_at_launch() -> void:
-	# Not awaited: autostart does not wait on the network. An editor run (a
-	# developer's checkout, and the test harness) never fetches by itself; the
-	# plugin panel's "Install required plugins" does it on request.
+func start_plugins_at_launch(registry_url: String = "") -> void:
+	_launch_autostart = true
+	# Not awaited: autostart does not wait on the network. Source/editor runs
+	# need required plugins too; ensure never replaces a manifest-lane copy.
 	RequiredPlugins.move_legacy_relay_state()
 	# Installs a crash left half-done were rolled back before Docket was
 	# loaded; their seeded skills and knowledge follow now.
 	await reconcile_recovered()
-	if not OS.has_feature("editor"):
-		RequiredPlugins.ensure(self)
+	_ensure_required_plugins()
 	await start_autostart_plugins()
+	_launch_autostart = false
 	if not _shutting_down:
-		await AutoUpdater.run(self)
+		await AutoUpdater.run(self, registry_url)
 
 
 ## Start all plugins whose autostart flag is true.

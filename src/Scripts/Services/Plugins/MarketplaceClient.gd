@@ -321,14 +321,19 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# An earlier install of this plugin whose Docket content is still to be
 	# put back would later overwrite what this one writes: it goes first.
 	var waiting := PluginInstallTransaction.content_pending(ProjectSettings.globalize_path(STAGING_DIR)).filter(
-		func(entry: Dictionary) -> bool: return entry.id == plugin_id)
-	if not waiting.is_empty():
+		func(entry: Dictionary) -> bool: return entry.id == plugin_id and not entry.journal.has("superseded"))
+	var previous_def = db.get_by_id(plugin_id) if db != null else null
+	if not waiting.all(func(entry: Dictionary) -> bool: return PluginInstallTransaction.can_supersede(
+			entry, str(manifest.version), consent.get("collected", false), str(previous_def.version) if previous_def != null else "")):
 		return _err("content_repair_pending", {"id": plugin_id,
 			"reasons": waiting.map(func(entry: Dictionary) -> String:
 				return entry.reason if not entry.reason.is_empty() else "it has not run yet (Docket was not available)"),
 			"paths": waiting.map(func(entry: Dictionary) -> String: return entry.path)})
 	# Read under the lock: entering may have just recovered this record.
-	var previous_def = db.get_by_id(plugin_id) if db != null else null
+	if not waiting.is_empty():
+		consent["superseded_content"] = waiting.map(func(entry: Dictionary) -> String: return entry.path)
+		if not PluginInstallTransaction.save_content(op.staging_dir, plugin_id, {"attempted": manifest, "not_applied": true, "superseded_content": consent.superseded_content}):
+			return _err("staging_failed", {"dir": op.staging_dir})
 	# An unattended update stands only while the plugin still wants it, judged
 	# under the lock: a user who opted out, removed the plugin, moved it to the
 	# developer lane or installed another version meanwhile is not overridden.

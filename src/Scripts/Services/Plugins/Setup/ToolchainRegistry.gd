@@ -17,9 +17,8 @@ extends RefCounted
 ## a worker thread (it owns S_BUILDING threading; see contract §3).
 ##
 ## Persistence choice: standalone ConfigFile at `user://toolchain_paths.cfg`,
-## not SingletonObject.config_file. This mirrors DocketManager's
-## `user://docket_projects.cfg` pattern (a small dedicated registry file
-## loaded/saved directly by the owning service) rather than
+## not SingletonObject.config_file: a small dedicated registry file
+## loaded/saved directly by the owning service, rather than
 ## PluginSettingsStore's approach (routes through SingletonObject's shared
 ## config + a settings-schema UI layer). A Setup-layer class has no business
 ## depending on SingletonObject — it must be usable from a headless test

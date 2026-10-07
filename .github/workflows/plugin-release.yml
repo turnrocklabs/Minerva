@@ -1,6 +1,6 @@
 name: Plugin Release
 
-# Builds the plugins Minerva requires (agent_relay, voice) from this
+# Builds the plugins Minerva requires (agent_relay, voice, docket) from this
 # repository and publishes each as its own GitHub release, independent of app
 # builds. Pushing a tag "<id>-v<version>" (the version in that plugin's
 # manifest.json) builds every target and publishes the release Minerva's
@@ -12,8 +12,10 @@ on:
     tags:
       - 'agent_relay-v*'
       - 'voice-v*'
+      - 'docket-v*'
     branches:
       - development
+      - 'release/docket-plugin-*'
     paths:
       - 'src/plugins/agent-relay/**'
       - 'src/plugins/voice/**'
@@ -29,7 +31,7 @@ permissions:
 jobs:
   agent-relay:
     name: Agent Relay (${{ matrix.target }})
-    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'agent_relay-v')
+    if: github.ref_name == 'development' || startsWith(github.ref_name, 'agent_relay-v')
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +72,7 @@ jobs:
 
   voice:
     name: Voice Support (${{ matrix.target }})
-    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'voice-v')
+    if: github.ref_name == 'development' || startsWith(github.ref_name, 'voice-v')
     strategy:
       fail-fast: false
       matrix:
@@ -115,9 +117,50 @@ jobs:
           path: plugin-release/*
           if-no-files-found: error
 
+  docket:
+    name: Docket (${{ matrix.target }})
+    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'docket-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-latest }
+          - { target: windows-x86_64, runner: windows-latest }
+          - { target: macos-arm64, runner: macos-15 }
+          - { target: macos-amd64, runner: macos-15-intel }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: imrans-lab/minerva-plugins
+          ref: bab730e25c0929d1ca477b0bf7b4b890871c368f
+          path: minerva-plugins
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: minerva-plugins/docket/go.mod
+      - name: Package verified Docket runtime
+        shell: bash
+        run: |
+          version=""
+          if [ "${{ github.ref_type }}" = tag ]; then version="--version=${GITHUB_REF_NAME#docket-v}"; fi
+          prefix=""
+          if [ "${{ runner.os }}" = Linux ]; then prefix="xvfb-run -a"; fi
+          $prefix python scripts/package-plugin-release.py $version \
+            --manifest minerva-plugins/docket/manifest.json --docket-source minerva-plugins \
+            --stage docket-stage --target "${{ matrix.target }}" --out plugin-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release-docket-${{ matrix.target }}
+          path: plugin-release/*
+          if-no-files-found: error
+
   publish:
     name: Publish ${{ github.ref_name }}
-    needs: [agent-relay, voice]
+    needs: [agent-relay, voice, docket]
     # A tag builds only its own plugin; the other job is skipped, not failed.
     if: >-
       always() && github.ref_type == 'tag'

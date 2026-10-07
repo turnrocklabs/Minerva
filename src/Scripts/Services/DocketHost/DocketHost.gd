@@ -27,9 +27,6 @@ extends Node
 ## Every step belongs to one process of the plugin: its connection (a new
 ## one for each start) and that connection's process generation. A result
 ## that arrives once the process has changed is dropped.
-##
-## The embedded DocketManager owns the same files, so the host stays
-## inactive while it exists: the two never run together.
 
 signal vault_changed
 signal state_changed(state: String)
@@ -38,7 +35,7 @@ const PLUGIN_ID := "docket"
 const MASTER_RES := "res://Data/master.dct"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"
-const SCHEMA_RES := "res://Scripts/Services/Docket/Core/data/schema.json"
+const SCHEMA_RES := "res://Data/docket_schema.json"
 ## Where DocketHost keeps the session: {"version": SESSION_VERSION,
 ## "paths": [...]}.
 const SESSION_PATH := "user://docket_host_session.json"
@@ -55,7 +52,7 @@ const CHANGING_TOOLS := ["docket_create", "docket_update", "docket_transition", 
 	"docket_move", "docket_type_define", "docket_type_evolve", "docket_type_activate", "docket_reload",
 	"docket_project_add", "docket_project_remove"]
 
-## "inactive" (the embedded DocketManager owns Docket's files), "unavailable"
+## "inactive" (not started), "unavailable"
 ## (the plugin is not running, or not ready), "starting" (its process is
 ## being set up), "ready", "degraded" (ready, with `problems`) or "failed"
 ## (the schema or the master could not be set up; `problems` says why).
@@ -114,13 +111,8 @@ var _reconcile_again := false
 var _changes := 0
 
 
-## Takes up the Docket plugin through `plugin_manager`, unless the embedded
-## DocketManager owns Docket's files (`embedded_owner`): then it stays
-## inactive.
-func start(plugin_manager, embedded_owner: bool) -> void:
-	if embedded_owner:
-		state = "inactive"
-		return
+## Takes up the Docket plugin through `plugin_manager`.
+func start(plugin_manager) -> void:
 	_plugin_manager = plugin_manager
 	_plugin_manager.plugin_ready.connect(_on_plugin_ready)
 	_plugin_manager.plugin_stopped.connect(_on_plugin_gone)
@@ -251,6 +243,12 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 	return {"prompt": ""}
 
 
+func pickup_pending() -> bool:
+	return state == "starting" or (_plugin_manager != null \
+		and ((state == "unavailable" and _plugin_manager.get_plugin_status(PLUGIN_ID).get("running", false)) \
+			or (_plugin_manager.has_method("docket_pickup_pending") and _plugin_manager.docket_pickup_pending())))
+
+
 ## The master's policies, read from the plugin afresh: {items} (its items
 ## of type policy whose status is proposed or active, in full), or {error}
 ## when Docket is unavailable, the master is not open, its policy type is not
@@ -261,8 +259,8 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 ## so nothing is awaited after it. Policies are the master's only; the
 ## session's projects never count. No items is a successful read.
 func policy_items() -> Dictionary:
-	while state == "starting":
-		await state_changed
+	if not state in ["ready", "degraded"] and pickup_pending():
+		return {"error": "Docket is being installed/started — retry shortly"}
 	if not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
 	var connection = _connection
@@ -291,7 +289,7 @@ func policy_items() -> Dictionary:
 
 
 ## The knowledge items policy rules name by id (`refs`), read afresh from
-## the master, as the embedded Docket reads them, in the order of `refs`:
+## the master in the order of `refs`:
 ## {items}, or {error, index}: when Docket is unavailable, its projects
 ## cannot be listed or the master is not open (index -1, no ref read), or a
 ## ref's read fails, answers with another item or sees the plugin's process
@@ -1337,6 +1335,18 @@ func _fail(why: String) -> void:
 	push_error("[DocketHost] %s" % why)
 	_set_state("failed")
 
+
+func availability_message() -> String:
+	if state == "starting":
+		return "Docket is starting. Features that need it will be available when setup finishes."
+	if state == "unavailable" and _plugin_manager != null:
+		if _plugin_manager.install_queue.pending_for(PLUGIN_ID) != null:
+			return "Docket is being installed or updated. Features that need it will return when setup finishes."
+		if _plugin_manager.get_plugin_status(PLUGIN_ID).get("state_name", "") in ["INSTALLED", "STOPPED"]:
+			return "Docket is stopped. Open Plugins and press Start for Docket to use features that need it."
+	if state in ["unavailable", "failed"]:
+		return RequiredPlugins.missing_message(PLUGIN_ID, "; ".join(problems) if not problems.is_empty() else "not ready")
+	return ""
 
 func _set_state(new_state: String) -> void:
 	state = new_state

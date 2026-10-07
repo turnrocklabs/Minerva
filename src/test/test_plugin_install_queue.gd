@@ -411,6 +411,11 @@ func _test_startup_auto_update(port: int) -> void:
 ## is not replayed, so the state is checked first).
 func _done(job) -> void:
 	await _until(func() -> bool: return job.state == Job.State.DONE, 60.0)
+	if job.state != Job.State.DONE:
+		print("INSTALL_QUEUE_TIMEOUT requested=%s" % JSON.stringify(job.status()))
+		for pending in _pm.install_queue.jobs():
+			if pending.state != Job.State.DONE:
+				print("INSTALL_QUEUE_UNFINISHED %s" % JSON.stringify(pending.status()))
 
 
 func _until(ready: Callable, seconds: float = 30.0) -> void:

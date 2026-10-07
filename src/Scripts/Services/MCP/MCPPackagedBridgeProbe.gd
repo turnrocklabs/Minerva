@@ -68,6 +68,18 @@ func run() -> void:
 		return
 	var manager = singleton.get_mcp_manager()
 	manager.connect_minerva_server()
+	# Startup downloads are asynchronous; a loaded browser does not prove
+	# the master policy is ready to admit the probe's governed call.
+	var readiness_deadline := Time.get_ticks_msec() + 60000
+	while true:
+		var readiness: Dictionary = await manager.minerva_server.call_tool("minerva_policy_reload", {})
+		if readiness.get("success", false): break
+		if not readiness.get("retryable", false) or Time.get_ticks_msec() >= readiness_deadline:
+			print("PACKAGED_BRIDGE_PHASE=docket-not-ready code=%s" % readiness.get("error_code", "unknown"))
+			_finish(false)
+			return
+		await get_tree().create_timer(0.25).timeout
+	print("PACKAGED_BRIDGE_PHASE=docket-ready")
 	var delay_module = DelayToolModule.new(get_tree())
 	manager.minerva_server._modules.append(delay_module)
 	manager.minerva_server._register_tool("minerva_bridge_probe_delay",

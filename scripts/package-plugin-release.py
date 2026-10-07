@@ -24,6 +24,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import secrets
 import shutil
 import subprocess
 import sys
@@ -116,7 +117,21 @@ def pack(root: Path, archive: Path) -> None:
     archive.with_name(archive.name + ".sha256").write_text(sha256(archive) + "\n", encoding="ascii")
 
 
-def probe_tools(root: Path, manifest: dict) -> None:
+def tool_name(plugin_id: str, raw: str) -> str:
+    if plugin_id == "docket" and raw.startswith("docket_"):
+        return "minerva_" + raw.replace(".", "_")
+    prefix = f"minerva_{plugin_id}_"
+    return raw if raw.startswith(prefix) else prefix + raw.replace(".", "_")
+
+
+def verify_docket_bundle(root: Path) -> None:
+    apps = list(root.glob("official/*/Docket.app"))
+    if len(apps) != 1:
+        raise SystemExit("Docket macOS package must contain one official app bundle")
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(apps[0])], check=True)
+
+
+def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
     """Run the extracted release's entrypoint and compare tools/list with the
     manifest's tools."""
     backend = manifest["backend"]
@@ -126,10 +141,19 @@ def probe_tools(root: Path, manifest: dict) -> None:
         if not os.path.exists(command) and os.path.exists(command + ".exe"):
             command += ".exe"
     stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+    env = dict(os.environ)
+    if manifest.get("panel_authority"):
+        env[manifest["panel_authority"]["secret_env"]] = secrets.token_hex(32)
+        env["MINERVA_PLUGIN_DATA_DIR"] = str(root.parent / "probe-data")
+    argv = [command, *backend.get("args", [])]
+    mac_docket = sys.platform == "darwin" and manifest["id"] == "docket"
+    if mac_docket:
+        verify_docket_bundle(root)
+        argv.append("--headless")
     process = subprocess.Popen(
-        [command, *backend.get("args", [])], cwd=root,
+        argv, cwd=root,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
-        text=True, encoding="utf-8")
+        text=True, encoding="utf-8", env=env)
     assert process.stdin is not None and process.stdout is not None
     lines: queue.Queue[str] = queue.Queue()
     threading.Thread(target=lambda: [lines.put(line) for line in process.stdout], daemon=True).start()
@@ -179,12 +203,19 @@ def probe_tools(root: Path, manifest: dict) -> None:
             process.kill()
             process.wait(timeout=5)
         stderr.close()
-    reported = {tool.get("name") for tool in listed.get("result", {}).get("tools", [])}
+        if mac_docket:
+            verify_docket_bundle(root)
+    tools = listed.get("result", {}).get("tools", [])
+    if discover:
+        return [{"name": tool_name(manifest["id"], t["name"]), "description": t.get("description", ""),
+                 "input_schema": t.get("inputSchema", {})} for t in tools]
+    reported = {tool_name(manifest["id"], tool["name"]) for tool in tools}
     declared = {tool["name"] for tool in manifest.get("tools", [])}
     if reported != declared:
         raise SystemExit(f"{manifest['id']} tools/list does not match its manifest: "
                          f"undeclared {sorted(reported - declared)}, missing {sorted(declared - reported)}")
 
+    return tools
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -194,8 +225,14 @@ def main() -> None:
     parser.add_argument("--version", help="the release's version (default: the template's)")
     parser.add_argument("--entrypoint", help="backend entrypoint for this target")
     parser.add_argument("--out", type=Path, required=True, help="directory for the archive")
+    parser.add_argument("--docket-source", type=Path, help="stage Docket from its pinned plugin source using signed upstream acquisition")
     args = parser.parse_args()
 
+    if args.docket_source:
+        args.stage.mkdir(parents=True, exist_ok=True)
+        binary = args.stage.resolve() / "docket-plugin.exe"
+        subprocess.run(["go", "build", "-mod=readonly", "-o", str(binary), "."], cwd=args.docket_source / "docket", check=True)
+        subprocess.run([str(binary), "acquire", str(args.stage.resolve() / "official")], check=True)
     version = args.version or json.loads(args.manifest.read_text(encoding="utf-8"))["version"]
     manifest = build_manifest(args.manifest, version, args.target, args.entrypoint)
     archive = args.out / f"{manifest['id']}-{version}-{args.target}.tar.gz"
@@ -203,6 +240,10 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch) / "package"
         shutil.copytree(args.stage, root, symlinks=True)
+        if args.docket_source:
+            manifest.pop("setup", None)
+            manifest["description"] = "Docket's signed upstream GUI, packaged for Minerva's required-plugin installer."
+            manifest["tools"] = probe_tools(root, manifest, discover=True)
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         check_entries(root)
         write_sums(root)

@@ -115,17 +115,12 @@ func _build_agent_system_prompt(history = null) -> Dictionary:
 	return {"prompt": prompt}
 
 
-# "agentic-base" from whichever owns Docket's files: the Docket plugin
-# (DocketHost) once it is active, else the embedded DocketManager; with
-# neither, Docket is unavailable. {prompt} ("" for none) or {error}.
+# "agentic-base" through DocketHost: {prompt} ("" for none) or {error}.
 func _docket_base_prompt() -> Dictionary:
 	var host: DocketHost = SingletonObject.docket_host
 	if host != null and host.state != "inactive":
 		return await host.system_prompt("agentic-base")
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm == null:
-		return {"error": "Docket is not available"}
-	return {"prompt": dm.get_system_prompt("agentic-base")}
+	return {"error": "Docket is not available"}
 
 
 # Why prompt `history_list` (as create_prompt returned it) must not be sent,

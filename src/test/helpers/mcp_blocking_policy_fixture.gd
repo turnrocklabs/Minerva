@@ -1,4 +1,4 @@
-extends PolicyEngine
+extends "res://test/helpers/hosted_policy_fixture.gd"
 ## Deterministic public-server policy denial without Docket or owner config.
 
 func evaluate(_tool_name: String, _arguments: Dictionary,

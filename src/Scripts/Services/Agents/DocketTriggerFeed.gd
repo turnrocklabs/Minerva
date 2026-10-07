@@ -1,10 +1,8 @@
 class_name DocketTriggerFeed
 extends RefCounted
-## DOCKET_POLL triggers under the Docket plugin, when no embedded
-## DocketManager runs. The plugin's item_changed events that carry a baseline
+## DOCKET_POLL triggers under the Docket plugin. Its item_changed events carry a baseline
 ## descriptor (one per ordinary create, transition, update, comment, delete,
-## hint_set or quality call) fire them as DocketManager's signal for that
-## call did: created, transitioned, updated or comment_added.
+## hint_set or quality call) and fire created, transitioned, updated or comment_added.
 ##
 ## A trigger's project name is bound once to one open project's path ("master"
 ## to the master's); until it names exactly one, the trigger watches nothing.
@@ -93,7 +91,7 @@ func status(trigger_id: String) -> Dictionary:
 
 
 func _on_event(plugin_id: String, event_name: String, payload: Dictionary) -> void:
-	if plugin_id != PLUGIN_ID or event_name != EVENT or SingletonObject.docket_manager != null:
+	if plugin_id != PLUGIN_ID or event_name != EVENT:
 		return
 	var generation := _process_generation()
 	if not _continuous(generation, payload):
@@ -113,12 +111,12 @@ func _on_event(plugin_id: String, event_name: String, payload: Dictionary) -> vo
 
 
 func _on_dropped(plugin_id: String, reason: String) -> void:
-	if plugin_id == PLUGIN_ID and SingletonObject.docket_manager == null:
+	if plugin_id == PLUGIN_ID:
 		_interrupt("a Docket change was not delivered: %s" % reason)
 
 
 func _on_gone(plugin_id: String) -> void:
-	if plugin_id == PLUGIN_ID and SingletonObject.docket_manager == null:
+	if plugin_id == PLUGIN_ID:
 		_queue.clear()
 		_interrupt("the Docket plugin stopped")
 

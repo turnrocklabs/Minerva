@@ -93,8 +93,7 @@ static func build_install_record(plugin_id: String, skill_entry: Dictionary, uns
 
 ## Look up an existing plugin-seeded skill record by (plugin_id, manifest skill id).
 ##
-## docket_caller: a PluginSeedingDocket (over the DocketManager, the Docket
-## plugin, or a ToolRegistry in tests); every call to it is awaited.
+## docket_caller: a PluginSeedingDocket over DocketHost; every call is awaited.
 ##
 ## Returns the full record dict, or {} if none found.
 static func find_existing_record(plugin_id: String, manifest_skill_id: String, docket_caller) -> Dictionary:

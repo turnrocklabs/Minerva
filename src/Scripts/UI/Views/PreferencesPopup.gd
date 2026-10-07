@@ -488,104 +488,43 @@ func _on_hcp_logs_button_pressed() -> void:
 
 
 # ── Vault password ──────────────────────────────────────────────────────────
-# The vault password encrypts plugin secrets (CapabilityBroker.secrets:*).
-# Stored unencrypted in user://docket_prefs.json; the OS file permissions are
-# the only protection. Loss of password = loss of all encrypted secrets, since
-# v1 has no re-encryption flow.
+# Existing Docket master vault unlock through the private host channel.
+# The password stays in memory for this session, never in preferences.
 
 ## Refresh the "Vault: configured/not configured" label and clear input fields.
 func _refresh_vault_status() -> void:
 	if _vault_status_label == null:
 		return
-	if SingletonObject.docket_manager == null:
-		var host := SingletonObject.docket_host
-		_vault_status_label.text = host.vault_status() if host != null else "Vault: unavailable."
-		if host != null and not host.vault_changed.is_connected(_refresh_vault_status):
-			host.vault_changed.connect(_refresh_vault_status)
-		%VaultLabel.text = "[b]Unlock Existing Master Vault[/b]\nPassword stays in memory for this session; resent privately after Docket restarts. New vault creation is unavailable here."
-		%VaultPasswordLabel.text = "Password:"
-		%SetVaultPasswordButton.text = "Unlock for Session"
-		_vault_confirm.get_parent().hide()
-		_vault_hint.editable = false
-		_vault_hint.text = ""
-		_vault_password.text = ""
-		_vault_confirm.text = ""
-		return
-	var has_pw: bool = not UserPrefs.load_vault_password().is_empty()
-	var dm = SingletonObject.docket_manager if "docket_manager" in SingletonObject else null
-	var has_data := false
-	if dm != null:
-		var db = dm.get_master_db() if dm.has_method("get_master_db") else dm.get_db()
-		if db != null and db.has_vault():
-			has_data = true
-	if has_pw and has_data:
-		_vault_status_label.text = "Vault: configured (contains encrypted secrets)"
-	elif has_pw:
-		_vault_status_label.text = "Vault: password set (no secrets stored yet)"
-	else:
-		_vault_status_label.text = "Vault: not configured — set a password to enable plugin secrets"
-
-	_vault_hint.text = UserPrefs.load_vault_password_hint()
+	var host := SingletonObject.docket_host
+	_vault_status_label.text = host.vault_status() if host != null else "Vault: unavailable."
+	if host != null and not host.vault_changed.is_connected(_refresh_vault_status):
+		host.vault_changed.connect(_refresh_vault_status)
+	%VaultLabel.text = "[b]Unlock Existing Master Vault[/b]\nPassword stays in memory for this session; resent privately after Docket restarts. New vault creation is unavailable here."
+	%VaultPasswordLabel.text = "Password:"
+	%SetVaultPasswordButton.text = "Unlock for Session"
+	_vault_confirm.get_parent().hide()
+	_vault_hint.editable = false
+	_vault_hint.text = ""
 	_vault_password.text = ""
 	_vault_confirm.text = ""
-	_vault_message.text = ""
 
 
-## Save the vault password from the form. Validates match + non-empty,
-## warns if it would invalidate an existing initialized vault.
+## Unlock the existing master vault for this session and clear form input.
 func _on_set_vault_password_pressed() -> void:
-	if SingletonObject.docket_manager == null:
-		var password := _vault_password.text
-		_vault_password.text = ""
-		_vault_confirm.text = ""
-		_vault_hint.text = ""
-		if password.is_empty():
-			_vault_message.text = "Enter a nonempty password."
-			return
-		%SetVaultPasswordButton.disabled = true
-		var host := SingletonObject.docket_host
-		var result := await host.unlock_vault(password) if host != null else "Vault: unavailable."
-		password = ""
-		%SetVaultPasswordButton.disabled = false
-		_refresh_vault_status()
-		_vault_message.text = result
-		return
-	var new_pw: String = _vault_password.text
-	var confirm: String = _vault_confirm.text
-	var hint: String = _vault_hint.text
-
-	if new_pw.is_empty():
-		_vault_message.text = "Password cannot be empty."
-		return
-
-	if new_pw != confirm:
-		_vault_message.text = "Passwords do not match."
-		return
-
-	# If a vault has already been initialized in the active docket, check
-	# whether the new password derives the same key. If not, the existing
-	# secrets become unreadable until the user sets the matching password
-	# back. v1 doesn't re-encrypt — flag this clearly.
-	var dm = SingletonObject.docket_manager if "docket_manager" in SingletonObject else null
-	if dm != null:
-		var db = dm.get_master_db() if dm.has_method("get_master_db") else dm.get_db()
-		if db != null and db.has_vault():
-			var salt := db.get_vault_salt()
-			var key := VaultCrypto.derive_key(new_pw, salt)
-			if not db.verify_vault(key):
-				_vault_message.text = "Warning: this password does not match the existing vault — already-stored secrets will be unreadable until the matching password is set. Saving anyway."
-
-	UserPrefs.save_vault_password(new_pw)
-	UserPrefs.save_vault_password_hint(hint)
-
-	# Append to whatever warning we may have already shown.
-	var prefix: String = ""
-	if not _vault_message.text.is_empty():
-		prefix = _vault_message.text + " "
-	_vault_message.text = prefix + "Saved."
+	var password := _vault_password.text
 	_vault_password.text = ""
 	_vault_confirm.text = ""
+	_vault_hint.text = ""
+	if password.is_empty():
+		_vault_message.text = "Enter a nonempty password."
+		return
+	%SetVaultPasswordButton.disabled = true
+	var host := SingletonObject.docket_host
+	var result := await host.unlock_vault(password) if host != null else "Vault: unavailable."
+	password = ""
+	%SetVaultPasswordButton.disabled = false
 	_refresh_vault_status()
+	_vault_message.text = result
 
 
 #region OpenRouter Models Tab

@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless test of plugin content seeding (PluginContentSeeding and its
 ## seeders) when the Docket plugin owns Minerva's projects: DocketHost is the
-## owner, the embedded DocketManager set aside, and every seeding call goes
+## host adapter, and every seeding call goes
 ## through PluginSeedingDocket to the project it was bound to.
 ## - lifecycle: an install seeds skills in the master and knowledge in its
 ##   named project, every call naming its project; an update keeps a person's
@@ -81,6 +81,8 @@ var fail_after := {}
 var failed_at := -1
 var after_call := Callable()
 var next_id := 100
+var create_defaults := {}
+var failing_tools := []
 func process_generation() -> int:
 	return generation
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
@@ -90,6 +92,8 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 		after_call.call(tool, arguments)
 	return answer
 func _handle(tool: String, arguments: Dictionary) -> Dictionary:
+	if tool in failing_tools:
+		return {"error": "injected write failure"}
 	if tool == "docket_project_list":
 		return {"success": true, "projects": projects.duplicate(true)}
 	if not tool in ["docket_flush", "docket_query", "docket_get", "docket_create", "docket_update",
@@ -124,7 +128,7 @@ func _handle(tool: String, arguments: Dictionary) -> Dictionary:
 		"docket_create":
 			next_id += 1
 			id = "019f0000aaaabbbbccccddddeee%05d" % next_id
-			var created := arguments.duplicate(true)
+			var created := create_defaults.merged(arguments, true)
 			created.erase("project")
 			created.merge({"id": id, "status": "draft", "_path": path}, true)
 			items[id] = created
@@ -275,7 +279,6 @@ func _run() -> void:
 	for path in USER_FILES:
 		if not check("the throwaway profile holds no %s yet" % path, not FileAccess.file_exists(path)):
 			return
-	var saved_manager = _so.docket_manager
 	var saved_host = _so.docket_host
 	var saved_registry = _so.plugin_tool_registry
 	_so.plugin_tool_registry = null
@@ -283,7 +286,6 @@ func _run() -> void:
 		await _test_lifecycle()
 		await _test_interrupted_update()
 		await _test_interruptions()
-	_so.docket_manager = saved_manager
 	_so.docket_host = saved_host
 	_so.plugin_tool_registry = saved_registry
 	if _pm != null:
@@ -311,9 +313,8 @@ func _set_up() -> bool:
 	_host_manager.authority = authority
 	root.add_child(_host_manager)
 	root.add_child(_host)
-	_so.docket_manager = null
 	_so.docket_host = _host
-	_host.start(_host_manager, false)
+	_host.start(_host_manager)
 	_host_manager.plugin_ready.emit("docket")
 	var ready := await _wait(func(): return _host.state in ["ready", "degraded"])
 	if not check("DocketHost sets up the plugin as the owner", ready, "%s %s" % [_host.state, _host.problems]):
@@ -566,15 +567,146 @@ func _test_interruptions() -> void:
 	_host_manager.connection = null
 	_host_manager.plugin_stopped.emit("docket")
 	var reached_before: Dictionary = _store.reached.duplicate()
-	var other := _def("seedlate", "1.0.0", "Work", "", "late", "late tip")
+	var other := _def("seedlate", "1.0.0", "Work", "1. late", "late", "late tip")
+	_db.plugins[other.id] = other
 	var skipped: Dictionary = await Seeding.seed_install(_pm, other, true, {})
+	var skill_only := _def("seedskills", "1.0.0", "", "1. later", "", "")
+	skill_only.knowledge.clear()
+	_db.plugins[skill_only.id] = skill_only
+	await Seeding.seed_install(_pm, skill_only, true, {})
+	var empty := _def("seedempty", "1.0.0", "", "", "", "")
+	empty.skills.clear()
+	empty.knowledge.clear()
+	var empty_seed: Dictionary = await Seeding.seed_install(_pm, empty, true, {})
+	var empty_update: Dictionary = await Seeding.reconcile(_pm, empty, empty, {"collected": true}, true)
+	check("unavailable content-free installs and updates complete without a repair intent",
+		Seeding.complete(empty_seed) and Seeding.complete(empty_update) and _pending(empty.id).is_empty() and _store.reached == reached_before)
 	var removed: Dictionary = await _pm.remove_plugin(id)
 	var waiting := _pending(id)
-	check("with the plugin stopped, an install and an uninstall say their content was not done",
-		"unavailable" in skipped.get("content_skipped", "") and removed.get("ok", false)
+	check("with the plugin stopped, an install defers and an uninstall says its content was not done",
+		skipped.has("content_deferred") and removed.get("ok", false)
 		and "unavailable" in removed.get("content_skipped", ""), [skipped, removed])
 	check("neither reached Docket, and the uninstall keeps its cleanup, its open projects unknown",
 		_store.reached == reached_before and waiting.size() == 1 and waiting[0].journal.get("enumerated") == null,
 		waiting)
 	for entry in waiting:
 		load(TXN_GD).content_done(entry.path)
+	check("approved deferred content is retained without reaching Docket",
+		_pending(other.id).size() == 1 and _pending(other.id)[0].committed and _store.reached == reached_before)
+	var declined: Dictionary = await Seeding.seed_install(_pm, other, false, {"collected": true, "seed": false})
+	check("declining content while unavailable creates no additional intent", declined.get("skills_declined", false) and _pending(other.id).size() == 1)
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	other.version = "2.0.0"
+	_store.failing_flush = ["master"]
+	await _pm.reconcile_recovered()
+	check("a changed manifest is visibly stale and cannot replay old content", _pending(other.id).size() == 1 \
+		and _pm.get_plugin_status(other.id).content_pending[0].stale and _record("minerva_seedlate_guide").is_empty())
+	var flushes: int = _store.reached.get("docket_flush", 0)
+	await _pm.reconcile_recovered()
+	check("a skills-only retry confirms the failed save even when records already exist",
+		_pending(skill_only.id).size() == 1 and _store.reached.get("docket_flush", 0) > flushes)
+	_store.failing_flush = []
+	other.version = "1.0.0"
+	var reviewed: Dictionary = _pending(other.id)[0]
+	reviewed.journal.erase("stale")
+	load(TXN_GD).requeue_content(reviewed.path, other.id, reviewed.journal, true)
+	_store.failing_flush = ["work"]
+	await _pm.reconcile_recovered()
+	check("a failed deferred save retains its file bindings", _pending(other.id).size() == 1 and _pending(other.id)[0].journal.has("paths"))
+	_store.failing_flush = []
+	_store.projects[1] = _project("work", WORK_B)
+	var before_rebind: int = _store.sent.size()
+	await _pm.reconcile_recovered()
+	check("reopened project names cannot redirect a deferred retry",
+		_pending(other.id).size() == 1 and _pending(other.id)[0].journal.paths.Work == WORK_A \
+		and _store.sent.slice(before_rebind).all(func(call): return call[0] in ["docket_query", "docket_get", "docket_flush"]))
+	_store.projects[1] = _project("work", WORK_A)
+	await _pm.reconcile_recovered()
+	check("Docket readiness applies approved skills and knowledge and drains the intent",
+		_pending(other.id).is_empty() and not _record("minerva_seedlate_note").is_empty() and _record("minerva_seedlate_guide").get("article") == "late")
+	var sent: int = _store.sent.size()
+	await _pm.reconcile_recovered()
+	check("a drained intent does not seed twice", _store.sent.size() == sent)
+	var abandoned := {"attempted": other.to_dict(), "deferred_install": true}
+	var Txn = load(TXN_GD)
+	var abandoned_path: String = Txn.queue_install(_staging, other.id, abandoned)
+	Txn.requeue_content(abandoned_path, other.id, abandoned, false)
+	await _pm.reconcile_recovered()
+	check("an uncommitted never-applied intent is discarded without writes", _pending(other.id).is_empty() and _store.sent.size() == sent)
+	var docket := _def("docket", "1.0.0", "", "", "", "")
+	docket.autostart = true
+	_db.plugins[docket.id] = docket
+	_pm._launch_autostart = true
+	check("a reused profile remains retriable before Docket autostart reaches it", _pm.docket_pickup_pending())
+	docket.autostart = false
+	check("a deliberately stopped Docket is not waiting for autostart", not _pm.docket_pickup_pending())
+	_pm._launch_autostart = false
+	_host_manager.connection = null
+	_host_manager.plugin_stopped.emit("docket")
+	var missing := _def("seedmissing", "1.0.0", "Later", "", "later", "later tip")
+	_db.plugins[missing.id] = missing
+	await Seeding.seed_install(_pm, missing, true, {})
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	await _pm.reconcile_recovered()
+	check("a never-opened project retains an explicitly unbound path", _pending(missing.id).size() == 1 and _pending(missing.id)[0].journal.paths.Later == "")
+	_store.projects.append(_project("later", WORK_C, "Later"))
+	await _pm.reconcile_recovered()
+	check("a never-bound path can bind once its project opens", _pending(missing.id).is_empty() and _record("minerva_seedmissing_guide", WORK_C).get("article") == "later")
+	_host_manager.connection = null
+	_host_manager.plugin_stopped.emit("docket")
+	var newer := _def(other.id, "2.0.0", "Work", "1. new", "new", "new tip")
+	_db.plugins[newer.id] = newer
+	var deferred: Dictionary = await Seeding.reconcile(_pm, other, newer, {"collected": true, "seed_new": false}, true)
+	check("an unavailable update retains its recorded consent and prior manifest", deferred.has("content_deferred") and _pending(other.id)[0].journal.deferred_update.consent.seed_new == false)
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	await _pm.reconcile_recovered()
+	check("an approved update replays reconciliation of existing pristine content", _pending(other.id).is_empty() \
+		and _record("minerva_seedlate_note").get("steps") == "1. new" and _record("minerva_seedlate_guide").get("article") == "new")
+	var move_guide := _record("minerva_seedlate_guide", WORK_A)
+	move_guide.article = "MY LATE GUIDE"
+	var moved := _def(other.id, "3.0.0", "Other", "1. new", "moved", "moved tip")
+	_db.plugins[moved.id] = moved
+	_host_manager.connection = null
+	_host_manager.plugin_stopped.emit("docket")
+	await Seeding.reconcile(_pm, newer, moved, {"collected": true, "seed_new": true}, true)
+	var rollback := {"attempted": newer.to_dict(), "knowledge_written": false, "entries": [],
+		"paths": {"": _store.master.path, "Work": WORK_A, "Other": OTHER}}
+	var rollback_path: String = Txn.queue_install(_staging, other.id, rollback)
+	Txn.requeue_content(rollback_path, other.id, rollback, false)
+	var pending_count: int = _pending(other.id).size()
+	var rolled_back: Dictionary = await Seeding.reconcile_after_rollback(_pm, newer, rollback)
+	check("an unavailable rollback retains its original intent without queuing a forward update",
+		not Seeding.complete(rolled_back) and _pending(other.id).size() == pending_count \
+		and Txn.content_pending(_staging).any(func(entry: Dictionary) -> bool: return entry.path == rollback_path and not entry.committed and entry.journal.paths.Work == WORK_A))
+	Txn.content_done(rollback_path)
+	_host_manager.connection = _store
+	_host_manager.plugin_ready.emit("docket")
+	await _wait(func(): return _host.state in ["ready", "degraded"])
+	_store.after_call = func(tool: String, args: Dictionary):
+		if tool == "docket_flush" and args.get("project") == "other": _store.failing_flush = ["work"]
+	await _pm.reconcile_recovered()
+	check("a deferred move retains its journal when committed cleanup cannot save", _pending(other.id).size() == 1 and not str(_pending(other.id)[0].get("reason", "")).is_empty())
+	_store.after_call = Callable()
+	_store.failing_flush = []
+	await _pm.reconcile_recovered()
+	check("a deferred committed move cleans Work and preserves the person's article",
+		_pending(other.id).is_empty() and _record("minerva_seedlate_tip", WORK_A).is_empty() \
+		and move_guide.get("source") == "user" and move_guide.article == "MY LATE GUIDE" and move_guide.get("deprecated") == false \
+		and _record("minerva_seedlate_guide", OTHER).get("article") == "moved")
+	var stale := {"attempted": other.to_dict(), "deferred_install": true, "stale": true}
+	var prior_path: String = Txn.queue_install(_staging, other.id, stale)
+	var prior: Dictionary = _pending(other.id)[0]
+	check("only a newer approved version supersedes a stale intent", Txn.can_supersede(prior, "3.0.0", true, "2.0.0") \
+		and not Txn.can_supersede(prior, "3.0.0", false) and not Txn.can_supersede(prior, "1.0.0", true))
+	var op_path := _staging.path_join("op_supersede")
+	var before_supersede: Dictionary = _store.items.duplicate(true)
+	Txn.save_content(op_path, other.id, {"attempted": newer.to_dict(), "not_applied": true, "superseded_content": [prior_path]})
+	check("before commit the earlier partial-content intent stays live", not _pending(other.id)[0].journal.has("superseded"))
+	check("commit supersedes while preserving the prior journal for review", Txn.mark_committed(op_path) \
+		and _store.items == before_supersede and Txn.content_pending(_staging).any(func(entry: Dictionary) -> bool: return entry.path == prior_path and entry.journal.has("superseded")))

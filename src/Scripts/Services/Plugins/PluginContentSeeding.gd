@@ -37,17 +37,20 @@ const SKILL_CONTENT := Knowledge.SKILL_CONTENT
 ## install transaction (consent.journal_dir) the operation's Docket journal
 ## is saved first, so a rollback unseeds what this seeds; if it cannot be,
 ## nothing is seeded.
-static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) -> Dictionary:
-	var docket_caller := docket()
-	var why := docket_caller.unavailable()
-	if not why.is_empty():
-		return {"content_skipped": _unreached(def, "seeded", why)}
+static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary, operation: SeedingDocket = null) -> Dictionary:
+	var docket_caller := operation if operation != null else docket()
 	var resolved: Array = SkillSeeder.resolve_deps(def, available_tools(manager))
 	var accepted: bool = bool(consent.get("seed", false)) if consent.get("collected", false) else auto_confirm
 	if not auto_confirm and not consent.get("collected", false):
 		accepted = await SkillConsent.ask_seed(manager, def, resolved)
 	if not accepted:
 		return {"skills_seeded": 0, "skills_skipped": 0, "skills_deferred_to_update": 0, "skills_declined": true}
+	var why := docket_caller.unavailable()
+	if not why.is_empty():
+		if def.skills.is_empty() and def.knowledge.is_empty(): return {}
+		if not _save_journal(consent, def, {"attempted": def.to_dict(), "deferred_install": true}):
+			return {"content_skipped": _skipped(def, consent)}
+		return {"content_deferred": "Content will be added when Docket is ready."}
 
 	var knowledge_plan: Dictionary = await Knowledge.plan(def, docket_caller) if not def.knowledge.is_empty() else {}
 	var journal := _journal(def, {}, knowledge_plan, {}, "")
@@ -64,7 +67,7 @@ static func seed_install(manager, def, auto_confirm: bool, consent: Dictionary) 
 	}
 	# The master's new skills are settled in its file (a failed save shows).
 	var failed: int = materialised.get("failed", 0)
-	if (materialised.get("seeded", 0) > 0 or failed > 0) and not await docket_caller.settle(""):
+	if (materialised.get("seeded", 0) > 0 or failed > 0 or consent.has("journal_path")) and not await docket_caller.settle(""):
 		failed += 1
 	if failed > 0:
 		seeded["skills_failed"] = failed
@@ -100,7 +103,16 @@ static func reconcile(manager, previous_def, def, consent: Dictionary, auto_conf
 	var result := {}
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
-		return {"content_skipped": _unreached(def, "updated", why)}
+		if consent.get("rollback", false): return {"content_skipped": why}
+		if def.skills.is_empty() and def.knowledge.is_empty() and previous_def.skills.is_empty() and previous_def.knowledge.is_empty():
+			return {}
+		var recorded := {}
+		for field in ["collected", "seed_new", "update_decisions", "update_seen"]:
+			if consent.has(field): recorded[field] = consent[field]
+		var journal := {"attempted": def.to_dict(), "deferred_install": true,
+			"deferred_update": {"previous": previous_def.to_dict(), "consent": recorded}}
+		if not _save_journal(consent, def, journal): return {"content_skipped": _skipped(def, consent)}
+		return {"content_deferred": "Content will be added when Docket is ready."}
 
 	# Phase 1: classify each skill and knowledge action (no docket writes yet).
 	var plan: Dictionary = await SkillSeeder.plan_reconcile(def, available_tools(manager), docket_caller)
@@ -335,7 +347,7 @@ static func _consent_holds(seen: Dictionary, action: Dictionary, knowledge_proje
 static func complete(result: Dictionary) -> bool:
 	var knowledge: Dictionary = result.get("knowledge", {})
 	var retired: Dictionary = result.get("knowledge_retired", {})
-	return not result.has("content_skipped") and not result.has("content_incomplete") \
+	return not result.has("content_deferred") and not result.has("content_skipped") and not result.has("content_incomplete") \
 		and result.get("reconcile", {}).get("failed", 0) == 0 \
 		and knowledge.get("failed", 0) == 0 and not knowledge.has("missing_project") \
 		and not result.has("knowledge_missing_project") \
@@ -346,6 +358,8 @@ static func complete(result: Dictionary) -> bool:
 ## Why a result that is not complete() did not finish, for the person.
 static func unfinished_reason(result: Dictionary) -> String:
 	var reasons: Array[String] = []
+	if result.has("content_deferred"):
+		reasons.append(str(result.content_deferred))
 	if result.has("content_skipped"):
 		reasons.append(str(result.content_skipped))
 	if result.has("content_incomplete"):
@@ -392,14 +406,12 @@ static func content_committed(journal: Dictionary) -> bool:
 
 ## content_committed, saying why it did not finish ("" when it did). A
 ## journal that names what the install applied and retired nothing needs no
-## Docket; one that does not say (absent or unreadable) is only taken for
-## that by the embedded owner, as before: under the plugin it waits.
+## Docket; one that does not say (absent or unreadable) waits.
 static func content_committed_problem(journal: Dictionary) -> String:
 	var docket_caller := docket()
 	var retired := str(journal.get("retired_project", ""))
 	if not journal.get("attempted") is Dictionary:
-		return "its Docket record cannot be read, so it is not repaired automatically" \
-			if docket_caller.plugin_owner() else ""
+		return "its Docket record cannot be read, so it is not repaired automatically"
 	if retired.is_empty():
 		return ""
 	await docket_caller.pin(journal, [retired])
@@ -486,27 +498,19 @@ static func available_tools(manager) -> Dictionary:
 	return available
 
 
-## Tests point this at their own Docket (a ToolRegistry, or a
-## PluginSeedingDocket over whatever stands in for it).
+## Tests supply a PluginSeedingDocket over their own hosted protocol fixture.
 static var docket_override = null
 
 
-## Docket as seeding reaches it (PluginSeedingDocket), from whichever owns
-## Docket's files: the embedded DocketManager while it exists, else the
-## Docket plugin through DocketHost, even while that cannot be reached (the
-## seeding is then reported, never done in the embedded one's place).
+## Docket as seeding reaches it through DocketHost. An unavailable owner
+## is reported; no other owner is used in its place.
 static func docket() -> SeedingDocket:
 	if docket_override is SeedingDocket:
 		return docket_override
-	if docket_override != null:
-		return SeedingDocket.new(docket_override, false)
-	if typeof(SingletonObject) != TYPE_NIL and "docket_manager" in SingletonObject \
-			and SingletonObject.docket_manager != null:
-		return SeedingDocket.new(SingletonObject.docket_manager, false)
 	var host = SingletonObject.get("docket_host") if typeof(SingletonObject) != TYPE_NIL else null
 	if host != null and host.state != "inactive":
-		return SeedingDocket.new(host, true)
-	return SeedingDocket.new(null, false)
+		return SeedingDocket.new(host)
+	return SeedingDocket.new(null)
 
 
 ## The Docket journal for applying `def`: the definition, the project a move
@@ -554,7 +558,21 @@ static func _journal(def, plan: Dictionary, knowledge_plan: Dictionary, decision
 ## Save `journal` as the Docket journal of the install transaction in
 ## consent.journal_dir (none: nothing to save). Returns whether it is saved.
 static func _save_journal(consent: Dictionary, def, journal: Dictionary) -> bool:
+	for field in ["superseded_content", "deferred_update"]:
+		if consent.has(field): journal[field] = consent[field]
+	var path := str(consent.get("journal_path", ""))
+	if not path.is_empty():
+		journal["deferred_install"] = true
+		if consent.has("bound_paths"):
+			var paths: Dictionary = journal.get("paths", {})
+			for name: String in consent.bound_paths:
+				if not str(consent.bound_paths[name]).is_empty(): paths[name] = consent.bound_paths[name]
+			journal["paths"] = paths
+		consent["saved_journal"] = journal
+		return Txn.requeue_content(path, def.id, journal, true)
 	var journal_dir := str(consent.get("journal_dir", ""))
+	if journal_dir.is_empty() and journal.get("deferred_install", false):
+		return not Txn.queue_install(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), def.id, journal).is_empty()
 	return journal_dir.is_empty() or Txn.save_content(journal_dir, def.id, journal)
 
 

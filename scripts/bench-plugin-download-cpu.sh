@@ -15,6 +15,8 @@ GODOT="${GODOT:-godot}"
 size_mib="${1:-64}"
 rate_mib="${2:-8}"
 work="$(mktemp -d)"
+source "$REPO_ROOT/scripts/lib/test-profile.sh"
+seed_test_profile "$work/profile"
 port=$(( 30000 + RANDOM % 20000 ))
 server=
 trap 'kill "$server" 2>/dev/null; rm -rf "$work"' EXIT

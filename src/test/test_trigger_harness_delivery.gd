@@ -54,6 +54,7 @@ var _fail := 0
 ## resolved as a node at runtime rather than by identifier.
 var _so: Node = null
 var _saved_chats = null
+var _hosted_docket := preload("res://test/helpers/hosted_trigger_fixture.gd").new()
 ## Real PreferencesPopup + NotesContainers for the host fields the real render
 ## path reads; without them the production code renders against nulls.
 var _host_render := preload("res://test/helpers/chat_host_render_fixture.gd").new()
@@ -74,10 +75,12 @@ func _run() -> void:
 	check("S0: the SingletonObject autoload is live", _so != null)
 	if _so == null:
 		return
+	_hosted_docket.install(_so)
 	_saved_chats = _so.Chats
 	_host_render.install(_so)
 	await _test_triggers_deliver_to_harness_sessions()
 	_host_render.restore()
+	_hosted_docket.restore()
 
 
 func check(label: String, ok: bool, detail: String = "") -> void:
@@ -294,8 +297,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		{"interval_seconds": 5.0})
 	_so.note_changed.emit(null)
 	tm._on_schedule_check()
-	if _so.docket_manager != null:
-		_so.docket_manager.item_created.emit("t10item", "bug", "t10project")
+	await _hosted_docket.emit_created("t10project", "t10item", tm.docket_feed)
 	if _so.plugin_event_broker != null:
 		_so.plugin_event_broker.plugin_event.emit("t10plugin", "ping", {})
 	for trig in [note_trig, time_trig, docket_trig, plugin_trig, timer_trig]:
@@ -472,9 +474,9 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 			and module.relay_calls.size() == calls_at_swap, str(r15))
 
 	# T16 — the plugin-event limit counts deliveries started, not fires folded in.
-	check("T16/T17: the plugin event broker and docket manager exist",
-		_so.plugin_event_broker != null and _so.docket_manager != null)
-	if _so.plugin_event_broker == null or _so.docket_manager == null:
+	check("T16/T17: the plugin event broker and hosted Docket exist",
+		_so.plugin_event_broker != null and _so.docket_host != null)
+	if _so.plugin_event_broker == null or _so.docket_host == null:
 		TriggerDestination.address_tools = null
 		_so.trigger_manager.harness_delivery.tools = app_delivery_tools
 		_so.agent_registry.remove_agent(agent.id)
@@ -506,16 +508,14 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	check("T16: re-enabling resumes it", module.relay_calls.size() == calls_at_limit + 1
 		and _sent_containing(module, "T16 e5") == 1, str(module.relay_calls.size()))
 
-	# T17 — two triggers on one event source each keep their own handler:
-	# edits, disable and re-enable of one leave one handler each, and deleting
-	# one leaves the other connected and delivering.
-	var sources_watched: Array[Signal] = [_so.note_changed, _so.docket_manager.item_created]
-	var baseline: Array = sources_watched.map(func(sig: Signal) -> int: return _handlers_for(tm, sig))
+	# T17 — note handlers remain per-trigger; hosted Docket has one shared
+	# feed whose served triggers change on edit, disable, re-enable and delete.
+	var baseline_note := _handlers_for(tm, _so.note_changed)
+	var baseline_docket: int = tm.docket_feed._served().size()
 	var handlers_are := func(extra: int) -> bool:
-		for i in sources_watched.size():
-			if _handlers_for(tm, sources_watched[i]) != baseline[i] + extra:
-				return false
-		return true
+		return _handlers_for(tm, _so.note_changed) == baseline_note + extra \
+			and _handlers_for(tm.docket_feed, _so.plugin_event_broker.plugin_event) == 1 \
+			and tm.docket_feed._served().size() == baseline_docket + extra
 	var once_note := await _harness_trigger(tm, "once note", "codex@Codex Bare", "T17 note", TriggerDefinition.TriggerType.EVENT,
 		{"event_type": TriggerDefinition.EventType.NOTE_CHANGED})
 	var twin_note := await _harness_trigger(tm, "twin note", "codex@Codex Bare", "T17 twin", TriggerDefinition.TriggerType.EVENT,
@@ -524,17 +524,17 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 		{"docket_project": "t17project"})
 	var twin_docket := await _harness_trigger(tm, "twin docket", "codex@Codex Bare", "", TriggerDefinition.TriggerType.DOCKET_POLL,
 		{"docket_project": "t17project"})
-	check("T17: a second trigger on the same source gets its own handler", handlers_are.call(2))
+	check("T17: a second trigger is served once by its source", handlers_are.call(2))
 	for trig: TriggerDefinition in [once_note, once_docket]:
 		tm.update_trigger(trig.id, TriggerDefinition.deserialize(trig.serialize()))
 		tm.update_trigger(trig.id, TriggerDefinition.deserialize(trig.serialize()))
 		tm.set_trigger_enabled(trig.id, false)
-	check("T17: disabling one leaves only the other's handler", handlers_are.call(1))
+	check("T17: disabling one leaves only the other served", handlers_are.call(1))
 	for trig: TriggerDefinition in [once_note, once_docket]:
 		tm.set_trigger_enabled(trig.id, true)
-	check("T17: after two edits and a re-enable each trigger has exactly one handler", handlers_are.call(2))
+	check("T17: after two edits and a re-enable each trigger is served exactly once", handlers_are.call(2))
 	_so.note_changed.emit(null)
-	_so.docket_manager.item_created.emit("t17item", "bug", "t17project")
+	await _hosted_docket.emit_created("t17project", "t17item", tm.docket_feed)
 	for trig: TriggerDefinition in [once_note, twin_note, once_docket, twin_docket]:
 		await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"])
 	check("T17: each trigger delivers each event exactly once",
@@ -543,7 +543,7 @@ func _test_triggers_deliver_to_harness_sessions() -> void:
 	tm.remove_trigger(once_note.id)
 	tm.remove_trigger(once_docket.id)
 	_so.note_changed.emit(null)
-	_so.docket_manager.item_created.emit("t17gone", "bug", "t17project")
+	await _hosted_docket.emit_created("t17project", "t17gone", tm.docket_feed)
 	for trig: TriggerDefinition in [twin_note, twin_docket]:
 		await _await_receipt(tm, trig.id, ["handed_to_harness", "failed"])
 	check("T17: deleting one removes only its handler; the other still delivers",
@@ -995,7 +995,7 @@ func _await_receipt(tm: Node, trigger_id: String, statuses: Array, seconds: floa
 
 
 ## How many of `tm`'s handlers are connected to `sig`.
-func _handlers_for(tm: Node, sig: Signal) -> int:
+func _handlers_for(tm: Object, sig: Signal) -> int:
 	var count: int = 0
 	for connection: Dictionary in sig.get_connections():
 		var callable: Callable = connection.callable

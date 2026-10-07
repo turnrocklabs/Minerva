@@ -106,6 +106,7 @@ func _run() -> void:
 	if so == null:
 		check("SingletonObject autoload is available for lifecycle coverage", false)
 		return
+	so.get_mcp_manager().minerva_server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 
 	var tools = load(TOOLS_SCRIPT_PATH).new(null)
 

@@ -37,8 +37,7 @@ extends "res://test/helpers/docket_owner_suite.gd"
 ## itself); the two tools the master-shaped rules govern (StandInTools); and,
 ## for the dispatch, a running plugin (RUNNING_PLUGIN_MANAGER_SRC) whose
 ## backend records what it is sent (RECORDING_CONNECTION_SRC).
-## The embedded DocketManager is set aside while the test runs, so the plugin
-## owns the policy.
+## The hosted plugin owns the policy.
 
 const CONTEXT_PATH := "res://Scripts/Services/MCP/MCPExecutionContext.gd"
 const USER_FILES := ["user://docket_host_session.json", "user://docket_host_session.json.new"]
@@ -204,12 +203,13 @@ signal backend_tool_called(id: String, tool: String)
 var connection = null
 var authority = null
 var guard := Callable()
+var running := true
 func get_connection(_id: String):
 	return connection
 func get_panel_authority(_id: String):
 	return authority
 func get_plugin_status(_id: String) -> Dictionary:
-	return {"running": true}
+	return {"running": running}
 func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
 	guard = backend_guard
 """
@@ -279,7 +279,6 @@ func _run() -> void:
 		if FileAccess.file_exists(path):
 			check("the throwaway profile holds no %s yet" % path, false)
 			return
-	var saved_manager = _so.docket_manager
 	var saved_host = _so.docket_host
 	await _test_policy_owner()
 	if _connection != null:
@@ -287,9 +286,8 @@ func _run() -> void:
 		await _test_skill_scopes()
 		await _test_recovery_tools()
 	await _test_docket_tool_names()
-	_so.docket_manager = saved_manager
 	_so.docket_host = saved_host
-	# The server's rules come from the embedded Docket again.
+	# Clear cached rules after restoring the host.
 	_so.get_mcp_manager().minerva_server.policy_engine.reload()
 	for node in _made:
 		if is_instance_valid(node):
@@ -338,9 +336,8 @@ func _test_policy_owner() -> void:
 	if host == null:
 		return
 	root.add_child(host)
-	_so.docket_manager = null
 	_so.docket_host = host
-	host.start(manager, false)
+	host.start(manager)
 	manager.plugin_ready.emit("docket")
 	var ready := await _wait(func(): return host.state in ["ready", "degraded"])
 	check("DocketHost sets up the plugin as the owner, with the master open",
@@ -400,6 +397,26 @@ func _test_policy_owner() -> void:
 	# With no policy in force the call runs.
 	var allowed := await _governed_call()
 	check("once no policy is in force the call runs", _ran(allowed), str(allowed).left(200))
+	host.state = "starting"
+	var startup: Dictionary = await _governed_call()
+	var server = _so.get_mcp_manager().minerva_server
+	var status: Dictionary = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("startup refuses immediately with observable retryability and no governed execution",
+		startup.get("error_code") == "docket_not_ready" and startup.get("retryable", false) \
+		and not _ran(startup) and status.get("error_code") == "docket_not_ready", str(startup))
+	host.state = "unavailable"
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("RUNNING before plugin_ready remains retryable", status.get("retryable", false) and status.get("error_code") == "docket_not_ready", str(status))
+	manager.running = false
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("a stopped plugin remains non-retryable", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
+	manager.running = true
+	host.state = "failed"
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("failed setup remains non-retryable even with a running plugin", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
+	host.state = "ready"
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("the ungoverned readiness probe succeeds once Docket is ready", status.get("success", false), str(status))
 
 	# A policy that cannot be read refuses the call rather than allow it.
 	connection.query_fails = true

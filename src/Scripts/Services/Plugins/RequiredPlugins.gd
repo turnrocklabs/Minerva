@@ -28,20 +28,39 @@ const REPO := "turnrocklabs/Minerva"
 ## Each plugin's display name and the tools Minerva itself calls on it (a
 ## release that lacks one is refused at start: host_tools_missing). Keep them
 ## in step with the callers: MCPTerminalTools, PassthroughLaunchDialog and
-## BundledVoiceDetectorAdapter.
+## BundledVoiceDetectorAdapter, DocketHost/PluginSeedingDocket,
+## DocketSubscriptionFeed, DocketCapabilityRoute, SessionHandover and open_docket_panel.
 const PLUGINS := {
 	"agent_relay": {"name": "Agent Relay", "host_tools": [
 		"minerva_agent_relay_watch_start", "minerva_agent_relay_watch_status", "minerva_agent_relay_send"]},
 	"voice": {"name": "Voice Support", "host_tools": ["minerva_voice_configure", "minerva_voice_start"]},
+	"docket": {"name": "Docket", "auto_update": true, "host_tools": [
+		"minerva_docket_query", "minerva_docket_get", "minerva_docket_comment",
+		"minerva_docket_create", "minerva_docket_update", "minerva_docket_transition", "minerva_docket_delete",
+		"minerva_docket_reassign",
+		"minerva_docket_project_list", "minerva_docket_project_add", "minerva_docket_project_remove",
+		"minerva_docket_flush", "minerva_docket_gui_open",
+		"minerva_docket_secret_get", "minerva_docket_secret_set", "minerva_docket_secret_delete",
+		"minerva_docket_subscribe", "minerva_docket_changes_since", "minerva_docket_ack"]},
 }
 ## The GitHub Releases API listing the pickup reads, newest first, a page at a
 ## time (tests point it at a local fixture).
-static var releases_url := "https://api.github.com/repos/%s/releases" % REPO
+static var releases_url := _initial_releases_url(OS.get_environment("MINERVA_REQUIRED_RELEASES_URL"))
 ## App builds share the listing, so a rarely released plugin can sit many pages
 ## back; the pickup stops at a short page, once every required plugin has a
 ## release, or after this many pages.
 const MAX_RELEASE_PAGES := 10
 const RELEASES_PER_PAGE := 100
+
+
+static func _initial_releases_url(override: String) -> String:
+	if not override.is_empty():
+		var loopback := RegEx.new()
+		loopback.compile("^https?://(?:127[.]0[.]0[.]1|localhost|\\[::1\\])(?::[0-9]+)?(?:/|$)")
+		if loopback.search(override.to_lower()) != null:
+			return override
+		push_warning("[RequiredPlugins] Ignoring non-loopback MINERVA_REQUIRED_RELEASES_URL")
+	return "https://api.github.com/repos/%s/releases" % REPO
 
 
 static func has(plugin_id: String) -> bool:
@@ -77,8 +96,9 @@ static func host_tools_missing(def: PluginDefinition, conn) -> String:
 		return "%s %s could not list its tools (%s); it was stopped." % [
 			display_name(def.id), def.version, conn.last_failure_reason if not conn.last_failure_reason.is_empty() else "tools/list failed"]
 	var listed: Array[String] = []
+	var registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
 	for tool in tools:
-		listed.append(str(tool.name))
+		listed.append(registry._apply_prefix(def.id, str(tool.name)))
 	var lacking: Array[String] = []
 	for name in PLUGINS.get(def.id, {}).get("host_tools", []):
 		if not name in listed:
@@ -243,6 +263,7 @@ static func _on_installed(manager, job, fresh: bool, stops: int) -> void:
 	if fresh and not healed_meanwhile:
 		var legacy = manager.get_db().legacy_autostart(id)
 		manager.get_db().set_autostart(id, true if legacy == null else bool(legacy))
+		manager.get_db().set_auto_update(id, bool(PLUGINS[id].get("auto_update", false)))
 	_start_if_wanted(manager, id, stops)
 
 

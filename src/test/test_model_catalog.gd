@@ -94,6 +94,7 @@ func _run() -> void:
 
 	# (b) the MCP tool (flat success envelope: data at top level)
 	var tools = singleton.get_mcp_manager().minerva_server
+	tools.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 	var owners := 0
 	for module in tools._modules:
 		if module.can_handle("minerva_list_models"):

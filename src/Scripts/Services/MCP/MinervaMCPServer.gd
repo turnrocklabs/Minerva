@@ -116,7 +116,6 @@ func _init_modules() -> void:
 		MCPTerminalTools.new(self),
 		_MCPSessionToolsScript.new(self),
 		MCPWebviewTools.new(self),
-		MCPDocketTools.new(self),
 		MCPHttpTools.new(self),
 		annotation_tools,
 		_MCPAnnotationReplyToolsScript.new(self, annotation_tools),
@@ -336,8 +335,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 		policy_engine.reload()
 		var unread := await policy_engine.refresh()
 		if not unread.is_empty():
-			return {"success": false, "error": "Policy unavailable: %s" % unread,
-				"error_code": "policy_unavailable"}
+			return policy_engine.unavailable_result(unread)
 		return {"success": true, "rules_loaded": policy_engine.rule_count()}
 
 	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks
@@ -806,10 +804,8 @@ func _request_policy_override_approval(rule_id: String, reason: String) -> bool:
 ## Write observation telemetry to Docket as comments on rule items.
 ## Best effort: a failure never breaks tool dispatch (through the Docket
 ## plugin it is logged).
-## Goes through DocketManager.call_tool() directly (not MCP dispatch) to avoid
-## recursion back into the policy engine.
+## Goes through DocketHost directly to avoid policy dispatch recursion.
 func _write_observation_telemetry(observations: Array) -> void:
-	var dm = SingletonObject.docket_manager if SingletonObject else null
 	var host = SingletonObject.get("docket_host") if SingletonObject else null
 	for obs in observations:
 		var rule_id: String = str(obs.get("rule_id", ""))
@@ -822,14 +818,7 @@ func _write_observation_telemetry(observations: Array) -> void:
 			str(obs.get("facts", {})),
 		]
 		# Best-effort write — never disrupts the tool call path.
-		if dm != null:
-			dm.call_tool("docket_comment", {
-				"action": "add",
-				"item_id": rule_id,
-				"author": "policy-engine",
-				"text": comment_text,
-			})
-		elif host != null:
+		if host != null:
 			_write_observation_through(host, rule_id, comment_text)
 
 
@@ -880,8 +869,7 @@ func _activate_policy_tools(policy_result: Dictionary, caller_chat_id: String) -
 ## PolicyEngine.admit(); knowledge_ref may list several item ids, comma
 ## separated), read before the call is made: {knowledge: [compact entries]},
 ## or, when an item cannot be read, a refusal naming the rule, the item and
-## why (error_code "policy_knowledge_unavailable"). Read from the embedded
-## Docket when it exists, else through the Docket plugin's host.
+## why (error_code "policy_knowledge_unavailable"), through DocketHost.
 func _resolve_policy_injections(injections: Array) -> Dictionary:
 	var wanted: Array = []  # [rule_id, item id], in order
 	for injection in injections:
@@ -891,15 +879,8 @@ func _resolve_policy_injections(injections: Array) -> Dictionary:
 	if wanted.is_empty():
 		return {"knowledge": []}
 	var items: Array = []
-	var dm = SingletonObject.docket_manager if SingletonObject else null
 	var host = SingletonObject.get("docket_host") if SingletonObject else null
-	if dm != null:
-		for pair in wanted:
-			var item_result: Dictionary = dm.call_tool("docket_get", {"id": pair[1]})
-			if item_result.has("error"):
-				return _knowledge_refusal(pair[0], pair[1], str(item_result.error))
-			items.append(item_result)
-	elif host != null:
+	if host != null:
 		var refs := PackedStringArray()
 		for pair in wanted:
 			refs.append(pair[1])

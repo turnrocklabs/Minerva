@@ -74,18 +74,6 @@ class RolledBackManager extends RefCounted:
 		return [restored]
 
 
-class FailingUpdateDocket extends RefCounted:
-	var inner
-
-	func _init(p_inner) -> void:
-		inner = p_inner
-
-	func call_tool(tool_name: String, arguments: Dictionary):
-		if tool_name == "docket_update":
-			return {"error": "injected write failure"}
-		return inner.call_tool(tool_name, arguments)
-
-
 func _init() -> void:
 	# PluginSkillConsent references project autoloads; let those globals
 	# register before any test work begins.
@@ -99,7 +87,6 @@ func _init() -> void:
 	await test_knowledge_lifecycle()
 	await test_knowledge_consent()
 	await test_rollback_restores_content()
-	await test_unsaved_knowledge_retry()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -189,14 +176,8 @@ func _accepted(previous: PluginDefinitionScript, def: PluginDefinitionScript, ac
 
 
 func _new_docket() -> Dictionary:
-	var db_path := _tmp_dir.path_join("t8_%d.db" % randi())
-	var db := DocketDB.create_new(db_path)
-	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
-	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
-	sf.close()
-	var registry := ToolRegistry.new()
-	registry.init(schema, db, {"master": db})  # loaded as "master", as in Minerva
-	return {"db": db, "registry": registry, "docket": PluginSeedingDocket.new(registry, false)}
+	var registry = load("res://test/helpers/content_registry_fixture.gd").new(_tmp_dir.path_join("t8_%d.dct" % randi()))
+	return {"registry": registry, "docket": registry.docket}
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +331,7 @@ func test_full_lifecycle() -> void:
 	check("orphan unsatisfied_deps populated",
 		(after_react.get("unsatisfied_deps", []) as Array).size() >= 1)
 
-	ctx.db.close()
+	ctx.registry.close()
 
 
 ## A required plugin's repair installs over its existing record with
@@ -396,55 +377,21 @@ func test_repair_keeps_customised_skills() -> void:
 		str(pristine_after.get("steps", "")) == "shipped pristine v2")
 
 	var failure_plan := await PluginSkillSeederScript.plan_reconcile(def_v2, {}, docket)
+	registry.store.failing_tools = ["docket_update"]
 	var failed: Dictionary = await PluginSkillSeederScript.apply_reconcile(
-		failure_plan, {}, PluginSeedingDocket.new(FailingUpdateDocket.new(registry), false))
+		failure_plan, {}, PluginSeedingDocket.new(registry.host))
 	check("reconcile reports failed store writes", int(failed.get("failed", 0)) > 0)
 	var Seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
-	Seeding.docket_override = FailingUpdateDocket.new(registry)
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var unseeded: Dictionary = await Seeding.unseed(RolledBackManager.new(def_v2), plugin_id)
 	Seeding.docket_override = null
 	check("an unseed that cannot hand a customised skill to the person is not complete",
 		unseeded.get("skills_failed", 0) > 0 and not Seeding.complete(unseeded))
-	ctx.db.close()
+	ctx.registry.close()
 
 
-## Knowledge written to another project whose file could not be saved is not
-## done until that file holds it, even when a retry finds nothing left to
-## change (the cache already has it).
-func test_unsaved_knowledge_retry() -> void:
-	print("test_unsaved_knowledge_retry")
-	var ctx := _new_docket()
-	var path := _tmp_dir.path_join("notes_%d.dct.jsonl" % randi())
-	var notes_db := DocketDBJsonl.create_new_jsonl(path)
-	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
-	ctx.registry.init(JSON.parse_string(sf.get_as_text()), ctx.db, {"master": ctx.db, "notes": notes_db})
-	sf.close()
-	var registry = ctx.registry
-	var docket = ctx.docket
-	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
-	await Knowledge.apply(await Knowledge.plan(_knowledge_def("notes", [_kb("Red to red."), _hint("9600")]), docket), {}, docket)
-	# Keep the canonical file readable: a missing file is refused before mutation.
-	# A directory at the atomic temp path blocks saving after the cache changes.
-	var dropped := _knowledge_def("notes", [])
-	var blocked_temp := path + ".tmp.%d" % OS.get_process_id()
-	DirAccess.make_dir_absolute(blocked_temp)
-	var failed: Dictionary = await Knowledge.apply(await Knowledge.plan(dropped, docket), {}, docket)
-	var retry_plan: Dictionary = await Knowledge.plan(dropped, docket)
-	var retried: Dictionary = await Knowledge.apply(retry_plan, {}, docket)
-	DirAccess.remove_absolute(blocked_temp)
-	var saved: Dictionary = await Knowledge.apply(await Knowledge.plan(dropped, docket), {}, docket)
-	var stored_deprecated := 0
-	for line in FileAccess.get_file_as_string(path).split("\n", false):
-		var stored = JSON.parse_string(line)
-		if stored is Dictionary and stored.get("deprecated", 0) != 0:
-			stored_deprecated += 1
-	check("a retry with nothing left to change fails until the project's file holds the change",
-		failed.failed > 0 and retry_plan.actions.is_empty() and retry_plan.deprecate_record_ids.is_empty()
-		and retried.failed > 0 and saved.failed == 0 and stored_deprecated == 2)
-	notes_db.close()
-	ctx.db.close()
-
-
+## Canonical-save failure/retry is covered by the real-child consumer suite
+## in minerva-plugins/docket/tests/gd/test_docket_post_lifecycle_consumers.gd.
 func _knowledge_def(project: String, entries: Array) -> PluginDefinitionScript:
 	var manifest := _manifest("notes_demo", [])
 	manifest["knowledge_project"] = project
@@ -523,7 +470,7 @@ func test_knowledge_lifecycle() -> void:
 	check("uninstall deletes the unchanged hint and hands the edited article to the user",
 		removed.deleted == 1 and removed.kept == 1 and find.call("minerva_notes_demo_baud").is_empty()
 		and kept.get("source") == "user" and kept.get("article") == "Red to red; black to COM.")
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_knowledge_consent() -> void:
@@ -557,22 +504,19 @@ func test_knowledge_consent() -> void:
 		root, InstalledDB.new("notes_demo"), {}, docket, manifest_path, true, op)
 	check("a repair keeps the customised kb without asking",
 		repair.get("update_decisions", {}) == {"minerva_notes_demo_wiring": false})
-	ctx.db.close()
+	ctx.registry.close()
 
 
 func test_rollback_restores_content() -> void:
 	print("test_rollback_restores_content")
 	var ctx := _new_docket()
-	var notes_db := DocketDB.create_new(_tmp_dir.path_join("t8_notes_%d.db" % randi()))
 	var registry = ctx.registry
 	var docket = ctx.docket
-	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
-	registry.init(JSON.parse_string(sf.get_as_text()), ctx.db, {"master": ctx.db, "notes": notes_db})
-	sf.close()
+	registry.add_project("notes", _tmp_dir.path_join("t8_notes_%d.dct" % randi()))
 	var Knowledge = load("res://Scripts/Services/Plugins/PluginKnowledgeSeeder.gd")
 	var Seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
 	var Txn = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
-	Seeding.docket_override = registry
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 
 	var v1 := _knowledge_def("master", [_kb("Red to red.")])
 	await Knowledge.apply(await Knowledge.plan(v1, docket), {}, docket)
@@ -585,6 +529,7 @@ func test_rollback_restores_content() -> void:
 	var blocked_dir := _tmp_dir.path_join("blocked").path_join("op_blocked")
 	DirAccess.make_dir_recursive_absolute(blocked_dir)
 	FileAccess.open(_tmp_dir.path_join("blocked").path_join(Txn.CONTENT_PENDING), FileAccess.WRITE).close()
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var skipped: Dictionary = await Seeding.reconcile(RolledBackManager.new(v2), v1, v2,
 		await _accepted(v1, v2, ["minerva_notes_demo_wiring"], {"journal_dir": blocked_dir}), false)
 	check("an update whose undo record cannot be saved leaves the person's text alone",
@@ -593,6 +538,7 @@ func test_rollback_restores_content() -> void:
 	# The person accepts v2 over their text; v2 then fails and is rolled back.
 	var op_dir := _tmp_dir.path_join("op_rollback")
 	DirAccess.make_dir_recursive_absolute(op_dir)
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.reconcile(RolledBackManager.new(v2), v1, v2,
 		await _accepted(v1, v2, ["minerva_notes_demo_wiring"], {"journal_dir": op_dir}), false)
 	check("the accepted update overwrote the person's text, saving it first",
@@ -604,6 +550,8 @@ func test_rollback_restores_content() -> void:
 	var unloaded := {"id": "unloaded-record", "fields": {"article": "THEIRS"}, "project": "archive"}
 	rollback_journal.entries.append({"id": "deleted-record", "fields": {"article": "GONE"}, "project": "master"})
 	rollback_journal.entries.append(unloaded)
+	rollback_journal.paths["archive"] = _tmp_dir.path_join("closed-archive.dct")
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var put_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1), v2,
 		rollback_journal)
 	var restored: Dictionary = registry.call_tool("docket_get", {"id": original_id})
@@ -618,11 +566,13 @@ func test_rollback_restores_content() -> void:
 	var move_dir := _tmp_dir.path_join("op_move")
 	DirAccess.make_dir_recursive_absolute(move_dir)
 	var v3 := _knowledge_def("notes", [_kb("Red to red.")])
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.reconcile(RolledBackManager.new(v3), v1, v3,
 		{"collected": true, "update_decisions": {}, "journal_dir": move_dir}, false)
 	check("moving the knowledge retires the original record rather than deleting it",
 		registry.call_tool("docket_get", {"id": original_id}).get("deprecated") == true)
 	var journal: Dictionary = Txn.content_journal(move_dir)
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var moved_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
 		PluginDefinition.from_dict(journal.attempted), journal)
 	var revived: Dictionary = registry.call_tool("docket_get", {"id": original_id})
@@ -638,14 +588,16 @@ func test_rollback_restores_content() -> void:
 	# Rolling back an update that wrote knowledge in a project not loaded now
 	# repairs the rest, and stays unfinished until that project is loaded.
 	var archive_def := _knowledge_def("archive", [_kb("Red to red.")])
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var unloaded_move: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
-		archive_def, {"knowledge_written": true})
+		archive_def, {"knowledge_written": true, "paths": {"": registry.host.master_path, "archive": _tmp_dir.path_join("closed-archive.dct")}})
 	check("a rollback that could not reach a project repairs the rest and is not complete",
 		unloaded_move.has("reconcile") and unloaded_move.has("knowledge")
 		and unloaded_move.get("knowledge_missing_project") == "archive" and not Seeding.complete(unloaded_move))
 	# One whose project was never loaded wrote nothing there to repair.
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var never_written: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(v1),
-		archive_def, {"knowledge_written": false})
+		archive_def, {"knowledge_written": false, "paths": {"": registry.host.master_path, "archive": _tmp_dir.path_join("closed-archive.dct")}})
 	check("a rollback of knowledge that was never written does not wait for its project",
 		not never_written.has("knowledge_missing_project") and Seeding.complete(never_written))
 
@@ -653,8 +605,10 @@ func test_rollback_restores_content() -> void:
 	# the person's, live.
 	var commit_dir := _tmp_dir.path_join("op_commit")
 	DirAccess.make_dir_recursive_absolute(commit_dir)
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.reconcile(RolledBackManager.new(v3), v1, v3,
 		{"collected": true, "update_decisions": {}, "journal_dir": commit_dir}, false)
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.content_committed(Txn.content_journal(commit_dir))
 	var kept: Dictionary = registry.call_tool("docket_get", {"id": original_id})
 	check("once the move commits, the person's record in the old project is theirs and live",
@@ -668,11 +622,13 @@ func test_rollback_restores_content() -> void:
 	var seal_dir := _tmp_dir.path_join("op_seal")
 	DirAccess.make_dir_recursive_absolute(seal_dir)
 	var h2 := _knowledge_def("master", [_hint("115200")])
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.reconcile(RolledBackManager.new(h2), h1, h2,
 		{"collected": true, "update_decisions": {}, "journal_dir": seal_dir}, false)
 	var baud_id: String = registry.call_tool("docket_query",
 		{"filter": {"type": "hint", "key": "minerva_notes_demo_baud"}}).items[0].id
 	registry.call_tool("docket_update", {"id": baud_id, "pristine_hash": "unsealed"})
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var unsealed_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(h1), h2,
 		Txn.content_journal(seal_dir))
 	var baud: Dictionary = registry.call_tool("docket_get", {"id": baud_id})
@@ -687,9 +643,11 @@ func test_rollback_restores_content() -> void:
 	var edit_dir := _tmp_dir.path_join("op_edited")
 	DirAccess.make_dir_recursive_absolute(edit_dir)
 	var h3 := _knowledge_def("master", [_hint("57600")])
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.reconcile(RolledBackManager.new(h3), h1, h3,
 		await _accepted(h1, h3, ["minerva_notes_demo_baud"], {"journal_dir": edit_dir}), false)
 	registry.call_tool("docket_update", {"id": baud_id, "value": "NEWER"})
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var edited_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(h1), h3,
 		Txn.content_journal(edit_dir))
 	var held: Array = edited_back.get("journal_left", [])
@@ -708,14 +666,15 @@ func test_rollback_restores_content() -> void:
 	var s2 := _make_def("notes_demo", [_slide_deck_skill("notes_demo", "v2")])
 	var skill_dir := _tmp_dir.path_join("op_skill")
 	DirAccess.make_dir_recursive_absolute(skill_dir)
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	await Seeding.reconcile(RolledBackManager.new(s2), s1, s2,
 		await _accepted(s1, s2, [skill_v1.id], {"journal_dir": skill_dir}), false)
 	var skill_took := str(registry.call_tool("docket_get", {"id": skill_id}).get("steps", ""))
+	Seeding.docket_override = PluginSeedingDocket.new(registry.host)
 	var skill_back: Dictionary = await Seeding.reconcile_after_rollback(RolledBackManager.new(s1), s2,
 		Txn.content_journal(skill_dir))
 	check("a rolled-back accepted skill update puts the person's steps back, with no conflict",
 		skill_took != "my own steps" and registry.call_tool("docket_get", {"id": skill_id}).get("steps") == "my own steps"
 		and not skill_back.has("journal_conflicts") and Seeding.complete(skill_back))
 	Seeding.docket_override = null
-	notes_db.close()
-	ctx.db.close()
+	ctx.registry.close()

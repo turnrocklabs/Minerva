@@ -235,6 +235,7 @@ func _run() -> void:
 	busy_scope.cancel()
 
 	var server = so.get_mcp_manager().minerva_server
+	server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 	output.clear()
 	_capture(server, "execute_tool_for_http", ["minerva_speak", {"text": "bad audio"}], output)
 	transport.reply(_last_id(transport), {"audio_base64": Marshalls.raw_to_base64(PackedByteArray([1, 2]))})

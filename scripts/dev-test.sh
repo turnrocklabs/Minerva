@@ -17,6 +17,7 @@
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GODOT="${GODOT:-godot}"
+export MINERVA_REQUIRED_RELEASES_URL="http://127.0.0.1:9/required-releases.json"
 
 display=false
 if [[ "${1:-}" == --display ]]; then display=true; shift; fi

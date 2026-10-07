@@ -55,7 +55,7 @@ var _revision_counter: int = 0
 ## Delivery to triggers' harness destinations (TriggerDestination).
 var harness_delivery := TriggerHarnessDelivery.new()
 
-## DOCKET_POLL triggers' events under the Docket plugin (no DocketManager).
+## DOCKET_POLL triggers' events under the Docket plugin.
 var docket_feed := DocketTriggerFeed.new(self)
 ## Wake-up pointers for DOCKET_POLL triggers in wake mode.
 var docket_wakeups := DocketWakeups.new()
@@ -957,7 +957,7 @@ func _on_schedule_check() -> void:
 		if _fire_trigger(trig.id):
 			trig.last_fired_at = scheduled_occurrence
 
-	# DOCKET_POLL triggers now use direct DocketManager signals — no polling needed
+	# DOCKET_POLL triggers use the Docket plugin's event feed.
 
 
 ## Return the scheduled occurrence string if the trigger should fire now, else "".
@@ -1110,54 +1110,13 @@ func _is_leap_year(year: int) -> bool:
 #region Docket Signals
 
 func _activate_docket_poll(trig: TriggerDefinition) -> void:
-	## Connect to DocketManager signals for real-time event-driven triggers;
-	## under the Docket plugin, docket_feed serves them instead.
 	_deactivate_docket_poll(trig)
-	var dm: DocketManager = SingletonObject.docket_manager
-	if not dm:
-		docket_feed.activate(trig.id)
-		return
-	_connect_for(trig.id, dm.item_created, _on_docket_event_created)
-	_connect_for(trig.id, dm.item_transitioned, _on_docket_event_transitioned)
-	_connect_for(trig.id, dm.item_updated, _on_docket_event_updated)
-	_connect_for(trig.id, dm.comment_added, _on_docket_event_comment)
-	print("[TriggerManager] Connected docket signals for trigger '%s' (project=%s)" % [trig.id, trig.docket_project])
+	docket_feed.activate(trig.id)
 
 
 func _deactivate_docket_poll(trig: TriggerDefinition) -> void:
 	_disconnect_all_for(trig.id)
 	docket_feed.forget(trig.id)
-
-
-func _on_docket_event_created(item_id: String, item_type: String, project: String, trigger_id: String) -> void:
-	_handle_docket_event(trigger_id, project, item_id, "created", item_type)
-
-
-func _on_docket_event_transitioned(item_id: String, old_status: String, new_status: String, project: String, trigger_id: String) -> void:
-	_handle_docket_event(trigger_id, project, item_id, "transitioned", "", old_status, new_status)
-
-
-func _on_docket_event_updated(item_id: String, project: String, trigger_id: String) -> void:
-	_handle_docket_event(trigger_id, project, item_id, "updated")
-
-
-func _on_docket_event_comment(item_id: String, project: String, trigger_id: String) -> void:
-	_handle_docket_event(trigger_id, project, item_id, "comment_added")
-
-
-# A DocketManager signal for trigger `trigger_id`: its project must be the
-# one the trigger names (any when it names none), and the item is read from
-# that project as it is now.
-func _handle_docket_event(trigger_id: String, project: String, item_id: String, event_type: String, item_type: String = "", old_status: String = "", new_status: String = "") -> void:
-	var trig := get_trigger(trigger_id)
-	if not trig or not trig.enabled:
-		return
-	if not trig.docket_project.is_empty() and trig.docket_project != project:
-		return
-	var dm: DocketManager = SingletonObject.docket_manager
-	var db = dm.get_db(project) if dm else null
-	fire_docket_event(trig, project, item_id, event_type, item_type, old_status, new_status,
-		db.get_item(item_id) if db else null)
 
 
 ## Whether a Docket change of item `item_id` (of type `item_type`, "" when
