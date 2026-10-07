@@ -50,7 +50,7 @@ func _scenario(scenario: Array) -> void:
 	manager.plugin_crashed.connect(func(value: String) -> void: crashes.append(value))
 	var arguments := {"code": scenario[3]}
 	if scenario[2] != "overflow_exit":
-		arguments.wait_for_release = true
+		arguments["wait_for_release"] = true
 	var reply: Dictionary = await connection.call_tool(scenario[2], arguments, 5.0)
 	if scenario[2] != "overflow_exit":
 		# A reply still adapting when its process exits may be dropped by the generation guard.
