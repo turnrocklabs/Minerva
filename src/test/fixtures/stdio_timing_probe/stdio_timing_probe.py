@@ -174,7 +174,9 @@ async def handle_tools_call(req_id, name, args):
         await send(_text_result(req_id, {"exiting": True}))
         if name == "stdout_eof_exit":
             os.close(sys.stdout.fileno())
-            await asyncio.sleep(0.2)
+        # Let the response finish adapting before exit invalidates its generation.
+        # The early-EOF case also keeps the process alive after stdout closes.
+        await asyncio.sleep(0.2)
         os._exit(int(args.get("code", 0)))
     elif name == "overflow_exit":
         sys.stdout.write("x" * (64 * 1024 * 1024))
