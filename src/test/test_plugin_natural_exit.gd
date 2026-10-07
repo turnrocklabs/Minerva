@@ -48,7 +48,15 @@ func _scenario(scenario: Array) -> void:
 	var crashes: Array = []
 	manager.plugin_stopped.connect(func(value: String) -> void: stops.append(value))
 	manager.plugin_crashed.connect(func(value: String) -> void: crashes.append(value))
-	var reply: Dictionary = await connection.call_tool(scenario[2], {"code": scenario[3]}, 5.0)
+	var arguments := {"code": scenario[3]}
+	if scenario[2] != "overflow_exit":
+		arguments.wait_for_release = true
+	var reply: Dictionary = await connection.call_tool(scenario[2], arguments, 5.0)
+	if scenario[2] != "overflow_exit":
+		# A reply still adapting when its process exits may be dropped by the generation guard.
+		_check("final response delivered", reply.get("exiting") == true and connection.pending_request_count() == 0)
+		_check("exit released after response", connection._write_stdio_notification(
+			{"jsonrpc": "2.0", "method": "test/release_exit"}, connection._process_generation))
 	var deadline := Time.get_ticks_msec() + 5000
 	while definition.state == scenario[1] and Time.get_ticks_msec() < deadline:
 		await process_frame
@@ -56,7 +64,6 @@ func _scenario(scenario: Array) -> void:
 	_check("%s %s/%s -> %s" % [id, scenario[2], scenario[3], scenario[4]],
 		definition.state == scenario[4] and stops.size() == int(clean) and crashes.size() == int(not clean))
 	if scenario[2] != "overflow_exit":
-		_check("final response delivered", reply.get("exiting") == true and connection.pending_request_count() == 0)
 		_check("natural status retained", connection.last_stdio_exit_code == scenario[3])
 	else:
 		_check("overflow is not a clean exit", connection.last_stdio_exit_code == -1 and reply.has("error"))

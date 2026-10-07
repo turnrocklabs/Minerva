@@ -47,6 +47,7 @@ import sys
 
 # stdout is shared; serialize all writes so frames never interleave.
 _write_lock = asyncio.Lock()
+_exit_release = asyncio.Event()
 MODE = "legacy"
 CANCELLED_IDS = []
 INITIALIZE_PARAMS = {}
@@ -172,10 +173,11 @@ async def handle_tools_call(req_id, name, args):
     """
     if name in ("exit", "stdout_eof_exit"):
         await send(_text_result(req_id, {"exiting": True}))
+        if args.get("wait_for_release", False):
+            await _exit_release.wait()
         if name == "stdout_eof_exit":
             os.close(sys.stdout.fileno())
-        # Let the response finish adapting before exit invalidates its generation.
-        # The early-EOF case also keeps the process alive after stdout closes.
+        # Keep the early-EOF process alive after stdout closes.
         await asyncio.sleep(0.2)
         os._exit(int(args.get("code", 0)))
     elif name == "overflow_exit":
@@ -400,6 +402,8 @@ async def dispatch(msg):
                 return
         await handle_tools_call(req_id, params.get("name", ""),
                                 params.get("arguments", {}))
+    elif method == "test/release_exit":
+        _exit_release.set()
     elif method == "notifications/cancelled":
         CANCELLED_IDS.append(msg.get("params", {}).get("requestId"))
     elif method == "notifications/initialized":
