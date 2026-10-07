@@ -51,6 +51,8 @@ var stdio_args: PackedStringArray = []
 ## Whether the server is currently connected
 var server_connected: bool = false
 var last_failure_reason: String = ""
+## A verified natural STDIO exit; I/O failures retain the unknown sentinel.
+var last_stdio_exit_code: int = -1
 
 ## Skip MCP protocol initialization (for REST APIs that don't support it)
 var skip_mcp_init: bool = false
@@ -931,6 +933,7 @@ func has_tool(tool_name: String) -> bool:
 
 ## STDIO transport: Connect by spawning subprocess and performing MCP handshake
 func _connect_stdio() -> Error:
+	last_stdio_exit_code = -1
 	SingletonObject.verbose_log("[MCP STDIO] Connecting server=%s" % server_name)
 	var startup_deadline_ms := Time.get_ticks_msec() + int(stdio_startup_budget_sec * 1000.0)
 
@@ -1002,6 +1005,8 @@ func _connect_stdio() -> Error:
 		connected_process.stderr_ready.connect(_drain_stderr.bind(connected_process))
 	if connected_process.has_signal("io_overflow"):
 		connected_process.io_overflow.connect(_on_stdio_io_failure.bind(connected_process))
+	if connected_process.has_signal("process_exited"):
+		connected_process.process_exited.connect(_on_stdio_process_exited.bind(connected_process))
 
 	# Give the child a short unscaled startup turn within the shared deadline.
 	var startup_delay := minf(0.1, _remaining_startup_seconds(startup_deadline_ms))
@@ -1282,7 +1287,23 @@ func _cancel_pending_deadline(pending: _PendingRequest) -> void:
 	pending.deadline_callback = Callable()
 
 
-func _on_stdio_io_failure(expected_process = null) -> void:
+func _on_stdio_process_exited(exit_code: int, expected_process = null) -> void:
+	var process = _subprocess
+	if process == null or (expected_process != null and expected_process != process):
+		return
+	if process.has_method("has_io_overflow") and process.has_io_overflow():
+		_on_stdio_io_failure(process)
+		return
+	_drain_stdout(process, true)
+	_drain_stderr(process)
+	if process != _subprocess:
+		return
+	if exit_code < 0 and process.has_method("stop_gracefully"):
+		exit_code = process.stop_gracefully(0, server_name)
+	_on_stdio_io_failure(process, exit_code)
+
+
+func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1) -> void:
 	if _subprocess == null or (expected_process != null and expected_process != _subprocess):
 		return
 	var failed_process = _subprocess
@@ -1292,6 +1313,7 @@ func _on_stdio_io_failure(expected_process = null) -> void:
 	_process_generation += 1
 	protocol_profile = Profile.new()
 	_completed_wire_results.clear()
+	last_stdio_exit_code = natural_exit_code
 	disconnected.emit()
 	_fail_pending_requests(failed_pending,
 		"MCP server '%s' exceeded a subprocess I/O bound or lost its input pipe" % server_name)
@@ -1502,10 +1524,10 @@ func _normalize_mcp_tool_result(result) -> Dictionary:
 ## available line and dispatches it: plugin-initiated messages (capability
 ## requests, event/state/notify) go to their handlers; a JSON-RPC response —
 ## an "id" with no "method" — is routed to its waiter via _resolve_pending.
-func _drain_stdout(expected_process = null) -> void:
+func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
 	var process = _subprocess
 	if process == null or (expected_process != null and expected_process != process) \
-			or not process.is_running():
+			or (not allow_exited and not process.is_running()):
 		return
 
 	# Re-guard each iteration: a dispatched message (or engine-exit teardown)
@@ -1726,7 +1748,7 @@ func _backstop_tick(expected_process = null) -> void:
 		return
 	var process = _subprocess
 	if not process.is_running():
-		_on_stdio_io_failure(expected_process)
+		_on_stdio_process_exited(-1, process)
 		return
 	_drain_stdout(process)
 	# Dispatching stdout can synchronously disconnect or replace the process.

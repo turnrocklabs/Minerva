@@ -244,9 +244,23 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 
 
 func pickup_pending() -> bool:
+	if stopped_by_user():
+		return false
 	return state == "starting" or (_plugin_manager != null \
 		and ((state == "unavailable" and _plugin_manager.get_plugin_status(PLUGIN_ID).get("running", false)) \
 			or (_plugin_manager.has_method("docket_pickup_pending") and _plugin_manager.docket_pickup_pending())))
+
+
+func stopped_by_user() -> bool:
+	return _plugin_manager != null and _plugin_manager.has_method("person_stops") \
+		and _plugin_manager.get_plugin_status(PLUGIN_ID).get("state_name", "") == "STOPPED" \
+		and _plugin_manager.person_stops(PLUGIN_ID) > 0
+
+
+func stopped_result() -> Dictionary:
+	var message := "Docket was closed; reopen it from Tools > Docket"
+	return {"status": "error", "code": "docket_stopped_by_user", "error_code": "docket_stopped_by_user",
+		"error": message, "message": message, "retryable": false}
 
 
 ## The master's policies, read from the plugin afresh: {items} (its items
@@ -259,6 +273,8 @@ func pickup_pending() -> bool:
 ## so nothing is awaited after it. Policies are the master's only; the
 ## session's projects never count. No items is a successful read.
 func policy_items() -> Dictionary:
+	if stopped_by_user():
+		return stopped_result()
 	if not state in ["ready", "degraded"] and pickup_pending():
 		return {"error": "Docket is being installed/started — retry shortly"}
 	if not state in ["ready", "degraded"]:
@@ -610,6 +626,8 @@ func _unbound_write(tool: String, arguments: Dictionary, write_binding: Dictiona
 func _begin_read() -> Dictionary:
 	while state == "starting" or _changing:
 		await get_tree().process_frame
+	if stopped_by_user():
+		return stopped_result()
 	if not state in ["ready", "degraded"]:
 		return {"status": "error", "code": "unavailable",
 			"message": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}

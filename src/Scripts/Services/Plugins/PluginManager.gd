@@ -1906,10 +1906,20 @@ func _on_plugin_disconnected(id: String) -> void:
 ## disconnect signal).  Updates state and emits signals.
 func _handle_unexpected_exit(id: String) -> void:
 	var rt := _ensure_runtime(id)
-
 	# Avoid double-handling (health-check and signal may fire close together).
 	if rt.get("stopping", false):
 		return
+	var conn := get_connection(id)
+	# Health checks must observe the same exit status as the transport backstop.
+	if conn != null and is_instance_valid(conn._subprocess) and not conn._subprocess.is_running():
+		conn._on_stdio_process_exited(-1, conn._subprocess)
+		return
+	var def = _db.get_by_id(id)
+	if id == "docket" and def != null and def.state == S_RUNNING \
+			and conn != null and conn.last_stdio_exit_code == 0:
+		stop_plugin(id, true)
+		return
+
 	rt["stopping"] = true
 
 	_cleanup_connection(id)

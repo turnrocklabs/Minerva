@@ -42,6 +42,7 @@ thread-pooled readline, and `sleep` uses `asyncio.sleep`, never `time.sleep`.
 import asyncio
 import argparse
 import json
+import os
 import sys
 
 # stdout is shared; serialize all writes so frames never interleave.
@@ -169,7 +170,14 @@ async def handle_tools_call(req_id, name, args):
     Runs as its own asyncio task, so suspending here (await asyncio.sleep)
     never stalls the reader or any sibling request.
     """
-    if name == "echo":
+    if name == "exit":
+        await send(_text_result(req_id, {"exiting": True}))
+        os._exit(int(args.get("code", 0)))
+    elif name == "overflow_exit":
+        sys.stdout.write("x" * (64 * 1024 * 1024))
+        sys.stdout.flush()
+        os._exit(0)
+    elif name == "echo":
         # Reply immediately with the arguments echoed back.
         await send(_text_result(req_id, {"success": True, "echo": args}))
 

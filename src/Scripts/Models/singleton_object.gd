@@ -1033,6 +1033,11 @@ func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = nul
 
 ## open_docket_panel for a person's menu choice: a refusal is shown to them.
 func open_docket_panel_for_user() -> void:
+	if plugin_manager != null \
+			and plugin_manager.get_plugin_status(DocketHost.PLUGIN_ID).get("state", -1) == PluginManager.S_STOPPED:
+		var started: Dictionary = await plugin_manager.start_plugin(DocketHost.PLUGIN_ID)
+		if not started.has("error") and docket_host != null:
+			await docket_host.open_projects()
 	var opened := await open_docket_panel()
 	if opened.ok or not (is_instance_valid(errorPopup) and is_instance_valid(errorTitle) and is_instance_valid(errorText)):
 		return

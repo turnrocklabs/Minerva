@@ -98,6 +98,9 @@ func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> 
 ## A startup retry remains a refusal; policy is never skipped.
 func unavailable_result(why: String) -> Dictionary:
 	var host = _get_docket_host()
+	if host != null and host.has_method("stopped_by_user") and host.stopped_by_user():
+		return host.stopped_result().merged({"allowed": false, "effect": "unavailable",
+			"reason": why, "allowed_next_actions": [], "success": false})
 	var retryable: bool = host != null and host.has_method("pickup_pending") and host.pickup_pending()
 	return {
 			"allowed": false,
