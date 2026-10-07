@@ -500,6 +500,7 @@ jobs:
         with:
           sparse-checkout: |
             scripts/tarball-smoke.sh
+            scripts/verify-packaged-mcp-app.py
 
       - name: Download Linux build artifact
         uses: actions/download-artifact@v4
@@ -527,10 +528,19 @@ jobs:
           test ! -e downloads/Minerva-Linux-Build/extracted/builtin-plugins
           ls -la downloads/Minerva-Linux-Build/extracted/Minerva.x86_64
 
+      - name: Prefetch required-plugin releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
       - name: Run tarball smoke
+        env:
+          MINERVA_REQUIRED_RELEASES_JSON: ${{ runner.temp }}/required-releases.json
         run: |
           chmod +x scripts/tarball-smoke.sh
-          scripts/tarball-smoke.sh downloads/Minerva-Linux-Build/extracted
+          python3 scripts/verify-packaged-mcp-app.py --with-required-releases \
+            scripts/tarball-smoke.sh downloads/Minerva-Linux-Build/extracted
 
       - name: Upload minerva.log on failure
         if: failure()
@@ -1158,8 +1168,16 @@ jobs:
           [ "$fail" -eq 0 ] || exit 1
           echo "All required macOS bundle entries present"
 
+      - name: Prefetch required-plugin releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
       - name: Smoke-launch macOS build
         working-directory: src/build/macos
+        env:
+          MINERVA_REQUIRED_RELEASES_JSON: ${{ runner.temp }}/required-releases.json
         run: |
           chmod +x Minerva.app/Contents/MacOS/Minerva
           # Long enough to catch deferred-call crashes that fire ~30s in
@@ -1167,7 +1185,8 @@ jobs:
           # 60fps ≈ 35s. We capture stdout/stderr and grep for the
           # extension-load + script-compile error patterns that signal
           # missing or mis-bundled GDExtensions.
-          Minerva.app/Contents/MacOS/Minerva --headless --quit-after 2100 \
+          python3 "$GITHUB_WORKSPACE/scripts/verify-packaged-mcp-app.py" --with-required-releases \
+            Minerva.app/Contents/MacOS/Minerva --headless --quit-after 2100 \
               > minerva-launch.log 2>&1 || true
           # Check for the specific failure modes we're guarding against.
           # As of iter 13, FFmpeg is built from source on macOS, so any
@@ -1432,19 +1451,32 @@ jobs:
           [ "$fail" -eq 0 ] || exit 1
           echo "All required Linux runtime assets present"
 
+      - name: Prefetch required-plugin releases
+        if: |
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'linux' ||
+          github.event.inputs.platform == 'all'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
       - name: Smoke-launch Linux build (extension load only)
         if: |
           github.event_name == 'push' ||
           github.event.inputs.platform == 'linux' ||
           github.event.inputs.platform == 'all'
         working-directory: src/build/linux
+        env:
+          MINERVA_REQUIRED_RELEASES_JSON: ${{ runner.temp }}/required-releases.json
         run: |
           chmod +x ./Minerva.x86_64
           # Headless --quit-after exits after N frames; enough for the
           # engine to load GDExtensions and dlopen their sidecars. Won't
           # exercise CEF init (CEF only loads when a panel opens) — file
           # presence above is the CEF backstop.
-          timeout 30 ./Minerva.x86_64 --headless --quit-after 30 \
+          python3 "$GITHUB_WORKSPACE/scripts/verify-packaged-mcp-app.py" --with-required-releases \
+            timeout 30 ./Minerva.x86_64 --headless --quit-after 30 \
               > minerva-launch.log 2>&1 || true
           if grep -E "Can't open dynamic library|GDExtension dynamic library not found|Error loading extension" minerva-launch.log; then
             echo "::error::Extension load error during smoke launch — see log below"

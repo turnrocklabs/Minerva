@@ -3,13 +3,17 @@
 
 import json
 import os
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import re
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 
 # Match the established tarball smoke allowance for a cold application start.
 # Once startup returns to the scene tree, helper requests retain their
@@ -22,6 +26,50 @@ TIMEOUT_SECONDS = 60
 # page load, so this outer bound only has to cover boot plus two cold
 # browsers plus the bounded windows.
 BRIDGE_TIMEOUT_SECONDS = 90
+
+
+@contextmanager
+def _required_releases():
+    """Serve CI's release snapshot; normal local probes keep their existing URL."""
+    snapshot = os.environ.get("MINERVA_REQUIRED_RELEASES_JSON")
+    if not snapshot:
+        yield None
+        return
+    pages = json.loads(Path(snapshot).read_text(encoding="utf-8"))
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+        raise ValueError("required-release snapshot must be an array of pages")
+    releases = [release for page in pages for release in page]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            url = urlsplit(self.path)
+            try:
+                query = parse_qs(url.query, strict_parsing=True, keep_blank_values=True)
+                page = int(query.get("page", ["1"])[0])
+                count = int(query.get("per_page", ["100"])[0])
+                if url.path != "/required-releases.json" or page < 1 or not 1 <= count <= 100:
+                    raise ValueError("invalid release page")
+            except ValueError:
+                self.send_error(400)
+                return
+            body = json.dumps(releases[(page - 1) * count:page * count]).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}/required-releases.json"
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 def _seed_profile(root: Path, env: dict[str, str]) -> None:
@@ -107,6 +155,14 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
 
 
 def main() -> int:
+    if len(sys.argv) >= 3 and sys.argv[1] == "--with-required-releases":
+        with _required_releases() as releases_url:
+            if releases_url is None:
+                raise SystemExit("--with-required-releases requires MINERVA_REQUIRED_RELEASES_JSON")
+            env = os.environ.copy()
+            env["MINERVA_REQUIRED_RELEASES_URL"] = releases_url
+            result = subprocess.call(sys.argv[2:], env=env)
+            return result if result >= 0 else 128 - result
     if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--bridge"):
         raise SystemExit("usage: verify-packaged-mcp-app.py <Minerva executable> [--bridge]")
     executable = Path(sys.argv[1]).resolve()
@@ -117,9 +173,11 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(
             prefix="minerva-packaged-mcp-",
-            ignore_cleanup_errors=os.name == "nt") as temporary:
+            ignore_cleanup_errors=os.name == "nt") as temporary, _required_releases() as releases_url:
         temporary_root = Path(temporary)
         env = os.environ.copy()
+        if releases_url is not None:
+            env["MINERVA_REQUIRED_RELEASES_URL"] = releases_url
         _seed_profile(temporary_root, env)
         env["MINERVA_PACKAGED_BRIDGE_PROBE" if bridge_probe
             else "MINERVA_PACKAGED_MCP_HELPER_PROBE"] = "1"
