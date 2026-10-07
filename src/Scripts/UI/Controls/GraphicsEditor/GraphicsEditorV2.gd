@@ -2176,6 +2176,8 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 
 
 func _on_prompt_button_pressed() -> void:
+	if not ServiceAccountPrompt.require_account():
+		return
 	if !image_gen_window.visible:
 		image_gen_window.position = Vector2(
 			(
@@ -2191,6 +2193,8 @@ func _on_prompt_button_pressed() -> void:
 
 
 func _on_send_prompt_button_pressed() -> void:
+	if not ServiceAccountPrompt.require_account():
+		return
 	image_gen_window.hide()
 	var params : Dictionary = get_params_image_gen()
 	var toast: ToastNotification
@@ -2448,6 +2452,8 @@ func _on_edit_button_pressed() -> void:
 
 
 func _on_edit_img_button_pressed() -> void:
+	if not ServiceAccountPrompt.require_account():
+		return
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE or ai_request_type == AI_REQUEST.MASK_EDIT:
 		_on_edit_from_texture_rects_pressed()
 		return
@@ -2913,6 +2919,10 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 	for btn in [prompt_button, workflow_option_button, negative_prompt_mic_button, 
 				positive_prompt_mic_button, advanced_settings_check_button, send_action_button]:
 		btn.disabled = !enable
+	# Keep the entry actions available to explain missing account setup.
+	var account_missing := not Core.has_account_configuration()
+	prompt_button.disabled = not (enable or account_missing)
+	send_action_button.disabled = not (enable or account_missing)
 	
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable

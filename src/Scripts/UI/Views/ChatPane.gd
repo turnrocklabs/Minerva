@@ -1931,6 +1931,8 @@ func _on_send_message_button_item_selected(index: int) -> void:
 
 	# Clear any leftover cancelled flag from previous requests
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if history.provider is CoreProvider and not ServiceAccountPrompt.require_account():
+		return
 	SingletonObject.clear_cancelled(history.HistoryId)
 
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
@@ -1956,6 +1958,8 @@ func _on_send_message_button_item_selected(index: int) -> void:
 
 func execute_hcp_chat():
 	ensure_chat_open()
+	if not ServiceAccountPrompt.require_account():
+		return
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 

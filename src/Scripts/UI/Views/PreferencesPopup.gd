@@ -3152,6 +3152,10 @@ func _create_voice_tab() -> void:
 	_voice_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_voice_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_row.add_child(_voice_status_label)
+	var settings_btn := Button.new()
+	settings_btn.text = "Settings"
+	settings_btn.pressed.connect(ServiceAccountPrompt.open_settings)
+	status_row.add_child(settings_btn)
 
 	var status_btn := Button.new()
 	status_btn.text = "Check Status"
@@ -3258,7 +3262,7 @@ func _update_tts_section_enabled() -> void:
 
 	# Update status label based on connection
 	if not core_connected:
-		_voice_status_label.text = "Voice service: Core not connected"
+		_voice_status_label.text = "Voice service: Core not connected" if Core.has_account_configuration() else "Sign in to minerva-services to use Voice"
 	elif _voices_cache.is_empty():
 		_voice_status_label.text = "Voice service: click Refresh to load voices"
 

@@ -41,6 +41,19 @@ var _jwt_token: String = ""
 var _client_id: String = ""
 
 
+## Whether stored service setup exists; authentication success is separate.
+func has_account_configuration() -> bool:
+	if client._connected:
+		return true
+	var cfg := ConfigFile.new()
+	if cfg.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id()) != OK:
+		return false
+	for key: String in ["username", "password", "auth_base_url", "url"]:
+		if str(cfg.get_value("HCP", key, "")).is_empty():
+			return false
+	return true
+
+
 ## Mint a NEW, distinct Core session for a plugin (the host.core.session capability).
 ## Performs an INDEPENDENT login with the stored HCP credentials — Core mints a fresh
 ## session_id (Uuid::new_v4) per login and allows up to 10 concurrent sessions per
