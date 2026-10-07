@@ -107,7 +107,11 @@ public:
     bool has_io_overflow() const { return _io_overflow; }
 
     /// Check if subprocess is running
-    bool is_running() const { return _running && !_exited; }
+    bool is_running() {
+        // EOF may precede exit; keep polling after the reader has drained stdout.
+        if (_stdout_done) _poll_exit();
+        return _running && !_exited;
+    }
 
     /// Check if output is available
     bool has_output();

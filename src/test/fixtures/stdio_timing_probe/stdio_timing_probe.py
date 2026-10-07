@@ -170,8 +170,11 @@ async def handle_tools_call(req_id, name, args):
     Runs as its own asyncio task, so suspending here (await asyncio.sleep)
     never stalls the reader or any sibling request.
     """
-    if name == "exit":
+    if name in ("exit", "stdout_eof_exit"):
         await send(_text_result(req_id, {"exiting": True}))
+        if name == "stdout_eof_exit":
+            os.close(sys.stdout.fileno())
+            await asyncio.sleep(0.2)
         os._exit(int(args.get("code", 0)))
     elif name == "overflow_exit":
         sys.stdout.write("x" * (64 * 1024 * 1024))

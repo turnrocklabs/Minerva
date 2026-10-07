@@ -149,6 +149,7 @@ PLUGIN_TESTS=(
 	test/test_passthrough_e2e.gd
 )
 PLATFORM_GATE_TESTS=(
+	test/test_plugin_natural_exit.gd
 	test/test_marketplace_install_transaction.gd
 	test/test_plugin_install_queue.gd
 	test/test_marketplace_browse.gd

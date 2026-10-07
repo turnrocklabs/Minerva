@@ -14,6 +14,7 @@ func _initialize() -> void:
 func _run() -> void:
 	for scenario: Array in [
 		["docket", S_RUNNING, "exit", 0, S_STOPPED],
+		["docket", S_RUNNING, "stdout_eof_exit", 0, S_STOPPED],
 		["docket", S_RUNNING, "exit", 7, S_ERROR],
 		["other", S_RUNNING, "exit", 0, S_ERROR],
 		["docket", S_STARTING, "exit", 0, S_ERROR],
@@ -21,6 +22,8 @@ func _run() -> void:
 	]:
 		await _scenario(scenario)
 	print("NATURAL_EXIT_RESULTS: %d failed" % failed)
+	if failed == 0:
+		print("=== PASS ===")
 	quit(1 if failed else 0)
 
 func _scenario(scenario: Array) -> void:
@@ -33,7 +36,8 @@ func _scenario(scenario: Array) -> void:
 	manager._db._plugins[id] = definition
 	var connection = load("res://Scripts/Services/MCP/MCPServerConnection.gd").new(id)
 	var fixture := ProjectSettings.globalize_path("res://test/fixtures/stdio_timing_probe/stdio_timing_probe.py")
-	connection.configure_stdio("python3", PackedStringArray([fixture, "--profile", "modern"]))
+	var python := "python" if OS.get_name() == "Windows" else "python3"
+	connection.configure_stdio(python, PackedStringArray([fixture, "--profile", "modern"]))
 	_check("child connected", await connection.connect_to_server() == OK)
 	manager._ensure_runtime(id)["connection"] = connection
 	connection.disconnected.connect(manager._on_plugin_disconnected.bind(id))
@@ -48,8 +52,8 @@ func _scenario(scenario: Array) -> void:
 	var clean: bool = scenario[4] == S_STOPPED
 	_check("%s %s/%s -> %s" % [id, scenario[2], scenario[3], scenario[4]],
 		definition.state == scenario[4] and stops.size() == int(clean) and crashes.size() == int(not clean))
-	if scenario[2] == "exit":
-		_check("pending caller settled", not reply.is_empty() and connection.pending_request_count() == 0)
+	if scenario[2] != "overflow_exit":
+		_check("final response delivered", reply.get("exiting") == true and connection.pending_request_count() == 0)
 		_check("natural status retained", connection.last_stdio_exit_code == scenario[3])
 	else:
 		_check("overflow is not a clean exit", connection.last_stdio_exit_code == -1 and reply.has("error"))
