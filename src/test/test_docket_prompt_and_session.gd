@@ -117,6 +117,9 @@ const AUTHORITY_SRC := """
 extends RefCounted
 var connection = null
 var initialized := true
+var fingerprint := "fixed-vault-fingerprint"
+var hint := ""
+var password_sends := 0
 var hold := ""
 var gate_open := true
 var entered := 0
@@ -126,12 +129,19 @@ func host_request(name: String, params: Dictionary) -> Dictionary:
 		entered += 1
 		private_methods.append(name)
 		var project: Dictionary = connection.open.get(params.path, {})
-		var descriptor := {"path": params.path, "open_generation": project.get("open_generation", ""), "fingerprint": "fixed-vault-fingerprint"}
+		var descriptor := {"path": params.path, "open_generation": project.get("open_generation", ""), "fingerprint": fingerprint if initialized else "absent", "initialized":initialized, "hint":hint}
 		var reply := {"result": descriptor.merged({"unlocked": name == "vault_unlock"})}
-		if not initialized or project.is_empty():
+		if project.is_empty():
 			reply = {"error": {"message": "Vault request refused"}}
-		elif name == "vault_unlock" and (params.get("password") != "D3a-private-session-sentinel" or params.open_generation != descriptor.open_generation or params.fingerprint != descriptor.fingerprint):
+		elif name == "vault_unlock" and (not initialized or params.get("password") != "D3a-private-session-sentinel" or params.open_generation != descriptor.open_generation or params.fingerprint != descriptor.fingerprint):
 			reply = {"error": {"message": "Vault unlock refused"}}
+		if name in ["vault_unlock", "vault_init"]: password_sends += 1
+		if name == "vault_init":
+			if initialized or params.get("password") != "D3a-private-session-sentinel": reply = {"error":{"message":"Vault creation refused"}}
+			else:
+				initialized = true
+				hint = params.get("hint", "")
+				reply = {"result":descriptor.merged({"initialized":true, "fingerprint":fingerprint, "hint":hint, "unlocked":true}, true)}
 		while name == hold and not gate_open:
 			await Engine.get_main_loop().process_frame
 		return reply
@@ -444,20 +454,21 @@ func _vault_form():
 	form.visible = false
 	_made_nodes.append(form)
 	root.add_child(form)
-	return form
+	form._vault_panel.bind_host(_so.docket_host)
+	return form._vault_panel
 
 
 func _fill_vault(form, password: String) -> void:
-	form._vault_password.text = password
-	form._vault_confirm.text = password
-	form._vault_hint.text = password
+	form._password.text = password
+	form._confirm.text = password
+	form._hint.text = password
 
 
 func _submit_vault(form, hosted: bool = true) -> void:
-	form._vault_message.text = ""
+	form._message.text = ""
 	form.get_node("%SetVaultPasswordButton").pressed.emit()
 	check("G: real Preferences scene button completes its vault attempt",
-		await _wait(func() -> bool: return not form.get_node("%SetVaultPasswordButton").disabled and (not hosted or not form._vault_message.text.is_empty())))
+		await _wait(func() -> bool: return not form.get_node("%SetVaultPasswordButton").disabled and (not hosted or not form._message.text.is_empty())))
 
 
 func _vault_attempt(host, password: String = VAULT_PASSWORD) -> Dictionary:
@@ -497,39 +508,37 @@ func _test_vault() -> void:
 	var form = _vault_form()
 	_write("user://docket_prefs.json", JSON.stringify({"vault_password": "legacy-untouched", "vault_password_hint": "legacy-hint"}))
 	var before := FileAccess.get_file_as_bytes("user://docket_prefs.json")
-	form._refresh_vault_status()
+	form.refresh()
 	check("G: hosted Preferences does not load legacy password/hint and labels session unlock",
-		form._vault_hint.text.is_empty() and not form._vault_hint.editable
+		form._hint.text.is_empty() and not form._hint.editable
 		and form.get_node("%SetVaultPasswordButton").text == "Unlock for Session"
-		and not form._vault_confirm.get_parent().visible)
+		and not form._confirm.get_parent().visible)
 	_fill_vault(form, "wrong-password")
 	await _submit_vault(form)
 	check("G: wrong password visibly refuses and clears every credential widget",
-		form._vault_message.text == "Vault unlock refused; check the existing vault password."
-		and form._vault_password.text.is_empty() and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty()
+		form._message.text == "Vault unlock refused; check the existing vault password."
+		and form._password.text.is_empty() and form._confirm.text.is_empty() and form._hint.text.is_empty()
 		and host._vault_session._password.is_empty())
 	authority.initialized = false
+	form.refresh()
+	check("G: absent master selects Create mode", await _wait(func() -> bool: return form._mode == "create") and form._confirm.get_parent().visible)
 	_fill_vault(form, VAULT_PASSWORD)
+	form._confirm.text = "different"
 	await _submit_vault(form)
-	check("G: an uninitialized vault visibly refuses without retaining the password",
-		form._vault_message.text == "Vault refused: an initialized, readable existing vault is required."
-		and host._vault_session._password.is_empty())
-	authority.initialized = true
+	check("G: mismatch refuses locally and clears input", form._message.text == "Passwords do not match." and form._password.text.is_empty() and host._vault_session._password.is_empty())
 	_fill_vault(form, VAULT_PASSWORD)
-	form._vault_confirm.text = ""
+	form._hint.text = "00123"
 	await _submit_vault(form)
-	check("G: correct single password privately unlocks the exact existing opening for this session",
-		host.vault_status() == "Vault: unlocked for this session only (password kept in memory)."
-		and host._vault_session._password == VAULT_PASSWORD
-		and authority.private_methods.slice(-2) == ["vault_challenge", "vault_unlock"])
+	check("G: Create retains the successful session credential and switches to Unlock", host._vault_session._password == VAULT_PASSWORD and form._mode == "unlock" and authority.initialized and authority.hint == "00123")
 	check("G: successful hosted UI clears widgets and preserves existing plaintext preferences byte-for-byte",
-		form._vault_password.text.is_empty() and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty()
+		form._password.text.is_empty() and form._confirm.text.is_empty() and form._hint.text.is_empty()
 		and FileAccess.get_file_as_bytes("user://docket_prefs.json") == before)
 	_fill_vault(form, "")
 	await _submit_vault(form)
 	check("G: empty hosted input refuses and clears the form",
-		form._vault_message.text == "Enter a nonempty password." and form._vault_password.text.is_empty()
-		and form._vault_confirm.text.is_empty() and form._vault_hint.text.is_empty())
+		form._message.text == "Enter a nonempty password." and form._password.text.is_empty()
+		and form._confirm.text.is_empty() and form._hint.text.is_empty())
+	if host.vault_changed.is_connected(form.refresh): host.vault_changed.disconnect(form.refresh)
 	await host.unlock_vault(VAULT_PASSWORD)
 	var settled_calls: int = authority.private_methods.size()
 	connection.open_project("/p/vault-session.dct")
@@ -639,6 +648,12 @@ func _test_vault() -> void:
 	check("I: no-channel refusal does not automatically retry",
 		no_channel == "Vault unavailable: no private host channel." and authority.private_methods.size() == refused_calls)
 	manager.authority = authority
+	await host.unlock_vault(VAULT_PASSWORD)
+	var sent_before: int = authority.password_sends
+	authority.fingerprint = "changed-vault-fingerprint"
+	host._vault_session._unlocked = {}
+	await host._vault_session.resume(host)
+	check("J: changed fingerprint clears the retained password before any resend", authority.password_sends == sent_before and host._vault_session._password.is_empty() and host._vault_session._credential.is_empty())
 	var public_clean := not JSON.stringify(connection.public_calls + restarted.public_calls).contains(VAULT_PASSWORD)
 	var history_clean := true
 	for chat in _made_chats:

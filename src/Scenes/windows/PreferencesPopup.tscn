@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="Texture2D" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
@@ -8,6 +8,8 @@
 [ext_resource type="Texture2D" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
 [ext_resource type="PackedScene" path="res://Scenes/windows/hcp_logs.tscn" id="7_6m13a"]
 [ext_resource type="PackedScene" path="res://Scripts/UI/Controls/service_selection.tscn" id="8_g7jo0"]
+
+[ext_resource type="PackedScene" path="res://Scenes/windows/HostedVaultPanel.tscn" id="9_vault"]
 
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
@@ -257,82 +259,9 @@ size_flags_horizontal = 2
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="VaultVBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
-layout_mode = 2
-
-[node name="VaultLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
+[node name="HostedVaultPanel" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2" instance=ExtResource("9_vault")]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(0, 56)
-bbcode_enabled = true
-text = "[b]Plugin Vault Password[/b]
-Encrypts plugin credentials stored locally (e.g. OBS WebSocket password). If you lose this password, encrypted secrets cannot be recovered."
-fit_content = true
-
-[node name="VaultStatusLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Vault: not configured"
-
-[node name="VaultPasswordHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
-layout_mode = 2
-
-[node name="VaultPasswordLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultPasswordHBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "New Password:"
-
-[node name="leVaultPassword" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultPasswordHBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-secret = true
-
-[node name="VaultConfirmHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
-layout_mode = 2
-
-[node name="VaultConfirmLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultConfirmHBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "Confirm:"
-
-[node name="leVaultConfirm" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultConfirmHBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-secret = true
-
-[node name="VaultHintHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
-layout_mode = 2
-
-[node name="VaultHintLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultHintHBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "Hint (optional):"
-
-[node name="leVaultHint" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultHintHBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="VaultButtonHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
-layout_mode = 2
-
-[node name="SetVaultPasswordButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultButtonHBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Set Vault Password"
-
-[node name="VaultMessageLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-autowrap_mode = 3
-text = ""
 
 [node name="HSeparatorVault" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
 layout_mode = 2
@@ -785,7 +714,6 @@ visible = false
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer/VerboseLoggingCheckButton" to="." method="_on_verbose_logging_check_button_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
-[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VaultVBoxContainer/VaultButtonHBox/SetVaultPasswordButton" to="." method="_on_set_vault_password_pressed"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]

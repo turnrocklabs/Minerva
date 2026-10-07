@@ -1,0 +1,82 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Views/HostedVaultPanel.gd" id="1"]
+
+[node name="HostedVaultPanel" type="VBoxContainer"]
+layout_mode = 2
+script = ExtResource("1")
+
+[node name="VaultLabel" type="RichTextLabel" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 56)
+bbcode_enabled = true
+text = "[b]Master Vault[/b]
+Password stays in memory for this session. Losing it means re-entering all secrets."
+fit_content = true
+
+[node name="VaultStatusLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Vault: unavailable."
+
+[node name="VaultPasswordHBox" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="VaultPasswordLabel" type="Label" parent="VaultPasswordHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Password:"
+
+[node name="leVaultPassword" type="LineEdit" parent="VaultPasswordHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="VaultConfirmHBox" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="VaultConfirmLabel" type="Label" parent="VaultConfirmHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Confirm:"
+
+[node name="leVaultConfirm" type="LineEdit" parent="VaultConfirmHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="VaultHintHBox" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="VaultHintLabel" type="Label" parent="VaultHintHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Hint (plain text; optional):"
+
+[node name="leVaultHint" type="LineEdit" parent="VaultHintHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VaultButtonHBox" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="SetVaultPasswordButton" type="Button" parent="VaultButtonHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Unlock for Session"
+disabled = true
+
+[node name="VaultMessageLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = ""

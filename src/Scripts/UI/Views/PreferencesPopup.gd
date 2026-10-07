@@ -27,12 +27,7 @@ const ServerDiagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnosti
 @onready var service_selection_window: ServiceSelection = %ServiceSelection
 @onready var logs_window: HcpLogs = %Logs
 
-# Vault password UI (encrypts plugin secrets — see CapabilityBroker.secrets:* handler)
-@onready var _vault_status_label: Label    = %VaultStatusLabel
-@onready var _vault_password: LineEdit     = %leVaultPassword
-@onready var _vault_confirm: LineEdit      = %leVaultConfirm
-@onready var _vault_hint: LineEdit         = %leVaultHint
-@onready var _vault_message: Label         = %VaultMessageLabel
+@onready var _vault_panel: HostedVaultPanel = %HostedVaultPanel
 
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
@@ -488,44 +483,10 @@ func _on_hcp_logs_button_pressed() -> void:
 	logs_window.popup_centered()
 
 
-# ── Vault password ──────────────────────────────────────────────────────────
-# Existing Docket master vault unlock through the private host channel.
-# The password stays in memory for this session, never in preferences.
-
-## Refresh the "Vault: configured/not configured" label and clear input fields.
+# Master vault controls live in their scene; no password preferences are read.
 func _refresh_vault_status() -> void:
-	if _vault_status_label == null:
-		return
-	var host := SingletonObject.docket_host
-	_vault_status_label.text = host.vault_status() if host != null else "Vault: unavailable."
-	if host != null and not host.vault_changed.is_connected(_refresh_vault_status):
-		host.vault_changed.connect(_refresh_vault_status)
-	%VaultLabel.text = "[b]Unlock Existing Master Vault[/b]\nPassword stays in memory for this session; resent privately after Docket restarts. New vault creation is unavailable here."
-	%VaultPasswordLabel.text = "Password:"
-	%SetVaultPasswordButton.text = "Unlock for Session"
-	_vault_confirm.get_parent().hide()
-	_vault_hint.editable = false
-	_vault_hint.text = ""
-	_vault_password.text = ""
-	_vault_confirm.text = ""
-
-
-## Unlock the existing master vault for this session and clear form input.
-func _on_set_vault_password_pressed() -> void:
-	var password := _vault_password.text
-	_vault_password.text = ""
-	_vault_confirm.text = ""
-	_vault_hint.text = ""
-	if password.is_empty():
-		_vault_message.text = "Enter a nonempty password."
-		return
-	%SetVaultPasswordButton.disabled = true
-	var host := SingletonObject.docket_host
-	var result := await host.unlock_vault(password) if host != null else "Vault: unavailable."
-	password = ""
-	%SetVaultPasswordButton.disabled = false
-	_refresh_vault_status()
-	_vault_message.text = result
+	_vault_panel.bind_host(SingletonObject.docket_host)
+	_vault_panel.refresh()
 
 
 #region OpenRouter Models Tab

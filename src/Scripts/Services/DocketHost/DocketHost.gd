@@ -150,6 +150,14 @@ func unlock_vault(password: String) -> String:
 	return await _vault_session.unlock(self, password)
 
 
+func create_vault(password: String, hint: String = "") -> String:
+	return await _vault_session.create(self, password, hint)
+
+
+func vault_details() -> Dictionary:
+	return await _vault_session.details(self)
+
+
 func _exit_tree() -> void:
 	_vault_session.lost(self, true)
 
