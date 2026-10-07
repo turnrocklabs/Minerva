@@ -1,6 +1,7 @@
 extends SceneTree
 ## A real STDIO child distinguishes user quit from crash, startup loss and I/O failure.
 
+const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const S_STARTING := 1
 const S_RUNNING := 2
 const S_STOPPED := 3
@@ -37,8 +38,10 @@ func _scenario(scenario: Array) -> void:
 	var connection = load("res://Scripts/Services/MCP/MCPServerConnection.gd").new(id)
 	var fixture := ProjectSettings.globalize_path("res://test/fixtures/stdio_timing_probe/stdio_timing_probe.py")
 	var python := "python" if OS.get_name() == "Windows" else "python3"
-	connection.configure_stdio(python, PackedStringArray([fixture, "--profile", "modern"]))
+	# Match Docket's protocol so cold discovery cannot change whether quit executes.
+	connection.configure_stdio(python, PackedStringArray([fixture, "--profile", "legacy"]))
 	_check("child connected", await connection.connect_to_server() == OK)
+	_check("initialized legacy profile", connection.protocol_profile.era == Profile.Era.INITIALIZED_LEGACY)
 	manager._ensure_runtime(id)["connection"] = connection
 	connection.disconnected.connect(manager._on_plugin_disconnected.bind(id))
 	var stops: Array = []
