@@ -507,7 +507,6 @@ func _refresh_vault_status() -> void:
 	_vault_hint.text = ""
 	_vault_password.text = ""
 	_vault_confirm.text = ""
-	return
 
 
 ## Unlock the existing master vault for this session and clear form input.
@@ -526,7 +525,6 @@ func _on_set_vault_password_pressed() -> void:
 	%SetVaultPasswordButton.disabled = false
 	_refresh_vault_status()
 	_vault_message.text = result
-	return
 
 
 #region OpenRouter Models Tab

@@ -109,9 +109,8 @@ static func is_deprecated(record: Dictionary) -> bool:
 ## auto-flip ONLY when the caller explicitly includes `customised` in
 ## `changes` (e.g. seeder.apply_reconcile sets it deliberately).
 ##
-## Reading the record requires a docket_caller that supports docket_get.  In
-## production this is SingletonObject.docket_manager; tests pass a ToolRegistry
-## directly.
+## Reading the record requires a PluginSeedingDocket over DocketHost.
+## Tests use the same adapter over their hosted fixture.
 ##
 ## Returns the docket_update result Dictionary.
 static func apply_user_edit(record_id: String, changes: Dictionary, docket_caller) -> Dictionary:

@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless test of plugin content seeding (PluginContentSeeding and its
 ## seeders) when the Docket plugin owns Minerva's projects: DocketHost is the
-## owner, the embedded DocketManager set aside, and every seeding call goes
+## host adapter, and every seeding call goes
 ## through PluginSeedingDocket to the project it was bound to.
 ## - lifecycle: an install seeds skills in the master and knowledge in its
 ##   named project, every call naming its project; an update keeps a person's
@@ -279,7 +279,6 @@ func _run() -> void:
 	for path in USER_FILES:
 		if not check("the throwaway profile holds no %s yet" % path, not FileAccess.file_exists(path)):
 			return
-	var saved_manager = _so.docket_manager
 	var saved_host = _so.docket_host
 	var saved_registry = _so.plugin_tool_registry
 	_so.plugin_tool_registry = null
@@ -287,7 +286,6 @@ func _run() -> void:
 		await _test_lifecycle()
 		await _test_interrupted_update()
 		await _test_interruptions()
-	_so.docket_manager = saved_manager
 	_so.docket_host = saved_host
 	_so.plugin_tool_registry = saved_registry
 	if _pm != null:
@@ -315,9 +313,8 @@ func _set_up() -> bool:
 	_host_manager.authority = authority
 	root.add_child(_host_manager)
 	root.add_child(_host)
-	_so.docket_manager = null
 	_so.docket_host = _host
-	_host.start(_host_manager, false)
+	_host.start(_host_manager)
 	_host_manager.plugin_ready.emit("docket")
 	var ready := await _wait(func(): return _host.state in ["ready", "degraded"])
 	if not check("DocketHost sets up the plugin as the owner", ready, "%s %s" % [_host.state, _host.problems]):

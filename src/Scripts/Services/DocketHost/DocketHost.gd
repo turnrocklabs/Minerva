@@ -27,9 +27,6 @@ extends Node
 ## Every step belongs to one process of the plugin: its connection (a new
 ## one for each start) and that connection's process generation. A result
 ## that arrives once the process has changed is dropped.
-##
-## The embedded DocketManager owns the same files, so the host stays
-## inactive while it exists: the two never run together.
 
 signal vault_changed
 signal state_changed(state: String)
@@ -55,7 +52,7 @@ const CHANGING_TOOLS := ["docket_create", "docket_update", "docket_transition", 
 	"docket_move", "docket_type_define", "docket_type_evolve", "docket_type_activate", "docket_reload",
 	"docket_project_add", "docket_project_remove"]
 
-## "inactive" (the embedded DocketManager owns Docket's files), "unavailable"
+## "inactive" (not started), "unavailable"
 ## (the plugin is not running, or not ready), "starting" (its process is
 ## being set up), "ready", "degraded" (ready, with `problems`) or "failed"
 ## (the schema or the master could not be set up; `problems` says why).
@@ -114,13 +111,8 @@ var _reconcile_again := false
 var _changes := 0
 
 
-## Takes up the Docket plugin through `plugin_manager`, unless the embedded
-## DocketManager owns Docket's files (`embedded_owner`): then it stays
-## inactive.
-func start(plugin_manager, embedded_owner: bool) -> void:
-	if embedded_owner:
-		state = "inactive"
-		return
+## Takes up the Docket plugin through `plugin_manager`.
+func start(plugin_manager) -> void:
 	_plugin_manager = plugin_manager
 	_plugin_manager.plugin_ready.connect(_on_plugin_ready)
 	_plugin_manager.plugin_stopped.connect(_on_plugin_gone)
@@ -297,7 +289,7 @@ func policy_items() -> Dictionary:
 
 
 ## The knowledge items policy rules name by id (`refs`), read afresh from
-## the master, as the embedded Docket reads them, in the order of `refs`:
+## the master in the order of `refs`:
 ## {items}, or {error, index}: when Docket is unavailable, its projects
 ## cannot be listed or the master is not open (index -1, no ref read), or a
 ## ref's read fails, answers with another item or sees the plugin's process

@@ -22,7 +22,7 @@ func _init(master_path: String = "/content-fixture/master.dct") -> void:
 	host.projects = store.projects
 	host.master_path = master_path
 	host.state = "ready"
-	docket = PluginSeedingDocket.new(host, true)
+	docket = PluginSeedingDocket.new(host)
 
 func add_project(name: String, path: String) -> void:
 	store.projects.append({"name": name, "display_name": name, "path": path, "open_generation": "1"})

@@ -37,8 +37,7 @@ extends "res://test/helpers/docket_owner_suite.gd"
 ## itself); the two tools the master-shaped rules govern (StandInTools); and,
 ## for the dispatch, a running plugin (RUNNING_PLUGIN_MANAGER_SRC) whose
 ## backend records what it is sent (RECORDING_CONNECTION_SRC).
-## The embedded DocketManager is set aside while the test runs, so the plugin
-## owns the policy.
+## The hosted plugin owns the policy.
 
 const CONTEXT_PATH := "res://Scripts/Services/MCP/MCPExecutionContext.gd"
 const USER_FILES := ["user://docket_host_session.json", "user://docket_host_session.json.new"]
@@ -280,7 +279,6 @@ func _run() -> void:
 		if FileAccess.file_exists(path):
 			check("the throwaway profile holds no %s yet" % path, false)
 			return
-	var saved_manager = _so.docket_manager
 	var saved_host = _so.docket_host
 	await _test_policy_owner()
 	if _connection != null:
@@ -288,9 +286,8 @@ func _run() -> void:
 		await _test_skill_scopes()
 		await _test_recovery_tools()
 	await _test_docket_tool_names()
-	_so.docket_manager = saved_manager
 	_so.docket_host = saved_host
-	# The server's rules come from the embedded Docket again.
+	# Clear cached rules after restoring the host.
 	_so.get_mcp_manager().minerva_server.policy_engine.reload()
 	for node in _made:
 		if is_instance_valid(node):
@@ -339,9 +336,8 @@ func _test_policy_owner() -> void:
 	if host == null:
 		return
 	root.add_child(host)
-	_so.docket_manager = null
 	_so.docket_host = host
-	host.start(manager, false)
+	host.start(manager)
 	manager.plugin_ready.emit("docket")
 	var ready := await _wait(func(): return host.state in ["ready", "degraded"])
 	check("DocketHost sets up the plugin as the owner, with the master open",

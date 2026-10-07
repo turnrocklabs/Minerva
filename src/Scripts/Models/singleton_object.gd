@@ -732,7 +732,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 			var message := docket_host.availability_message()
 			if not message.is_empty():
 				create_toast_notification(message, ToastNotification.Type.INFO, false))
-	docket_host.start(plugin_manager, false)
+	docket_host.start(plugin_manager)
 
 	# Autostart plugins (like SCM services with auto-start flag), then any
 	# opted-in plugin updates
@@ -1000,7 +1000,6 @@ var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
 #endregion Plugin Editor Registry
 
 #region Docket
-var docket_manager = null
 ## Minerva's side of the Docket plugin, set up with the plugins.
 var docket_host: DocketHost = null
 

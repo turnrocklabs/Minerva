@@ -7,8 +7,5 @@ class PolicySource extends RefCounted:
 
 var _source := PolicySource.new()
 
-func _get_docket_manager() -> Variant:
-	return null
-
 func _get_docket_host() -> Variant:
 	return _source

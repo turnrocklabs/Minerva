@@ -606,10 +606,8 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 		return target
 	var project: String = target.project
 
-	# Forward skill fields to docket_create. DataModel.create_item copies any
-	# field listed in the skill type's optional_fields (including tool_deps and
-	# optimization), so the persisted item will carry them — the only gap was
-	# the MCP-layer schema on docket_create itself.
+	# Forward the skill type's optional fields to docket_create, including
+	# tool_deps and optimization, so the persisted item carries them.
 	var create_args := {
 		"project": project,
 		"type": "skill",

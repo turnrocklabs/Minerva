@@ -3,7 +3,7 @@ extends "res://test/helpers/docket_owner_suite.gd"
 ## prompt read from it, and the session DocketHost keeps there.
 ##
 ## Run only in a throwaway profile, made before Godot starts (the app's
-## autoloads, the embedded Docket among them, use the profile before this
+## autoloads use the profile before this
 ## script runs), from the repository root:
 ##   ( source scripts/lib/test-profile.sh && root="$(mktemp -d)" && seed_test_profile "$root" \
 ##     && MINERVA_TEST_PROFILE_ROOT="$root" timeout 300 \
@@ -383,7 +383,7 @@ func _test_session() -> void:
 	var host: Node = host_script.new()
 	_made_nodes.append(host)
 	root.add_child(host)
-	host.start(manager, false)
+	host.start(manager)
 	if not await _wait(func() -> bool: return not host.state in ["starting", "unavailable"]):
 		check("E: the host set the plugin's process up", false, host.state)
 		return
@@ -491,10 +491,8 @@ func _test_vault() -> void:
 	var host: Node = load(DOCKET_HOST_PATH).new()
 	_made_nodes.append(host)
 	root.add_child(host)
-	host.start(manager, false)
+	host.start(manager)
 	check("G: fake-backed hosted master is ready", await _wait(func() -> bool: return host.state == "ready"))
-	var previous_dm = _so.docket_manager
-	_so.docket_manager = null
 	_so.docket_host = host
 	var form = _vault_form()
 	_write("user://docket_prefs.json", JSON.stringify({"vault_password": "legacy-untouched", "vault_password_hint": "legacy-hint"}))
@@ -651,7 +649,6 @@ func _test_vault() -> void:
 	host._exit_tree()
 	check("J: explicit host exit drops retained credential and unlocked references",
 		host._vault_session._password.is_empty() and host._vault_session._unlocked.is_empty())
-	_so.docket_manager = previous_dm
 
 
 func _failed_paths(host) -> Array:

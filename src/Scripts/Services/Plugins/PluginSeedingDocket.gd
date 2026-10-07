@@ -1,6 +1,4 @@
-## Docket as plugin content seeding reaches it, from whichever owns Docket's
-## files: the embedded DocketManager (or a ToolRegistry standing in for it in
-## tests), or the Docket plugin through DocketHost. Every call is awaited and
+## Docket as plugin content seeding reaches it through DocketHost. Every call is awaited and
 ## answers the tool's result Dictionary, or {error}. One is made for each
 ## lifecycle operation (PluginContentSeeding.docket()).
 ##
@@ -14,12 +12,11 @@
 ## nothing more is sent, incomplete() says why, and uncertain() lists the
 ## changes that were sent but may or may not have been made.
 ##
-## Under either owner, a read that fails (but for an item that is not there)
+## A read that fails (but for an item that is not there)
 ## also stops the operation, rather than be taken for an empty answer.
 class_name PluginSeedingDocket extends RefCounted
 
-## The project name a manifest's knowledge defaults to, and the embedded
-## owner's primary project.
+## The project name a manifest's knowledge defaults to.
 const MASTER := "master"
 ## The tools whose calls change Docket (an uncertain one is listed).
 const CHANGING := ["docket_create", "docket_update", "docket_transition", "docket_delete"]
@@ -34,10 +31,7 @@ class OpenProject extends RefCounted:
 	func _to_string() -> String:
 		return path
 
-# The DocketManager or ToolRegistry (answering call_tool synchronously), or
-# the DocketHost.
-var _target
-var _plugin_owner := false
+var _target: DocketHost
 # Under the plugin: project key ("" for the master) -> its target, and the
 # keys found naming no open project.
 var _bound: Dictionary = {}
@@ -47,22 +41,19 @@ var _missing: Dictionary = {}
 var _pinned: Array = []
 var _recovery := false
 var _unbound: Array[String] = []
-# Under the embedded owner: the names found open, for bound_paths.
-var _embedded_names: Dictionary = {}
 var _stopped := ""
 var _uncertain: Array[Dictionary] = []
 
 
-func _init(target, plugin_owner: bool) -> void:
+func _init(target: DocketHost) -> void:
 	_target = target
-	_plugin_owner = plugin_owner
 
 
 ## Why Docket cannot be reached for seeding now, or "".
 func unavailable() -> String:
 	if _target == null:
 		return "Docket is not available"
-	if _plugin_owner and not _target.state in ["ready", "degraded"]:
+	if not _target.state in ["ready", "degraded"]:
 		return "Docket is %s" % _target.state
 	return ""
 
@@ -75,18 +66,12 @@ func incomplete() -> String:
 ## The canonical path each project name the operation bound is open at
 ## ("" for the master), and "" for each it found naming no open project:
 ## what a journal records, so recovery under the plugin reaches the same
-## files (pin). Under the embedded owner, the paths of the project files
-## it found (recovery there goes by name, as it always has).
+## files (pin).
 func bound_paths() -> Dictionary:
 	var paths := {}
 	for key in _missing:
 		if key is String:
 			paths[key] = ""
-	if not _plugin_owner:
-		for key in _embedded_names:
-			var db = _target.get_db(MASTER if key.is_empty() else key) if _target.has_method("get_db") else null
-			paths[key] = ProjectSettings.globalize_path(db.get_path()) if db != null else ""
-		return paths
 	for key in _bound:
 		if key is String:
 			paths[key] = str(_bound[key].project.get("path", ""))
@@ -123,8 +108,6 @@ func enumerated_paths() -> Array:
 ## operations mean the same project file, opened the same way.
 func binding_key(project: String) -> String:
 	var key := "" if project == MASTER else project
-	if not _plugin_owner:
-		return str(bound_paths().get(key, ""))
 	if not _bound.has(key):
 		return ""
 	var found: Dictionary = _bound[key]
@@ -140,11 +123,8 @@ func binding_key(project: String) -> String:
 ## project open at its path (one not open is missing), and no other name is
 ## bound for the rest of the operation. With `enumerating` (a removal's
 ## retry, which reaches every project it listed), a journal must also list
-## those projects' files, even as none. Nothing is done under the embedded
-## owner, whose recovery goes by name.
+## those projects' files, even as none.
 func pin(journal: Dictionary, required: Array, enumerating := false, allow_unbound := false) -> void:
-	if not _plugin_owner:
-		return
 	var recorded = journal.get("paths")
 	var paths: Dictionary = recorded if recorded is Dictionary else {}
 	var enumerated = journal.get("enumerated", null if enumerating else [])
@@ -183,11 +163,6 @@ func pin(journal: Dictionary, required: Array, enumerating := false, allow_unbou
 			await _target_of(project)
 
 
-## Whether this serves the Docket plugin (rather than the embedded owner).
-func plugin_owner() -> bool:
-	return _plugin_owner
-
-
 ## Whether the operation found `project` (a name) naming no open project.
 func was_missing(project: String) -> bool:
 	return _missing.has("" if project == MASTER else project)
@@ -208,9 +183,6 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	if not why.is_empty():
 		_stopped = why
 		return {"error": why}
-	if not _plugin_owner:
-		var result = _target.call_tool(tool, arguments)
-		return _read_checked(tool, result if result is Dictionary else {"error": "%s answered %s" % [tool, str(result)]})
 	var found := await _target_of(arguments.get("project", ""))
 	if found.has("error"):
 		return found
@@ -251,15 +223,7 @@ func has_project(project) -> bool:
 	if not unavailable().is_empty():
 		_stopped = unavailable()
 		return false
-	if _plugin_owner:
-		return not (await _target_of(project)).has("error")
-	var key := "" if str(project) == MASTER else str(project)
-	var loaded: bool = (MASTER if key.is_empty() else key) in await project_names()
-	if loaded:
-		_embedded_names[key] = true
-	else:
-		_missing[key] = {"error": "Docket project '%s' is not open" % project}
-	return loaded
+	return not (await _target_of(project)).has("error")
 
 
 ## The open projects, as project arguments name them (under the plugin, as
@@ -268,24 +232,18 @@ func has_project(project) -> bool:
 func project_names() -> Array:
 	if not _stopped.is_empty() or not unavailable().is_empty():
 		return []
-	if _plugin_owner:
-		var listed: Dictionary = await _target.open_projects()
-		if not listed.get("projects") is Array:
-			_stopped = "Docket's open projects could not be listed (%s)" % listed.get("message", "no list")
-			return []
-		return listed.projects.map(func(p: Dictionary) -> OpenProject: return OpenProject.new(str(p.get("path", ""))))
-	var listed := await call_tool("docket_project_list", {})
-	return listed.get("projects", []).map(func(p) -> String: return str(p.get("name", ""))) \
-		if listed.get("projects") is Array else []
+	var listed: Dictionary = await _target.open_projects()
+	if not listed.get("projects") is Array:
+		_stopped = "Docket's open projects could not be listed (%s)" % listed.get("message", "no list")
+		return []
+	return listed.projects.map(func(p: Dictionary) -> OpenProject: return OpenProject.new(str(p.get("path", ""))))
 
 
-## Whether every change to `project` ("" being the primary one) is settled
-## in its file: docket_persist under the embedded owner, a checked
-## docket_flush of exactly that one project under the plugin (sent under its
+## Whether every change to `project` is settled in its file: a checked
+## docket_flush of exactly that one project (sent under its
 ## bound selector, never none: a flush naming no project writes them all).
 func settle(project) -> bool:
-	var tool := "docket_flush" if _plugin_owner else "docket_persist"
-	return not (await call_tool(tool, {"project": project})).has("error")
+	return not (await call_tool("docket_flush", {"project": project})).has("error")
 
 
 # `arguments` as a journal can keep them (an OpenProject as its path).

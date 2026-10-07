@@ -1,7 +1,7 @@
 extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of Docket skills as Minerva's skill tools meet them when the
-## Docket plugin owns Minerva's projects (the embedded DocketManager set
-## aside), through the public server dispatch and its execution context:
+## Docket plugin owns Minerva's projects, through the public server dispatch
+## and its execution context:
 ## - the skill contract: get gives a skill's full content (prompt_text,
 ##   steps, tool_deps, optimization applied); create stores its tools and
 ##   optimization and activates its tools, update changes its steps, get and
@@ -39,9 +39,8 @@ extends "res://test/helpers/docket_owner_suite.gd"
 ## update, transition, comment) over in-memory items in two projects, where
 ## any call can be held and a query of a type made to fail; its private
 ## channel; the plugin manager DocketHost is given; and the running plugin
-## the registry dispatches to. The embedded Docket tools' module is set
-## aside, as it is absent once the plugin owns Docket; their definitions stay
-## registered and give the argument schemas the dispatch coerces with. A tool
+## the registry dispatches to. Published plugin definitions give the argument
+## schemas the dispatch coerces with. A tool
 ## (CREATE_DEP) is registered for the created skills to depend on. Not covered: a real Docket
 ## process or package, and cancellation inside the transport's reply
 ## delivery.
@@ -309,16 +308,8 @@ func _run() -> void:
 		if FileAccess.file_exists(path):
 			check("the throwaway profile holds no %s yet" % path, false)
 			return
-	var saved_manager = _so.docket_manager
 	var saved_host = _so.docket_host
 	var saved_registry = _so.plugin_tool_registry
-	var docket_tools = null
-	var saved_names: Array[String] = []
-	for module in _server()._modules:
-		if module.get_script().resource_path.ends_with("/MCPDocketTools.gd"):
-			docket_tools = module
-			saved_names.assign(module._tool_names)
-			module._tool_names.clear()
 	var index = _server().tool_search_index
 	index.register_tool(CREATE_DEP, "a tool created skills depend on",
 		{"name": CREATE_DEP, "description": "a tool created skills depend on", "input_schema": {"type": "object"}}, "")
@@ -328,7 +319,6 @@ func _run() -> void:
 		await _test_secret_route()
 	index.unregister_tool(CREATE_DEP)
 	_server().tool_budget_manager.reset()
-	_so.docket_manager = saved_manager
 	_so.docket_host = saved_host
 	_so.plugin_tool_registry = saved_registry
 	for name in _saved_write_definitions:
@@ -337,8 +327,6 @@ func _run() -> void:
 		else:
 			_server().mcp_manager.tool_registry[name] = _saved_write_definitions[name]
 	_saved_write_definitions.clear()
-	if docket_tools != null:
-		docket_tools._tool_names.assign(saved_names)
 	_server().policy_engine.reload()
 	var skills = _so.get_skill_manager()
 	for skill in skills.skills.duplicate():
@@ -380,9 +368,8 @@ func _set_up() -> bool:
 	host_manager.authority = authority
 	root.add_child(host_manager)
 	root.add_child(host)
-	_so.docket_manager = null
 	_so.docket_host = host
-	host.start(host_manager, false)
+	host.start(host_manager)
 	host_manager.plugin_ready.emit("docket")
 	var ready := await _wait(func(): return host.state in ["ready", "degraded"])
 	check("DocketHost sets up the plugin as the owner", ready, "%s %s" % [host.state, host.problems])

@@ -17,7 +17,7 @@
 ## flag for that, so it is always derived.
 ##
 ## All Docket access is awaited through `docket_caller`, a PluginSeedingDocket
-## (over the DocketManager, the Docket plugin, or a ToolRegistry in tests).
+## over DocketHost.
 class_name PluginKnowledgeSeeder extends RefCounted
 
 const Seeder := preload("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
@@ -100,7 +100,7 @@ static func content_hash(entry: Dictionary) -> String:
 			tags.sort()
 			value = tags
 		else:
-			# As Docket stores text (DocketDB._normalize_text), so an entry
+			# Normalize escaped text as Docket stores it, so an entry
 			# hashes like the record it becomes.
 			value = str(value).replace("\\n", "\n").replace("\\t", "\t") if value != null else ""
 		content[field] = value

@@ -444,7 +444,7 @@ func test_compile_single_element_triggers_array():
 func test_evaluate_no_rules_allows():
 	print("test_evaluate_no_rules_allows:")
 	var engine := PolicyEngine.new()
-	# No rules loaded — reload() not called (no DocketManager in test env)
+	# No rules loaded in this test environment.
 	var result := engine.evaluate("minerva_bash", {"command": "git push --force origin main"})
 	check("no rules: allowed is true", result.get("allowed", false) == true)
 	check("no rules: effect is 'clear'", result.get("effect", "") == "clear")

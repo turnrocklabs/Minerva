@@ -11,7 +11,7 @@ var _sequence := 0
 
 func install(so: Node) -> void:
 	_so = so
-	for key in ["docket_manager", "docket_host", "plugin_manager", "plugin_event_broker"]:
+	for key in ["docket_host", "plugin_manager", "plugin_event_broker"]:
 		_previous[key] = so.get(key)
 	var suite = load("res://test/test_docket_trigger_feed.gd")
 	_wire = _make(suite.WIRE_SRC)
@@ -31,7 +31,6 @@ func install(so: Node) -> void:
 	_host.projects = _wire.listed
 	_host.master_path = _wire.listed[0].path
 	_host.state = "ready"
-	so.docket_manager = null
 	so.docket_host = _host
 	so.plugin_manager = _plugins
 	so.plugin_event_broker = _broker

@@ -3,10 +3,8 @@ extends RefCounted
 ## Wake-mode DOCKET_POLL triggers (TriggerDefinition.docket_wake_sessions)
 ## fed from docket.app's change feed: docket_subscribe, docket_changes_since
 ## and docket_ack, called on the MCP server `server` (default "docket").
-## Off by default (`enabled` in state_path). It runs beside the embedded
-## DocketManager signals and the Docket plugin feed, which stay as they are:
-## those see changes made through Minerva's own Docket, this one changes made
-## through docket.app, whose event log is the only one that numbers them.
+## Off by default (`enabled` in state_path). It runs beside the Docket plugin
+## feed; this subscription reads docket.app's numbered event log.
 ##
 ## Identity. Minerva subscribes once per installation, named
 ## "minerva@install-<id>" from a random id kept in state_path. The
@@ -15,8 +13,8 @@ extends RefCounted
 ##
 ## Reading. Every poll_s the feed reads pages until `more` is false. Each
 ## event's item is read with docket_get (its events included) and handed to
-## the served triggers whose filters pass, under the change key the embedded
-## path derives for the same change (DocketWakeups.change_key_of): docket.app
+## the served triggers whose filters pass, under the timestamp change key
+## (DocketWakeups.change_key_of): docket.app
 ## writes an event's timestamp as the item's updated_at, and a transition's
 ## from/to come from its event note "<from> → <to>". A change a session
 ## already took under that key is not sent to it again.

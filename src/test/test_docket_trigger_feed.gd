@@ -1,10 +1,10 @@
 extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of Docket triggers (DOCKET_POLL) under the Docket plugin,
-## the embedded DocketManager set aside: item_changed events enter as stdio
+## where item_changed events enter as stdio
 ## frames the Docket plugin's connection reads (MCPServerConnection's own
 ## reading and validation), reach the event broker, the feed and the trigger
 ## manager, whose triggers:
-## - fire for the described change of an item as DocketManager signalled it
+## - fire for the described change of an item
 ##   (created with its type, transitioned with both states, updated,
 ##   comment_added), with their project, item type (created only) and
 ##   parent filters and message as before; a deleted item reads as none;
@@ -170,7 +170,7 @@ func _run() -> void:
 	if profile.is_empty() or not user_dir.begins_with(profile.trim_suffix("/") + "/"):
 		check("Godot's user directory is in the throwaway profile (see the header)", false, user_dir)
 		return
-	var saved := {"docket_manager": _so.docket_manager, "docket_host": _so.docket_host,
+	var saved := {"docket_host": _so.docket_host,
 		"plugin_manager": _so.plugin_manager, "plugin_event_broker": _so.plugin_event_broker}
 	if _set_up():
 		await _test_changes()
@@ -214,7 +214,6 @@ func _set_up() -> bool:
 	_host.state = "ready"
 	broker.plugin_event.connect(func(_p, _e, _payload): _arrived += 1)
 	broker.plugin_event_dropped.connect(func(_p, _reason): _arrived += 1)
-	_so.docket_manager = null
 	_so.docket_host = _host
 	_so.plugin_manager = _plugins
 	_so.plugin_event_broker = broker

@@ -406,14 +406,12 @@ static func content_committed(journal: Dictionary) -> bool:
 
 ## content_committed, saying why it did not finish ("" when it did). A
 ## journal that names what the install applied and retired nothing needs no
-## Docket; one that does not say (absent or unreadable) is only taken for
-## that by the embedded owner, as before: under the plugin it waits.
+## Docket; one that does not say (absent or unreadable) waits.
 static func content_committed_problem(journal: Dictionary) -> String:
 	var docket_caller := docket()
 	var retired := str(journal.get("retired_project", ""))
 	if not journal.get("attempted") is Dictionary:
-		return "its Docket record cannot be read, so it is not repaired automatically" \
-			if docket_caller.plugin_owner() else ""
+		return "its Docket record cannot be read, so it is not repaired automatically"
 	if retired.is_empty():
 		return ""
 	await docket_caller.pin(journal, [retired])
@@ -511,8 +509,8 @@ static func docket() -> SeedingDocket:
 		return docket_override
 	var host = SingletonObject.get("docket_host") if typeof(SingletonObject) != TYPE_NIL else null
 	if host != null and host.state != "inactive":
-		return SeedingDocket.new(host, true)
-	return SeedingDocket.new(null, false)
+		return SeedingDocket.new(host)
+	return SeedingDocket.new(null)
 
 
 ## The Docket journal for applying `def`: the definition, the project a move

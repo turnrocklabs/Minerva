@@ -252,7 +252,7 @@ func test_docket_c1_startup_and_refusals() -> void:
 	for i in 30:
 		if so.plugin_tool_registry != null: break
 		await process_frame
-	check("C1 startup has no embedded Docket file owner", so.docket_manager == null)
+	check("C1 startup has the hosted Docket adapter", so.docket_host != null)
 	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
 	var host_scale_before := root.content_scale_factor
 	var host_font_before := root.get_theme_font_size("font_size")

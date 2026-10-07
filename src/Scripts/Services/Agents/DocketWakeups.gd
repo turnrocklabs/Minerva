@@ -27,7 +27,7 @@ extends RefCounted
 ## Dedup: each change is taken at most once per session, keyed by
 ## "<identity>|<change key>". The change key is the plugin event's position,
 ## "<process generation>/<stream>/<sequence>", unique per change; without the
-## plugin (embedded DocketManager) it is "<project>|<item id>|<kind>|
+## source position it is "<project>|<item id>|<kind>|
 ## <updated_at>|<from>><to>".
 ##
 ## A registered session that is not reachable (unbound, exited, another
@@ -120,8 +120,8 @@ func _init() -> void:
 	NotifyDeliveryLedger.shared().changed.connect(_on_ledger_changed)
 
 
-## The change key of a change with no source position: the embedded
-## DocketManager's, derived from the item's updated_at after the change.
+## The change key of a change with no source position, derived from the
+## item's updated_at after the change.
 static func change_key_of(project: String, item_id: String, kind: String, updated_at: String,
 		from_status: String, to_status: String) -> String:
 	return "%s|%s|%s|%s|%s>%s" % [project, item_id, kind, updated_at, from_status, to_status]
