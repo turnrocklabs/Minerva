@@ -1335,6 +1335,16 @@ func _ready():
 	# builds still use the retain count to avoid an unsupported process reinit.
 	# Tracked under DCR 019dac8d.
 	if ClassDB.class_exists("CefTexture"):
+		if OS.get_name() == "Windows":
+			# CEF's admin de-elevation relaunches the host executable, leaving two
+			# Minervas alive. Keep the user's chosen privilege; never elevate it.
+			var switch_key := "godot_cef/advanced/custom_command_line_switches"
+			var switches: Array[String] = []
+			switches.assign(str(ProjectSettings.get_setting(switch_key, "")).split("\n"))
+			if not switches.any(func(value: String) -> bool:
+				return value.strip_edges().trim_prefix("--") == "do-not-de-elevate"):
+				switches.append("do-not-de-elevate")
+				ProjectSettings.set_setting(switch_key, "\n".join(switches))
 		var cef_pin: Node = ClassDB.instantiate("CefTexture")
 		if cef_pin != null:
 			cef_pin.name = "CefLifecyclePin"
