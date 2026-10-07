@@ -65,8 +65,6 @@ jobs:
             runner: windows-latest
           - target: macos-arm64
             runner: macos-15
-          - target: macos-amd64
-            runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -93,6 +91,17 @@ jobs:
       - name: Build pinned MCP schema helper
         shell: bash
         run: scripts/build-mcp-schema-helper.sh "${{ matrix.target }}"
+      - name: Package universal macOS helper on Apple Silicon
+        if: matrix.target == 'macos-arm64'
+        run: |
+          dist=src/native/json_schema_helper/dist/macos-arm64
+          # Both app runtime paths use this universal helper; only arm64 executes in CI.
+          clang++ -std=c++17 -mmacosx-version-min=11.0 -arch arm64 -arch x86_64 \
+            -I src/native/vendor/jsoncons/include src/native/json_schema_helper/main.cpp \
+            -o "$dist/minerva-json-schema-helper"
+          archive=src/native/json_schema_helper/artifacts/minerva-json-schema-helper-macos-arm64.tar.gz
+          tar -czf "$archive" -C "$dist" .
+          shasum -a 256 "$archive" | cut -d' ' -f1 > "$archive.sha256"
       - name: Check contributor rerun safety
         run: python tests/test_contributor_setup.py
       - name: Test native helper contract
@@ -997,12 +1006,12 @@ jobs:
         working-directory: src
         run: |
           ROOT=build/macos/Minerva.app/Contents/Resources/mcp-runtime
+          artifact="${GITHUB_WORKSPACE}/mcp-schema-helpers/minerva-json-schema-helper-macos-arm64"
+          archive="$artifact/minerva-json-schema-helper-macos-arm64.tar.gz"
+          expected=$(tr -d '\r\n' < "$archive.sha256")
+          actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+          [ "$actual" = "$expected" ] || { echo "::error::MCP helper checksum mismatch"; exit 1; }
           for target in macos-arm64 macos-amd64; do
-            artifact="${GITHUB_WORKSPACE}/mcp-schema-helpers/minerva-json-schema-helper-${target}"
-            archive="$artifact/minerva-json-schema-helper-${target}.tar.gz"
-            expected=$(tr -d '\r\n' < "$archive.sha256")
-            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
-            [ "$actual" = "$expected" ] || { echo "::error::MCP helper checksum mismatch: $target"; exit 1; }
             mkdir -p "$ROOT/$target"
             tar -xzf "$archive" -C "$ROOT/$target"
           done
@@ -1116,12 +1125,10 @@ jobs:
             "$APP/Contents/Resources/Minerva.pck"
             "$APP/Contents/Info.plist"
             "$APP/Contents/Resources/mcp-runtime/macos-arm64/minerva-json-schema-helper"
-            "$APP/Contents/Resources/mcp-runtime/macos-amd64/minerva-json-schema-helper"
           )
           required_dirs=(
             "$APP/Contents/Frameworks"
             "$APP/Contents/Resources/mcp-runtime/macos-arm64"
-            "$APP/Contents/Resources/mcp-runtime/macos-amd64"
           )
           # Critical GDExtension assets that MUST land in Contents/Frameworks/
           # — the prior bug shipped a Minerva.app with no Frameworks/ at all,

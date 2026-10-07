@@ -93,10 +93,6 @@ jobs:
             platform: macos
             runner: macos-15
             artifact: Minerva-macOS-Build
-          - target: macos-amd64
-            platform: macos
-            runner: macos-15-intel
-            artifact: Minerva-macOS-Build
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Select requested platform
