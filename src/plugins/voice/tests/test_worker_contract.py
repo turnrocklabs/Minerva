@@ -44,6 +44,33 @@ class DelayedDetector(FakeDetector):
 
 
 class WorkerContractTest(unittest.IsolatedAsyncioTestCase):
+    async def test_control_plane_responds_before_loading_ml_dependencies(self) -> None:
+        script = """
+import asyncio, json, sys
+from minerva_voice_worker.server import VoiceWorker
+async def check():
+    worker = VoiceWorker()
+    responses = []
+    for request in [
+        {"id": 1, "method": "initialize"},
+        {"id": 2, "method": "tools/list"},
+        {"id": 3, "method": "tools/call", "params": {"name": "minerva_voice_status"}},
+    ]:
+        responses.append(await worker.dispatch(request))
+    print(json.dumps({"responses": responses, "loaded": sorted(set(sys.modules) &
+        {"numpy", "onnxruntime", "openwakeword", "minerva_voice_worker.detector"})}))
+asyncio.run(check())
+"""
+        result = await asyncio.to_thread(subprocess.run,
+            [sys.executable, "-B", "-I", "-c", script],
+            capture_output=True, text=True, timeout=10, check=True)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["loaded"], [])
+        responses = payload["responses"]
+        self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-06-18")
+        self.assertEqual(len(responses[1]["result"]["tools"]), 5)
+        self.assertFalse(json.loads(responses[2]["result"]["content"][0]["text"])["ready"])
+
     async def asyncSetUp(self) -> None:
         self.detector = FakeDetector()
         self.worker = VoiceWorker(detector_factory=lambda: self.detector)

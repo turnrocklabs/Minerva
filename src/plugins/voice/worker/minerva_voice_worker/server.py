@@ -9,8 +9,8 @@ import math
 import sys
 from pathlib import Path
 
-from .detector import DEFAULT_VAD_SILENCE_MS, VoiceDetector
-from .session import AudioSession
+from .constants import DEFAULT_VAD_SILENCE_MS
+from .session import AudioSession, Detector
 
 PROTOCOL_VERSION = "2025-06-18"
 MAX_CONTROL_LINE_CHARS = 64 * 1024
@@ -55,7 +55,10 @@ class VoiceWorker:
         factory = detector_factory or self._make_detector
         self.session = AudioSession(factory)
 
-    def _make_detector(self) -> VoiceDetector:
+    def _make_detector(self) -> Detector:
+        # Import ML dependencies in the existing background loader, after initialize.
+        from .detector import VoiceDetector
+
         return VoiceDetector(self._model_path, self._wake_word_threshold, self._vad_silence_ms)
 
     async def dispatch(self, message: dict) -> dict | None:

@@ -11,11 +11,12 @@ import onnxruntime as ort
 from openwakeword.vad import VAD
 from openwakeword.utils import AudioFeatures
 
+from .constants import DEFAULT_VAD_SILENCE_MS
+
 SAMPLE_RATE = 16_000
 OWW_CHUNK_SAMPLES = 1_280
 VAD_CHUNK_SAMPLES = 512
 ENERGY_THRESHOLD = 250
-DEFAULT_VAD_SILENCE_MS = 4_700
 
 
 class VoiceDetector:
