@@ -28,7 +28,9 @@ func status(host: Node) -> String:
 
 
 func observe(host: Node) -> void:
-	if not _credential.is_empty() and _credential.path != host.master_path:
+	# Preparation temporarily has no master path. Wait for the next known path
+	# before deciding that the retained credential belongs to a different vault.
+	if not _credential.is_empty() and not host.master_path.is_empty() and _credential.path != host.master_path:
 		_password = ""
 		_credential = {}
 	if not _unlocked.is_empty() and host._vault_identity() != _unlocked:

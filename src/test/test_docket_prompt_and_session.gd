@@ -649,6 +649,14 @@ func _test_vault() -> void:
 		no_channel == "Vault unavailable: no private host channel." and authority.private_methods.size() == refused_calls)
 	manager.authority = authority
 	await host.unlock_vault(VAULT_PASSWORD)
+	var known_master: String = host.master_path
+	var unknown_sent: int = authority.password_sends
+	host.master_path = ""
+	host._vault_session.observe(host)
+	await process_frame
+	check("J: temporary unknown master preserves the credential without sending it", host._vault_session._password == VAULT_PASSWORD and authority.password_sends == unknown_sent)
+	host.master_path = known_master
+	await host._vault_session.resume(host)
 	var sent_before: int = authority.password_sends
 	authority.fingerprint = "changed-vault-fingerprint"
 	host._vault_session._unlocked = {}
