@@ -194,8 +194,12 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 	await _ensure_plugins_running_for_entries(editors_array)
 
 	for editor_ser in editors_array:
-		prints("Getting registered object:", editor_ser.get("associated_object"))
 		var ser_type = editor_ser.get("type")
+		# Saved layouts can contain retired types; omit them before creating a blank tab.
+		if ser_type not in Editor.Type.values():
+			print("[EditorContainer] Skipping unsupported saved editor type: %s" % str(ser_type))
+			continue
+		prints("Getting registered object:", editor_ser.get("associated_object"))
 		var editor_inst: Editor
 		if ser_type == Editor.Type.PLUGIN_SCENE:
 			editor_inst = Editor.create_plugin_scene(

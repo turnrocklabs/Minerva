@@ -143,7 +143,6 @@ enum Type {
 	WEBVIEW = 10,
 	PLUGIN_MANAGER = 11,
 	WORKER_STATUS = 12,
-	DOCKET = 13,
 	PLUGIN_SCENE = 14,   ## Native Godot-scene panel contributed by a plugin (design §7.1).
 }
 
@@ -506,11 +505,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(panel)
 			editor.worker_status_panel = panel
-
-		Editor.Type.DOCKET:
-			var notice := Label.new()
-			notice.text = "Docket uses its own window. Open it with File > Docket."
-			vbox_container.add_child(notice)
 
 		Editor.Type.PLUGIN_SCENE:
 			# PLUGIN_SCENE editors must be created via Editor.create_plugin_scene()

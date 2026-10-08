@@ -1840,7 +1840,6 @@ func _editor_type_to_string(t: int) -> String:
 		Editor.Type.WEBVIEW:         return "WEBVIEW"
 		Editor.Type.PLUGIN_MANAGER:  return "PLUGIN_MANAGER"
 		Editor.Type.WORKER_STATUS:   return "WORKER_STATUS"
-		Editor.Type.DOCKET:          return "DOCKET"
 		Editor.Type.PLUGIN_SCENE:    return "PLUGIN_SCENE"
 		_:                           return "UNKNOWN"
 

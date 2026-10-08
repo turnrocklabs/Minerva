@@ -323,6 +323,7 @@ func test_plugin_scene_type_exists() -> void:
 	# Verify the enum value exists and is an int.
 	var val = Editor.Type.PLUGIN_SCENE
 	check("Editor.Type.PLUGIN_SCENE exists", val is int)
+	check_eq("PLUGIN_SCENE retains its saved-layout value", val, 14)
 
 
 func test_plugin_scene_type_distinct_from_others() -> void:
@@ -340,7 +341,6 @@ func test_plugin_scene_type_distinct_from_others() -> void:
 		Editor.Type.WEBVIEW,
 		Editor.Type.PLUGIN_MANAGER,
 		Editor.Type.WORKER_STATUS,
-		Editor.Type.DOCKET,
 	]
 	var is_unique := true
 	for other in others:

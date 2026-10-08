@@ -1050,10 +1050,9 @@ func _register_running_manifest_tools(plugin_id: String,
 #     (no double-prefix). This lets conformant backends opt in without
 #     breakage.
 #   - The Docket plugin's own tools ("docket_get", …) become "minerva_" + name
-#     ("minerva_docket_get"): the names the embedded Docket gave them, which
-#     policies, skills' tool_deps and prompts name. A built-in tool of the
-#     same name (the embedded Docket's) is a conflict, so the two never
-#     register together.
+#     ("minerva_docket_get"), preserving the names used by policies,
+#     skills' tool_deps and prompts. Built-in name collisions are rejected
+#     to prevent plugin tools from shadowing host tools.
 #   - Names that start with "minerva_" but belong to a DIFFERENT plugin's
 #     prefix are rejected as they could shadow another plugin's tools.
 #

@@ -130,13 +130,11 @@ func _test_internal_editor_filter(Broker) -> void:
 	const T_ACTIVITY_LOG := 9    # Editor.Type.ACTIVITY_LOG
 	const T_PLUGIN_MANAGER := 11 # Editor.Type.PLUGIN_MANAGER
 	const T_WORKER_STATUS := 12  # Editor.Type.WORKER_STATUS
-	const T_DOCKET := 13         # Editor.Type.DOCKET
 
 	var stub_text := { "type": T_TEXT }
 	var stub_graphics := { "type": T_GRAPHICS }
 	var stub_activity := { "type": T_ACTIVITY_LOG }
 	var stub_logs := { "type": T_LOGS }
-	var stub_docket := { "type": T_DOCKET }
 	var stub_plugin_mgr := { "type": T_PLUGIN_MANAGER }
 	var stub_worker := { "type": T_WORKER_STATUS }
 
@@ -145,7 +143,6 @@ func _test_internal_editor_filter(Broker) -> void:
 	check("internal filter: GRAPHICS not internal", not Broker._editor_is_internal(stub_graphics))
 	check("internal filter: ACTIVITY_LOG flagged", Broker._editor_is_internal(stub_activity))
 	check("internal filter: LOGS flagged", Broker._editor_is_internal(stub_logs))
-	check("internal filter: DOCKET flagged", Broker._editor_is_internal(stub_docket))
 	check("internal filter: PLUGIN_MANAGER flagged", Broker._editor_is_internal(stub_plugin_mgr))
 	check("internal filter: WORKER_STATUS flagged", Broker._editor_is_internal(stub_worker))
 

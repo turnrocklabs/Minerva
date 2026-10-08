@@ -2019,14 +2019,13 @@ const _EDITORS_EXPORT_ALLOWED_ARGS := ["editor_name", "format"]
 ## host.editors.list or host.editors.export. ACTIVITY_LOG in particular
 ## logs every MCP call (including other plugins' args), so allowing
 ## arbitrary plugin export of it would be a cross-plugin information leak.
-## DOCKET / PLUGIN_MANAGER / LOGS / WORKER_STATUS are similar host UI tabs
+## PLUGIN_MANAGER / LOGS / WORKER_STATUS are similar host UI tabs
 ## that hold operational state, not user content. If a plugin wants its
 ## own state, it owns the panel and uses host.documents.* instead.
 const _EDITORS_INTERNAL_TYPES := [
 	Editor.Type.ACTIVITY_LOG,
 	Editor.Type.LOGS,
 	Editor.Type.PLUGIN_MANAGER,
-	Editor.Type.DOCKET,
 	Editor.Type.WORKER_STATUS,
 ]
 
@@ -2578,7 +2577,6 @@ static func _editor_kind_string(ed_type: int) -> String:
 		Editor.Type.SPREADSHEET: return "spreadsheet"
 		Editor.Type.VIDEO_EDITOR: return "video_editor"
 		Editor.Type.WEBVIEW: return "webview"
-		Editor.Type.DOCKET: return "docket"
 		Editor.Type.PLUGIN_MANAGER: return "plugin_manager"
 		Editor.Type.WORKER_STATUS: return "worker_status"
 		Editor.Type.ACTIVITY_LOG: return "activity_log"
