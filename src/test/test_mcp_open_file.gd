@@ -284,7 +284,8 @@ func test_saved_layout_skips_retired_editor() -> void:
 		{"type": 13, "name": "Docket"},
 		{"type": Editor.Type.TEXT, "name": "after", "content": "second buffer"},
 	]
-	var restored: Array[Editor] = await EditorContainer.deserialize(layout)
+	var saved_layout: Array = JSON.parse_string(JSON.stringify(layout))
+	var restored: Array[Editor] = await EditorContainer.deserialize(saved_layout)
 	for editor: Editor in restored:
 		pane.adopt_editor(editor)
 	await process_frame

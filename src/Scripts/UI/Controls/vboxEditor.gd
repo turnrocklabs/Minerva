@@ -194,7 +194,7 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 	await _ensure_plugins_running_for_entries(editors_array)
 
 	for editor_ser in editors_array:
-		var ser_type = editor_ser.get("type")
+		var ser_type: int = int(editor_ser.get("type", -1))
 		# Saved layouts can contain retired types; omit them before creating a blank tab.
 		if ser_type not in Editor.Type.values():
 			print("[EditorContainer] Skipping unsupported saved editor type: %s" % str(ser_type))
