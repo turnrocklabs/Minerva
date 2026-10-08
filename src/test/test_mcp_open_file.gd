@@ -254,46 +254,48 @@ class LayoutErrorCapture extends "res://test/helpers/log_capture.gd":
 
 func test_saved_layout_skips_retired_editor() -> void:
 	var so = root.get_node("SingletonObject")
-	var saved_pane: EditorPane = so.editor_pane
-	var saved_container: EditorContainer = so.editor_container
-	var pane: EditorPane = preload("res://Scenes/EditorPane.tscn").instantiate()
+	# Load at runtime: these scripts need autoloads, which --script has not wired at compile time.
+	var saved_pane = so.editor_pane
+	var saved_container = so.editor_container
+	var pane = load("res://Scenes/EditorPane.tscn").instantiate()
 	# MainScene normally supplies these two owner-unique controls.
-	var toggle := CheckButton.new()
+	var toggle = CheckButton.new()
 	toggle.name = "ToggleAllButton"
 	pane.add_child(toggle)
 	toggle.owner = pane
 	toggle.unique_name_in_owner = true
-	var buffer_control := Control.new()
+	var buffer_control = Control.new()
 	buffer_control.name = "BufferControlEditor"
 	pane.add_child(buffer_control)
 	buffer_control.owner = pane
 	buffer_control.unique_name_in_owner = true
-	var container := EditorContainer.new()
+	var container_script = load("res://Scripts/UI/Controls/vboxEditor.gd")
+	var container = container_script.new()
 	container.editor_pane = pane
 	so.editor_pane = pane
 	so.editor_container = container
 	root.add_child(pane)
 	root.add_child(container)
-	var host_scale_before := root.content_scale_factor
-	var host_font_before := root.get_theme_font_size("font_size")
-	var capture := LayoutErrorCapture.new()
+	var host_scale_before = root.content_scale_factor
+	var host_font_before = root.get_theme_font_size("font_size")
+	var capture = LayoutErrorCapture.new()
 	OS.add_logger(capture)
 	# Type 13 is the on-disk value of the retired tab, between two live tabs.
-	var layout: Array[Dictionary] = [
-		{"type": Editor.Type.TEXT, "name": "before", "content": "first buffer"},
+	var layout = [
+		{"type": 0, "name": "before", "content": "first buffer"},
 		{"type": 13, "name": "Docket"},
-		{"type": Editor.Type.TEXT, "name": "after", "content": "second buffer"},
+		{"type": 0, "name": "after", "content": "second buffer"},
 	]
-	var saved_layout: Array = JSON.parse_string(JSON.stringify(layout))
-	var restored: Array[Editor] = await EditorContainer.deserialize(saved_layout)
-	for editor: Editor in restored:
+	var saved_layout = JSON.parse_string(JSON.stringify(layout))
+	var restored = await container_script.deserialize(saved_layout)
+	for editor in restored:
 		pane.adopt_editor(editor)
 	await process_frame
 	OS.remove_logger(capture)
 	check_eq("Mixed saved layout restores exactly two valid tabs", pane.Tabs.get_tab_count(), 2)
-	var intact := restored.size() == 2
+	var intact = restored.size() == 2
 	if intact:
-		intact = restored[0].type == Editor.Type.TEXT and restored[1].type == Editor.Type.TEXT
+		intact = restored[0].type == 0 and restored[1].type == 0
 		if intact:
 			intact = restored[0].tab_title == "before" and restored[1].tab_title == "after" \
 				and restored[0].code_edit != null and restored[1].code_edit != null
