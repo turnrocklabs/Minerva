@@ -62,17 +62,15 @@ func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
 	var helpers = load(HELPERS_GD)
 	# Let the OS reserve the port, rather than racing a random port selection.
 	var ready_path := "%s/fixture-ready-%d.json" % [_dir, Time.get_ticks_msec()]
-	var process: Dictionary = OS.execute_with_pipe(helpers.python_cmd(),
-		[ProjectSettings.globalize_path(SERVER_PY), _source, "0", "--ready-file", ready_path] + server_args, false)
-	_server_pid = process.get("pid", -1)
+	_server_pid = OS.create_process(helpers.python_cmd(),
+		[ProjectSettings.globalize_path(SERVER_PY), _source, "0",
+		"--ready-file", ready_path, "--log-file", ready_path + ".log"] + server_args)
 	var port := 0
-	var stderr := ""
 	var began := Time.get_ticks_msec()
 	while _server_pid > 0 and Time.get_ticks_msec() - began < FIXTURE_READY_MS:
-		stderr = (stderr + _fixture_output(process.stderr)).right(4096)
 		if not OS.is_process_running(_server_pid):
 			break
-		# macOS does not reliably expose pipe bytes while the server is alive.
+		# Use the readiness file without any dependency on process pipes.
 		if FileAccess.file_exists(ready_path):
 			var ready: Variant = JSON.parse_string(FileAccess.get_file_as_string(ready_path))
 			if ready is Dictionary:
@@ -82,30 +80,32 @@ func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
 		await create_timer(0.1).timeout
 	print("Fixture startup: port=%d elapsed_ms=%d" % [port, Time.get_ticks_msec() - began])
 	if port <= 0 or port > 65535 or not OS.is_process_running(_server_pid):
-		var error := "fixture server failed to start: pid=%d stderr=%s" % [_server_pid, stderr]
-		_close_fixture(process, ready_path)
+		var error := "fixture server failed to start: pid=%d stderr=%s" % [
+			_server_pid, _fixture_log(ready_path + ".log")]
+		_close_fixture(ready_path)
 		return {"result": {"ok": false, "error": error}, "path": ""}
 	var downloader = load(DOWNLOADER_GD).new()
 	downloader.stall_timeout_s = stall_timeout_s
 	var path := "%s/dl_%d.bin" % [_dir, port]
 	var result: Dictionary = await downloader.download("http://127.0.0.1:%d/plugin.tar.gz" % port, path, self)
-	_close_fixture(process, ready_path)
+	_close_fixture(ready_path)
 	return {"result": result, "path": path}
 
 
-func _fixture_output(pipe: FileAccess) -> String:
-	var available := mini(pipe.get_length(), 4096)
-	return pipe.get_buffer(available).get_string_from_utf8() if available > 0 else ""
+func _fixture_log(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var length := file.get_length()
+	file.seek(maxi(0, length - 4096))
+	return file.get_buffer(mini(length, 4096)).get_string_from_utf8()
 
 
-func _close_fixture(process: Dictionary, ready_path: String) -> void:
+func _close_fixture(ready_path: String) -> void:
 	if _server_pid > 0 and OS.is_process_running(_server_pid):
 		OS.kill(_server_pid)
 	_server_pid = -1
-	for key in ["stdio", "stderr"]:
-		if process.has(key):
-			process[key].close()
-	for path in [ready_path, ready_path + ".tmp"]:
+	for path in [ready_path, ready_path + ".tmp", ready_path + ".log"]:
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
 

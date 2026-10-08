@@ -3,6 +3,7 @@
 
     throttled_http_server.py FILE PORT [--rate BYTES_PER_S] [--drop-after N]
                              [--stall-after N] [--no-range] [--ready-file PATH]
+                             [--log-file PATH]
 
 Every GET returns FILE at --rate. --drop-after closes the FIRST response's
 connection after N body bytes; later requests are served whole. --stall-after
@@ -16,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import sys
 import time
 
 CHUNK = 16 * 1024
@@ -30,7 +32,10 @@ def main():
     p.add_argument("--stall-after", type=int, default=-1)
     p.add_argument("--no-range", action="store_true")
     p.add_argument("--ready-file", help="write the bound port as JSON to this file")
+    p.add_argument("--log-file", help="write fixture stderr to this file")
     args = p.parse_args()
+    if args.log_file:
+        sys.stderr = open(args.log_file, "w", encoding="utf-8", buffering=1)
     data = open(args.file, "rb").read()
     dropped, stalled = [], []
 
