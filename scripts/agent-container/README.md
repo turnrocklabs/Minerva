@@ -317,6 +317,28 @@ resolution. It must name a `.gd` inside one of the assembled trees.
 Focused runner tests are `python3 -B -m unittest discover -s tests -p test_two_repo_gate.py`
 (run separately by the authorized executor).
 
+### GDScript warning ratchet (GATE-W)
+
+`warning-gate.py` fails when analyzer warnings rise between a base commit and
+the job revision. Warnings come only from the editor, so it stages natives,
+imports, enables the typing warnings in the job copy's `project.godot` (the
+editor ignores `override.cfg`) and reads every first-party `src/**/*.gd`
+through `godot --headless --editor --lsp-port`. The base commit is cloned and
+scanned the same way; nothing is committed as a baseline.
+
+```bash
+python3 scripts/agent-container/agent.py run-job testex1 --folder /home/imran/github/Minerva \
+  --rev HEAD_SHA --command 'python3 -B scripts/agent-container/warning-gate.py --base BASE_SHA' \
+  --seconds 1200 --memory 8g --cpus 4 --artifact gate-evidence --json
+```
+
+A warning is (file, code, message with `line N` normalised); any count that
+rises is printed as `RISEN` and fails. In `src/test`, `untyped_declaration`
+and `unsafe_*` are informational. `--refactor` compares the changed files by
+per-code totals instead, so moved or renamed code keeps its warnings. About
+150 s per run; `gate-evidence/warning-receipt.json` holds the scans and any
+regressions. The revision must exist in the session clone.
+
 ### Four Docket owner scenarios
 
 `ripout-owner-oracles.py` is an independent scenario runner for the policy,
