@@ -6,7 +6,7 @@ extends RefCounted
 ## three differences:
 ##   - they cannot be removed (they can be stopped, and Auto-start turned off);
 ##   - a missing or broken one is installed at launch from its newest official
-##     release (ensure), with Auto-start on when its record is first created;
+##     release (ensure), with Auto-start and Auto-update on at first creation;
 ##     offline, the next launch or the plugin panel tries again;
 ##   - a feature that needs a missing or broken one says which plugin and how
 ##     to get it.
@@ -34,7 +34,7 @@ const PLUGINS := {
 	"agent_relay": {"name": "Agent Relay", "host_tools": [
 		"minerva_agent_relay_watch_start", "minerva_agent_relay_watch_status", "minerva_agent_relay_send"]},
 	"voice": {"name": "Voice Support", "host_tools": ["minerva_voice_configure", "minerva_voice_start"]},
-	"docket": {"name": "Docket", "auto_update": true, "host_tools": [
+	"docket": {"name": "Docket", "host_tools": [
 		"minerva_docket_query", "minerva_docket_get", "minerva_docket_comment",
 		"minerva_docket_create", "minerva_docket_update", "minerva_docket_transition", "minerva_docket_delete",
 		"minerva_docket_reassign",
@@ -196,9 +196,11 @@ static func missing_ids(manager, every_file: bool = true) -> Array[String]:
 ## a plugin that ships with Minerva, customised ones are kept, and the install
 ## is skipped if, when it takes the install lock, the plugin no longer needs
 ## repair (needs_repair). A record created here gets Auto-start on (or the
-## choice an older Minerva stored for it). Once installed, or found whole
-## after the fetch or when its repair runs, the release copy is started if its
-## Auto-start is on and no person has stopped it since (_start_if_wanted).
+## choice an older Minerva stored for it), and Auto-update on. Existing
+## records keep their update choice, including an explicit opt-out. Once
+## installed, or found whole after the fetch or when its repair runs, the
+## release copy is started if its Auto-start is on and no person has stopped
+## it since (_start_if_wanted).
 ## Returns the jobs queued or already pending, keyed by plugin id; nothing new
 ## is queued when the release listing cannot be read.
 static func ensure(manager) -> Dictionary:
@@ -263,7 +265,7 @@ static func _on_installed(manager, job, fresh: bool, stops: int) -> void:
 	if fresh and not healed_meanwhile:
 		var legacy = manager.get_db().legacy_autostart(id)
 		manager.get_db().set_autostart(id, true if legacy == null else bool(legacy))
-		manager.get_db().set_auto_update(id, bool(PLUGINS[id].get("auto_update", false)))
+		manager.get_db().set_auto_update(id, true)
 	_start_if_wanted(manager, id, stops)
 
 

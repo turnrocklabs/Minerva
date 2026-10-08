@@ -7,9 +7,9 @@ extends SceneTree
 ##   - a relay whose tools/list lacks a tool Minerva calls on it is refused at
 ##     start and stopped;
 ##   - ensure() installs a missing required plugin from that release,
-##     creates its record with Auto-start on and starts it, with the relay's
-##     state file in its data directory; a plugin with no release is left
-##     alone;
+##     creates its record with Auto-start and Auto-update on and starts it,
+##     with the relay's state file in its data directory; a plugin with no
+##     release is left alone;
 ##   - an installed release whose entrypoint is built for another platform is
 ##     broken, and one missing a file it lists in SHA256SUMS refuses to
 ##     start, naming the plugin and the problem, and ensure() reinstalls it
@@ -22,6 +22,8 @@ extends SceneTree
 ##     and keeps a capability the user revoked while it shipped built in;
 ##   - a required plugin cannot be removed, and starting one that is not
 ##     installed says which plugin is missing and how to get it.
+##   - all three required plugins default to updates on at first install;
+##     repairs and an update pass preserve existing opt-in and opt-out choices.
 ##
 ## Run: godot --headless --path src --script test/test_required_plugins.gd
 
@@ -38,6 +40,7 @@ var _fail := 0
 ## once recorded.
 var _grants_before = null
 var _grants_recorded := false
+var _update_choices_started := false
 
 
 func _init() -> void:
@@ -51,7 +54,7 @@ func _init() -> void:
 	_test_foreign_build_is_broken()
 	_pm = await _h.bootstrap_plugin_manager(true)
 	var port: int = _h.random_high_port()
-	if _pm == null or not _pack_relay("9.9.9") or not _write_releases(port) \
+	if _pm == null or not _pack_required_plugin(RELAY, "9.9.9") or not _write_releases(port) \
 			or not await _h.start_http_server(_temp, port):
 		print("FAIL: fixture setup")
 		_finish(1)
@@ -67,6 +70,7 @@ func _init() -> void:
 	await _test_repair_leaves_developer_copy()
 	await _test_first_install_keeps_old_choices()
 	await _test_required_plugin_is_kept()
+	await _test_required_update_choices(port)
 	_finish(1 if _fail else 0)
 
 
@@ -219,7 +223,7 @@ func _test_repair_leaves_developer_copy() -> void:
 	var job = queued.get(RELAY)
 	# The queued repair has not reached its install lock yet; a developer
 	# registers their checkout (the record exists before install_plugin yields).
-	var registered: Dictionary = await _pm.install_plugin(_temp.path_join("relay/manifest.json"), true)
+	var registered: Dictionary = await _pm.install_plugin(_temp.path_join(RELAY).path_join("manifest.json"), true)
 	if job != null:
 		await _until(func() -> bool: return job.state == job.State.DONE)
 	var def = _pm.get_db().get_by_id(RELAY)
@@ -255,15 +259,85 @@ func _test_required_plugin_is_kept() -> void:
 		"starting a missing required plugin names it and how to get it: %s" % [started])
 
 
-## A relay stand-in: the capability probe under the relay's id, packed as the
+func _test_required_update_choices(port: int) -> void:
+	var plugin_ids: Array[String] = RequiredPlugins.ids()
+	# This case owns only records it creates in the suite's disposable profile.
+	for id: String in plugin_ids:
+		if _pm.get_db().has_plugin(id):
+			_check(false, "update-choice fixture requires a fresh %s record" % id)
+			return
+	_update_choices_started = true
+	for id: String in plugin_ids:
+		if not _pack_required_plugin(id, "9.9.9"):
+			_check(false, "pack initial update-choice fixture for %s" % id)
+			return
+	if not _write_releases(port, plugin_ids):
+		_check(false, "publish initial required-plugin fixtures")
+		return
+	var registry := FileAccess.open(_temp.path_join("registry.json"), FileAccess.WRITE)
+	if registry == null:
+		_check(false, "write local update registry")
+		return
+	registry.store_string(JSON.stringify({"registry_version": 2, "plugins": []}))
+	registry.close()
+	var queued: Dictionary = await RequiredPlugins.ensure(_pm)
+	for id: String in plugin_ids:
+		var job = queued.get(id)
+		if job != null:
+			await _until(func() -> bool: return job.state == job.State.DONE)
+		var def: PluginDefinition = _pm.get_db().get_by_id(id)
+		_check(job != null and job.state == job.State.DONE and job.outcome == job.OUTCOME_INSTALLED
+			and def != null and def.auto_update,
+			"fresh %s record defaults Auto-update on through ensure" % id)
+		if def == null:
+			return
+		await _pm.stop_plugin(id)
+		_pm.get_db().set_autostart(id, false)
+
+	for opted_in: bool in [false, true]:
+		for id: String in plugin_ids:
+			_check(_pm.get_db().set_auto_update(id, opted_in), "save %s update choice %s" % [id, opted_in])
+			var def: PluginDefinition = _pm.get_db().get_by_id(id)
+			var probe := ProjectSettings.globalize_path(def.data_directory).path_join("capability_probe.py")
+			DirAccess.remove_absolute(probe)
+		queued = await RequiredPlugins.ensure(_pm)
+		for id: String in plugin_ids:
+			var job = queued.get(id)
+			if job != null:
+				await _until(func() -> bool: return job.state == job.State.DONE)
+			var def: PluginDefinition = _pm.get_db().get_by_id(id)
+			_check(job != null and def != null and def.auto_update == opted_in
+				and not RequiredPlugins.needs_repair(def, true),
+				"ensure repairs %s while preserving existing update choice %s" % [id, opted_in])
+		var next_version := "9.9.11" if opted_in else "9.9.10"
+		for id: String in plugin_ids:
+			if not _pack_required_plugin(id, next_version):
+				_check(false, "pack newer update-choice fixture for %s" % id)
+				return
+		if not _write_releases(port, plugin_ids, next_version):
+			_check(false, "publish newer required-plugin fixtures")
+			return
+		var updates: Dictionary = await load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd").run(
+			_pm, "http://127.0.0.1:%d/registry.json" % port)
+		for id: String in plugin_ids:
+			var job = updates.get(id)
+			if job != null:
+				await _until(func() -> bool: return job.state == job.State.DONE)
+			var def: PluginDefinition = _pm.get_db().get_by_id(id)
+			_check(def != null and def.auto_update == opted_in and updates.has(id) == opted_in
+				and def.version == (next_version if opted_in else "9.9.9"),
+				"update pass honors %s choice %s and only upgrades opted-in records" % [id, opted_in])
+
+
+## A required-plugin stand-in: the capability probe under its id, packed as the
 ## release archive for this computer's preferred target.
-func _pack_relay(version: String) -> bool:
-	var dir := _temp.path_join("relay")
+func _pack_required_plugin(id: String, version: String) -> bool:
+	var dir := _temp.path_join(id)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var manifest := {
-		"id": RELAY, "name": "Agent Relay", "version": version, "host_api_version": "1",
+		"id": id, "name": RequiredPlugins.display_name(id), "version": version, "host_api_version": "1",
 		"release_targets": MarketplaceClient.platform_targets(),
-		"backend": {"transport": "stdio", "entrypoint": _h.python_cmd(), "args": _probe_args(true)},
+		"backend": {"transport": "stdio", "entrypoint": _h.python_cmd(), "args": _probe_args(true, id)},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
 		"permissions": {"host_capabilities": [CAPABILITY]}, "auto_reload": false,
 	}
@@ -271,23 +345,25 @@ func _pack_relay(version: String) -> bool:
 	f.store_string(JSON.stringify(manifest))
 	f.close()
 	DirAccess.copy_absolute(ProjectSettings.globalize_path(PROBE_PY), dir.path_join("capability_probe.py"))
-	return _h.pack_plugin_dir(dir, _temp.path_join("%s-%s-%s.tar.gz" % [RELAY, version,
+	return _h.pack_plugin_dir(dir, _temp.path_join("%s-%s-%s.tar.gz" % [id, version,
 		MarketplaceClient.resolve_platform_target()]))
 
 
-## The relay stand-in's arguments: with `host_tools`, it also lists the tools
-## Minerva calls on the relay.
-func _probe_args(host_tools: bool) -> Array[String]:
+## The stand-in's arguments: with `host_tools`, list the tools Minerva calls
+## on the required plugin named by `id`.
+func _probe_args(host_tools: bool, id: String = RELAY) -> Array[String]:
 	var args: Array[String] = ["capability_probe.py"]
 	if host_tools:
-		args.append_array(["--list-tools", ",".join(RequiredPlugins.PLUGINS[RELAY].host_tools)])
+		args.append_array(["--list-tools", ",".join(RequiredPlugins.PLUGINS[id].host_tools)])
 	return args
 
 
-func _write_releases(port: int) -> bool:
-	var asset := "%s-9.9.9-%s.tar.gz" % [RELAY, MarketplaceClient.resolve_platform_target()]
-	var releases := [{"tag_name": "agent_relay-v9.9.9", "assets": [
-		{"name": asset, "browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]}]
+func _write_releases(port: int, plugin_ids: Array[String] = [RELAY], version: String = "9.9.9") -> bool:
+	var releases: Array[Dictionary] = []
+	for id: String in plugin_ids:
+		var asset := "%s-%s-%s.tar.gz" % [id, version, MarketplaceClient.resolve_platform_target()]
+		releases.append({"tag_name": "%s-v%s" % [id, version], "assets": [
+			{"name": asset, "browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]})
 	var f := FileAccess.open(_temp.path_join("releases.json"), FileAccess.WRITE)
 	if f == null:
 		return false
@@ -309,16 +385,19 @@ func _check(ok: bool, what: String) -> void:
 
 
 func _finish(code: int) -> void:
-	if _pm != null and _pm.get_db().has_plugin(RELAY):
-		_pm.stop_plugin(RELAY)
-		_pm.get_db().remove(RELAY)
+	var cleanup_ids: Array[String] = RequiredPlugins.ids() if _update_choices_started else [RELAY]
+	for id: String in cleanup_ids:
+		if _pm != null and _pm.get_db().has_plugin(id):
+			_pm.stop_plugin(id)
+			_pm.get_db().remove(id)
 	if _grants_recorded:
 		_pm._policy_ref._grants.erase(RELAY)
 		if _grants_before != null:
 			_pm._policy_ref._grants[RELAY] = _grants_before
 		_pm._policy_ref._save()
 	if _h != null:
-		_h.rm_dir_recursive("user://plugins/" + RELAY)
+		for id: String in cleanup_ids:
+			_h.rm_dir_recursive("user://plugins/" + id)
 		_h.teardown()
 		_h.remove_tree(_temp)
 	print("=== %s ===" % ("FAIL" if code else "PASS"))
