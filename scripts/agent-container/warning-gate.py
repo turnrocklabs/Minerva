@@ -145,8 +145,11 @@ def regressions(base, head, changed, refactor):
             risen.append({"file": path, "code": code, "message": key[2], "base": base[key], "head": head[key]})
     if refactor:
         def totals(scan):
-            return Counter({code: count for (path, code, _), count in scan.items()
-                            if path in changed and not informational(path, code)})
+            by_code = Counter()
+            for (path, code, _), count in scan.items():
+                if path in changed and not informational(path, code):
+                    by_code[code] += count
+            return by_code
         before, after = totals(base), totals(head)
         risen += [{"files": "refactor touch-set", "code": code, "base": before[code], "head": after[code]}
                   for code in sorted(after) if after[code] > before[code]]
