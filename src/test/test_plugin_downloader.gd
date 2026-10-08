@@ -61,20 +61,20 @@ func _init() -> void:
 func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
 	var helpers = load(HELPERS_GD)
 	# Let the OS reserve the port, rather than racing a random port selection.
+	var ready_path := "%s/fixture-ready-%d.json" % [_dir, Time.get_ticks_msec()]
 	var process: Dictionary = OS.execute_with_pipe(helpers.python_cmd(),
-		[ProjectSettings.globalize_path(SERVER_PY), _source, "0"] + server_args, false)
+		[ProjectSettings.globalize_path(SERVER_PY), _source, "0", "--ready-file", ready_path] + server_args, false)
 	_server_pid = process.get("pid", -1)
 	var port := 0
-	var stdout := ""
 	var stderr := ""
 	var began := Time.get_ticks_msec()
 	while _server_pid > 0 and Time.get_ticks_msec() - began < FIXTURE_READY_MS:
-		stdout += _fixture_output(process.stdio)
 		stderr = (stderr + _fixture_output(process.stderr)).right(4096)
 		if not OS.is_process_running(_server_pid):
 			break
-		if stdout.contains("\n"):
-			var ready: Variant = JSON.parse_string(stdout.get_slice("\n", 0))
+		# macOS does not reliably expose pipe bytes while the server is alive.
+		if FileAccess.file_exists(ready_path):
+			var ready: Variant = JSON.parse_string(FileAccess.get_file_as_string(ready_path))
 			if ready is Dictionary:
 				port = int(ready.get("port", 0))
 			if port > 0 and port <= 65535:
@@ -83,13 +83,13 @@ func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
 	print("Fixture startup: port=%d elapsed_ms=%d" % [port, Time.get_ticks_msec() - began])
 	if port <= 0 or port > 65535 or not OS.is_process_running(_server_pid):
 		var error := "fixture server failed to start: pid=%d stderr=%s" % [_server_pid, stderr]
-		_close_fixture(process)
+		_close_fixture(process, ready_path)
 		return {"result": {"ok": false, "error": error}, "path": ""}
 	var downloader = load(DOWNLOADER_GD).new()
 	downloader.stall_timeout_s = stall_timeout_s
 	var path := "%s/dl_%d.bin" % [_dir, port]
 	var result: Dictionary = await downloader.download("http://127.0.0.1:%d/plugin.tar.gz" % port, path, self)
-	_close_fixture(process)
+	_close_fixture(process, ready_path)
 	return {"result": result, "path": path}
 
 
@@ -98,13 +98,16 @@ func _fixture_output(pipe: FileAccess) -> String:
 	return pipe.get_buffer(available).get_string_from_utf8() if available > 0 else ""
 
 
-func _close_fixture(process: Dictionary) -> void:
+func _close_fixture(process: Dictionary, ready_path: String) -> void:
 	if _server_pid > 0 and OS.is_process_running(_server_pid):
 		OS.kill(_server_pid)
 	_server_pid = -1
 	for key in ["stdio", "stderr"]:
 		if process.has(key):
 			process[key].close()
+	for path in [ready_path, ready_path + ".tmp"]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
 
 
 func _check(ok: bool, what: String) -> void:

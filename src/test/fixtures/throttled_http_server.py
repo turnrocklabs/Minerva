@@ -2,7 +2,7 @@
 """Serve one file slowly, with the misbehaviours a plugin download meets.
 
     throttled_http_server.py FILE PORT [--rate BYTES_PER_S] [--drop-after N]
-                             [--stall-after N] [--no-range]
+                             [--stall-after N] [--no-range] [--ready-file PATH]
 
 Every GET returns FILE at --rate. --drop-after closes the FIRST response's
 connection after N body bytes; later requests are served whole. --stall-after
@@ -14,6 +14,7 @@ cannot resume does. Range requests are otherwise answered with 206.
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from pathlib import Path
 import re
 import time
 
@@ -28,6 +29,7 @@ def main():
     p.add_argument("--drop-after", type=int, default=-1)
     p.add_argument("--stall-after", type=int, default=-1)
     p.add_argument("--no-range", action="store_true")
+    p.add_argument("--ready-file", help="write the bound port as JSON to this file")
     args = p.parse_args()
     data = open(args.file, "rb").read()
     dropped, stalled = [], []
@@ -68,7 +70,12 @@ def main():
 
     ThreadingHTTPServer.daemon_threads = True
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(json.dumps({"port": server.server_port}), flush=True)
+    ready = json.dumps({"port": server.server_port})
+    if args.ready_file:
+        ready_tmp = Path(args.ready_file + ".tmp")
+        ready_tmp.write_text(ready + "\n", encoding="utf-8")
+        ready_tmp.replace(args.ready_file)
+    print(ready, flush=True)
     server.serve_forever()
 
 
