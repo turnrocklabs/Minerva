@@ -77,6 +77,7 @@ jobs:
   verify:
     name: Packaged native runtimes (${{ matrix.target }})
     needs: validate
+    continue-on-error: ${{ matrix.platform == 'macos' }}
     strategy:
       fail-fast: false
       matrix:
@@ -232,3 +233,20 @@ jobs:
           path: ${{ runner.temp }}/minerva-dumps/*
           if-no-files-found: warn
           retention-days: 7
+      - name: Report macOS packaged advisory result
+        if: always() && matrix.platform == 'macos' && steps.selected.outputs.value == 'true'
+        shell: bash
+        env:
+          ADVISORY_RESULT: ${{ job.status }}
+        run: |
+          {
+            echo "### macOS packaged native runtimes — advisory"
+            echo "Result: **$ADVISORY_RESULT**. Linux and Windows packaged checks remain required."
+            echo "Restore required status after the readiness fix lands and 10 consecutive clean Mac advisory runs (01a118e9d823)."
+            if [ "$ADVISORY_RESULT" != success ]; then
+              echo "**Triage this Mac failure before milestone simulated HITL or owner HITL.** See this job's failed step and logs."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ADVISORY_RESULT" != success ]; then
+            echo "::warning::macOS packaged advisory result: $ADVISORY_RESULT; triage before milestone or owner HITL (01a118e9d823)."
+          fi

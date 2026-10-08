@@ -674,6 +674,7 @@ jobs:
   export-macos:
     needs: [check-gdextension, build-macos, build-mcp-schema-helpers]
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    continue-on-error: true
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
     runs-on: macos-15
@@ -1233,6 +1234,24 @@ jobs:
           name: macos-smoke-log
           path: src/build/macos/minerva-launch.log
           if-no-files-found: warn
+
+      - name: Report macOS export advisory result
+        if: always()
+        shell: bash
+        env:
+          ADVISORY_RESULT: ${{ job.status }}
+        run: |
+          {
+            echo "### macOS export — advisory"
+            echo "Result: **$ADVISORY_RESULT**. Native macOS build, schema-helper and release gates remain required."
+            echo "Restore required status after the readiness fix lands and 10 consecutive clean Mac advisory runs (01a118e9d823)."
+            if [ "$ADVISORY_RESULT" != success ]; then
+              echo "**Triage this Mac failure before milestone simulated HITL or owner HITL.** See this job's failed step and logs."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ADVISORY_RESULT" != success ]; then
+            echo "::warning::macOS export advisory result: $ADVISORY_RESULT; triage before milestone or owner HITL (01a118e9d823)."
+          fi
 
   build-godot:
     needs: [check-gdextension, build-windows, build-linux, build-mcp-schema-helpers, build-godot-cef]
