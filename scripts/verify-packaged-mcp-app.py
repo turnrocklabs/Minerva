@@ -19,13 +19,11 @@ from urllib.parse import parse_qs, urlsplit
 # Once startup returns to the scene tree, helper requests retain their
 # independent two-second deadlines; this outer bound also covers native start.
 TIMEOUT_SECONDS = 60
-# The bridge probe creates two browsers cold. On the macOS Intel runner's
-# software renderer each takes about fourteen seconds to reach its page
-# (run 35402602094: first page 14.1 s, launch failed at 40.5 s), on every
-# other platform one to three seconds. The probe's own windows are gated on
-# page load, so this outer bound only has to cover boot plus two cold
-# browsers plus the bounded windows.
-BRIDGE_TIMEOUT_SECONDS = 90
+# Windows bridge passes ranged up to 80.7s (run 37616479739), while another
+# run reached initialize but missed the 60s policy-ready window. Allow cold
+# boot, two bounded 90s readiness attempts and the existing browser windows.
+# This outer bound does not change transport or bridge assertion deadlines.
+BRIDGE_TIMEOUT_SECONDS = 360
 
 
 @contextmanager

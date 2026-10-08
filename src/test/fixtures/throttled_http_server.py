@@ -13,6 +13,7 @@ cannot resume does. Range requests are otherwise answered with 206.
 """
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import re
 import time
 
@@ -66,7 +67,9 @@ def main():
             pass
 
     ThreadingHTTPServer.daemon_threads = True
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    print(json.dumps({"port": server.server_port}), flush=True)
+    server.serve_forever()
 
 
 if __name__ == "__main__":

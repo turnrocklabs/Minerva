@@ -15,6 +15,7 @@ const DOWNLOADER_GD := "res://Scripts/Services/Plugins/PluginDownloader.gd"
 const SERVER_PY := "res://test/fixtures/throttled_http_server.py"
 const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 const SIZE := 3 * 1024 * 1024
+const FIXTURE_READY_MS := 30000
 
 var _dir := ""
 var _source := ""
@@ -58,23 +59,52 @@ func _init() -> void:
 
 ## Serve the source with `server_args`, download it, stop the server.
 func _download(server_args: Array, stall_timeout_s: float) -> Dictionary:
-	var port := 30000 + randi() % 20000
 	var helpers = load(HELPERS_GD)
-	_server_pid = OS.create_process(helpers.python_cmd(), [ProjectSettings.globalize_path(SERVER_PY), _source, str(port)] + server_args)
-	for i in 50:
-		if helpers.port_open(port):
+	# Let the OS reserve the port, rather than racing a random port selection.
+	var process: Dictionary = OS.execute_with_pipe(helpers.python_cmd(),
+		[ProjectSettings.globalize_path(SERVER_PY), _source, "0"] + server_args, false)
+	_server_pid = process.get("pid", -1)
+	var port := 0
+	var stdout := ""
+	var stderr := ""
+	var began := Time.get_ticks_msec()
+	while _server_pid > 0 and Time.get_ticks_msec() - began < FIXTURE_READY_MS:
+		stdout += _fixture_output(process.stdio)
+		stderr = (stderr + _fixture_output(process.stderr)).right(4096)
+		if not OS.is_process_running(_server_pid):
 			break
+		if stdout.contains("\n"):
+			var ready: Variant = JSON.parse_string(stdout.get_slice("\n", 0))
+			if ready is Dictionary:
+				port = int(ready.get("port", 0))
+			if port > 0 and port <= 65535:
+				break
 		await create_timer(0.1).timeout
-	# The probe alone would accept a port some other process already held.
-	if not OS.is_process_running(_server_pid):
-		return {"result": {"ok": false, "error": "fixture server failed to start on %d" % port}, "path": ""}
+	print("Fixture startup: port=%d elapsed_ms=%d" % [port, Time.get_ticks_msec() - began])
+	if port <= 0 or port > 65535 or not OS.is_process_running(_server_pid):
+		var error := "fixture server failed to start: pid=%d stderr=%s" % [_server_pid, stderr]
+		_close_fixture(process)
+		return {"result": {"ok": false, "error": error}, "path": ""}
 	var downloader = load(DOWNLOADER_GD).new()
 	downloader.stall_timeout_s = stall_timeout_s
 	var path := "%s/dl_%d.bin" % [_dir, port]
 	var result: Dictionary = await downloader.download("http://127.0.0.1:%d/plugin.tar.gz" % port, path, self)
-	if _server_pid > 0:
-		OS.kill(_server_pid)
+	_close_fixture(process)
 	return {"result": result, "path": path}
+
+
+func _fixture_output(pipe: FileAccess) -> String:
+	var available := mini(pipe.get_length(), 4096)
+	return pipe.get_buffer(available).get_string_from_utf8() if available > 0 else ""
+
+
+func _close_fixture(process: Dictionary) -> void:
+	if _server_pid > 0 and OS.is_process_running(_server_pid):
+		OS.kill(_server_pid)
+	_server_pid = -1
+	for key in ["stdio", "stderr"]:
+		if process.has(key):
+			process[key].close()
 
 
 func _check(ok: bool, what: String) -> void:

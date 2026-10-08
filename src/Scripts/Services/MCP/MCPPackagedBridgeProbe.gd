@@ -70,15 +70,9 @@ func run() -> void:
 	manager.connect_minerva_server()
 	# Startup downloads are asynchronous; a loaded browser does not prove
 	# the master policy is ready to admit the probe's governed call.
-	var readiness_deadline := Time.get_ticks_msec() + 60000
-	while true:
-		var readiness: Dictionary = await manager.minerva_server.call_tool("minerva_policy_reload", {})
-		if readiness.get("success", false): break
-		if not readiness.get("retryable", false) or Time.get_ticks_msec() >= readiness_deadline:
-			print("PACKAGED_BRIDGE_PHASE=docket-not-ready code=%s" % readiness.get("error_code", "unknown"))
-			_finish(false)
-			return
-		await get_tree().create_timer(0.25).timeout
+	if not await _wait_for_docket(manager.minerva_server, singleton.plugin_manager):
+		_finish(false)
+		return
 	print("PACKAGED_BRIDGE_PHASE=docket-ready")
 	var delay_module = DelayToolModule.new(get_tree())
 	manager.minerva_server._modules.append(delay_module)
@@ -90,6 +84,44 @@ func run() -> void:
 	manager.minerva_server._modules.erase(delay_module)
 	manager.tool_registry.erase("minerva_bridge_probe_delay")
 	_finish(cef_ok)
+
+
+## Retry only a live, initialized child's policy-readiness miss, never a
+## crash or failed transport start. This runs only in the opt-in probe.
+func _wait_for_docket(server: MinervaMCPServer, plugin_manager: Node) -> bool:
+	var began := Time.get_ticks_msec()
+	for attempt in range(2):
+		var deadline := Time.get_ticks_msec() + 90000
+		while true:
+			var readiness: Dictionary = await server.call_tool("minerva_policy_reload", {})
+			if readiness.get("success", false):
+				print("PACKAGED_BRIDGE_PHASE=policy-ready attempt=%d elapsed_ms=%d" % [
+					attempt + 1, Time.get_ticks_msec() - began])
+				return true
+			if not readiness.get("retryable", false) or Time.get_ticks_msec() >= deadline:
+				print("PACKAGED_BRIDGE_PHASE=docket-not-ready attempt=%d code=%s elapsed_ms=%d" % [
+					attempt + 1, readiness.get("error_code", "unknown"), Time.get_ticks_msec() - began])
+				if attempt != 0 or not readiness.get("retryable", false) \
+						or readiness.get("error_code", "") != "docket_not_ready" \
+						or plugin_manager == null:
+					return false
+				var status: Dictionary = plugin_manager.call("get_plugin_status", "docket")
+				var connection := plugin_manager.call("get_connection", "docket") as MCPServerConnection
+				if not status.get("running", false) or status.get("crash_count", 0) != 0 \
+						or connection == null or not connection.server_connected \
+						or not is_instance_valid(connection._subprocess) \
+						or not connection._subprocess.is_running():
+					return false
+				print("PACKAGED_BRIDGE_PHASE=docket-retry elapsed_ms=%d" % (Time.get_ticks_msec() - began))
+				# Use the existing host operation directly: governed tool admission
+				# itself is unavailable while this readiness check is failing.
+				var restarted: Dictionary = await plugin_manager.call("restart_plugin", "docket")
+				if not restarted.get("ok", false):
+					print("PACKAGED_BRIDGE_PHASE=docket-retry-failed")
+					return false
+				break
+			await get_tree().create_timer(0.25).timeout
+	return false
 
 
 func _probe_editor(script: Script, label: String, delay_module: DelayToolModule) -> bool:
