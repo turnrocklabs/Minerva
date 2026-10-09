@@ -38,6 +38,73 @@ func _capture(client, method: String, args: Array, output: Dictionary) -> void:
 func _last_id(client) -> String:
 	return client.sent.back().params.request_id
 
+## Production keyboard/Stream Deck handlers and recording conversion; the
+## existing capture fixture supplies PCM without opening the host microphone.
+## Runtime-loaded collaborators stay untyped: typing their script classes in a
+## --script runner compiles them before the Core/SingletonObject autoloads exist.
+func _manual_ptt_without_detector(so, voice, transport, config, feature: GDScript) -> void:
+	var old_capture = so.AtT
+	var old_chat = so.Chats
+	var old_transport: int = config.stt_transport
+	config.stt_transport = config.STTTransport.BUFFERED
+	var capture = load("res://test/fixtures/voice_audio_capture.gd").new()
+	root.add_child(capture)
+	capture.file_path = "user://manual-ptt-without-detector.wav"
+	var recording := AudioStreamWAV.new()
+	recording.format = AudioStreamWAV.FORMAT_16_BITS
+	recording.mix_rate = int(AudioServer.get_mix_rate())
+	recording.stereo = true
+	recording.data = PackedByteArray([0, 1, 0, 1])
+	capture.effect = capture.CaptureEffect.new(recording)
+	capture._normalization_capture = capture.NormalizationCapture.new()
+	so.AtT = capture
+	var pane = load("res://test/fixtures/voice_speech_pane.gd").new()
+	var mic := Button.new()
+	mic.name = "btnMicrophone"
+	pane.add_child(mic)
+	mic.owner = pane
+	mic.unique_name_in_owner = true
+	root.add_child(pane)
+	so.Chats = pane
+	check("manual PTT has no gateway or running detector", pane._voice_gateway == null and so.plugin_manager.get_connection("voice") == null and not feature.is_enabled())
+	var deck = load("res://Scripts/Services/StreamDeck/StreamDeckServer.gd").new()
+	root.add_child(deck)
+	for keyboard: bool in [true, false]:
+		capture.submitted.clear()
+		if keyboard:
+			pane._on_btn_microphone_pressed()
+		else:
+			deck._handle_ptt_down(1)
+		check("manual PTT records while Voice Support is off (%s)" % keyboard, capture.effect.is_recording_active())
+		feature.cancel_active()
+		capture.deactivate_turnrock_voice()
+		check("Voice Support deactivation leaves manual capture running (%s)" % keyboard, capture.effect.is_recording_active())
+		var frames := PackedVector2Array()
+		frames.resize(1200)
+		frames.fill(Vector2(0.25, 0.25))
+		capture._normalization_capture.frames = frames
+		if keyboard:
+			pane._on_btn_microphone_pressed()
+		else:
+			deck._handle_ptt_up(1)
+		check("manual PTT hands a normalized recording to the saved engine (%s)" % keyboard, capture.submitted.size() > 44 and not capture.effect.is_recording_active())
+	var scope = load("res://Scripts/Services/Voice/VoiceOperation.gd").new()
+	scope.voice_owner = "ptt"
+	var output := {}
+	var before: int = transport.sent.size()
+	_capture(voice, "transcribe_auto_result", [PackedByteArray([0, 1]), config, scope], output)
+	feature.cancel_active()
+	check("manual engine request survives feature-off cancellation", not scope.cancelled and transport.sent.size() == before + 1)
+	if transport.sent.size() == before + 1:
+		transport.reply(_last_id(transport), {"text": "manual transcript"})
+	check("saved Core engine transcribes manual PTT while feature is off", output.get("result", {}).get("text", "") == "manual transcript")
+	so.AtT = old_capture
+	so.Chats = old_chat
+	config.stt_transport = old_transport
+	deck.free()
+	pane.free()
+	capture.free()
+
 func _deliver_binary(client, request_id: String, audio: PackedByteArray) -> void:
 	var stream := PackedByteArray()
 	stream.resize(16)
@@ -111,8 +178,9 @@ func _run() -> void:
 	var disabled_stt: Dictionary = await voice.transcribe_auto_result(bytes, config, scope_script.new())
 	var disabled_tts: Dictionary = await voice.synthesize_result("disabled", "", "kokoro", scope_script.new())
 	var disabled_stream: Dictionary = voice.begin_transcription_stream(config, scope_script.new())
-	check("disabled TurnRock entrypoints fail before Core and never invoke Whisper fallback", disabled_stt.error_code == voice_feature.DISABLED_CODE and disabled_tts.error_code == voice_feature.DISABLED_CODE and disabled_stream.error_code == voice_feature.DISABLED_CODE and transport.sent.size() == sends_while_disabled and voice.whisper_calls == 0)
+	check("disabled hands-free entrypoints fail before Core and never invoke Whisper fallback", disabled_stt.error_code == voice_feature.DISABLED_CODE and disabled_tts.error_code == voice_feature.DISABLED_CODE and disabled_stream.error_code == voice_feature.DISABLED_CODE and transport.sent.size() == sends_while_disabled and voice.whisper_calls == 0)
 	check("deactivation cancels pinned TurnRock work without cancelling OpenAI work", owned_scope.cancelled and not openai_scope.cancelled)
+	_manual_ptt_without_detector(so, voice, transport, config, voice_feature)
 	voice_feature.set_enabled(true)
 	var output := {}
 	_capture(voice, "transcribe_auto_result", [bytes, config], output)
@@ -178,11 +246,12 @@ func _run() -> void:
 	config.stt_provider = config.STTProvider.VOICE_SERVICE
 	capture.start_ptt(capture_req)
 	capture.deactivate_turnrock_voice()
-	var turnrock_capture_stopped: bool = not capture.effect.is_recording_active()
+	var manual_core_capture_survived: bool = capture.effect.is_recording_active()
+	capture._StopConverting()
 	config.stt_provider = config.STTProvider.OPENAI_WHISPER
 	capture.start_ptt(capture_req)
 	capture.deactivate_turnrock_voice()
-	check("deactivation stops buffered TurnRock capture but preserves OpenAI capture", turnrock_capture_stopped and capture.effect.is_recording_active())
+	check("deactivation preserves manual Core and OpenAI capture", manual_core_capture_survived and capture.effect.is_recording_active())
 	capture._StopConverting()
 	config.stt_provider = config.STTProvider.VOICE_SERVICE
 	capture.free()

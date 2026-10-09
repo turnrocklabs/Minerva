@@ -5,6 +5,7 @@ extends RefCounted
 const SECTION := "Voice"
 const ENABLED_KEY := "turnrock_enabled"
 const DISABLED_CODE := "turnrock_voice_disabled"
+const MANUAL_PTT_OWNER := "ptt"
 
 static var _generation := 0
 static var _operations: Array[WeakRef] = []
@@ -23,6 +24,9 @@ static func disabled_failure() -> Dictionary:
 
 
 static func admit(operation: VoiceOperation = null) -> Dictionary:
+	# Manual capture uses the selected STT engine, independently of the detector.
+	if operation != null and operation.voice_owner == MANUAL_PTT_OWNER:
+		return {"success": true, "generation": _generation}
 	if not is_enabled():
 		return disabled_failure()
 	if operation != null:
