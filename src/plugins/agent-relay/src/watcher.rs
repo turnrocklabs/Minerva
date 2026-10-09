@@ -896,13 +896,20 @@ fn watch_loop(
                     // prompt, not a turn — skip it entirely (no emit, no last_*).
                     // Bell, shell markers, dialogs, exits are real signals and
                     // bypass the gate.
+                    let waiting_for_answer = {
+                        let s = session.lock().unwrap();
+                        s.armed && s.profile_id == "codex"
+                            && s.facts.prompts.back().is_some_and(|prompt| {
+                                detector::submit_waiting_for_answer(content, &prompt.text, &cd)
+                            })
+                    };
                     if det.cause == WakeCause::TurnCompleted
                         && det.method == DetectionMethod::SettlePrompt
-                        && !gate_open
+                        && (!gate_open || waiting_for_answer)
                     {
                         log::debug!(
                             "watch_loop: {terminal_id} settle_prompt gated \
-                             (no busy/growth observed since arm/start)"
+                             (no activity or submitted prompt has no answer yet)"
                         );
                         continue;
                     }

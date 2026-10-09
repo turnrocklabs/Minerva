@@ -1052,68 +1052,7 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 /// Rows to look back past the arm anchor when echo-anchoring a turn read.
 const ECHO_SEARCH_ROWS: u64 = 120;
 
-/// Re-anchor a wide turn read on the prompt-glyph echo of the text we just
-/// sent. Returns Some(slice) starting just AFTER the echo, leading blanks
-/// dropped — the chat already shows the user's message, so the echo is
-/// redundant in the answer. The echoed message can WRAP over multiple rows
-/// (glyph row + indented continuation rows — W8 HITL: the wrapped tail of the
-/// user's message headed the bot answer), so rows past the glyph row are also
-/// consumed while the accumulated echo text is still a prefix of `sent`.
-/// Returns None when the echo isn't in `wide` (the caller falls back to the
-/// exact old-anchor window).
-fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
-    let marker: String = sent.lines().next().unwrap_or("").chars().take(40).collect();
-    if marker.trim().is_empty() {
-        return None;
-    }
-    let lines: Vec<&str> = wide.lines().collect();
-    // Whitespace-collapsed comparison throughout: the TUI re-wraps the
-    // message at its own column width, so only the word stream is comparable.
-    let collapse = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let target = collapse(sent);
-    // Echo lines start with the CLI's prompt glyph (❯ claude, › codex).
-    // Take the LAST glyph-prefixed match (a resend echoes again); answer
-    // lines QUOTING the text don't start with the glyph, so they never
-    // steal the anchor. Match either the 40-char marker (echo row carries
-    // extra text) or a row whose body is a PREFIX of the sent text (the row
-    // wrapped before the marker length — narrow terminals).
-    let echo_idx = lines.iter().rposition(|l| {
-        let t = l.trim_start();
-        if !(t.starts_with('❯') || t.starts_with('›')) {
-            return false;
-        }
-        if l.contains(marker.as_str()) {
-            return true;
-        }
-        let body = collapse(t.trim_start_matches(['❯', '›']));
-        !body.is_empty() && target.starts_with(body.as_str())
-    })?;
-
-    // Consume the echo's wrapped continuation rows. A row that stops
-    // extending the prefix is the first NON-echo row (the answer can never
-    // extend it — answers don't start with the unfinished tail of the
-    // user's message).
-    let mut acc = collapse(
-        lines[echo_idx].trim_start().trim_start_matches(['❯', '›']),
-    );
-    let mut from = (echo_idx + 1).min(lines.len());
-    while from < lines.len()
-        && !acc.is_empty()
-        && acc.len() < target.len()
-        && target.starts_with(acc.as_str())
-    {
-        let next_acc = collapse(&format!("{} {}", acc, lines[from]));
-        if !target.starts_with(next_acc.as_str()) {
-            break;
-        }
-        acc = next_acc;
-        from += 1;
-    }
-    while from < lines.len() && lines[from].trim().is_empty() {
-        from += 1;
-    }
-    Some(lines[from..].join("\n"))
-}
+use detector::slice_from_echo;
 
 /// Steps 1–4 + turn metadata of read_turn, shared with relay_ask:
 /// row window → host.terminal.read → clean → optional distill → result JSON

@@ -653,6 +653,90 @@ fn normalize_row(line: &str) -> String {
     out
 }
 
+/// Re-anchor a wide turn read on the prompt-glyph echo of the text we just
+/// sent. Returns Some(slice) starting just AFTER the echo, leading blanks
+/// dropped — the chat already shows the user's message, so the echo is
+/// redundant in the answer. The echoed message can WRAP over multiple rows
+/// (glyph row + indented continuation rows — W8 HITL: the wrapped tail of the
+/// user's message headed the bot answer), so rows past the glyph row are also
+/// consumed while the accumulated echo text is still a prefix of `sent`.
+/// Returns None when the echo isn't in `wide` (the caller falls back to the
+/// exact old-anchor window).
+pub fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
+    let marker: String = sent.lines().next().unwrap_or("").chars().take(40).collect();
+    if marker.trim().is_empty() {
+        return None;
+    }
+    let lines: Vec<&str> = wide.lines().collect();
+    // Whitespace-collapsed comparison throughout: the TUI re-wraps the
+    // message at its own column width, so only the word stream is comparable.
+    let collapse = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let target = collapse(sent);
+    // Echo lines start with the CLI's prompt glyph (❯ claude, › codex).
+    // Take the LAST glyph-prefixed match (a resend echoes again); answer
+    // lines QUOTING the text don't start with the glyph, so they never
+    // steal the anchor. Match either the 40-char marker (echo row carries
+    // extra text) or a row whose body is a PREFIX of the sent text (the row
+    // wrapped before the marker length — narrow terminals).
+    let echo_idx = lines.iter().rposition(|l| {
+        let t = l.trim_start();
+        if !(t.starts_with('❯') || t.starts_with('›')) {
+            return false;
+        }
+        if l.contains(marker.as_str()) {
+            return true;
+        }
+        let body = collapse(t.trim_start_matches(['❯', '›']));
+        !body.is_empty() && target.starts_with(body.as_str())
+    })?;
+
+    // Consume the echo's wrapped continuation rows. A row that stops
+    // extending the prefix is the first NON-echo row (the answer can never
+    // extend it — answers don't start with the unfinished tail of the
+    // user's message).
+    let mut acc = collapse(
+        lines[echo_idx].trim_start().trim_start_matches(['❯', '›']),
+    );
+    let mut from = (echo_idx + 1).min(lines.len());
+    while from < lines.len()
+        && !acc.is_empty()
+        && acc.len() < target.len()
+        && target.starts_with(acc.as_str())
+    {
+        let spaced = collapse(&format!("{} {}", acc, lines[from]));
+        // A long unbroken token can wrap inside a word, so try the row
+        // without an invented word boundary when the spaced form cannot fit.
+        let next_acc = if target.starts_with(spaced.as_str()) {
+            spaced
+        } else {
+            format!("{}{}", acc, collapse(lines[from]))
+        };
+        if !target.starts_with(next_acc.as_str()) {
+            break;
+        }
+        acc = next_acc;
+        from += 1;
+    }
+    while from < lines.len() && lines[from].trim().is_empty() {
+        from += 1;
+    }
+    Some(lines[from..].join("\n"))
+}
+
+/// A submitted Codex prompt must advance beyond its draft or echo before
+/// an idle composer can count as completion. A short reply can finish without
+/// a sampled busy frame, so answer text or completion status remains evidence.
+pub fn submit_waiting_for_answer(screen: &str, body: &str, cd: &CompiledDetection) -> bool {
+    if confirm_submit(screen, body, cd, None) == SubmitState::StuckInComposer {
+        return true;
+    }
+    let lines: Vec<&str> = screen.lines().collect();
+    let end = lines.len().saturating_sub(trailing_noncontent_rows(screen, cd) as usize);
+    let content = lines[..end].join("\n");
+    content.trim().is_empty()
+        || slice_from_echo(&content, body).is_some_and(|answer| answer.trim().is_empty())
+}
+
 /// Count the trailing rows of `screen` that are input-box chrome rather than
 /// content: everything from the LAST line matching the profile's prompt_box
 /// regex to the end (the live input box, draft rows below it, hint lines).
@@ -1223,6 +1307,21 @@ mod tests {
             "a complete 48-character word still requires its right boundary"
         );
     }
+    #[test]
+    fn codex_draft_and_echo_wait_but_fast_answer_and_status_complete() {
+        let cd = compiled_codex();
+        let body = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef what is this string?";
+        let echo = format!("› {}\n  {}", &body[..48], &body[48..]);
+        let idle = "› Ask Codex to do anything\n  ? for shortcuts";
+        let draft = format!("old answer\n› {body}\n  ? for shortcuts");
+        assert!(submit_waiting_for_answer(&draft, body, &cd));
+        assert!(submit_waiting_for_answer(&format!("{echo}\n\n{idle}"), body, &cd));
+        assert!(submit_waiting_for_answer(idle, body, &cd));
+        for answer in ["It is a hexadecimal string.", "Worked for 3s • 1:58 AM"] {
+            assert!(!submit_waiting_for_answer(&format!("{echo}\n{answer}\n\n{idle}"), body, &cd));
+        }
+        assert!(!submit_waiting_for_answer(&format!("Worked for 3s • 1:58 AM\n\n{idle}"), body, &cd));
+    }
 }
 
 #[cfg(test)]
@@ -1284,4 +1383,6 @@ mod askuserquestion_tests {
         );
         assert_eq!(r.method, DetectionMethod::PermissionDialog);
     }
+
+
 }
