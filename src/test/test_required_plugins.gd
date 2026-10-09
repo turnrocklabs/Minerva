@@ -355,6 +355,11 @@ func _test_manual_update_button(port: int) -> void:
 		feature.set_enabled(previous_enabled)
 		return
 	await _until(func() -> bool: return not panel._update_checking)
+	# Discovery saw9.9.12. Publish9.9.13 without refreshing the panel: only the
+	# button's check-now request can find it, so a cached-entry updater fails.
+	for id: String in ids:
+		_check(_pack_required_plugin(id, "9.9.13", true, "upgrade_marker"), "pack release published after row discovery for " + id)
+	_check(_write_releases(port, ids, "9.9.13"), "publish releases after the panel's initial check")
 	var dialog = load("res://Scenes/MarketplaceBrowseDialog.tscn").instantiate()
 	dialog.plugin_manager = _pm
 	dialog.registry_url = "http://127.0.0.1:%d/registry.json" % port
@@ -367,31 +372,33 @@ func _test_manual_update_button(port: int) -> void:
 		if button == null or not button.visible:
 			continue
 		var previous_connection = _pm.get_connection(id)
+		var previous_job = _pm.install_queue.job_for(id)
 		button.pressed.emit()
 		await _until(func() -> bool:
 			var job = _pm.install_queue.job_for(id)
-			return job != null and job.expected_version() == "9.9.12")
+			return job != null and job != previous_job)
 		var job = _pm.install_queue.job_for(id)
 		if job == null:
 			_check(false, "manual button queued " + id)
 			continue
+		_check(job.expected_version() == "9.9.13", "click fetches the release published after discovery for " + id)
 		_check(dialog._rows.has(job), "manual update appears in Installs for " + id)
 		await _until(func() -> bool: return job.state == job.State.DONE)
 		var def: PluginDefinition = _pm.get_db().get_by_id(id)
-		_check(job.outcome == job.OUTCOME_READY and def.version == "9.9.12" and not def.auto_update and _pm.get_connection(id) != previous_connection, "manual Update upgrades/restarts opted-out " + id)
-		_check(panel._detail_version_label.text == "9.9.12" and not button.visible, "plugin row reflects the upgraded version for " + id)
+		_check(job.outcome == job.OUTCOME_READY and def.version == "9.9.13" and not def.auto_update and _pm.get_connection(id) != previous_connection, "manual Update upgrades/restarts opted-out " + id)
+		_check(panel._detail_version_label.text == "9.9.13" and not button.visible, "plugin row reflects the upgraded version for " + id)
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
 	await create_timer(3.1).timeout
 	_check(dialog.get_node("%JobRows").get_child_count() == 0, "successful running updates leave Installs")
-	_check(_pack_required_plugin(RELAY, "9.9.13", false) and _write_releases(port, ids, "9.9.13"), "publish a newer release that fails required-tool admission")
+	_check(_pack_required_plugin(RELAY, "9.9.14", false) and _write_releases(port, ids, "9.9.14"), "publish a newer release that fails required-tool admission")
 	await panel.check_for_updates()
 	_select_panel_plugin(panel, RELAY)
 	panel.find_child("UpdatePlugin", true, false).pressed.emit()
 	await _until(func() -> bool:
 		var job = _pm.install_queue.job_for(RELAY)
-		return job != null and job.expected_version() == "9.9.13" and job.state == job.State.DONE)
+		return job != null and job.expected_version() == "9.9.14" and job.state == job.State.DONE)
 	var failed = _pm.install_queue.job_for(RELAY)
-	_check(failed != null and failed.outcome == failed.OUTCOME_FAILED and not failed.message.is_empty() and _pm.get_db().get_by_id(RELAY).version == "9.9.12" and _pm.get_connection(RELAY) != null, "failed start rolls back to the working version and reports failure")
+	_check(failed != null and failed.outcome == failed.OUTCOME_FAILED and not failed.message.is_empty() and _pm.get_db().get_by_id(RELAY).version == "9.9.13" and _pm.get_connection(RELAY) != null, "failed start rolls back to the working version and reports failure")
 	_check(failed != null and dialog._rows.has(failed), "failed manual update stays in Installs")
 	await _h.scrub_plugin(_pm, "voice")
 	var developer: Dictionary = await _pm.install_plugin(_temp.path_join("voice/manifest.json"), true)
