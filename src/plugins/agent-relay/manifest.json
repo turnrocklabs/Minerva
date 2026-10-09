@@ -416,6 +416,14 @@
                 },
                 "description": "List of spinner characters to detect activity."
               },
+              "status_chrome_regex": {
+                "type": "string",
+                "description": "Completed status rows to remove before matching a scrape to its log. Empty disables the rule."
+              },
+              "submit_wait_for_answer": {
+                "type": "boolean",
+                "description": "Keep an armed submit pending while only its draft or echo is visible."
+              },
               "alt_screen": {
                 "type": "boolean",
                 "description": "Whether this CLI uses an alternate screen buffer."

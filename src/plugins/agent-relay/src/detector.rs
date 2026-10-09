@@ -114,6 +114,7 @@ pub struct CompiledDetection {
     /// Whether a single extra Enter is the known recovery for text left
     /// sitting in this CLI's composer after a write (see `confirm_submit`).
     pub composer_enter_recovery: bool,
+    pub submit_wait_for_answer: bool,
     /// A caret-SELECTED numbered option line (`❯ 1. Yes`, `› 2. Skip`).
     menu_selected: Regex,
     /// Any numbered option line, marked or not (`  3. Skip until next version`).
@@ -161,6 +162,7 @@ impl CompiledDetection {
             settle_ms: p.detection.settle_ms,
             watch_timeout_ms: p.detection.watch_timeout_ms,
             composer_enter_recovery: p.detection.composer_enter_recovery,
+            submit_wait_for_answer: p.detection.submit_wait_for_answer,
             // Constant patterns — the unwraps cannot fail.
             menu_selected: Regex::new(r"^\s*[❯›>]\s*\d+[.)]\s+\S").unwrap(),
             menu_option: Regex::new(r"^\s*[❯›>]?\s*\d+[.)]\s+\S").unwrap(),

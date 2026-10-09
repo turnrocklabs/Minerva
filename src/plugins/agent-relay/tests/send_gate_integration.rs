@@ -9,12 +9,54 @@
 
 mod common;
 
+
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
 use common::{quiet, settled, FakeHost};
+
+/// A copied profile keeps its detection policy under a different id, and its
+/// status rule can be changed or disabled through the public profile tool.
+#[test]
+fn cloned_codex_profile_keeps_answer_rules_and_accepts_overrides() {
+    let mut host = FakeHost::start();
+    let codex = host.tool("minerva_agent_relay_profile_get", json!({"id": "codex"}));
+    let mut cloned = codex["profile"].clone();
+    cloned["id"] = json!("custom-codex");
+    assert_eq!(cloned["detection"]["submit_wait_for_answer"], true);
+    let stored = host.tool("minerva_agent_relay_profile_set", cloned.clone());
+    for field in ["status_chrome_regex", "submit_wait_for_answer"] {
+        assert_eq!(stored["profile"]["detection"][field], cloned["detection"][field]);
+    }
+    host.watch_start("profile-rules", "custom-codex");
+    let capture = "Worked for 3s • 1:58 AM";
+    let read = host.tool("minerva_agent_relay_read_clean", json!({
+        "terminal_id": "profile-rules", "raw_text": capture,
+    }));
+    assert_eq!(read["cleaned"], "");
+
+    let invalid = host.tool("minerva_agent_relay_profile_set", json!({
+        "id": "custom-codex", "detection": {"status_chrome_regex": "["},
+    }));
+    assert!(invalid["error"].as_str().unwrap().contains("invalid status_chrome_regex"));
+    let unchanged = host.tool("minerva_agent_relay_profile_get", json!({"id": "custom-codex"}));
+    for field in ["status_chrome_regex", "submit_wait_for_answer"] {
+        assert_eq!(unchanged["profile"]["detection"][field], cloned["detection"][field]);
+    }
+
+    let disabled = host.tool("minerva_agent_relay_profile_set", json!({
+        "id": "custom-codex", "detection": {"status_chrome_regex": "", "submit_wait_for_answer": false},
+    }));
+    assert!(disabled["profile"]["detection"]["status_chrome_regex"].is_null());
+    assert_eq!(disabled["profile"]["detection"]["submit_wait_for_answer"], false);
+    let read = host.tool("minerva_agent_relay_read_clean", json!({
+        "terminal_id": "profile-rules", "raw_text": capture,
+    }));
+    assert_eq!(read["cleaned"], capture);
+}
+
 
 // ── Screens ─────────────────────────────────────────────────────────────────
 

@@ -38,6 +38,14 @@ pub struct Detection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub running_row_regex: Option<String>,
 
+    /// Completed status rows to remove before matching a scrape to its log.
+    #[serde(default)]
+    pub status_chrome_regex: Option<String>,
+
+    /// Keep an armed submit pending while only its draft or echo is visible.
+    #[serde(default)]
+    pub submit_wait_for_answer: bool,
+
     /// Whether this CLI uses an alternate screen buffer (smcup/rmcup).
     /// Alt-screen CLIs repaint the full viewport on each update; detection
     /// reads the viewport only (no scrollback delta).
@@ -85,6 +93,27 @@ pub struct Profile {
 
     /// Detection configuration.
     pub detection: Detection,
+}
+
+impl Profile {
+    /// Older saved overrides predate these rules. Inherit absent fields from
+    /// the matching built-in profile while retaining explicit opt-outs.
+    pub fn from_persisted(mut value: serde_json::Value) -> Result<Self, serde_json::Error> {
+        let defaults = value.get("id").and_then(|id| id.as_str())
+            .and_then(|id| builtin_profiles().into_iter().find(|p| p.id == id));
+        if let (Some(defaults), Some(detection)) = (
+            defaults,
+            value.get_mut("detection").and_then(|d| d.as_object_mut()),
+        ) {
+            detection.entry("submit_wait_for_answer")
+                .or_insert(serde_json::Value::Bool(defaults.detection.submit_wait_for_answer));
+            if let Some(pattern) = defaults.detection.status_chrome_regex {
+                detection.entry("status_chrome_regex")
+                    .or_insert(serde_json::Value::String(pattern));
+            }
+        }
+        serde_json::from_value(value)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +215,8 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 // text mid-turn (queue screen 02; bug 01a0c7136b7d, Alt+Up).
                 // The running row survives: spinner glyph, a verb, an ellipsis.
                 running_row_regex: Some(r"^\s*[·✢✳✶✻✽]\s+\S+…(?:\s|$)".to_string()),
+                status_chrome_regex: None,
+                submit_wait_for_answer: false,
 
                 // Claude Code scrolls the PRIMARY screen (scrollback grows).
                 alt_screen: false,
@@ -238,6 +269,9 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 // Codex 0.162 enters the alternate screen (CSI ?1049h).
                 // Rows are viewport positions, not retained transcript history.
                 running_row_regex: None,
+                // Measured Codex 0.162 completed-work row, including its clock.
+                status_chrome_regex: Some(r"^Worked for [0-9]+(?:s|m(?: [0-9]+s)?)(?: • [0-9]{1,2}:[0-9]{2} (?:AM|PM))?$".to_string()),
+                submit_wait_for_answer: true,
                 alt_screen: true,
 
                 bell_capable: false,
@@ -270,6 +304,8 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 ],
 
                 running_row_regex: None,
+                status_chrome_regex: None,
+                submit_wait_for_answer: false,
                 alt_screen: true,
                 bell_capable: false,
                 settle_ms: 2_000,
@@ -349,5 +385,28 @@ mod tests {
             assert_eq!(back.id, p.id);
             assert_eq!(back.detection.settle_ms, p.detection.settle_ms);
         }
+    }
+
+    #[test]
+    fn test_legacy_override_inherits_answer_rules_but_explicit_opt_out_survives() {
+        let codex = builtin_profiles().into_iter().find(|p| p.id == "codex").unwrap();
+        let mut old = serde_json::to_value(&codex).unwrap();
+        let detection = old["detection"].as_object_mut().unwrap();
+        detection.remove("status_chrome_regex");
+        detection.remove("submit_wait_for_answer");
+        detection.insert("settle_ms".to_string(), serde_json::json!(200));
+        let restored = Profile::from_persisted(old.clone()).unwrap();
+        assert_eq!(restored.detection.status_chrome_regex, codex.detection.status_chrome_regex);
+        assert!(restored.detection.submit_wait_for_answer);
+        assert_eq!(restored.detection.settle_ms, 200);
+        old["detection"]["status_chrome_regex"] = serde_json::Value::Null;
+        old["detection"]["submit_wait_for_answer"] = serde_json::Value::Bool(false);
+        let disabled = Profile::from_persisted(old).unwrap();
+        assert!(disabled.detection.status_chrome_regex.is_none());
+        assert!(!disabled.detection.submit_wait_for_answer);
+        let saved = serde_json::to_value(&disabled).unwrap();
+        let reloaded = Profile::from_persisted(saved).unwrap();
+        assert!(reloaded.detection.status_chrome_regex.is_none());
+        assert!(!reloaded.detection.submit_wait_for_answer);
     }
 }

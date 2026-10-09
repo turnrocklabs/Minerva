@@ -110,18 +110,25 @@ pub fn filter(raw: &str) -> String {
 }
 
 /// Remove measured harness status chrome before comparing a scrape to its log.
-/// Other profiles and prose containing these words retain their text.
+/// Profiles without a status rule and prose outside it retain their text.
 pub fn filter_for_profile(raw: &str, profile: Option<&str>) -> String {
     let cleaned = filter(raw);
-    if profile != Some("codex") {
-        return cleaned;
-    }
-    static WORKED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let worked = WORKED.get_or_init(|| {
-        regex::Regex::new(r"^Worked for [0-9]+(?:s|m(?: [0-9]+s)?)(?: • [0-9]{1,2}:[0-9]{2} (?:AM|PM))?$")
-            .expect("static Codex status regex")
+    let configured = profile.and_then(|id| {
+        crate::profiles::profile_get(id).or_else(|| {
+            crate::profiles::builtin_profiles().into_iter().find(|p| p.id == id)
+        })
     });
-    cleaned.lines().filter(|line| !worked.is_match(line.trim()))
+    let Some(pattern) = configured.as_ref().and_then(|p| p.detection.status_chrome_regex.as_deref()) else {
+        return cleaned;
+    };
+    let status = match Regex::new(pattern) {
+        Ok(status) => status,
+        Err(error) => {
+            log::warn!("status_chrome_regex compile error: {error}");
+            return cleaned;
+        }
+    };
+    cleaned.lines().filter(|line| !status.is_match(line.trim()))
         .collect::<Vec<_>>().join("\n")
 }
 

@@ -1693,6 +1693,8 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
                 permission_dialog_regex: None,
                 spinner_glyphs: vec![],
                 running_row_regex: None,
+                status_chrome_regex: None,
+                submit_wait_for_answer: false,
                 alt_screen: false,
                 bell_capable: false,
                 settle_ms: 1_500,
@@ -1730,6 +1732,19 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
             profile.detection.spinner_glyphs = arr.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
+        }
+        if let Some(s) = det_obj.get("status_chrome_regex").and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                if let Err(e) = regex::Regex::new(s) {
+                    return ok_response(id, tool_err(&format!("invalid status_chrome_regex: {e}")));
+                }
+                profile.detection.status_chrome_regex = Some(s.to_string());
+            } else {
+                profile.detection.status_chrome_regex = None;
+            }
+        }
+        if let Some(b) = det_obj.get("submit_wait_for_answer").and_then(|v| v.as_bool()) {
+            profile.detection.submit_wait_for_answer = b;
         }
         if let Some(b) = det_obj.get("alt_screen").and_then(|v| v.as_bool()) {
             profile.detection.alt_screen = b;
@@ -1969,6 +1984,8 @@ fn tools_list_schema() -> Value {
                             "properties": {
                                 "prompt_box_regex": {"type": "string"},
                                 "permission_dialog_regex": {"type": "string"},
+                                "status_chrome_regex": {"type": "string"},
+                                "submit_wait_for_answer": {"type": "boolean"},
                                 "spinner_glyphs": {"type": "array", "items": {"type": "string"}},
                                 "alt_screen": {"type": "boolean"},
                                 "bell_capable": {"type": "boolean"},

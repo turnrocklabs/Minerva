@@ -898,7 +898,7 @@ fn watch_loop(
                     // bypass the gate.
                     let waiting_for_answer = {
                         let s = session.lock().unwrap();
-                        s.armed && s.profile_id == "codex"
+                        s.armed && cd.submit_wait_for_answer
                             && s.facts.prompts.back().is_some_and(|prompt| {
                                 detector::submit_waiting_for_answer(content, &prompt.text, &cd)
                             })

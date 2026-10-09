@@ -33,6 +33,8 @@ fn load_fixture(name: &str) -> String {
 // We use #[path] to include the source directly in the test binary.
 #[path = "../src/chrome_filter.rs"]
 mod chrome_filter;
+#[path = "../src/profiles.rs"]
+mod profiles;
 
 // ---------------------------------------------------------------------------
 // Helper: count box-drawing characters in a string.
