@@ -1010,11 +1010,6 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     let terminal = "t-watch-gone-answer";
     let moved_on = Arc::new(AtomicBool::new(false));
     let cleared = Arc::new(AtomicBool::new(false));
-    // A's turn is held open by the FAKE HOST, not by timing: while this is set
-    // no wait ever settles, so A's turn cannot end however long the test pumps.
-    // That is what makes the watch-absence sample below a barrier rather than a
-    // race — see the sampling comment.
-    let a_turn_open = Arc::new(AtomicBool::new(true));
     let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
     host.screen = Box::new(move |v| {
         if v.writes.is_empty() {
@@ -1028,14 +1023,11 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         }
     });
     let m = Arc::clone(&moved_on);
-    let open = Arc::clone(&a_turn_open);
     host.wait = Box::new(move |v| {
         if v.writes.is_empty() {
             quiet()
         } else if !m.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
-        } else if open.load(Ordering::SeqCst) {
-            quiet()
         } else {
             settled(HOLD_CLAUDE_PERMISSION, 160)
         }
@@ -1059,6 +1051,11 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         .map(str::to_string)
         .unwrap_or_else(|| panic!("the chooser card must offer a numbered option: {question}"));
 
+    // Withhold A's windowed read response: the real sender keeps its slot
+    // attached throughout read_turn, including when its watch disappears.
+    let turn_reads_before = host.view().turn_reads;
+    host.hold_turn_reads = Box::new(|_| true);
+
     // Answer A (custom text) is written and its turn holds the slot; answer B
     // validates the SAME card and queues behind it. The order is ESTABLISHED,
     // not assumed (see test 2): A's write is out before B is issued.
@@ -1073,22 +1070,22 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     );
     wait_for_one_waiter(&mut host, terminal);
 
-    // The screen advances to a permission dialog and the watch is stopped
-    // while B waits: the stop is signalled while the watcher is blocked in its
-    // wait, so that wait still counts A's turn end — and the loop then exits
-    // and drops the session before A has finished reading its turn.
+    // Advance to the permission dialog and await A's held read before stopping
+    // the watch. A cannot release its slot until this capability is answered;
+    // quiet waits alone would not pin it once watch loss ends its wait.
     moved_on.store(true, Ordering::SeqCst);
+    host.pump_while(&[first], |v| v.turn_reads == turn_reads_before);
+    assert!(
+        host.view().turn_reads > turn_reads_before,
+        "A must reach its held read before the watch stops"
+    );
     let stopped = host.tool(
         "minerva_agent_relay_watch_stop",
         json!({"terminal_id": terminal}),
     );
     assert_eq!(stopped["was_watching"], true, "{stopped}");
-    // The watch must be gone before the queued answer takes the slot, and that
-    // check is a real barrier: A's turn is pinned open by `a_turn_open`, so no
-    // amount of servicing here can let A finish, let B take the slot and let the
-    // stale refusal revive the watch underneath the sample. A sample that merely
-    // ran before `await_reply(first)` would still race that revival, because
-    // every host.tool and pump_while services capability calls.
+    // Service the watcher until it exits. Servicing cannot let A finish or B
+    // take the slot: A's read response remains explicitly withheld.
     let mut watch_gone = false;
     for _ in 0..100 {
         let status = host.tool(
@@ -1110,9 +1107,7 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     );
     // The other half of the barrier: A still owns the slot and B is still
     // queued behind it, so the null above was sampled in the window the oracle
-    // is about. (The gate's own send_in_flight/send_waiters cannot say this any
-    // more: watch_status reports them off the session, and the session is the
-    // thing that just vanished.)
+    // is about.
     assert!(
         !host.has_reply(first),
         "the sample must land while A still owns the slot"
@@ -1122,8 +1117,9 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         "the sample must land before the queued answer takes the slot"
     );
 
-    // Release A's turn; only now may the queued answer reach the front.
-    a_turn_open.store(false, Ordering::SeqCst);
+    // Release A's read; only now may the queued answer reach the front.
+    host.hold_turn_reads = Box::new(|_| false);
+    host.release_turn_reads();
     host.await_reply(first);
 
     // B now owns the slot with no watch on the terminal. Nothing of its
