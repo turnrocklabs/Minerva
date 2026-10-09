@@ -431,10 +431,11 @@ pub fn watch_stop(terminal_id: &str) -> bool {
 /// Arm a watch session for one-shot notification (called internally by the
 /// send tool in B4, exposed as pub fn here for B4's use).
 /// `snapshot`: (screen content, total_rows) at arm time. The turn-start
-/// boundary for read_turn is ANCHORED on the last content row — total rows
-/// minus the trailing input-box/chrome rows of the snapshot screen — because
+/// boundary for a primary-screen read_turn is ANCHORED on the last content row:
+/// total rows minus the trailing input-box/chrome rows of the snapshot — because
 /// the answer renders INTO the rows the input box occupied (019eb345d4d9).
-/// The busy-gate's growth reference keeps the RAW row count.
+/// Alternate screens start at viewport row zero; only the bound session log
+/// can recover text a redraw discarded. The busy-gate keeps the RAW row count.
 /// Returns true if the session exists and was armed.
 pub fn arm(terminal_id: &str, snapshot: Option<(&str, u64)>) -> bool {
     let raw_rows = snapshot.map(|(_, rows)| rows);
@@ -486,13 +487,14 @@ fn content_hash(content: &str) -> u64 {
     hasher.finish()
 }
 
-/// Compute the content-anchored row count: `total_rows` minus the trailing
-/// input-box/chrome rows of `content`, per the named profile. Falls back to
-/// the raw count when the profile or its regex is unavailable.
+/// A primary screen retains its content anchor; an alternate screen has no
+/// historical row offsets, so the turn read must include the whole viewport.
+/// Falls back to the raw count when the profile or its regex is unavailable.
 fn anchored_rows(profile_id: &str, content: &str, total_rows: u64) -> u64 {
     match profile_get(profile_id)
         .and_then(|p| CompiledDetection::from_profile(&p).ok())
     {
+        Some(cd) if cd.alt_screen => 0,
         Some(cd) => total_rows.saturating_sub(detector::trailing_noncontent_rows(content, &cd)),
         None => total_rows,
     }
@@ -1336,6 +1338,45 @@ mod tests {
         let (start, end) = turn_rows("t-arm-rows");
         assert_eq!(start, Some(100), "turn_start_row snapshotted (no trailing chrome)");
         assert_eq!(end, None, "turn_end_row not set yet");
+    }
+
+    #[test]
+    fn test_codex_alternate_screen_turn_window_cannot_run_backwards() {
+        let _g = setup();
+        let session = Arc::new(Mutex::new(WatchSession::new(
+            "t-alt-window".to_string(),
+            "codex".to_string(),
+            NotifyMode::Armed,
+        )));
+        get_sessions()
+            .lock()
+            .unwrap()
+            .insert("t-alt-window".to_string(), session);
+        // An eight-row redraw reuses the content area rather than appending
+        // history: primary-screen anchors would give start 2 > end 1.
+        assert!(arm(
+            "t-alt-window",
+            Some(("Header\nold content\n\n› Ask anything\n\n\n\n\n", 8))
+        ));
+        let (start, _) = turn_rows("t-alt-window");
+        assert_eq!(
+            start,
+            Some(0),
+            "alternate screens have no retained row history"
+        );
+        let profile = profile_get("codex").unwrap();
+        let cd = CompiledDetection::from_profile(&profile).unwrap();
+        let end = 8u64.saturating_sub(
+            detector::trailing_noncontent_rows(
+                "Header\nnew content\n\n› Ask anything\n\n\n\n\n",
+                &cd,
+            ) + 1,
+        );
+        assert_eq!(end, 1, "the completed viewport's content ends at row one");
+        assert!(
+            start.unwrap() <= end,
+            "a shrinking viewport keeps a valid read window"
+        );
     }
 
     // ── Test: arm() without rows leaves start_row unchanged ─────────────────

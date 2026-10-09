@@ -555,13 +555,13 @@ pub fn confirm_submit(
         return SubmitState::Submitted("busy");
     }
 
-    let needle = echo_needle(body);
+    let (needle, partial_token) = echo_needle(body);
     if needle.is_empty() {
         return SubmitState::Unconfirmed;
     }
 
-    let (echoes, composer_holds_body) = echo_rows(screen, &needle, cd);
-    let echoes_before = baseline.map_or(0, |b| echo_rows(b, &needle, cd).0);
+    let (echoes, composer_holds_body) = echo_rows(screen, &needle, partial_token, cd);
+    let echoes_before = baseline.map_or(0, |b| echo_rows(b, &needle, partial_token, cd).0);
 
     if echoes > echoes_before {
         return SubmitState::Submitted("echo");
@@ -579,7 +579,12 @@ pub fn confirm_submit(
 
 /// How many rows of `screen` carry `needle` OUTSIDE the composer (the echo
 /// count), and whether the composer row itself carries it.
-fn echo_rows(screen: &str, needle: &str, cd: &CompiledDetection) -> (usize, bool) {
+fn echo_rows(
+    screen: &str,
+    needle: &str,
+    partial_token: bool,
+    cd: &CompiledDetection,
+) -> (usize, bool) {
     let composer_idx = screen
         .lines()
         .enumerate()
@@ -589,7 +594,13 @@ fn echo_rows(screen: &str, needle: &str, cd: &CompiledDetection) -> (usize, bool
     let mut echoes = 0usize;
     let mut composer_holds_body = false;
     for (i, line) in screen.lines().enumerate() {
-        if !normalize_row(line).contains(needle) {
+        let row = normalize_row(line);
+        let boundary = |c: char| !is_echo_word_char(c);
+        let matches = row.match_indices(needle).any(|(at, _)| {
+            row[..at].chars().next_back().is_none_or(boundary)
+                && (partial_token || row[at + needle.len()..].chars().next().is_none_or(boundary))
+        });
+        if !matches {
             continue;
         }
         if Some(i) == composer_idx {
@@ -602,11 +613,25 @@ fn echo_rows(screen: &str, needle: &str, cd: &CompiledDetection) -> (usize, bool
 }
 
 /// The comparable fragment of a sent message: its first line, whitespace
-/// collapsed, capped so a wrapped transcript row still contains it.
-fn echo_needle(body: &str) -> String {
+/// collapsed, capped so a wrapped transcript row still contains it. The flag
+/// names a partial token, which cannot require a right word boundary.
+fn echo_needle(body: &str) -> (String, bool) {
     let first = body.lines().next().unwrap_or("");
     let normalized = normalize_row(first);
-    normalized.chars().take(48).collect()
+    let capped: String = normalized.chars().take(48).collect();
+    // Prefer complete words. An unbroken first token has no boundary before
+    // the cap; its prefix can require only the left word boundary.
+    if normalized.chars().nth(48).is_some_and(is_echo_word_char) {
+        return match capped.rsplit_once(' ') {
+            Some((words, _)) => (words.to_string(), false),
+            None => (capped, true),
+        };
+    }
+    (capped, false)
+}
+
+fn is_echo_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 /// Collapse a row to comparable text: caret/box glyphs and runs of whitespace
@@ -1111,11 +1136,92 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_is_primary_screen_profile() {
-        // Scrollback grew 17→23→50 rows across live turns — codex scrolls the
-        // primary screen; the busy-gate's row-growth arm depends on this.
-        let codex = builtin_profiles().into_iter().find(|p| p.id == "codex").unwrap();
-        assert!(!codex.detection.alt_screen, "codex runs on the primary screen");
+    fn test_codex_is_alternate_screen_profile() {
+        let codex = builtin_profiles()
+            .into_iter()
+            .find(|p| p.id == "codex")
+            .unwrap();
+        assert!(
+            codex.detection.alt_screen,
+            "Codex 0.162 enters the alternate screen"
+        );
+    }
+
+    #[test]
+    fn test_short_unsent_prompt_is_not_an_echo_in_another_word() {
+        let cd = compiled_codex();
+        let baseline = "This session has no transcript yet\n› Ask anything";
+        for screen in [
+            "This session has no transcript yet\n› hi",
+            "Thinking about the next steps\n› hi",
+            "history\n› hi",
+        ] {
+            for before in [None, Some(baseline)] {
+                assert_eq!(
+                    confirm_submit(screen, "hi", &cd, before),
+                    SubmitState::StuckInComposer,
+                    "an unrelated substring must not suppress extra-Enter recovery"
+                );
+            }
+        }
+        assert_eq!(
+            confirm_submit("› hi\nHello!\n› Ask anything", "hi", &cd, Some(baseline)),
+            SubmitState::Submitted("echo")
+        );
+        assert_eq!(
+            confirm_submit("This session\n› history", "hi", &cd, Some(baseline)),
+            SubmitState::Unconfirmed,
+            "a longer composer word is not the submitted prompt either"
+        );
+    }
+
+    #[test]
+    fn test_capped_hash_prompt_confirms_echo_and_recovers_unsent_input() {
+        let cd = compiled_codex();
+        let hash = "0123456789abcdef".repeat(4);
+        let baseline = "History ready\n› Ask anything";
+        for body in [hash.clone(), format!("{hash} is the revision")] {
+            assert_eq!(
+                confirm_submit(
+                    &format!("› {body}\nHello!\n› Ask anything"),
+                    &body,
+                    &cd,
+                    Some(baseline)
+                ),
+                SubmitState::Submitted("echo"),
+                "a capped first token still confirms its transcript echo"
+            );
+            assert_eq!(
+                confirm_submit(
+                    &format!("History ready\n› {body}"),
+                    &body,
+                    &cd,
+                    Some(baseline)
+                ),
+                SubmitState::StuckInComposer,
+                "the same long token in the input box still earns recovery"
+            );
+            assert_eq!(
+                confirm_submit(
+                    &format!("x{body}\n› Ask anything"),
+                    &body,
+                    &cd,
+                    Some(baseline)
+                ),
+                SubmitState::Unconfirmed,
+                "a partial token still needs a left word boundary"
+            );
+        }
+        assert_eq!(
+            confirm_submit(
+                &format!("› {hash}\n› Ask anything"),
+                &hash[..48],
+                &cd,
+                Some(baseline)
+            ),
+            SubmitState::Unconfirmed,
+            "a complete 48-character word still requires its right boundary"
+        );
     }
 }
 
