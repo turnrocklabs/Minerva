@@ -92,19 +92,6 @@ func _init() -> void:
 	check("wake after VAD initializes a fresh recording", gateway.engagement_state == "ENGAGED" and gateway._recording)
 	gateway.stop()
 	gateway.free()
-	var adapter = load("res://Scripts/Services/Voice/DockerVoiceDetectorAdapter.gd").new()
-	root.add_child(adapter)
-	adapter._generation = 2
-	adapter._should_connect = false
-	adapter._handle_health_result(1, HTTPRequest.RESULT_CANT_CONNECT, 0)
-	check("stale health completion after stop cannot restart detector", not adapter._should_connect and adapter._health_retries == 0 and adapter._ws == null)
-	var failures: Array[String] = []
-	adapter.start_failed.connect(func(reason: String): failures.append(reason))
-	adapter._should_connect = true
-	adapter._health_retries = adapter.MAX_HEALTH_RETRIES - 1
-	adapter._handle_health_result(adapter._generation, HTTPRequest.RESULT_CANT_CONNECT, 0)
-	check("final health failure is terminal once and audio remains unavailable", failures.size() == 1 and not adapter._should_connect and adapter.send_audio(PackedByteArray([1, 2])) == ERR_CONNECTION_ERROR)
-	adapter.free()
 	VoiceFeature.set_enabled(voice_was_enabled)
 	print("Voice gateway lifecycle: %d passed, %d failed" % [passed, failed])
 	quit(0 if failed == 0 else 1)

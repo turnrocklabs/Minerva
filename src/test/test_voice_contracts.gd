@@ -10,10 +10,13 @@ class DockerAdmissionProbe extends RefCounted:
 		calls += 1
 		return true
 	func get_definitions() -> Array:
-		return [{"image_name": "minerva-voice-gateway"}]
+		calls += 1
+		return []
 	func is_running(_definition) -> bool:
+		calls += 1
 		return false
 	func is_image_built(_definition) -> bool:
+		calls += 1
 		return false
 
 func _init() -> void:
@@ -37,6 +40,14 @@ func _capture(client, method: String, args: Array, output: Dictionary) -> void:
 
 func _last_id(client) -> String:
 	return client.sent.back().params.request_id
+
+func _no_builtin_voice_container(so) -> void:
+	var previous = so.docker_manager
+	so.docker_manager = null
+	# The functional runner supplies a fresh profile, with no custom containers.
+	# Exercise the production factory so a retired built-in cannot trigger probes.
+	check("fresh Docker manager has no automatic voice container", so.get_docker_manager().get_definitions().is_empty())
+	so.docker_manager = previous
 
 ## Production keyboard/Stream Deck handlers and recording conversion; the
 ## existing capture fixture supplies PCM without opening the host microphone.
@@ -151,6 +162,7 @@ func _stream_id(seed: int) -> PackedByteArray:
 func _run() -> void:
 	var core = root.get_node("Core")
 	var so = root.get_node("SingletonObject")
+	_no_builtin_voice_container(so)
 	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging, "docker": so.docker_manager}
 	so.verbose_logging = false
 	so.config_file = ConfigFile.new()
