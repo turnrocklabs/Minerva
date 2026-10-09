@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import unittest
+from pathlib import Path
 
 import websockets
 
@@ -237,6 +238,66 @@ asyncio.run(check())
             "jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": [],
         })
         self.assertEqual(bad_params["error"]["code"], -32602)
+
+    async def test_stdio_eof_exits_with_unresponsive_websocket_peer(self) -> None:
+        # Keep ML loading at the existing detector fixture boundary. The child
+        # still runs the production stdin loop, session and websocket server.
+        script = """
+import asyncio, runpy, sys
+from minerva_voice_worker import server
+FakeDetector = runpy.run_path(sys.argv[1])["FakeDetector"]
+class FixtureWorker(server.VoiceWorker):
+    def __init__(self) -> None:
+        super().__init__(detector_factory=FakeDetector)
+server.VoiceWorker = FixtureWorker
+asyncio.run(server.run())
+"""
+        process = await asyncio.to_thread(subprocess.Popen,
+            [sys.executable, "-B", "-I", "-c", script, str(Path(__file__).resolve())],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        writer: asyncio.StreamWriter | None = None
+        try:
+            assert process.stdin is not None
+            assert process.stdout is not None
+            request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                       "params": {"name": "minerva_voice_start", "arguments": {}}}
+            process.stdin.write(json.dumps(request) + "\n")
+            process.stdin.flush()
+            reply = json.loads(await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 10))
+            endpoint = json.loads(reply["result"]["content"][0]["text"])
+            reader, writer = await asyncio.open_connection(endpoint["host"], endpoint["port"])
+            # A raw upgraded TCP peer never reads/responds to WebSocket CLOSE.
+            writer.write((
+                f"GET /audio?token={endpoint['token']} HTTP/1.1\r\n"
+                f"Host: 127.0.0.1:{endpoint['port']}\r\n"
+                "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            ).encode("ascii"))
+            await writer.drain()
+            handshake = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 3)
+            self.assertTrue(handshake.startswith(b"HTTP/1.1 101"), handshake)
+            started = time.monotonic()
+            process.stdin.close()
+            try:
+                return_code = await asyncio.wait_for(asyncio.to_thread(process.wait), 3)
+            except TimeoutError:
+                self.fail("worker did not exit within 3 s of stdin EOF with an unresponsive connected peer")
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            self.assertEqual(return_code, 0, stderr)
+            print(f"connected unresponsive-peer EOF shutdown completed in {time.monotonic() - started:.3f}s")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                await asyncio.to_thread(process.wait)
+            if writer is not None:
+                writer.close()
+                await writer.wait_closed()
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None and not pipe.closed:
+                    pipe.close()
 
 
 if __name__ == "__main__":

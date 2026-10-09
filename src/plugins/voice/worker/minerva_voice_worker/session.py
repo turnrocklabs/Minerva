@@ -52,6 +52,7 @@ class Detector(Protocol):
 
 class AudioSession:
     MAX_CHUNK_BYTES = 64 * 1024
+    CLOSE_TIMEOUT_SECONDS = 1.0
 
     def __init__(self, detector_factory: Callable[[], Detector]) -> None:
         self._detector_factory = detector_factory
@@ -100,6 +101,7 @@ class AudioSession:
             lambda websocket: self._handle_client(websocket, generation), "127.0.0.1", 0,
             max_size=self.MAX_CHUNK_BYTES, max_queue=4,
             ping_interval=20, ping_timeout=10,
+            close_timeout=self.CLOSE_TIMEOUT_SECONDS,
         )
         async with self._lifecycle_lock:
             if generation != self._generation:
@@ -171,7 +173,9 @@ class AudioSession:
             self._client_generation += 1
             self._detector = None
             self._token = ""
-        if client is not None:
+        # After stdin EOF, the host may no longer service its close handshake.
+        # Let the server's bounded close own peer cleanup when stdin has ended.
+        if client is not None and self._accept_starts:
             await client.close(code=1001, reason="session stopped")
         if server is not None:
             await server.wait_closed()
