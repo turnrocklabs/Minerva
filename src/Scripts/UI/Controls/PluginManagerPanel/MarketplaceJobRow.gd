@@ -10,6 +10,8 @@ extends PanelContainer
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 const Operation := preload("res://Scripts/Services/Plugins/PluginInstallOperation.gd")
 
+signal dismiss_requested(job: Job)
+
 const STAGE_NAMES := {
 	Operation.STAGE_DOWNLOAD: "Downloading",
 	Operation.STAGE_EXTRACT: "Extracting",
@@ -56,6 +58,7 @@ func _render() -> void:
 	_name.text = job.plugin_id() if not job.plugin_id().is_empty() else job.url.get_file()
 	set_process(job.state == Job.State.RUNNING)
 	_retry.visible = false
+	_cancel.text = "Cancel"
 	_detail.text = ""
 	match job.state:
 		Job.State.QUEUED:
@@ -108,8 +111,14 @@ func _render_outcome() -> void:
 		Job.OUTCOME_CANCELLED:
 			_status.text = "Cancelled — nothing was changed"
 	_detail.text = job.message
+	if job.outcome not in [Job.OUTCOME_READY, Job.OUTCOME_INSTALLED]:
+		_cancel.visible = true
+		_cancel.text = "Dismiss"
 
 
 func _on_cancel() -> void:
+	if job.state == Job.State.DONE:
+		dismiss_requested.emit(job)
+		return
 	if not queue.cancel(job) and job.state == Job.State.RUNNING:
 		_detail.text = "Too late to cancel: the install is being finished. Its result will show here."

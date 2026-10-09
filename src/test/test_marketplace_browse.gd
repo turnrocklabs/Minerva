@@ -7,8 +7,8 @@ extends SceneTree
 ##     description or says it has none, and installs a two-plugin selection
 ##     as two job rows with their own stage and progress;
 ##   - closing the dialog mid-install and opening a new one shows the same
-##     jobs, and a dialog opened after they finish shows their outcomes until
-##     the queue stops keeping them;
+##     jobs; success leaves after a short done state and never reappears,
+##     while failed/cancelled jobs remain until dismissed or history eviction;
 ##   - PluginManagerPanel lists a plugin installed through the queue while
 ##     no dialog is open (as an MCP install is);
 ##   - minerva_plugin_marketplace_list / _detail return descriptions and
@@ -98,14 +98,36 @@ func _test_dialog_installs_a_selection_and_survives_reopening() -> void:
 	rows = _rows_by_plugin(dialog)
 	_check(rows.size() == 2 and slow.state != slow.State.DONE, "a reopened dialog shows the same unfinished jobs")
 	await _pm.install_queue.job_for(PLAIN).finished
+	await create_timer(3.1).timeout
+	rows = _rows_by_plugin(dialog)
+	_check(not rows.has(SLOW) and not rows.has(PLAIN), "successful jobs leave the Installs progress area after the done state")
 	dialog._on_close_requested()
 	await process_frame
 	dialog = await _open_dialog()
 	_select(dialog, SLOW)
 	rows = _rows_by_plugin(dialog)
-	_check(rows.has(SLOW) and rows.has(PLAIN) and "Installed v1.0.0" in rows[SLOW]._status.text \
-		and "Installed v1.0.0" in rows[PLAIN]._status.text, "a dialog opened after the installs shows their outcomes")
+	_check(not rows.has(SLOW) and not rows.has(PLAIN), "successful jobs do not reappear when the dialog reopens")
 	_check(dialog._install_btn.disabled, "installed plugins are not offered again")
+	var failed = _pm.install_queue.request_url(_registry_url.replace("registry.json", "missing-progress.tar.gz"))
+	var cancelled = _pm.install_queue.request_url(_registry_url.replace("registry.json", "cancelled-progress.tar.gz"))
+	_check(_shows_job(dialog, failed) and _shows_job(dialog, cancelled), "new install jobs appear in the progress area")
+	_check(_pm.install_queue.cancel(cancelled), "a queued progress fixture can be cancelled")
+	await failed.finished
+	await create_timer(3.1).timeout
+	_check(_shows_job(dialog, failed) and _shows_job(dialog, cancelled), "failed and cancelled jobs stay after the success dwell")
+	dialog._on_close_requested()
+	await process_frame
+	dialog = await _open_dialog()
+	_check(_shows_job(dialog, failed) and _shows_job(dialog, cancelled), "failed and cancelled jobs survive reopening")
+	for row in dialog.get_node("%JobRows").get_children():
+		if row.job in [failed, cancelled]:
+			row._cancel.pressed.emit()
+	await process_frame
+	_check(not _shows_job(dialog, failed) and not _shows_job(dialog, cancelled), "terminal failures and cancellations can be dismissed")
+	dialog._on_close_requested()
+	await process_frame
+	dialog = await _open_dialog()
+	_check(not _shows_job(dialog, failed) and not _shows_job(dialog, cancelled), "dismissed terminal jobs do not reappear on reopening")
 
 	# Finish enough quick (404) installs that the queue stops keeping SLOW's job.
 	var trimmed = _pm.install_queue.job_for(SLOW)
@@ -185,6 +207,14 @@ func _rows_by_plugin(dialog) -> Dictionary:
 	for row in dialog.get_node("%JobRows").get_children():
 		rows[row.job.plugin_id()] = row
 	return rows
+
+
+## Observe real scene children rather than only the view's bookkeeping.
+func _shows_job(dialog, job) -> bool:
+	for row in dialog.get_node("%JobRows").get_children():
+		if row.job == job:
+			return true
+	return false
 
 
 func _write_registry() -> bool:

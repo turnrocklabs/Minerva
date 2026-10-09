@@ -7,11 +7,15 @@ extends Window
 ## The queue owns every install, so closing this dialog neither stops nor
 ## loses one. The Installs list shows one MarketplaceJobRow per job the
 ## queue still keeps — including installs started elsewhere (MCP) or before
-## this dialog opened — so an install's progress and outcome survive
-## selection changes and reopening.
+## this dialog opened. Success leaves after a short done state; errors stay
+## until dismissed or evicted from the queue's bounded history.
 
 const MARKETPLACE_CLIENT_GD := "res://Scripts/Services/Plugins/MarketplaceClient.gd"
 const JOB_ROW_TSCN := preload("res://Scenes/MarketplaceJobRow.tscn")
+const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
+const JobRow := preload("res://Scripts/UI/Controls/PluginManagerPanel/MarketplaceJobRow.gd")
+const SUCCESS_DWELL_SECONDS := 2.0
+const DISMISSED_META := &"marketplace_progress_dismissed"
 
 ## Set before the dialog enters the tree; defaults to the app's manager and
 ## the canonical registry.
@@ -20,7 +24,8 @@ var registry_url := ""
 
 var _client: Node = null
 var _plugins: Array = []
-var _rows := {}  # PluginInstallJob -> MarketplaceJobRow
+var _rows: Dictionary[Job, JobRow] = {}
+var _success_pending: Dictionary[Job, bool] = {}
 
 @onready var _list: ItemList = %PluginList
 @onready var _details: RichTextLabel = %Details
@@ -133,26 +138,52 @@ func _on_install_pressed() -> void:
 
 ## Keep the rows to the jobs the queue still keeps (a trimmed job can no
 ## longer be retried), and the Install button to what can be installed now.
-func _on_job_changed(job) -> void:
+func _on_job_changed(job: Job) -> void:
+	if job.state != Job.State.DONE and job.has_meta(DISMISSED_META):
+		job.remove_meta(DISMISSED_META)
 	_add_row(job)
 	var kept: Array = _queue().jobs()
 	for shown in _rows.keys():
 		if not shown in kept:
-			_rows[shown].queue_free()
-			_rows.erase(shown)
+			_remove_row(shown)
 		elif shown != job:
 			_rows[shown].refresh()
+	if _terminal_success(job) and _rows.has(job) and not _success_pending.has(job):
+		_success_pending[job] = true
+		get_tree().create_timer(SUCCESS_DWELL_SECONDS).timeout.connect(func() -> void:
+			_success_pending.erase(job)
+			if _terminal_success(job):
+				_remove_row(job), CONNECT_ONE_SHOT)
 	_on_selection_changed(-1)
 
 
-func _add_row(job) -> void:
+func _add_row(job: Job) -> void:
 	if _rows.has(job):
 		return
-	var row = JOB_ROW_TSCN.instantiate()
+	# Finished successes never return on reopening or another job's event.
+	if _terminal_success(job) or job.get_meta(DISMISSED_META, false):
+		return
+	var row: JobRow = JOB_ROW_TSCN.instantiate()
 	row.bind(job, _queue())
+	row.dismiss_requested.connect(_dismiss_job)
 	_rows[job] = row
 	%JobRows.add_child(row)
 	%JobRows.move_child(row, 0)  # newest first
+
+
+static func _terminal_success(job: Job) -> bool:
+	return job.state == Job.State.DONE and job.outcome in [Job.OUTCOME_READY, Job.OUTCOME_INSTALLED]
+
+
+func _dismiss_job(job: Job) -> void:
+	job.set_meta(DISMISSED_META, true)
+	_remove_row(job)
+
+
+func _remove_row(job: Job) -> void:
+	if _rows.has(job):
+		_rows[job].queue_free()
+		_rows.erase(job)
 
 
 ## Registry text shown as text, not as BBCode markup.
