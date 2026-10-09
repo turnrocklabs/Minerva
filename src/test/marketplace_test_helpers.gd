@@ -30,6 +30,7 @@ var _http_dir: String = ""
 
 const PLUGIN_MANAGER_GD := "res://Scripts/Services/Plugins/PluginManager.gd"
 const MARKETPLACE_GD := "res://Scripts/Services/Plugins/MarketplaceClient.gd"
+const InstallJob := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 
 # Plugin state enum values (mirrors PluginDefinition.State; intentionally
 # inlined so tests don't need to import the definition).
@@ -39,6 +40,21 @@ const S_STOPPED: int = 3
 
 func _init(tree: SceneTree) -> void:
 	_tree = tree
+
+
+## Observe the real progress scene instead of the view's private row map.
+func shows_install_job(dialog: Window, job: InstallJob) -> bool:
+	for row: Node in dialog.get_node("%JobRows").get_children():
+		if row.get("job") == job:
+			return true
+	return false
+
+
+func shows_installed_version(panel: Control, version: String) -> bool:
+	for label: Label in panel.find_children("*", "Label", true, false):
+		if label.is_visible_in_tree() and label.text == version:
+			return true
+	return false
 
 
 # ---------------------------------------------------------------------------

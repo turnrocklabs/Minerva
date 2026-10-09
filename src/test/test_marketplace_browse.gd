@@ -72,15 +72,15 @@ func _init() -> void:
 
 func _test_dialog_installs_a_selection_and_survives_reopening() -> void:
 	var dialog = await _open_dialog()
-	var list: ItemList = dialog._list
+	var list: ItemList = dialog.get_node("%PluginList")
 	_check(list.item_count == 4 and list.is_item_disabled(_index(dialog, ELSEWHERE)),
 		"the registry is listed and the entry with no build here is disabled")
 	_select(dialog, PLAIN)
-	_check("published without a description" in dialog._details.text, "a legacy entry says it has no description")
+	_check("published without a description" in dialog.get_node("%Details").text, "a legacy entry says it has no description")
 	_select(dialog, SLOW)
-	_check(DESCRIPTION in dialog._details.text, "the selected entry's long description is shown")
-	_check(dialog._install_btn.text == "Install 2" and not dialog._install_btn.disabled, "both selections can be installed")
-	dialog._install_btn.pressed.emit()
+	_check(DESCRIPTION in dialog.get_node("%Details").text, "the selected entry's long description is shown")
+	_check(dialog.get_node("%Install").text == "Install 2" and not dialog.get_node("%Install").disabled, "both selections can be installed")
+	dialog.get_node("%Install").pressed.emit()
 
 	var slow = _pm.install_queue.job_for(SLOW)
 	var give_up := Time.get_ticks_msec() + 20000
@@ -88,9 +88,9 @@ func _test_dialog_installs_a_selection_and_survives_reopening() -> void:
 		await process_frame
 	var rows: Dictionary = _rows_by_plugin(dialog)
 	_check(rows.size() == 2, "two job rows: %s" % [rows.keys()])
-	_check(rows.has(SLOW) and "Downloading" in rows[SLOW]._status.text and rows[SLOW]._progress.visible \
-		and rows[SLOW]._progress.max_value > 0, "the running install shows its stage and byte progress")
-	_check(rows.has(PLAIN) and "Waiting" in rows[PLAIN]._status.text, "the other waits its turn")
+	_check(rows.has(SLOW) and "Downloading" in rows[SLOW].get_node("%Status").text and rows[SLOW].get_node("%Progress").visible \
+		and rows[SLOW].get_node("%Progress").max_value > 0, "the running install shows its stage and byte progress")
+	_check(rows.has(PLAIN) and "Waiting" in rows[PLAIN].get_node("%Status").text, "the other waits its turn")
 
 	dialog._on_close_requested()
 	await process_frame
@@ -107,27 +107,27 @@ func _test_dialog_installs_a_selection_and_survives_reopening() -> void:
 	_select(dialog, SLOW)
 	rows = _rows_by_plugin(dialog)
 	_check(not rows.has(SLOW) and not rows.has(PLAIN), "successful jobs do not reappear when the dialog reopens")
-	_check(dialog._install_btn.disabled, "installed plugins are not offered again")
+	_check(dialog.get_node("%Install").disabled, "installed plugins are not offered again")
 	var failed = _pm.install_queue.request_url(_registry_url.replace("registry.json", "missing-progress.tar.gz"))
 	var cancelled = _pm.install_queue.request_url(_registry_url.replace("registry.json", "cancelled-progress.tar.gz"))
-	_check(_shows_job(dialog, failed) and _shows_job(dialog, cancelled), "new install jobs appear in the progress area")
+	_check(_h.shows_install_job(dialog, failed) and _h.shows_install_job(dialog, cancelled), "new install jobs appear in the progress area")
 	_check(_pm.install_queue.cancel(cancelled), "a queued progress fixture can be cancelled")
 	await failed.finished
 	await create_timer(3.1).timeout
-	_check(_shows_job(dialog, failed) and _shows_job(dialog, cancelled), "failed and cancelled jobs stay after the success dwell")
+	_check(_h.shows_install_job(dialog, failed) and _h.shows_install_job(dialog, cancelled), "failed and cancelled jobs stay after the success dwell")
 	dialog._on_close_requested()
 	await process_frame
 	dialog = await _open_dialog()
-	_check(_shows_job(dialog, failed) and _shows_job(dialog, cancelled), "failed and cancelled jobs survive reopening")
+	_check(_h.shows_install_job(dialog, failed) and _h.shows_install_job(dialog, cancelled), "failed and cancelled jobs survive reopening")
 	for row in dialog.get_node("%JobRows").get_children():
 		if row.job in [failed, cancelled]:
-			row._cancel.pressed.emit()
+			row.get_node("%Cancel").pressed.emit()
 	await process_frame
-	_check(not _shows_job(dialog, failed) and not _shows_job(dialog, cancelled), "terminal failures and cancellations can be dismissed")
+	_check(not _h.shows_install_job(dialog, failed) and not _h.shows_install_job(dialog, cancelled), "terminal failures and cancellations can be dismissed")
 	dialog._on_close_requested()
 	await process_frame
 	dialog = await _open_dialog()
-	_check(not _shows_job(dialog, failed) and not _shows_job(dialog, cancelled), "dismissed terminal jobs do not reappear on reopening")
+	_check(not _h.shows_install_job(dialog, failed) and not _h.shows_install_job(dialog, cancelled), "dismissed terminal jobs do not reappear on reopening")
 
 	# Finish enough quick (404) installs that the queue stops keeping SLOW's job.
 	var trimmed = _pm.install_queue.job_for(SLOW)
@@ -135,7 +135,7 @@ func _test_dialog_installs_a_selection_and_survives_reopening() -> void:
 	for i in _pm.install_queue.MAX_FINISHED:
 		last = _pm.install_queue.request_url(_registry_url.replace("registry.json", "gone_%d.tar.gz" % i))
 	await last.finished
-	_check(not trimmed in _pm.install_queue.jobs() and not dialog._rows.has(trimmed),
+	_check(not trimmed in _pm.install_queue.jobs() and not _h.shows_install_job(dialog, trimmed),
 		"a job the queue no longer keeps leaves the open dialog, so it cannot look retryable")
 	dialog._on_close_requested()
 
@@ -162,10 +162,11 @@ func _test_panel_lists_an_install_started_elsewhere() -> void:
 		return
 	await _wait_update_check(panel)
 	await panel.check_for_updates()
-	for index in panel._plugin_list.item_count:
-		if panel._plugin_list.get_item_metadata(index) == EXTERNAL:
-			panel._plugin_list.select(index)
-			panel._plugin_list.item_selected.emit(index)
+	var plugin_list: ItemList = panel.find_children("*", "ItemList", true, false)[0]
+	for index in plugin_list.item_count:
+		if plugin_list.get_item_metadata(index) == EXTERNAL:
+			plugin_list.select(index)
+			plugin_list.item_selected.emit(index)
 	var update: Button = panel.find_child("UpdatePlugin", true, false)
 	_check(update != null and update.visible and not update.disabled, "ordinary opted-out marketplace row offers Update")
 	if update != null and update.visible:
@@ -176,10 +177,12 @@ func _test_panel_lists_an_install_started_elsewhere() -> void:
 			if job.expected_version() == "2.0.0" and job.state == job.State.DONE:
 				break
 			await process_frame
-		_check(job.outcome == job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(EXTERNAL).version == "2.0.0" and not _pm.get_db().get_by_id(EXTERNAL).auto_update and panel._detail_version_label.text == "2.0.0", "ordinary manual Update uses its registry and preserves opt-out")
+		_check(job.outcome == job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(EXTERNAL).version == "2.0.0" and not _pm.get_db().get_by_id(EXTERNAL).auto_update and _h.shows_installed_version(panel, "2.0.0"), "ordinary manual Update uses its registry and preserves opt-out")
 	panel.queue_free()
 
 
+## Initial listing has no public completion signal/busy widget when it finds
+## no newer release; keep this fixture-readiness seam, never a UI assertion.
 func _wait_update_check(panel) -> void:
 	var give_up := Time.get_ticks_msec() + 10000
 	while panel._update_checking and Time.get_ticks_msec() < give_up:
@@ -214,7 +217,7 @@ func _open_dialog():
 	dialog.registry_url = _registry_url
 	root.add_child(dialog)
 	var give_up := Time.get_ticks_msec() + 10000
-	while dialog._list.item_count == 0 and Time.get_ticks_msec() < give_up:
+	while dialog.get_node("%PluginList").item_count == 0 and Time.get_ticks_msec() < give_up:
 		await process_frame
 	return dialog
 
@@ -222,13 +225,14 @@ func _open_dialog():
 ## Add `id` to the dialog's selection the way a click does.
 func _select(dialog, id: String) -> void:
 	var idx := _index(dialog, id)
-	dialog._list.select(idx, false)
-	dialog._list.multi_selected.emit(idx, true)
+	dialog.get_node("%PluginList").select(idx, false)
+	dialog.get_node("%PluginList").multi_selected.emit(idx, true)
 
 
 func _index(dialog, id: String) -> int:
-	for i in dialog._plugins.size():
-		if dialog._plugins[i].id == id:
+	var list: ItemList = dialog.get_node("%PluginList")
+	for i in list.item_count:
+		if list.get_item_text(i).begins_with(id + " — "):
 			return i
 	return -1
 
@@ -238,14 +242,6 @@ func _rows_by_plugin(dialog) -> Dictionary:
 	for row in dialog.get_node("%JobRows").get_children():
 		rows[row.job.plugin_id()] = row
 	return rows
-
-
-## Observe real scene children rather than only the view's bookkeeping.
-func _shows_job(dialog, job) -> bool:
-	for row in dialog.get_node("%JobRows").get_children():
-		if row.job == job:
-			return true
-	return false
 
 
 func _write_registry(external_version: String = "1.0.0") -> bool:

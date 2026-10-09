@@ -354,7 +354,9 @@ func _test_manual_update_button(port: int) -> void:
 		panel.free()
 		feature.set_enabled(previous_enabled)
 		return
-	await _until(func() -> bool: return not panel._update_checking)
+	_select_panel_plugin(panel, ids[0])
+	var initial_update: Button = panel.find_child("UpdatePlugin", true, false)
+	await _until(func() -> bool: return initial_update.visible and not initial_update.disabled)
 	# Discovery saw9.9.12. Publish9.9.13 without refreshing the panel: only the
 	# button's check-now request can find it, so a cached-entry updater fails.
 	for id: String in ids:
@@ -374,6 +376,11 @@ func _test_manual_update_button(port: int) -> void:
 		var previous_connection = _pm.get_connection(id)
 		var previous_job = _pm.install_queue.job_for(id)
 		button.pressed.emit()
+		# Selecting the same row repaints details before the HTTP reply arrives.
+		# A user cannot click again while the first check/submission is in flight.
+		_select_panel_plugin(panel, id)
+		_check(button.disabled, "row repaint preserves the in-flight Update button for " + id)
+		button.pressed.emit()  # a duplicate public action must be ignored too
 		await _until(func() -> bool:
 			var job = _pm.install_queue.job_for(id)
 			return job != null and job != previous_job)
@@ -382,11 +389,11 @@ func _test_manual_update_button(port: int) -> void:
 			_check(false, "manual button queued " + id)
 			continue
 		_check(job.expected_version() == "9.9.13", "click fetches the release published after discovery for " + id)
-		_check(dialog._rows.has(job), "manual update appears in Installs for " + id)
+		_check(_h.shows_install_job(dialog, job), "manual update appears in Installs for " + id)
 		await _until(func() -> bool: return job.state == job.State.DONE)
 		var def: PluginDefinition = _pm.get_db().get_by_id(id)
 		_check(job.outcome == job.OUTCOME_READY and def.version == "9.9.13" and not def.auto_update and _pm.get_connection(id) != previous_connection, "manual Update upgrades/restarts opted-out " + id)
-		_check(panel._detail_version_label.text == "9.9.13" and not button.visible, "plugin row reflects the upgraded version for " + id)
+		_check(_h.shows_installed_version(panel, "9.9.13") and not button.visible, "plugin row reflects the upgraded version for " + id)
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
 	await create_timer(3.1).timeout
 	_check(dialog.get_node("%JobRows").get_child_count() == 0, "successful running updates leave Installs")
@@ -399,7 +406,7 @@ func _test_manual_update_button(port: int) -> void:
 		return job != null and job.expected_version() == "9.9.14" and job.state == job.State.DONE)
 	var failed = _pm.install_queue.job_for(RELAY)
 	_check(failed != null and failed.outcome == failed.OUTCOME_FAILED and not failed.message.is_empty() and _pm.get_db().get_by_id(RELAY).version == "9.9.13" and _pm.get_connection(RELAY) != null, "failed start rolls back to the working version and reports failure")
-	_check(failed != null and dialog._rows.has(failed), "failed manual update stays in Installs")
+	_check(failed != null and _h.shows_install_job(dialog, failed), "failed manual update stays in Installs")
 	await _h.scrub_plugin(_pm, "voice")
 	var developer: Dictionary = await _pm.install_plugin(_temp.path_join("voice/manifest.json"), true)
 	_check(developer.get("ok", false), "register a real manifest-lane fixture")
@@ -412,10 +419,11 @@ func _test_manual_update_button(port: int) -> void:
 
 
 func _select_panel_plugin(panel, id: String) -> void:
-	for index in panel._plugin_list.item_count:
-		if panel._plugin_list.get_item_metadata(index) == id:
-			panel._plugin_list.select(index)
-			panel._plugin_list.item_selected.emit(index)
+	var list: ItemList = panel.find_children("*", "ItemList", true, false)[0]
+	for index in list.item_count:
+		if list.get_item_metadata(index) == id:
+			list.select(index)
+			list.item_selected.emit(index)
 			return
 	_check(false, "plugin row exists for " + id)
 

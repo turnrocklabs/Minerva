@@ -21,6 +21,8 @@ const InstallJob := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd"
 var update_registry_url: String = ""
 var _update_entries: Dictionary = {}
 var _update_checking := false
+## Includes release lookup, before the install queue has a job to report.
+var _update_in_flight: Dictionary[String, bool] = {}
 
 ## File dialog for installing plugins.
 var _install_dialog: FileDialog = null
@@ -928,7 +930,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_auto_update_check.visible = def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE
 	var entry: Dictionary = _update_entries.get(plugin_id, {})
 	_update_button.visible = not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
-	_update_button.disabled = _update_checking or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
+	_update_button.disabled = _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
 		or MarketplaceClient.download_target(entry.get("downloads", {})).is_empty()
 	_update_button.tooltip_text = "Update immediately to v%s" % entry.get("version", "")
 	if _panel_button != null and def != null:
@@ -1244,13 +1246,15 @@ func check_for_updates() -> void:
 
 func _on_update_pressed() -> void:
 	var id := _selected_plugin_id
-	if id.is_empty() or _pm() == null:
+	if id.is_empty() or _pm() == null or _update_in_flight.has(id):
 		return
+	_update_in_flight[id] = true
 	_update_button.disabled = true
 	_show_status("Checking the newest release for %s..." % id)
 	var job: InstallJob = await AutoUpdater.update_one(_pm(), id, update_registry_url)
 	if not is_instance_valid(self):
 		return
+	_update_in_flight.erase(id)
 	if job == null:
 		_show_status("Could not queue an update for %s; check its release listing or current install." % id, true)
 	else:
