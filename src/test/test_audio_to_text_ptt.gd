@@ -14,6 +14,7 @@ var _fail_count: int = 0
 # ── Fakes ─────────────────────────────────────────────────────────────
 
 class FakeGateway:
+	var _connected: bool = true
 	var ptt_down_calls: int = 0
 	var ptt_up_calls: int = 0
 	var last_action: String = ""
@@ -35,6 +36,7 @@ func _init():
 	test_start_ptt_null_target_returns_invalid()
 	test_start_ptt_populates_legacy_fields()
 	test_start_ptt_calls_ptt_down()
+	test_disconnected_gateway_does_not_hold_engagement()
 	test_stop_ptt_idempotent()
 	test_start_ptt_rollback_on_error()
 	test_finish_transcription_append_empty()
@@ -124,6 +126,22 @@ func test_start_ptt_calls_ptt_down():
 	check("ptt_up not called yet", gw.ptt_up_calls == 0)
 	# Order check: the stub records whether _StartConverting saw last_action == "down".
 	check("ptt_down fired before _StartConverting", att.saw_gateway_down_before_convert)
+	te.free()
+	att.free()
+
+
+func test_disconnected_gateway_does_not_hold_engagement() -> void:
+	var att := _StubbedATT.new()
+	var te := _make_text_edit()
+	var gw := FakeGateway.new()
+	gw._connected = false
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = te
+	req.voice_gateway = gw
+	check("disconnected detector does not prevent manual capture", att.start_ptt(req) == OK)
+	check("disconnected detector is not held before capture", gw.ptt_down_calls == 0)
+	att.stop_ptt()
+	check("disconnected detector receives no unmatched release", gw.ptt_up_calls == 0)
 	te.free()
 	att.free()
 

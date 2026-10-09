@@ -53,7 +53,9 @@ class PTTRequest:
 	var target: Control                # required — TextEdit/LineEdit/CodeEdit where transcript lands
 	var mic_button: BaseButton = null  # optional — drives LIME_GREEN → loading → mic icon cycle
 	var stop_button: BaseButton = null # optional — for UIs with a separate stop control
-	var voice_gateway = null           # optional — object with ptt_down()/ptt_up() methods
+	# Optional detector client: _connected bool plus ptt_down()/ptt_up() methods.
+	# Only a connected detector needs its engagement held during manual capture.
+	var voice_gateway = null
 	var clear_before: bool = false     # pre-clear target before recording (AISettings pattern)
 	var insert_mode: int = InsertMode.APPEND
 
