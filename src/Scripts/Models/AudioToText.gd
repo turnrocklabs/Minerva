@@ -53,7 +53,7 @@ class PTTRequest:
 	var target: Control                # required — TextEdit/LineEdit/CodeEdit where transcript lands
 	var mic_button: BaseButton = null  # optional — drives LIME_GREEN → loading → mic icon cycle
 	var stop_button: BaseButton = null # optional — for UIs with a separate stop control
-	# Optional detector client: _connected bool plus ptt_down()/ptt_up() methods.
+	# Optional detector client: is_detector_connected(), ptt_down()/ptt_up().
 	# Only a connected detector needs its engagement held during manual capture.
 	var voice_gateway = null
 	var clear_before: bool = false     # pre-clear target before recording (AISettings pattern)
@@ -289,7 +289,7 @@ func start_ptt(req: PTTRequest) -> int:
 	if req.clear_before:
 		req.target.text = ""
 
-	if req.voice_gateway != null and req.voice_gateway.has_method("ptt_down") and req.voice_gateway.get("_connected") == true:
+	if req.voice_gateway != null and req.voice_gateway.has_method("ptt_down") and req.voice_gateway.is_detector_connected():
 		req.voice_gateway.ptt_down()
 		_ptt_gateway_down = true
 

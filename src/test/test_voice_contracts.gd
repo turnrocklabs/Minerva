@@ -99,6 +99,22 @@ func _manual_ptt_without_detector(so, voice, transport, config, feature: GDScrip
 		else:
 			deck._handle_ptt_up(1)
 		check("manual PTT hands a normalized recording to the saved engine (%s)" % keyboard, capture.submitted.size() > 44 and not capture.effect.is_recording_active())
+	# This fixture inherits the production buffered STT dispatch; unlike the
+	# capture fixture it does not override _start_voice_service_stt or tag a scope.
+	var production_ptt = load("res://test/fixtures/voice_ptt.gd").new()
+	root.add_child(production_ptt)
+	var target := LineEdit.new()
+	production_ptt.add_child(target)
+	production_ptt._field_for_filling = target
+	var sends_before_ptt: int = transport.sent.size()
+	production_ptt._start_voice_service_stt(capture.submitted, config)
+	var generated_operation = production_ptt._voice_operation
+	feature.cancel_active()
+	check("buffered AudioToText PTT tags a manual operation admitted by STT while Voice Support is off", generated_operation != null and generated_operation.voice_owner == feature.MANUAL_PTT_OWNER and not generated_operation.cancelled and transport.sent.size() == sends_before_ptt + 1)
+	if transport.sent.size() == sends_before_ptt + 1:
+		transport.reply(_last_id(transport), {"text": "owned manual transcript"})
+	check("AudioToText's admitted manual operation completes its correlated transcript", target.text == "owned manual transcript" and production_ptt._voice_operation == null)
+	production_ptt.free()
 	var scope = load("res://Scripts/Services/Voice/VoiceOperation.gd").new()
 	scope.voice_owner = "ptt"
 	var output := {}

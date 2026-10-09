@@ -9,7 +9,7 @@ class ShutdownObservation extends RefCounted:
 	func _init(client: Node) -> void:
 		gateway = client
 	func shutdown_all() -> void:
-		client_closed_first = not gateway.get("_connected") and gateway.get("detector").stops > 0
+		client_closed_first = not gateway.call("is_detector_connected") and gateway.get("detector").stops > 0
 
 func _shutdown_order() -> void:
 	var singleton = root.get_node("SingletonObject")
@@ -20,7 +20,7 @@ func _shutdown_order() -> void:
 	pane._voice_gateway = gateway
 	gateway.start()
 	gateway.detector.emit_connected()
-	check("shutdown fixture begins with a connected detector", gateway._connected)
+	check("shutdown fixture begins with a connected detector", gateway.is_detector_connected())
 	var observation := ShutdownObservation.new(gateway)
 	var saved := {}
 	for property: String in ["plugin_manager", "Chats", "cost_tracker", "notes_container", "editor_container", "docker_manager"]:
@@ -55,6 +55,7 @@ func _init() -> void:
 	var gateway = load("res://test/fixtures/voice_gateway_lifecycle.gd").new()
 	root.add_child(gateway)
 	gateway.start()
+	check("detector is disconnected until its adapter connects", not gateway.is_detector_connected())
 	var first_generation: int = gateway._session_generation
 	gateway.engagement_state = "ENGAGED"
 	gateway._recording = true
@@ -66,7 +67,7 @@ func _init() -> void:
 	gateway._pre_vad_buffer.assign([PackedByteArray([3, 4])])
 	gateway.stop()
 	check("stop clears capture session state and returns UI to standby",
-		gateway.engagement_state == "STANDBY" and not gateway._recording and not gateway._vad_active and not gateway._ptt_active and gateway._ptt_saved_engagement.is_empty() and gateway._audio_buffer.is_empty() and gateway._pre_vad_buffer.is_empty())
+		gateway.engagement_state == "STANDBY" and not gateway.is_detector_connected() and not gateway._recording and not gateway._vad_active and not gateway._ptt_active and gateway._ptt_saved_engagement.is_empty() and gateway._audio_buffer.is_empty() and gateway._pre_vad_buffer.is_empty())
 	check("gateway stop preserves independently owned live TTS state", gateway._tts_playing)
 	check("stop invalidates the previous health generation", gateway._session_generation != first_generation and not gateway._should_connect)
 	gateway._tts_playing = false
@@ -77,7 +78,7 @@ func _init() -> void:
 	gateway._vad_active = true
 	gateway._audio_buffer = PackedByteArray([9, 9])
 	gateway.detector.emit_disconnected()
-	check("socket close resets capture state before automatic reconnect", not gateway._connected and not gateway._recording and not gateway._vad_active and gateway._audio_buffer.is_empty() and gateway.engagement_state == "STANDBY")
+	check("socket close resets capture state before automatic reconnect", not gateway.is_detector_connected() and not gateway._recording and not gateway._vad_active and gateway._audio_buffer.is_empty() and gateway.engagement_state == "STANDBY")
 	gateway.detector.emit_connected()
 	gateway._pre_vad_buffer.assign([PackedByteArray([7, 8])])
 	gateway._handle_vad_start()

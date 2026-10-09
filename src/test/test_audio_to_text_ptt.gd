@@ -19,6 +19,9 @@ class FakeGateway:
 	var ptt_up_calls: int = 0
 	var last_action: String = ""
 
+	func is_detector_connected() -> bool:
+		return _connected
+
 	func ptt_down() -> void:
 		ptt_down_calls += 1
 		last_action = "down"

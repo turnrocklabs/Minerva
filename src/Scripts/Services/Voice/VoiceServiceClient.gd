@@ -338,8 +338,7 @@ func transcribe_auto_result(audio_wav: PackedByteArray, voice_config: VoiceConfi
 		return busy
 	if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE:
 		var result := await transcribe_result(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model, operation, diagnostic_id)
-		var feature_disabled: bool = result.get("error_code") == VoiceFeature.DISABLED_CODE and (operation == null or operation.voice_owner != VoiceFeature.MANUAL_PTT_OWNER)
-		if result.success or result.get("error_code") in ["cancelled", "operation_busy"] or feature_disabled or not voice_config.whisper_fallback:
+		if result.success or result.get("error_code") in ["cancelled", "operation_busy", VoiceFeature.DISABLED_CODE] or not voice_config.whisper_fallback:
 			_log_stt_result(diagnostic_id, "total", started_msec, audio_wav.size(), voice_config.stt_backend, voice_config.stt_model, result)
 			return result
 		if operation != null:

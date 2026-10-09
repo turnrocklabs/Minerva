@@ -69,6 +69,10 @@ var _diagnostic_send_failures := 0
 var _diagnostic_discarded_start := 0
 
 
+func is_detector_connected() -> bool:
+	return _connected
+
+
 func _ready() -> void:
 	_capture_timer = Timer.new()
 	_capture_timer.wait_time = 1.0 / CAPTURE_POLL_HZ
