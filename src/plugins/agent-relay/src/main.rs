@@ -900,7 +900,9 @@ fn handle_read_clean(params: &Value, id: Value, router: &Arc<Router>) -> RpcResp
     };
 
     // Pass 1: built-in chrome filter.
-    let mut cleaned = chrome_filter::filter(&raw);
+    let profile = watcher::watch_status(terminal_id)
+        .and_then(|status| status["profile_id"].as_str().map(str::to_string));
+    let mut cleaned = chrome_filter::filter_for_profile(&raw, profile.as_deref());
 
     // Pass 2: named filter rules.
     cleaned = with_filter_rules(|rs| rs.apply(&cleaned));
@@ -1200,7 +1202,9 @@ fn read_turn_core(
     // ── Step 3: B2 cleaning pipeline ───────────────────────────────────────
 
     // Pass 1: chrome filter.
-    let mut cleaned = chrome_filter::filter(&raw);
+    let profile = watcher::watch_status(terminal_id)
+        .and_then(|status| status["profile_id"].as_str().map(str::to_string));
+    let mut cleaned = chrome_filter::filter_for_profile(&raw, profile.as_deref());
     // Pass 2: the harness's own record of this turn, when its session log holds
     // one. echo_hint is the prompt the relay submitted, and is present only for
     // a Submit send — a raw keystroke is no prompt to match on. Runs BEFORE the

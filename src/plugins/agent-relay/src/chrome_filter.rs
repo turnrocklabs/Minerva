@@ -109,6 +109,22 @@ pub fn filter(raw: &str) -> String {
     result
 }
 
+/// Remove measured harness status chrome before comparing a scrape to its log.
+/// Other profiles and prose containing these words retain their text.
+pub fn filter_for_profile(raw: &str, profile: Option<&str>) -> String {
+    let cleaned = filter(raw);
+    if profile != Some("codex") {
+        return cleaned;
+    }
+    static WORKED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let worked = WORKED.get_or_init(|| {
+        regex::Regex::new(r"^Worked for [0-9]+(?:s|m(?: [0-9]+s)?)(?: • [0-9]{1,2}:[0-9]{2} (?:AM|PM))?$")
+            .expect("static Codex status regex")
+    });
+    cleaned.lines().filter(|line| !worked.is_match(line.trim()))
+        .collect::<Vec<_>>().join("\n")
+}
+
 // ---------------------------------------------------------------------------
 // Redaction pass
 // ---------------------------------------------------------------------------
