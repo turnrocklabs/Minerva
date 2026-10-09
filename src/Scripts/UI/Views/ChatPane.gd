@@ -5436,6 +5436,8 @@ func _voice_composer_name(target: Control) -> String:
 		return "Chat composer"
 	var ancestor: Node = target
 	while is_instance_valid(ancestor):
+		if ancestor is Editor and not ancestor.tab_title.is_empty():
+			return "%s composer" % ancestor.tab_title
 		if ancestor is Window and not ancestor.title.is_empty():
 			return "%s composer" % ancestor.title
 		ancestor = ancestor.get_parent()
@@ -5521,6 +5523,10 @@ func _on_gateway_transcription_stream_finished(operation: VoiceOperation, outcom
 func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: Dictionary, generation: int) -> void:
 	if generation != _gateway_generation or _voice_tearing_down:
 		return
+	# Completion can produce no text. Refresh the source mode before mapping
+	# an error or delivery, so an empty/cancelled result cannot strand activity.
+	if is_instance_valid(_voice_gateway):
+		_voice_gateway.refresh_feedback()
 	if not outcome.success:
 		if outcome.get("error_code") in ["not_speech", "cancelled"]:
 			return

@@ -109,6 +109,22 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 	pane.start_voice_gateway()
 	gateway.detector.emit_connected()
 	check("voice restart resumes standby, never listening or recording", gateway.engagement_state == "STANDBY" and not gateway._recording and label.text == "STANDBY")
+	gateway.detector.emit_event({"type": "wake_word", "confidence": 0.99})
+	gateway.detector.emit_event({"type": "vad_start"})
+	gateway._audio_buffer = pcm
+	gateway.detector.emit_event({"type": "vad_end"})
+	transport.reply(_last_id(transport), {"text": ""})
+	check("successful empty hands-free transcript restores listening", label.text == "Listening" and not gateway._recording)
+	gateway.detector.emit_event({"type": "vad_start"})
+	pane._on_audio_stop_1_pressed()
+	check("Stop during recording restores listening", label.text == "Listening" and not gateway._recording)
+	gateway.detector.emit_event({"type": "vad_start"})
+	gateway._audio_buffer = pcm
+	gateway.detector.emit_event({"type": "vad_end"})
+	var stopped_request := _last_id(transport)
+	pane._on_audio_stop_1_pressed()
+	transport.reply(stopped_request, {"text": "late cancelled text"})
+	check("Stop during transcription restores listening and rejects late delivery", label.text == "Listening" and pane.sent_utterances == ["indicator utterance"])
 	pane.stop_voice_gateway()
 	feature.set_enabled(false)
 	capture._field_for_filling = pane.get_node("txtMainUserInput")
@@ -121,6 +137,29 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 	transport.reply(_last_id(transport), {"text": "manual indicator"})
 	manual.append(label.text)
 	check("existing indicator follows held, transcribing and delivered PTT with voice mode off", manual == ["PTT held", "PTT transcribing", "PTT delivered to Chat composer"])
+	# Real editor scenes retain their tab-title and CodeEdit destination; only
+	# unrelated document startup is replaced by the render fixture.
+	var prior_editor_pane = so.editor_pane
+	var editor_pane = load("res://Scripts/UI/Views/EditorPane.gd").new()
+	var tabs := TabContainer.new()
+	editor_pane.Tabs = tabs
+	so.editor_pane = editor_pane
+	for title: String in ["Draft one", "Draft two"]:
+		var editor = load("res://Scenes/Editor.tscn").instantiate()
+		editor.set_script(load("res://test/fixtures/voice_editor_composer.gd"))
+		pane.add_child(editor)
+		editor.tab_title = title
+		var target: CodeEdit = editor.code_edit
+		capture._field_for_filling = target
+		capture._set_ptt_state(capture.PTTState.LISTENING, {"target": target})
+		capture._start_voice_service_stt(gateway._pcm_to_wav(pcm), config)
+		transport.reply(_last_id(transport), {"text": "editor indicator"})
+		check("PTT names actual editor destination " + title, target.text == "editor indicator" and label.text == "PTT delivered to %s composer" % title)
+		editor.free()
+	so.editor_pane = prior_editor_pane
+	tabs.free()
+	editor_pane.free()
+	capture._field_for_filling = pane.get_node("txtMainUserInput")
 	capture._set_ptt_state(capture.PTTState.ERROR, {"error_message": "fixture error"})
 	check("PTT error reaches the same indicator", label.text == "PTT error: fixture error")
 	# Let the existing mic error auto-clear finish before removing its source.

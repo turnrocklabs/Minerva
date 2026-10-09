@@ -184,6 +184,7 @@ func cancel_active_transcription() -> void:
 	for operation: VoiceOperation in operations:
 		operation.cancel()
 		transcription_stream_finished.emit(operation, {"success": false, "error_code": "cancelled", "error_message": "Voice transcription cancelled locally."})
+	_emit_resting_feedback()
 
 
 func _reset_capture_session(reason: String) -> void:
@@ -523,6 +524,11 @@ func _set_engagement(new_state: String, reason: String = "") -> void:
 	engagement_state = new_state
 	print("[VoiceSupport] %s → %s (%s)" % [old, new_state, reason])
 	engagement_changed.emit(new_state)
+	_emit_resting_feedback()
+
+
+## Refresh presentation after host-owned buffered transcription completes.
+func refresh_feedback() -> void:
 	_emit_resting_feedback()
 
 

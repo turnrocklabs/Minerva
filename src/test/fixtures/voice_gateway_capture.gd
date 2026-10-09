@@ -10,6 +10,10 @@ func start() -> void:
 func stop() -> void:
 	pass
 
+func refresh_feedback() -> void:
+	# This cancellation/playback probe does not render the indicator.
+	pass
+
 func check_dismiss_phrase(_text: String) -> bool:
 	return false
 
