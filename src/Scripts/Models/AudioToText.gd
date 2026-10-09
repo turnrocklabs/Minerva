@@ -508,6 +508,7 @@ func _start_whisper_stt(wav_bytes: PackedByteArray) -> void:
 	_whisper_audio_bytes = wav_bytes.size()
 	if SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI).is_empty():
 		_log_whisper_terminal("missing_api_key")
+		_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Missing OpenAI API key for Whisper service"})
 		SingletonObject.ErrorDisplay("No API Key", "Missing OpenAI API key for Whisper service")
 		return
 

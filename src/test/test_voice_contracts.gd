@@ -84,6 +84,8 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 	hands_free.append(label.text)
 	gateway.detector.emit_event({"type": "vad_start"})
 	hands_free.append(label.text)
+	gateway.detector.emit_event({"type": "wake_word", "confidence": 0.99})
+	check("repeated wake word preserves active recording feedback", label.text == "Recording")
 	var pcm := PackedByteArray()
 	pcm.resize(16800)
 	for index in range(pcm.size() / 2):
@@ -128,15 +130,13 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 	pane.stop_voice_gateway()
 	feature.set_enabled(false)
 	capture._field_for_filling = pane.get_node("txtMainUserInput")
-	capture._set_ptt_state(capture.PTTState.LISTENING, {"target": capture._field_for_filling})
-	var manual: Array[String] = [label.text]
-	gateway.notify_tts_finished()
-	check("background voice completion cannot overwrite held manual PTT", label.text == "PTT held")
+	# HELD and ERROR are checked below through public capture/release routes.
+	var manual: Array[String] = []
 	capture._start_voice_service_stt(gateway._pcm_to_wav(pcm), config)
 	manual.append(label.text)
 	transport.reply(_last_id(transport), {"text": "manual indicator"})
 	manual.append(label.text)
-	check("existing indicator follows held, transcribing and delivered PTT with voice mode off", manual == ["PTT held", "PTT transcribing", "PTT delivered to Chat composer"])
+	check("existing indicator follows transcribing and delivered PTT with voice mode off", manual == ["PTT transcribing", "PTT delivered to Chat composer"])
 	# Real editor scenes retain their tab-title and CodeEdit destination; only
 	# unrelated document startup is replaced by the render fixture.
 	var prior_editor_pane = so.editor_pane
@@ -151,7 +151,6 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 		editor.tab_title = title
 		var target: CodeEdit = editor.code_edit
 		capture._field_for_filling = target
-		capture._set_ptt_state(capture.PTTState.LISTENING, {"target": target})
 		capture._start_voice_service_stt(gateway._pcm_to_wav(pcm), config)
 		transport.reply(_last_id(transport), {"text": "editor indicator"})
 		check("PTT names actual editor destination " + title, target.text == "editor indicator" and label.text == "PTT delivered to %s composer" % title)
@@ -160,10 +159,6 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 	tabs.free()
 	editor_pane.free()
 	capture._field_for_filling = pane.get_node("txtMainUserInput")
-	capture._set_ptt_state(capture.PTTState.ERROR, {"error_message": "fixture error"})
-	check("PTT error reaches the same indicator", label.text == "PTT error: fixture error")
-	# Let the existing mic error auto-clear finish before removing its source.
-	await create_timer(capture.ERROR_AUTO_CLEAR_SECONDS + 0.1).timeout
 	feature.set_enabled(true)
 	so.AtT = previous.capture
 	so.Chats = previous.chats
@@ -202,6 +197,10 @@ func _manual_ptt_without_detector(so, voice, transport, config, feature: GDScrip
 	mic.unique_name_in_owner = true
 	root.add_child(pane)
 	so.Chats = pane
+	var label := Label.new()
+	pane.add_child(label)
+	pane._engagement_state_label = label
+	pane._bind_voice_feedback_sources(capture, null)
 	check("manual PTT has no gateway or running detector", pane._voice_gateway == null and so.plugin_manager.get_connection("voice") == null and not feature.is_enabled())
 	var deck = load("res://Scripts/Services/StreamDeck/StreamDeckServer.gd").new()
 	root.add_child(deck)
@@ -212,6 +211,9 @@ func _manual_ptt_without_detector(so, voice, transport, config, feature: GDScrip
 		else:
 			deck._handle_ptt_down(1)
 		check("manual PTT records while Voice Support is off (%s)" % keyboard, capture.effect.is_recording_active())
+		check("public PTT entry reports held on the existing indicator (%s)" % keyboard, label.text == "PTT held")
+		pane._on_gateway_disconnected()
+		check("background voice state cannot overwrite public held PTT (%s)" % keyboard, label.text == "PTT held")
 		feature.cancel_active()
 		capture.deactivate_turnrock_voice()
 		check("Voice Support deactivation leaves manual capture running (%s)" % keyboard, capture.effect.is_recording_active())
@@ -224,6 +226,43 @@ func _manual_ptt_without_detector(so, voice, transport, config, feature: GDScrip
 		else:
 			deck._handle_ptt_up(1)
 		check("manual PTT hands a normalized recording to the saved engine (%s)" % keyboard, capture.submitted.size() > 44 and not capture.effect.is_recording_active())
+	var req = capture.PTTRequest.new()
+	req.target = pane.get_node("txtMainUserInput")
+	check("public PTT starts for empty recording check", capture.start_ptt(req) == OK)
+	capture.effect.recording = null
+	check("public PTT release reports no-audio error on the same indicator", capture.start_ptt(req) == ERR_INVALID_DATA and label.text == "PTT error: No audio captured")
+	capture.effect.recording = recording
+	# Use fresh in-memory preferences, never the owner's keys, and the real error
+	# window contract so this missing-key public release cannot abort headlessly.
+	var previous_ui := {"preferences": so.preferences_popup, "popup": so.errorPopup, "title": so.errorTitle, "text": so.errorText}
+	var preferences = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
+	var error_popup = load("res://Scripts/UI/Controls/PersistentWindow.gd").new()
+	root.add_child(error_popup)
+	var error_title := Label.new()
+	var error_text := Label.new()
+	error_popup.add_child(error_title)
+	error_popup.add_child(error_text)
+	so.preferences_popup = preferences
+	so.errorPopup = error_popup
+	so.errorTitle = error_title
+	so.errorText = error_text
+	var previous_provider: int = config.stt_provider
+	config.stt_provider = config.STTProvider.OPENAI_WHISPER
+	capture.start_ptt(req)
+	var whisper_frames := PackedVector2Array()
+	whisper_frames.resize(1200)
+	whisper_frames.fill(Vector2(0.25, 0.25))
+	capture._normalization_capture.frames = whisper_frames
+	capture.start_ptt(req)
+	check("public PTT missing Whisper key clears held state with a visible error", capture.ptt_state == capture.PTTState.ERROR and label.text == "PTT error: Missing OpenAI API key for Whisper service" and error_title.text == "No API Key" and capture.http_request == null)
+	config.stt_provider = previous_provider
+	so.preferences_popup = previous_ui.preferences
+	so.errorPopup = previous_ui.popup
+	so.errorTitle = previous_ui.title
+	so.errorText = previous_ui.text
+	preferences.free()
+	error_popup.free()
+	await create_timer(capture.ERROR_AUTO_CLEAR_SECONDS + 0.1).timeout
 	# This fixture inherits the production buffered STT dispatch; unlike the
 	# capture fixture it does not override _start_voice_service_stt or tag a scope.
 	var production_ptt = load("res://test/fixtures/voice_ptt.gd").new()
@@ -333,7 +372,7 @@ func _run() -> void:
 	var disabled_stream: Dictionary = voice.begin_transcription_stream(config, scope_script.new())
 	check("disabled hands-free entrypoints fail before Core and never invoke Whisper fallback", disabled_stt.error_code == voice_feature.DISABLED_CODE and disabled_tts.error_code == voice_feature.DISABLED_CODE and disabled_stream.error_code == voice_feature.DISABLED_CODE and transport.sent.size() == sends_while_disabled and voice.whisper_calls == 0)
 	check("deactivation cancels pinned TurnRock work without cancelling OpenAI work", owned_scope.cancelled and not openai_scope.cancelled)
-	_manual_ptt_without_detector(so, voice, transport, config, voice_feature)
+	await _manual_ptt_without_detector(so, voice, transport, config, voice_feature)
 	voice_feature.set_enabled(true)
 	await _voice_indicator_sequence(so, transport, config, voice_feature)
 	var output := {}

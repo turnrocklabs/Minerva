@@ -383,7 +383,7 @@ func _handle_wake_word(confidence: float) -> void:
 		_set_engagement("ENGAGED", "wake word")
 		_cancel_idle_timer()
 		_pre_vad_buffer.clear()
-	if _should_connect:
+	if _should_connect and not _recording:
 		feedback_changed.emit(FeedbackState.WAKE_WORD_HEARD)
 	# VAD can lead wake-word classification from the same audio. Admit recording
 	# here because the detector will not emit a second vad_start edge.
