@@ -185,6 +185,59 @@ fn a_turn_qualifies_only_inside_the_submit_window() {
 }
 
 #[test]
+fn an_empty_scrape_delivers_the_matching_bound_log_answer() {
+    let pair = corpus_pairs()
+        .into_iter()
+        .find(|pair| pair.harness == "codex" && !pair.ground_truth.is_empty())
+        .expect("answered Codex corpus pair");
+    let tree = TempTree::new();
+    tree.plant(&pair);
+    for scraped in ["", " \n\t"] {
+        let mut binding = LogBinding::default();
+        assert_eq!(
+            backfill(
+                "codex",
+                &pair.facts(),
+                &tree.roots(),
+                &mut binding,
+                &pair.prompt,
+                scraped,
+            )
+            .as_deref(),
+            Some(pair.ground_truth.as_str()),
+            "a fresh bound log replaces a lost alternate-screen answer"
+        );
+    }
+
+    let empty = Candidate {
+        rebound: true,
+        ..cand("hi", "")
+    };
+    assert_eq!(
+        choose(&empty, &[turn("hi", "hello")]).as_deref(),
+        Some("hello")
+    );
+    assert_eq!(choose(&empty, &[turn("other prompt", "hello")]), None);
+    assert_eq!(choose(&empty, &[turn("hi", "")]), None);
+    assert_eq!(choose(&empty, &[turn_at("hi", "hello", 0)]), None);
+    assert_eq!(
+        choose(&empty, &[turn_at("hi", "old hello", SUBMIT_MS - 60_000)]),
+        None
+    );
+    assert_eq!(
+        choose(
+            &Candidate {
+                scraped: "hi",
+                ..empty
+            },
+            &[turn("hi", "hello")]
+        ),
+        None,
+        "a non-empty short scrape still requires a vouched cursor"
+    );
+}
+
+#[test]
 fn normalise_collapses_markup_to_words() {
     assert_eq!(
         normalise("## What a **PTY** is\n\n- one\n"),

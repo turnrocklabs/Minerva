@@ -235,10 +235,10 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 // same pseudo-glyph approach as the claude profile.
                 spinner_glyphs: vec!["esc to interrupt".to_string()],
 
-                // Codex scrolls the PRIMARY screen — scrollback grows during
-                // turns (observed 17→23→50 rows live).
+                // Codex 0.162 enters the alternate screen (CSI ?1049h).
+                // Rows are viewport positions, not retained transcript history.
                 running_row_regex: None,
-                alt_screen: false,
+                alt_screen: true,
 
                 bell_capable: false,
                 settle_ms: 1_500,

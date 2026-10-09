@@ -20,7 +20,8 @@
 //      required, not merely respected: a turn whose opening record carries no
 //      readable stamp, and a prompt the relay has no submit time for, are both
 //      no evidence at all, and the screen text stands;
-//   2. a scraped answer under SHORT_ANSWER_CHARS holds too few words to
+//   2. an empty scrape is no evidence: rule 1 alone supplies the log answer.
+//      A non-empty scrape under SHORT_ANSWER_CHARS holds too few words to
 //      cross-check against, so rule 1 alone decides it — and only when the
 //      cursor vouches for which turns are in play. Only a cursor that already
 //      delivered a cross-checked answer under THIS prompt vouches: every
@@ -45,11 +46,14 @@
 // While both transcripts are on disk the binder refuses them as Ambiguous, so
 // the exposure is the moment when only the sibling's log has been flushed and
 // ours has not. What is left of it there is narrow: that file is freshly bound,
-// so a short scrape is refused, and a longer one carries the sibling's answer
-// only when that answer also passes rule 3 or rule 4 against our screen text.
+// so a non-empty short scrape is refused, and a longer one carries the sibling's
+// answer only when it also passes rule 3 or rule 4 against our screen text.
 // Nor does such a bind outlive the prompt it was made for: every submission
 // re-puts the question to the binder before the cached path is read again, and
-// a short scrape is refused on every turn that question was put on.
+// a non-empty short scrape is refused on every turn that question was put on.
+// An empty scrape cannot cross-check a fresh bind; the binder's ambiguity and
+// submit-window checks are its only evidence, including this unflushed-sibling
+// limit.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
@@ -66,8 +70,7 @@ use crate::watcher;
 pub const SOURCE_SCREEN: &str = "screen";
 pub const SOURCE_LOG: &str = "log";
 
-/// Below this many scraped characters there is nothing to cross-check with, so
-/// a prompt match alone carries the log's answer.
+/// A non-empty scrape below this size needs a cursor vouched for this prompt.
 const SHORT_ANSWER_CHARS: usize = 10;
 
 /// Fraction of the log answer's words that must also appear in the scraped
@@ -420,6 +423,11 @@ fn choose(candidate: &Candidate, turns: &[Turn]) -> Option<String> {
     // is then the only record of the partial answer.
     if turn.answer.trim().is_empty() {
         return None;
+    }
+    // Alternate-screen redraws can discard the entire answer. The bound
+    // prompt and submit window still identify it; an empty scrape adds no veto.
+    if candidate.scraped.trim().is_empty() {
+        return Some(turn.answer.clone());
     }
     if candidate.scraped.trim().chars().count() < SHORT_ANSWER_CHARS {
         // Rule 2: nothing to cross-check with, so the cursor has to vouch for
