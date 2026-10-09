@@ -15,6 +15,12 @@ extends PanelContainer
 
 ## Currently selected plugin id, or empty if none.
 var _selected_plugin_id: String = ""
+const AutoUpdater := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
+const InstallJob := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
+## Optional fixture/custom registry; required plugins retain their own lane.
+var update_registry_url: String = ""
+var _update_entries: Dictionary = {}
+var _update_checking := false
 
 ## File dialog for installing plugins.
 var _install_dialog: FileDialog = null
@@ -81,6 +87,7 @@ var _reload_button: Button = null
 var _autostart_check: CheckButton = null
 var _auto_reload_check: CheckButton = null
 var _auto_update_check: CheckButton = null
+var _update_button: Button = null
 var _files_changed_label: Label = null
 var _remove_button: Button = null
 var _panel_button: Button = null
@@ -141,6 +148,7 @@ func _ready() -> void:
 	_connect_signals()
 	_check_required_plugins()
 	_refresh_plugin_list()
+	check_for_updates()
 
 
 func _exit_tree() -> void:
@@ -200,7 +208,7 @@ func _build_left_pane() -> VBoxContainer:
 	_refresh_button.text = "Refresh"
 	_refresh_button.flat = true
 	_refresh_button.custom_minimum_size.x = 60
-	_refresh_button.pressed.connect(_refresh_plugin_list)
+	_refresh_button.pressed.connect(_on_refresh_pressed)
 	header_row.add_child(_refresh_button)
 
 	_plugin_list = ItemList.new()
@@ -311,7 +319,7 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	status_row.add_child(_detail_uptime_label)
 
 	# Control buttons — split across two rows so the detail pane doesn't
-	# overflow at narrow widths. Row 1: lifecycle (Start / Stop / Restart).
+	# overflow at narrow widths. Row 1: lifecycle and Update.
 	# Row 2: maintenance + remove (Reload / Open Panel / Remove Plugin).
 	var btn_row := HBoxContainer.new()
 	parent.add_child(btn_row)
@@ -330,6 +338,12 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_restart_button.text = "Restart"
 	_restart_button.pressed.connect(_on_restart_pressed)
 	btn_row.add_child(_restart_button)
+	_update_button = Button.new()
+	_update_button.name = "UpdatePlugin"
+	_update_button.text = "Update"
+	_update_button.visible = false
+	_update_button.pressed.connect(_on_update_pressed)
+	btn_row.add_child(_update_button)
 
 	var btn_row2 := HBoxContainer.new()
 	parent.add_child(btn_row2)
@@ -912,6 +926,11 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	# Startup updates come from the marketplace; a developer (manifest-lane)
 	# checkout is never overwritten, so the toggle is offered only there.
 	_auto_update_check.visible = def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE
+	var entry: Dictionary = _update_entries.get(plugin_id, {})
+	_update_button.visible = not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
+	_update_button.disabled = _update_checking or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
+		or MarketplaceClient.download_target(entry.get("downloads", {})).is_empty()
+	_update_button.tooltip_text = "Update immediately to v%s" % entry.get("version", "")
 	if _panel_button != null and def != null:
 		_panel_button.visible = not def.ui_panels.is_empty()
 		_panel_button.disabled = not is_running
@@ -1199,6 +1218,48 @@ func _on_audit_entry_added(entry: Dictionary) -> void:
 # ---------------------------------------------------------------------------
 # Signal Handlers — control buttons
 # ---------------------------------------------------------------------------
+
+func _on_refresh_pressed() -> void:
+	_refresh_plugin_list()
+	await check_for_updates()
+
+
+## Listing is refreshed on open/Refresh, never on each lifecycle repaint.
+func check_for_updates() -> void:
+	if _update_checking or _pm() == null:
+		return
+	_update_checking = true
+	var ids: Array[String] = []
+	for def: PluginDefinition in _pm().get_db().get_all():
+		if AutoUpdater.wants_update(def, "", true):
+			ids.append(def.id)
+	var entries: Dictionary = await AutoUpdater.fetch_entries(_pm(), ids, update_registry_url)
+	if not is_instance_valid(self):
+		return
+	_update_entries = entries
+	_update_checking = false
+	if not _selected_plugin_id.is_empty():
+		_populate_detail_panel(_selected_plugin_id)
+
+
+func _on_update_pressed() -> void:
+	var id := _selected_plugin_id
+	if id.is_empty() or _pm() == null:
+		return
+	_update_button.disabled = true
+	_show_status("Checking the newest release for %s..." % id)
+	var job: InstallJob = await AutoUpdater.update_one(_pm(), id, update_registry_url)
+	if not is_instance_valid(self):
+		return
+	if job == null:
+		_show_status("Could not queue an update for %s; check its release listing or current install." % id, true)
+	else:
+		_show_status("Updating %s; progress is shown in Marketplace Installs." % id)
+		job.finished.connect(func() -> void:
+			if not _selected_plugin_id.is_empty():
+				_populate_detail_panel(_selected_plugin_id), CONNECT_ONE_SHOT)
+	if not _selected_plugin_id.is_empty():
+		_populate_detail_panel(_selected_plugin_id)
 
 func _on_start_pressed() -> void:
 	if _selected_plugin_id.is_empty():

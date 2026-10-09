@@ -143,6 +143,8 @@ func _test_dialog_installs_a_selection_and_survives_reopening() -> void:
 func _test_panel_lists_an_install_started_elsewhere() -> void:
 	var panel = load(PANEL_TSCN).instantiate()
 	panel._pm_override = _pm
+	if "update_registry_url" in panel:
+		panel.update_registry_url = _registry_url
 	root.add_child(panel)
 	await process_frame
 	var job = _pm.install_queue.request_url(_urls[EXTERNAL], true)
@@ -152,7 +154,36 @@ func _test_panel_lists_an_install_started_elsewhere() -> void:
 	for i in panel._plugin_list.item_count:
 		listed = listed or EXTERNAL in panel._plugin_list.get_item_text(i)
 	_check(job.outcome == job.OUTCOME_INSTALLED and listed, "the panel lists a plugin installed without the dialog")
+	_pm.get_db().set_auto_update(EXTERNAL, false)
+	_check(_pack(EXTERNAL, 0, "2.0.0") and _write_registry("2.0.0"), "publish a newer ordinary marketplace release")
+	if not panel.has_method("check_for_updates"):
+		_check(false, "ordinary marketplace rows offer manual Update")
+		panel.queue_free()
+		return
+	await _wait_update_check(panel)
+	await panel.check_for_updates()
+	for index in panel._plugin_list.item_count:
+		if panel._plugin_list.get_item_metadata(index) == EXTERNAL:
+			panel._plugin_list.select(index)
+			panel._plugin_list.item_selected.emit(index)
+	var update: Button = panel.find_child("UpdatePlugin", true, false)
+	_check(update != null and update.visible and not update.disabled, "ordinary opted-out marketplace row offers Update")
+	if update != null and update.visible:
+		update.pressed.emit()
+		var give_up := Time.get_ticks_msec() + 20000
+		while Time.get_ticks_msec() < give_up:
+			job = _pm.install_queue.job_for(EXTERNAL)
+			if job.expected_version() == "2.0.0" and job.state == job.State.DONE:
+				break
+			await process_frame
+		_check(job.outcome == job.OUTCOME_INSTALLED and _pm.get_db().get_by_id(EXTERNAL).version == "2.0.0" and not _pm.get_db().get_by_id(EXTERNAL).auto_update and panel._detail_version_label.text == "2.0.0", "ordinary manual Update uses its registry and preserves opt-out")
 	panel.queue_free()
+
+
+func _wait_update_check(panel) -> void:
+	var give_up := Time.get_ticks_msec() + 10000
+	while panel._update_checking and Time.get_ticks_msec() < give_up:
+		await process_frame
 
 
 func _test_mcp_list_and_detail() -> void:
@@ -217,11 +248,12 @@ func _shows_job(dialog, job) -> bool:
 	return false
 
 
-func _write_registry() -> bool:
+func _write_registry(external_version: String = "1.0.0") -> bool:
 	var target := MarketplaceClient.resolve_platform_target()
 	var plugins := []
 	for id in [SLOW, PLAIN, EXTERNAL]:
-		var entry := {"id": id, "name": id, "version": "1.0.0", "release_tag": "%s-v1.0.0" % id,
+		var version := external_version if id == EXTERNAL else "1.0.0"
+		var entry := {"id": id, "name": id, "version": version, "release_tag": "%s-v%s" % [id, version],
 			"downloads": {target: _urls[id]}}
 		if id == SLOW:
 			entry["description"] = DESCRIPTION
@@ -244,12 +276,12 @@ func _port_open(port: int) -> bool:
 
 ## Archive `<id>.tar.gz` in the temp dir: manifest, placeholder binary,
 ## optional random payload, SHA256SUMS.
-func _pack(id: String, payload_bytes: int) -> bool:
+func _pack(id: String, payload_bytes: int, version: String = "1.0.0") -> bool:
 	var dir := _temp.path_join(id)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
 	f.store_string(JSON.stringify({
-		"id": id, "name": id, "version": "1.0.0", "host_api_version": "1",
+		"id": id, "name": id, "version": version, "host_api_version": "1",
 		"backend": {"transport": "stdio", "entrypoint": "./test-binary", "args": []},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
 		"permissions": {"host_capabilities": []}, "autostart": false, "auto_reload": false,

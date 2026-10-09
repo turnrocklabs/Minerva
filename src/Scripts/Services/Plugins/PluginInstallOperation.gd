@@ -43,6 +43,9 @@ var staging_dir := ""
 ## asked, so a skill the user customised keeps their version and a skill the
 ## update adds is not seeded.
 var unattended := false
+## User requested Update now; unattended consent stays the same, but startup
+## opt-in is not required. Lane and newer-version guards still apply.
+var manual_update := false
 ## A required plugin's repair (RequiredPlugins.ensure): it replaces only a copy
 ## that still needs repair when the install takes the staging lock.
 var repair_only := false

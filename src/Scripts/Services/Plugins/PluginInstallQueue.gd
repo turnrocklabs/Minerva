@@ -51,13 +51,16 @@ var _serial := 0
 ## auto-update) and `repair_only` (a required plugin's repair) are set on the
 ## job's operation before anyone hears of it; such a conditional install is
 ## always a job of its own, never another request's.
+## Manual Update uses the same unattended consent/transaction and bypasses
+## only startup opt-in; its intent is set before announcing the job.
 func request(entry: Dictionary, auto_confirm_skills: bool = false, unattended: bool = false,
-		repair_only: bool = false) -> Job:
+		repair_only: bool = false, manual_update: bool = false) -> Job:
 	var downloads: Dictionary = entry.get("downloads", {})
 	var url := str(downloads.get(MarketplaceClient.download_target(downloads), ""))
-	if unattended or repair_only:
+	if unattended or repair_only or manual_update:
 		var job := _new_job(entry, url, auto_confirm_skills)
-		job.op.unattended = unattended
+		job.op.unattended = unattended or manual_update
+		job.op.manual_update = manual_update
 		job.op.repair_only = repair_only
 		return _submit(job)
 	return _enqueue(entry, url, auto_confirm_skills)

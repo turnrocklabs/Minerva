@@ -337,7 +337,8 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# An unattended update stands only while the plugin still wants it, judged
 	# under the lock: a user who opted out, removed the plugin, moved it to the
 	# developer lane or installed another version meanwhile is not overridden.
-	if op.unattended and not AutoUpdater.wants_update(previous_def, str(manifest.get("version", ""))):
+	# A manual Update bypasses only startup opt-in, never lane/version checks.
+	if op.unattended and not AutoUpdater.wants_update(previous_def, str(manifest.get("version", "")), op.manual_update):
 		return _err("update_not_wanted", {"id": plugin_id})
 	# Likewise a repair: a copy fixed, or a developer copy registered, while
 	# it was queued or downloading is left alone.
