@@ -1312,3 +1312,22 @@ fn a_path_kept_by_an_empty_rebind_does_not_vouch_for_a_short_scrape() {
         "a cross-checking scrape may still deliver"
     );
 }
+
+/// The clean eight-row capture retained only Codex's completed-work status.
+#[test]
+fn codex_status_only_capture_recovers_greeting_without_accepting_wrong_prose() {
+    let captured = "Worked for 3s • 1:58 AM";
+    let greeting = "Hi! What would you like to work on?";
+    let cleaned = crate::chrome_filter::filter_for_profile(captured, Some("codex"));
+    assert!(cleaned.is_empty());
+    let fresh = Candidate { rebound: true, ..cand("hi", &cleaned) };
+    assert_eq!(choose(&fresh, &[turn("hi", greeting)]).as_deref(), Some(greeting));
+    for prose in [captured, "I worked for 3s on the wrong thing."] {
+        let cleaned = crate::chrome_filter::filter_for_profile(prose, Some("claude"));
+        assert_eq!(cleaned, prose);
+        assert_eq!(choose(&Candidate { rebound: true, ..cand("hi", &cleaned) },
+            &[turn("hi", greeting)]), None);
+    }
+    let prose = "> Worked for 3s • 1:58 AM";
+    assert_eq!(crate::chrome_filter::filter_for_profile(prose, Some("codex")), prose);
+}

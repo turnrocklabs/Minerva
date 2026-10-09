@@ -900,7 +900,9 @@ fn handle_read_clean(params: &Value, id: Value, router: &Arc<Router>) -> RpcResp
     };
 
     // Pass 1: built-in chrome filter.
-    let mut cleaned = chrome_filter::filter(&raw);
+    let profile = watcher::watch_status(terminal_id)
+        .and_then(|status| status["profile_id"].as_str().map(str::to_string));
+    let mut cleaned = chrome_filter::filter_for_profile(&raw, profile.as_deref());
 
     // Pass 2: named filter rules.
     cleaned = with_filter_rules(|rs| rs.apply(&cleaned));
@@ -1050,68 +1052,7 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 /// Rows to look back past the arm anchor when echo-anchoring a turn read.
 const ECHO_SEARCH_ROWS: u64 = 120;
 
-/// Re-anchor a wide turn read on the prompt-glyph echo of the text we just
-/// sent. Returns Some(slice) starting just AFTER the echo, leading blanks
-/// dropped — the chat already shows the user's message, so the echo is
-/// redundant in the answer. The echoed message can WRAP over multiple rows
-/// (glyph row + indented continuation rows — W8 HITL: the wrapped tail of the
-/// user's message headed the bot answer), so rows past the glyph row are also
-/// consumed while the accumulated echo text is still a prefix of `sent`.
-/// Returns None when the echo isn't in `wide` (the caller falls back to the
-/// exact old-anchor window).
-fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
-    let marker: String = sent.lines().next().unwrap_or("").chars().take(40).collect();
-    if marker.trim().is_empty() {
-        return None;
-    }
-    let lines: Vec<&str> = wide.lines().collect();
-    // Whitespace-collapsed comparison throughout: the TUI re-wraps the
-    // message at its own column width, so only the word stream is comparable.
-    let collapse = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let target = collapse(sent);
-    // Echo lines start with the CLI's prompt glyph (❯ claude, › codex).
-    // Take the LAST glyph-prefixed match (a resend echoes again); answer
-    // lines QUOTING the text don't start with the glyph, so they never
-    // steal the anchor. Match either the 40-char marker (echo row carries
-    // extra text) or a row whose body is a PREFIX of the sent text (the row
-    // wrapped before the marker length — narrow terminals).
-    let echo_idx = lines.iter().rposition(|l| {
-        let t = l.trim_start();
-        if !(t.starts_with('❯') || t.starts_with('›')) {
-            return false;
-        }
-        if l.contains(marker.as_str()) {
-            return true;
-        }
-        let body = collapse(t.trim_start_matches(['❯', '›']));
-        !body.is_empty() && target.starts_with(body.as_str())
-    })?;
-
-    // Consume the echo's wrapped continuation rows. A row that stops
-    // extending the prefix is the first NON-echo row (the answer can never
-    // extend it — answers don't start with the unfinished tail of the
-    // user's message).
-    let mut acc = collapse(
-        lines[echo_idx].trim_start().trim_start_matches(['❯', '›']),
-    );
-    let mut from = (echo_idx + 1).min(lines.len());
-    while from < lines.len()
-        && !acc.is_empty()
-        && acc.len() < target.len()
-        && target.starts_with(acc.as_str())
-    {
-        let next_acc = collapse(&format!("{} {}", acc, lines[from]));
-        if !target.starts_with(next_acc.as_str()) {
-            break;
-        }
-        acc = next_acc;
-        from += 1;
-    }
-    while from < lines.len() && lines[from].trim().is_empty() {
-        from += 1;
-    }
-    Some(lines[from..].join("\n"))
-}
+use detector::slice_from_echo;
 
 /// Steps 1–4 + turn metadata of read_turn, shared with relay_ask:
 /// row window → host.terminal.read → clean → optional distill → result JSON
@@ -1200,7 +1141,9 @@ fn read_turn_core(
     // ── Step 3: B2 cleaning pipeline ───────────────────────────────────────
 
     // Pass 1: chrome filter.
-    let mut cleaned = chrome_filter::filter(&raw);
+    let profile = watcher::watch_status(terminal_id)
+        .and_then(|status| status["profile_id"].as_str().map(str::to_string));
+    let mut cleaned = chrome_filter::filter_for_profile(&raw, profile.as_deref());
     // Pass 2: the harness's own record of this turn, when its session log holds
     // one. echo_hint is the prompt the relay submitted, and is present only for
     // a Submit send — a raw keystroke is no prompt to match on. Runs BEFORE the
@@ -1750,6 +1693,8 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
                 permission_dialog_regex: None,
                 spinner_glyphs: vec![],
                 running_row_regex: None,
+                status_chrome_regex: None,
+                submit_wait_for_answer: false,
                 alt_screen: false,
                 bell_capable: false,
                 settle_ms: 1_500,
@@ -1787,6 +1732,19 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
             profile.detection.spinner_glyphs = arr.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
+        }
+        if let Some(s) = det_obj.get("status_chrome_regex").and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                if let Err(e) = regex::Regex::new(s) {
+                    return ok_response(id, tool_err(&format!("invalid status_chrome_regex: {e}")));
+                }
+                profile.detection.status_chrome_regex = Some(s.to_string());
+            } else {
+                profile.detection.status_chrome_regex = None;
+            }
+        }
+        if let Some(b) = det_obj.get("submit_wait_for_answer").and_then(|v| v.as_bool()) {
+            profile.detection.submit_wait_for_answer = b;
         }
         if let Some(b) = det_obj.get("alt_screen").and_then(|v| v.as_bool()) {
             profile.detection.alt_screen = b;
@@ -2026,6 +1984,8 @@ fn tools_list_schema() -> Value {
                             "properties": {
                                 "prompt_box_regex": {"type": "string"},
                                 "permission_dialog_regex": {"type": "string"},
+                                "status_chrome_regex": {"type": "string"},
+                                "submit_wait_for_answer": {"type": "boolean"},
                                 "spinner_glyphs": {"type": "array", "items": {"type": "string"}},
                                 "alt_screen": {"type": "boolean"},
                                 "bell_capable": {"type": "boolean"},

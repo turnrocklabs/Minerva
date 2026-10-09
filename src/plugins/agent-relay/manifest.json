@@ -1,7 +1,7 @@
 {
   "id": "agent_relay",
   "name": "Agent Relay",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "host_api_version": "1",
   "release_targets": [
     "linux-x86_64",
@@ -415,6 +415,14 @@
                   "type": "string"
                 },
                 "description": "List of spinner characters to detect activity."
+              },
+              "status_chrome_regex": {
+                "type": "string",
+                "description": "Completed status rows to remove before matching a scrape to its log. Empty disables the rule."
+              },
+              "submit_wait_for_answer": {
+                "type": "boolean",
+                "description": "Keep an armed submit pending while only its draft or echo is visible."
               },
               "alt_screen": {
                 "type": "boolean",

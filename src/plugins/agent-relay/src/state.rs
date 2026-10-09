@@ -147,7 +147,7 @@ pub fn load() -> Vec<SessionSpec> {
     let mut profile_count = 0usize;
     if let Some(items) = doc.get("profiles").and_then(|v| v.as_array()) {
         for item in items {
-            match serde_json::from_value::<Profile>(item.clone()) {
+            match Profile::from_persisted(item.clone()) {
                 Ok(p) => {
                     profiles::profile_set(p);
                     profile_count += 1;

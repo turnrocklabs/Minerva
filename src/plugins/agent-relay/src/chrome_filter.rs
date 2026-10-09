@@ -109,6 +109,29 @@ pub fn filter(raw: &str) -> String {
     result
 }
 
+/// Remove measured harness status chrome before comparing a scrape to its log.
+/// Profiles without a status rule and prose outside it retain their text.
+pub fn filter_for_profile(raw: &str, profile: Option<&str>) -> String {
+    let cleaned = filter(raw);
+    let configured = profile.and_then(|id| {
+        crate::profiles::profile_get(id).or_else(|| {
+            crate::profiles::builtin_profiles().into_iter().find(|p| p.id == id)
+        })
+    });
+    let Some(pattern) = configured.as_ref().and_then(|p| p.detection.status_chrome_regex.as_deref()) else {
+        return cleaned;
+    };
+    let status = match Regex::new(pattern) {
+        Ok(status) => status,
+        Err(error) => {
+            log::warn!("status_chrome_regex compile error: {error}");
+            return cleaned;
+        }
+    };
+    cleaned.lines().filter(|line| !status.is_match(line.trim()))
+        .collect::<Vec<_>>().join("\n")
+}
+
 // ---------------------------------------------------------------------------
 // Redaction pass
 // ---------------------------------------------------------------------------

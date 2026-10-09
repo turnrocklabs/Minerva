@@ -4,6 +4,8 @@ Minerva plugin for relaying messages to and from CLI agent processes running in
 terminal tabs. Watches terminals for turn completion, cleans TUI chrome from
 output, and (B4) distils agent turns via host.providers.chat.
 
+0.3.1 — Fix Codex alternate-screen reply recovery and submission detection for short prompts and long tokens.
+
 ## GDScript class name prefix
 
 For any future GDScript files in this plugin, the `class_name` MUST start with

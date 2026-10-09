@@ -33,6 +33,8 @@ fn load_fixture(name: &str) -> String {
 // We use #[path] to include the source directly in the test binary.
 #[path = "../src/chrome_filter.rs"]
 mod chrome_filter;
+#[path = "../src/profiles.rs"]
+mod profiles;
 
 // ---------------------------------------------------------------------------
 // Helper: count box-drawing characters in a string.
@@ -95,7 +97,7 @@ fn golden_claude_code_tui() {
 #[test]
 fn golden_codex_tui() {
     let raw = load_fixture("codex_tui.txt");
-    let out = chrome_filter::filter(&raw);
+    let out = chrome_filter::filter_for_profile(&raw, Some("codex"));
 
     // 1. No box-drawing chars survive.
     assert!(
