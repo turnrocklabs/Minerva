@@ -727,7 +727,9 @@ pub fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
 /// an idle composer can count as completion. A short reply can finish without
 /// a sampled busy frame, so answer text or completion status remains evidence.
 pub fn submit_waiting_for_answer(screen: &str, body: &str, cd: &CompiledDetection) -> bool {
-    if confirm_submit(screen, body, cd, None) == SubmitState::StuckInComposer {
+    let (needle, partial_token) = echo_needle(body);
+    // A prior echo cannot override text still held by the current composer.
+    if !needle.is_empty() && echo_rows(screen, &needle, partial_token, cd).1 {
         return true;
     }
     let lines: Vec<&str> = screen.lines().collect();
@@ -1315,6 +1317,8 @@ mod tests {
         let idle = "› Ask Codex to do anything\n  ? for shortcuts";
         let draft = format!("old answer\n› {body}\n  ? for shortcuts");
         assert!(submit_waiting_for_answer(&draft, body, &cd));
+        let repeated = format!("{echo}\nold answer\n\n› {body}\n  ? for shortcuts");
+        assert!(submit_waiting_for_answer(&repeated, body, &cd));
         assert!(submit_waiting_for_answer(&format!("{echo}\n\n{idle}"), body, &cd));
         assert!(submit_waiting_for_answer(idle, body, &cd));
         for answer in ["It is a hexadecimal string.", "Worked for 3s • 1:58 AM"] {
