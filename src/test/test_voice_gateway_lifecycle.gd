@@ -3,6 +3,42 @@ extends SceneTree
 var passed := 0
 var failed := 0
 
+class ShutdownObservation extends RefCounted:
+	var gateway: Node
+	var client_closed_first := false
+	func _init(client: Node) -> void:
+		gateway = client
+	func shutdown_all() -> void:
+		client_closed_first = not gateway.get("_connected") and gateway.get("detector").stops > 0
+
+func _shutdown_order() -> void:
+	var singleton = root.get_node("SingletonObject")
+	var pane = load("res://test/fixtures/voice_speech_pane.gd").new()
+	root.add_child(pane)
+	var gateway = load("res://test/fixtures/voice_gateway_lifecycle.gd").new()
+	pane.add_child(gateway)
+	pane._voice_gateway = gateway
+	gateway.start()
+	gateway.detector.emit_connected()
+	check("shutdown fixture begins with a connected detector", gateway._connected)
+	var observation := ShutdownObservation.new(gateway)
+	var saved := {}
+	for property: String in ["plugin_manager", "Chats", "cost_tracker", "notes_container", "editor_container", "docker_manager"]:
+		saved[property] = singleton.get(property)
+		singleton.set(property, null)
+	var registered: Dictionary = singleton._registered_objects.duplicate()
+	singleton.Chats = pane
+	singleton.plugin_manager = observation
+	# Exercise the production exit path, observing the client at the precise
+	# point where plugin shutdown would begin its synchronous child wait.
+	singleton._exit_tree()
+	check("exit closes the connected detector client before plugin shutdown", observation.client_closed_first)
+	for property: String in saved:
+		singleton.set(property, saved[property])
+	singleton._registered_objects = registered
+	gateway.stop()
+	pane.free()
+
 func _init() -> void:
 	await process_frame
 	# The gateway only starts while Voice Support is enabled; the saved setting
@@ -10,6 +46,7 @@ func _init() -> void:
 	var VoiceFeature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var voice_was_enabled: bool = VoiceFeature.is_enabled()
 	VoiceFeature.set_enabled(true)
+	_shutdown_order()
 	var base_gateway = load("res://Scripts/Services/Voice/VoiceGatewayClient.gd").new()
 	var bundled_adapter = base_gateway._create_detector_adapter()
 	check("Voice Support defaults to the bundled detector adapter", bundled_adapter.get_script() == load("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd"))

@@ -1590,6 +1590,10 @@ func _release_textures_recursive(node: Node) -> void:
 func _exit_tree() -> void:
 	# Ensure proper cleanup order during shutdown
 	print("[SingletonObject] Cleaning up...")
+	# Close the detector peer before synchronous plugin shutdown waits for
+	# the worker's stdin-EOF cleanup.
+	if is_instance_valid(Chats):
+		Chats.stop_voice_gateway()
 
 	# Stop all running plugins (best-effort synchronous cleanup)
 	if plugin_manager != null:
