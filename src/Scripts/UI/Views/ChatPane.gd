@@ -57,6 +57,9 @@ var _voice_llm_busy := false
 var _voice_utterance_queue: Array[String] = []
 var _engagement_toggle: CheckButton = null
 var _engagement_state_label: Label = null
+var _voice_feedback_manual_active := false
+var _voice_feedback_background_text := "Voice Off"
+var _voice_feedback_background_color := Color(0.5, 0.5, 0.5)
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 25
@@ -3773,6 +3776,7 @@ func _ready():
 	_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	_engagement_state_label.add_theme_font_size_override("font_size", 11)
 	listen_hbox.add_child(_engagement_state_label)
+	_bind_voice_feedback_sources(SingletonObject.AtT, _voice_gateway)
 
 	# Place in top bar, left of CloneChatButton
 	var vbox3: Node = get_parent().get_parent().get_parent()
@@ -5341,6 +5345,7 @@ func _on_speech_playback_began(operation: SpeechOperation, cfg: VoiceConfig, msg
 		return
 	if is_instance_valid(_voice_gateway):
 		_voice_gateway.notify_tts_started()
+	_set_voice_indicator("Speaking", Color(0.2, 0.9, 0.2))
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE and is_instance_valid(msg_node) and msg_node is MessageMarkdown and msg_node._expanded:
 		msg_node._expanded = false
 		msg_node.contract_message()
@@ -5361,6 +5366,8 @@ func _finish_speech(outcome: Dictionary, operation: SpeechOperation, context: Di
 			status.queue_free()
 	if is_instance_valid(_voice_gateway):
 		_voice_gateway.notify_tts_finished()
+	else:
+		_set_voice_indicator("Voice Off")
 	if _voice_tearing_down:
 		_voice_llm_busy = false
 	else:
@@ -5382,24 +5389,86 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 
 
 ## Voice Support detector connection state.
+func _bind_voice_feedback_sources(capture: AudioToTexts, gateway: Node) -> void:
+	if is_instance_valid(capture) and not capture.feedback_changed.is_connected(_on_ptt_feedback_changed):
+		capture.feedback_changed.connect(_on_ptt_feedback_changed)
+	if is_instance_valid(gateway) and not gateway.is_connected("feedback_changed", _on_gateway_feedback_changed):
+		gateway.connect("feedback_changed", _on_gateway_feedback_changed)
+
+
+## PTT owns the visible indicator while held/transcribing. Background detector
+## and playback feedback continues updating so cancellation restores current mode.
+func _set_voice_indicator(text: String, color: Color = Color(0.5, 0.5, 0.5), from_ptt: bool = false) -> void:
+	if not from_ptt:
+		_voice_feedback_background_text = text
+		_voice_feedback_background_color = color
+		if _voice_feedback_manual_active:
+			return
+	if is_instance_valid(_engagement_state_label):
+		_engagement_state_label.text = text
+		_engagement_state_label.add_theme_color_override("font_color", color)
+
+
+func _on_gateway_feedback_changed(state: VoiceGatewayClient.FeedbackState) -> void:
+	match state:
+		VoiceGatewayClient.FeedbackState.OFF:
+			_set_voice_indicator("Voice Off")
+		VoiceGatewayClient.FeedbackState.CONNECTING:
+			_set_voice_indicator("Connecting...", Color(0.9, 0.7, 0.2))
+		VoiceGatewayClient.FeedbackState.OFFLINE:
+			_set_voice_indicator("Voice Offline", Color(0.9, 0.3, 0.3))
+		VoiceGatewayClient.FeedbackState.STANDBY:
+			_set_voice_indicator("STANDBY")
+		VoiceGatewayClient.FeedbackState.LISTENING:
+			_set_voice_indicator("Listening", Color(0.2, 0.9, 0.2))
+		VoiceGatewayClient.FeedbackState.WAKE_WORD_HEARD:
+			_set_voice_indicator("Wake word heard", Color(0.2, 0.9, 0.2))
+		VoiceGatewayClient.FeedbackState.RECORDING:
+			_set_voice_indicator("Recording", Color(0.2, 0.9, 0.2))
+		VoiceGatewayClient.FeedbackState.TRANSCRIBING:
+			_set_voice_indicator("Transcribing", Color(0.2, 0.9, 0.2))
+		VoiceGatewayClient.FeedbackState.SPEAKING:
+			_set_voice_indicator("Speaking", Color(0.2, 0.9, 0.2))
+
+
+func _voice_composer_name(target: Control) -> String:
+	if target == %txtMainUserInput:
+		return "Chat composer"
+	var ancestor: Node = target
+	while is_instance_valid(ancestor):
+		if ancestor is Window and not ancestor.title.is_empty():
+			return "%s composer" % ancestor.title
+		ancestor = ancestor.get_parent()
+	return "focused composer"
+
+
+func _on_ptt_feedback_changed(state: AudioToTexts.FeedbackState, target: Control, message: String) -> void:
+	_voice_feedback_manual_active = state in [AudioToTexts.FeedbackState.HELD, AudioToTexts.FeedbackState.TRANSCRIBING]
+	match state:
+		AudioToTexts.FeedbackState.IDLE:
+			_set_voice_indicator(_voice_feedback_background_text, _voice_feedback_background_color, true)
+		AudioToTexts.FeedbackState.HELD:
+			_set_voice_indicator("PTT held", Color(0.2, 0.9, 0.2), true)
+		AudioToTexts.FeedbackState.TRANSCRIBING:
+			_set_voice_indicator("PTT transcribing", Color(0.2, 0.9, 0.2), true)
+		AudioToTexts.FeedbackState.DELIVERED:
+			_set_voice_indicator("PTT delivered to %s" % _voice_composer_name(target), Color(0.2, 0.9, 0.2), true)
+		AudioToTexts.FeedbackState.ERROR:
+			_set_voice_indicator("PTT error: %s" % message if not message.is_empty() else "PTT error", Color(0.9, 0.3, 0.3), true)
+
+
 func _on_gateway_connected() -> void:
-	if _engagement_state_label:
-		_engagement_state_label.text = "STANDBY"
-		_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_set_voice_indicator("STANDBY")
 
 
 func _on_gateway_disconnected() -> void:
-	if _engagement_state_label:
-		_engagement_state_label.text = "Voice Offline"
-		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+	_set_voice_indicator("Voice Offline", Color(0.9, 0.3, 0.3))
 
 
 ## Voice Support detector startup failed.
 func _on_gateway_start_failed(reason: String) -> void:
 	push_warning("[ChatPane] Voice Support failed: %s" % reason)
-	if _engagement_state_label:
-		_engagement_state_label.text = "Failed"
-		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+	_set_voice_indicator("Failed", Color(0.9, 0.3, 0.3))
 	SingletonObject.create_toast_notification(
 		"Voice Support failed: %s" % reason, ToastNotification.Type.ERROR)
 	_engagement_toggle.set_pressed_no_signal(false)
@@ -5411,12 +5480,7 @@ func _on_gateway_start_failed(reason: String) -> void:
 
 ## Voice Support engagement state changed.
 func _on_engagement_changed(state: String) -> void:
-	if _engagement_state_label:
-		_engagement_state_label.text = state
-		if state == "ENGAGED":
-			_engagement_state_label.add_theme_color_override("font_color", Color(0.2, 0.9, 0.2))
-		else:
-			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_set_voice_indicator("Listening" if state == "ENGAGED" else "STANDBY", Color(0.2, 0.9, 0.2) if state == "ENGAGED" else Color(0.5, 0.5, 0.5))
 
 
 ## Voice Support produced VAD-endpointed audio for STT.
@@ -5460,8 +5524,7 @@ func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: 
 	if not outcome.success:
 		if outcome.get("error_code") in ["not_speech", "cancelled"]:
 			return
-		if is_instance_valid(_engagement_state_label):
-			_engagement_state_label.text = "Voice: %s" % outcome.error_message
+		_set_voice_indicator("Voice: %s" % outcome.error_message, Color(0.9, 0.3, 0.3))
 		push_warning("Voice transcription failed: %s" % outcome.error_message)
 		return
 	var text: String = outcome.text
@@ -5477,6 +5540,7 @@ func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: 
 	# Queue utterance — only send when LLM is idle (one utterance → one response)
 	if _voice_llm_busy:
 		_voice_utterance_queue.append(text)
+		_set_voice_indicator("Transcript queued for Chat composer", Color(0.2, 0.9, 0.2))
 		print("[ChatPane] Queued utterance (%d in queue)" % _voice_utterance_queue.size())
 		return
 
@@ -5486,6 +5550,7 @@ func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: 
 func _voice_send_utterance(text: String) -> void:
 	_voice_llm_busy = true
 	%txtMainUserInput.text = text
+	_set_voice_indicator("Transcript delivered to Chat composer", Color(0.2, 0.9, 0.2))
 	_on_send_message_button_item_selected(0)
 
 
@@ -5502,9 +5567,7 @@ func _voice_on_response_complete() -> void:
 func start_voice_gateway() -> void:
 	_gateway_stopped = false
 	if _voice_gateway:
-		if _engagement_state_label:
-			_engagement_state_label.text = "Connecting..."
-			_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		_set_voice_indicator("Connecting...", Color(0.9, 0.7, 0.2))
 		_voice_gateway.start()
 		print("[ChatPane] Voice Support started")
 
@@ -5518,9 +5581,7 @@ func stop_voice_gateway() -> void:
 	_cancel_gateway_transcriptions()
 	if _voice_gateway:
 		_voice_gateway.stop()
-		if _engagement_state_label:
-			_engagement_state_label.text = "Voice Off"
-			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		_set_voice_indicator("Voice Off")
 		print("[ChatPane] Voice Support stopped")
 
 
@@ -5539,8 +5600,7 @@ func deactivate_turnrock_voice() -> void:
 	cancel_tts()
 	if is_instance_valid(_engagement_toggle):
 		_engagement_toggle.set_pressed_no_signal(false)
-	if is_instance_valid(_engagement_state_label):
-		_engagement_state_label.text = "Voice Off"
+	_set_voice_indicator("Voice Off")
 
 
 func update_voice_detector_configuration() -> void:

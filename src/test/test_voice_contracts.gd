@@ -49,6 +49,92 @@ func _no_builtin_voice_container(so) -> void:
 	check("fresh Docker manager has no automatic voice container", so.get_docker_manager().get_definitions().is_empty())
 	so.docker_manager = previous
 
+## Render seam only: real detector/capture transitions, STT and host playback.
+## Runtime-loaded source classes stay untyped for --script autoload readiness.
+func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void:
+	var previous := {"capture": so.AtT, "chats": so.Chats, "speak": config.speak_mode, "transport": config.stt_transport, "auto_send": config.auto_send_transcription, "listening": config.always_listening}
+	config.stt_transport = config.STTTransport.BUFFERED
+	config.speak_mode = config.SpeakMode.FULL
+	config.auto_send_transcription = false
+	var pane = load("res://test/fixtures/voice_speech_pane.gd").new()
+	root.add_child(pane)
+	so.Chats = pane
+	var label := Label.new()
+	pane.add_child(label)
+	pane._engagement_state_label = label
+	var capture = load("res://test/fixtures/voice_ptt.gd").new()
+	root.add_child(capture)
+	so.AtT = capture
+	capture.transcription_completed.connect(pane._on_voice_transcription_completed)
+	var gateway = load("res://test/fixtures/voice_gateway_lifecycle.gd").new()
+	pane.add_child(gateway)
+	pane._voice_gateway = gateway
+	gateway.engagement_changed.connect(pane._on_engagement_changed)
+	gateway.connected_to_gateway.connect(pane._on_gateway_connected)
+	gateway.disconnected_from_gateway.connect(pane._on_gateway_disconnected)
+	gateway.transcription_ready.connect(pane._on_gateway_transcription_ready)
+	# The baseline lacks this presentation binding. Its existing signals still
+	# drive the label below, so missing states fail as outcomes, not compile errors.
+	if pane.has_method("_bind_voice_feedback_sources"):
+		pane._bind_voice_feedback_sources(capture, gateway)
+	pane.start_voice_gateway()
+	gateway.detector.emit_connected()
+	var hands_free: Array[String] = [label.text]
+	gateway.detector.emit_event({"type": "wake_word", "confidence": 0.99})
+	hands_free.append(label.text)
+	gateway.detector.emit_event({"type": "vad_start"})
+	hands_free.append(label.text)
+	var pcm := PackedByteArray()
+	pcm.resize(16800)
+	for index in range(pcm.size() / 2):
+		pcm.encode_s16(index * 2, 1000)
+	gateway._audio_buffer = pcm
+	gateway.detector.emit_event({"type": "vad_end"})
+	hands_free.append(label.text)
+	transport.reply(_last_id(transport), {"text": "indicator utterance"})
+	hands_free.append(label.text)
+	check("hands-free transcript reaches the named Chat composer", pane.get_node("txtMainUserInput").text == "indicator utterance" and pane.sent_utterances == ["indicator utterance"])
+	var player := AudioStreamPlayer.new()
+	pane.add_child(player)
+	pane._tts_player = player
+	pane._voice_speak_response("indicator reply")
+	_deliver_binary(transport, _last_id(transport), gateway._pcm_to_wav(pcm))
+	hands_free.append(label.text)
+	check("existing indicator follows standby, wake, recording, transcribing, delivery and speaking", hands_free == ["STANDBY", "Wake word heard", "Recording", "Transcribing", "Transcript delivered to Chat composer", "Speaking"])
+	pane.cancel_tts()
+	pane.stop_voice_gateway()
+	check("existing indicator shows off when voice mode stops", label.text == "Voice Off")
+	config.always_listening = true
+	config.save()
+	pane.start_voice_gateway()
+	gateway.detector.emit_connected()
+	check("voice restart resumes standby, never listening or recording", gateway.engagement_state == "STANDBY" and not gateway._recording and label.text == "STANDBY")
+	pane.stop_voice_gateway()
+	feature.set_enabled(false)
+	capture._field_for_filling = pane.get_node("txtMainUserInput")
+	capture._set_ptt_state(capture.PTTState.LISTENING, {"target": capture._field_for_filling})
+	var manual: Array[String] = [label.text]
+	gateway.notify_tts_finished()
+	check("background voice completion cannot overwrite held manual PTT", label.text == "PTT held")
+	capture._start_voice_service_stt(gateway._pcm_to_wav(pcm), config)
+	manual.append(label.text)
+	transport.reply(_last_id(transport), {"text": "manual indicator"})
+	manual.append(label.text)
+	check("existing indicator follows held, transcribing and delivered PTT with voice mode off", manual == ["PTT held", "PTT transcribing", "PTT delivered to Chat composer"])
+	capture._set_ptt_state(capture.PTTState.ERROR, {"error_message": "fixture error"})
+	check("PTT error reaches the same indicator", label.text == "PTT error: fixture error")
+	# Let the existing mic error auto-clear finish before removing its source.
+	await create_timer(capture.ERROR_AUTO_CLEAR_SECONDS + 0.1).timeout
+	feature.set_enabled(true)
+	so.AtT = previous.capture
+	so.Chats = previous.chats
+	config.speak_mode = previous.speak
+	config.stt_transport = previous.transport
+	config.auto_send_transcription = previous.auto_send
+	config.always_listening = previous.listening
+	capture.free()
+	pane.free()
+
 ## Production keyboard/Stream Deck handlers and recording conversion; the
 ## existing capture fixture supplies PCM without opening the host microphone.
 ## Runtime-loaded collaborators stay untyped: typing their script classes in a
@@ -210,6 +296,7 @@ func _run() -> void:
 	check("deactivation cancels pinned TurnRock work without cancelling OpenAI work", owned_scope.cancelled and not openai_scope.cancelled)
 	_manual_ptt_without_detector(so, voice, transport, config, voice_feature)
 	voice_feature.set_enabled(true)
+	await _voice_indicator_sequence(so, transport, config, voice_feature)
 	var output := {}
 	_capture(voice, "transcribe_auto_result", [bytes, config], output)
 	transport.reply(_last_id(transport), {"text": ""})

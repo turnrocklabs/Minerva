@@ -15,6 +15,10 @@ signal connected_to_gateway()
 signal disconnected_from_gateway()
 signal gateway_start_failed(reason: String)
 
+## Host-facing activity, separate from the detector protocol and engagement mode.
+enum FeedbackState { OFF, CONNECTING, OFFLINE, STANDBY, LISTENING, WAKE_WORD_HEARD, RECORDING, TRANSCRIBING, SPEAKING }
+signal feedback_changed(state: FeedbackState)
+
 const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
@@ -142,6 +146,7 @@ func start() -> void:
 	_capture_timer.start()
 	_detector.start(_detector_configuration())
 	print("[VoiceSupport] Started (waiting for detector readiness)")
+	_emit_resting_feedback()
 
 
 func _detector_configuration() -> Dictionary:
@@ -164,6 +169,7 @@ func stop() -> void:
 	_connected = false
 	_reset_capture_session("voice support stopped")
 	print("[VoiceSupport] Stopped")
+	_emit_resting_feedback()
 
 
 func cancel_active_transcription() -> void:
@@ -321,6 +327,7 @@ func _on_detector_connected() -> void:
 	if generation != _session_generation or not _should_connect:
 		return
 	print("[VoiceSupport] Detector connected")
+	_emit_resting_feedback()
 
 
 func _on_detector_disconnected() -> void:
@@ -331,6 +338,7 @@ func _on_detector_disconnected() -> void:
 		return
 	disconnected_from_gateway.emit()
 	print("[VoiceSupport] Detector disconnected")
+	feedback_changed.emit(FeedbackState.OFFLINE)
 
 
 func _on_detector_start_failed(reason: String) -> void:
@@ -374,6 +382,8 @@ func _handle_wake_word(confidence: float) -> void:
 		_set_engagement("ENGAGED", "wake word")
 		_cancel_idle_timer()
 		_pre_vad_buffer.clear()
+	if _should_connect:
+		feedback_changed.emit(FeedbackState.WAKE_WORD_HEARD)
 	# VAD can lead wake-word classification from the same audio. Admit recording
 	# here because the detector will not emit a second vad_start edge.
 	if _vad_active:
@@ -426,6 +436,8 @@ func _begin_recording_if_admitted() -> void:
 					return
 		_cancel_idle_timer()
 		print("[VoiceSupport] Recording started (with %d bytes pre-VAD)" % _audio_buffer.size())
+		if _recording:
+			feedback_changed.emit(FeedbackState.RECORDING)
 
 
 func _handle_vad_end() -> void:
@@ -450,6 +462,7 @@ func _handle_vad_end() -> void:
 				_finish_active_stt_stream()
 			else:
 				var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
+				feedback_changed.emit(FeedbackState.TRANSCRIBING)
 				transcription_ready.emit(wav)
 		else:
 			print("[VoiceSupport] Discarded recording (too short or below energy threshold)")
@@ -459,6 +472,7 @@ func _handle_vad_end() -> void:
 				_stt_stream_session = {}
 				rejected.cancel()
 				transcription_stream_finished.emit(rejected, {"success": false, "error_code": "not_speech", "error_message": "Voice capture was too short or quiet."})
+			_emit_resting_feedback()
 		_audio_buffer = PackedByteArray()
 
 
@@ -470,6 +484,7 @@ func _finish_active_stt_stream() -> void:
 	_stt_stream_operation = null
 	_stt_stream_session = {}
 	_pending_stt_streams[operation] = session
+	feedback_changed.emit(FeedbackState.TRANSCRIBING)
 	var outcome: Dictionary = await SingletonObject.get_voice_client().finish_transcription_stream(session, operation)
 	if _pending_stt_streams.get(operation) != session:
 		return
@@ -508,6 +523,24 @@ func _set_engagement(new_state: String, reason: String = "") -> void:
 	engagement_state = new_state
 	print("[VoiceSupport] %s → %s (%s)" % [old, new_state, reason])
 	engagement_changed.emit(new_state)
+	_emit_resting_feedback()
+
+
+func _emit_resting_feedback() -> void:
+	var state: FeedbackState = FeedbackState.STANDBY
+	if not _should_connect:
+		state = FeedbackState.OFF
+	elif not _connected:
+		state = FeedbackState.CONNECTING
+	elif _tts_playing:
+		state = FeedbackState.SPEAKING
+	elif _recording:
+		state = FeedbackState.RECORDING
+	elif not _pending_stt_streams.is_empty():
+		state = FeedbackState.TRANSCRIBING
+	elif engagement_state == "ENGAGED":
+		state = FeedbackState.LISTENING
+	feedback_changed.emit(state)
 
 
 func check_dismiss_phrase(text: String) -> bool:
@@ -522,12 +555,14 @@ func check_dismiss_phrase(text: String) -> bool:
 func notify_tts_started() -> void:
 	_tts_playing = true
 	_cancel_idle_timer()
+	feedback_changed.emit(FeedbackState.SPEAKING)
 
 
 func notify_tts_finished() -> void:
 	_tts_playing = false
 	if engagement_state == "ENGAGED":
 		_start_idle_timer()
+	_emit_resting_feedback()
 
 
 func ptt_down() -> void:

@@ -41,6 +41,10 @@ var ptt_state: int = PTTState.READY
 ## info dict carries: mic_button (BaseButton), target (Control), error_message (String)
 signal ptt_state_changed(new_state: int, info: Dictionary)
 
+## Feedback includes the actual composer; it doesn't change mic-button states.
+enum FeedbackState { IDLE, HELD, TRANSCRIBING, DELIVERED, ERROR }
+signal feedback_changed(state: FeedbackState, target: Control, message: String)
+
 const ERROR_AUTO_CLEAR_SECONDS := 1.5
 
 
@@ -243,6 +247,16 @@ func _remove_normalization_capture() -> void:
 func _set_ptt_state(new_state: int, info: Dictionary = {}) -> void:
 	ptt_state = new_state
 	ptt_state_changed.emit(new_state, info)
+	var target: Control = null
+	if is_instance_valid(info.get("target", _field_for_filling)):
+		target = info.get("target", _field_for_filling)
+	match new_state:
+		PTTState.LISTENING:
+			_emit_feedback(FeedbackState.HELD, target)
+		PTTState.TRANSCRIBING:
+			_emit_feedback(FeedbackState.TRANSCRIBING, target)
+		PTTState.ERROR:
+			_emit_feedback(FeedbackState.ERROR, target, str(info.get("error_message", "")))
 	if new_state == PTTState.ERROR:
 		var tree := get_tree()
 		if tree == null:
@@ -252,7 +266,12 @@ func _set_ptt_state(new_state: int, info: Dictionary = {}) -> void:
 		var cb := func() -> void:
 			if ptt_state == PTTState.ERROR:
 				_set_ptt_state(PTTState.READY, {"mic_button": stored_btn})
+				_emit_feedback(FeedbackState.IDLE)
 		t.timeout.connect(cb, CONNECT_ONE_SHOT)
+
+
+func _emit_feedback(state: FeedbackState, target: Control = null, message: String = "") -> void:
+	feedback_changed.emit(state, target if is_instance_valid(target) else null, message)
 
 
 ## Unified PTT entry point. Owns legacy-field assignment, gateway sequencing, button
@@ -540,6 +559,7 @@ func _StopConverting():
 		print("HTTP request stopped")
 
 	_set_ptt_state(PTTState.READY, {"mic_button": _btn})
+	_emit_feedback(FeedbackState.IDLE)
 	if _btn_stop != null:
 		_btn_stop.disabled = true
 
@@ -597,6 +617,12 @@ func _finish_transcription(text: String, successful_empty: bool = false, error_m
 			insertion_status = "success"
 		elif not text.is_empty():
 			insertion_status = "target_unavailable"
+		if insertion_status == "success":
+			_emit_feedback(FeedbackState.DELIVERED, target)
+		elif insertion_status == "target_unavailable":
+			_emit_feedback(FeedbackState.ERROR, null, "Transcript target is unavailable")
+		else:
+			_emit_feedback(FeedbackState.IDLE)
 	if _ptt_submit_started_msec > 0:
 		print("[VoiceSTT] operation=%s stage=ui_insert elapsed_ms=%d status=%s characters=%d" % [
 			_ptt_diagnostic_id, Time.get_ticks_msec() - _ptt_submit_started_msec, insertion_status, text.length()])

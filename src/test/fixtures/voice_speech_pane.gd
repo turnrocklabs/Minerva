@@ -23,9 +23,9 @@ func _init() -> void:
 
 func _ready() -> void:
 	pass
-func _voice_send_utterance(text: String) -> void:
-	sent_utterances.append(text)
-	_voice_llm_busy = true
+func _on_send_message_button_item_selected(_index: int) -> void:
+	# Keep the production voice-to-composer delivery; only replace LLM dispatch.
+	sent_utterances.append(%txtMainUserInput.text)
 
 func _voice_on_response_complete() -> void:
 	released += 1
