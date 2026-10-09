@@ -49,8 +49,8 @@
 //
 // Answer text is the source form the harness recorded. Claude states it as the
 // text blocks of the turn's assistant records, joined by a blank line; codex
-// states its own in task_complete.last_agent_message and that wins over the
-// streamed assistant messages. Codex records no partial answer for a turn it
+// states its final segment in task_complete.last_agent_message, which replaces
+// streamed final text while explicit commentary remains in order. Codex records no partial answer for a turn it
 // aborted, so an interrupted codex turn has an empty answer by construction
 // while an interrupted claude turn carries the partial text.
 //
@@ -269,8 +269,8 @@ pub(crate) fn extract_within(
 struct OpenTurn {
     prompt: String,
     start_ms: i64,
-    answer_parts: Vec<String>,
-    /// The answer the harness states for itself, which wins over the parts.
+    answer_parts: Vec<(String, bool)>,
+    /// The canonical final answer, replacing unphased/final streamed parts.
     stated_answer: Option<String>,
     slash_commands: Vec<SlashCommand>,
     /// True while the turn exists only to carry a slash command, which no
@@ -316,8 +316,12 @@ impl OpenTurn {
     }
 
     fn push_answer(&mut self, text: String) {
+        self.push_answer_phase(text, false);
+    }
+
+    fn push_answer_phase(&mut self, text: String, commentary: bool) {
         if self.charge(text.len()) {
-            self.answer_parts.push(text);
+            self.answer_parts.push((text, commentary));
         }
     }
 
@@ -338,9 +342,14 @@ impl OpenTurn {
         if self.oversize {
             return None;
         }
-        let answer = self
-            .stated_answer
-            .unwrap_or_else(|| self.answer_parts.join(PIECE_JOIN));
+        let mut parts: Vec<&str> = self.answer_parts.iter()
+            .filter(|(_, commentary)| self.stated_answer.is_none() || *commentary)
+            .map(|(text, _)| text.as_str())
+            .collect();
+        if let Some(stated) = self.stated_answer.as_deref() {
+            parts.push(stated);
+        }
+        let answer = parts.join(PIECE_JOIN);
         Some(Turn {
             prompt: self.prompt,
             answer,
@@ -545,7 +554,9 @@ impl Extractor {
                     "assistant" => {
                         if let Some(open) = self.open.as_mut() {
                             if !text.is_empty() {
-                                open.push_answer(text);
+                                open.push_answer_phase(
+                                    text, payload["phase"].as_str() == Some("commentary"),
+                                );
                             }
                         }
                     }

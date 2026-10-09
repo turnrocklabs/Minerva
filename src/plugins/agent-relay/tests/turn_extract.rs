@@ -734,3 +734,16 @@ fn a_codex_turn_without_task_complete_gives_way_to_the_next_task_started() {
     assert_eq!(turns[0].prompt, "the ordinary one");
     assert_eq!(turns[0].answer, "a short answer");
 }
+
+/// Codex 0.162 streamed this captured answer across commentary and final phases.
+#[test]
+fn captured_codex_count_preserves_all_fifty_numbers() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/real/codex_0162_count.jsonl");
+    let turns = turns_of(&path, Harness::Codex);
+    assert_eq!(turns.len(), 1);
+    let numbers: Vec<u32> = turns[0].answer.split_whitespace()
+        .map(|n| n.parse().expect("captured answer contains numbers"))
+        .collect();
+    assert_eq!(numbers, (1..=50).collect::<Vec<_>>());
+}
