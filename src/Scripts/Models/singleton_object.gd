@@ -1015,7 +1015,7 @@ func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = nul
 	if new_docket: gui_args["new_docket"] = true
 	var focused: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_gui_open", gui_args, context)
 	if focused.has("error") or focused.get("success", true) == false:
-		return {"ok": false, "errors": [str(focused.get("error", "Docket could not focus its window"))]}
+		return {"ok": false, "errors": [str(focused.get("error", "Docket could not focus its window"))], "tool_refusal": true}
 	return {"ok": true, "pid": focused.get("pid", 0)}
 
 
@@ -1030,6 +1030,9 @@ func open_docket_panel_for_user(new_docket: bool = false) -> void:
 	if opened.ok or not (is_instance_valid(errorPopup) and is_instance_valid(errorTitle) and is_instance_valid(errorText)):
 		return
 	var why := ", ".join(PackedStringArray(opened.errors))
+	if opened.get("tool_refusal", false):
+		ErrorDisplay("Docket request refused", why)
+		return
 	var advice := "Check that the Docket plugin is installed and running in the Plugin Manager."
 	ErrorDisplay("Docket unavailable", "Docket could not be opened: %s\n\n%s" % [why, advice])
 #endregion Docket

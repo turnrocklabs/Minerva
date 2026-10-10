@@ -353,6 +353,10 @@ func test_docket_c1_startup_and_refusals() -> void:
 	window.calls.clear()
 	await so.open_docket_panel_for_user()
 	check("Tools Docket remains focus-only", window.calls == [["minerva_docket_gui_open", {"focus":true}]])
+	var saved_window_size: Vector2i = root.size
+	var saved_embed: bool = root.gui_embed_subwindows
+	root.size = Vector2i(1400, 900)
+	root.gui_embed_subwindows = true
 	var error_window := PersistentWindow.new()
 	error_window.popup_window = true
 	error_window.visible = false
@@ -362,16 +366,20 @@ func test_docket_c1_startup_and_refusals() -> void:
 	error_window.add_child(error_title)
 	error_window.add_child(error_text)
 	root.add_child(error_window)
-	# The headless fixture has no visible native parent; test message/display,
-	# while the final campaign HITL owns native window transience.
-	error_window.transient = false
+	# Embed this owned popup in a sized viewport; headless has no native screen.
 	so.errorPopup = error_window
 	so.errorTitle = error_title
 	so.errorText = error_text
 	window.refusal = "Close the current dialog before creating a new Docket"
 	await docket_item.create_callback.call()
-	check("File New Docket visibly surfaces the existing dialog refusal",
-		error_window.visible and error_text.text.contains(window.refusal))
+	check("File New Docket visibly surfaces a neutral verbatim refusal",
+		error_window.visible and error_title.text == "Docket request refused" and error_text.text == window.refusal)
+	var running_plugin: RefCounted = so.plugin_manager
+	so.plugin_manager = null
+	await so.open_docket_panel_for_user()
+	check("Unavailable Docket keeps the existing plugin recovery advice",
+		error_title.text == "Docket unavailable" and error_text.text.contains("Check that the Docket plugin is installed and running"))
+	so.plugin_manager = running_plugin
 	error_window.hide()
 	so.editor_container = saved_ui[0]
 	so.creatable_item_registry = saved_ui[1]
@@ -379,6 +387,8 @@ func test_docket_c1_startup_and_refusals() -> void:
 	so.errorTitle = saved_ui[3]
 	so.errorText = saved_ui[4]
 	error_window.free()
+	root.gui_embed_subwindows = saved_embed
+	root.size = saved_window_size
 	container.free()
 	window.refusal = "Fixture window focus refused"
 	var refused: Dictionary = await tools.handle("minerva_open_docket", {})
