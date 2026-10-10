@@ -5530,8 +5530,7 @@ func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: 
 	# Completion can produce no text. Refresh the source mode before mapping
 	# an error or delivery, so an empty/cancelled result cannot strand activity.
 	if is_instance_valid(_voice_gateway):
-		var gateway: VoiceGatewayClientScript = _voice_gateway
-		gateway.refresh_feedback()
+		_voice_gateway.call("refresh_feedback")
 	if not outcome.success:
 		if outcome.get("error_code") in ["not_speech", "cancelled"]:
 			return
