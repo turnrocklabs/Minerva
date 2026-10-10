@@ -112,7 +112,7 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 """
 
 ## The plugin's private channel: the schema is accepted, the master installed
-## and opened.
+## and opened. Vault descriptors/init mirror Docket 466d7b7 (C1a/C1b).
 const AUTHORITY_SRC := """
 extends RefCounted
 var connection = null
@@ -521,6 +521,10 @@ func _test_vault_panel_startup(initialized: bool) -> void:
 	check("G: ready panel has accurate status and optional plain hint",
 		form.get_node("%VaultStatusLabel").text.begins_with("Vault: locked" if initialized else "Vault: not created.")
 		and (not initialized or form.get_node("%VaultStatusLabel").text.contains("00123")))
+	if initialized:
+		check("G: fresh hosted session shows the descriptor hint without saved credentials",
+			form.get_node("%VaultStatusLabel").text.contains("Hint (plain text): 00123")
+			and host._vault_session._password.is_empty() and not form._hint.get_parent().visible)
 	var calls: int = authority.private_methods.size()
 	for repeat in range(3):
 		host.state_changed.emit(host.state)
@@ -579,6 +583,11 @@ func _test_vault() -> void:
 	form._hint.text = "00123"
 	await _submit_vault(form)
 	check("G: Create retains the successful session credential and switches to Unlock", host._vault_session._password == VAULT_PASSWORD and form._mode == "unlock" and authority.initialized and authority.hint == "00123")
+	await form.refresh()
+	var created_details: Dictionary = await host.vault_details()
+	check("G: typed creation hint is readable from the descriptor and unlock form",
+		created_details.get("hint") == "00123"
+		and form.get_node("%VaultStatusLabel").text.contains("Hint (plain text): 00123"))
 	check("G: successful hosted UI clears widgets and preserves existing plaintext preferences byte-for-byte",
 		form._password.text.is_empty() and form._confirm.text.is_empty() and form._hint.text.is_empty()
 		and FileAccess.get_file_as_bytes("user://docket_prefs.json") == before)
