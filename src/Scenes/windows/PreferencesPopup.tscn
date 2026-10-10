@@ -181,6 +181,11 @@ secret = true
 layout_mode = 2
 theme_override_icons/unchecked = ExtResource("4_nlyvs")
 
+[node name="CoreConnetButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Connect"
+
 [node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer"]
 custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
@@ -296,11 +301,6 @@ size_flags_horizontal = 8
 [node name="Control" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
 layout_mode = 2
 size_flags_vertical = 3
-
-[node name="CoreConnetButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Connect"
 
 [node name="Audio & Video" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
@@ -713,7 +713,7 @@ visible = false
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer/HcpLogsButton" to="." method="_on_hcp_logs_button_pressed"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer/VerboseLoggingCheckButton" to="." method="_on_verbose_logging_check_button_toggled"]
-[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
