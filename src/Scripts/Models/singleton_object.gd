@@ -989,9 +989,9 @@ var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
 ## Minerva's side of the Docket plugin, set up with the plugins.
 var docket_host: DocketHost = null
 
-## Open/focus the upstream Docket window, optionally opening an existing project.
+## Open/focus Docket, optionally opening a project or its New Docket dialog.
 ## The plugin owns the files; failures stay visible to both people and MCP callers.
-func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = null) -> Dictionary:
+func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = null, new_docket: bool = false) -> Dictionary:
 	if plugin_manager == null or not plugin_manager.get_plugin_status(DocketHost.PLUGIN_ID).get("running", false) \
 			or plugin_tool_registry == null:
 		return {"ok": false, "errors": ["docket_plugin_unavailable: install and start Docket in the Plugin Manager"]}
@@ -1011,20 +1011,22 @@ func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = nul
 			var added: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_project_add", {"path": path}, context)
 			if added.has("error") or added.get("success", true) == false:
 				return {"ok": false, "errors": [str(added.get("error", "Docket could not open the project"))]}
-	var focused: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_gui_open", {"focus": true}, context)
+	var gui_args := {"focus": true}
+	if new_docket: gui_args["new_docket"] = true
+	var focused: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_gui_open", gui_args, context)
 	if focused.has("error") or focused.get("success", true) == false:
 		return {"ok": false, "errors": [str(focused.get("error", "Docket could not focus its window"))]}
 	return {"ok": true, "pid": focused.get("pid", 0)}
 
 
 ## open_docket_panel for a person's menu choice: a refusal is shown to them.
-func open_docket_panel_for_user() -> void:
+func open_docket_panel_for_user(new_docket: bool = false) -> void:
 	if plugin_manager != null \
 			and plugin_manager.get_plugin_status(DocketHost.PLUGIN_ID).get("state", -1) == PluginManager.S_STOPPED:
 		var started: Dictionary = await plugin_manager.start_plugin(DocketHost.PLUGIN_ID)
 		if not started.has("error") and docket_host != null:
 			await docket_host.open_projects()
-	var opened := await open_docket_panel()
+	var opened := await open_docket_panel("", null, new_docket)
 	if opened.ok or not (is_instance_valid(errorPopup) and is_instance_valid(errorTitle) and is_instance_valid(errorText)):
 		return
 	var why := ", ".join(PackedStringArray(opened.errors))
@@ -1539,7 +1541,7 @@ func _init_creatable_items() -> void:
 	creatable_item_registry.register_item(
 		CreatableItemRegistry.CreatableItem.create(
 			"docket", "Docket",
-			func(): open_docket_panel_for_user(),
+			func(): open_docket_panel_for_user(true),
 			null, 90
 		)
 	)

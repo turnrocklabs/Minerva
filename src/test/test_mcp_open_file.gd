@@ -237,6 +237,7 @@ func test_general_tools_directory() -> void:
 # This lets us verify the routing logic without a live Godot UI.
 
 class DocketWindowRegistry extends RefCounted:
+	# Normalized gui_open replies mirror Docket 466d7b7 (C1b), no live plugin.
 	var refusal := ""
 	var calls: Array = []
 	func handle_tool_call(name: String, args: Dictionary, _context: MCPExecutionContext = null) -> Dictionary:
@@ -339,6 +340,46 @@ func test_docket_c1_startup_and_refusals() -> void:
 	var opened: Dictionary = await tools.handle("minerva_open_docket", {})
 	check("Docket opens its upstream window", opened.get("success") == true and opened.get("pid") == 123)
 	check("Open routes through existing plugin dispatch", window.calls == [["minerva_docket_gui_open", {"focus":true}]])
+	var saved_ui := [so.editor_container, so.creatable_item_registry, so.errorPopup, so.errorTitle, so.errorText]
+	var container = load("res://Scripts/UI/Controls/vboxEditor.gd").new()
+	so.editor_container = container
+	so.creatable_item_registry = CreatableItemRegistry.new()
+	so._init_creatable_items()
+	var docket_item: CreatableItemRegistry.CreatableItem = so.creatable_item_registry.get_item("docket")
+	window.calls.clear()
+	await docket_item.create_callback.call()
+	check("File New Docket forwards focus and new_docket through the registered callback",
+		window.calls == [["minerva_docket_gui_open", {"focus":true, "new_docket":true}]])
+	window.calls.clear()
+	await so.open_docket_panel_for_user()
+	check("Tools Docket remains focus-only", window.calls == [["minerva_docket_gui_open", {"focus":true}]])
+	var error_window := PersistentWindow.new()
+	error_window.popup_window = true
+	error_window.visible = false
+	error_window.size = Vector2i(600, 200)
+	var error_title := Label.new()
+	var error_text := Label.new()
+	error_window.add_child(error_title)
+	error_window.add_child(error_text)
+	root.add_child(error_window)
+	# The headless fixture has no visible native parent; test message/display,
+	# while the final campaign HITL owns native window transience.
+	error_window.transient = false
+	so.errorPopup = error_window
+	so.errorTitle = error_title
+	so.errorText = error_text
+	window.refusal = "Close the current dialog before creating a new Docket"
+	await docket_item.create_callback.call()
+	check("File New Docket visibly surfaces the existing dialog refusal",
+		error_window.visible and error_text.text.contains(window.refusal))
+	error_window.hide()
+	so.editor_container = saved_ui[0]
+	so.creatable_item_registry = saved_ui[1]
+	so.errorPopup = saved_ui[2]
+	so.errorTitle = saved_ui[3]
+	so.errorText = saved_ui[4]
+	error_window.free()
+	container.free()
 	window.refusal = "Fixture window focus refused"
 	var refused: Dictionary = await tools.handle("minerva_open_docket", {})
 	check("Window-opening errors reach the caller verbatim", refused.get("success") == false and refused.get("error") == window.refusal)
