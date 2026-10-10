@@ -24,6 +24,8 @@ var _fail_count: int = 0
 
 
 func _init() -> void:
+	# Editor's dependency graph needs the autoloads attached by --script.
+	await process_frame
 	print("=== PluginEditorRegistry + Editor.PLUGIN_SCENE Integration Tests ===\n")
 
 	print("-- PluginEditorRegistry: register_plugin --")
@@ -321,13 +323,15 @@ func test_list_editor_kinds_contains_id_field() -> void:
 
 func test_plugin_scene_type_exists() -> void:
 	# Verify the enum value exists and is an int.
+	var Editor = load("res://Scripts/UI/Controls/Editor.gd")
 	var val = Editor.Type.PLUGIN_SCENE
 	check("Editor.Type.PLUGIN_SCENE exists", val is int)
 	check_eq("PLUGIN_SCENE retains its saved-layout value", val, 14)
 
 
 func test_plugin_scene_type_distinct_from_others() -> void:
-	var ps := Editor.Type.PLUGIN_SCENE
+	var Editor = load("res://Scripts/UI/Controls/Editor.gd")
+	var ps = Editor.Type.PLUGIN_SCENE
 	var others: Array = [
 		Editor.Type.TEXT,
 		Editor.Type.GRAPHICS,

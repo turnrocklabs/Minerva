@@ -39,6 +39,8 @@ var _fail_count: int = 0
 
 
 func _init() -> void:
+	# --script attaches autoloads after _init; the broker needs that context.
+	await process_frame
 	print("=== host.editors.* Capability Test (T5 R2) ===\n")
 	_clear_policy_for_test()
 	await _run_tests()
