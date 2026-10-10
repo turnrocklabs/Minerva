@@ -2094,8 +2094,11 @@ func _cleanup_connection(id: String) -> void:
 	if conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
 		conn.disconnected.disconnect(_on_plugin_disconnected.bind(id))
 
-	# Also cancel an HTTP initialize that has not set server_connected yet.
-	conn.disconnect_from_server()
+	# Cancel HTTP initialize even before it connects; a crashed stdio handshake
+	# must finish through its exit path without waking its start here.
+	if conn.transport == MCPServerConnection.TransportType.HTTP \
+			or conn.server_connected or is_instance_valid(conn._subprocess):
+		conn.disconnect_from_server()
 	rt["panel_authority"] = null
 
 	rt["connection"] = null
