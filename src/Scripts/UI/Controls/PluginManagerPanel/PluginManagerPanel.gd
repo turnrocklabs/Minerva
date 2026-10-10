@@ -31,6 +31,7 @@ var _install_dialog: FileDialog = null
 var _remove_confirm: ConfirmationDialog = null
 var _docket_choice := false
 var _shown_attach_refusal := ""
+var _docket_primary_choice := "Update docket.app"
 
 ## Pending plugin id for removal confirmation.
 var _pending_remove_id: String = ""
@@ -706,6 +707,8 @@ func _connect_signals() -> void:
 	var pm: PluginManager = _pm()
 	if not pm.plugin_state_changed.is_connected(_on_plugin_state_changed):
 		pm.plugin_state_changed.connect(_on_plugin_state_changed)
+	if not pm.plugin_status_changed.is_connected(_on_plugin_event):
+		pm.plugin_status_changed.connect(_on_plugin_event)
 	if not pm.plugin_started.is_connected(_on_plugin_event):
 		pm.plugin_started.connect(_on_plugin_event)
 	if not pm.plugin_stopped.is_connected(_on_plugin_event):
@@ -754,6 +757,8 @@ func _disconnect_signals() -> void:
 	var pm: PluginManager = _pm()
 	if pm.plugin_state_changed.is_connected(_on_plugin_state_changed):
 		pm.plugin_state_changed.disconnect(_on_plugin_state_changed)
+	if pm.plugin_status_changed.is_connected(_on_plugin_event):
+		pm.plugin_status_changed.disconnect(_on_plugin_event)
 	if pm.plugin_started.is_connected(_on_plugin_event):
 		pm.plugin_started.disconnect(_on_plugin_event)
 	if pm.plugin_stopped.is_connected(_on_plugin_event):
@@ -811,9 +816,11 @@ func _refresh_plugin_list() -> void:
 
 	for status in plugins:
 		var display_name: String = "%s  v%s" % [status.get("name", status.get("id", "?")), status.get("version", "")]
-		if status.get("attached", false):
+		if status.get("attach_refused", false):
+			display_name += "  — registered, refused: " + str(status.get("notice", ""))
+		elif status.get("attached", false):
 			display_name += "  — attached v%s (not managed)" % status.get("attached_version", "unknown")
-		if not str(status.get("notice", "")).is_empty():
+		if not status.get("attach_refused", false) and not str(status.get("notice", "")).is_empty():
 			display_name += "  — " + str(status.notice)
 		var state: int = status.get("state", PluginDefinition.State.INSTALLED)
 		var plugin_id: String = status.get("id", "")
@@ -898,6 +905,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_detail_placeholder.visible = false
 	_detail_panel.visible = true
 
+	var external: bool = status.get("attached", false) or status.get("attach_refused", false)
 	# Header
 	_detail_name_label.text = status.get("name", plugin_id)
 	_detail_version_label.text = status.get("version", "-")
@@ -905,6 +913,8 @@ func _populate_detail_panel(plugin_id: String) -> void:
 		_detail_version_label.text = "Installed: %s; attached: %s (not managed)" % [status.get("version", "-"), status.get("attached_version", "unknown")]
 	_detail_id_label.text = plugin_id
 
+	if status.get("attach_refused", false):
+		_detail_version_label.text = "Installed: %s; registered: %s (refused)" % [status.get("version", "-"), status.get("registered_version", "unknown")]
 	var state: int = status.get("state", PluginDefinition.State.INSTALLED)
 	var state_name: String = status.get("state_name", "UNKNOWN")
 	_detail_status_label.text = state_name
@@ -915,7 +925,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var uptime: float = status.get("uptime_sec", 0.0)
 	_detail_uptime_label.text = _format_uptime(uptime) if state == PluginDefinition.State.RUNNING else "-"
 	if not status.get("attach_choices", []).is_empty() and str(status.get("notice", "")) != _shown_attach_refusal:
-		_show_docket_choice({"error": status.notice})
+		_show_docket_choice({"error": status.notice, "choices": status.attach_choices})
 
 
 	# Button states
@@ -932,7 +942,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_required := RequiredPlugins.has(plugin_id)
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
-	_restart_button.disabled = status.get("attached", false) or not (is_running or is_starting) or is_building
+	_restart_button.disabled = external or not (is_running or is_starting) or is_building
 	# A required plugin can be stopped and kept from starting, not removed.
 	_remove_button.visible = not is_required
 
@@ -942,12 +952,12 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	# checkout is never overwritten, so the toggle is offered only there.
 	_auto_update_check.visible = def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE
 	var entry: Dictionary = _update_entries.get(plugin_id, {})
-	_update_button.visible = status.get("attached", false) or not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
-	_update_button.disabled = status.get("attached", false) or _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
+	_update_button.visible = external or not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
+	_update_button.disabled = external or _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
 		or MarketplaceClient.download_target(entry.get("downloads", {})).is_empty()
-	_update_button.tooltip_text = "Attached, not managed by Minerva" if status.get("attached", false) else "Update immediately to v%s" % entry.get("version", "")
-	_auto_update_check.disabled = status.get("attached", false)
-	_auto_reload_check.disabled = status.get("attached", false)
+	_update_button.tooltip_text = "Registered Docket is not managed by Minerva" if external else "Update immediately to v%s" % entry.get("version", "")
+	_auto_update_check.disabled = external
+	_auto_reload_check.disabled = external
 	if _panel_button != null and def != null:
 		_panel_button.visible = not def.ui_panels.is_empty()
 		_panel_button.disabled = not is_running
@@ -1584,9 +1594,11 @@ func _show_docket_choice(result: Dictionary) -> void:
 	_pending_remove_id = ""
 	_remove_delete_data_check.visible = false
 	_remove_confirm.title = "Registered Docket unavailable"
-	_remove_confirm.ok_button_text = "Update docket.app"
-	_remove_confirm.cancel_button_text = "Quit docket.app and let Minerva start its own"
-	_remove_confirm.dialog_text = str(result.get("error", "")) + "\n\nUpdate docket.app, or quit it yourself and press Start here. Minerva will not quit or restart the attached app."
+	var choices: Array = result.get("choices", ["Update docket.app", "Quit docket.app and let Minerva start its own"])
+	_docket_primary_choice = str(choices[0])
+	_remove_confirm.ok_button_text = _docket_primary_choice
+	_remove_confirm.cancel_button_text = str(choices[1])
+	_remove_confirm.dialog_text = str(result.get("error", "")) + ("\n\nOpen Minerva's master in docket.app, then Stop and Start this connection. Or quit docket.app and press Start here." if _docket_primary_choice == "Open master in docket.app" else "\n\nUpdate docket.app, or quit it yourself and press Start here.")
 	_sync_dialog_scale(_remove_confirm)
 	_remove_confirm.popup_centered()
 
@@ -1601,7 +1613,10 @@ func _on_remove_cancelled() -> void:
 func _on_remove_confirmed() -> void:
 	if _docket_choice:
 		_docket_choice = false
-		OS.shell_open("https://github.com/imrans-lab/docket/releases")
+		if _docket_primary_choice == "Open master in docket.app":
+			SingletonObject.open_docket_panel_for_user()
+		else:
+			OS.shell_open(RequiredPlugins.release_page())
 		return
 	if _pending_remove_id.is_empty() or not _pm():
 		return

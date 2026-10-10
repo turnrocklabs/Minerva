@@ -63,6 +63,10 @@ static func _initial_releases_url(override: String) -> String:
 	return "https://api.github.com/repos/%s/releases" % REPO
 
 
+static func release_page() -> String:
+	return "https://github.com/%s/releases" % REPO
+
+
 static func has(plugin_id: String) -> bool:
 	return PLUGINS.has(plugin_id)
 

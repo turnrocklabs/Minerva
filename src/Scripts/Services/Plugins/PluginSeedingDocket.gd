@@ -53,6 +53,8 @@ func _init(target: DocketHost) -> void:
 func unavailable() -> String:
 	if _target == null:
 		return "Docket is not available"
+	if _target.has_method("host_write_problem") and not _target.host_write_problem().is_empty():
+		return _target.host_write_problem()
 	if not _target.state in ["ready", "degraded"]:
 		return "Docket is %s" % _target.state
 	return ""

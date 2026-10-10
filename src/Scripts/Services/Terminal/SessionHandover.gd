@@ -35,6 +35,9 @@ const REASSIGN_TOOL := "docket_reassign"
 ## ({retargeted, left_in_chat}) and `claims` ({reassigned, failed, checked,
 ## error?}), or {success:false, error}.
 static func run(role: String, to_identity: String, actor: String) -> Dictionary:
+	var host = _docket_host()
+	if host != null and host.has_method("host_write_problem") and not host.host_write_problem().is_empty():
+		return {"success": false, "error": host.host_write_problem()}
 	var moved: Dictionary = HarnessSessionRegistry.shared().handover(role, to_identity)
 	if not bool(moved.get("success", false)):
 		return moved

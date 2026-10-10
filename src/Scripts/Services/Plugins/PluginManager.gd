@@ -79,6 +79,7 @@ signal backend_tool_called(id: String, tool: String)
 signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
+signal plugin_status_changed(id: String)
 signal plugin_file_changed(id: String)
 ## A reconcile_recovered drain finished.
 signal content_drained
@@ -716,6 +717,7 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 			return await _start_attached_docket(found)
 		var rt := _ensure_runtime(id)
 		rt["attached"] = false
+		rt["attach_refused"] = false
 		rt["registration"] = {}
 		rt["attach_choices"] = []
 		rt["notice"] = found.get("note", "")
@@ -730,12 +732,26 @@ func is_attached(id: String) -> bool:
 
 func _refuse_attachment(reason: String, record: Dictionary = {}) -> Dictionary:
 	var rt := _ensure_runtime("docket")
-	rt["attached"] = true
+	rt["attached"] = false
+	rt["attach_refused"] = true
 	rt["registration"] = record
 	rt["notice"] = reason
 	rt["attach_choices"] = PluginEndpointDiscovery.ATTACH_CHOICES
 	_transition_state("docket", S_ERROR)
 	return {"error": reason, "attached_refused": true, "choices": PluginEndpointDiscovery.ATTACH_CHOICES}
+
+
+func set_attached_host_status(notice: String, choices: Array = []) -> void:
+	if not is_attached("docket"): return
+	var rt := _ensure_runtime("docket")
+	rt["notice"] = notice
+	rt["attach_choices"] = choices
+	plugin_status_changed.emit("docket")
+
+
+func _attached_stopped(id: String) -> void:
+	_ensure_runtime(id)["notice"] = "Docket stopped"
+	stop_plugin(id, true)
 
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:
@@ -753,6 +769,7 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 	_cleanup_connection("docket")
 	var rt := _ensure_runtime("docket")
 	rt["attached"] = true
+	rt["attach_refused"] = false
 	rt["registration"] = found.record
 	rt["notice"] = "Attached Docket, not managed by Minerva"
 	rt["attach_choices"] = []
@@ -1125,6 +1142,8 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 ## Stop and then start a plugin.
 ## Returns {"ok": true} or {"error": "..."}.
 func restart_plugin(id: String) -> Dictionary:
+	if is_attached(id):
+		return {"error": "Attached Docket is not managed by Minerva; quit it in docket.app"}
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -1453,7 +1472,9 @@ func get_plugin_status(id: String) -> Dictionary:
 		"name": def.name,
 		"version": def.version,
 		"attached": is_attached(id),
-		"attached_version": rt.get("registration", {}).get("version", ""),
+		"attach_refused": rt.get("attach_refused", false),
+		"registered_version": rt.get("registration", {}).get("version", ""),
+		"attached_version": rt.get("registration", {}).get("version", "") if is_attached(id) else "",
 		"notice": rt.get("notice", ""),
 		"attach_choices": rt.get("attach_choices", []),
 		"content_pending": _pending_content_status(id),
@@ -1668,8 +1689,21 @@ func _record_crash(id: String) -> bool:
 
 func _run_health_checks() -> void:
 	for def in _db.get_by_status(S_RUNNING):
+		# A preceding attached ping awaited: this entry may have been stopped or replaced.
+		if _db.get_by_id(def.id) != def or def.state != S_RUNNING: continue
 		var rt: Dictionary = _runtime.get(def.id, {})
 		var conn: MCPServerConnection = rt.get("connection", null)
+		if is_attached(def.id):
+			if rt.get("health_pending", false): continue
+			if conn == null or not conn.server_connected or not endpoint_discovery.pid_alive.call(int(rt.get("registration", {}).get("pid", 0))):
+				_attached_stopped(def.id)
+				continue
+			rt["health_pending"] = true
+			var alive: bool = await conn.check_http_liveness()
+			rt["health_pending"] = false
+			if _owns_runtime_connection(def.id, conn) and not alive:
+				_attached_stopped(def.id)
+			continue
 
 		# If the connection object is gone or the subprocess is not running,
 		# treat it as an unexpected exit.
@@ -1691,6 +1725,7 @@ func _run_health_checks() -> void:
 ## Emits plugin_file_changed and starts a debounce timer for auto_reload plugins.
 func _run_file_watch_checks() -> void:
 	for def in _db.get_all():
+		if is_attached(def.id): continue
 		var plugin_dir: String = def.data_directory
 		if plugin_dir.is_empty():
 			continue
@@ -1979,6 +2014,9 @@ func _on_plugin_disconnected(id: String) -> void:
 					 S_CRASH_LOOP]:
 		return
 
+	if is_attached(id):
+		_attached_stopped(id)
+		return
 	push_warning("[PluginManager] Plugin '%s' disconnected unexpectedly" % id)
 	_handle_unexpected_exit(id)
 
@@ -2046,8 +2084,8 @@ func _cleanup_connection(id: String) -> void:
 	if conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
 		conn.disconnected.disconnect(_on_plugin_disconnected.bind(id))
 
-	if conn.server_connected or is_instance_valid(conn._subprocess):
-		conn.disconnect_from_server()
+	# Also cancel an HTTP initialize that has not set server_connected yet.
+	conn.disconnect_from_server()
 	rt["panel_authority"] = null
 
 	rt["connection"] = null

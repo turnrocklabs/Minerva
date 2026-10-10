@@ -88,7 +88,8 @@ static func queue_update(manager, id: String, entry: Dictionary, manual: bool = 
 
 
 static func _attached(manager, id: String) -> bool:
-	return manager.has_method("is_attached") and manager.is_attached(id)
+	return (manager.has_method("is_attached") and manager.is_attached(id)) \
+		or (manager.has_method("get_plugin_status") and manager.get_plugin_status(id).get("attach_refused", false))
 
 
 ## Installed, marketplace-lane and older than `version` ("" skips version).

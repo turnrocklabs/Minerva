@@ -129,6 +129,14 @@ func _run() -> void:
 		and refused.get("choices", []).size() == 2 and ready.size() == before_ready and manager.stdio_starts == 0)
 	manager.stop_plugin("docket")
 	manager.omit_tool = ""
+	record.profile = profile.path_join("Wrong-Docket-profile")
+	_write(discovery.profile_directory, record)
+	refused = await manager.start_plugin("docket")
+	status = manager.get_plugin_status("docket")
+	check("mismatched registration profile is refused and named", refused.has("error")
+		and "instance.json" in refused.error and status.get("attach_refused", false)
+		and not status.get("attached", true) and manager.stdio_starts == 0)
+	record.profile = discovery.profile_directory
 	record.pid = 99
 	_write(discovery.profile_directory, record)
 	await manager.start_plugin("docket")

@@ -32,6 +32,9 @@ signal vault_changed
 signal state_changed(state: String)
 
 const PLUGIN_ID := "docket"
+const ATTACHED_VAULT_NOTE := "Attached Docket: manage the vault in docket.app."
+const ATTACHED_WRITE_NOTE := "Attached Docket: plugin pickup, policy observations and session handover writes are unavailable."
+const ATTACHED_MASTER_CHOICES := ["Open master in docket.app", "Quit docket.app and let Minerva start its own"]
 const MASTER_RES := "res://Data/master.dct"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"
@@ -125,6 +128,14 @@ func start(plugin_manager) -> void:
 		_prepare()
 
 
+func is_attached() -> bool:
+	return _plugin_manager != null and _plugin_manager.has_method("is_attached") and _plugin_manager.is_attached(PLUGIN_ID)
+
+
+func host_write_problem() -> String:
+	return ATTACHED_WRITE_NOTE if is_attached() else ""
+
+
 ## The ordinary projects of the session in order, as open descriptors (the
 ## master and personal.dct excluded); a path not open now is left out.
 func session_projects() -> Array:
@@ -143,18 +154,22 @@ func master_project() -> Dictionary:
 
 ## Hosted vault state and private unlock; no credential enters session persistence.
 func vault_status() -> String:
+	if is_attached(): return "unavailable"
 	return _vault_session.status(self)
 
 
 func unlock_vault(password: String) -> String:
+	if is_attached(): return ATTACHED_VAULT_NOTE
 	return await _vault_session.unlock(self, password)
 
 
 func create_vault(password: String, hint: String = "") -> String:
+	if is_attached(): return ATTACHED_VAULT_NOTE
 	return await _vault_session.create(self, password, hint)
 
 
 func vault_details() -> Dictionary:
+	if is_attached(): return {"mode": "unavailable", "message": ATTACHED_VAULT_NOTE}
 	return await _vault_session.details(self)
 
 
@@ -359,6 +374,7 @@ static func _names_item(ref: String, id: String) -> bool:
 ## Adds `text` as a comment by the policy engine on policy rule `rule_id` in
 ## the master: "" or why it could not.
 func write_policy_observation(rule_id: String, text: String) -> String:
+	if is_attached(): return ATTACHED_WRITE_NOTE
 	while state == "starting":
 		await state_changed
 	if not state in ["ready", "degraded"]:
@@ -860,6 +876,7 @@ func forget_project(path: String) -> String:
 # `path` once it is open ("" leaves the entry out), and saves the session
 # before saying so; one change or reconcile at a time. "" or why not.
 func _change_session(path: String, replacement: String) -> String:
+	if is_attached(): return "Attached Docket: manage projects in docket.app."
 	while _changing or _reconciling:
 		await get_tree().process_frame
 	_changing = true
@@ -1046,6 +1063,9 @@ func _prepare() -> void:
 	personal_path = ""
 	projects = []
 	_set_state("starting")
+	if is_attached():
+		await _prepare_attached(connection, generation)
+		return
 	var authority = _plugin_manager.get_panel_authority(PLUGIN_ID)
 	if authority == null:
 		_fail("the Docket plugin has no private channel for its host")
@@ -1124,6 +1144,53 @@ func _prepare() -> void:
 	_publish()
 
 
+# Public-only attachment: reuse the existing master file; never bootstrap an
+# empty replacement or restore/save a hosted session in someone else's app.
+func _prepare_attached(connection, generation: int) -> void:
+	_session = PackedStringArray()
+	_session_error = ""
+	_migrating = false
+	var listed := await _refresh(connection, generation)
+	if _stale(connection, generation): return
+	var wanted := ProjectSettings.globalize_path(MASTER_USER)
+	if listed.is_empty(): master_path = _attached_project_path(wanted)
+	if listed.is_empty() and master_path.is_empty():
+		await _call(connection, "docket_project_add", {"path": wanted, "create": false})
+		if _stale(connection, generation): return
+		listed = await _refresh(connection, generation)
+		if _stale(connection, generation): return
+		master_path = _attached_project_path(wanted) if listed.is_empty() else ""
+	if not listed.is_empty() or master_path.is_empty():
+		var why := "attached Docket has no Minerva master"
+		if not listed.is_empty(): why += ": " + listed
+		_plugin_manager.set_attached_host_status(why, ATTACHED_MASTER_CHOICES)
+		_fail(why)
+		return
+	# Protected declarations cannot be defined/activated through the public
+	# custom-type API. Prompt/policy/skill agree; hint and kb differ. Report
+	# this omission without blocking public master reads.
+	master_report = {"attached": true, "schema_declarations": "skipped", "capability_gaps": []}
+	notices.append("Attached Docket: protected Minerva schema declarations and master bootstrap are skipped; hint and kb differ from hosted definitions.")
+	personal_path = _attached_project_path(ProjectSettings.globalize_path(PERSONAL_USER))
+	_session = _open_paths()
+	_session.erase(master_path)
+	_session.erase(personal_path)
+	_reconciled_paths = _open_paths()
+	_plugin_manager.set_attached_host_status("Attached, not managed; vault in docket.app. Plugin pickup, policy observations and session handover writes are unavailable.")
+	print("[DocketHost] ", notices[0])
+	_publish()
+
+
+func _attached_project_path(wanted: String) -> String:
+	for project in projects:
+		var path := str(project.get("path", ""))
+		var same := path.simplify_path() == wanted.simplify_path()
+		if OS.get_name() == "Windows":
+			same = path.simplify_path().nocasecmp_to(wanted.simplify_path()) == 0
+		if same: return path
+	return ""
+
+
 # Opens the existing project at `path` (never creating it): its descriptor,
 # or {} with the reason in _open_errors.
 func _open(connection, generation: int, path: String) -> Dictionary:
@@ -1145,7 +1212,7 @@ func _refresh(connection, generation: int) -> String:
 	if listed.has("error") or not listed.value.get("projects") is Array:
 		return "the open projects could not be listed: %s" % listed.get("error", "no list")
 	projects = listed.value.projects
-	_vault_session.observe(self)
+	if not is_attached(): _vault_session.observe(self)
 	return ""
 
 
@@ -1171,6 +1238,7 @@ func _guard(tool: String, arguments: Dictionary, caller: String = "agent", write
 
 
 func _guard_checks(tool: String, arguments: Dictionary, caller: String) -> String:
+	if is_attached() and tool == "docket_gui_open": return ""
 	while state == "starting":
 		await state_changed
 	if state in ["inactive", "unavailable", "failed"]:
@@ -1306,12 +1374,13 @@ func _publish(more: Array = []) -> void:
 		now.append(saved)
 	problems = now
 	_set_state("degraded" if not problems.is_empty() else "ready")
-	_vault_session.resume.call_deferred(self)
+	if not is_attached(): _vault_session.resume.call_deferred(self)
 
 
 # Writes the session when it differs from the one last saved: "" or why it
 # could not (it is tried again at the next change).
 func _save_if_changed() -> String:
+	if is_attached(): return ""
 	if not _session_error.is_empty():
 		return ""  # an unreadable saved session is kept as it is
 	if _session == _saved_session and not _migrating:

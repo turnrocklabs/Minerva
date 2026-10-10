@@ -211,6 +211,17 @@ func connect_to_server() -> Error:
 	return ERR_INVALID_PARAMETER
 
 
+## An attached app has no child-process signal; probe its public MCP endpoint.
+func check_http_liveness(timeout_sec: float = 2.0) -> bool:
+	if transport != TransportType.HTTP or not server_connected or _http_transport == null:
+		return false
+	var owner = _http_transport
+	var context = ExecutionContext.create("attached-http-health", "", "", timeout_sec)
+	var reply: Dictionary = await owner.request_method("ping", {}, {}, context)
+	# Local admission exhaustion says nothing about the external endpoint.
+	return owner == _http_transport and server_connected and (not reply.has("error") or reply.get("error_code") == "queue_full")
+
+
 ## Disconnect from the server
 func disconnect_from_server() -> void:
 	SingletonObject.verbose_log("[MCP %s] Disconnecting..." % server_name)
