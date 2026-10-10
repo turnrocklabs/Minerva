@@ -308,7 +308,8 @@ func start_ptt(req: PTTRequest) -> int:
 	if req.clear_before:
 		req.target.text = ""
 
-	if req.voice_gateway != null and req.voice_gateway.has_method("ptt_down") and req.voice_gateway.is_detector_connected():
+	var gateway: Object = req.voice_gateway
+	if gateway != null and gateway.has_method("ptt_down") and gateway.call("is_detector_connected"):
 		req.voice_gateway.ptt_down()
 		_ptt_gateway_down = true
 

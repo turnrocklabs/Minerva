@@ -5436,10 +5436,14 @@ func _voice_composer_name(target: Control) -> String:
 		return "Chat composer"
 	var ancestor: Node = target
 	while is_instance_valid(ancestor):
-		if ancestor is Editor and not ancestor.tab_title.is_empty():
-			return "%s composer" % ancestor.tab_title
-		if ancestor is Window and not ancestor.title.is_empty():
-			return "%s composer" % ancestor.title
+		if ancestor is Editor:
+			var editor: Editor = ancestor
+			if not editor.tab_title.is_empty():
+				return "%s composer" % editor.tab_title
+		if ancestor is Window:
+			var window: Window = ancestor
+			if not window.title.is_empty():
+				return "%s composer" % window.title
 		ancestor = ancestor.get_parent()
 	return "focused composer"
 
@@ -5526,7 +5530,8 @@ func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: 
 	# Completion can produce no text. Refresh the source mode before mapping
 	# an error or delivery, so an empty/cancelled result cannot strand activity.
 	if is_instance_valid(_voice_gateway):
-		_voice_gateway.refresh_feedback()
+		var gateway: VoiceGatewayClientScript = _voice_gateway
+		gateway.refresh_feedback()
 	if not outcome.success:
 		if outcome.get("error_code") in ["not_speech", "cancelled"]:
 			return

@@ -88,7 +88,7 @@ func _voice_indicator_sequence(so, transport, config, feature: GDScript) -> void
 	check("repeated wake word preserves active recording feedback", label.text == "Recording")
 	var pcm := PackedByteArray()
 	pcm.resize(16800)
-	for index in range(pcm.size() / 2):
+	for index in range(pcm.size() >> 1):
 		pcm.encode_s16(index * 2, 1000)
 	gateway._audio_buffer = pcm
 	gateway.detector.emit_event({"type": "vad_end"})
@@ -374,7 +374,7 @@ func _run() -> void:
 	check("deactivation cancels pinned TurnRock work without cancelling OpenAI work", owned_scope.cancelled and not openai_scope.cancelled)
 	await _manual_ptt_without_detector(so, voice, transport, config, voice_feature)
 	voice_feature.set_enabled(true)
-	await _voice_indicator_sequence(so, transport, config, voice_feature)
+	_voice_indicator_sequence(so, transport, config, voice_feature)
 	var output := {}
 	_capture(voice, "transcribe_auto_result", [bytes, config], output)
 	transport.reply(_last_id(transport), {"text": ""})
