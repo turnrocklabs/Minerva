@@ -791,12 +791,13 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 	if err != OK:
 		_cleanup_connection("docket")
 		return _refuse_attachment("Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason, record)
-	var issue: String = await RequiredPlugins.host_tools_missing(def, conn)
+	var issue: Variant = await RequiredPlugins.host_tools_missing(def, conn)
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
-	if not issue.is_empty():
+	if not issue is String or not issue.is_empty():
 		_cleanup_connection("docket")
-		return _refuse_attachment(issue, record)
+		var reason: String = issue if issue is String else "Docket tool check failed"
+		return _refuse_attachment(reason, record)
 	rt["start_time"] = Time.get_unix_time_from_system()
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
