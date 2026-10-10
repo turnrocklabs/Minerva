@@ -323,28 +323,28 @@ func test_list_editor_kinds_contains_id_field() -> void:
 
 func test_plugin_scene_type_exists() -> void:
 	# Verify the enum value exists and is an int.
-	var Editor = load("res://Scripts/UI/Controls/Editor.gd")
-	var val = Editor.Type.PLUGIN_SCENE
+	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	var val = EditorScript.Type.PLUGIN_SCENE
 	check("Editor.Type.PLUGIN_SCENE exists", val is int)
 	check_eq("PLUGIN_SCENE retains its saved-layout value", val, 14)
 
 
 func test_plugin_scene_type_distinct_from_others() -> void:
-	var Editor = load("res://Scripts/UI/Controls/Editor.gd")
-	var ps = Editor.Type.PLUGIN_SCENE
+	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	var ps = EditorScript.Type.PLUGIN_SCENE
 	var others: Array = [
-		Editor.Type.TEXT,
-		Editor.Type.GRAPHICS,
-		Editor.Type.VIDEO,
-		Editor.Type.PACKAGE,
-		Editor.Type.LOGS,
-		Editor.Type.KANBAN,
-		Editor.Type.SPREADSHEET,
-		Editor.Type.VIDEO_EDITOR,
-		Editor.Type.ACTIVITY_LOG,
-		Editor.Type.WEBVIEW,
-		Editor.Type.PLUGIN_MANAGER,
-		Editor.Type.WORKER_STATUS,
+		EditorScript.Type.TEXT,
+		EditorScript.Type.GRAPHICS,
+		EditorScript.Type.VIDEO,
+		EditorScript.Type.PACKAGE,
+		EditorScript.Type.LOGS,
+		EditorScript.Type.KANBAN,
+		EditorScript.Type.SPREADSHEET,
+		EditorScript.Type.VIDEO_EDITOR,
+		EditorScript.Type.ACTIVITY_LOG,
+		EditorScript.Type.WEBVIEW,
+		EditorScript.Type.PLUGIN_MANAGER,
+		EditorScript.Type.WORKER_STATUS,
 	]
 	var is_unique := true
 	for other in others:
