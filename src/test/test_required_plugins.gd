@@ -382,8 +382,8 @@ func _test_manual_update_button(port: int) -> void:
 		_check(button.disabled, "row repaint preserves the in-flight Update button for " + id)
 		button.pressed.emit()  # a duplicate public action must be ignored too
 		await _until(func() -> bool:
-			var job = _pm.install_queue.job_for(id)
-			return job != null and job != previous_job)
+			var pending_job = _pm.install_queue.job_for(id)
+			return pending_job != null and pending_job != previous_job)
 		var job = _pm.install_queue.job_for(id)
 		if job == null:
 			_check(false, "manual button queued " + id)
