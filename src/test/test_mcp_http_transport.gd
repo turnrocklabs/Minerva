@@ -142,6 +142,7 @@ func _run() -> void:
 	for legacy_case: Dictionary in [
 		{"path": "/legacy-session-2025", "version": "2025-06-18"},
 		{"path": "/legacy-session-2024", "version": "2024-11-05"},
+		{"path": "/legacy-notification-empty-headers", "version": "2025-03-26", "session": ""},
 	]:
 		var session_legacy = connection_script.new("session-legacy", base)
 		session_legacy.mcp_endpoint = legacy_case.path
@@ -151,7 +152,7 @@ func _run() -> void:
 			and session_legacy.protocol_profile.protocol_version == legacy_case.version)
 		var session_echo: Dictionary = await session_legacy.call_tool("echo", {})
 		check("negotiated %s legacy calls retain their session" % legacy_case.version,
-			session_echo.get("headers", {}).get("Mcp-Session-Id") == "legacy-session")
+			session_echo.get("headers", {}).get("Mcp-Session-Id", "") == legacy_case.get("session", "legacy-session"))
 		session_legacy.disconnect_from_server()
 	var notification_limited = connection_script.new("notification-limited-legacy", base)
 	notification_limited.mcp_endpoint = "/legacy-session-notification-unsupported"

@@ -85,7 +85,10 @@ func execute(url: String, headers: PackedStringArray, request: Dictionary,
 			client.poll()
 			await tree.process_frame
 		if not done:
-			if not client.has_response():
+			# Godot's has_response() tests for response headers. A legacy
+			# notification may have a parsed 202 status with zero headers.
+			var empty_ack := not request.has("id") and client.get_response_code() == 202
+			if not client.has_response() and not empty_ack:
 				_finish_retryable({"error": "HTTP peer closed before response", "outcome_unknown": submitted})
 			else:
 				await _receive(tree, request)

@@ -211,7 +211,7 @@ func _start_background_process(server_name: String, command: String, args: Packe
 
 
 ## Check if a process is running by PID
-func _is_process_running(pid: int) -> bool:
+static func _is_process_running(pid: int) -> bool:
 	if pid <= 0:
 		return false
 

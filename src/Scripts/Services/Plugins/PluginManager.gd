@@ -197,6 +197,9 @@ var setup_state_path: String = DEFAULT_SETUP_STATE_PATH
 ## of the real PATH/well-known install dirs.
 var setup_pipeline_factory: Callable = Callable()
 
+## Discovery owns registration validation; tests use a disposable profile.
+var endpoint_discovery := PluginEndpointDiscovery.new()
+
 ## Production seam (R3-UI, G4.1): SetupPipeline.approver — Callable(step:
 ## Dictionary, step_index: int) -> bool — applied to EVERY setup pipeline this
 ## manager starts (install or rebuild), unless a `setup_pipeline_factory`-
@@ -702,9 +705,68 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	# failed first start and roll a pending update back.
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
 		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
+	if id == "docket":
+		var found: Dictionary = endpoint_discovery.discover()
+		if found.has("error"):
+			return {"error": found.error}
+		if found.get("attached", false):
+			return await _start_attached_docket(found)
+		_ensure_runtime(id)["notice"] = found.get("note", "")
 	if in_transaction:
 		return await _start_plugin_now(id)
 	return await PendingUpgrade.start(self, id, _start_plugin_now.bind(id))
+
+
+func is_attached(id: String) -> bool:
+	return _runtime.get(id, {}).get("attached", false)
+
+
+func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:
+	return MCPServerConnection.new(id, url, transport)
+
+
+## An external app has no managed binary or private panel authority. It must
+## satisfy the same public catalog contract before plugin_ready can open data.
+func _start_attached_docket(found: Dictionary) -> Dictionary:
+	var def = _db.get_by_id("docket")
+	if _shutting_down or def == null:
+		return {"error": "Docket cannot start while Minerva is shutting down or its plugin record is missing"}
+	if def.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]:
+		return {"error": "Docket is already active or in a crash loop"}
+	_cleanup_connection("docket")
+	var rt := _ensure_runtime("docket")
+	rt["attached"] = true
+	rt["registration"] = found.record
+	rt["notice"] = "Attached Docket, not managed by Minerva"
+	rt["stopping"] = false
+	var conn := _create_connection("docket", found.url, MCPServerConnection.TransportType.HTTP)
+	conn.plugin_id = "docket"
+	rt["connection"] = conn
+	rt["panel_authority"] = null
+	conn.disconnected.connect(_on_plugin_disconnected.bind("docket"))
+	_transition_state("docket", S_STARTING)
+	var err: Error = await conn.connect_to_server()
+	if not _owns_runtime_connection("docket", conn):
+		return {"error": "Docket attach was cancelled"}
+	if err != OK:
+		_cleanup_connection("docket")
+		_transition_state("docket", S_ERROR)
+		return {"error": "Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason}
+	var issue = await RequiredPlugins.host_tools_missing(def, conn)
+	if not _owns_runtime_connection("docket", conn):
+		return {"error": "Docket attach was cancelled"}
+	if not issue is String or not issue.is_empty():
+		_cleanup_connection("docket")
+		_transition_state("docket", S_ERROR)
+		return {"error": issue if issue is String else "Docket tool check failed"}
+	rt["start_time"] = Time.get_unix_time_from_system()
+	_transition_state("docket", S_RUNNING)
+	plugin_started.emit("docket")
+	await _discover_backend_tools("docket", conn)
+	if not _owns_runtime_connection("docket", conn):
+		return {"error": "Docket attach was cancelled"}
+	plugin_ready.emit("docket")
+	return {"ok": true, "attached": true}
 
 
 func _start_plugin_now(id: String) -> Dictionary:
@@ -814,7 +876,7 @@ func _start_plugin_now(id: String) -> Dictionary:
 			resolved_args.append(arg)
 
 	# Create and configure the connection.
-	var conn := MCPServerConnection.new(def.id, "", MCPServerConnection.TransportType.STDIO)
+	var conn := _create_connection(def.id, "", MCPServerConnection.TransportType.STDIO)
 	conn.configure_stdio(command, resolved_args)
 
 	# Tag the connection with the plugin id so _stdio_request can pass it to the handler.
@@ -836,6 +898,7 @@ func _start_plugin_now(id: String) -> Dictionary:
 
 	var rt := _ensure_runtime(id)
 	rt["connection"] = conn
+	rt["attached"] = false
 	# A backend that serves its panel's edits privately gets a secret of its
 	# own for each process it runs.
 	rt["panel_authority"] = null

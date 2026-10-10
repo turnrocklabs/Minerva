@@ -46,7 +46,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/legacy":
                 self.reply({"jsonrpc": "2.0", "id": request_id,
                             "error": {"code": -32601, "message": "legacy"}}, 400)
-            elif self.path in ("/legacy-session-2025", "/legacy-session-2024",
+            elif self.path in ("/legacy-session-2025", "/legacy-session-2024", "/legacy-notification-empty-headers",
                                "/legacy-session-notification-unsupported",
                                "/legacy-notification-no-session",
                                "/legacy-session-notification-wrong-id",
@@ -82,17 +82,24 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             version = "2025-06-18"
-            if self.path == "/legacy-session-2024":
+            if self.path == "/legacy-notification-empty-headers":
+                version = "2025-03-26"
+            elif self.path == "/legacy-session-2024":
                 version = "2024-11-05"
             elif self.path == "/legacy-session-invalid-version":
                 version = "1900-01-01"
-            extra = [] if self.path == "/legacy-notification-no-session" else [
+            extra = [] if self.path in ("/legacy-notification-no-session", "/legacy-notification-empty-headers") else [
                 ("Mcp-Session-Id", "legacy-session")]
             self.reply(result({"protocolVersion": version, "capabilities": {"tools": {}},
                                "serverInfo": {"name": "probe", "version": "1"}}),
                        extra=extra)
             return
         if method == "notifications/initialized":
+            if self.path == "/legacy-notification-empty-headers":
+                self.wfile.write(b"HTTP/1.1 202 Accepted\r\n\r\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
             if self.path in ("/legacy-session-notification-unsupported",
                              "/legacy-notification-no-session",
                              "/legacy-session-notification-wrong-id",
