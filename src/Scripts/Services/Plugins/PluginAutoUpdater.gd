@@ -19,7 +19,7 @@ const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 ## than the installed version. Returns the jobs queued, keyed by plugin id.
 static func run(manager, registry_url: String = "") -> Dictionary:
 	var candidates: Array = manager.get_db().get_all().filter(func(def: PluginDefinition) -> bool:
-		return wants_update(def, ""))
+		return not _attached(manager, def.id) and wants_update(def, ""))
 	if candidates.is_empty() or manager.install_queue == null:
 		return {}
 	var ids: Array[String] = []
@@ -67,13 +67,15 @@ static func _fetch_registry_entries(manager, registry_url: String) -> Dictionary
 
 ## A manual action checks now, then uses the same conditional update job.
 static func update_one(manager, id: String, registry_url: String = "") -> Job:
+	if _attached(manager, id):
+		return null
 	var entries := await fetch_entries(manager, [id], registry_url)
 	return queue_update(manager, id, entries.get(id, {}), true)
 
 
 ## Rejudge after listing I/O; the install repeats this predicate under lock.
 static func queue_update(manager, id: String, entry: Dictionary, manual: bool = false) -> Job:
-	if manager.is_shutting_down() or manager.install_queue == null or entry.get("id", "") != id:
+	if _attached(manager, id) or manager.is_shutting_down() or manager.install_queue == null or entry.get("id", "") != id:
 		return null
 	var def: PluginDefinition = manager.get_db().get_by_id(id)
 	if not wants_update(def, str(entry.get("version", "")), manual) or manager.install_queue.pending_for(id) != null:
@@ -83,6 +85,10 @@ static func queue_update(manager, id: String, entry: Dictionary, manual: bool = 
 	job.finished.connect(func() -> void:
 		print("[PluginAutoUpdater] '%s' update to %s: %s %s" % [id, entry.version, job.outcome, job.message]), CONNECT_ONE_SHOT)
 	return job
+
+
+static func _attached(manager, id: String) -> bool:
+	return manager.has_method("is_attached") and manager.is_attached(id)
 
 
 ## Installed, marketplace-lane and older than `version` ("" skips version).

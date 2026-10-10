@@ -1,6 +1,7 @@
 extends "res://Scripts/Services/Plugins/PluginManager.gd"
 ## Transport selection spy; the real-process oracle uses the production connection.
 var stdio_starts := 0
+var omit_tool := ""
 var discovered: Array[String] = []
 
 class Connection extends MCPServerConnection:
@@ -14,6 +15,8 @@ class Connection extends MCPServerConnection:
 	func list_tools() -> Array:
 		var result: Array = []
 		for name in RequiredPlugins.PLUGINS.docket.host_tools:
+			if name == manager.omit_tool:
+				continue
 			result.append(MCPToolDefinition.from_dict({"name": name.trim_prefix("minerva_"), "inputSchema": {"type": "object"}}))
 		return result
 

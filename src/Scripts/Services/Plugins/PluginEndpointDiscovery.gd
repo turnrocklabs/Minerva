@@ -2,6 +2,8 @@ class_name PluginEndpointDiscovery
 extends RefCounted
 ## The profile-local Docket registration is the sole attach discovery source.
 ## It is read only: Docket owns its publication and stale-record cleanup.
+const PROTOCOL_FLOOR := "2025-03-26"
+const ATTACH_CHOICES := ["Update docket.app", "Quit docket.app and let Minerva start its own"]
 var profile_directory: String = ""
 var pid_alive: Callable = MCPServerRunner._is_process_running
 
@@ -22,6 +24,11 @@ func discover() -> Dictionary:
 	if not record.get("profile") is String or not record.profile.is_absolute_path() \
 			or not record.get("version") is String or not record.get("started_at") is String:
 		return {"error": "Docket registration is incomplete"}
+	var protocol = record.get("protocol_version", "")
+	var date := RegEx.new()
+	date.compile("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+	if not protocol is String or date.search(protocol) == null or protocol < PROTOCOL_FLOOR:
+		return {"error": "Registered Docket requires MCP protocol %s or newer" % PROTOCOL_FLOOR, "record": record}
 	return {"attached": true, "record": record, "url": "http://127.0.0.1:%d" % int(endpoint.port)}
 
 static func _integer(value: Variant, low: int, high: int) -> bool:

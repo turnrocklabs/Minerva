@@ -706,12 +706,19 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
 		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
 	if id == "docket":
+		var current = _db.get_by_id(id)
+		if _shutting_down or (current != null and current.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]):
+			return {"error": "Docket cannot start while active, shutting down, or in a crash loop"}
 		var found: Dictionary = endpoint_discovery.discover()
 		if found.has("error"):
-			return {"error": found.error}
+			return _refuse_attachment(str(found.error), found.get("record", {}))
 		if found.get("attached", false):
 			return await _start_attached_docket(found)
-		_ensure_runtime(id)["notice"] = found.get("note", "")
+		var rt := _ensure_runtime(id)
+		rt["attached"] = false
+		rt["registration"] = {}
+		rt["attach_choices"] = []
+		rt["notice"] = found.get("note", "")
 	if in_transaction:
 		return await _start_plugin_now(id)
 	return await PendingUpgrade.start(self, id, _start_plugin_now.bind(id))
@@ -719,6 +726,16 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 
 func is_attached(id: String) -> bool:
 	return _runtime.get(id, {}).get("attached", false)
+
+
+func _refuse_attachment(reason: String, record: Dictionary = {}) -> Dictionary:
+	var rt := _ensure_runtime("docket")
+	rt["attached"] = true
+	rt["registration"] = record
+	rt["notice"] = reason
+	rt["attach_choices"] = PluginEndpointDiscovery.ATTACH_CHOICES
+	_transition_state("docket", S_ERROR)
+	return {"error": reason, "attached_refused": true, "choices": PluginEndpointDiscovery.ATTACH_CHOICES}
 
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:
@@ -738,6 +755,7 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 	rt["attached"] = true
 	rt["registration"] = found.record
 	rt["notice"] = "Attached Docket, not managed by Minerva"
+	rt["attach_choices"] = []
 	rt["stopping"] = false
 	var conn := _create_connection("docket", found.url, MCPServerConnection.TransportType.HTTP)
 	conn.plugin_id = "docket"
@@ -750,15 +768,13 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 		return {"error": "Docket attach was cancelled"}
 	if err != OK:
 		_cleanup_connection("docket")
-		_transition_state("docket", S_ERROR)
-		return {"error": "Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason}
+		return _refuse_attachment("Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason, found.record)
 	var issue = await RequiredPlugins.host_tools_missing(def, conn)
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
 	if not issue is String or not issue.is_empty():
 		_cleanup_connection("docket")
-		_transition_state("docket", S_ERROR)
-		return {"error": issue if issue is String else "Docket tool check failed"}
+		return _refuse_attachment(issue if issue is String else "Docket tool check failed", found.record)
 	rt["start_time"] = Time.get_unix_time_from_system()
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
@@ -899,6 +915,8 @@ func _start_plugin_now(id: String) -> Dictionary:
 	var rt := _ensure_runtime(id)
 	rt["connection"] = conn
 	rt["attached"] = false
+	rt["registration"] = {}
+	rt["attach_choices"] = []
 	# A backend that serves its panel's edits privately gets a secret of its
 	# own for each process it runs.
 	rt["panel_authority"] = null
@@ -1434,6 +1452,10 @@ func get_plugin_status(id: String) -> Dictionary:
 		"id": id,
 		"name": def.name,
 		"version": def.version,
+		"attached": is_attached(id),
+		"attached_version": rt.get("registration", {}).get("version", ""),
+		"notice": rt.get("notice", ""),
+		"attach_choices": rt.get("attach_choices", []),
 		"content_pending": _pending_content_status(id),
 		"state": def.state,
 		"state_name": [

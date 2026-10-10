@@ -29,6 +29,8 @@ var _install_dialog: FileDialog = null
 
 ## Confirmation dialog for removing plugins.
 var _remove_confirm: ConfirmationDialog = null
+var _docket_choice := false
+var _shown_attach_refusal := ""
 
 ## Pending plugin id for removal confirmation.
 var _pending_remove_id: String = ""
@@ -809,6 +811,10 @@ func _refresh_plugin_list() -> void:
 
 	for status in plugins:
 		var display_name: String = "%s  v%s" % [status.get("name", status.get("id", "?")), status.get("version", "")]
+		if status.get("attached", false):
+			display_name += "  — attached v%s (not managed)" % status.get("attached_version", "unknown")
+		if not str(status.get("notice", "")).is_empty():
+			display_name += "  — " + str(status.notice)
 		var state: int = status.get("state", PluginDefinition.State.INSTALLED)
 		var plugin_id: String = status.get("id", "")
 		# Setup-pipeline states (G4.1): fold live build progress into the row
@@ -895,15 +901,22 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	# Header
 	_detail_name_label.text = status.get("name", plugin_id)
 	_detail_version_label.text = status.get("version", "-")
+	if status.get("attached", false):
+		_detail_version_label.text = "Installed: %s; attached: %s (not managed)" % [status.get("version", "-"), status.get("attached_version", "unknown")]
 	_detail_id_label.text = plugin_id
 
 	var state: int = status.get("state", PluginDefinition.State.INSTALLED)
 	var state_name: String = status.get("state_name", "UNKNOWN")
 	_detail_status_label.text = state_name
+	if not str(status.get("notice", "")).is_empty():
+		_detail_status_label.text += " — " + str(status.notice)
 	_detail_status_label.add_theme_color_override("font_color", _state_color(state))
 
 	var uptime: float = status.get("uptime_sec", 0.0)
 	_detail_uptime_label.text = _format_uptime(uptime) if state == PluginDefinition.State.RUNNING else "-"
+	if not status.get("attach_choices", []).is_empty() and str(status.get("notice", "")) != _shown_attach_refusal:
+		_show_docket_choice({"error": status.notice})
+
 
 	# Button states
 	var is_running := state == PluginDefinition.State.RUNNING
@@ -919,7 +932,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_required := RequiredPlugins.has(plugin_id)
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
-	_restart_button.disabled = not (is_running or is_starting) or is_building
+	_restart_button.disabled = status.get("attached", false) or not (is_running or is_starting) or is_building
 	# A required plugin can be stopped and kept from starting, not removed.
 	_remove_button.visible = not is_required
 
@@ -929,10 +942,12 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	# checkout is never overwritten, so the toggle is offered only there.
 	_auto_update_check.visible = def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE
 	var entry: Dictionary = _update_entries.get(plugin_id, {})
-	_update_button.visible = not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
-	_update_button.disabled = _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
+	_update_button.visible = status.get("attached", false) or not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
+	_update_button.disabled = status.get("attached", false) or _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
 		or MarketplaceClient.download_target(entry.get("downloads", {})).is_empty()
-	_update_button.tooltip_text = "Update immediately to v%s" % entry.get("version", "")
+	_update_button.tooltip_text = "Attached, not managed by Minerva" if status.get("attached", false) else "Update immediately to v%s" % entry.get("version", "")
+	_auto_update_check.disabled = status.get("attached", false)
+	_auto_reload_check.disabled = status.get("attached", false)
 	if _panel_button != null and def != null:
 		_panel_button.visible = not def.ui_panels.is_empty()
 		_panel_button.disabled = not is_running
@@ -1272,7 +1287,9 @@ func _on_start_pressed() -> void:
 	_start_button.disabled = true
 	var result: Dictionary = await _pm().start_plugin(_selected_plugin_id)
 	_report_lifecycle_result("Start", _selected_plugin_id, result)
-	if result.has("error") and RequiredPlugins.has(_selected_plugin_id):
+	if result.get("attached_refused", false):
+		_show_docket_choice(result)
+	if result.has("error") and RequiredPlugins.has(_selected_plugin_id) and not result.get("attached_refused", false):
 		_check_required_plugins()
 	_refresh_plugin_list()
 
@@ -1527,16 +1544,12 @@ func _on_remove_pressed() -> void:
 	if _selected_plugin_id.is_empty():
 		return
 
-	if _remove_confirm == null:
-		_remove_confirm = ConfirmationDialog.new()
-		_remove_confirm.confirmed.connect(_on_remove_confirmed)
-		add_child(_remove_confirm)
-
-		# Add a checkbox option to delete data to the dialog's content area
-		_remove_delete_data_check = CheckButton.new()
-		_remove_delete_data_check.text = "Also delete plugin data directory"
-		_remove_delete_data_check.tooltip_text = "If checked, the plugin's data directory (user://plugins/data/<id>/) will be permanently deleted"
-		_remove_confirm.add_child(_remove_delete_data_check)
+	_ensure_remove_dialog()
+	_docket_choice = false
+	_remove_confirm.title = "Remove plugin"
+	_remove_delete_data_check.visible = true
+	_remove_confirm.ok_button_text = "OK"
+	_remove_confirm.cancel_button_text = "Cancel"
 
 	_pending_remove_id = _selected_plugin_id
 	var pm_name := _selected_plugin_id
@@ -1550,7 +1563,46 @@ func _on_remove_pressed() -> void:
 	_remove_confirm.popup_centered()
 
 
+func _ensure_remove_dialog() -> void:
+	if _remove_confirm == null:
+		_remove_confirm = ConfirmationDialog.new()
+		_remove_confirm.confirmed.connect(_on_remove_confirmed)
+		_remove_confirm.canceled.connect(_on_remove_cancelled)
+		add_child(_remove_confirm)
+
+		# Add a checkbox option to delete data to the dialog's content area
+		_remove_delete_data_check = CheckButton.new()
+		_remove_delete_data_check.text = "Also delete plugin data directory"
+		_remove_delete_data_check.tooltip_text = "If checked, the plugin's data directory (user://plugins/data/<id>/) will be permanently deleted"
+		_remove_confirm.add_child(_remove_delete_data_check)
+
+
+func _show_docket_choice(result: Dictionary) -> void:
+	_ensure_remove_dialog()
+	_docket_choice = true
+	_shown_attach_refusal = str(result.get("error", ""))
+	_pending_remove_id = ""
+	_remove_delete_data_check.visible = false
+	_remove_confirm.title = "Registered Docket unavailable"
+	_remove_confirm.ok_button_text = "Update docket.app"
+	_remove_confirm.cancel_button_text = "Quit docket.app and let Minerva start its own"
+	_remove_confirm.dialog_text = str(result.get("error", "")) + "\n\nUpdate docket.app, or quit it yourself and press Start here. Minerva will not quit or restart the attached app."
+	_sync_dialog_scale(_remove_confirm)
+	_remove_confirm.popup_centered()
+
+
+func _on_remove_cancelled() -> void:
+	if _docket_choice:
+		_show_status("Quit docket.app, then press Start to use Minerva's installed Docket.")
+	_docket_choice = false
+	_pending_remove_id = ""
+
+
 func _on_remove_confirmed() -> void:
+	if _docket_choice:
+		_docket_choice = false
+		OS.shell_open("https://github.com/imrans-lab/docket/releases")
+		return
 	if _pending_remove_id.is_empty() or not _pm():
 		return
 
