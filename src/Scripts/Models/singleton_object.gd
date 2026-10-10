@@ -995,7 +995,8 @@ func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = nul
 	if plugin_manager == null or not plugin_manager.get_plugin_status(DocketHost.PLUGIN_ID).get("running", false) \
 			or plugin_tool_registry == null:
 		return {"ok": false, "errors": ["docket_plugin_unavailable: install and start Docket in the Plugin Manager"]}
-	if (docket_host == null or not docket_host.state in ["ready", "degraded"]) and not (plugin_manager.has_method("is_attached") and plugin_manager.is_attached(DocketHost.PLUGIN_ID) and dct_path.is_empty()):
+	var manager: Object = plugin_manager
+	if (docket_host == null or not docket_host.state in ["ready", "degraded"]) and not (manager.has_method("is_attached") and manager.call("is_attached", DocketHost.PLUGIN_ID) and dct_path.is_empty()):
 		return {"ok": false, "errors": ["Docket is not ready: %s" % (docket_host.state if docket_host != null else "unavailable")]}
 	if not dct_path.is_empty():
 		if dct_path.get_extension().to_lower() != "dct":

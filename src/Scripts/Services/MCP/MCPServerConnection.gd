@@ -215,8 +215,8 @@ func connect_to_server() -> Error:
 func check_http_liveness(timeout_sec: float = 2.0) -> bool:
 	if transport != TransportType.HTTP or not server_connected or _http_transport == null:
 		return false
-	var owner = _http_transport
-	var context = ExecutionContext.create("attached-http-health", "", "", timeout_sec)
+	var owner: HttpTransport = _http_transport
+	var context: ExecutionContext = ExecutionContext.create("attached-http-health", "", "", timeout_sec)
 	var reply: Dictionary = await owner.request_method("ping", {}, {}, context)
 	# Local admission exhaustion says nothing about the external endpoint.
 	return owner == _http_transport and server_connected and (not reply.has("error") or reply.get("error_code") == "queue_full")

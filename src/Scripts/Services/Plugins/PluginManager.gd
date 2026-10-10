@@ -707,12 +707,14 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
 		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
 	if id == "docket":
-		var current = _db.get_by_id(id)
+		var db: Object = _db
+		var current: PluginDefinition = db.call("get_by_id", id)
 		if _shutting_down or (current != null and current.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]):
 			return {"error": "Docket cannot start while active, shutting down, or in a crash loop"}
 		var found: Dictionary = endpoint_discovery.discover()
 		if found.has("error"):
-			return _refuse_attachment(str(found.error), found.get("record", {}))
+			var record: Dictionary = found.get("record", {})
+			return _refuse_attachment(str(found.error), record)
 		if found.get("attached", false):
 			return await _start_attached_docket(found)
 		var rt := _ensure_runtime(id)
@@ -727,7 +729,8 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 
 
 func is_attached(id: String) -> bool:
-	return _runtime.get(id, {}).get("attached", false)
+	var runtime: Dictionary = _runtime.get(id, {})
+	return runtime.get("attached", false)
 
 
 func _refuse_attachment(reason: String, record: Dictionary = {}) -> Dictionary:
@@ -761,7 +764,9 @@ func _create_connection(id: String, url: String, transport: int) -> MCPServerCon
 ## An external app has no managed binary or private panel authority. It must
 ## satisfy the same public catalog contract before plugin_ready can open data.
 func _start_attached_docket(found: Dictionary) -> Dictionary:
-	var def = _db.get_by_id("docket")
+	var db: Object = _db
+	var def: PluginDefinition = db.call("get_by_id", "docket")
+	var record: Dictionary = found.record
 	if _shutting_down or def == null:
 		return {"error": "Docket cannot start while Minerva is shutting down or its plugin record is missing"}
 	if def.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]:
@@ -774,7 +779,7 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 	rt["notice"] = "Attached Docket, not managed by Minerva"
 	rt["attach_choices"] = []
 	rt["stopping"] = false
-	var conn := _create_connection("docket", found.url, MCPServerConnection.TransportType.HTTP)
+	var conn := _create_connection("docket", str(found.url), MCPServerConnection.TransportType.HTTP)
 	conn.plugin_id = "docket"
 	rt["connection"] = conn
 	rt["panel_authority"] = null
@@ -785,13 +790,13 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 		return {"error": "Docket attach was cancelled"}
 	if err != OK:
 		_cleanup_connection("docket")
-		return _refuse_attachment("Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason, found.record)
-	var issue = await RequiredPlugins.host_tools_missing(def, conn)
+		return _refuse_attachment("Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason, record)
+	var issue: String = await RequiredPlugins.host_tools_missing(def, conn)
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
-	if not issue is String or not issue.is_empty():
+	if not issue.is_empty():
 		_cleanup_connection("docket")
-		return _refuse_attachment(issue if issue is String else "Docket tool check failed", found.record)
+		return _refuse_attachment(issue, record)
 	rt["start_time"] = Time.get_unix_time_from_system()
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
@@ -803,10 +808,11 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 
 
 func _start_plugin_now(id: String) -> Dictionary:
+	var db: Object = _db
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
 
-	var def = _db.get_by_id(id)
+	var def: PluginDefinition = db.call("get_by_id", id)
 	if def == null:
 		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
 	if RequiredPlugins.has(id):
@@ -1466,6 +1472,7 @@ func get_plugin_status(id: String) -> Dictionary:
 	var now := Time.get_unix_time_from_system()
 	var start_time: float = rt.get("start_time", 0.0)
 	var uptime := (now - start_time) if start_time > 0.0 else 0.0
+	var registration: Dictionary = rt.get("registration", {})
 
 	return {
 		"id": id,
@@ -1473,8 +1480,8 @@ func get_plugin_status(id: String) -> Dictionary:
 		"version": def.version,
 		"attached": is_attached(id),
 		"attach_refused": rt.get("attach_refused", false),
-		"registered_version": rt.get("registration", {}).get("version", ""),
-		"attached_version": rt.get("registration", {}).get("version", "") if is_attached(id) else "",
+		"registered_version": registration.get("version", ""),
+		"attached_version": registration.get("version", "") if is_attached(id) else "",
 		"notice": rt.get("notice", ""),
 		"attach_choices": rt.get("attach_choices", []),
 		"content_pending": _pending_content_status(id),
@@ -1688,20 +1695,22 @@ func _record_crash(id: String) -> bool:
 # ---------------------------------------------------------------------------
 
 func _run_health_checks() -> void:
-	for def in _db.get_by_status(S_RUNNING):
+	var db: Object = _db
+	for def: PluginDefinition in _db.get_by_status(S_RUNNING):
 		# A preceding attached ping awaited: this entry may have been stopped or replaced.
-		if _db.get_by_id(def.id) != def or def.state != S_RUNNING: continue
+		if db.call("get_by_id", def.id) != def or def.state != S_RUNNING: continue
 		var rt: Dictionary = _runtime.get(def.id, {})
 		var conn: MCPServerConnection = rt.get("connection", null)
 		if is_attached(def.id):
 			if rt.get("health_pending", false): continue
-			if conn == null or not conn.server_connected or not endpoint_discovery.pid_alive.call(int(rt.get("registration", {}).get("pid", 0))):
+			var registration: Dictionary = rt.get("registration", {})
+			if conn == null or not conn.server_connected or not endpoint_discovery.pid_alive.call(PluginEndpointDiscovery._integer_value(registration.get("pid", 0))):
 				_attached_stopped(def.id)
 				continue
 			rt["health_pending"] = true
-			var alive: bool = await conn.check_http_liveness()
+			var attached_alive: bool = await conn.check_http_liveness()
 			rt["health_pending"] = false
-			if _owns_runtime_connection(def.id, conn) and not alive:
+			if _owns_runtime_connection(def.id, conn) and not attached_alive:
 				_attached_stopped(def.id)
 			continue
 
@@ -1724,7 +1733,7 @@ func _run_health_checks() -> void:
 ## Check whether any watched files in installed plugins have been modified.
 ## Emits plugin_file_changed and starts a debounce timer for auto_reload plugins.
 func _run_file_watch_checks() -> void:
-	for def in _db.get_all():
+	for def: PluginDefinition in _db.get_all():
 		if is_attached(def.id): continue
 		var plugin_dir: String = def.data_directory
 		if plugin_dir.is_empty():

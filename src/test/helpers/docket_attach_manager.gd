@@ -11,8 +11,11 @@ var delay_health := false
 signal health_release
 var discovered: Array[String] = []
 
+func release_health() -> void:
+	health_release.emit()
+
 class Connection extends MCPServerConnection:
-	var manager
+	var manager: Node
 	func connect_to_server() -> Error:
 		if transport == TransportType.STDIO:
 			manager.stdio_starts += 1
@@ -23,7 +26,7 @@ class Connection extends MCPServerConnection:
 		manager.disconnects += 1
 		super.disconnect_from_server()
 	func check_http_liveness(_timeout_sec: float = 2.0) -> bool:
-		if manager.delay_health: await manager.health_release
+		if manager.delay_health: await Signal(manager, "health_release")
 		return manager.http_alive
 	func call_tool(name: String, arguments: Dictionary, _timeout_sec: float = 120.0) -> Dictionary:
 		manager.tool_calls.append({"name": name, "arguments": arguments.duplicate(true)})
@@ -39,10 +42,10 @@ class Connection extends MCPServerConnection:
 		return {}
 	func call_tool_outcome_with_context(name: String, arguments: Dictionary, _context: MCPExecutionContext) -> MCPToolCallOutcome:
 		var outcome := MCPToolCallOutcome.new()
-		outcome.application = await call_tool(name, arguments)
+		outcome.application = call_tool(name, arguments)
 		return outcome
 	func refresh_tools() -> Error:
-		tools = await list_tools()
+		tools = list_tools()
 		return OK
 	func list_tools() -> Array:
 		var result: Array = []

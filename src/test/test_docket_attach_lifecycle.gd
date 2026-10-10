@@ -40,7 +40,7 @@ func _run() -> void:
 	await manager.start_plugin("docket")
 	check("attached host adds master through public endpoint", host.state in ["ready", "degraded"]
 		and host.master_path == ProjectSettings.globalize_path("user://master.dct")
-		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_project_add" and call.arguments.get("create") == false))
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_add" and tool_call.arguments.get("create") == false))
 	check("attached host does not save a hosted session", not FileAccess.file_exists("user://docket_host_session.json"))
 	var session_text := '{"version":1,"paths":["hosted-session-sentinel"]}'
 	var session_file := FileAccess.open("user://docket_host_session.json", FileAccess.WRITE)
@@ -72,8 +72,8 @@ func _run() -> void:
 	var focus: Dictionary = await singleton.open_docket_panel()
 	var new_docket: Dictionary = await singleton.open_docket_panel("", null, true)
 	check("attached focus and New use the public connection", focus.get("ok", false) and new_docket.get("ok", false)
-		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_gui_open" and call.arguments == {"focus":true})
-		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_gui_open" and call.arguments == {"focus":true,"new_docket":true}))
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_gui_open" and tool_call.arguments == {"focus":true})
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_gui_open" and tool_call.arguments == {"focus":true,"new_docket":true}))
 	manager.stop_plugin("docket")
 	manager.fake_projects.clear()
 	manager.refuse_master = true

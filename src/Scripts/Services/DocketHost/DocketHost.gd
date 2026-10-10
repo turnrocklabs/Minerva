@@ -81,7 +81,7 @@ var _vault_session := preload("res://Scripts/Services/DocketHost/HostedVaultSess
 
 var _plugin_manager
 # The process the current state belongs to: its connection and generation.
-var _connection = null
+var _connection: Object = null
 var _generation := -1
 # What setting up the current process could not do.
 var _setup_problems: Array[String] = []
@@ -129,7 +129,8 @@ func start(plugin_manager) -> void:
 
 
 func is_attached() -> bool:
-	return _plugin_manager != null and _plugin_manager.has_method("is_attached") and _plugin_manager.is_attached(PLUGIN_ID)
+	var manager: Object = _plugin_manager
+	return manager != null and manager.has_method("is_attached") and manager.call("is_attached", PLUGIN_ID)
 
 
 func host_write_problem() -> String:
@@ -209,7 +210,7 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 		await state_changed
 	if not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	# The session brought up to date first (a project an agent or panel
 	# opened or closed, a person's change), so the projects whose prompts
@@ -302,7 +303,7 @@ func policy_items() -> Dictionary:
 		return {"error": "Docket is being installed/started — retry shortly"}
 	if not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	for gap in master_report.get("capability_gaps", []):
 		if gap is Dictionary and (gap.has("error") or str(gap.get("slug", "")) == "policy"):
@@ -341,7 +342,7 @@ func policy_knowledge(refs: PackedStringArray) -> Dictionary:
 	if not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state),
 			"index": -1}
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	var listed := await _refresh(connection, generation)
 	if not listed.is_empty():
@@ -466,6 +467,7 @@ func skill_lookup(selector: String, project_name: String = "") -> Dictionary:
 ## successful empty read) or {status: "error", code, message, project?}.
 func skill_knowledge(project_path: String, components: PackedStringArray, limit: int = 10) -> Dictionary:
 	var begun := await _begin_read()
+	var connection: Object = begun.get("connection")
 	if begun.has("status"):
 		return begun
 	var project := _descriptor_of(project_path)
@@ -475,7 +477,7 @@ func skill_knowledge(project_path: String, components: PackedStringArray, limit:
 	var items := []
 	for component in components:
 		for item_type in ["hint", "insight"]:
-			var read := await _call(begun.connection, "docket_query", {"project": str(project.get("name", "")),
+			var read := await _call(connection, "docket_query", {"project": str(project.get("name", "")),
 				"detail": "full", "limit": limit, "filter": {"conditions": [
 					{"field": "type", "op": "eq", "value": item_type},
 					{"conj": "and", "field": "component", "op": "eq", "value": component}]}})
@@ -496,13 +498,14 @@ func skill_knowledge(project_path: String, components: PackedStringArray, limit:
 ## `process` is also for same_process().
 func skill_target(project_name: String) -> Dictionary:
 	var begun := await _begin_read()
+	var connection: Object = begun.get("connection")
 	if begun.has("status"):
 		return begun
 	var project := master_project() if project_name.is_empty() else _resolve(project_name)
 	if project.is_empty():
 		return {"status": "error", "code": "unknown_project", "message": "the master project is not open"
 			if project_name.is_empty() else "%s names no one open project" % project_name}
-	return {"status": "ok", "project": project, "process": [begun.connection, begun.generation],
+	return {"status": "ok", "project": project, "process": [connection, begun.generation],
 		"session_changes": begun.session_changes}
 
 
@@ -525,6 +528,7 @@ func open_projects() -> Dictionary:
 ## "error", code, message}.
 func seeding_target(project_name: String, path: String = "") -> Dictionary:
 	var begun := await _begin_read()
+	var connection: Object = begun.get("connection")
 	if begun.has("status"):
 		return begun
 	var matches: Array = []
@@ -539,7 +543,7 @@ func seeding_target(project_name: String, path: String = "") -> Dictionary:
 		return {"status": "error", "code": "missing_project" if matches.is_empty() else "ambiguous_project",
 			"message": "Docket project '%s' is %s" % [named, "not open" if matches.is_empty()
 				else "open %d times; it is not written to until only one is" % matches.size()]}
-	return {"status": "ok", "project": matches[0], "process": [begun.connection, begun.generation],
+	return {"status": "ok", "project": matches[0], "process": [connection, begun.generation],
 		"session_changes": begun.session_changes}
 
 
@@ -547,7 +551,8 @@ func seeding_target(project_name: String, path: String = "") -> Dictionary:
 ## skill_target or skill_lookup) names: when it is not, a write sent
 ## meanwhile may or may not have been made.
 func same_process(process: Array) -> bool:
-	return not _stale(process[0], process[1])
+	var connection: Object = process[0]
+	return not _stale(connection, process[1])
 
 
 ## Why an item_changed `event` (its project selector, project_path and
@@ -586,7 +591,7 @@ func item_for_trigger(event: Dictionary, id: String) -> Dictionary:
 	var problem := opening_problem(event)
 	if not problem.is_empty():
 		return {"error": problem}
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	var read := await _call(connection, "docket_get", {"id": id, "project": str(event.get("project", "")), "include": []})
 	problem = await _listed_opening(connection, generation, event)
@@ -603,7 +608,7 @@ func item_for_trigger(event: Dictionary, id: String) -> Dictionary:
 # process of `generation`), does not give `event`'s selector to its opening,
 # or why the list could not be had; then opening_problem again. "" when it
 # does.
-func _listed_opening(connection, generation: int, event: Dictionary) -> String:
+func _listed_opening(connection: Object, generation: int, event: Dictionary) -> String:
 	var listed := await _call(connection, "docket_project_list", {}) if not _stale(connection, generation) else {}
 	if _stale(connection, generation):
 		return "the Docket plugin's process changed"
@@ -636,7 +641,8 @@ func _unbound_write(tool: String, arguments: Dictionary, write_binding: Dictiona
 	var target: Dictionary = write_binding.get("target", {})
 	if tool != write_binding.get("tool", "") or arguments != write_binding.get("arguments", {}) or target.is_empty():
 		return "the skill was not written: the call is not the write it was bound to"
-	if _stale(target.process[0], target.process[1]) or _changing or _session_changes != target.session_changes:
+	var connection: Object = target.process[0]
+	if _stale(connection, target.process[1]) or _changing or _session_changes != target.session_changes:
 		return "the skill was not written: Docket changed since its project was chosen"
 	var now := _resolve(str(arguments.get("project", "")))
 	if _layer_openings([now]) != _layer_openings([target.project]):
@@ -655,7 +661,7 @@ func _begin_read() -> Dictionary:
 	if not state in ["ready", "degraded"]:
 		return {"status": "error", "code": "unavailable",
 			"message": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	var session_changes := _session_changes
 	var listed := await _refresh(connection, generation)
@@ -671,6 +677,7 @@ func _begin_read() -> Dictionary:
 # while reading is an error (_unsettled).
 func _read_skills(active_only: bool, only_path: String = "", only_name: String = "") -> Dictionary:
 	var begun := await _begin_read()
+	var connection: Object = begun.get("connection")
 	if begun.has("status"):
 		return begun
 	var read_projects := projects.duplicate()
@@ -694,7 +701,7 @@ func _read_skills(active_only: bool, only_path: String = "", only_name: String =
 		conditions.append({"conj": "and", "field": "status", "op": "eq", "value": "active"})
 	var found := []
 	for project in read_projects:
-		var read := await _call(begun.connection, "docket_query", {"project": str(project.get("name", "")),
+		var read := await _call(connection, "docket_query", {"project": str(project.get("name", "")),
 			"detail": "full", "filter": {"conditions": conditions}})
 		var failed := _read_failure(read, begun, project)
 		if not failed.is_empty():
@@ -705,7 +712,7 @@ func _read_skills(active_only: bool, only_path: String = "", only_name: String =
 				skills.append(skill_record(item, project))
 		# Where these skills were read: the target a write to them is held to.
 		found.append({"project": project, "skills": skills, "target": {"project": project.duplicate(),
-			"process": [begun.connection, begun.generation], "session_changes": begun.session_changes}})
+			"process": [connection, begun.generation], "session_changes": begun.session_changes}})
 	var unsettled := await _unsettled(begun, changes, read_projects, only_path.is_empty())
 	if not unsettled.is_empty():
 		return unsettled
@@ -721,7 +728,8 @@ func _read_skills(active_only: bool, only_path: String = "", only_name: String =
 # A person's change to the session that began meanwhile, or is still under
 # way, fails it too, even when it left the open set as it was.
 func _unsettled(begun: Dictionary, changes: int, read_projects: Array, every: bool) -> Dictionary:
-	var listed := await _refresh(begun.connection, begun.generation)
+	var connection: Object = begun.get("connection")
+	var listed := await _refresh(connection, begun.generation)
 	if not listed.is_empty():
 		return {"status": "error", "code": "unavailable", "message": listed}
 	var now := []
@@ -739,8 +747,9 @@ func _unsettled(begun: Dictionary, changes: int, read_projects: Array, every: bo
 # The {status: "error"} result for a query `read` of `project` that failed,
 # answered malformed, or saw the process change; {} when it is good.
 func _read_failure(read: Dictionary, begun: Dictionary, project: Dictionary) -> Dictionary:
+	var connection: Object = begun.get("connection")
 	var name := str(project.get("display_name", project.get("name", "")))
-	if _stale(begun.connection, begun.generation):
+	if _stale(connection, begun.generation):
 		return {"status": "error", "code": "changed", "project": name,
 			"message": "the Docket plugin's process changed while %s was read" % name}
 	if read.has("error"):
@@ -893,7 +902,7 @@ func _changed_session(path: String, replacement: String) -> String:
 		return "Docket is not ready: %s" % state
 	if not _session_error.is_empty():
 		return "the saved session could not be read, so it is not changed"
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	var listed := await _refresh(connection, generation)
 	if not listed.is_empty():
@@ -942,7 +951,7 @@ func _changed_session(path: String, replacement: String) -> String:
 # A change that failed after opening `opened` (a project that was not open
 # before; {} for none) closes it again, so it does not join the session
 # unasked; `why` is returned, with anything that went wrong closing it.
-func _unopened(connection, generation: int, opened: Dictionary, why: String) -> String:
+func _unopened(connection: Object, generation: int, opened: Dictionary, why: String) -> String:
 	if opened.is_empty() or _stale(connection, generation):
 		return why
 	var closed := await _call(connection, "docket_project_remove", {"name": str(opened.get("name", ""))})
@@ -975,7 +984,8 @@ func call_bound(target: Dictionary, tool: String, arguments: Dictionary) -> Dict
 	# Nothing awaits between that check and the send.
 	var bound := arguments.duplicate(true)
 	bound["project"] = str(target.project.get("name", ""))
-	var answered := await _call(target.process[0], tool, bound)
+	var connection: Object = target.process[0]
+	var answered := await _call(connection, tool, bound)
 	if tool in CHANGING_TOOLS:
 		_changes += 1
 	problem = await _fresh_problem(target)
@@ -991,9 +1001,10 @@ func fresh_target_problem(target: Dictionary) -> String:
 # target_problem against the open projects listed afresh on `target`'s
 # process (the list cannot be had: a problem too).
 func _fresh_problem(target: Dictionary) -> String:
-	if _stale(target.process[0], target.process[1]):
+	var connection: Object = target.process[0]
+	if _stale(connection, target.process[1]):
 		return "the Docket plugin's process changed"
-	var listed := await _refresh(target.process[0], target.process[1])
+	var listed := await _refresh(connection, target.process[1])
 	if not listed.is_empty():
 		return listed
 	return target_problem(target)
@@ -1004,7 +1015,8 @@ func _fresh_problem(target: Dictionary) -> String:
 ## in, and the project open at its path the same opening under the same
 ## selector. Nothing here awaits.
 func target_problem(target: Dictionary) -> String:
-	if _stale(target.process[0], target.process[1]):
+	var connection: Object = target.process[0]
+	if _stale(connection, target.process[1]):
 		return "the Docket plugin's process changed"
 	if _changing or _session_changes != target.session_changes:
 		return "the Docket session changed"
@@ -1015,10 +1027,10 @@ func target_problem(target: Dictionary) -> String:
 	return ""
 
 
-func _call(connection, tool: String, arguments: Dictionary) -> Dictionary:
+func _call(connection: Object, tool: String, arguments: Dictionary) -> Dictionary:
 	if connection == null or _plugin_manager.get_connection(PLUGIN_ID) != connection:
 		return {"error": "the Docket plugin is not running"}
-	var answered: Dictionary = await connection.call_tool(tool, arguments)
+	var answered: Dictionary = await connection.call("call_tool", tool, arguments)
 	if answered.has("error") or answered.get("success", true) == false:
 		# Once the request went out, no failure shows that nothing was changed:
 		# not a timeout or lost connection, not a reply that failed validation,
@@ -1045,10 +1057,10 @@ func _on_plugin_gone(id: String) -> void:
 # Sets up the plugin's current process once: schema, master, personal.dct
 # and the session, in that order, before any other project can be opened.
 func _prepare() -> void:
-	var connection = _plugin_manager.get_connection(PLUGIN_ID)
+	var connection: Object = _plugin_manager.get_connection(PLUGIN_ID)
 	if connection == null:
 		return
-	var generation: int = connection.process_generation()
+	var generation: int = connection.call("process_generation")
 	if connection == _connection and generation == _generation:
 		return  # already set up, or being set up, for this process
 	_vault_session.lost(self)
@@ -1146,7 +1158,8 @@ func _prepare() -> void:
 
 # Public-only attachment: reuse the existing master file; never bootstrap an
 # empty replacement or restore/save a hosted session in someone else's app.
-func _prepare_attached(connection, generation: int) -> void:
+func _prepare_attached(connection: Object, generation: int) -> void:
+	var manager: Object = _plugin_manager
 	_session = PackedStringArray()
 	_session_error = ""
 	_migrating = false
@@ -1163,7 +1176,7 @@ func _prepare_attached(connection, generation: int) -> void:
 	if not listed.is_empty() or master_path.is_empty():
 		var why := "attached Docket has no Minerva master"
 		if not listed.is_empty(): why += ": " + listed
-		_plugin_manager.set_attached_host_status(why, ATTACHED_MASTER_CHOICES)
+		manager.call("set_attached_host_status", why, ATTACHED_MASTER_CHOICES)
 		_fail(why)
 		return
 	# Protected declarations cannot be defined/activated through the public
@@ -1176,13 +1189,13 @@ func _prepare_attached(connection, generation: int) -> void:
 	_session.erase(master_path)
 	_session.erase(personal_path)
 	_reconciled_paths = _open_paths()
-	_plugin_manager.set_attached_host_status("Attached, not managed; vault in docket.app. Plugin pickup, policy observations and session handover writes are unavailable.")
+	manager.call("set_attached_host_status", "Attached, not managed; vault in docket.app. Plugin pickup, policy observations and session handover writes are unavailable.")
 	print("[DocketHost] ", notices[0])
 	_publish()
 
 
 func _attached_project_path(wanted: String) -> String:
-	for project in projects:
+	for project: Dictionary in projects:
 		var path := str(project.get("path", ""))
 		var same := path.simplify_path() == wanted.simplify_path()
 		if OS.get_name() == "Windows":
@@ -1193,7 +1206,7 @@ func _attached_project_path(wanted: String) -> String:
 
 # Opens the existing project at `path` (never creating it): its descriptor,
 # or {} with the reason in _open_errors.
-func _open(connection, generation: int, path: String) -> Dictionary:
+func _open(connection: Object, generation: int, path: String) -> Dictionary:
 	var opened := await _call(connection, "docket_project_add", {"path": path, "create": false})
 	if _stale(connection, generation):
 		return {}
@@ -1205,7 +1218,7 @@ func _open(connection, generation: int, path: String) -> Dictionary:
 
 
 # Reads the open projects again into `projects`: "" or why it could not.
-func _refresh(connection, generation: int) -> String:
+func _refresh(connection: Object, generation: int) -> String:
 	var listed := await _call(connection, "docket_project_list", {})
 	if _stale(connection, generation):
 		return "the Docket plugin's process changed"
@@ -1266,7 +1279,7 @@ func _approved(tool: String, arguments: Dictionary) -> String:
 	var item_id := str(arguments.get("id", ""))
 	if item_id.is_empty():
 		return "the call names no item, so it cannot be checked for a policy"
-	var connection = _connection
+	var connection: Object = _connection
 	var generation := _generation
 	var shown := arguments.duplicate(true)
 	var get_args := {"id": item_id, "include": []}
@@ -1334,7 +1347,7 @@ func _reconcile() -> void:
 		_reconcile_again = false
 		while _changing:
 			await get_tree().process_frame
-		var connection = _connection
+		var connection: Object = _connection
 		var generation := _generation
 		var listed := await _refresh(connection, generation)
 		if _stale(connection, generation):
@@ -1406,9 +1419,9 @@ func _descriptor_of(path: String) -> Dictionary:
 	return {}
 
 
-func _stale(connection, generation: int) -> bool:
+func _stale(connection: Object, generation: int) -> bool:
 	return connection == null or connection != _connection or generation != _generation \
-		or _plugin_manager.get_connection(PLUGIN_ID) != connection or connection.process_generation() != generation
+		or _plugin_manager.get_connection(PLUGIN_ID) != connection or connection.call("process_generation") != generation
 
 
 # What went wrong with a private-channel answer, or "": a refusal, or a

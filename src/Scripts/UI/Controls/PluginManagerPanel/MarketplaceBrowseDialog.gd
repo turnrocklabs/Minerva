@@ -12,6 +12,7 @@ extends Window
 
 const MARKETPLACE_CLIENT_GD := "res://Scripts/Services/Plugins/MarketplaceClient.gd"
 const JOB_ROW_TSCN := preload("res://Scenes/MarketplaceJobRow.tscn")
+const InstallQueue := preload("res://Scripts/Services/Plugins/PluginInstallQueue.gd")
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 const JobRow := preload("res://Scripts/UI/Controls/PluginManagerPanel/MarketplaceJobRow.gd")
 const SUCCESS_DWELL_SECONDS := 2.0
@@ -46,7 +47,7 @@ func _ready() -> void:
 	add_child(_client)
 	var queue = _queue()
 	if queue != null:
-		for job in queue.jobs():
+		for job: Job in queue.jobs():
 			_add_row(job)
 		queue.job_changed.connect(_on_job_changed)
 	await _refresh()
@@ -131,7 +132,7 @@ func _on_install_pressed() -> void:
 	if queue == null:
 		_status.text = "Plugin manager unavailable"
 		return
-	for entry in _installable_selection():
+	for entry: Dictionary in _installable_selection():
 		queue.request(entry)
 	_on_selection_changed(-1)
 
@@ -143,7 +144,7 @@ func _on_job_changed(job: Job) -> void:
 		job.remove_meta(DISMISSED_META)
 	_add_row(job)
 	var kept: Array = _queue().jobs()
-	for shown in _rows.keys():
+	for shown: Job in _rows.keys():
 		if not shown in kept:
 			_remove_row(shown)
 		elif shown != job:
@@ -198,7 +199,7 @@ func _installed_version(plugin_id: String) -> String:
 	return str(def.version) if def != null else ""
 
 
-func _queue():
+func _queue() -> InstallQueue:
 	return plugin_manager.install_queue if plugin_manager != null else null
 
 

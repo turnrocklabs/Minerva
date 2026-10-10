@@ -10,17 +10,19 @@ extends RefCounted
 ## never overwritten. Nothing is awaited by startup, and a registry or release
 ## listing that cannot be read is logged and retried at the next start.
 ## The same per-plugin path handles manual clicks, which bypass only opt-in.
-## `manager` stays untyped to avoid compiling its autoload dependencies into
+## `manager` uses Node with dynamic calls to avoid compiling its autoload dependencies into
 ## --script suites that load RequiredPlugins before autoload readiness.
 
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 
 ## Queue an update for every opted-in plugin whose registry entry is newer
 ## than the installed version. Returns the jobs queued, keyed by plugin id.
-static func run(manager, registry_url: String = "") -> Dictionary:
-	var candidates: Array = manager.get_db().get_all().filter(func(def: PluginDefinition) -> bool:
+static func run(manager: Node, registry_url: String = "") -> Dictionary:
+	var db: Object = manager.call("get_db")
+	var definitions: Array = db.call("get_all")
+	var candidates: Array = definitions.filter(func(def: PluginDefinition) -> bool:
 		return not _attached(manager, def.id) and wants_update(def, ""))
-	if candidates.is_empty() or manager.install_queue == null:
+	if candidates.is_empty() or manager.get("install_queue") == null:
 		return {}
 	var ids: Array[String] = []
 	for candidate: PluginDefinition in candidates:
@@ -28,15 +30,16 @@ static func run(manager, registry_url: String = "") -> Dictionary:
 	var entries := await fetch_entries(manager, ids, registry_url)
 	var queued := {}
 	for id: String in ids:
-		var job := queue_update(manager, id, entries.get(id, {}))
+		var entry: Dictionary = entries.get(id, {})
+		var job := queue_update(manager, id, entry)
 		if job != null:
 			queued[id] = job
 	return queued
 
 
 ## Refresh each plugin's own release lane; there is no cached listing here.
-static func fetch_entries(manager, ids: Array[String], registry_url: String = "") -> Dictionary:
-	if ids.is_empty() or manager.is_shutting_down():
+static func fetch_entries(manager: Node, ids: Array[String], registry_url: String = "") -> Dictionary:
+	if ids.is_empty() or manager.call("is_shutting_down"):
 		return {}
 	var entries := {}
 	if ids.any(func(id: String) -> bool: return not RequiredPlugins.has(id)):
@@ -44,15 +47,15 @@ static func fetch_entries(manager, ids: Array[String], registry_url: String = ""
 	# Required plugins are published as their own releases, not in the registry.
 	if ids.any(func(id: String) -> bool: return RequiredPlugins.has(id)):
 		entries.merge(await RequiredPlugins.fetch_entries(manager), true)
-	return {} if manager.is_shutting_down() else entries
+	return {} if manager.call("is_shutting_down") else entries
 
 
-static func _fetch_registry_entries(manager, registry_url: String) -> Dictionary:
-	var client: Node = MarketplaceClient.new()
+static func _fetch_registry_entries(manager: Node, registry_url: String) -> Dictionary:
+	var client: MarketplaceClient = MarketplaceClient.new()
 	manager.add_child(client)
 	var fetched: Dictionary = await client.fetch_registry(registry_url)
 	client.queue_free()
-	if manager.is_shutting_down():
+	if manager.call("is_shutting_down"):
 		return {}
 	var entries := {}
 	if fetched.get("ok", false):
@@ -66,30 +69,35 @@ static func _fetch_registry_entries(manager, registry_url: String) -> Dictionary
 
 
 ## A manual action checks now, then uses the same conditional update job.
-static func update_one(manager, id: String, registry_url: String = "") -> Job:
+static func update_one(manager: Node, id: String, registry_url: String = "") -> Job:
 	if _attached(manager, id):
 		return null
 	var entries := await fetch_entries(manager, [id], registry_url)
-	return queue_update(manager, id, entries.get(id, {}), true)
+	var entry: Dictionary = entries.get(id, {})
+	return queue_update(manager, id, entry, true)
 
 
 ## Rejudge after listing I/O; the install repeats this predicate under lock.
-static func queue_update(manager, id: String, entry: Dictionary, manual: bool = false) -> Job:
-	if _attached(manager, id) or manager.is_shutting_down() or manager.install_queue == null or entry.get("id", "") != id:
+static func queue_update(manager: Node, id: String, entry: Dictionary, manual: bool = false) -> Job:
+	if _attached(manager, id) or manager.call("is_shutting_down") or manager.get("install_queue") == null or entry.get("id", "") != id:
 		return null
-	var def: PluginDefinition = manager.get_db().get_by_id(id)
-	if not wants_update(def, str(entry.get("version", "")), manual) or manager.install_queue.pending_for(id) != null:
+	var db: Object = manager.call("get_db")
+	var def: PluginDefinition = db.call("get_by_id", id)
+	var queue: Node = manager.get("install_queue")
+	if not wants_update(def, str(entry.get("version", "")), manual) or queue.call("pending_for", id) != null:
 		return null
-	var job: Job = manager.install_queue.request(entry, false, true, false, manual)
+	var job: Job = queue.call("request", entry, false, true, false, manual)
 	print("[PluginAutoUpdater] Updating '%s' %s -> %s" % [id, def.version, entry.version])
 	job.finished.connect(func() -> void:
 		print("[PluginAutoUpdater] '%s' update to %s: %s %s" % [id, entry.version, job.outcome, job.message]), CONNECT_ONE_SHOT)
 	return job
 
 
-static func _attached(manager, id: String) -> bool:
-	return (manager.has_method("is_attached") and manager.is_attached(id)) \
-		or (manager.has_method("get_plugin_status") and manager.get_plugin_status(id).get("attach_refused", false))
+static func _attached(manager: Object, id: String) -> bool:
+	if manager.has_method("is_attached") and manager.call("is_attached", id):
+		return true
+	var status: Dictionary = manager.call("get_plugin_status", id) if manager.has_method("get_plugin_status") else {}
+	return status.get("attach_refused", false)
 
 
 ## Installed, marketplace-lane and older than `version` ("" skips version).

@@ -814,7 +814,7 @@ func _refresh_plugin_list() -> void:
 		_plugin_list.set_item_disabled(idx, true)
 		return
 
-	for status in plugins:
+	for status: Dictionary in plugins:
 		var display_name: String = "%s  v%s" % [status.get("name", status.get("id", "?")), status.get("version", "")]
 		if status.get("attach_refused", false):
 			display_name += "  — registered, refused: " + str(status.get("notice", ""))
@@ -947,14 +947,15 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_remove_button.visible = not is_required
 
 	# Show "Open Panel" button only if plugin declares UI panels and is running
-	var def = pm.get_db().get_by_id(plugin_id)
+	var def: PluginDefinition = pm.get_db().get_by_id(plugin_id)
 	# Startup updates come from the marketplace; a developer (manifest-lane)
 	# checkout is never overwritten, so the toggle is offered only there.
 	_auto_update_check.visible = def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE
 	var entry: Dictionary = _update_entries.get(plugin_id, {})
+	var downloads: Dictionary = entry.get("downloads", {})
 	_update_button.visible = external or not entry.is_empty() and AutoUpdater.wants_update(def, str(entry.get("version", "")), true)
-	_update_button.disabled = external or _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.pending_for(plugin_id) != null \
-		or MarketplaceClient.download_target(entry.get("downloads", {})).is_empty()
+	_update_button.disabled = external or _update_checking or _update_in_flight.has(plugin_id) or pm.install_queue == null or pm.install_queue.call("pending_for", plugin_id) != null \
+		or MarketplaceClient.download_target(downloads).is_empty()
 	_update_button.tooltip_text = "Registered Docket is not managed by Minerva" if external else "Update immediately to v%s" % entry.get("version", "")
 	_auto_update_check.disabled = external
 	_auto_reload_check.disabled = external
@@ -1257,10 +1258,13 @@ func check_for_updates() -> void:
 		return
 	_update_checking = true
 	var ids: Array[String] = []
-	for def: PluginDefinition in _pm().get_db().get_all():
+	var manager: PluginManager = _pm()
+	var db: Object = manager.get_db()
+	var definitions: Array = db.call("get_all")
+	for def: PluginDefinition in definitions:
 		if AutoUpdater.wants_update(def, "", true):
 			ids.append(def.id)
-	var entries: Dictionary = await AutoUpdater.fetch_entries(_pm(), ids, update_registry_url)
+	var entries: Dictionary = await AutoUpdater.fetch_entries(manager, ids, update_registry_url)
 	if not is_instance_valid(self):
 		return
 	_update_entries = entries
@@ -1271,12 +1275,13 @@ func check_for_updates() -> void:
 
 func _on_update_pressed() -> void:
 	var id := _selected_plugin_id
+	var manager: Node = _pm()
 	if id.is_empty() or _pm() == null or _update_in_flight.has(id):
 		return
 	_update_in_flight[id] = true
 	_update_button.disabled = true
 	_show_status("Checking the newest release for %s..." % id)
-	var job: InstallJob = await AutoUpdater.update_one(_pm(), id, update_registry_url)
+	var job: InstallJob = await AutoUpdater.update_one(manager, id, update_registry_url)
 	if not is_instance_valid(self):
 		return
 	_update_in_flight.erase(id)
@@ -1564,7 +1569,7 @@ func _on_remove_pressed() -> void:
 	_pending_remove_id = _selected_plugin_id
 	var pm_name := _selected_plugin_id
 	if _pm():
-		var status = _pm().get_plugin_status(_selected_plugin_id)
+		var status: Dictionary = _pm().get_plugin_status(_selected_plugin_id)
 		pm_name = status.get("name", _selected_plugin_id)
 
 	_remove_confirm.dialog_text = "Remove plugin '%s'?\n\nThis will stop the plugin and remove it from Minerva." % pm_name
