@@ -53,6 +53,7 @@ source "$REPO_ROOT/scripts/lib/test-profile.sh"
 MINERVA_FUNCTIONAL_PROFILE_ROOT="$(mktemp -d)" || exit 1
 trap 'rm -rf "$MINERVA_FUNCTIONAL_PROFILE_ROOT"' EXIT
 seed_test_profile "$MINERVA_FUNCTIONAL_PROFILE_ROOT" || exit 1
+export MINERVA_TEST_PROFILE_ROOT="$MINERVA_FUNCTIONAL_PROFILE_ROOT"
 
 TURNROCK_TESTS=(
 	test/test_core_model_catalog.gd
@@ -120,6 +121,8 @@ HERMETIC_TESTS=(
 	test/test_terminal_notify.gd
 	test/test_trigger_harness_delivery.gd
 	test/test_docket_wakeups.gd
+	test/test_docket_attach.gd
+	test/test_docket_attach_lifecycle.gd
 	test/test_session_handover.gd
 	test/test_terminal_session.gd
 	test/test_agent_container_foreground.gd

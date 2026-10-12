@@ -136,6 +136,11 @@ func policies() -> Array:
 	return found
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	match tool:
+		"docket_schema_declare":
+			return {"version": arguments.version, "projects": []}
+		"docket_project_bootstrap":
+			master.path = str(arguments.path)
+			return {"status": "installed", "path": master.path, "project": master, "conflicts": [], "capability_gaps": []}
 		"docket_project_list":
 			return {"success": true, "projects": [master]}
 		"docket_query":
@@ -182,17 +187,6 @@ func _request_policy_approval(_tool: String, _arguments: Dictionary, _title: Str
 	return answer
 """
 
-## The plugin's private channel: the schema is accepted, the master installed.
-const AUTHORITY_SRC := """
-extends RefCounted
-var connection = null
-func host_request(name: String, params: Dictionary) -> Dictionary:
-	if name == "declare_schema":
-		return {"result": {"version": params.version}}
-	connection.master.path = str(params.path)
-	return {"result": {"status": "installed", "path": params.path, "project": connection.master,
-		"conflicts": [], "capability_gaps": []}}
-"""
 
 const PLUGIN_MANAGER_SRC := """
 extends Node
@@ -201,13 +195,10 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal backend_tool_called(id: String, tool: String)
 var connection = null
-var authority = null
 var guard := Callable()
 var running := true
 func get_connection(_id: String):
 	return connection
-func get_panel_authority(_id: String):
-	return authority
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": running}
 func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
@@ -322,15 +313,12 @@ static func _ran(result: Dictionary) -> bool:
 
 func _test_policy_owner() -> void:
 	var connection = _make(CONNECTION_SRC)
-	var authority = _make(AUTHORITY_SRC)
 	var manager = _make(PLUGIN_MANAGER_SRC)
-	if connection == null or authority == null or manager == null:
+	if connection == null or manager == null:
 		return
 	connection.tree = get_tree()
 	connection.items = {"POL-1": _policy("POL-1", "active")}
-	authority.connection = connection
 	manager.connection = connection
-	manager.authority = authority
 	root.add_child(manager)
 	var host = _make(HOST_SRC)
 	if host == null:

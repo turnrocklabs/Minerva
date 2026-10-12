@@ -32,9 +32,7 @@ signal vault_changed
 signal state_changed(state: String)
 
 const PLUGIN_ID := "docket"
-const ATTACHED_VAULT_NOTE := "Attached Docket: manage the vault in docket.app."
-const ATTACHED_WRITE_NOTE := "Attached Docket: plugin pickup, policy observations and session handover writes are unavailable."
-const ATTACHED_MASTER_CHOICES := ["Open master in docket.app", "Quit docket.app and let Minerva start its own"]
+const ATTACHED_MASTER_CHOICES := ["Open master in docket.app", "Cancel"]
 const MASTER_RES := "res://Data/master.dct"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"
@@ -134,7 +132,15 @@ func is_attached() -> bool:
 
 
 func host_write_problem() -> String:
-	return ATTACHED_WRITE_NOTE if is_attached() else ""
+	return capability_problem()
+
+
+## The manager names unavailable optional verbs from its live catalog.
+func capability_problem() -> String:
+	var manager: Object = _plugin_manager
+	if manager == null: return ""
+	var status: Dictionary = manager.call("get_plugin_status", PLUGIN_ID)
+	return str(status.get("capability_reason", ""))
 
 
 ## The ordinary projects of the session in order, as open descriptors (the
@@ -153,24 +159,24 @@ func master_project() -> Dictionary:
 	return _descriptor_of(master_path) if not master_path.is_empty() else {}
 
 
-## Hosted vault state and private unlock; no credential enters session persistence.
+## Public vault control; no credential enters session persistence.
 func vault_status() -> String:
-	if is_attached(): return "unavailable"
+	if not capability_problem().is_empty(): return "unavailable"
 	return _vault_session.status(self)
 
 
 func unlock_vault(password: String) -> String:
-	if is_attached(): return ATTACHED_VAULT_NOTE
+	if not capability_problem().is_empty(): return capability_problem()
 	return await _vault_session.unlock(self, password)
 
 
 func create_vault(password: String, hint: String = "") -> String:
-	if is_attached(): return ATTACHED_VAULT_NOTE
+	if not capability_problem().is_empty(): return capability_problem()
 	return await _vault_session.create(self, password, hint)
 
 
 func vault_details() -> Dictionary:
-	if is_attached(): return {"mode": "unavailable", "message": ATTACHED_VAULT_NOTE}
+	if not capability_problem().is_empty(): return {"mode": "unavailable", "message": capability_problem()}
 	return await _vault_session.details(self)
 
 
@@ -180,7 +186,7 @@ func _exit_tree() -> void:
 
 # Settled unlock identity ignores ordinary project/session activity.
 func _vault_identity() -> Dictionary:
-	if not state in ["ready", "degraded"] or _stale(_connection, _generation):
+	if not capability_problem().is_empty() or not state in ["ready", "degraded"] or _stale(_connection, _generation):
 		return {}
 	var master := master_project()
 	if master.is_empty():
@@ -375,7 +381,7 @@ static func _names_item(ref: String, id: String) -> bool:
 ## Adds `text` as a comment by the policy engine on policy rule `rule_id` in
 ## the master: "" or why it could not.
 func write_policy_observation(rule_id: String, text: String) -> String:
-	if is_attached(): return ATTACHED_WRITE_NOTE
+	if not capability_problem().is_empty(): return capability_problem()
 	while state == "starting":
 		await state_changed
 	if not state in ["ready", "degraded"]:
@@ -885,7 +891,7 @@ func forget_project(path: String) -> String:
 # `path` once it is open ("" leaves the entry out), and saves the session
 # before saying so; one change or reconcile at a time. "" or why not.
 func _change_session(path: String, replacement: String) -> String:
-	if is_attached(): return "Attached Docket: manage projects in docket.app."
+	if not capability_problem().is_empty(): return capability_problem()
 	while _changing or _reconciling:
 		await get_tree().process_frame
 	_changing = true
@@ -1055,7 +1061,7 @@ func _on_plugin_gone(id: String) -> void:
 
 
 # Sets up the plugin's current process once: schema, master, personal.dct
-# and the session, in that order, before any other project can be opened.
+# and Minerva's session, in that order, through the current public endpoint.
 func _prepare() -> void:
 	var connection: Object = _plugin_manager.get_connection(PLUGIN_ID)
 	if connection == null:
@@ -1075,12 +1081,10 @@ func _prepare() -> void:
 	personal_path = ""
 	projects = []
 	_set_state("starting")
-	if is_attached():
-		await _prepare_attached(connection, generation)
-		return
-	var authority = _plugin_manager.get_panel_authority(PLUGIN_ID)
-	if authority == null:
-		_fail("the Docket plugin has no private channel for its host")
+	var unavailable := capability_problem()
+	if not unavailable.is_empty():
+		_setup_problems.append(unavailable)
+		await _prepare_without_capabilities(connection, generation)
 		return
 
 	var schema = JSON.parse_string(FileAccess.get_file_as_string(SCHEMA_RES))
@@ -1088,27 +1092,30 @@ func _prepare() -> void:
 		_fail("Minerva's Docket schema (%s) cannot be read" % SCHEMA_RES)
 		return
 	var version := "minerva-" + FileAccess.get_sha256(SCHEMA_RES)
-	var declared: Dictionary = await authority.host_request("declare_schema", {"schema": schema, "version": version})
+	var declared: Dictionary = await _call(connection, "docket_schema_declare", {"schema": schema, "version": version})
 	if _stale(connection, generation):
 		return
-	var declared_error := _channel_error(declared)
+	var declared_error: String = str(declared.get("error", ""))
 	if not declared_error.is_empty():
 		_fail("Docket did not accept Minerva's schema: %s" % declared_error)
 		return
 
+	for project: Dictionary in declared.value.get("projects", []):
+		for conflict: Dictionary in project.get("conflicts", []):
+			notices.append("%s: type %s kept unchanged (%s)" % [project.get("name", ""), conflict.get("slug", ""), conflict.get("reason", "")])
 	var shipped := FileAccess.get_file_as_bytes(MASTER_RES)
 	if shipped.is_empty():
 		_fail("Minerva's shipped master (%s) cannot be read" % MASTER_RES)
 		return
-	var bootstrapped: Dictionary = await authority.host_request("bootstrap_project",
+	var bootstrapped: Dictionary = await _call(connection, "docket_project_bootstrap",
 		{"path": ProjectSettings.globalize_path(MASTER_USER), "content": Marshalls.raw_to_base64(shipped)})
 	if _stale(connection, generation):
 		return
-	var bootstrap_error := _channel_error(bootstrapped)
+	var bootstrap_error: String = str(bootstrapped.get("error", ""))
 	if not bootstrap_error.is_empty():
 		_fail("the master could not be set up: %s" % bootstrap_error)
 		return
-	master_report = bootstrapped.result
+	master_report = bootstrapped.value
 	master_path = str(master_report.get("project", {}).get("path", ""))
 	for conflict in master_report.get("conflicts", []):
 		notices.append("master item %s kept as changed here, not updated as shipped (%s)"
@@ -1156,9 +1163,9 @@ func _prepare() -> void:
 	_publish()
 
 
-# Public-only attachment: reuse the existing master file; never bootstrap an
-# empty replacement or restore/save a hosted session in someone else's app.
-func _prepare_attached(connection: Object, generation: int) -> void:
+# Missing capability verbs allow core reads of an existing master. No
+# declaration, bootstrap or vault operation is attempted against that catalog.
+func _prepare_without_capabilities(connection: Object, generation: int) -> void:
 	var manager: Object = _plugin_manager
 	_session = PackedStringArray()
 	_session_error = ""
@@ -1179,18 +1186,13 @@ func _prepare_attached(connection: Object, generation: int) -> void:
 		manager.call("set_attached_host_status", why, ATTACHED_MASTER_CHOICES)
 		_fail(why)
 		return
-	# Protected declarations cannot be defined/activated through the public
-	# custom-type API. Prompt/policy/skill agree; hint and kb differ. Report
-	# this omission without blocking public master reads.
-	master_report = {"attached": true, "schema_declarations": "skipped", "capability_gaps": []}
-	notices.append("Attached Docket: protected Minerva schema declarations and master bootstrap are skipped; hint and kb differ from hosted definitions.")
+	master_report = {"attached": true, "schema_declarations": "skipped", "capability_gaps": [capability_problem()]}
 	personal_path = _attached_project_path(ProjectSettings.globalize_path(PERSONAL_USER))
 	_session = _open_paths()
 	_session.erase(master_path)
 	_session.erase(personal_path)
 	_reconciled_paths = _open_paths()
-	manager.call("set_attached_host_status", "Attached, not managed; vault in docket.app. Plugin pickup, policy observations and session handover writes are unavailable.")
-	print("[DocketHost] ", notices[0])
+	manager.call("set_attached_host_status", "")
 	_publish()
 
 
@@ -1225,7 +1227,7 @@ func _refresh(connection: Object, generation: int) -> String:
 	if listed.has("error") or not listed.value.get("projects") is Array:
 		return "the open projects could not be listed: %s" % listed.get("error", "no list")
 	projects = listed.value.projects
-	if not is_attached(): _vault_session.observe(self)
+	_vault_session.observe(self)
 	return ""
 
 
@@ -1387,13 +1389,13 @@ func _publish(more: Array = []) -> void:
 		now.append(saved)
 	problems = now
 	_set_state("degraded" if not problems.is_empty() else "ready")
-	if not is_attached(): _vault_session.resume.call_deferred(self)
+	_vault_session.resume.call_deferred(self)
 
 
 # Writes the session when it differs from the one last saved: "" or why it
 # could not (it is tried again at the next change).
 func _save_if_changed() -> String:
-	if is_attached(): return ""
+	if not capability_problem().is_empty(): return ""
 	if not _session_error.is_empty():
 		return ""  # an unreadable saved session is kept as it is
 	if _session == _saved_session and not _migrating:
@@ -1422,19 +1424,6 @@ func _descriptor_of(path: String) -> Dictionary:
 func _stale(connection: Object, generation: int) -> bool:
 	return connection == null or connection != _connection or generation != _generation \
 		or _plugin_manager.get_connection(PLUGIN_ID) != connection or connection.call("process_generation") != generation
-
-
-# What went wrong with a private-channel answer, or "": a refusal, or a
-# result that is itself an {error, kind}.
-static func _channel_error(answered: Dictionary) -> String:
-	if answered.has("error_code"):
-		return str(answered.get("error_message", answered.error_code))
-	var result = answered.get("result")
-	if not result is Dictionary:
-		return "no result"
-	if result.has("error"):
-		return "%s (%s)" % [result.error, result.get("kind", "")]
-	return ""
 
 
 func _fail(why: String) -> void:

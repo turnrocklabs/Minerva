@@ -1,10 +1,9 @@
 extends SceneTree
-## A real STDIO child distinguishes user quit from crash, startup loss and I/O failure.
+## A generic real STDIO child reports unexpected exit, startup loss and I/O failure.
 
 const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const S_STARTING := 1
 const S_RUNNING := 2
-const S_STOPPED := 3
 const S_ERROR := 4
 
 var failed := 0
@@ -14,12 +13,11 @@ func _initialize() -> void:
 
 func _run() -> void:
 	for scenario: Array in [
-		["docket", S_RUNNING, "exit", 0, S_STOPPED],
-		["docket", S_RUNNING, "stdout_eof_exit", 0, S_STOPPED],
-		["docket", S_RUNNING, "exit", 7, S_ERROR],
+		["other", S_RUNNING, "exit", 7, S_ERROR],
 		["other", S_RUNNING, "exit", 0, S_ERROR],
-		["docket", S_STARTING, "exit", 0, S_ERROR],
-		["docket", S_RUNNING, "overflow_exit", 0, S_ERROR],
+		["other", S_RUNNING, "stdout_eof_exit", 0, S_ERROR],
+		["other", S_STARTING, "exit", 0, S_ERROR],
+		["other", S_RUNNING, "overflow_exit", 0, S_ERROR],
 	]:
 		await _scenario(scenario)
 	print("NATURAL_EXIT_RESULTS: %d failed" % failed)
@@ -38,7 +36,7 @@ func _scenario(scenario: Array) -> void:
 	var connection = load("res://Scripts/Services/MCP/MCPServerConnection.gd").new(id)
 	var fixture := ProjectSettings.globalize_path("res://test/fixtures/stdio_timing_probe/stdio_timing_probe.py")
 	var python := "python" if OS.get_name() == "Windows" else "python3"
-	# Match Docket's protocol so cold discovery cannot change whether quit executes.
+	# Pin the fixture protocol so cold discovery cannot change whether exit executes.
 	connection.configure_stdio(python, PackedStringArray([fixture, "--profile", "legacy"]))
 	_check("child connected", await connection.connect_to_server() == OK)
 	_check("initialized legacy profile", connection.protocol_profile.era == Profile.Era.INITIALIZED_LEGACY)
@@ -60,29 +58,13 @@ func _scenario(scenario: Array) -> void:
 	var deadline := Time.get_ticks_msec() + 5000
 	while definition.state == scenario[1] and Time.get_ticks_msec() < deadline:
 		await process_frame
-	var clean: bool = scenario[4] == S_STOPPED
 	_check("%s %s/%s -> %s" % [id, scenario[2], scenario[3], scenario[4]],
-		definition.state == scenario[4] and stops.size() == int(clean) and crashes.size() == int(not clean))
+		definition.state == scenario[4] and stops.is_empty() and crashes == [id])
 	if scenario[2] != "overflow_exit":
 		_check("natural status retained", connection.last_stdio_exit_code == scenario[3])
 	else:
 		_check("overflow is not a clean exit", connection.last_stdio_exit_code == -1 and reply.has("error"))
 	_check("runtime released", manager.get_connection(id) == null)
-	if clean:
-		var host = load("res://Scripts/Services/DocketHost/DocketHost.gd").new()
-		host.start(manager)
-		var singleton = root.get_node("SingletonObject")
-		var previous = singleton.docket_host
-		singleton.docket_host = host
-		var policy = load("res://Scripts/Services/MCP/PolicyEngine.gd").new()
-		var refused: Dictionary = await policy.admit("minerva_docket_query", {})
-		_check("machine quit refusal is clear and non-retryable",
-			refused.get("error_code") == "docket_stopped_by_user" and refused.get("retryable") == false
-			and "Tools > Docket" in refused.get("error", "") and not host.pickup_pending())
-		var read: Dictionary = await host.open_projects()
-		_check("direct host read preserves quit refusal", read.get("code") == "docket_stopped_by_user")
-		singleton.docket_host = previous
-		host.free()
 	await create_timer(0.1).timeout
 	_check("no automatic restart", manager.get_connection(id) == null and definition.state == scenario[4])
 	connection.disconnect_from_server()
