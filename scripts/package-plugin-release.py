@@ -243,8 +243,11 @@ def stop_docket_fixture(pid: int) -> None:
             return False
         # A detached Linux child may remain a zombie under a container init.
         stat = Path(f"/proc/{pid}/stat")
-        if sys.platform.startswith("linux") and stat.exists():
-            return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+        if sys.platform.startswith("linux"):
+            try:
+                return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+            except FileNotFoundError:
+                return False
         return True
 
     for sig in (signal.SIGTERM, signal.SIGKILL):
@@ -272,8 +275,10 @@ def probe_docket(root: Path, manifest: dict) -> None:
     identity = receipt["tag"] + "+" + receipt["source"]
     mac_profile_link = None
     owned_pid = None
-    with tempfile.TemporaryDirectory(prefix="docket-package-probe-") as temporary:
-        scratch = Path(temporary).resolve()
+    with contextlib.ExitStack() as scratch_cleanup:
+        scratch = Path(tempfile.mkdtemp(prefix="docket-package-probe-")).resolve()
+        cleanup_failed = False
+        scratch_cleanup.callback(lambda: None if cleanup_failed else shutil.rmtree(scratch))
         env = dict(os.environ)
         env["MINERVA_PLUGIN_DATA_DIR"] = str(scratch / "plugin-data")
         for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "APPDATA", "LOCALAPPDATA"):
@@ -347,8 +352,12 @@ def probe_docket(root: Path, manifest: dict) -> None:
                         owned_pid = pid
                 if owned_pid is not None:
                     stop_docket_fixture(owned_pid)
+            except BaseException:
+                cleanup_failed = True
+                print(f"Docket fixture cleanup failed; preserve {scratch} and discard this runner", file=sys.stderr)
+                raise
             finally:
-                if mac_profile_link is not None:
+                if mac_profile_link is not None and not cleanup_failed:
                     if mac_profile_link.is_symlink() and mac_profile_link.resolve() == profile:
                         mac_profile_link.unlink()
                     verify_docket_bundle(root)
