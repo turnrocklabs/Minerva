@@ -165,3 +165,9 @@ The push export consumes successful CEF producer run `38196002368` at
 reuse. Artifacts expire on 2027-01-10: changed inputs or expiry require a new
 `godot-cef.yml` dispatch and an updated pinned producer in the CI recipe.
 No CEF binary or engine is committed to Git.
+
+Tag-only release wrappers are exempt from the branch deadline and call the
+same reusable build/package lane. Existing tag publication remains available;
+branch pushes never execute those functional or publishing jobs. The lint also
+checks local composite actions and rejects dependency chains whose declared
+branch-job deadlines sum to more than ten minutes.

@@ -5,7 +5,7 @@ on:
     inputs:
       scan_base:
         description: Base commit for the manual outgoing scan
-        default: '6da588fd617c8e52a64a8fc444fa295c327426bf'
+        default: 'HEAD^'
         type: string
       platform:
         description: 'Platform to build for'
@@ -33,12 +33,13 @@ on:
 # Single source of truth for the Godot version — every job that installs Godot
 # reads these. Keep in sync with the project's config/features in project.godot.
 env:
+  CEF_PRODUCER_RUN: 38196002368
   GODOT_VERSION: "4.6.2"
   GODOT_RELEASE: "stable"
 
 jobs:
   secret-history:
-    timeout-minutes: 10
+    timeout-minutes: 2
     name: Secret history
     runs-on: ubuntu-latest
     steps:
@@ -62,7 +63,7 @@ jobs:
       skip_macos: true
 
   build-mcp-schema-helpers:
-    timeout-minutes: 10
+    timeout-minutes: 2
     name: MCP schema helper (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -130,7 +131,7 @@ jobs:
           if-no-files-found: error
 
   check-gdextension:
-    timeout-minutes: 10
+    timeout-minutes: 1
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check.outputs.changed }}
@@ -152,8 +153,7 @@ jobs:
           fi
 
   build-windows:
-    timeout-minutes: 10
-    needs: check-gdextension
+    timeout-minutes: 3
     if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: windows-latest
     steps:
@@ -232,8 +232,7 @@ jobs:
           src/bin/minerva-vt.dll
 
   build-linux:
-    timeout-minutes: 10
-    needs: check-gdextension
+    timeout-minutes: 3
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
     runs-on: ubuntu-latest
     steps:
@@ -576,8 +575,7 @@ jobs:
           if-no-files-found: warn
 
   build-macos:
-    timeout-minutes: 10
-    needs: check-gdextension
+    timeout-minutes: 3
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     # Pinned to macos-15: macos-latest moved to macos-26 (Xcode 26 SDK), which
     # Zig 0.15.2 cannot link against — the ghostty-vt shim fails with undefined
@@ -1275,7 +1273,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 10
+    timeout-minutes: 6
     needs: [check-gdextension, build-windows, build-linux, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
@@ -1344,14 +1342,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event_name == 'push' && 38196002368 || github.run_id }}
+          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-linux-x86_64
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
       - name: Download godot-cef Windows artifact
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event_name == 'push' && 38196002368 || github.run_id }}
+          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 
@@ -1657,7 +1655,7 @@ jobs:
       verify_debug: ${{ github.ref == 'refs/heads/development' }}
 
   create-release:
-    timeout-minutes: 10
+    timeout-minutes: 1
     needs: [secret-history, build-godot, export-macos, verify-packaged-native, functional-tests, tarball-smoke, platform-gate-windows]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on

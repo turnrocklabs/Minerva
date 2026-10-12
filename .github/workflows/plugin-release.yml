@@ -8,6 +8,12 @@ name: Plugin Release
 # packages it without publishing.
 
 on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        required: false
   workflow_dispatch:
     inputs:
       publish:
@@ -15,10 +21,6 @@ on:
         type: boolean
         default: false
   push:
-    tags:
-      - 'agent_relay-v*'
-      - 'voice-v*'
-      - 'docket-v*'
     branches:
       - development
       - 'release/docket-plugin-*'
@@ -38,7 +40,7 @@ jobs:
   agent-relay:
     timeout-minutes: 60
     name: Agent Relay (${{ matrix.target }})
-    if: github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag') && (github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'agent_relay-v'))
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +82,7 @@ jobs:
   voice:
     timeout-minutes: 60
     name: Voice Support (${{ matrix.target }})
-    if: github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag') && (github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'voice-v'))
     strategy:
       fail-fast: false
       matrix:
@@ -128,7 +130,7 @@ jobs:
   docket:
     timeout-minutes: 60
     name: Docket (${{ matrix.target }})
-    if: github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag') && (github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'docket-v'))
     strategy:
       fail-fast: false
       matrix:
@@ -172,7 +174,7 @@ jobs:
     name: Publish ${{ github.ref_name }}
     needs: [agent-relay, voice, docket]
     # A tag builds only its own plugin; the other job is skipped, not failed.
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    if: (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag') && always() && ((github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish)) && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     permissions:
       contents: write
