@@ -67,6 +67,16 @@ func _descriptor(answer: Dictionary) -> Dictionary:
 		"initialized":result.get("initialized", true), "hint":result.get("hint", "")}
 
 
+## The host is supplied as a project-context Node; public control consumes a
+## typed descriptor and calls its existing checked endpoint owner.
+func _control(host: Node, connection: Object, action: String, fields: Dictionary = {}) -> Dictionary:
+	var master: Dictionary = host.call("master_project")
+	var params: Dictionary = fields.duplicate()
+	params["action"] = action
+	params["project"] = str(master.get("name", ""))
+	return await host.call("_call", connection, "docket_vault_control", params)
+
+
 func details(host: Node) -> Dictionary:
 	observe(host)
 	var unavailable := {"mode":"unavailable", "message":message, "hint":"", "busy":_busy}
@@ -75,7 +85,7 @@ func details(host: Node) -> Dictionary:
 	var epoch := _epoch
 	var listed: String = await host._refresh(binding.process[0], binding.process[1])
 	if not _current(host, binding, epoch) or not listed.is_empty(): return unavailable
-	var answer: Dictionary = await host._call(binding.process[0], "docket_vault_control", {"action":"status", "project":host.master_project().get("name", "")})
+	var answer: Dictionary = await _control(host, binding.process[0], "status")
 	if not _current(host, binding, epoch): return unavailable
 	var descriptor := _descriptor(answer)
 	if descriptor.is_empty() or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""): return unavailable
@@ -131,7 +141,7 @@ func _operate(host: Node, password: String, creating: bool = false, hint: String
 	var listed: String = await host._refresh(connection, generation)
 	if not _current(host, binding, epoch) or not listed.is_empty():
 		return _finish(host, epoch, "Vault request expired; try again.", true)
-	var answer: Dictionary = await host._call(connection, "docket_vault_control", {"action":"status", "project":host.master_project().get("name", "")})
+	var answer: Dictionary = await _control(host, connection, "status")
 	if not _current(host, binding, epoch):
 		return _finish(host, epoch, "Vault request expired; try again.", true)
 	var descriptor := _descriptor(answer)
@@ -147,10 +157,10 @@ func _operate(host: Node, password: String, creating: bool = false, hint: String
 	if not _current(host, binding, epoch) or not listed.is_empty() \
 			or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""):
 		return _finish(host, epoch, "Vault request expired; try again.", true)
-	var params := {"action":"init" if creating else "unlock", "project":host.master_project().get("name", ""), "open_generation":descriptor.open_generation, "fingerprint":descriptor.fingerprint}
+	var params := { "open_generation":descriptor.open_generation, "fingerprint":descriptor.fingerprint}
 	params["password"] = password
 	if creating: params["hint"] = hint
-	answer = await host._call(connection, "docket_vault_control", params)
+	answer = await _control(host, connection, "init" if creating else "unlock", params)
 	params.clear()
 	if not _current(host, binding, epoch):
 		return _finish(host, epoch, "Vault creation outcome is uncertain; refresh and explicitly unlock." if creating else "Vault request expired; try again.", not creating)

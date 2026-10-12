@@ -138,7 +138,7 @@ func host_write_problem() -> String:
 ## The manager names unavailable optional verbs from its live catalog.
 func capability_problem() -> String:
 	var manager: Object = _plugin_manager
-	if manager == null: return "Docket is unavailable"
+	if manager == null: return ""
 	var status: Dictionary = manager.call("get_plugin_status", PLUGIN_ID)
 	return str(status.get("capability_reason", ""))
 
@@ -1061,7 +1061,7 @@ func _on_plugin_gone(id: String) -> void:
 
 
 # Sets up the plugin's current process once: schema, master, personal.dct
-# and the session, in that order, before any other project can be opened.
+# and Minerva's session, in that order, through the current public endpoint.
 func _prepare() -> void:
 	var connection: Object = _plugin_manager.get_connection(PLUGIN_ID)
 	if connection == null:

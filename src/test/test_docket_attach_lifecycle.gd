@@ -95,8 +95,8 @@ func _run() -> void:
 	manager.stop_plugin("docket")
 	await manager.start_plugin("docket")
 	check("capable attachment declares schema and bootstraps through public tools", host.state == "ready"
-		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_schema_declare")
-		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_project_bootstrap")
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_schema_declare")
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap")
 		and manager.get_panel_authority("docket") == null)
 	check("schema conflicts name the project and slug", host.notices.any(func(notice: String) -> bool: return "ordinary" in notice and "hint" in notice))
 	check("capable attachment permits public policy observations and pickup", await host.write_policy_observation("fixture", "fixture") == ""
