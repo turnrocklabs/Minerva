@@ -3,7 +3,7 @@
 set -euo pipefail
 producer="${CEF_PRODUCER_RUN:?CEF producer run is required}"
 source_sha=6da588fd617c8e52a64a8fc444fa295c327426bf
-git fetch --no-tags origin "$source_sha"
+git fetch --no-recurse-submodules --no-tags origin "$source_sha"
 for path in vendor/godot_cef patches/godot_cef scripts/build-godot-cef.sh src/addons/godot_cef; do
   expected="$(git rev-parse "$source_sha:$path")"
   actual="$(git rev-parse "HEAD:$path")"
