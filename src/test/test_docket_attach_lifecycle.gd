@@ -131,6 +131,7 @@ func _run() -> void:
 		and stops == ["docket"] and manager.stdio_starts == 0
 		and "Docket stopped" in manager.get_plugin_status("docket").get("notice", ""))
 	check("loss does not restart automatically", manager.get_connection("docket") == null)
+	await _check_stopped_refusal(host, "backend loss")
 	record.pid = 99
 	_write(discovery.profile_directory, record)
 	await manager.start_plugin("docket")
@@ -146,6 +147,9 @@ func _run() -> void:
 	manager.stop_plugin("docket")
 	check("Stop cancels an initializing HTTP connection", manager.disconnects == before_disconnect + 1)
 	await manager.start_plugin("docket")
+	manager.stop_plugin("docket", true)
+	await _check_stopped_refusal(host, "explicit Stop")
+	await manager.start_plugin("docket")
 	manager.shutdown_all()
 	check("shutdown disconnects and leaves external PID alone", manager.get_connection("docket") == null
 		and discovery.discover().get("attached", false) and manager.stdio_starts == 1)
@@ -160,3 +164,13 @@ func _write(directory: String, record: Dictionary) -> void:
 	var file := FileAccess.open(directory.path_join("instance.json"), FileAccess.WRITE)
 	file.store_string(JSON.stringify(record))
 	file.close()
+
+func _check_stopped_refusal(host: Node, label: String) -> void:
+	var policy = load("res://Scripts/Services/MCP/PolicyEngine.gd").new()
+	var refused: Dictionary = await policy.admit("minerva_docket_query", {})
+	check(label + " machine refusal is clear and non-retryable",
+		refused.get("error_code") == "docket_stopped_by_user" and refused.get("retryable") == false
+		and refused.get("error") == "Docket was closed; reopen it from Tools > Docket"
+		and not host.pickup_pending())
+	var read: Dictionary = await host.open_projects()
+	check(label + " direct read preserves stopped refusal", read.get("code") == "docket_stopped_by_user")
