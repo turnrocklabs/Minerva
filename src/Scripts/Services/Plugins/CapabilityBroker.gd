@@ -394,6 +394,9 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 			named_result = _handle_host_project_open(plugin_id, args)
 		"host.project.current":
 			named_result = _handle_host_project_current(plugin_id, args)
+		"host.chat.active", "host.chat.input":
+			named_result = chat_target.handle(plugin_id, capability, args) if chat_target != null \
+				else PluginErrors.backend_error(plugin_id, "the chat target is not wired")
 		_:
 			named_result = {
 				"success": false,
@@ -3137,6 +3140,9 @@ const _AUDIT_REDACT_FIELDS := [
 	# Credential / auth field names commonly carried by mcp.proxy: tools and
 	# secrets: capability args. Forward-looks at T5+ MCP exposure.
 	"password", "token", "secret", "api_key", "authorization",
+	# Words a plugin types into a chat or terminal on the user's behalf
+	# (host.chat.input, host.terminal.write).
+	"text",
 ]
 const _AUDIT_STRING_CAP := 256
 
@@ -3252,6 +3258,9 @@ func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
 ## Injectable registry reference for tests. When null, resolved at dispatch time
 ## from PluginManager.get_chat_provider_registry().
 var chat_provider_registry = null  # PluginChatProviderRegistry
+
+## host.chat.active / host.chat.input. Injected by SingletonObject.initialize_plugins.
+var chat_target: PluginHostChatTarget = null
 
 const _CHAT_PROVIDER_VALID_HISTORY_MODES := ["newest_only", "full"]
 

@@ -644,10 +644,12 @@ func initialize_plugins() -> void:
 
 	var RouterClass: GDScript = load("res://Scripts/Services/Plugins/PluginHostEventRouter.gd")
 	plugin_host_event_router = RouterClass.new(plugin_policy, plugin_audit_log,
-		_plugins_with_connection, _send_plugin_host_event, _notify_host_event_refusal)
+		_plugins_with_connection, _send_plugin_host_event, _notify_plugin_refusal)
 	var manager: PluginManager = plugin_manager
 	manager.plugin_started.connect(_on_plugin_started_for_host_events)
 	_wire_chat_host_events()
+	var ChatTargetClass = load("res://Scripts/Services/Plugins/PluginHostChatTarget.gd")
+	plugin_capability_broker.chat_target = ChatTargetClass.new(_chat_pane_if_live, _notify_plugin_refusal)
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
 
@@ -668,7 +670,11 @@ func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -
 	return conn.send_host_event(event, payload) if conn != null else ERR_UNAVAILABLE
 
 
-func _notify_host_event_refusal(message: String) -> void:
+func _chat_pane_if_live() -> ChatPane:
+	return Chats if is_instance_valid(Chats) else null
+
+
+func _notify_plugin_refusal(message: String) -> void:
 	create_toast_notification(message, ToastNotification.Type.ERROR)
 
 
@@ -692,6 +698,8 @@ func _wire_chat_host_events() -> void:
 			_host_events_wired_pane.chat_turn_completed.disconnect(_publish_chat_turn_completed)
 		if _host_events_wired_pane.chat_directory_changed.is_connected(_publish_chat_directory_changed):
 			_host_events_wired_pane.chat_directory_changed.disconnect(_publish_chat_directory_changed)
+		if _host_events_wired_pane.chat_active_changed.is_connected(_publish_chat_active_changed):
+			_host_events_wired_pane.chat_active_changed.disconnect(_publish_chat_active_changed)
 	_host_events_wired_pane = Chats if is_instance_valid(Chats) else null
 	if _host_events_wired_pane == null:
 		return
@@ -699,6 +707,8 @@ func _wire_chat_host_events() -> void:
 		Chats.chat_turn_completed.connect(_publish_chat_turn_completed)
 	if not Chats.chat_directory_changed.is_connected(_publish_chat_directory_changed):
 		Chats.chat_directory_changed.connect(_publish_chat_directory_changed)
+	if not Chats.chat_active_changed.is_connected(_publish_chat_active_changed):
+		Chats.chat_active_changed.connect(_publish_chat_active_changed)
 
 
 func _publish_chat_turn_completed(payload: Dictionary) -> void:
@@ -707,6 +717,10 @@ func _publish_chat_turn_completed(payload: Dictionary) -> void:
 
 func _publish_chat_directory_changed(payload: Dictionary) -> void:
 	plugin_host_event_router.publish(plugin_host_event_router.EVENT_CHAT_DIRECTORY_CHANGED, payload)
+
+
+func _publish_chat_active_changed(payload: Dictionary) -> void:
+	plugin_host_event_router.publish(plugin_host_event_router.EVENT_CHAT_ACTIVE_CHANGED, payload)
 
 
 ## Wire plugin tool registry signals to MinervaMCPServer's tool_registry and search index.
