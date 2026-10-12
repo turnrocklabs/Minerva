@@ -270,9 +270,9 @@ def probe_docket(root: Path, manifest: dict) -> None:
     if len(receipts) != 1:
         raise SystemExit("Docket package must contain one acquisition receipt")
     receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
-    if receipt.get("tag") != "v" + manifest["version"] or not receipt.get("source"):
+    if receipt.get("Tag") != "v" + manifest["version"] or not receipt.get("Source"):
         raise SystemExit("Docket acquisition receipt does not identify this release")
-    identity = receipt["tag"] + "+" + receipt["source"]
+    identity = receipt["Tag"] + "+" + receipt["Source"]
     mac_profile_link = None
     owned_pid = None
     with contextlib.ExitStack() as scratch_cleanup:
