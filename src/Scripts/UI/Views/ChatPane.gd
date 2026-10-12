@@ -5808,16 +5808,9 @@ func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
 	return -1
 
 
-## Resolve a provider's enum ID by matching its script against API_MODEL_PROVIDER_SCRIPTS.
+## Preserve exact saved identity, including retired dynamic model entries.
 func _resolve_provider_enum_id(provider: BaseProvider) -> int:
-	var provider_script = provider.get_script()
-	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-		if SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
-			return key
-	# Dynamic models
-	if "enum_id" in provider:
-		return provider.enum_id
-	return -1
+	return int(ModelResolver.spec_for(provider).get("model_id", -1))
 
 
 ## if enter is pressed, accept the event and trigger chat

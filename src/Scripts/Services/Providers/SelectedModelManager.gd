@@ -108,8 +108,11 @@ func update_model(model_id: int, config: Dictionary) -> void:
 
 func remove_model(model_id: int) -> void:
 	var config := super.get_model(model_id)
-	if not config.is_empty() and not legacy_models.has(str(model_id)):
+	if not config.is_empty():
+		var original_effort := legacy_effort(model_id)
 		legacy_models[str(model_id)] = config.duplicate(true)
+		# Current custom settings and original effort have different lifetimes.
+		legacy_models[str(model_id)]["reasoning_effort"] = original_effort
 	super.remove_model(model_id)
 
 

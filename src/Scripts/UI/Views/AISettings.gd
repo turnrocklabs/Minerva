@@ -704,7 +704,7 @@ func _select_reasoning_value(opt: OptionButton, value: String) -> void:
 	if value == "":
 		opt.select(0)
 		return
-	if value == "off":
+	if value in ["off", "none"]:
 		var off_index := opt.get_item_index(1)
 		opt.select(off_index if off_index >= 0 else 0)
 		return
