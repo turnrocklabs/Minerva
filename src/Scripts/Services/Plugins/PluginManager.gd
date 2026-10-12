@@ -128,6 +128,8 @@ var _backend_tool_guards: Dictionary = {}
 
 ## Accumulated time since last health-check sweep.
 var _health_timer_acc: float = 0.0
+## One-shot launcher grace beyond its own 30-second registration bound.
+var docket_launcher_timeout_ms: int = 35000
 
 ## Accumulated time since last file-watch sweep.
 var _file_watch_acc: float = 0.0
@@ -840,12 +842,12 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
 	if id == "docket":
 		var runtime := _ensure_runtime(id)
+		# Rollback stops the connection and cancels its lease, but cannot run
+		# another launcher during the same explicit Start.
+		if runtime.get("launcher_used", false) and runtime.get("launcher_generation", -1) == docket_start:
+			return _refuse_attachment("Docket launcher already ran; press Start to reconnect after the rollback")
 		if runtime.get("start_generation", 0) != docket_start or not runtime.get("start_pending", false):
 			return {"error": "Docket start was cancelled"}
-		# A rollback may call this again, but cannot launch a second app or an
-		# earlier hosted backend during the same explicit Start.
-		if runtime.get("launcher_used", false):
-			return {"error": "Docket launcher already ran; press Start to reconnect after the rollback"}
 
 	var def: PluginDefinition = db.call("get_by_id", id)
 	if def == null:
@@ -950,6 +952,7 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 			resolved_args.append(arg)
 	if id == "docket":
 		_ensure_runtime(id)["launcher_used"] = true
+		_ensure_runtime(id)["launcher_generation"] = docket_start
 		var launched: Dictionary = await _run_docket_launcher(command, resolved_args, docket_start)
 		if not _owns_docket_start(docket_start):
 			return {"error": "Docket start was cancelled"}
@@ -992,7 +995,7 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# A backend that serves its panel's edits privately gets a secret of its
 	# own for each process it runs.
 	rt["panel_authority"] = null
-	if id != "docket" and not def.panel_authority.is_empty():
+	if not def.panel_authority.is_empty():
 		var authority := PluginPanelAuthority.new(id, conn, def.panel_authority)
 		authority.tool_guard = func(tool: String, arguments: Dictionary) -> String:
 			return await check_backend_tool(id, tool, arguments, "panel")
@@ -1078,7 +1081,7 @@ func _run_docket_launcher(command: String, args: PackedStringArray, generation: 
 	var stderr_pipe: FileAccess = process.get("stderr")
 	var stdout_tail := PackedByteArray()
 	var stderr_tail := PackedByteArray()
-	var deadline: int = Time.get_ticks_msec() + 35000
+	var deadline: int = Time.get_ticks_msec() + docket_launcher_timeout_ms
 	# A project launcher uses a SceneTree, while Engine exposes MainLoop.
 	var loop: SceneTree = Engine.get_main_loop() as SceneTree
 	while OS.is_process_running(pid):
@@ -1088,7 +1091,7 @@ func _run_docket_launcher(command: String, args: PackedStringArray, generation: 
 			return {"error": "Docket start was cancelled"}
 		if Time.get_ticks_msec() >= deadline:
 			OS.kill(pid)  # launcher only; Docket is detached and independently owned
-			return {"error": "Docket launcher did not finish within 35 seconds"}
+			return {"error": "Docket launcher did not finish within %d ms" % docket_launcher_timeout_ms}
 		await loop.process_frame
 	stdout_tail = SetupExecutors._drain_available(stdout_pipe, stdout_tail, 256)
 	stderr_tail = SetupExecutors._drain_available(stderr_pipe, stderr_tail, 256)

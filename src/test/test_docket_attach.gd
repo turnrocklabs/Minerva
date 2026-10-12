@@ -166,7 +166,7 @@ func _launcher_checks(profile: String) -> void:
 	var tools_file := FileAccess.open(tools_path, FileAccess.WRITE)
 	tools_file.store_string(JSON.stringify(tools))
 	tools_file.close()
-	for mode in ["spawn", "fail", "slow"]:
+	for mode in ["spawn", "fail", "slow", "hang", "rollback"]:
 		# The real connection and launcher exercise their public process/HTTP
 		# boundaries; runtime-loaded script avoids the --script autoload parse order.
 		var manager = load("res://test/helpers/docket_attach_manager.gd").new()
@@ -180,6 +180,26 @@ func _launcher_checks(profile: String) -> void:
 		def.args.assign([ProjectSettings.globalize_path("res://test/fixtures/docket_launcher.py"),
 			mode, directory, tools_path])
 		manager._db._plugins.docket = def
+		if mode == "hang": manager.docket_launcher_timeout_ms = 500
+		if mode == "rollback":
+			# A real pending update exercises stop, disk rollback and callback
+			# retry through PluginPendingUpgrade.start, not a runtime-state seam.
+			def.args[1] = "fail"
+			manager._db.load_db()
+			manager._db._plugins.docket = def
+			def.version = "old"
+			var previous: Dictionary = def.to_dict()
+			def.version = "new"
+			check("rollback fixture DB saved", manager._db.save())
+			var txn_owner = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+			var txn = txn_owner.begin(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR))
+			check("rollback fixture transaction created", txn != null)
+			if txn == null:
+				manager.free()
+				continue
+			txn.plugin_id = "docket"
+			txn.db_before = previous
+			check("rollback fixture is pending", txn.publish(txn_owner.PHASE_PENDING))
 		manager.endpoint_discovery.profile_directory = directory
 		var ready: Array = []
 		manager.plugin_ready.connect(func(id: String) -> void: ready.append(id))
@@ -189,25 +209,33 @@ func _launcher_checks(profile: String) -> void:
 			await process_frame
 			check("launcher wait yields with STARTING visible", def.state == manager.S_STARTING and results.is_empty())
 			var deadline: int = Time.get_ticks_msec() + 5000
-			while not FileAccess.file_exists(directory.path_join("instance.json")) and Time.get_ticks_msec() < deadline:
+			while not FileAccess.file_exists(directory.path_join("launcher.pid")) and Time.get_ticks_msec() < deadline:
 				await process_frame
+			check("Stop runs during the launcher before registration", FileAccess.file_exists(directory.path_join("launcher.pid"))
+				and not FileAccess.file_exists(directory.path_join("instance.json")) and results.is_empty())
 			manager.stop_plugin("docket")
 			while results.is_empty() and Time.get_ticks_msec() < deadline:
 				await process_frame
 			check("Stop cancels attachment without readiness", not results.is_empty()
 				and results[0].get("error") == "Docket start was cancelled" and ready.is_empty()
 				and manager.get_connection("docket") == null)
+			while not FileAccess.file_exists(directory.path_join("instance.json")) and Time.get_ticks_msec() < deadline:
+				await process_frame
 		else:
 			var result: Dictionary = await manager.start_plugin("docket")
 			if mode == "fail":
 				check("failed launcher surfaces its reason", result.get("error") == "fixture startup refused"
 					and def.state == manager.S_ERROR and ready.is_empty())
-				var runtime: Dictionary = manager._ensure_runtime("docket")
-				runtime["start_pending"] = true
-				var repeated: Dictionary = await manager._start_plugin_now("docket", int(runtime.start_generation))
-				check("rollback cannot run a second launcher", repeated.has("error")
+			elif mode == "rollback":
+				check("PendingUpgrade rollback refuses a second launcher and ends in ERROR", "launcher already ran" in result.get("error", "")
+					and manager._db.get_by_id("docket").state == manager.S_ERROR
+					and manager._db.get_by_id("docket").version == "old"
 					and FileAccess.get_file_as_string(directory.path_join("starts.txt")) == "start\n")
-				runtime["start_pending"] = false
+			elif mode == "hang":
+				var pid := int(FileAccess.get_file_as_string(directory.path_join("launcher.pid")))
+				check("launcher timeout ends in ERROR and kills the launcher", "did not finish" in result.get("error", "")
+					and def.state == manager.S_ERROR and FileAccess.file_exists(directory.path_join("launcher.pid"))
+					and not OS.is_process_running(pid) and ready.is_empty())
 			else:
 				var conn = manager.get_connection("docket")
 				check("one-shot launcher attaches real HTTP child", result.get("attached", false)
@@ -217,7 +245,7 @@ func _launcher_checks(profile: String) -> void:
 					and FileAccess.get_file_as_string(directory.path_join("starts.txt")) == "start\n")
 		manager.shutdown_all()
 		var registration: Dictionary = manager.endpoint_discovery.discover()
-		if mode != "fail":
+		if mode in ["spawn", "slow"]:
 			check("disconnect/shutdown leaves child alive " + mode, registration.get("attached", false))
 			if registration.get("attached", false):
 				OS.kill(PluginEndpointDiscovery._integer_value(registration.record.pid))  # this fixture's private child only
