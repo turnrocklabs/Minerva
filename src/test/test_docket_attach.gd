@@ -166,7 +166,7 @@ func _launcher_checks(profile: String) -> void:
 	var tools_file := FileAccess.open(tools_path, FileAccess.WRITE)
 	tools_file.store_string(JSON.stringify(tools))
 	tools_file.close()
-	for mode in ["spawn", "fail", "slow", "hang", "rollback"]:
+	for mode in ["spawn", "fail", "slow", "hang", "rollback", "rapid"]:
 		# The real connection and launcher exercise their public process/HTTP
 		# boundaries; runtime-loaded script avoids the --script autoload parse order.
 		var manager = load("res://test/helpers/docket_attach_manager.gd").new()
@@ -203,7 +203,17 @@ func _launcher_checks(profile: String) -> void:
 		manager.endpoint_discovery.profile_directory = directory
 		var ready: Array = []
 		manager.plugin_ready.connect(func(id: String) -> void: ready.append(id))
-		if mode == "slow":
+		if mode == "rapid":
+			var results: Array = []
+			_collect_start(manager.start_plugin.bind("docket"), results)
+			await create_timer(1.0).timeout
+			check("rapid Stop lands while delayed launcher has no app registration", not FileAccess.file_exists(directory.path_join("instance.json")))
+			manager.stop_plugin("docket")
+			var restarted: Dictionary = await manager.start_plugin("docket")
+			check("rapid Start reuses the one in-flight launcher", restarted.get("attached", false)
+				and FileAccess.get_file_as_string(directory.path_join("starts.txt")) == "start\n"
+				and not results.is_empty() and results[0].get("error") == "Docket start was cancelled")
+		elif mode == "slow":
 			var results: Array = []
 			_collect_start(manager.start_plugin.bind("docket"), results)
 			await process_frame
@@ -245,7 +255,7 @@ func _launcher_checks(profile: String) -> void:
 					and FileAccess.get_file_as_string(directory.path_join("starts.txt")) == "start\n")
 		manager.shutdown_all()
 		var registration: Dictionary = manager.endpoint_discovery.discover()
-		if mode in ["spawn", "slow"]:
+		if mode in ["spawn", "slow", "rapid"]:
 			check("disconnect/shutdown leaves child alive " + mode, registration.get("attached", false))
 			if registration.get("attached", false):
 				OS.kill(PluginEndpointDiscovery._integer_value(registration.record.pid))  # this fixture's private child only
