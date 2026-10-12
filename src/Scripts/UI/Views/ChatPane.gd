@@ -820,12 +820,14 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 	model_msg_node.loading = true
 	return model_msg_node
 
+static func _is_cancelled_response(bot_response: BotResponse) -> bool:
+	return str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
+
+
 # Generate content from provider
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
 	print("[ChatPane] generate_content_from_provider called, provider: %s" % provider.provider_name)
-	# The turn this request belongs to: a stopped one must not end its successor.
-	var turn_token: int = history.request_turn_token
 	var bot_response
 
 	# Set chat_id on provider for budget enforcement
@@ -870,8 +872,8 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if bot_response and not str(bot_response.error).is_empty():
 		if provider_override == null or provider_override == history.provider:
 			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
-		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
-		_terminate_turn(history, turn_token, "cancelled" if was_cancelled else "error", str(bot_response.error))
+		history.termination_reason = "cancelled" if _is_cancelled_response(bot_response) else "error"
+		history.termination_message = str(bot_response.error)
 
 	# Record cost with chat context
 	if bot_response and SingletonObject.cost_tracker:
@@ -1878,7 +1880,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.Message = bot_response.text
 	existing_response.Error = bot_response.error
-	_note_turn_reply(history, turn_token, existing_response)
+	_note_turn_response(history, turn_token, existing_response, bot_response)
 	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
 	existing_response.OutputTokens = bot_response.completion_tokens
@@ -2077,7 +2079,7 @@ func execute_hcp_chat():
 	# Core sends take no turn (their stop and queue rules differ), so this, the
 	# send's single end, reports it; termination_reason is not theirs to read.
 	var reply: ChatHistoryItem = chi if bot_response != null else null
-	var stopped := bot_response != null and str(bot_response.get_meta("error_code", "")) == "cancelled"
+	var stopped: bool = bot_response != null and _is_cancelled_response(bot_response)
 	_emit_turn_completed(history, reply, ChatEventPayloads.resolve_outcome(
 		ChatEventPayloads.OUTCOME_CANCELLED if stopped else "", "", reply))
 
@@ -2231,13 +2233,32 @@ func _take_turn_report(history: ServiceHistory, turn_token: int) -> ChatEventPay
 
 
 ## Only a model item is a reply: an empty item built from a null response is none.
+static func _is_model_item(item: ChatHistoryItem) -> bool:
+	return item != null and (item.Role == ChatHistoryItem.ChatRole.MODEL
+		or item.Role == ChatHistoryItem.ChatRole.ASSISTANT)
+
+
 func _note_turn_reply(history: ServiceHistory, turn_token: int, reply: ChatHistoryItem) -> void:
 	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
-	if report == null:
-		return
-	var is_model: bool = reply != null and (reply.Role == ChatHistoryItem.ChatRole.MODEL
-		or reply.Role == ChatHistoryItem.ChatRole.ASSISTANT)
-	report.reply = reply if is_model else null
+	if report != null:
+		report.reply = reply if _is_model_item(reply) else null
+
+
+## The provider response that ends turn `turn_token`, and the item built from
+## it: a null response leaves no reply, an errored one ends the turn so.
+## Recorded here, where the turn ends on it, never inside the request: a
+## request that is retried, or whose turn was stopped, must not decide it.
+func _note_turn_response(history: ServiceHistory, turn_token: int, reply: ChatHistoryItem, bot_response: BotResponse) -> void:
+	_note_turn_reply(history, turn_token, reply if bot_response != null else null)
+	if bot_response != null and not str(bot_response.error).is_empty():
+		_note_turn_termination(history, turn_token,
+			"cancelled" if _is_cancelled_response(bot_response) else "error")
+
+
+func _note_turn_termination(history: ServiceHistory, turn_token: int, reason: String) -> void:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null:
+		report.termination = reason
 
 
 ## Record why turn `turn_token` ended. The chat-wide termination_reason keeps
@@ -2245,9 +2266,7 @@ func _note_turn_reply(history: ServiceHistory, turn_token: int, reply: ChatHisto
 func _terminate_turn(history: ServiceHistory, turn_token: int, reason: String, message: String) -> void:
 	history.termination_reason = reason
 	history.termination_message = message
-	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
-	if report != null:
-		report.termination = reason
+	_note_turn_termination(history, turn_token, reason)
 
 
 func _note_turn_outcome(history: ServiceHistory, turn_token: int, outcome: String) -> void:
@@ -2470,7 +2489,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
 	var chi = process_bot_response(bot_response, history.provider)
-	_note_turn_reply(history, turn_token, chi if bot_response != null else null)
+	_note_turn_response(history, turn_token, chi, bot_response)
 	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
 
 	# W5: carry passthrough question options (W1 contract) onto the finalized CHI
@@ -3182,6 +3201,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		if current_round > 0 and "empty response" in continuation_response.error.to_lower():
 			print("[Agent] Retrying continuation after empty response (round %d)..." % current_round)
 			await get_tree().create_timer(1.0).timeout
+			if turn_token >= 0 and _turn_stopped(history, turn_token):
+				return
 			continuation_response = await generate_content_from_provider(history, continuation_list)
 			if continuation_response and not continuation_response.error:
 				# Retry succeeded — continue processing below
@@ -3352,7 +3373,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		var bot_response = await generate_content_from_provider(history, history_list)
 		
 		var chi = process_bot_response(bot_response, history.provider)
-		_note_turn_reply(history, turn_token, chi if bot_response != null else null)
+		_note_turn_response(history, turn_token, chi, bot_response)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	_release_chat_turn(history, turn_token)
 
@@ -3439,6 +3460,10 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
 	bot_response.SliderContainerId = run.model_slider_uuid
 	user_msg.MultiSliderContainerId = run.multi_slider_uuid
 	bot_response.MultiSliderContainerId = run.multi_slider_uuid
+	# Every worker's response counts: one that failed fails the turn, even when
+	# a later worker's reply is the one reported.
+	if not _is_model_item(bot_response) or not bot_response.Error.is_empty():
+		_note_turn_termination(history, run.turn_token, "error")
 	if run_complete:
 		if history.provider is HumanProvider:
 			_silence_turn(history, run.turn_token)

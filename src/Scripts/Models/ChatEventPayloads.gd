@@ -54,6 +54,8 @@ static func resolve_outcome(noted: String, termination_reason: String, reply: Ch
 
 ## `reply` is the turn's assistant reply or null; the payload never carries user
 ## or tool content. message_index is the reply's index in the chat, or -1.
+## Core (HCP) replies carry only structured HcpData with no plain-text form, so
+## their text is empty.
 static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outcome: String) -> Dictionary:
 	var text := ""
 	if reply != null:
