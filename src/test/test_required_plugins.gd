@@ -382,6 +382,25 @@ func _test_manual_update_button(port: int) -> void:
 	for id: String in ids:
 		_select_panel_plugin(panel, id)
 		var button: Button = panel.find_child("UpdatePlugin", true, false)
+		if id == "docket":
+			_check(button != null and button.visible and button.disabled
+				and button.tooltip_text == "Registered Docket is not managed by Minerva",
+				"attached Docket shows Update but keeps app updates disabled")
+			var update_toggle: CheckButton = null
+			for toggle: CheckButton in panel.find_children("*", "CheckButton", true, false):
+				if toggle.text == "Update at startup": update_toggle = toggle
+			_check(update_toggle != null and update_toggle.visible and update_toggle.disabled
+				and not _pm.get_db().get_by_id(id).auto_update,
+				"attached Docket disables Auto-update and preserves opt-out")
+			var pending_release: Dictionary = panel._update_entries.get(id, {})
+			_check(pending_release.get("version") == "9.9.12" and button.visible
+				and _h.shows_installed_version(panel, "9.9.11"),
+				"attached Docket keeps the discovered pending release separate from installed version")
+			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
+			_check(record.get("pid", 0) == _docket_pid and OS.is_process_running(_docket_pid)
+				and FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt")) == "start\n",
+				"attached Docket release checks leave the external app untouched")
+			continue
 		_check(button != null and button.visible and not button.disabled, "newer release offers Update for opted-out " + id)
 		if button == null or not button.visible:
 			continue
@@ -407,11 +426,6 @@ func _test_manual_update_button(port: int) -> void:
 		_check(job.outcome == job.OUTCOME_READY and def.version == "9.9.13" and not def.auto_update and _pm.get_connection(id) != previous_connection, "manual Update upgrades/restarts opted-out " + id)
 		_check(_h.shows_installed_version(panel, "9.9.13") and not button.visible, "plugin row reflects the upgraded version for " + id)
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
-		if id == "docket":
-			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
-			_check(record.get("pid", 0) == _docket_pid and OS.is_process_running(_docket_pid)
-				and FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt")) == "start\n",
-				"docket plugin upgrade reconnects while the external app keeps running")
 	await create_timer(3.1).timeout
 	_check(dialog.get_node("%JobRows").get_child_count() == 0, "successful running updates leave Installs")
 	_check(_pack_required_plugin(RELAY, "9.9.14", false) and _write_releases(port, ids, "9.9.14"), "publish a newer release that fails required-tool admission")
