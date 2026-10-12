@@ -432,7 +432,8 @@ func _test_manual_update_button(port: int) -> void:
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
 	await create_timer(3.1).timeout
 	_check(dialog.get_node("%JobRows").get_children().all(func(row: Node) -> bool:
-		return str(row.get("job").plugin_id) == "docket"), "successful running non-Docket updates leave Installs")
+		var row_job: Object = row.get("job")
+		return str(row_job.call("plugin_id")) == "docket"), "successful running non-Docket updates leave Installs")
 	_check(_pack_required_plugin(RELAY, "9.9.14", false) and _write_releases(port, ids, "9.9.14"), "publish a newer release that fails required-tool admission")
 	await panel.check_for_updates()
 	_select_panel_plugin(panel, RELAY)
