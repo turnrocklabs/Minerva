@@ -219,6 +219,13 @@ def probe_docket(root: Path, manifest: dict) -> None:
     if manifest.get("tools") or manifest["backend"].get("args"):
         raise SystemExit("Docket launcher must have empty tools and arguments")
     command = (root / manifest["backend"]["entrypoint"]).resolve()
+    receipts = list(root.glob("official/*/acquisition.lock.json"))
+    if len(receipts) != 1:
+        raise SystemExit("Docket package must contain one acquisition receipt")
+    receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+    if receipt.get("tag") != "v" + manifest["version"] or not receipt.get("source"):
+        raise SystemExit("Docket acquisition receipt does not identify this release")
+    identity = manifest["version"] + "+" + receipt["source"]
     mac_profile_link = None
     owned_pid = None
     with tempfile.TemporaryDirectory(prefix="docket-package-probe-") as temporary:
@@ -264,7 +271,7 @@ def probe_docket(root: Path, manifest: dict) -> None:
                 raise SystemExit(f"Docket did not spawn a registered fixture: {spawned}")
             owned_pid = pid
             address = f"127.0.0.1:{endpoint['port']}"
-            if spawned.get("endpoint") != address or spawned.get("version") != manifest["version"]:
+            if spawned.get("endpoint") != address or spawned.get("version") != identity:
                 raise SystemExit(f"Docket registered identity does not match release: {spawned}")
             if Path(record["profile"]).resolve() != profile.resolve():
                 raise SystemExit("Docket registered outside the isolated profile")
@@ -278,7 +285,7 @@ def probe_docket(root: Path, manifest: dict) -> None:
                 initialized = json.load(response)
             result = initialized.get("result", {})
             if (initialized.get("id") != 1 or "error" in initialized
-                    or result.get("serverInfo", {}).get("version") != manifest["version"]
+                    or result.get("serverInfo", {}).get("version") != identity
                     or result.get("_meta", {}).get("registration_status") != "registered"):
                 raise SystemExit(f"Docket standalone initialize failed: {initialized}")
             attached = invoke()
