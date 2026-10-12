@@ -530,7 +530,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Minerva-Linux-Build
-          compression-level: 0
           path: downloads/Minerva-Linux-Build
 
       - name: Install runtime dependencies
@@ -1607,6 +1606,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Build
+          compression-level: 0
           path: src/build/Minerva-Linux.tar.gz
 
       # Minerva-macOS-Build is uploaded by the export-macos job (macos-latest).
