@@ -29,6 +29,8 @@ class TurnReport:
 	var reply: ChatHistoryItem = null
 	## Set only by an explicit stop; it outranks everything else.
 	var outcome: String = ""
+	## This turn's termination_reason, recorded under its own token.
+	var termination: String = ""
 	## A Human-provider pseudo-turn or a refused send: no event at all.
 	var silent: bool = false
 
