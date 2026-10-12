@@ -15,6 +15,7 @@ func _run() -> void:
 	for scenario: Array in [
 		["other", S_RUNNING, "exit", 7, S_ERROR],
 		["other", S_RUNNING, "exit", 0, S_ERROR],
+		["other", S_RUNNING, "stdout_eof_exit", 0, S_ERROR],
 		["other", S_STARTING, "exit", 0, S_ERROR],
 		["other", S_RUNNING, "overflow_exit", 0, S_ERROR],
 	]:
