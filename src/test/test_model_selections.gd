@@ -151,7 +151,7 @@ func check_reasoning() -> void:
 
 func check_controls_and_requests() -> void:
 	var fixtures = load("res://test/fixtures/model_request_capture.gd")
-	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
+	var history_script = load("res://Scripts/Models/ChatHistory.gd")
 	var settings_script = load("res://Scripts/UI/Views/AISettings.gd")
 	var chatgpt_script = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTProvider.gd")
 	var auth_script = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTAuth.gd")
