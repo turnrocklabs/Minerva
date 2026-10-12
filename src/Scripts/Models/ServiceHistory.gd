@@ -534,10 +534,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	# OpenAI previously ignored the chat override and always used its entry's effort.
 	if int(data.get("ReasoningSettingsVersion", 0)) < 1 and (provider_obj is OpenAIProvider or history.ReasoningEffort.is_empty()):
 		history.ReasoningEffort = str(provider_obj.get_meta("legacy_reasoning_effort", ""))
-	if int(data.get("ReasoningSettingsVersion", 0)) < 1 and history.ReasoningEffort == "off" and provider_obj is ChatGPTProvider:
-		var levels := provider_obj.reasoning_effort_levels()
-		if not levels.is_empty():
-			history.ReasoningEffort = str(levels[0])
+	if provider_obj is ChatGPTProvider:
+		history.ReasoningEffort = provider_obj.restore_reasoning_choice(history.ReasoningEffort, int(data.get("ReasoningSettingsVersion", 0)) < 1)
 	if data.has("ReasoningSummary"):
 		history.ReasoningSummary = bool(data.get("ReasoningSummary", true))
 	if data.has("IsAgentChat"):

@@ -78,6 +78,18 @@ func check_saved_chats(manager) -> void:
 	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
 	var legacy = history_script.Deserialize({"Provider": 60002, "HistoryId": "migration-check", "HistoryName": "Legacy", "HistoryItemList": [], "ReasoningEffort": ""})
 	check("real saved chat restores original model and effort", legacy.provider.model_name == "example" and legacy.ReasoningEffort == "high")
+	var selection = load("res://Scripts/Services/Providers/ReasoningSelection.gd")
+	check("legacy configured effort survives request validation without catalog metadata", selection.validate(legacy.ReasoningEffort, legacy.provider.reasoning_effort_levels()) == "high")
+	manager.legacy_models["60003"] = {"id": 60003, "model_name": "manual"}
+	for effort: String in ["high", "off"]:
+		var manual = history_script.Deserialize({"Provider": 60003, "HistoryId": "manual-" + effort, "HistoryName": "Manual", "HistoryItemList": [], "ReasoningEffort": effort})
+		var effective := "low" if effort == "off" else "high"
+		var request: Dictionary = {}
+		manual.provider.apply_reasoning_options(request, selection.validate(manual.ReasoningEffort, manual.provider.reasoning_effort_levels()), true)
+		var restored = history_script.Deserialize(JSON.parse_string(JSON.stringify(manual.Serialize())))
+		check("manual legacy " + effort + " survives migration, validation and save/reopen", request.get("reasoning", {}).get("effort") == effective and restored.ReasoningEffort == effective and selection.validate(restored.ReasoningEffort, restored.provider.reasoning_effort_levels()) == effective)
+		manual.provider.free()
+		restored.provider.free()
 	var mcp_script = load("res://Scripts/Services/MCP/Modules/MCPModelTools.gd")
 	var mcp = mcp_script.new()
 	check("archived model update and delete return truthful errors", not mcp._update_model({"model_id": 60002, "short_name": "wrong"}).get("success", false) and not mcp._remove_model({"model_id": 60002}).get("success", false))
@@ -200,6 +212,13 @@ func check_controls_and_requests() -> void:
 				check("ChatGPT full request reflects " + ("Default" if effort.is_empty() else effort), body.get("reasoning", {}).get("effort") == ("medium" if effort.is_empty() else effort))
 		settings.free()
 		container.free()
+	chatgpt.supported_reasoning_levels = []
+	for old_effort: String in ["high", "off"]:
+		var effective: String = chatgpt.restore_reasoning_choice(old_effort, true)
+		var params: Dictionary = {}
+		chatgpt.apply_reasoning_options(params, effective, true)
+		await chatgpt.generate_content([], params)
+		check("manual legacy choice reaches full request: " + old_effort, chatgpt.captured.get("reasoning", {}).get("effort") == ("low" if old_effort == "off" else "high"))
 	api.free()
 	chatgpt.free()
 	chatgpt_script.auth = original_auth
