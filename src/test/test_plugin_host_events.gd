@@ -111,6 +111,21 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 	return []
 """
 
+## Provider handing out scripted responses: {"text": ...} or {"error": ...}.
+const SCRIPTED_PROVIDER_SRC := """
+extends "res://Scripts/Services/Providers/PluginProvider.gd"
+
+var scripted: Array = []
+
+func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {}) -> BotResponse:
+	var next: Dictionary = scripted.pop_front()
+	var response := BotResponse.new()
+	response.provider = self
+	response.text = str(next.get("text", ""))
+	response.error = str(next.get("error", ""))
+	return response
+"""
+
 var _pass := 0
 var _fail := 0
 var _so: Node = null
@@ -503,6 +518,35 @@ func _test_turn_events() -> void:
 	check("C19: a stopped turn's late termination does not decide the next turn's outcome",
 		outcomes == ["cancelled", "ok"], str(outcomes))
 
+	var provider = _compile(SCRIPTED_PROVIDER_SRC).new()
+	var saved_provider = target.provider
+	target.provider = provider
+	outcomes.clear()
+	pane._begin_chat_turn(target)
+	pane._cancel_chat_turn(target)
+	var token_d: int = pane._begin_chat_turn(target)
+	provider.scripted = [{"error": "Request cancelled."}]
+	await pane.generate_content_from_provider(target, [])
+	var reply_d = _item(Item, Item.ChatRole.MODEL, "reply:d")
+	target.HistoryItemList.append(reply_d)
+	pane._note_turn_reply(target, token_d, reply_d)
+	pane._release_chat_turn(target, token_d)
+	check("C20: a stopped turn's request failing late leaves the current turn's report alone",
+		outcomes == ["cancelled", "ok"], str(outcomes))
+
+	outcomes.clear()
+	var token_e: int = pane._begin_chat_turn(target)
+	provider.scripted = [{"error": "Empty response from model"}, {"text": "recovered"}]
+	var failed_attempt = await pane.generate_content_from_provider(target, [])
+	var retried = await pane.generate_content_from_provider(target, [])
+	var reply_e = _item(Item, Item.ChatRole.MODEL, str(retried.text))
+	target.HistoryItemList.append(reply_e)
+	pane._note_turn_reply(target, token_e, reply_e)
+	pane._release_chat_turn(target, token_e)
+	check("C21: an empty response followed by a successful retry reports ok",
+		not str(failed_attempt.error).is_empty() and outcomes == ["ok"], str(outcomes))
+	target.provider = saved_provider
+
 	_so.Chats = previous_chats
 	for history in [visible_chat, target]:
 		_so.ChatList.erase(history)
@@ -540,11 +584,15 @@ func _make_history(chat_name: String):
 	return history
 
 
-func _make_harness_pane(chats: Array, source: String = HARNESS_PANE_SRC):
+func _compile(source: String) -> GDScript:
 	var script := GDScript.new()
 	script.source_code = source
 	script.reload()
-	var pane = script.new()
+	return script
+
+
+func _make_harness_pane(chats: Array, source: String = HARNESS_PANE_SRC):
+	var pane = _compile(source).new()
 	pane.name = "HostEventHarnessPane"
 	root.add_child(pane)
 	for history in chats:

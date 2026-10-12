@@ -90,6 +90,7 @@ HERMETIC_TESTS=(
 	test/test_mcp_catalog_ownership.gd
 	test/test_panel_executed_tools.gd
 	test/test_mcp_plugin_result_boundaries.gd
+	test/test_plugin_host_events.gd
 	test/test_mcp_diagnostics.gd
 	test/test_preferences_verbose_logging.gd
 	test/test_bounded_process.gd
