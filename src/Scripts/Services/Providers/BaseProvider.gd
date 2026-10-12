@@ -191,9 +191,7 @@ func extract_reasoning(_data: Variant, _bot_response: BotResponse) -> void:
 func apply_reasoning_options(_params: Dictionary, _level: String, _enabled: bool) -> void:
 	pass
 
-## Whether reasoning effort is chosen via the AISettings picker. ChatGPT bakes
-## effort into per-effort model entries instead, so it leaves this false. A
-## provider returns true to have the picker shown for it. Default: false.
+## Whether reasoning effort is chosen via the chat settings picker.
 func uses_reasoning_effort_picker() -> bool:
 	return false
 

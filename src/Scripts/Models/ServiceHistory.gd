@@ -410,6 +410,7 @@ func Serialize() -> Dictionary:
 		"AgentSummarizeThreshold": AgentSummarizeThreshold,
 		"AgentModeEnabled": AgentModeEnabled,
 		"ReasoningEffort": ReasoningEffort,
+		"ReasoningSettingsVersion": 1,
 		"ReasoningSummary": ReasoningSummary,
 		"IsAgentChat": IsAgentChat,
 		"AgentDefinitionId": AgentDefinitionId,
@@ -530,6 +531,12 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
 	if data.has("ReasoningEffort"):
 		history.ReasoningEffort = str(data.get("ReasoningEffort", ""))
+	if int(data.get("ReasoningSettingsVersion", 0)) < 1 and history.ReasoningEffort.is_empty():
+		history.ReasoningEffort = str(provider_obj.get_meta("legacy_reasoning_effort", ""))
+	if int(data.get("ReasoningSettingsVersion", 0)) < 1 and history.ReasoningEffort == "off" and provider_obj is ChatGPTProvider:
+		var levels := provider_obj.reasoning_effort_levels()
+		if not levels.is_empty():
+			history.ReasoningEffort = str(levels[0])
 	if data.has("ReasoningSummary"):
 		history.ReasoningSummary = bool(data.get("ReasoningSummary", true))
 	if data.has("IsAgentChat"):

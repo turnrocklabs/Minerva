@@ -85,7 +85,7 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 			elif str(config.get("display_name", "")).to_lower() == requested:
 				display_matches.append({"kind": "dynamic", "model_id": int(config.get("id", -1))})
 	for id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
+		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK or not is_selectable_builtin(id):
 			continue
 		if target >= 0 and SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target:
 			continue
@@ -179,6 +179,20 @@ static func restore_plugin(key: String) -> PluginProvider:
 
 
 ## Catalog rows retain stable specs plus supported model-management metadata.
+## Legacy presets still restore by ID, but the chooser exposes one actual model.
+static func is_selectable_builtin(model_id: int) -> bool:
+	if model_id == SingletonObject.API_MODEL_PROVIDERS.GPT_DEEP:
+		return false
+	var provider_key: int = SingletonObject.MODEL_TO_PROVIDER.get(model_id, -1)
+	if provider_key not in [SingletonObject.API_PROVIDER.OPENAI, SingletonObject.API_PROVIDER.CHATGPT]:
+		return true
+	var provider: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id].new()
+	var name := provider.model_name
+	provider.free()
+	var manager: ProviderModelManager = SingletonObject.openai_model_manager if provider_key == SingletonObject.API_PROVIDER.OPENAI else SingletonObject.chatgpt_model_manager
+	return manager == null or manager.get_model_by_name("model_name", name).is_empty()
+
+
 static func catalog_models(key: String) -> Array:
 	var target := SingletonObject.provider_from_key(key)
 	if target < 0 or not SingletonObject.is_provider_enabled(target):
@@ -187,7 +201,7 @@ static func catalog_models(key: String) -> Array:
 		return CoreModelCatalog.list_models()
 	var rows: Array = []
 	for id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target:
+		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target or not is_selectable_builtin(id):
 			continue
 		var provider: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[id].new()
 		if not provider.supports_chat:

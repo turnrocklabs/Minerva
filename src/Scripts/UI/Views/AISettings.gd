@@ -442,8 +442,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	if provider is CoreProvider:
 		%CoreGenerationSettings.configure(provider, current_chat_tab_ref)
 
-	# Reasoning-effort picker (Anthropic/OpenRouter/Gemini; ChatGPT uses per-effort
-	# model entries instead, so it leaves uses_reasoning_effort_picker() false)
+	# Reasoning options follow the current model capabilities.
 	_update_reasoning_settings_visibility(provider)
 
 	# Timeout settings - always visible for all providers
@@ -661,7 +660,7 @@ func _create_model_chat_settings() -> void:
 
 
 ## Create or update the reasoning-effort picker for the selected provider.
-## Shown only for providers that use the picker (not ChatGPT's per-effort entries).
+## Shown only for providers that expose reasoning preferences.
 func _update_reasoning_settings_visibility(provider: BaseProvider) -> void:
 	var should_show := provider != null and provider.uses_reasoning_effort_picker()
 	if not should_show:
@@ -677,9 +676,14 @@ func _update_reasoning_settings_visibility(provider: BaseProvider) -> void:
 	var opt := _reasoning_settings_container.get_node("ReasoningHBox/ReasoningOptionButton") as OptionButton
 	opt.clear()
 	opt.add_item("Default", 0)   # id 0 → "" (no override, provider default)
-	opt.add_item("Off", 1)       # id 1 → "off"
+	if not provider is OpenAIProvider and not provider is ChatGPTProvider:
+		opt.add_item("Off", 1)
+	elif "none" in provider.reasoning_effort_levels():
+		opt.add_item("Off", 1)
 	var id := 2
 	for lvl in provider.reasoning_effort_levels():
+		if str(lvl) == "none":
+			continue
 		opt.add_item(str(lvl).capitalize(), id)
 		opt.set_item_metadata(opt.get_item_count() - 1, str(lvl))
 		id += 1
@@ -701,7 +705,8 @@ func _select_reasoning_value(opt: OptionButton, value: String) -> void:
 		opt.select(0)
 		return
 	if value == "off":
-		opt.select(1)
+		var off_index := opt.get_item_index(1)
+		opt.select(off_index if off_index >= 0 else 0)
 		return
 	for i in range(opt.get_item_count()):
 		if str(opt.get_item_metadata(i)) == value:
@@ -728,7 +733,7 @@ func _create_reasoning_settings() -> void:
 	var label := Label.new()
 	label.text = "Thinking effort:"
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.tooltip_text = "Default = provider default. Off disables thinking. Higher effort = deeper reasoning (more tokens/cost)."
+	label.tooltip_text = "Default uses the model default. Available levels depend on the model; higher effort can increase latency and token usage."
 	hbox.add_child(label)
 	var opt := OptionButton.new()
 	opt.name = "ReasoningOptionButton"

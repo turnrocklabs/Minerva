@@ -57,6 +57,7 @@ seed_test_profile "$MINERVA_FUNCTIONAL_PROFILE_ROOT" || exit 1
 TURNROCK_TESTS=(
 	test/test_core_model_catalog.gd
 	test/test_model_catalog.gd
+	test/test_model_selections.gd
 	test/test_plugin_chat_providers.gd
 	test/test_generation_options.gd
 	test/test_core_request_lifecycle.gd

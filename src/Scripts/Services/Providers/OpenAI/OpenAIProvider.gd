@@ -19,7 +19,8 @@ var available_tools: Array[Dictionary] = []
 var tools_enabled: bool = false
 
 ## Reasoning effort level: minimal, low, medium, high, xhigh
-var reasoning_effort: String = "medium"
+var reasoning_effort: String = ""
+var supported_reasoning_levels: Array = []
 
 
 func _init():
@@ -42,6 +43,20 @@ func _init():
 	supports_top_p = false
 	supports_frequency_penalty = false
 	supports_presence_penalty = false
+
+
+func uses_reasoning_effort_picker() -> bool:
+	return true
+
+
+func reasoning_effort_levels() -> Array:
+	return supported_reasoning_levels if not supported_reasoning_levels.is_empty() else OpenAIReasoning.levels(model_name)
+
+
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	var effort := level if enabled else "none"
+	if effort in reasoning_effort_levels():
+		params["reasoning_effort"] = effort
 
 
 ## Set available tools for agentic mode
@@ -123,8 +138,9 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	}
 
 	# Add reasoning effort for models that support it
-	if not reasoning_effort.is_empty():
-		additional_params.merge({"reasoning_effort": reasoning_effort}, true)
+	if not reasoning_effort.is_empty() and not additional_params.has("reasoning_effort"):
+		additional_params = additional_params.duplicate(true)
+		additional_params["reasoning_effort"] = reasoning_effort
 
 	# Add tools if enabled
 	print("[OpenAI] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
@@ -379,11 +395,12 @@ static func create_from_config(config: Dictionary) -> OpenAIProvider:
 	p.model_name = config.get("model_name", p.model_name)
 	p.display_name = config.get("display_name", p.model_name)
 	p.short_name = config.get("short_name", "OA")
-	p.reasoning_effort = config.get("reasoning_effort", "")
+	p.reasoning_effort = config.get("default_reasoning_level", "")
+	p.supported_reasoning_levels = config.get("supported_reasoning_levels", [])
 	p.input_token_cost = config.get("input_token_cost", 0.0)
 	p.output_token_cost = config.get("output_token_cost", 0.0)
 	# Determine reasoning model status from config or infer from reasoning_effort
-	var is_reasoning: bool = config.get("is_reasoning_model", not p.reasoning_effort.is_empty())
+	var is_reasoning: bool = config.get("is_reasoning_model", not p.reasoning_effort_levels().is_empty())
 	p.is_reasoning_model = is_reasoning
 	if not is_reasoning:
 		p.supports_temperature = true
@@ -404,16 +421,11 @@ class Nano extends OpenAIProvider:
 		model_name = "gpt-5-nano"
 		display_name = "GPT-5 Nano"
 		short_name = "G5N"
-		reasoning_effort = ""  # No reasoning for nano model
+		reasoning_effort = ""  # Inherit the API default.
 		input_token_cost = 0.10   # $0.10 per million input tokens
 		output_token_cost = 0.40   # $0.40 per million output tokens
 
-		# Nano is not a reasoning model, supports all params
-		is_reasoning_model = false
-		supports_temperature = true
-		supports_top_p = true
-		supports_frequency_penalty = true
-		supports_presence_penalty = true
+		is_reasoning_model = true
 
 
 ## Standard: Medium reasoning (default for daily tasks)
@@ -423,7 +435,8 @@ class Standard extends OpenAIProvider:
 		model_name = "gpt-5.2"
 		display_name = "GPT-5.2"
 		short_name = "G5"
-		reasoning_effort = "medium"
+		reasoning_effort = ""
+		set_meta("legacy_reasoning_effort", "medium")
 		input_token_cost = 5.00   # $5 per million input tokens
 		output_token_cost = 15.00  # $15 per million output tokens
 
@@ -435,6 +448,7 @@ class Deep extends OpenAIProvider:
 		model_name = "gpt-5.2"
 		display_name = "GPT-5.2 Deep"
 		short_name = "G5D"
-		reasoning_effort = "xhigh"
+		reasoning_effort = ""
+		set_meta("legacy_reasoning_effort", "xhigh")
 		input_token_cost = 5.00   # $5 per million input tokens
 		output_token_cost = 15.00  # $15 per million output tokens

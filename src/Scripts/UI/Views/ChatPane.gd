@@ -832,6 +832,13 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	var request: Dictionary = GenerationOptions.request_from_history(history) if request_options == null else request_options
 	var optional_params := GenerationOptions.chat_params(history, provider, request)
 
+	if provider is OpenAIProvider or provider is ChatGPTProvider:
+		var valid_effort := ReasoningSelection.validate(history.ReasoningEffort, provider.reasoning_effort_levels())
+		if valid_effort != history.ReasoningEffort:
+			var notice := ReasoningSelection.reset_message(history.ReasoningEffort, provider.display_name)
+			history.ReasoningEffort = valid_effort
+			SingletonObject.ErrorDisplay("Reasoning setting reset", notice)
+
 	# Per-chat reasoning effort → provider-native request params. Applied only
 	# when the user configured reasoning for this chat (ReasoningEffort != "");
 	# apply_reasoning_options is a no-op for providers without an override.
@@ -5702,6 +5709,11 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		return
 
 	history.provider = provider_
+	if provider_ is OpenAIProvider or provider_ is ChatGPTProvider:
+		var valid_effort := ReasoningSelection.validate(history.ReasoningEffort, provider_.reasoning_effort_levels())
+		if valid_effort != history.ReasoningEffort:
+			history.VBox.add_program_message(ReasoningSelection.reset_message(history.ReasoningEffort, provider_.display_name))
+			history.ReasoningEffort = valid_effort
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
 

@@ -144,6 +144,9 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	}
 
 	var reasoning := _build_reasoning_options()
+	reasoning.merge(additional_params.get("reasoning", {}), true)
+	additional_params = additional_params.duplicate(true)
+	additional_params.erase("reasoning")
 	if not reasoning.is_empty():
 		request_body["reasoning"] = reasoning
 	var text_options := _build_text_options()
@@ -267,35 +270,23 @@ func _valid_reasoning_summary(summary: String) -> String:
 	return ""
 
 
-## ChatGPT also exposes effort in the gears picker (in addition to the per-effort
-## model entries), so the picker can override effort at request time.
+## Effort is a per-request setting; the catalog supplies the supported values.
 func uses_reasoning_effort_picker() -> bool:
 	return true
 
 
-## Offer exactly the effort levels this model advertises; fall back to a standard
-## set when the catalog didn't provide any.
 func reasoning_effort_levels() -> Array:
 	var levels: Array = []
-	for preset in supported_reasoning_levels:
+	for preset: Variant in supported_reasoning_levels:
 		if preset is Dictionary and preset.has("effort"):
 			levels.append(str(preset["effort"]))
-	if levels.is_empty():
-		return ["low", "medium", "high"]
 	return levels
 
 
-## Override the model-entry effort at request time from the gears picker. gpt-5.x
-## reasoning models can't fully disable thinking, so "off" maps to the lowest
-## advertised effort rather than removing reasoning.
-func apply_reasoning_options(_params: Dictionary, level: String, enabled: bool) -> void:
-	var levels := reasoning_effort_levels()
-	if not enabled:
-		if not levels.is_empty():
-			reasoning_effort = str(levels[0])
-		return
-	if not level.is_empty() and level in levels:
-		reasoning_effort = level
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	var effort := level if enabled else "none"
+	if effort in reasoning_effort_levels():
+		params["reasoning"] = {"effort": effort}
 
 
 ## Parse the SSE response from the ChatGPT backend
@@ -764,7 +755,7 @@ static func create_from_config(config: Dictionary) -> ChatGPTProvider:
 	p.short_name = config.get("short_name", "CG")
 	p.input_token_cost = config.get("input_token_cost", 0.0)
 	p.output_token_cost = config.get("output_token_cost", 0.0)
-	p.reasoning_effort = str(config.get("reasoning_effort", config.get("default_reasoning_level", "")))
+	p.reasoning_effort = str(config.get("default_reasoning_level", ""))
 	p.supported_reasoning_levels = config.get("supported_reasoning_levels", [])
 	p.supports_reasoning_summaries = bool(config.get("supports_reasoning_summaries", false))
 	p.default_reasoning_summary = str(config.get("default_reasoning_summary", "auto"))

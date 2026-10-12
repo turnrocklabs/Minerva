@@ -201,8 +201,8 @@ func set_field_values():
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
 
-	# Blank shows the default as placeholder; ChatGPTModelManager falls back to it.
-	_fields["chatgpt_client_version"].placeholder_text = ChatGPTModelManager.DEFAULT_CLIENT_VERSION
+	# Blank discovers the stable Codex version automatically.
+	_fields["chatgpt_client_version"].placeholder_text = "Automatic (latest stable Codex)"
 	_fields["chatgpt_client_version"].text = config_file.get_value("CHATGPT", "client_version", "")
 
 	var selected_services_data = config_file.get_value("HCP", "selected_services", [])
@@ -554,18 +554,8 @@ func _on_or_delete_model(model_id: int) -> void:
 	if config.is_empty():
 		return
 
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Delete Model"
-	dialog.dialog_text = "Remove \"%s\" from OpenRouter models?" % config.get("display_name", "")
-	dialog.content_scale_factor = get_tree().root.content_scale_factor
-	dialog.confirmed.connect(func():
-		SingletonObject.openrouter_model_manager.remove_model(model_id)
-		_populate_openrouter_models()
-	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	dialog.confirmed.connect(func(): dialog.queue_free())
-	add_child(dialog)
-	dialog.popup_centered()
+	SingletonObject.openrouter_model_manager.remove_model(model_id)
+	_populate_openrouter_models()
 
 
 ## Show add/edit dialog for an OpenRouter model.
@@ -1064,7 +1054,7 @@ func _populate_custom_models() -> void:
 
 			var del_btn := Button.new()
 			del_btn.text = "Delete"
-			del_btn.pressed.connect(_on_custom_delete_model.bind(model_id, manager, config.get("display_name", "")))
+			del_btn.pressed.connect(_on_custom_delete_model.bind(model_id, manager))
 			row.add_child(del_btn)
 
 			_custom_models_list_container.add_child(row)
@@ -1091,19 +1081,9 @@ func _on_custom_edit_model(model_id: int, manager) -> void:
 		_show_custom_model_dialog(config, manager)
 
 
-func _on_custom_delete_model(model_id: int, manager, display_name: String) -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Delete Model"
-	dialog.dialog_text = "Remove \"%s\"?" % display_name
-	dialog.content_scale_factor = get_tree().root.content_scale_factor
-	dialog.confirmed.connect(func():
-		manager.remove_model(model_id)
-		_populate_custom_models()
-	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	dialog.confirmed.connect(func(): dialog.queue_free())
-	add_child(dialog)
-	dialog.popup_centered()
+func _on_custom_delete_model(model_id: int, manager: ProviderModelManager) -> void:
+	manager.remove_model(model_id)
+	_populate_custom_models()
 
 
 func _on_refresh_ollama_pressed() -> void:

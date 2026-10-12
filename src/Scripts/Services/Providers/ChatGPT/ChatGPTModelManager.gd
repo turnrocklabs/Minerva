@@ -1,24 +1,25 @@
 class_name ChatGPTModelManager
-extends ProviderModelManager
+extends SelectedModelManager
 ## Discovers ChatGPT/Codex models available to the signed-in ChatGPT account.
 
 const CHATGPT_MODELS_URL := "https://chatgpt.com/backend-api/codex/models"
-# The server hides models whose minimal_client_version exceeds the version we
-# send, so the default tracks a current Codex CLI release. Users can override it
-# in Preferences → Providers when new models stay missing.
-const DEFAULT_CLIENT_VERSION := "0.160.0"
+# Used only if automatic version discovery has no valid cached result.
+const DEFAULT_CLIENT_VERSION := CodexClientVersion.FALLBACK
 const CHATGPT_MODEL_ID_BASE := 60000
+
+var available_models: Array = []
+var version_resolver := CodexClientVersion.new()
 
 
 func _init() -> void:
 	super("user://chatgpt_models.json", CHATGPT_MODEL_ID_BASE)
 
 
-## The user's client version from preferences, or the default when unset or blank.
+## An explicit override wins over automatic version discovery.
 static func get_client_version() -> String:
 	var config: ConfigFile = SingletonObject.preferences_popup.config_file
 	var version: String = str(config.get_value("CHATGPT", "client_version", "")).strip_edges()
-	return version if not version.is_empty() else DEFAULT_CLIENT_VERSION
+	return version
 
 
 func fetch_available_models(scene_tree: SceneTree) -> Dictionary:
@@ -34,7 +35,8 @@ func fetch_available_models(scene_tree: SceneTree) -> Dictionary:
 
 	var http := HTTPRequest.new()
 	scene_tree.root.add_child(http)
-	var url := "%s?client_version=%s" % [CHATGPT_MODELS_URL, get_client_version().uri_encode()]
+	var resolved: Dictionary = await version_resolver.resolve(scene_tree, get_client_version())
+	var url := "%s?client_version=%s" % [CHATGPT_MODELS_URL, str(resolved.version).uri_encode()]
 	var headers: Array[String] = [
 		"Authorization: Bearer %s" % chatgpt_auth.access_token,
 		"ChatGPT-Account-ID: %s" % chatgpt_auth.account_id,
@@ -66,7 +68,8 @@ func fetch_available_models(scene_tree: SceneTree) -> Dictionary:
 	if normalized.is_empty():
 		return {"success": false, "error": "No visible ChatGPT models were found."}
 
-	return {"success": true, "models": normalized, "count": normalized.size()}
+	available_models = normalized
+	return {"success": true, "models": normalized, "count": normalized.size(), "client_version": resolved.version, "version_source": resolved.source}
 
 
 func refresh_from_account(scene_tree: SceneTree) -> Dictionary:
@@ -74,8 +77,24 @@ func refresh_from_account(scene_tree: SceneTree) -> Dictionary:
 	if not result.get("success", false):
 		return result
 	var normalized: Array = result.get("models", [])
-	_replace_discovered_models(normalized)
-	return {"success": true, "count": normalized.size()}
+	refresh_selected(normalized)
+	var choices: Array[Dictionary] = []
+	for config: Dictionary in normalized:
+		var choice: Dictionary = {}
+		for key: String in ["model_name", "display_name", "default_reasoning_level", "supported_reasoning_levels", "description"]:
+			choice[key] = config.get(key)
+		choices.append(choice)
+	return {"success": true, "count": choices.size(), "models": choices, "selected_count": models.size(),
+		"client_version": result.get("client_version"), "version_source": result.get("version_source")}
+
+
+func add_model(config: Dictionary) -> int:
+	for available: Dictionary in available_models:
+		if available.get("model_name") == config.get("model_name"):
+			var selection := available.duplicate(true)
+			selection.merge(config, true)
+			return super.add_model(selection)
+	return super.add_model(config)
 
 
 func _normalize_models(remote_models: Array) -> Array[Dictionary]:
@@ -125,50 +144,14 @@ func _normalize_models(remote_models: Array) -> Array[Dictionary]:
 			"experimental_supported_tools": item.get("experimental_supported_tools", []),
 			"raw_model_info": item,
 		}
-		if supported_reasoning.is_empty():
-			var config := base_config.duplicate(true)
-			config["catalog_key"] = slug
-			normalized.append(config)
-		else:
-			for preset in supported_reasoning:
-				if not preset is Dictionary:
-					continue
-				var effort: String = str(preset.get("effort", ""))
-				if effort.is_empty():
-					continue
-				var config := base_config.duplicate(true)
-				config["catalog_key"] = "%s:%s" % [slug, effort]
-				config["reasoning_effort"] = effort
-				config["display_name"] = "%s (%s)" % [display_name, _title_case_effort(effort)]
-				config["reasoning_description"] = str(preset.get("description", ""))
-				normalized.append(config)
+		base_config["catalog_key"] = slug
+		base_config.erase("reasoning_effort")
+		normalized.append(base_config)
 
 	normalized.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return int(a.get("priority", 0)) > int(b.get("priority", 0))
 	)
 	return normalized
-
-
-func _replace_discovered_models(new_models: Array[Dictionary]) -> void:
-	var ids_by_key := {}
-	for existing in models:
-		var existing_key: String = str(existing.get("catalog_key", existing.get("model_name", "")))
-		ids_by_key[existing_key] = int(existing.get("id", 0))
-
-	var refreshed: Array[Dictionary] = []
-	for model in new_models:
-		var config := model.duplicate(true)
-		var catalog_key: String = str(config.get("catalog_key", config.get("model_name", "")))
-		if ids_by_key.has(catalog_key):
-			config["id"] = ids_by_key[catalog_key]
-		else:
-			config["id"] = _next_id
-			_next_id += 1
-		refreshed.append(config)
-
-	models = refreshed
-	save_config()
-	models_changed.emit()
 
 
 func _generate_short_name(display_name: String) -> String:

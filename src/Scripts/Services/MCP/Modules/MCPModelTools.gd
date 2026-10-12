@@ -118,7 +118,7 @@ func register_tools() -> void:
 	, "models")
 
 	server._register_tool("minerva_refresh_chatgpt_models",
-		"Refresh ChatGPT/Codex models using the signed-in ChatGPT OAuth account. Returns the number of discovered selectable model/effort entries.",
+		"Discover ChatGPT/Codex models and refresh metadata for selected models. Returns available models without registering them; use minerva_add_model to select a model.",
 		{
 			"type": "object",
 			"properties": {},
