@@ -1192,7 +1192,7 @@ func _prepare_without_capabilities(connection: Object, generation: int) -> void:
 	_session.erase(master_path)
 	_session.erase(personal_path)
 	_reconciled_paths = _open_paths()
-	manager.call("set_attached_host_status", capability_problem())
+	manager.call("set_attached_host_status", "")
 	_publish()
 
 

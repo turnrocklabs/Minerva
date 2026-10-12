@@ -132,6 +132,17 @@ func execute(tool: String, arguments: Dictionary) -> Dictionary:
 	var name: String = str(arguments.get("action", "")) if tool == "docket_vault_control" else tool
 	var params := arguments.duplicate()
 	if tool == "docket_vault_control":
+		# Check the public contract before creating the fixture-only path identity.
+		if name not in ["status", "init", "unlock", "lock", "forget", "change_password", "set_hint"]:
+			return {"error": "Vault action refused"}
+		var allowed: Array[String] = ["action", "project"]
+		if name != "status": allowed.append_array(["open_generation", "fingerprint"])
+		if name in ["init", "unlock", "set_hint"]: allowed.append("password")
+		if name in ["init", "change_password", "set_hint"]: allowed.append("hint")
+		if name == "change_password": allowed.append_array(["old", "new"])
+		for field: String in arguments:
+			if field not in allowed or not arguments[field] is String:
+				return {"error": "Vault request refused"}
 		params["path"] = ""
 		for project: Dictionary in connection.open.values():
 			if project.name == arguments.get("project"):
@@ -567,6 +578,13 @@ func _test_vault() -> void:
 	host.start(manager)
 	check("G: fake-backed hosted master is ready", await _wait(func() -> bool: return host.state == "ready"))
 	_so.docket_host = host
+	var public_status: Dictionary = await authority.execute("docket_vault_control", {"action":"status", "project": host.master_project().name})
+	for forbidden in ["path", "panel_secret", "unexpected", "hint"]:
+		var invalid := {"action":"unlock", "project":host.master_project().name,
+			"open_generation":public_status.open_generation, "fingerprint":public_status.fingerprint, "password":VAULT_PASSWORD}
+		invalid[forbidden] = "fixture"
+		var refused: Dictionary = await authority.execute("docket_vault_control", invalid)
+		check("G: public unlock rejects disallowed field " + forbidden, refused.has("error"))
 	var form = _vault_form()
 	_write("user://docket_prefs.json", JSON.stringify({"vault_password": "legacy-untouched", "vault_password_hint": "legacy-hint"}))
 	var before := FileAccess.get_file_as_bytes("user://docket_prefs.json")

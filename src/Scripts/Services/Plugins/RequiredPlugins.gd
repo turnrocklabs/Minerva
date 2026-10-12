@@ -132,7 +132,7 @@ static func docket_capabilities_missing(conn: Object) -> String:
 	for name in DOCKET_CAPABILITIES:
 		if not name in listed:
 			lacking.append(name.trim_prefix("minerva_"))
-	return "" if lacking.is_empty() else "Attached Docket lacks %s; Minerva schema, bootstrap or vault features are unavailable." % ", ".join(lacking)
+	return "" if lacking.is_empty() else "Attached Docket lacks %s; Minerva schema, bootstrap, vault controls, policy observations, plugin pickup, session handover, project open/forget and session saving are unavailable." % ", ".join(lacking)
 
 
 ## Why an installed release of a required plugin cannot run here, or "" when

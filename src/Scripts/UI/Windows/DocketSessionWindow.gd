@@ -55,6 +55,8 @@ func refresh(outcome := "") -> void:
 		lines.append("Docket: %s" % host.state)
 		for problem in host.problems:
 			lines.append("- %s" % problem)
+		for notice in host.notices:
+			lines.append("- %s" % notice)
 		for failed in host.failed_projects():
 			var index := _failed.add_item(str(failed.path))
 			_failed.set_item_metadata(index, str(failed.path))

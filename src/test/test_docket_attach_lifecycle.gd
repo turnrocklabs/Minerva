@@ -42,6 +42,13 @@ func _run() -> void:
 		and host.master_path == ProjectSettings.globalize_path("user://master.dct")
 		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_add" and tool_call.arguments.get("create") == false))
 	check("attached host does not save a hosted session", not FileAccess.file_exists("user://docket_host_session.json"))
+	var degraded_status: Dictionary = manager.get_plugin_status("docket")
+	var reason: String = degraded_status.get("capability_reason", "")
+	check("degraded notice shows its reason once", not reason.is_empty()
+		and str(degraded_status.get("notice", "")).count(reason) == 1)
+	check("degraded reason names the blocked operations",
+		["schema", "bootstrap", "vault", "policy observations", "plugin pickup", "session handover", "project open/forget", "session saving"].all(
+			func(operation: String) -> bool: return operation in reason))
 	var session_text := '{"version":1,"paths":["hosted-session-sentinel"]}'
 	var session_file := FileAccess.open("user://docket_host_session.json", FileAccess.WRITE)
 	session_file.store_string(session_text)
@@ -99,8 +106,31 @@ func _run() -> void:
 		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap")
 		and manager.get_panel_authority("docket") == null)
 	check("schema conflicts name the project and slug", host.notices.any(func(notice: String) -> bool: return "ordinary" in notice and "hint" in notice))
+	var session_window = load("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
+	root.add_child(session_window)
+	session_window.refresh()
+	check("schema conflicts are visible in the session window",
+		"ordinary: type hint" in session_window.get_node("%Status").text)
+	session_window.free()
 	check("capable attachment permits public policy observations and pickup", await host.write_policy_observation("fixture", "fixture") == ""
 		and load("res://Scripts/Services/Plugins/PluginSeedingDocket.gd").new(host).unavailable().is_empty())
+	for error_tool: String in ["docket_schema_declare", "docket_project_bootstrap"]:
+		manager.stop_plugin("docket")
+		manager.prepare_error_tool = error_tool
+		manager.tool_calls.clear()
+		await manager.start_plugin("docket")
+		var failures_window = load("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
+		root.add_child(failures_window)
+		failures_window.refresh()
+		check(error_tool + " failure is visible", host.state == "failed"
+			and "Fixture public preparation refused" in failures_window.get_node("%Status").text)
+		await create_timer(0.2).timeout
+		check(error_tool + " failure is not retried", manager.tool_calls.filter(
+			func(tool_call: Dictionary) -> bool: return tool_call.name == error_tool).size() == 1)
+		failures_window.free()
+	manager.prepare_error_tool = ""
+	manager.stop_plugin("docket")
+	await manager.start_plugin("docket")
 	var stops: Array = []
 	manager.plugin_stopped.connect(func(id: String) -> void: stops.append(id))
 	var other = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()

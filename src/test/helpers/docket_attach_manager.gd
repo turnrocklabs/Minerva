@@ -13,6 +13,7 @@ var discovered: Array[String] = []
 var real_launcher := false
 var real_connection := false
 var capability_tools := false
+var prepare_error_tool := ""
 
 func _run_docket_launcher(_command: String, _args: PackedStringArray, _generation: int) -> Dictionary:
 	stdio_starts += 1
@@ -39,6 +40,7 @@ class Connection extends MCPServerConnection:
 		return manager.http_alive
 	func call_tool(name: String, arguments: Dictionary, _timeout_sec: float = 120.0) -> Dictionary:
 		manager.tool_calls.append({"name": name, "arguments": arguments.duplicate(true)})
+		if name == manager.prepare_error_tool: return {"error": "Fixture public preparation refused"}
 		match name:
 			"docket_schema_declare": return {"version":arguments.version, "projects":[{"name":"ordinary", "activated":[], "conflicts":[{"slug":"hint", "reason":"different immutable meaning"}]}]}
 			"docket_project_bootstrap":
