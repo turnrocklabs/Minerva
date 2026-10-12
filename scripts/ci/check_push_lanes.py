@@ -11,7 +11,8 @@ import yaml
 DENIED = re.compile(
     r"\bgo test\b|\bcargo test\b|\bzig build test\b|\bpytest\b|-m unittest|"
     r"run[-_]functional[-_]tests|run_tests\.sh|run-panel-tests|run-contract-guards|"
-    r"test[_-]packaged|verify-packaged|verify-pins|probe-python-runtime|"
+    r"test[_-]packaged|verify-packaged|verify-pins|probe-python-runtime|build-python-runtime|"
+    r"tests/test_[^\s]+\.py|--self-test|hermetic-fab-check|--check-usb|"
     r"\bsmoke\b|smoke[-_]|test_docket_watch|--test-class|"
     r"gh\s+release\s+download|go run[^\n]*\bacquire\b|regen_registry\.py[^\n]*--published",
     re.IGNORECASE,
@@ -20,7 +21,17 @@ DENIED = re.compile(
 
 def dispatch_only(condition: str) -> bool:
     condition = condition.strip().removeprefix("${{").removesuffix("}}").strip()
-    return condition.startswith("github.event_name == 'workflow_dispatch'") and "||" not in condition
+    gate = "github.event_name == 'workflow_dispatch'"
+    if condition == gate:
+        return True
+    if not condition.startswith(gate + " && "):
+        return False
+    depth = 0
+    for index, char in enumerate(condition):
+        depth += (char == "(") - (char == ")")
+        if depth < 0 or (depth == 0 and condition[index:index + 2] == "||"):
+            return False
+    return depth == 0
 
 
 def check_workflow(path: Path, seen: frozenset[Path]) -> list[str]:
