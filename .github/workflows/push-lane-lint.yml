@@ -1,0 +1,18 @@
+name: Push lane lint
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install YAML parser
+        run: python3 -m pip install PyYAML==6.0.3
+      - name: Check every push lane
+        run: python3 scripts/ci/check_push_lanes.py
+
