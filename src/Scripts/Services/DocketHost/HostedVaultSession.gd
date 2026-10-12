@@ -85,7 +85,8 @@ func details(host: Node) -> Dictionary:
 	var epoch := _epoch
 	var listed: String = await host._refresh(binding.process[0], binding.process[1])
 	if not _current(host, binding, epoch) or not listed.is_empty(): return unavailable
-	var answer: Dictionary = await _control(host, binding.process[0] as Object, "status")
+	var connection: Object = binding.process[0]
+	var answer: Dictionary = await _control(host, connection, "status")
 	if not _current(host, binding, epoch): return unavailable
 	var descriptor := _descriptor(answer)
 	if descriptor.is_empty() or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""): return unavailable
