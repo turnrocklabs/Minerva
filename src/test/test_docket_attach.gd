@@ -177,7 +177,7 @@ func _launcher_checks(profile: String) -> void:
 		def.id = "docket"
 		def.entrypoint = "python3"
 		var directory: String = profile.path_join("launcher-" + mode)
-		def.args = PackedStringArray([ProjectSettings.globalize_path("res://test/fixtures/docket_launcher.py"),
+		def.args.assign([ProjectSettings.globalize_path("res://test/fixtures/docket_launcher.py"),
 			mode, directory, tools_path])
 		manager._db._plugins.docket = def
 		manager.endpoint_discovery.profile_directory = directory
