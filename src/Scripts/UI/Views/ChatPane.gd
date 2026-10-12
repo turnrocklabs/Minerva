@@ -2162,9 +2162,12 @@ func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
 		return
 	if turn_token != history.request_turn_token:
 		return
+	var was_active: bool = history.is_request_active
 	history.is_request_active = false
 	_update_stop_button()
 	_update_compact_button()
+	if was_active:
+		chat_turn_completed.emit(ChatEventPayloads.turn_completed(history, false))
 	_drain_outgoing_queue(history)
 
 
@@ -2187,9 +2190,12 @@ func _drop_item(history: ChatHistory, item: ChatHistoryItem) -> void:
 func _cancel_chat_turn(history: ChatHistory) -> void:
 	if history == null:
 		return
+	var was_active: bool = history.is_request_active
 	history.request_turn_token += 1
 	history.is_request_active = false
 	_clear_outgoing_queue(history)
+	if was_active:
+		chat_turn_completed.emit(ChatEventPayloads.turn_completed(history, true))
 
 
 ## Start the oldest queued message of `history`, if the chat is now idle.
@@ -3672,6 +3678,8 @@ func render_history(chat_history: ChatHistory):
 	# Deferred so the new tab is fully registered first.
 	call_deferred("_apply_tab_filters")
 	call_deferred("_refresh_group_dock")
+	if not _initializing_pane:
+		_emit_directory_change(chat_history, ChatEventPayloads.CHANGE_CREATED)
 
 	# Eagerly create the agent-notes tab for agent chats so it's visible
 	# before any tool calls happen.
@@ -4090,6 +4098,7 @@ func _on_edit_title_dialog_confirmed():
 	var history: ChatHistory = SingletonObject.ChatList[tab]
 	history.HistoryName = new_name
 	_sync_agent_notes_tab_title(history)
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_RENAMED)
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:
@@ -4180,6 +4189,18 @@ func set_show_archived(show_archived: bool) -> void:
 ## Emitted whenever group membership, the active group, or the deleted set
 ## changes — the dock re-renders from this rather than polling.
 signal chat_groups_changed()
+
+## One turn of a chat ended (see ChatEventPayloads.turn_completed): emitted
+## once per turn, by _release_chat_turn or, for a stopped turn, _cancel_chat_turn.
+signal chat_turn_completed(payload: Dictionary)
+
+## A chat was created, renamed, regrouped, closed or restored
+## (ChatEventPayloads.directory_changed). Project load emits nothing.
+signal chat_directory_changed(payload: Dictionary)
+
+
+func _emit_directory_change(history: ServiceHistory, change: String) -> void:
+	chat_directory_changed.emit(ChatEventPayloads.directory_changed(history, change, _membership_of(history)))
 
 ## Currently selected group VIEW. Either a ChatGroupRegistry sentinel
 ## (VIEW_ALL / VIEW_UNGROUPED / VIEW_DELETED) or a real group id.
@@ -4411,6 +4432,7 @@ func set_chat_group(history: ServiceHistory, group_id: String) -> bool:
 		return false
 	if not group_id.is_empty() and not SingletonObject.chat_groups.has_group(group_id):
 		return false
+	var previous_group := _membership_of(history)
 	if history.Deleted:
 		# A deleted chat's membership lives in PreDeleteGroupId; writing
 		# ChatGroupId here would resurrect an empty group.
@@ -4424,6 +4446,8 @@ func set_chat_group(history: ServiceHistory, group_id: String) -> bool:
 	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()
+	if _membership_of(history) != previous_group:
+		_emit_directory_change(history, ChatEventPayloads.CHANGE_REGROUPED)
 	return true
 
 
@@ -4494,6 +4518,7 @@ func delete_group(group_id: String, reassign_to: String = ChatGroupRegistry.UNGR
 			touched = true
 		if touched:
 			moved.append(str(history.HistoryId))
+			_emit_directory_change(history, ChatEventPayloads.CHANGE_REGROUPED)
 
 	_last_dissolved_group = {
 		"id": group_id,
@@ -4569,6 +4594,7 @@ func undo_group_delete() -> Dictionary:
 			continue
 		_set_membership(history, restored)
 		reattached.append(str(raw_id))
+		_emit_directory_change(history, ChatEventPayloads.CHANGE_REGROUPED)
 
 	# Restore the prunable-or-not state rather than inferring it: a group that
 	# was populated before the delete stays prunable even if every one of its
@@ -4657,6 +4683,7 @@ func delete_chat(history: ServiceHistory) -> bool:
 	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_CLOSED)
 	SingletonObject.create_toast_notification("Chat deleted: %s (restore from the Deleted group)" % history.HistoryName)
 	return true
 
@@ -4676,6 +4703,7 @@ func restore_chat(history: ServiceHistory) -> bool:
 	history.PreDeleteGroupId = ""
 	_apply_tab_filters()
 	chat_groups_changed.emit()
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_RESTORED)
 	SingletonObject.create_toast_notification("Chat restored: %s" % history.HistoryName)
 	# Bring the restored chat back on screen.
 	var idx := SingletonObject.ChatList.find(history)
