@@ -34,7 +34,7 @@ const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
 const PAYLOADS_PATH := "res://Scripts/Models/ChatEventPayloads.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
-const PAYLOAD_LIMITS_PATH := "res://Scripts/Services/Plugins/PluginPayloadLimits.gd"
+const JSON_SERIALIZATION_PATH := "res://Scripts/Services/MCP/MCPJsonSerialization.gd"
 
 const TURN := "chat.turn_completed"
 const DIRECTORY := "chat.directory_changed"
@@ -85,8 +85,10 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, _pr
 	_release_chat_turn(history, turn_token)
 """
 
-## ChatPane whose real execute_regular_chat runs up to its network calls, which
-## never resolve: enough to reach the sends it refuses before a request.
+## ChatPane whose real execute_regular_chat runs only as far as the sends it
+## refuses before a request. Reaching create_prompt means the send was NOT
+## refused: that is recorded and the turn is stopped there, so nothing loops
+## or reaches a provider.
 const REAL_TURN_PANE_SRC := """
 extends "res://Scripts/UI/Views/ChatPane.gd"
 
@@ -99,9 +101,13 @@ func _update_stop_button() -> void:
 func _update_compact_button() -> void:
 	pass
 
+var reached_request := false
+
 func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null, _turn_token: int = -1) -> Array[Variant]:
-	while true:
-		await get_tree().process_frame
+	reached_request = true
+	push_error("REAL_TURN_PANE: create_prompt reached — the send was not refused")
+	_cancel_chat_turn(history_override)
+	await get_tree().process_frame
 	return []
 """
 
@@ -215,10 +221,9 @@ func _test_router() -> void:
 		str(failed))
 
 	var Router = load(ROUTER_PATH)
-	var Limits = load(PAYLOAD_LIMITS_PATH)
 	var long_text := "é".repeat(40000)
 	var bounded: Dictionary = Router.bound_payload({"text": long_text})
-	var bounded_size: int = Limits.size_bytes(bounded)
+	var bounded_size: int = Router.encoded_size(bounded)
 	check("A13: oversized text is cut to fit the encoded bound, whole characters, flagged",
 		bounded["truncated"] == true and bounded_size <= Router.PAYLOAD_MAX_BYTES
 			and bounded_size > Router.PAYLOAD_MAX_BYTES - 8
@@ -233,12 +238,27 @@ func _test_router() -> void:
 		"text": escape_heavy, "outcome": "ok"}
 	check("A15: escape-heavy text is under the raw size yet over the encoded bound",
 		escape_heavy.to_utf8_buffer().size() < Router.PAYLOAD_MAX_BYTES
-			and Limits.size_bytes(heavy_payload) > Router.PAYLOAD_MAX_BYTES)
+			and Router.encoded_size(heavy_payload) > Router.PAYLOAD_MAX_BYTES)
 	var heavy: Dictionary = router.publish(TURN, heavy_payload)
 	check("A16: and is still delivered, truncated, within the bound",
 		_list(heavy["delivered"]) == ["sub"] and sent.size() == 1
 			and sent[0]["payload"]["truncated"] == true
-			and Limits.size_bytes(sent[0]["payload"]) <= Router.PAYLOAD_MAX_BYTES, str(heavy))
+			and Router.encoded_size(sent[0]["payload"]) <= Router.PAYLOAD_MAX_BYTES, str(heavy))
+
+	sent.clear()
+	var control_heavy := "\u001b".repeat(40000)
+	var control_payload := {"chat_id": "c1", "message_index": 1, "role": "assistant",
+		"text": control_heavy, "outcome": "ok"}
+	var control: Dictionary = router.publish(TURN, control_payload)
+	var wire_size := -1
+	if sent.size() == 1:
+		var notification := {"jsonrpc": "2.0", "method": "minerva/host_event",
+			"params": {"event": TURN, "payload": sent[0]["payload"]}}
+		wire_size = str(load(JSON_SERIALIZATION_PATH).encode(notification).raw).to_utf8_buffer().size()
+	check("A16b: raw control characters (6 wire bytes each) deliver truncated within the wire limit",
+		_list(control["delivered"]) == ["sub"] and sent.size() == 1
+			and sent[0]["payload"]["truncated"] == true
+			and wire_size > 0 and wire_size <= 64 * 1024, "wire=%d %s" % [wire_size, str(control)])
 
 	var notices: Array = []
 	var modern = _definition("modern", [TURN])
@@ -467,6 +487,22 @@ func _test_turn_events() -> void:
 		turns.size() == 3 and turns[2]["message"]["params"]["payload"]["outcome"] == "cancelled",
 		str(turns))
 
+	# A stopped turn whose provider resolves after the next turn began writes its
+	# termination late; it must not decide the new turn's outcome.
+	var outcomes: Array = []
+	pane.chat_turn_completed.connect(func(payload: Dictionary) -> void: outcomes.append(payload["outcome"]))
+	var token_a: int = pane._begin_chat_turn(target)
+	pane._cancel_chat_turn(target)
+	var token_b: int = pane._begin_chat_turn(target)
+	pane._terminate_turn(target, token_a, "cancelled", "Request cancelled.")
+	var Item = load(CHAT_HISTORY_ITEM_PATH)
+	var reply_b = _item(Item, Item.ChatRole.MODEL, "reply:b")
+	target.HistoryItemList.append(reply_b)
+	pane._note_turn_reply(target, token_b, reply_b)
+	pane._release_chat_turn(target, token_b)
+	check("C19: a stopped turn's late termination does not decide the next turn's outcome",
+		outcomes == ["cancelled", "ok"], str(outcomes))
+
 	_so.Chats = previous_chats
 	for history in [visible_chat, target]:
 		_so.ChatList.erase(history)
@@ -489,7 +525,8 @@ func _test_refused_send_is_silent() -> void:
 	await _probe(SUBSCRIBER, "probe_clear")
 	pane.execute_regular_chat("second question")
 	await _until_idle(chat)
-	check("C16: the refused send released its turn", not chat.is_request_active)
+	check("C16: the send was refused before any request, and released its turn",
+		not pane.reached_request and not chat.is_request_active)
 	check("C17: and emitted no chat.turn_completed", emitted.is_empty(), str(emitted))
 	check("C18: the subscriber received nothing", (await _events(SUBSCRIBER, TURN)).is_empty())
 	_so.Chats = previous_chats
