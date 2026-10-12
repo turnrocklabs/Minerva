@@ -339,6 +339,7 @@ func _test_required_update_choices(port: int) -> void:
 ## scene classes stay untyped for the --script autoload compilation boundary.
 func _test_manual_update_button(port: int) -> void:
 	var ids: Array[String] = RequiredPlugins.ids()
+	var manual_jobs: Array[Object] = []
 	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var previous_enabled: bool = feature.is_enabled()
 	# This profile defaults Voice off. Enable only the detector fixture so a
@@ -400,7 +401,7 @@ func _test_manual_update_button(port: int) -> void:
 					return label.is_visible_in_tree() and label.text.begins_with("Installed: 9.9.11; attached:")),
 				"attached Docket keeps the discovered pending release separate from installed version")
 			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
-			_check(record.get("pid", 0) == _docket_pid and OS.is_process_running(_docket_pid)
+			_check(record.get("pid", 0) == _docket_pid and _pm.endpoint_discovery.pid_alive.call(_docket_pid)
 				and not _docket_starts_before.is_empty()
 				and FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt")) == _docket_starts_before,
 				"attached Docket release checks leave the external app untouched")
@@ -423,6 +424,7 @@ func _test_manual_update_button(port: int) -> void:
 		if job == null:
 			_check(false, "manual button queued " + id)
 			continue
+		manual_jobs.append(job)
 		_check(job.expected_version() == "9.9.13", "click fetches the release published after discovery for " + id)
 		_check(_h.shows_install_job(dialog, job), "manual update appears in Installs for " + id)
 		await _until(func() -> bool: return job.state == job.State.DONE)
@@ -431,9 +433,8 @@ func _test_manual_update_button(port: int) -> void:
 		_check(_h.shows_installed_version(panel, "9.9.13") and not button.visible, "plugin row reflects the upgraded version for " + id)
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
 	await create_timer(3.1).timeout
-	_check(dialog.get_node("%JobRows").get_children().all(func(row: Node) -> bool:
-		var row_job: Object = row.get("job")
-		return str(row_job.call("plugin_id")) == "docket"), "successful running non-Docket updates leave Installs")
+	_check(manual_jobs.size() == ids.size() - 1 and manual_jobs.all(func(job: Object) -> bool:
+		return not _h.shows_install_job(dialog, job)), "successful running non-Docket updates leave Installs")
 	_check(_pack_required_plugin(RELAY, "9.9.14", false) and _write_releases(port, ids, "9.9.14"), "publish a newer release that fails required-tool admission")
 	await panel.check_for_updates()
 	_select_panel_plugin(panel, RELAY)
