@@ -140,13 +140,15 @@ Minerva is built on the shoulders of these open-source projects:
 ## CI lanes
 
 Branch pushes run build/import/link checks and a redacted outgoing-range secret
-scan. Each concrete push job has a deadline of at most ten minutes.
+scan. Each concrete job has an explicit positive deadline. Ten minutes is the
+branch timing optimization target, measured against actual runs.
 `scripts/ci/check_push_lanes.py` checks every push workflow and local reusable
 callee; functional suites and packaged-product probes are dispatch-only.
 
-Before integrating a candidate, dispatch the existing workflows on a branch
-pinned to its exact SHA and wait for every required suite. Plain dispatches do
-not publish: release inputs default to false. For example:
+After review and outgoing-range scans, dispatch retained functional workflows
+on the exact candidate alongside integration. Record results and fix failures
+forward. Plain dispatches do not publish: release inputs default to false. For
+example:
 
 ```sh
 gh workflow run WORKFLOW.yml --ref CANDIDATE_BRANCH
@@ -166,10 +168,9 @@ reuse. Artifacts expire on 2027-01-10: changed inputs or expiry require a new
 `godot-cef.yml` dispatch and an updated pinned producer in the CI recipe.
 No CEF binary or engine is committed to Git.
 
-Tag-only release wrappers are exempt from the branch deadline and call the
+Tag-only release wrappers do not use the branch timing target and call the
 same reusable build/package lane. Existing tag publication remains available;
 branch pushes never execute those functional or publishing jobs. The lint also
-checks local composite actions and rejects dependency chains whose declared
-branch-job deadlines sum to more than ten minutes.
-
-CI timing is measured against a ten-minute optimization target. Explicit positive job deadlines remain required; deadlines and branch dependency chains above the target are reported rather than rejecting releases. FCIB, functional-lane separation and secret scans remain enforced.
+checks local composite actions and warns when declared branch dependency
+budgets exceed ten minutes. These timing warnings do not block release; FCIB,
+functional-lane separation and secret scans remain enforced.
