@@ -4092,13 +4092,21 @@ func _on_edit_title_dialog_confirmed():
 
 	var tab = %EditTitleDialog.get_meta("tab")
 	var new_name: String = %LineEdit.text
-	if tab == null or int(tab) < 0 or int(tab) >= SingletonObject.ChatList.size():
+	if tab == null:
 		return
+	rename_chat(int(tab), new_name)
+
+
+## Retitle the chat at tab index `tab`. False when no chat is at that index.
+func rename_chat(tab: int, new_name: String) -> bool:
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		return false
 	set_tab_title(tab, new_name)
 	var history: ChatHistory = SingletonObject.ChatList[tab]
 	history.HistoryName = new_name
 	_sync_agent_notes_tab_title(history)
 	_emit_directory_change(history, ChatEventPayloads.CHANGE_RENAMED)
+	return true
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:
