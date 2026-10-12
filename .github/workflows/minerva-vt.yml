@@ -79,8 +79,7 @@ jobs:
 
   # ─── Build macOS universal binary (arm64 + x86_64) ─────────────────
   build-macos:
-    timeout-minutes: 7
-    needs: submodule-hash
+    timeout-minutes: 5
     # Pinned to macos-15, as build.yml's build-macos: macos-latest moved to
     # macos-26 (Xcode 26 SDK), which Zig 0.15.2 cannot link against (undefined
     # libSystem symbols). Revisit when Zig supports the macOS 26 SDK.
@@ -90,6 +89,8 @@ jobs:
         with:
           submodules: recursive
 
+      - id: hash
+        run: echo "ghostty_hash=$(git ls-tree HEAD vendor/ghostty | awk '{print $3}')" >> "$GITHUB_OUTPUT"
       - name: Setup Zig
         run: |
           ZIG_VERSION="0.15.2"
@@ -112,9 +113,9 @@ jobs:
         with:
           path: |
             src/gdextension/terminal/ghostty-shim/.zig-cache
-          key: zig-macos-arm64-${{ needs.submodule-hash.outputs.ghostty_hash }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/build.zig.zon', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+          key: zig-macos-arm64-${{ steps.hash.outputs.ghostty_hash }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/build.zig.zon', 'src/gdextension/terminal/ghostty-shim/src/**') }}
           restore-keys: |
-            zig-macos-arm64-${{ needs.submodule-hash.outputs.ghostty_hash }}-
+            zig-macos-arm64-${{ steps.hash.outputs.ghostty_hash }}-
 
       - name: Build arm64
         working-directory: src/gdextension/terminal/ghostty-shim
@@ -145,14 +146,15 @@ jobs:
 
   # ─── Build Linux x86_64 ───────────────────────────────────────────
   build-linux:
-    timeout-minutes: 7
-    needs: submodule-hash
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
+      - id: hash
+        run: echo "ghostty_hash=$(git ls-tree HEAD vendor/ghostty | awk '{print $3}')" >> "$GITHUB_OUTPUT"
       - name: Setup Zig
         run: |
           ZIG_VERSION="0.15.2"
@@ -176,9 +178,9 @@ jobs:
           path: |
             src/gdextension/terminal/ghostty-shim/.zig-cache
             src/gdextension/terminal/ghostty-shim/zig-out
-          key: zig-linux-x86_64-${{ needs.submodule-hash.outputs.ghostty_hash }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/build.zig.zon', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+          key: zig-linux-x86_64-${{ steps.hash.outputs.ghostty_hash }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/build.zig.zon', 'src/gdextension/terminal/ghostty-shim/src/**') }}
           restore-keys: |
-            zig-linux-x86_64-${{ needs.submodule-hash.outputs.ghostty_hash }}-
+            zig-linux-x86_64-${{ steps.hash.outputs.ghostty_hash }}-
 
       - name: Build x86_64
         working-directory: src/gdextension/terminal/ghostty-shim
@@ -192,7 +194,7 @@ jobs:
 
   # ─── Build full GDExtension with SCons (optional, Linux only) ──────
   build-gdextension-linux:
-    timeout-minutes: 2
+    timeout-minutes: 5
     needs: [build-linux]
     runs-on: ubuntu-latest
     steps:

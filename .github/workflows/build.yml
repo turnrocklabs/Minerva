@@ -1273,7 +1273,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 6
+    timeout-minutes: 5
     needs: [check-gdextension, build-windows, build-linux, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
@@ -1655,7 +1655,7 @@ jobs:
       verify_debug: ${{ github.ref == 'refs/heads/development' }}
 
   create-release:
-    timeout-minutes: 1
+    timeout-minutes: 2
     needs: [secret-history, build-godot, export-macos, verify-packaged-native, functional-tests, tarball-smoke, platform-gate-windows]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
