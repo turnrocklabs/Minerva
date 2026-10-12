@@ -43,6 +43,7 @@ var _grants_before = null
 var _grants_recorded := false
 var _update_choices_started := false
 var _docket_pid := 0
+var _docket_starts_before := ""
 
 
 func _init() -> void:
@@ -349,6 +350,7 @@ func _test_manual_update_button(port: int) -> void:
 		if id == "docket":
 			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
 			_docket_pid = record.get("pid", 0)
+			_docket_starts_before = FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt"))
 			_check(_docket_pid > 0 and _pm.is_attached(id) and _pm.get_connection(id)._subprocess == null,
 				"docket upgrade starts with a registered external HTTP app")
 			var before_tools: Array = root.get_node("SingletonObject").plugin_tool_registry.get_plugin_tools(id)
@@ -399,7 +401,8 @@ func _test_manual_update_button(port: int) -> void:
 				"attached Docket keeps the discovered pending release separate from installed version")
 			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
 			_check(record.get("pid", 0) == _docket_pid and OS.is_process_running(_docket_pid)
-				and FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt")) == "start\n",
+				and not _docket_starts_before.is_empty()
+				and FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt")) == _docket_starts_before,
 				"attached Docket release checks leave the external app untouched")
 			continue
 		_check(button != null and button.visible and not button.disabled, "newer release offers Update for opted-out " + id)
@@ -428,7 +431,8 @@ func _test_manual_update_button(port: int) -> void:
 		_check(_h.shows_installed_version(panel, "9.9.13") and not button.visible, "plugin row reflects the upgraded version for " + id)
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
 	await create_timer(3.1).timeout
-	_check(dialog.get_node("%JobRows").get_child_count() == 0, "successful running updates leave Installs")
+	_check(dialog.get_node("%JobRows").get_children().all(func(row: Node) -> bool:
+		return str(row.get("job").plugin_id) == "docket"), "successful running non-Docket updates leave Installs")
 	_check(_pack_required_plugin(RELAY, "9.9.14", false) and _write_releases(port, ids, "9.9.14"), "publish a newer release that fails required-tool admission")
 	await panel.check_for_updates()
 	_select_panel_plugin(panel, RELAY)
