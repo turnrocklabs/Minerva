@@ -2,12 +2,16 @@ extends SceneTree
 ## Host → plugin events (DCR minerva:01a12de939dd, work item 01a1322eaead).
 ##
 ## Run: godot --headless --path src --script test/test_plugin_host_events.gd
+##   or scripts/run-functional-tests.sh --test test/test_plugin_host_events.gd
+## (registered in the runner's non-CI plugin tier, not in HERMETIC_TESTS).
 ##
 ## A. PluginHostEventRouter on its own: who receives an event, what is audited,
 ##    how payload text is bounded, and the refusal of a plugin whose protocol
 ##    cannot carry host events.
 ## P. ChatEventPayloads: outcome precedence and payload shape (reply only).
 ## B. Manifest permissions.host_events: parse, serialize, validate, grant keys.
+## R. Turn-report races on a harness pane (no plugins): a stopped turn's late
+##    termination or failing request, and a retried empty response.
 ## C. End to end through the live SingletonObject plugin system and three real
 ##    fixture plugins (fixtures/host_event_probe*): a message sent with
 ##    MCPToolUtils.submit_user_message (the minerva_send_message path) to a chat
@@ -149,10 +153,10 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 		printerr("  FAIL: %s%s" % [label, ("  — " + detail) if detail else ""])
 
 
+## Nothing here may touch a Minerva script before the SingletonObject autoload
+## is up: scripts that name it fail to compile earlier, and Godot keeps them
+## broken for the rest of the run.
 func _run() -> void:
-	_test_router()
-	_test_payloads()
-	_test_manifest()
 	await process_frame
 	_so = root.get_node_or_null("SingletonObject")
 	check("SingletonObject autoload is live", _so != null)
@@ -164,6 +168,10 @@ func _run() -> void:
 	check("the plugin system built its host-event router", _so.get("plugin_host_event_router") != null)
 	if _so.get("plugin_host_event_router") == null:
 		return
+	_test_router()
+	_test_payloads()
+	_test_manifest()
+	await _test_turn_report_races()
 	if OS.execute("python3", ["--version"], [], true) != OK:
 		print("SKIP: python3 not available — skipping fixture plugin sections")
 		return
@@ -502,6 +510,20 @@ func _test_turn_events() -> void:
 		turns.size() == 3 and turns[2]["message"]["params"]["payload"]["outcome"] == "cancelled",
 		str(turns))
 
+
+	_so.Chats = previous_chats
+	for history in [visible_chat, target]:
+		_so.ChatList.erase(history)
+	pane.queue_free()
+
+
+## Turn-report races, on a harness pane with no plugins involved: a stopped
+## turn's late writes must not decide the turn that replaced it.
+func _test_turn_report_races() -> void:
+	print("\n-- R: turn-report races --")
+	var target = _make_history("Races")
+	var pane = _make_harness_pane([target])
+
 	# A stopped turn whose provider resolves after the next turn began writes its
 	# termination late; it must not decide the new turn's outcome.
 	var outcomes: Array = []
@@ -519,7 +541,6 @@ func _test_turn_events() -> void:
 		outcomes == ["cancelled", "ok"], str(outcomes))
 
 	var provider = _compile(SCRIPTED_PROVIDER_SRC).new()
-	var saved_provider = target.provider
 	target.provider = provider
 	outcomes.clear()
 	pane._begin_chat_turn(target)
@@ -545,11 +566,7 @@ func _test_turn_events() -> void:
 	pane._release_chat_turn(target, token_e)
 	check("C21: an empty response followed by a successful retry reports ok",
 		not str(failed_attempt.error).is_empty() and outcomes == ["ok"], str(outcomes))
-	target.provider = saved_provider
-
-	_so.Chats = previous_chats
-	for history in [visible_chat, target]:
-		_so.ChatList.erase(history)
+	_so.ChatList.erase(target)
 	pane.queue_free()
 
 
