@@ -100,10 +100,13 @@ IN_CONTAINER = r"""
 set -euo pipefail
 git config --global protocol.file.allow always
 git config --global advice.detachedHead false
+# VM bind mounts may map the trusted read-only object store to another UID.
+git config --global --add safe.directory /hostgit
 git clone -q --shared --no-checkout /hostgit /work/src
 cd /work/src
 git checkout -q --detach "$REV"
 for sm in $SUBMODULES; do
+    git config --global --add safe.directory "/hostgit/modules/$sm"
     git config "submodule.$sm.url" "/hostgit/modules/$sm"
     git submodule update --init "$sm"
 done
