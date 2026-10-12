@@ -85,7 +85,7 @@ func details(host: Node) -> Dictionary:
 	var epoch := _epoch
 	var listed: String = await host._refresh(binding.process[0], binding.process[1])
 	if not _current(host, binding, epoch) or not listed.is_empty(): return unavailable
-	var answer: Dictionary = await _control(host, binding.process[0], "status")
+	var answer: Dictionary = await _control(host, binding.process[0] as Object, "status")
 	if not _current(host, binding, epoch): return unavailable
 	var descriptor := _descriptor(answer)
 	if descriptor.is_empty() or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""): return unavailable
@@ -136,7 +136,7 @@ func _operate(host: Node, password: String, creating: bool = false, hint: String
 	var binding: Dictionary = host._vault_binding()
 	if binding.is_empty():
 		return _finish(host, epoch, "Vault unavailable; wait for the Docket master to open.")
-	var connection = binding.process[0]
+	var connection: Object = binding.process[0]
 	var generation: int = binding.process[1]
 	var listed: String = await host._refresh(connection, generation)
 	if not _current(host, binding, epoch) or not listed.is_empty():
