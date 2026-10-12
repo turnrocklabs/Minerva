@@ -29,6 +29,7 @@ extends SceneTree
 
 const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 const PROBE_PY := "res://test/fixtures/capability_probe/capability_probe.py"
+const DOCKET_LAUNCHER_PY := "res://test/fixtures/docket_launcher.py"
 const RELAY := "agent_relay"
 const CAPABILITY := "host.terminal.list"
 
@@ -41,6 +42,7 @@ var _fail := 0
 var _grants_before = null
 var _grants_recorded := false
 var _update_choices_started := false
+var _docket_pid := 0
 
 
 func _init() -> void:
@@ -53,6 +55,8 @@ func _init() -> void:
 	_test_newest_release_is_picked()
 	_test_foreign_build_is_broken()
 	_pm = await _h.bootstrap_plugin_manager(true)
+	if _pm != null:
+		_pm.endpoint_discovery.profile_directory = _temp.path_join("docket-app")
 	var port: int = _h.random_high_port()
 	if _pm == null or not _pack_required_plugin(RELAY, "9.9.9") or not _write_releases(port) \
 			or not await _h.start_http_server(_temp, port):
@@ -342,6 +346,14 @@ func _test_manual_update_button(port: int) -> void:
 	for id: String in ids:
 		_pm.get_db().set_auto_update(id, false)
 		_check(not (await _pm.start_plugin(id)).has("error"), "start installed %s before its manual upgrade" % id)
+		if id == "docket":
+			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
+			_docket_pid = record.get("pid", 0)
+			_check(_docket_pid > 0 and _pm.is_attached(id) and _pm.get_connection(id)._subprocess == null,
+				"docket upgrade starts with a registered external HTTP app")
+			var before_tools: Array = root.get_node("SingletonObject").plugin_tool_registry.get_plugin_tools(id)
+			_check(not before_tools.any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"),
+				"docket new capability is absent before publishing upgrade releases")
 		_check(_pack_required_plugin(id, "9.9.12", true, "upgrade_marker"), "pack newer manual release for " + id)
 	_check(_write_releases(port, ids, "9.9.12"), "publish newer manual releases")
 	var panel = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
@@ -395,6 +407,11 @@ func _test_manual_update_button(port: int) -> void:
 		_check(job.outcome == job.OUTCOME_READY and def.version == "9.9.13" and not def.auto_update and _pm.get_connection(id) != previous_connection, "manual Update upgrades/restarts opted-out " + id)
 		_check(_h.shows_installed_version(panel, "9.9.13") and not button.visible, "plugin row reflects the upgraded version for " + id)
 		_check(registry.get_plugin_tools(id).any(func(tool: Dictionary) -> bool: return tool.get("_backend_name") == "upgrade_marker"), "new backend tools are registered in the same session for " + id)
+		if id == "docket":
+			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
+			_check(record.get("pid", 0) == _docket_pid and OS.is_process_running(_docket_pid)
+				and FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt")) == "start\n",
+				"docket plugin upgrade reconnects while the external app keeps running")
 	await create_timer(3.1).timeout
 	_check(dialog.get_node("%JobRows").get_child_count() == 0, "successful running updates leave Installs")
 	_check(_pack_required_plugin(RELAY, "9.9.14", false) and _write_releases(port, ids, "9.9.14"), "publish a newer release that fails required-tool admission")
@@ -436,6 +453,23 @@ func _pack_required_plugin(id: String, version: String, host_tools: bool = true,
 	var args := _probe_args(host_tools, id)
 	if not extra_tool.is_empty():
 		args[args.size() - 1] += "," + extra_tool
+	var source := PROBE_PY
+	if id == "docket":
+		# The external fixture catalog can change while Minerva is connected.
+		# Publishing the release models that change; upgrade must rediscover it.
+		var profile := _temp.path_join("docket-app")
+		DirAccess.make_dir_recursive_absolute(profile)
+		var tools: Array[String] = []
+		if host_tools:
+			for name: String in RequiredPlugins.PLUGINS.docket.host_tools:
+				tools.append(name.trim_prefix("minerva_"))
+		if not extra_tool.is_empty(): tools.append(extra_tool)
+		var tools_path := profile.path_join("tools.json")
+		var tools_file := FileAccess.open(tools_path, FileAccess.WRITE)
+		tools_file.store_string(JSON.stringify(tools))
+		tools_file.close()
+		args.assign(["capability_probe.py", "spawn", profile, tools_path])
+		source = DOCKET_LAUNCHER_PY
 	var manifest := {
 		"id": id, "name": RequiredPlugins.display_name(id), "version": version, "host_api_version": "1",
 		"release_targets": MarketplaceClient.platform_targets(),
@@ -446,7 +480,7 @@ func _pack_required_plugin(id: String, version: String, host_tools: bool = true,
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
 	f.store_string(JSON.stringify(manifest))
 	f.close()
-	DirAccess.copy_absolute(ProjectSettings.globalize_path(PROBE_PY), dir.path_join("capability_probe.py"))
+	DirAccess.copy_absolute(ProjectSettings.globalize_path(source), dir.path_join("capability_probe.py"))
 	return _h.pack_plugin_dir(dir, _temp.path_join("%s-%s-%s.tar.gz" % [id, version,
 		MarketplaceClient.resolve_platform_target()]))
 
@@ -492,6 +526,9 @@ func _finish(code: int) -> void:
 		if _pm != null and _pm.get_db().has_plugin(id):
 			_pm.stop_plugin(id)
 			_pm.get_db().remove(id)
+	if _docket_pid > 0:
+		OS.kill(_docket_pid)
+		_docket_pid = 0
 	if _grants_recorded:
 		_pm._policy_ref._grants.erase(RELAY)
 		if _grants_before != null:
