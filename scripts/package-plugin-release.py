@@ -214,6 +214,50 @@ def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
     return tools
 
 
+def stop_docket_fixture(pid: int) -> None:
+    """Wait for our detached fixture to stop before deleting its profile."""
+    if sys.platform == "win32":
+        import ctypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel.OpenProcess(0x100001, False, pid)
+        if not handle:
+            raise SystemExit(f"Cannot open owned Docket fixture PID {pid} for cleanup")
+        try:
+            if not kernel.TerminateProcess(handle, 0) or kernel.WaitForSingleObject(handle, 5000) != 0:
+                raise SystemExit(f"Docket fixture PID {pid} did not stop")
+        finally:
+            kernel.CloseHandle(handle)
+        return
+
+    def alive() -> bool:
+        with contextlib.suppress(ChildProcessError):
+            if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        # A detached Linux child may remain a zombie under a container init.
+        stat = Path(f"/proc/{pid}/stat")
+        if sys.platform.startswith("linux") and stat.exists():
+            return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+        return True
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, sig)
+        deadline = time.monotonic() + 5
+        while alive() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if not alive():
+            return
+    raise SystemExit(f"Docket fixture PID {pid} did not stop")
+
+
 def probe_docket(root: Path, manifest: dict) -> None:
     """Probe the bundled launcher with a fresh profile, never an owner's server."""
     if manifest.get("tools") or manifest["backend"].get("args"):
@@ -265,11 +309,12 @@ def probe_docket(root: Path, manifest: dict) -> None:
             record = json.loads((profile / "instance.json").read_text(encoding="utf-8"))
             pid = record.get("pid")
             endpoint = record.get("endpoint", {})
+            if isinstance(pid, int) and pid > 0 and Path(record.get("profile", "")).resolve() == profile.resolve():
+                owned_pid = pid
             if (spawned.get("status") != "spawned" or not isinstance(pid, int) or pid <= 0
                     or spawned.get("pid") != pid or endpoint.get("host") != "127.0.0.1"
                     or not isinstance(endpoint.get("port"), int) or not 1 <= endpoint["port"] <= 65535):
                 raise SystemExit(f"Docket did not spawn a registered fixture: {spawned}")
-            owned_pid = pid
             address = f"127.0.0.1:{endpoint['port']}"
             if spawned.get("endpoint") != address or spawned.get("version") != identity:
                 raise SystemExit(f"Docket registered identity does not match release: {spawned}")
@@ -293,17 +338,20 @@ def probe_docket(root: Path, manifest: dict) -> None:
                 raise SystemExit(f"Docket launcher did not attach to its fixture: {attached}")
             print(f"Docket launcher spawn/HTTP/attach passed ({manifest['version']})")
         finally:
-            if owned_pid is not None:
-                # Only the PID established by our fresh-profile spawn is owned.
-                with contextlib.suppress(ProcessLookupError):
-                    os.kill(owned_pid, signal.SIGTERM)
-                if sys.platform != "win32":
-                    with contextlib.suppress(ChildProcessError):
-                        os.waitpid(owned_pid, 0)
-            if mac_profile_link is not None:
-                if mac_profile_link.is_symlink() and mac_profile_link.resolve() == profile:
-                    mac_profile_link.unlink()
-                verify_docket_bundle(root)
+            try:
+                # Recover ownership even if parsing the launcher response failed.
+                if owned_pid is None and (profile / "instance.json").is_file():
+                    record = json.loads((profile / "instance.json").read_text(encoding="utf-8"))
+                    pid = record.get("pid")
+                    if isinstance(pid, int) and pid > 0 and Path(record.get("profile", "")).resolve() == profile.resolve():
+                        owned_pid = pid
+                if owned_pid is not None:
+                    stop_docket_fixture(owned_pid)
+            finally:
+                if mac_profile_link is not None:
+                    if mac_profile_link.is_symlink() and mac_profile_link.resolve() == profile:
+                        mac_profile_link.unlink()
+                    verify_docket_bundle(root)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
