@@ -3,7 +3,7 @@ extends RefCounted
 ## The profile-local Docket registration is the sole attach discovery source.
 ## It is read only: Docket owns its publication and stale-record cleanup.
 const PROTOCOL_FLOOR := "2025-03-26"
-const ATTACH_CHOICES := ["Update docket.app", "Quit docket.app and let Minerva start its own"]
+const ATTACH_CHOICES := ["Update docket.app", "Cancel"]
 var profile_directory: String = ""
 var pid_alive: Callable = _pid_is_running
 

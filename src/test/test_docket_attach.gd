@@ -73,7 +73,7 @@ func _run() -> void:
 	record.protocol_version = "2024-11-05"
 	_write(discovery.profile_directory, record)
 	var refused: Dictionary = await manager.start_plugin("docket")
-	check("old protocol refuses with update quit choice before readiness", refused.has("error")
+	check("old protocol refuses with update choice before readiness", refused.has("error")
 		and refused.get("choices", []).size() == 2 and manager.stdio_starts == 0 and ready.size() == before_ready)
 	manager.stop_plugin("docket")
 	record.erase("protocol_version")
@@ -98,16 +98,17 @@ func _run() -> void:
 	var panel = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
 	root.add_child(panel)
 	panel._populate_detail_panel("docket")
-	check("attached row shows versions and disables managed controls", "installed" in panel._detail_version_label.text
-		and "attached" in panel._detail_version_label.text and panel._update_button.disabled and panel._restart_button.disabled)
+	check("attached row shows versions, permits reconnect and disables updates", "installed" in panel._detail_version_label.text
+		and "attached" in panel._detail_version_label.text and panel._update_button.disabled and not panel._restart_button.disabled)
 	manager.stop_plugin("docket")
 	record.protocol_version = "2024-11-05"
 	_write(discovery.profile_directory, record)
 	await manager.start_plugin("docket")
 	panel._populate_detail_panel("docket")
-	check("startup refusal row offers update and quit choices", panel._remove_confirm != null
+	check("startup refusal row offers update without lifetime instructions", panel._remove_confirm != null
 		and panel._remove_confirm.visible and panel._remove_confirm.ok_button_text == "Update docket.app"
-		and "Quit docket.app" in panel._remove_confirm.cancel_button_text)
+		and panel._remove_confirm.cancel_button_text == "Cancel"
+		and not "quit" in panel._remove_confirm.dialog_text.to_lower())
 	panel._remove_confirm.hide()
 	panel.free()
 	singleton.plugin_manager = previous_manager
@@ -211,6 +212,9 @@ func _launcher_checks(profile: String) -> void:
 				var conn = manager.get_connection("docket")
 				check("one-shot launcher attaches real HTTP child", result.get("attached", false)
 					and conn != null and conn._subprocess == null and ready == ["docket"])
+				var restarted: Dictionary = await manager.restart_plugin("docket")
+				check("Restart rediscovers without spawning", restarted.get("attached", false)
+					and FileAccess.get_file_as_string(directory.path_join("starts.txt")) == "start\n")
 		manager.shutdown_all()
 		var registration: Dictionary = manager.endpoint_discovery.discover()
 		if mode != "fail":

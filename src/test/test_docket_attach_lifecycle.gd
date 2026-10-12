@@ -78,7 +78,7 @@ func _run() -> void:
 	manager.fake_projects.clear()
 	manager.refuse_master = true
 	await manager.start_plugin("docket")
-	check("missing attached master has explicit open quit choices", host.state == "failed"
+	check("missing attached master offers open without lifetime instructions", host.state == "failed"
 		and manager.get_plugin_status("docket").get("attach_choices", []).size() == 2
 		and "attached Docket has no Minerva master" in manager.get_plugin_status("docket").get("notice", ""))
 	focus = await singleton.open_docket_panel()

@@ -34,7 +34,7 @@ signal state_changed(state: String)
 const PLUGIN_ID := "docket"
 const ATTACHED_VAULT_NOTE := "Attached Docket: manage the vault in docket.app."
 const ATTACHED_WRITE_NOTE := "Attached Docket: plugin pickup, policy observations and session handover writes are unavailable."
-const ATTACHED_MASTER_CHOICES := ["Open master in docket.app", "Quit docket.app and let Minerva start its own"]
+const ATTACHED_MASTER_CHOICES := ["Open master in docket.app", "Cancel"]
 const MASTER_RES := "res://Data/master.dct"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"

@@ -768,7 +768,7 @@ func set_attached_host_status(notice: String, choices: Array = []) -> void:
 
 
 func _attached_stopped(id: String) -> void:
-	_ensure_runtime(id)["notice"] = "Docket stopped"
+	_ensure_runtime(id)["notice"] = "Docket stopped; press Start to reconnect"
 	stop_plugin(id, true)
 
 
@@ -1235,8 +1235,6 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 ## Stop and then start a plugin.
 ## Returns {"ok": true} or {"error": "..."}.
 func restart_plugin(id: String) -> Dictionary:
-	if is_attached(id):
-		return {"error": "Attached Docket is not managed by Minerva; quit it in docket.app"}
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
