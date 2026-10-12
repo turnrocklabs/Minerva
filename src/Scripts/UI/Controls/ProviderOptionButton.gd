@@ -269,6 +269,21 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 		for index in range(get_item_count()):
 			if _provider_spec_matches(get_item_provider_spec(index), spec):
 				return index
+		if provider is OpenAIProvider or provider is ChatGPTProvider:
+			# A retired effort variant keeps its saved identity, but displays the
+			# one selected entry for the same actual model in the same provider.
+			for index in range(get_item_count()):
+				var item_spec := get_item_provider_spec(index)
+				if item_spec.get("kind") not in ["builtin", "dynamic"]:
+					continue
+				var resolved := ModelResolver.create(item_spec, false, true)
+				if not resolved.success:
+					continue
+				var candidate: BaseProvider = resolved.provider
+				var matches := candidate.PROVIDER == provider.PROVIDER and candidate.model_name == provider.model_name
+				candidate.free()
+				if matches:
+					return index
 		return -1
 	for i in range(get_item_count()):
 		var item_id := get_item_id(i)
