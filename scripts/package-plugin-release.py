@@ -225,7 +225,7 @@ def probe_docket(root: Path, manifest: dict) -> None:
     receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
     if receipt.get("tag") != "v" + manifest["version"] or not receipt.get("source"):
         raise SystemExit("Docket acquisition receipt does not identify this release")
-    identity = manifest["version"] + "+" + receipt["source"]
+    identity = receipt["tag"] + "+" + receipt["source"]
     mac_profile_link = None
     owned_pid = None
     with tempfile.TemporaryDirectory(prefix="docket-package-probe-") as temporary:
