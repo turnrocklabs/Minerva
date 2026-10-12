@@ -81,6 +81,13 @@ func _run() -> void:
 	check("missing attached master offers open without lifetime instructions", host.state == "failed"
 		and manager.get_plugin_status("docket").get("attach_choices", []).size() == 2
 		and "attached Docket has no Minerva master" in manager.get_plugin_status("docket").get("notice", ""))
+	var panel = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
+	root.add_child(panel)
+	panel._populate_detail_panel("docket")
+	check("missing master recovery names the enabled Restart action", panel._start_button.disabled
+		and not panel._restart_button.disabled and "Restart" in panel._remove_confirm.dialog_text)
+	panel._remove_confirm.hide()
+	panel.free()
 	focus = await singleton.open_docket_panel()
 	check("attached app can be focused to resolve missing master", focus.get("ok", false))
 	manager.refuse_master = false

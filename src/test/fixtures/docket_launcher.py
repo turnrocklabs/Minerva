@@ -59,6 +59,12 @@ def main() -> int:
     if mode == "fail":
         print(json.dumps({"status": "failed", "reason": "fixture startup refused"}), flush=True)
         return 2
+    (profile / "launcher.pid").write_text(str(os.getpid()))
+    if mode == "hang":
+        while True:
+            time.sleep(.1)
+    if mode == "slow":
+        time.sleep(.5)
     subprocess.Popen([sys.executable, __file__, "serve", profile_text, sys.argv[3]],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
@@ -67,8 +73,6 @@ def main() -> int:
         if time.monotonic() >= deadline:
             raise RuntimeError("fixture did not register")
         time.sleep(.01)
-    if mode == "slow":
-        time.sleep(.5)
     record = json.loads((profile / "instance.json").read_text())
     print(json.dumps({"status": "spawned", "pid": record["pid"],
                       "endpoint": f"127.0.0.1:{record['endpoint']['port']}",

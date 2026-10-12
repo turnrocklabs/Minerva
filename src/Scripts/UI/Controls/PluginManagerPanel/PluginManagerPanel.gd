@@ -1603,7 +1603,7 @@ func _show_docket_choice(result: Dictionary) -> void:
 	_docket_primary_choice = str(choices[0])
 	_remove_confirm.ok_button_text = _docket_primary_choice
 	_remove_confirm.cancel_button_text = str(choices[1])
-	_remove_confirm.dialog_text = str(result.get("error", "")) + ("\n\nOpen Minerva's master in docket.app, then press Start to reconnect." if _docket_primary_choice == "Open master in docket.app" else "\n\nUpdate docket.app, then press Start to reconnect.")
+	_remove_confirm.dialog_text = str(result.get("error", "")) + ("\n\nOpen Minerva's master in docket.app, then press Restart to reconnect." if _docket_primary_choice == "Open master in docket.app" else "\n\nUpdate docket.app, then press Start to reconnect.")
 	_sync_dialog_scale(_remove_confirm)
 	_remove_confirm.popup_centered()
 
