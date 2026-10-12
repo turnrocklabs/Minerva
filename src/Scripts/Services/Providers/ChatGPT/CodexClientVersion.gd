@@ -18,10 +18,11 @@ func _init(path: String = "user://codex_client_version.json", url: String = LATE
 static func stable_version(value: Variant) -> String:
 	if not value is String:
 		return ""
+	var version: String = value
 	var pattern := RegEx.new()
 	pattern.compile("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
-	var found := pattern.search(value)
-	return value if found != null and found.get_string() == value else ""
+	var found := pattern.search(version)
+	return version if found != null and found.get_string() == version else ""
 
 
 func resolve(tree: SceneTree, override: String = "", now: int = -1) -> Dictionary:
@@ -36,7 +37,10 @@ func resolve(tree: SceneTree, override: String = "", now: int = -1) -> Dictionar
 			cache = parsed
 	var cached := stable_version(cache.get("version"))
 	var fetched: Variant = cache.get("fetched_at", 0)
-	var fresh := (fetched is int or fetched is float) and float(fetched) <= now and now - float(fetched) < CACHE_SECONDS
+	var fresh := false
+	if fetched is int or fetched is float:
+		var fetched_at: float = fetched
+		fresh = fetched_at <= now and now - fetched_at < CACHE_SECONDS
 	if not cached.is_empty() and fresh:
 		return {"version": cached, "source": "cache"}
 	var http := HTTPRequest.new()
@@ -46,11 +50,15 @@ func resolve(tree: SceneTree, override: String = "", now: int = -1) -> Dictionar
 	var err := http.request(latest_url)
 	if err == OK:
 		var result: Array = await http.request_completed
-		if int(result[0]) == HTTPRequest.RESULT_SUCCESS and int(result[1]) == 200:
+		var status: int = result[0]
+		var response_code: int = result[1]
+		if status == HTTPRequest.RESULT_SUCCESS and response_code == 200:
 			var body: PackedByteArray = result[3]
 			var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
-			if parsed is Dictionary and parsed.get("name") == "@openai/codex":
-				version = stable_version(parsed.get("version"))
+			if parsed is Dictionary:
+				var metadata: Dictionary = parsed
+				if metadata.get("name") == "@openai/codex":
+					version = stable_version(metadata.get("version"))
 	http.queue_free()
 	if not version.is_empty():
 		var file := FileAccess.open(cache_path + ".tmp", FileAccess.WRITE)

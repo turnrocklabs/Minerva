@@ -349,7 +349,7 @@ func _setup_default_provider_set():
 	if SingletonObject.is_model_enabled(SingletonObject.API_MODEL_PROVIDERS.HUMAN):
 		sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
 
-	for key in sorted_keys:
+	for key: int in sorted_keys:
 		if key < SingletonObject.DYNAMIC_MODEL_ID_BASE and not ModelResolver.is_selectable_builtin(key):
 			continue
 		# Skip models whose provider is disabled

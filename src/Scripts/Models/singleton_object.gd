@@ -2214,8 +2214,9 @@ func _init_dynamic_models() -> void:
 	anthropic_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.ANTHROPIC))
 
 	# OpenAI (ID base 30000)
-	openai_model_manager = SelectedModelManager.new("user://openai_models.json", OPENAI_MODEL_ID_BASE)
-	openai_model_manager.persistence_failed.connect(func(message: String): ErrorDisplay.call_deferred("Model preferences", message))
+	var openai_selections := SelectedModelManager.new("user://openai_models.json", OPENAI_MODEL_ID_BASE)
+	openai_model_manager = openai_selections
+	openai_selections.persistence_failed.connect(func(message: String) -> void: ErrorDisplay.call_deferred("Model preferences", message))
 	openai_model_manager.load_config()
 	openai_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.OPENAI))
 
@@ -2230,8 +2231,9 @@ func _init_dynamic_models() -> void:
 	local_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.LOCAL))
 
 	# ChatGPT/Codex (ID base 60000)
-	chatgpt_model_manager = ChatGPTModelManagerScript.new()
-	chatgpt_model_manager.persistence_failed.connect(func(message: String): ErrorDisplay.call_deferred("Model preferences", message))
+	var chatgpt_selections := ChatGPTModelManagerScript.new()
+	chatgpt_model_manager = chatgpt_selections
+	chatgpt_selections.persistence_failed.connect(func(message: String) -> void: ErrorDisplay.call_deferred("Model preferences", message))
 	chatgpt_model_manager.load_config()
 	chatgpt_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.CHATGPT))
 
@@ -2316,7 +2318,8 @@ func create_dynamic_provider(model_id: int) -> BaseProvider:
 	if provider:
 		provider.set_meta("dynamic_model_id", model_id)
 		if manager is SelectedModelManager:
-			provider.set_meta("legacy_reasoning_effort", manager.legacy_effort(model_id))
+			var selections: SelectedModelManager = manager
+			provider.set_meta("legacy_reasoning_effort", selections.legacy_effort(model_id))
 	return provider
 
 

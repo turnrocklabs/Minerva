@@ -13,35 +13,49 @@ func load_config() -> void:
 	if not FileAccess.file_exists(config_path):
 		return
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(config_path))
-	if not parsed is Dictionary or not parsed.get("models") is Array:
+	if not parsed is Dictionary:
 		load_error = "Invalid model selections: %s" % config_path
 		_report_error(load_error)
 		return
 	var data: Dictionary = parsed
-	if not data.get("legacy_models", {}) is Dictionary or int(data.get("selection_version", 0)) > 1:
+	if not data.get("models") is Array:
+		load_error = "Invalid model selections: %s" % config_path
+		_report_error(load_error)
+		return
+	var selection_version: float = data.get("selection_version", 0)
+	if not data.get("legacy_models", {}) is Dictionary or selection_version > 1:
 		load_error = "Unsupported model selections: %s" % config_path
 		_report_error(load_error)
 		return
-	_next_id = int(data.get("next_id", dynamic_id_base))
-	legacy_models = data.get("legacy_models", {}).duplicate(true)
+	var next_id: float = data.get("next_id", dynamic_id_base)
+	_next_id = int(next_id)
+	var saved_legacy: Dictionary = data.get("legacy_models", {})
+	legacy_models = saved_legacy.duplicate(true)
 	models.clear()
 	var seen: Dictionary = {}
 	for value: Variant in data.models:
-		if not value is Dictionary or not value.has("id") or not value.has("model_name"):
+		if not value is Dictionary:
 			load_error = "Invalid model entry in %s" % config_path
 			_report_error(load_error)
 			return
-		var config: Dictionary = value.duplicate(true)
-		var id := int(config.id)
+		var entry: Dictionary = value
+		if not entry.has("id") or not entry.has("model_name"):
+			load_error = "Invalid model entry in %s" % config_path
+			_report_error(load_error)
+			return
+		var config := entry.duplicate(true)
+		var saved_id: float = config.id
+		var id := int(saved_id)
+		config["id"] = id
 		_next_id = maxi(_next_id, id + 1)
-		if int(data.get("selection_version", 0)) < 1:
+		if selection_version < 1:
 			legacy_models[str(id)] = config.duplicate(true)
 		config = selected_config(config)
 		var name: String = str(config.model_name)
 		if not seen.has(name):
 			seen[name] = true
 			models.append(config)
-	if int(data.get("selection_version", 0)) < 1:
+	if selection_version < 1:
 		var backup := config_path + ".before-selection-migration"
 		if not FileAccess.file_exists(backup):
 			var err := DirAccess.copy_absolute(config_path, backup)
@@ -94,7 +108,8 @@ func save_config() -> void:
 func add_model(config: Dictionary) -> int:
 	var existing := get_model_by_name("model_name", str(config.get("model_name", "")))
 	if not existing.is_empty():
-		return int(existing.id)
+		var existing_id: int = existing.id
+		return existing_id
 	return super.add_model(selected_config(config))
 
 
@@ -103,7 +118,8 @@ func update_model(model_id: int, config: Dictionary) -> void:
 		_report_error("This model is no longer selected. Add it again to edit its preferences.")
 		return
 	var duplicate := get_model_by_name("model_name", str(config.get("model_name", "")))
-	if not duplicate.is_empty() and int(duplicate.id) != model_id:
+	var duplicate_id: int = duplicate.get("id", model_id)
+	if not duplicate.is_empty() and duplicate_id != model_id:
 		_report_error("This model is already selected.")
 		return
 	super.update_model(model_id, selected_config(config))
@@ -126,12 +142,14 @@ func remove_model(model_id: int) -> void:
 func get_model(model_id: int) -> Dictionary:
 	var config := super.get_model(model_id)
 	if config.is_empty():
-		config = selected_config(legacy_models.get(str(model_id), {}))
+		var archived: Dictionary = legacy_models.get(str(model_id), {})
+		config = selected_config(archived)
 	return config
 
 
 func legacy_effort(model_id: int) -> String:
-	return str(legacy_models.get(str(model_id), {}).get("reasoning_effort", ""))
+	var archived: Dictionary = legacy_models.get(str(model_id), {})
+	return str(archived.get("reasoning_effort", ""))
 
 
 ## Refresh only metadata for explicitly selected entries. An empty selection
@@ -139,10 +157,13 @@ func legacy_effort(model_id: int) -> String:
 func refresh_selected(available: Array) -> void:
 	for current: Dictionary in models:
 		for value: Variant in available:
-			if value is Dictionary and value.get("model_name") == current.get("model_name"):
-				var id := int(current.id)
+			if not value is Dictionary:
+				continue
+			var discovered: Dictionary = value
+			if discovered.get("model_name") == current.get("model_name"):
+				var id: int = current.id
 				var label: String = str(current.get("display_name", ""))
-				var metadata := selected_config(value)
+				var metadata := selected_config(discovered)
 				for field: String in ["id", "display_name", "short_name", "input_token_cost", "output_token_cost", "tool_mode"]:
 					metadata.erase(field)
 				current.merge(metadata, true)

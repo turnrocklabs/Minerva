@@ -84,7 +84,7 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 				matches.append({"kind": "dynamic", "model_id": int(config.get("id", -1))})
 			elif str(config.get("display_name", "")).to_lower() == requested:
 				display_matches.append({"kind": "dynamic", "model_id": int(config.get("id", -1))})
-	for id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+	for id: int in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK or not is_selectable_builtin(id):
 			continue
 		if target >= 0 and SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target:
@@ -186,7 +186,8 @@ static func is_selectable_builtin(model_id: int) -> bool:
 	var provider_key: int = SingletonObject.MODEL_TO_PROVIDER.get(model_id, -1)
 	if provider_key not in [SingletonObject.API_PROVIDER.OPENAI, SingletonObject.API_PROVIDER.CHATGPT]:
 		return true
-	var provider: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id].new()
+	var provider_script: GDScript = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id]
+	var provider: BaseProvider = provider_script.new()
 	var name := provider.model_name
 	provider.free()
 	var manager: ProviderModelManager = SingletonObject.openai_model_manager if provider_key == SingletonObject.API_PROVIDER.OPENAI else SingletonObject.chatgpt_model_manager
@@ -200,7 +201,7 @@ static func catalog_models(key: String) -> Array:
 	if target == SingletonObject.API_PROVIDER.TURNROCK:
 		return CoreModelCatalog.list_models()
 	var rows: Array = []
-	for id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+	for id: int in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target or not is_selectable_builtin(id):
 			continue
 		var provider: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[id].new()

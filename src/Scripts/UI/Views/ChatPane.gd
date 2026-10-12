@@ -5698,7 +5698,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 	if SingletonObject.ChatList.is_empty(): return
 
-	var history = SingletonObject.ChatList[current_tab]
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
 	# Passthrough chats are contractually bound to their terminal provider —
 	# the chooser is locked in the UI, and this guard backstops every other
@@ -5810,7 +5810,8 @@ func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
 
 ## Preserve exact saved identity, including retired dynamic model entries.
 func _resolve_provider_enum_id(provider: BaseProvider) -> int:
-	return int(ModelResolver.spec_for(provider).get("model_id", -1))
+	var model_id: int = ModelResolver.spec_for(provider).get("model_id", -1)
+	return model_id
 
 
 ## if enter is pressed, accept the event and trigger chat

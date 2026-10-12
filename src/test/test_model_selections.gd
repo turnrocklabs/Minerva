@@ -162,6 +162,12 @@ func check_reasoning() -> void:
 
 
 func check_controls_and_requests() -> void:
+	# Exercise the real credential getter with an isolated preferences object.
+	var singleton = root.get_node("SingletonObject")
+	var original_preferences = singleton.preferences_popup
+	var preferences = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
+	preferences.config_file.set_value("API KEYS", "openai", "fixture-key")
+	singleton.preferences_popup = preferences
 	var fixtures = load("res://test/fixtures/model_request_capture.gd")
 	var history_script = load("res://Scripts/Models/ChatHistory.gd")
 	var settings_script = load("res://Scripts/UI/Views/AISettings.gd")
@@ -222,6 +228,8 @@ func check_controls_and_requests() -> void:
 	api.free()
 	chatgpt.free()
 	chatgpt_script.auth = original_auth
+	singleton.preferences_popup = original_preferences
+	preferences.free()
 
 
 func check_delete_buttons() -> void:

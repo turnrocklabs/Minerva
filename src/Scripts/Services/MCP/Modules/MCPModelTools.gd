@@ -605,8 +605,10 @@ func _update_model(args: Dictionary) -> Dictionary:
 	var manager = SingletonObject.get_model_manager_for_id(model_id)
 	if manager == null:
 		return MCPToolUtils.error("No model manager found for model_id %d" % model_id)
-	if manager is SelectedModelManager and not manager.is_selected(model_id):
-		return MCPToolUtils.error("Model %d is no longer selected. Add it again to edit its preferences." % model_id)
+	if manager is SelectedModelManager:
+		var selections: SelectedModelManager = manager
+		if not selections.is_selected(model_id):
+			return MCPToolUtils.error("Model %d is no longer selected. Add it again to edit its preferences." % model_id)
 
 	var existing: Dictionary = manager.get_model(model_id)
 	if existing.is_empty():
@@ -637,8 +639,10 @@ func _remove_model(args: Dictionary) -> Dictionary:
 	var manager = SingletonObject.get_model_manager_for_id(model_id)
 	if manager == null:
 		return MCPToolUtils.error("No model manager found for model_id %d" % model_id)
-	if manager is SelectedModelManager and not manager.is_selected(model_id):
-		return MCPToolUtils.error("Model %d is already absent from selected models." % model_id)
+	if manager is SelectedModelManager:
+		var selections: SelectedModelManager = manager
+		if not selections.is_selected(model_id):
+			return MCPToolUtils.error("Model %d is already absent from selected models." % model_id)
 
 	var existing: Dictionary = manager.get_model(model_id)
 	if existing.is_empty():

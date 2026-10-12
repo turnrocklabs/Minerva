@@ -145,7 +145,8 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	}
 
 	var reasoning := _build_reasoning_options()
-	reasoning.merge(additional_params.get("reasoning", {}), true)
+	var reasoning_override: Dictionary = additional_params.get("reasoning", {})
+	reasoning.merge(reasoning_override, true)
 	additional_params = additional_params.duplicate(true)
 	additional_params.erase("reasoning")
 	if not reasoning.is_empty():
