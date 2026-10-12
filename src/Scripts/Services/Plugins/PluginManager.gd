@@ -1654,7 +1654,7 @@ func _auto_grant_declared_capabilities(def) -> void:
 	if _policy_ref == null:
 		push_warning("[PluginManager] _auto_grant: no PluginPolicy reference; skipping for '%s'" % def.id)
 		return
-	for cap in def.host_capabilities:
+	for cap in def.host_capabilities + def.host_event_grants():
 		if cap in _NEVER_AUTO_GRANT:
 			continue
 		_policy_ref.grant_capability(def.id, cap)
