@@ -120,6 +120,8 @@ HERMETIC_TESTS=(
 	test/test_terminal_notify.gd
 	test/test_trigger_harness_delivery.gd
 	test/test_docket_wakeups.gd
+	test/test_docket_attach.gd
+	test/test_docket_attach_lifecycle.gd
 	test/test_session_handover.gd
 	test/test_terminal_session.gd
 	test/test_agent_container_foreground.gd
