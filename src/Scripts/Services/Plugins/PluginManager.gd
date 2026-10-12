@@ -128,6 +128,14 @@ var _backend_tool_guards: Dictionary = {}
 
 ## Accumulated time since last health-check sweep.
 var _health_timer_acc: float = 0.0
+## One-shot launcher grace beyond its own 30-second registration bound.
+var docket_launcher_timeout_ms: int = 35000
+# Stop cancels attachment, while this profile's one-shot launcher keeps its
+# independent app startup. A subsequent Start waits for the same launcher.
+var _docket_launcher_process: Dictionary = {}
+var _docket_launcher_stdout := PackedByteArray()
+var _docket_launcher_stderr := PackedByteArray()
+var _docket_launcher_deadline: int = 0
 
 ## Accumulated time since last file-watch sweep.
 var _file_watch_acc: float = 0.0
@@ -706,10 +714,13 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	# failed first start and roll a pending update back.
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
 		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
+	var docket_start := 0
 	if id == "docket":
 		var db: Object = _db
 		var current: PluginDefinition = db.call("get_by_id", id)
-		if _shutting_down or (current != null and current.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]):
+		var runtime := _ensure_runtime(id)
+		if _shutting_down or runtime.get("start_pending", false) \
+				or (current != null and current.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]):
 			return {"error": "Docket cannot start while active, shutting down, or in a crash loop"}
 		var found: Dictionary = endpoint_discovery.discover()
 		if found.has("error"):
@@ -723,9 +734,19 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 		rt["registration"] = {}
 		rt["attach_choices"] = []
 		rt["notice"] = found.get("note", "")
+		var previous_generation: int = rt.get("start_generation", 0)
+		docket_start = previous_generation + 1
+		rt["start_generation"] = docket_start
+		rt["start_pending"] = true
+		rt["launcher_used"] = false
+	var started: Dictionary
 	if in_transaction:
-		return await _start_plugin_now(id)
-	return await PendingUpgrade.start(self, id, _start_plugin_now.bind(id))
+		started = await _start_plugin_now(id, docket_start)
+	else:
+		started = await PendingUpgrade.start(self, id, _start_plugin_now.bind(id, docket_start))
+	if id == "docket" and _ensure_runtime(id).get("start_generation", 0) == docket_start:
+		_ensure_runtime(id)["start_pending"] = false
+	return started
 
 
 func is_attached(id: String) -> bool:
@@ -738,6 +759,8 @@ func _refuse_attachment(reason: String, record: Dictionary = {}) -> Dictionary:
 	rt["attached"] = false
 	rt["attach_refused"] = true
 	rt["registration"] = record
+	rt["degraded"] = false
+	rt["capability_reason"] = ""
 	rt["notice"] = reason
 	rt["attach_choices"] = PluginEndpointDiscovery.ATTACH_CHOICES
 	_transition_state("docket", S_ERROR)
@@ -747,13 +770,14 @@ func _refuse_attachment(reason: String, record: Dictionary = {}) -> Dictionary:
 func set_attached_host_status(notice: String, choices: Array = []) -> void:
 	if not is_attached("docket"): return
 	var rt := _ensure_runtime("docket")
-	rt["notice"] = notice
+	var capability_reason: String = rt.get("capability_reason", "")
+	rt["notice"] = notice + ("\n" + capability_reason if not capability_reason.is_empty() else "")
 	rt["attach_choices"] = choices
 	plugin_status_changed.emit("docket")
 
 
 func _attached_stopped(id: String) -> void:
-	_ensure_runtime(id)["notice"] = "Docket stopped"
+	_ensure_runtime(id)["notice"] = "Docket stopped; press Start to reconnect"
 	stop_plugin(id, true)
 
 
@@ -763,15 +787,16 @@ func _create_connection(id: String, url: String, transport: int) -> MCPServerCon
 
 ## An external app has no managed binary or private panel authority. It must
 ## satisfy the same public catalog contract before plugin_ready can open data.
-func _start_attached_docket(found: Dictionary) -> Dictionary:
+func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Dictionary:
 	var db: Object = _db
 	var def: PluginDefinition = db.call("get_by_id", "docket")
 	var record: Dictionary = found.record
 	if _shutting_down or def == null:
 		return {"error": "Docket cannot start while Minerva is shutting down or its plugin record is missing"}
-	if def.state in [S_RUNNING, S_STARTING, S_CRASH_LOOP]:
+	if def.state in [S_RUNNING, S_CRASH_LOOP] \
+			or (def.state == S_STARTING and not _owns_docket_start(docket_start)):
 		return {"error": "Docket is already active or in a crash loop"}
-	_cleanup_connection("docket")
+	_cleanup_connection("docket", false)
 	var rt := _ensure_runtime("docket")
 	rt["attached"] = true
 	rt["attach_refused"] = false
@@ -779,6 +804,8 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 	rt["notice"] = "Attached Docket, not managed by Minerva"
 	rt["attach_choices"] = []
 	rt["stopping"] = false
+	rt["degraded"] = false
+	rt["capability_reason"] = ""
 	var conn := _create_connection("docket", str(found.url), MCPServerConnection.TransportType.HTTP)
 	conn.plugin_id = "docket"
 	rt["connection"] = conn
@@ -798,6 +825,13 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 		_cleanup_connection("docket")
 		var reason: String = issue if issue is String else "Docket tool check failed"
 		return _refuse_attachment(reason, record)
+	var capability_reason: String = await RequiredPlugins.docket_capabilities_missing(conn)
+	if not _owns_runtime_connection("docket", conn):
+		return {"error": "Docket attach was cancelled"}
+	rt["capability_reason"] = capability_reason
+	rt["degraded"] = not capability_reason.is_empty()
+	if not capability_reason.is_empty():
+		rt["notice"] = capability_reason
 	rt["start_time"] = Time.get_unix_time_from_system()
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
@@ -805,13 +839,21 @@ func _start_attached_docket(found: Dictionary) -> Dictionary:
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
 	plugin_ready.emit("docket")
-	return {"ok": true, "attached": true}
+	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
 
 
-func _start_plugin_now(id: String) -> Dictionary:
+func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	var db: Object = _db
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
+	if id == "docket":
+		var runtime := _ensure_runtime(id)
+		# Rollback stops the connection and cancels its lease, but cannot run
+		# another launcher during the same explicit Start.
+		if runtime.get("launcher_used", false) and runtime.get("launcher_generation", -1) == docket_start:
+			return _refuse_attachment("Docket launcher already ran; press Start to reconnect after the rollback")
+		if runtime.get("start_generation", 0) != docket_start or not runtime.get("start_pending", false):
+			return {"error": "Docket start was cancelled"}
 
 	var def: PluginDefinition = db.call("get_by_id", id)
 	if def == null:
@@ -865,7 +907,7 @@ func _start_plugin_now(id: String) -> Dictionary:
 	RequiredPlugins.prepare_launch(def)
 
 	# Clean up any leftover connection from a previous run.
-	_cleanup_connection(id)
+	_cleanup_connection(id, false)
 
 	_transition_state(id, S_STARTING)
 
@@ -914,6 +956,21 @@ func _start_plugin_now(id: String) -> Dictionary:
 				resolved_args.append(arg)
 		else:
 			resolved_args.append(arg)
+	if id == "docket":
+		_ensure_runtime(id)["launcher_used"] = true
+		_ensure_runtime(id)["launcher_generation"] = docket_start
+		var launched: Dictionary = await _run_docket_launcher(command, resolved_args, docket_start)
+		if not _owns_docket_start(docket_start):
+			return {"error": "Docket start was cancelled"}
+		if launched.has("error"):
+			return _refuse_attachment(str(launched.error))
+		var found: Dictionary = endpoint_discovery.discover()
+		if found.has("error"):
+			var record: Dictionary = found.get("record", {})
+			return _refuse_attachment(str(found.error), record)
+		if not found.get("attached", false):
+			return _refuse_attachment("Docket launcher finished without a live registration")
+		return await _start_attached_docket(found, docket_start)
 
 	# Create and configure the connection.
 	var conn := _create_connection(def.id, "", MCPServerConnection.TransportType.STDIO)
@@ -1011,6 +1068,54 @@ func _start_plugin_now(id: String) -> Dictionary:
 
 	plugin_ready.emit(id)
 	return {"ok": true}
+
+
+func _owns_docket_start(generation: int) -> bool:
+	var runtime: Dictionary = _runtime.get("docket", {})
+	return not _shutting_down and runtime.get("start_pending", false) \
+		and runtime.get("start_generation", 0) == generation
+
+
+## Only the one-shot launcher's pipes/PID belong to Minerva. Discovery owns
+## the app PID, which is never signalled here or by connection cleanup.
+func _run_docket_launcher(command: String, args: PackedStringArray, generation: int) -> Dictionary:
+	var existing_pid: int = _docket_launcher_process.get("pid", -1)
+	if _docket_launcher_process.is_empty() or not OS.is_process_running(existing_pid):
+		_docket_launcher_process = OS.execute_with_pipe(command, args, false)
+		_docket_launcher_stdout = PackedByteArray()
+		_docket_launcher_stderr = PackedByteArray()
+		_docket_launcher_deadline = Time.get_ticks_msec() + docket_launcher_timeout_ms
+	if _docket_launcher_process.is_empty():
+		return {"error": "Could not start the Docket launcher: %s" % command}
+	var pid: int = _docket_launcher_process.get("pid", -1)
+	var stdout_pipe: FileAccess = _docket_launcher_process.get("stdio")
+	var stderr_pipe: FileAccess = _docket_launcher_process.get("stderr")
+	# A project launcher uses a SceneTree, while Engine exposes MainLoop.
+	var loop: SceneTree = Engine.get_main_loop() as SceneTree
+	while OS.is_process_running(pid):
+		if not _owns_docket_start(generation):
+			return {"error": "Docket start was cancelled"}
+		_docket_launcher_stdout = SetupExecutors._drain_available(stdout_pipe, _docket_launcher_stdout, 64)
+		_docket_launcher_stderr = SetupExecutors._drain_available(stderr_pipe, _docket_launcher_stderr, 64)
+		if Time.get_ticks_msec() >= _docket_launcher_deadline:
+			OS.kill(pid)  # launcher only; Stop never signals the app or launcher
+			_docket_launcher_process = {}
+			return {"error": "Docket launcher did not finish within %d ms" % docket_launcher_timeout_ms}
+		await loop.process_frame
+	if not _owns_docket_start(generation):
+		return {"error": "Docket start was cancelled"}
+	_docket_launcher_stdout = SetupExecutors._drain_available(stdout_pipe, _docket_launcher_stdout, 256)
+	_docket_launcher_stderr = SetupExecutors._drain_available(stderr_pipe, _docket_launcher_stderr, 256)
+	_docket_launcher_process = {}
+	var parsed: Variant = JSON.parse_string(_docket_launcher_stdout.get_string_from_utf8().strip_edges())
+	var result: Dictionary = parsed if parsed is Dictionary else {}
+	if result.get("status") == "failed" and result.get("reason") is String:
+		return {"error": result.reason}
+	var exit_code: int = OS.get_process_exit_code(pid)
+	if exit_code != 0 or result.get("status") not in ["attached", "spawned"]:
+		return {"error": "Docket launcher failed (exit %d): %s" % [exit_code,
+			_docket_launcher_stderr.get_string_from_utf8().strip_edges()]}
+	return result
 
 
 ## Sets (or, given an invalid Callable, clears) plugin `id`'s guard of its
@@ -1149,8 +1254,6 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 ## Stop and then start a plugin.
 ## Returns {"ok": true} or {"error": "..."}.
 func restart_plugin(id: String) -> Dictionary:
-	if is_attached(id):
-		return {"error": "Attached Docket is not managed by Minerva; quit it in docket.app"}
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -1484,6 +1587,8 @@ func get_plugin_status(id: String) -> Dictionary:
 		"registered_version": registration.get("version", ""),
 		"attached_version": registration.get("version", "") if is_attached(id) else "",
 		"notice": rt.get("notice", ""),
+		"degraded": rt.get("degraded", false),
+		"capability_reason": rt.get("capability_reason", ""),
 		"attach_choices": rt.get("attach_choices", []),
 		"content_pending": _pending_content_status(id),
 		"state": def.state,
@@ -2047,12 +2152,6 @@ func _handle_unexpected_exit(id: String) -> void:
 	if conn != null and is_instance_valid(conn._subprocess) and not conn._subprocess.is_running():
 		conn._on_stdio_process_exited(-1, conn._subprocess)
 		return
-	var def = _db.get_by_id(id)
-	if id == "docket" and def != null and def.state == S_RUNNING \
-			and conn != null and conn.last_stdio_exit_code == 0:
-		stop_plugin(id, true)
-		return
-
 	rt["stopping"] = true
 
 	_cleanup_connection(id)
@@ -2084,8 +2183,12 @@ func _transition_state(id: String, new_state: int) -> void:
 
 
 ## Disconnect and free a connection, leaving the runtime entry intact.
-func _cleanup_connection(id: String) -> void:
+func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 	var rt: Dictionary = _runtime.get(id, {})
+	if id == "docket" and cancel_launcher:
+		var previous_generation: int = rt.get("start_generation", 0)
+		rt["start_generation"] = previous_generation + 1
+		rt["start_pending"] = false
 	var conn: MCPServerConnection = rt.get("connection", null)
 	if conn == null:
 		return

@@ -42,6 +42,13 @@ func _run() -> void:
 		and host.master_path == ProjectSettings.globalize_path("user://master.dct")
 		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_add" and tool_call.arguments.get("create") == false))
 	check("attached host does not save a hosted session", not FileAccess.file_exists("user://docket_host_session.json"))
+	var degraded_status: Dictionary = manager.get_plugin_status("docket")
+	var reason: String = degraded_status.get("capability_reason", "")
+	check("degraded notice shows its reason once", not reason.is_empty()
+		and str(degraded_status.get("notice", "")).count(reason) == 1)
+	check("degraded reason names the blocked operations",
+		["schema", "bootstrap", "vault", "policy observations", "plugin pickup", "session handover", "project open/forget", "session saving"].all(
+			func(operation: String) -> bool: return operation in reason))
 	var session_text := '{"version":1,"paths":["hosted-session-sentinel"]}'
 	var session_file := FileAccess.open("user://docket_host_session.json", FileAccess.WRITE)
 	session_file.store_string(session_text)
@@ -55,7 +62,7 @@ func _run() -> void:
 	check("attached session repair preserves hosted session bytes", not forgot.is_empty()
 		and FileAccess.get_file_as_string("user://docket_host_session.json") == session_text)
 	var vault: Dictionary = await host.vault_details()
-	check("attached vault is disabled with app explanation", vault.get("mode") == "unavailable" and "docket.app" in vault.get("message", ""))
+	check("missing vault capability is named without a private request", vault.get("mode") == "unavailable" and "docket_vault_control" in vault.get("message", ""))
 	var observed: String = await host.write_policy_observation("fixture", "fixture")
 	check("attached policy observation write is refused", "attached" in observed.to_lower())
 	var seeding = load("res://Scripts/Services/Plugins/PluginSeedingDocket.gd").new(host)
@@ -78,12 +85,52 @@ func _run() -> void:
 	manager.fake_projects.clear()
 	manager.refuse_master = true
 	await manager.start_plugin("docket")
-	check("missing attached master has explicit open quit choices", host.state == "failed"
+	check("missing attached master offers open without lifetime instructions", host.state == "failed"
 		and manager.get_plugin_status("docket").get("attach_choices", []).size() == 2
 		and "attached Docket has no Minerva master" in manager.get_plugin_status("docket").get("notice", ""))
+	var panel = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
+	root.add_child(panel)
+	panel._populate_detail_panel("docket")
+	check("missing master recovery names the enabled Restart action", panel._start_button.disabled
+		and not panel._restart_button.disabled and "Restart" in panel._remove_confirm.dialog_text)
+	panel._remove_confirm.hide()
+	panel.free()
 	focus = await singleton.open_docket_panel()
 	check("attached app can be focused to resolve missing master", focus.get("ok", false))
 	manager.refuse_master = false
+	manager.capability_tools = true
+	manager.stop_plugin("docket")
+	await manager.start_plugin("docket")
+	check("capable attachment declares schema and bootstraps through public tools", host.state == "ready"
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_schema_declare")
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap")
+		and manager.get_panel_authority("docket") == null)
+	check("schema conflicts name the project and slug", host.notices.any(func(notice: String) -> bool: return "ordinary" in notice and "hint" in notice))
+	var session_window = load("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
+	root.add_child(session_window)
+	session_window.refresh()
+	check("schema conflicts are visible in the session window",
+		"ordinary: type hint" in session_window.get_node("%Status").text)
+	session_window.free()
+	check("capable attachment permits public policy observations and pickup", await host.write_policy_observation("fixture", "fixture") == ""
+		and load("res://Scripts/Services/Plugins/PluginSeedingDocket.gd").new(host).unavailable().is_empty())
+	for error_tool: String in ["docket_schema_declare", "docket_project_bootstrap"]:
+		manager.stop_plugin("docket")
+		manager.prepare_error_tool = error_tool
+		manager.tool_calls.clear()
+		await manager.start_plugin("docket")
+		var failures_window = load("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
+		root.add_child(failures_window)
+		failures_window.refresh()
+		check(error_tool + " failure is visible", host.state == "failed"
+			and "Fixture public preparation refused" in failures_window.get_node("%Status").text)
+		await create_timer(0.2).timeout
+		check(error_tool + " failure is not retried", manager.tool_calls.filter(
+			func(tool_call: Dictionary) -> bool: return tool_call.name == error_tool).size() == 1)
+		failures_window.free()
+	manager.prepare_error_tool = ""
+	manager.stop_plugin("docket")
+	await manager.start_plugin("docket")
 	var stops: Array = []
 	manager.plugin_stopped.connect(func(id: String) -> void: stops.append(id))
 	var other = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()
@@ -124,6 +171,7 @@ func _run() -> void:
 		and stops == ["docket"] and manager.stdio_starts == 0
 		and "Docket stopped" in manager.get_plugin_status("docket").get("notice", ""))
 	check("loss does not restart automatically", manager.get_connection("docket") == null)
+	await _check_stopped_refusal(host, "backend loss")
 	record.pid = 99
 	_write(discovery.profile_directory, record)
 	await manager.start_plugin("docket")
@@ -139,6 +187,13 @@ func _run() -> void:
 	manager.stop_plugin("docket")
 	check("Stop cancels an initializing HTTP connection", manager.disconnects == before_disconnect + 1)
 	await manager.start_plugin("docket")
+	check("explicit Stop starts from a live attached backend", manager.is_attached("docket")
+		and def.state == manager.S_RUNNING and manager.get_connection("docket") != null)
+	var person_stops_before: int = manager.person_stops("docket")
+	manager.stop_plugin("docket", true)
+	check("explicit Stop records this person stop", manager.person_stops("docket") == person_stops_before + 1)
+	await _check_stopped_refusal(host, "explicit Stop")
+	await manager.start_plugin("docket")
 	manager.shutdown_all()
 	check("shutdown disconnects and leaves external PID alone", manager.get_connection("docket") == null
 		and discovery.discover().get("attached", false) and manager.stdio_starts == 1)
@@ -153,3 +208,13 @@ func _write(directory: String, record: Dictionary) -> void:
 	var file := FileAccess.open(directory.path_join("instance.json"), FileAccess.WRITE)
 	file.store_string(JSON.stringify(record))
 	file.close()
+
+func _check_stopped_refusal(host: Node, label: String) -> void:
+	var policy = load("res://Scripts/Services/MCP/PolicyEngine.gd").new()
+	var refused: Dictionary = await policy.admit("minerva_docket_query", {})
+	check(label + " machine refusal is clear and non-retryable",
+		refused.get("error_code") == "docket_stopped_by_user" and refused.get("retryable") == false
+		and refused.get("error") == "Docket was closed; reopen it from Tools > Docket"
+		and not host.pickup_pending())
+	var read: Dictionary = await host.open_projects()
+	check(label + " direct read preserves stopped refusal", read.get("code") == "docket_stopped_by_user")

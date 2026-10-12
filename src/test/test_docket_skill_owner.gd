@@ -114,6 +114,11 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 			await tree.process_frame
 	var project := _in_project(arguments)
 	match tool:
+		"docket_schema_declare":
+			return {"version": arguments.version, "projects": []}
+		"docket_project_bootstrap":
+			master.path = str(arguments.path)
+			return {"status": "installed", "path": master.path, "project": master, "conflicts": [], "capability_gaps": []}
 		"docket_secret_set":
 			writes.append([tool, arguments.duplicate(true)])
 			secrets[arguments.handle] = arguments.value
@@ -173,17 +178,6 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	return {"success": false, "error": "unexpected tool %s" % tool}
 """
 
-## The plugin's private channel: the schema is accepted, the master installed.
-const AUTHORITY_SRC := """
-extends RefCounted
-var store = null
-func host_request(name: String, params: Dictionary) -> Dictionary:
-	if name == "declare_schema":
-		return {"result": {"version": params.version}}
-	store.master.path = str(params.path)
-	return {"result": {"status": "installed", "path": params.path, "project": store.master,
-		"conflicts": [], "capability_gaps": []}}
-"""
 
 ## The plugin manager DocketHost is given (its guard is kept for the
 ## registry's manager).
@@ -194,12 +188,9 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal backend_tool_called(id: String, tool: String)
 var connection = null
-var authority = null
 var guard := Callable()
 func get_connection(_id: String):
 	return connection
-func get_panel_authority(_id: String):
-	return authority
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": true}
 func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
@@ -345,12 +336,11 @@ func _run() -> void:
 # work project's items.
 func _set_up() -> bool:
 	_store = _make(STORE_SRC)
-	var authority = _make(AUTHORITY_SRC)
 	var host_manager = _make(HOST_MANAGER_SRC)
 	var running = _make(RUNNING_MANAGER_SRC)
 	var wire = _make(WIRE_SRC)
 	var host = _make("extends \"res://Scripts/Services/DocketHost/DocketHost.gd\"")
-	if _store == null or authority == null or host_manager == null or running == null or wire == null or host == null:
+	if _store == null or host_manager == null or running == null or wire == null or host == null:
 		return false
 	_store.tree = get_tree()
 	_store.work.path = WORK_PATH
@@ -363,9 +353,7 @@ func _set_up() -> bool:
 		HINT: {"id": HINT, "type": "hint", "_project": "master", "title": "Probe hint", "component": "b10fprobe",
 			"value": "prefer the second path", "target": "all"},
 	}
-	authority.store = _store
 	host_manager.connection = _store
-	host_manager.authority = authority
 	root.add_child(host_manager)
 	root.add_child(host)
 	_so.docket_host = host

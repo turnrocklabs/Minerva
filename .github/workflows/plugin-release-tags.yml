@@ -1,0 +1,13 @@
+name: Plugin Release tagged release
+'on':
+  push:
+    tags:
+    - agent_relay-v*
+    - voice-v*
+    - docket-v*
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    uses: ./.github/workflows/plugin-release.yml

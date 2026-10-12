@@ -7,15 +7,6 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    paths:
-      - "vendor/godot_cef"
-      - "patches/godot_cef/**"
-      - "scripts/build-godot-cef.sh"
-      - "src/addons/godot_cef/**"
-      - ".github/workflows/godot-cef.yml"
-    branches-ignore:
-      - main
   pull_request:
     paths:
       - "vendor/godot_cef"
@@ -42,6 +33,7 @@ env:
 
 jobs:
   build:
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

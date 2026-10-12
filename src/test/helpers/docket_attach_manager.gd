@@ -10,6 +10,16 @@ var disconnects := 0
 var delay_health := false
 signal health_release
 var discovered: Array[String] = []
+var real_launcher := false
+var real_connection := false
+var capability_tools := false
+var prepare_error_tool := ""
+
+func _run_docket_launcher(_command: String, _args: PackedStringArray, _generation: int) -> Dictionary:
+	stdio_starts += 1
+	if real_launcher:
+		return await super._run_docket_launcher(_command, _args, _generation)
+	return {"error": "Fixture launcher has no registered app"}
 
 func release_health() -> void:
 	health_release.emit()
@@ -30,7 +40,13 @@ class Connection extends MCPServerConnection:
 		return manager.http_alive
 	func call_tool(name: String, arguments: Dictionary, _timeout_sec: float = 120.0) -> Dictionary:
 		manager.tool_calls.append({"name": name, "arguments": arguments.duplicate(true)})
+		if name == manager.prepare_error_tool: return {"error": "Fixture public preparation refused"}
 		match name:
+			"docket_schema_declare": return {"version":arguments.version, "projects":[{"name":"ordinary", "activated":[], "conflicts":[{"slug":"hint", "reason":"different immutable meaning"}]}]}
+			"docket_project_bootstrap":
+				var project := {"name":"Master", "path":arguments.path, "open_generation":"one"}
+				manager.fake_projects.append(project)
+				return {"project":project, "conflicts":[], "capability_gaps":[]}
 			"docket_project_list": return {"projects": manager.fake_projects.duplicate(true)}
 			"docket_project_add":
 				if manager.refuse_master: return {"error": "Fixture master unavailable"}
@@ -53,9 +69,14 @@ class Connection extends MCPServerConnection:
 			if name == manager.omit_tool:
 				continue
 			result.append(MCPToolDefinition.from_dict({"name": name.trim_prefix("minerva_"), "inputSchema": {"type": "object"}}))
+		if manager.capability_tools:
+			for name in RequiredPlugins.DOCKET_CAPABILITIES:
+				result.append(MCPToolDefinition.from_dict({"name":name.trim_prefix("minerva_"), "inputSchema":{"type":"object"}}))
 		return result
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:
+	if real_connection:
+		return super._create_connection(id, url, transport)
 	var conn := Connection.new(id, url, transport)
 	conn.manager = self
 	return conn

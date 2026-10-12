@@ -10,9 +10,9 @@ The manifest comes from the plugin's source template. Its version must equal
 release_targets. --entrypoint replaces the template's backend entrypoint for
 runtimes whose launcher differs per platform.
 
-The finished archive is then extracted and its entrypoint run as an MCP
-server: tools/list must name exactly the tools the manifest declares, so a
-release cannot disagree with the contract Minerva reads before it starts it.
+The finished archive is then extracted and its entrypoint probed against its
+contract: MCP servers must match their declared tools; Docket's one-shot
+launcher must spawn and attach to its registered standalone HTTP server.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ import os
 from pathlib import Path
 import queue
 import secrets
+import signal
 import shutil
 import subprocess
 import sys
@@ -32,6 +33,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.request
 
 PROBE_TIMEOUT_S = 30.0
 
@@ -146,10 +148,6 @@ def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
         env[manifest["panel_authority"]["secret_env"]] = secrets.token_hex(32)
         env["MINERVA_PLUGIN_DATA_DIR"] = str(root.parent / "probe-data")
     argv = [command, *backend.get("args", [])]
-    mac_docket = sys.platform == "darwin" and manifest["id"] == "docket"
-    if mac_docket:
-        verify_docket_bundle(root)
-        argv.append("--headless")
     process = subprocess.Popen(
         argv, cwd=root,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
@@ -203,8 +201,6 @@ def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
             process.kill()
             process.wait(timeout=5)
         stderr.close()
-        if mac_docket:
-            verify_docket_bundle(root)
     tools = listed.get("result", {}).get("tools", [])
     if discover:
         return [{"name": tool_name(manifest["id"], t["name"]), "description": t.get("description", ""),
@@ -216,6 +212,155 @@ def probe_tools(root: Path, manifest: dict, discover: bool = False) -> list:
                          f"undeclared {sorted(reported - declared)}, missing {sorted(declared - reported)}")
 
     return tools
+
+
+def stop_docket_fixture(pid: int) -> None:
+    """Wait for our detached fixture to stop before deleting its profile."""
+    if sys.platform == "win32":
+        import ctypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel.OpenProcess(0x100001, False, pid)
+        if not handle:
+            raise SystemExit(f"Cannot open owned Docket fixture PID {pid} for cleanup")
+        try:
+            if not kernel.TerminateProcess(handle, 0) or kernel.WaitForSingleObject(handle, 5000) != 0:
+                raise SystemExit(f"Docket fixture PID {pid} did not stop")
+        finally:
+            kernel.CloseHandle(handle)
+        return
+
+    def alive() -> bool:
+        with contextlib.suppress(ChildProcessError):
+            if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        # A detached Linux child may remain a zombie under a container init.
+        stat = Path(f"/proc/{pid}/stat")
+        if sys.platform.startswith("linux"):
+            try:
+                return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+            except FileNotFoundError:
+                return False
+        return True
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, sig)
+        deadline = time.monotonic() + 5
+        while alive() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if not alive():
+            return
+    raise SystemExit(f"Docket fixture PID {pid} did not stop")
+
+
+def probe_docket(root: Path, manifest: dict) -> None:
+    """Probe the bundled launcher with a fresh profile, never an owner's server."""
+    if manifest.get("tools") or manifest["backend"].get("args"):
+        raise SystemExit("Docket launcher must have empty tools and arguments")
+    command = (root / manifest["backend"]["entrypoint"]).resolve()
+    receipts = list(root.glob("official/*/acquisition.lock.json"))
+    if len(receipts) != 1:
+        raise SystemExit("Docket package must contain one acquisition receipt")
+    receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
+    if receipt.get("Tag") != "v" + manifest["version"] or not receipt.get("Source"):
+        raise SystemExit("Docket acquisition receipt does not identify this release")
+    identity = receipt["Tag"] + "+" + receipt["Source"]
+    mac_profile_link = None
+    owned_pid = None
+    with contextlib.ExitStack() as scratch_cleanup:
+        scratch = Path(tempfile.mkdtemp(prefix="docket-package-probe-")).resolve()
+        cleanup_failed = False
+        scratch_cleanup.callback(lambda: None if cleanup_failed else shutil.rmtree(scratch))
+        env = dict(os.environ)
+        env["MINERVA_PLUGIN_DATA_DIR"] = str(scratch / "plugin-data")
+        for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "APPDATA", "LOCALAPPDATA"):
+            env[key] = str(scratch / key)
+            Path(env[key]).mkdir()
+        if sys.platform == "win32":
+            profile = Path(env["APPDATA"]) / "Godot/app_userdata/Docket"
+        elif sys.platform == "darwin":
+            verify_docket_bundle(root)
+            # macOS has no per-process user-data base override. Refuse any
+            # existing profile; redirect only a newly created runner fixture.
+            profile = scratch / "Docket"
+            profile.mkdir()
+            link = Path.home() / "Library/Application Support/Godot/app_userdata/Docket"
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(profile, target_is_directory=True)
+            mac_profile_link = link
+        else:
+            profile = Path(env["XDG_DATA_HOME"]) / "godot/app_userdata/Docket"
+
+        def invoke() -> dict:
+            result = subprocess.run([str(command)], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=PROBE_TIMEOUT_S + 5)
+            if result.returncode:
+                raise SystemExit(f"Docket launcher exited {result.returncode}: {result.stderr[-4000:]}")
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"Docket launcher did not return one status: {result.stdout[-4000:]}") from error
+
+        try:
+            spawned = invoke()
+            record = json.loads((profile / "instance.json").read_text(encoding="utf-8"))
+            pid = record.get("pid")
+            endpoint = record.get("endpoint", {})
+            if isinstance(pid, int) and pid > 0 and Path(record.get("profile", "")).resolve() == profile.resolve():
+                owned_pid = pid
+            if (spawned.get("status") != "spawned" or not isinstance(pid, int) or pid <= 0
+                    or spawned.get("pid") != pid or endpoint.get("host") != "127.0.0.1"
+                    or not isinstance(endpoint.get("port"), int) or not 1 <= endpoint["port"] <= 65535):
+                raise SystemExit(f"Docket did not spawn a registered fixture: {spawned}")
+            address = f"127.0.0.1:{endpoint['port']}"
+            if spawned.get("endpoint") != address or spawned.get("version") != identity:
+                raise SystemExit(f"Docket registered identity does not match release: {spawned}")
+            if Path(record["profile"]).resolve() != profile.resolve():
+                raise SystemExit("Docket registered outside the isolated profile")
+            request = urllib.request.Request("http://" + address + "/mcp",
+                data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "minerva-plugin-release", "version": "1"}}}).encode(),
+                headers={"Content-Type": "application/json"})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(request, timeout=5) as response:
+                initialized = json.load(response)
+            result = initialized.get("result", {})
+            if (initialized.get("id") != 1 or "error" in initialized
+                    or result.get("serverInfo", {}).get("version") != identity
+                    or result.get("_meta", {}).get("registration_status") != "registered"):
+                raise SystemExit(f"Docket standalone initialize failed: {initialized}")
+            attached = invoke()
+            if attached != dict(spawned, status="attached"):
+                raise SystemExit(f"Docket launcher did not attach to its fixture: {attached}")
+            print(f"Docket launcher spawn/HTTP/attach passed ({manifest['version']})")
+        finally:
+            try:
+                # Recover ownership even if parsing the launcher response failed.
+                if owned_pid is None and (profile / "instance.json").is_file():
+                    record = json.loads((profile / "instance.json").read_text(encoding="utf-8"))
+                    pid = record.get("pid")
+                    if isinstance(pid, int) and pid > 0 and Path(record.get("profile", "")).resolve() == profile.resolve():
+                        owned_pid = pid
+                if owned_pid is not None:
+                    stop_docket_fixture(owned_pid)
+            except BaseException:
+                cleanup_failed = True
+                print(f"Docket fixture cleanup failed; preserve {scratch} and discard this runner", file=sys.stderr)
+                raise
+            finally:
+                if mac_profile_link is not None and not cleanup_failed:
+                    if mac_profile_link.is_symlink() and mac_profile_link.resolve() == profile:
+                        mac_profile_link.unlink()
+                    verify_docket_bundle(root)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -243,7 +388,6 @@ def main() -> None:
         if args.docket_source:
             manifest.pop("setup", None)
             manifest["description"] = "Docket's signed upstream GUI, packaged for Minerva's required-plugin installer."
-            manifest["tools"] = probe_tools(root, manifest, discover=True)
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         check_entries(root)
         write_sums(root)
@@ -252,7 +396,10 @@ def main() -> None:
         extracted.mkdir()
         with tarfile.open(archive) as tar:
             tar.extractall(extracted, filter="tar")
-        probe_tools(extracted, manifest)
+        if manifest["id"] == "docket":
+            probe_docket(extracted, manifest)
+        else:
+            probe_tools(extracted, manifest)
     print(f"packaged {archive}")
 
 
