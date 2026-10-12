@@ -126,7 +126,7 @@ static func docket_capabilities_missing(conn: Object) -> String:
 	var tools: Array = raw_tools if raw_tools is Array else []
 	var listed: Array[String] = []
 	var registry: Script = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
-	for tool in tools:
+	for tool: Variant in tools:
 		listed.append(str(registry.call("_apply_prefix", "docket", str(tool.name))))
 	var lacking: Array[String] = []
 	for name in DOCKET_CAPABILITIES:

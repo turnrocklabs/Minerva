@@ -53,6 +53,7 @@ source "$REPO_ROOT/scripts/lib/test-profile.sh"
 MINERVA_FUNCTIONAL_PROFILE_ROOT="$(mktemp -d)" || exit 1
 trap 'rm -rf "$MINERVA_FUNCTIONAL_PROFILE_ROOT"' EXIT
 seed_test_profile "$MINERVA_FUNCTIONAL_PROFILE_ROOT" || exit 1
+export MINERVA_TEST_PROFILE_ROOT="$MINERVA_FUNCTIONAL_PROFILE_ROOT"
 
 TURNROCK_TESTS=(
 	test/test_core_model_catalog.gd

@@ -726,7 +726,8 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 		rt["registration"] = {}
 		rt["attach_choices"] = []
 		rt["notice"] = found.get("note", "")
-		docket_start = int(rt.get("start_generation", 0)) + 1
+		var previous_generation: int = rt.get("start_generation", 0)
+		docket_start = previous_generation + 1
 		rt["start_generation"] = docket_start
 		rt["start_pending"] = true
 		rt["launcher_used"] = false
@@ -956,7 +957,8 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 			return _refuse_attachment(str(launched.error))
 		var found: Dictionary = endpoint_discovery.discover()
 		if found.has("error"):
-			return _refuse_attachment(str(found.error), found.get("record", {}))
+			var record: Dictionary = found.get("record", {})
+			return _refuse_attachment(str(found.error), record)
 		if not found.get("attached", false):
 			return _refuse_attachment("Docket launcher finished without a live registration")
 		return await _start_attached_docket(found, docket_start)
@@ -1077,6 +1079,8 @@ func _run_docket_launcher(command: String, args: PackedStringArray, generation: 
 	var stdout_tail := PackedByteArray()
 	var stderr_tail := PackedByteArray()
 	var deadline: int = Time.get_ticks_msec() + 35000
+	# A project launcher uses a SceneTree, while Engine exposes MainLoop.
+	var loop: SceneTree = Engine.get_main_loop() as SceneTree
 	while OS.is_process_running(pid):
 		stdout_tail = SetupExecutors._drain_available(stdout_pipe, stdout_tail, 64)
 		stderr_tail = SetupExecutors._drain_available(stderr_pipe, stderr_tail, 64)
@@ -1085,7 +1089,7 @@ func _run_docket_launcher(command: String, args: PackedStringArray, generation: 
 		if Time.get_ticks_msec() >= deadline:
 			OS.kill(pid)  # launcher only; Docket is detached and independently owned
 			return {"error": "Docket launcher did not finish within 35 seconds"}
-		await Engine.get_main_loop().process_frame
+		await loop.process_frame
 	stdout_tail = SetupExecutors._drain_available(stdout_pipe, stdout_tail, 256)
 	stderr_tail = SetupExecutors._drain_available(stderr_pipe, stderr_tail, 256)
 	var parsed: Variant = JSON.parse_string(stdout_tail.get_string_from_utf8().strip_edges())
@@ -2167,7 +2171,8 @@ func _transition_state(id: String, new_state: int) -> void:
 func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 	var rt: Dictionary = _runtime.get(id, {})
 	if id == "docket" and cancel_launcher:
-		rt["start_generation"] = int(rt.get("start_generation", 0)) + 1
+		var previous_generation: int = rt.get("start_generation", 0)
+		rt["start_generation"] = previous_generation + 1
 		rt["start_pending"] = false
 	var conn: MCPServerConnection = rt.get("connection", null)
 	if conn == null:
