@@ -197,6 +197,12 @@ func request_method(method: String, params: Dictionary, timeout_sec: float = 120
 	return response
 
 
+## Whether this connection's negotiated protocol carries host events: only
+## STDIO plugins on the legacy (Minerva plugin) profile do.
+func accepts_host_events() -> bool:
+	return transport == TransportType.STDIO and protocol_profile.era == Profile.Era.INITIALIZED_LEGACY
+
+
 ## Method of the host → plugin event notification (PluginHostEventRouter).
 const HOST_EVENT_METHOD := "minerva/host_event"
 
@@ -212,7 +218,7 @@ func send_host_event(event: String, payload: Dictionary) -> Error:
 		return ERR_UNAVAILABLE
 	if protocol_profile.generation != _process_generation:
 		return ERR_UNAVAILABLE
-	if protocol_profile.era != Profile.Era.INITIALIZED_LEGACY:
+	if not accepts_host_events():
 		return ERR_UNCONFIGURED
 	var notification := {"jsonrpc": Protocol.JSON_RPC_VERSION, "method": HOST_EVENT_METHOD,
 		"params": {"event": event, "payload": payload}}

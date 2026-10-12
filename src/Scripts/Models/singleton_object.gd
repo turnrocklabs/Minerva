@@ -644,7 +644,8 @@ func initialize_plugins() -> void:
 
 	var RouterClass = load("res://Scripts/Services/Plugins/PluginHostEventRouter.gd")
 	plugin_host_event_router = RouterClass.new(plugin_policy, plugin_audit_log,
-		_plugins_with_connection, _send_plugin_host_event)
+		_plugins_with_connection, _send_plugin_host_event, _notify_host_event_refusal)
+	plugin_manager.plugin_started.connect(_on_plugin_started_for_host_events)
 	_wire_chat_host_events()
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
@@ -663,17 +664,43 @@ func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -
 	return conn.send_host_event(event, payload) if conn != null else ERR_UNAVAILABLE
 
 
+func _notify_host_event_refusal(message: String) -> void:
+	create_toast_notification(message, ToastNotification.Type.ERROR)
+
+
+func _on_plugin_started_for_host_events(p_id: String) -> void:
+	var def = plugin_manager.get_db().get_by_id(p_id)
+	var conn = plugin_manager.get_connection(p_id)
+	if def != null:
+		plugin_host_event_router.plugin_started(def, conn != null and conn.accepts_host_events())
+
+
 ## Route ChatPane's chat signals to plugins. Runs from both initialize_plugins
-## and the Chats setter, since either may come first at startup.
+## and the Chats setter, since either may come first at startup; a replaced
+## pane is disconnected so no event is published twice.
 func _wire_chat_host_events() -> void:
-	if plugin_host_event_router == null or not is_instance_valid(Chats) or Chats == _host_events_wired_pane:
+	if plugin_host_event_router == null or Chats == _host_events_wired_pane:
 		return
-	_host_events_wired_pane = Chats
-	var router = plugin_host_event_router
-	Chats.chat_turn_completed.connect(func(payload: Dictionary) -> void:
-		router.publish(router.EVENT_CHAT_TURN_COMPLETED, payload))
-	Chats.chat_directory_changed.connect(func(payload: Dictionary) -> void:
-		router.publish(router.EVENT_CHAT_DIRECTORY_CHANGED, payload))
+	if is_instance_valid(_host_events_wired_pane):
+		if _host_events_wired_pane.chat_turn_completed.is_connected(_publish_chat_turn_completed):
+			_host_events_wired_pane.chat_turn_completed.disconnect(_publish_chat_turn_completed)
+		if _host_events_wired_pane.chat_directory_changed.is_connected(_publish_chat_directory_changed):
+			_host_events_wired_pane.chat_directory_changed.disconnect(_publish_chat_directory_changed)
+	_host_events_wired_pane = Chats if is_instance_valid(Chats) else null
+	if _host_events_wired_pane == null:
+		return
+	if not Chats.chat_turn_completed.is_connected(_publish_chat_turn_completed):
+		Chats.chat_turn_completed.connect(_publish_chat_turn_completed)
+	if not Chats.chat_directory_changed.is_connected(_publish_chat_directory_changed):
+		Chats.chat_directory_changed.connect(_publish_chat_directory_changed)
+
+
+func _publish_chat_turn_completed(payload: Dictionary) -> void:
+	plugin_host_event_router.publish(plugin_host_event_router.EVENT_CHAT_TURN_COMPLETED, payload)
+
+
+func _publish_chat_directory_changed(payload: Dictionary) -> void:
+	plugin_host_event_router.publish(plugin_host_event_router.EVENT_CHAT_DIRECTORY_CHANGED, payload)
 
 
 ## Wire plugin tool registry signals to MinervaMCPServer's tool_registry and search index.
