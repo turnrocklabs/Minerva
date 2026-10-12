@@ -1386,6 +1386,9 @@ jobs:
         run: |
           mkdir -p build
           set -euo pipefail
+          # Cold editor plugins preload imported icons before the first asset scan.
+          # Bootstrap assets, then require a clean script-load pass; both must exit zero.
+          timeout 120s godot --headless --import 2>&1 | tee import-assets-output.txt
           timeout 120s godot --headless --import 2>&1 | tee import-output.txt
           if grep -Eq "SCRIPT ERROR|Parse Error" import-output.txt; then
             echo "::error::Godot import reported a script or parse error"
