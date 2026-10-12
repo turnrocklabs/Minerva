@@ -99,11 +99,18 @@ func add_model(config: Dictionary) -> int:
 
 
 func update_model(model_id: int, config: Dictionary) -> void:
+	if not is_selected(model_id):
+		_report_error("This model is no longer selected. Add it again to edit its preferences.")
+		return
 	var duplicate := get_model_by_name("model_name", str(config.get("model_name", "")))
 	if not duplicate.is_empty() and int(duplicate.id) != model_id:
 		_report_error("This model is already selected.")
 		return
 	super.update_model(model_id, selected_config(config))
+
+
+func is_selected(model_id: int) -> bool:
+	return not super.get_model(model_id).is_empty()
 
 
 func remove_model(model_id: int) -> void:

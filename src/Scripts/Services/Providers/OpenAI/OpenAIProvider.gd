@@ -50,7 +50,15 @@ func uses_reasoning_effort_picker() -> bool:
 
 
 func reasoning_effort_levels() -> Array:
-	return supported_reasoning_levels if not supported_reasoning_levels.is_empty() else OpenAIReasoning.levels(model_name)
+	if not supported_reasoning_levels.is_empty():
+		return supported_reasoning_levels
+	var documented := OpenAIReasoning.levels(model_name)
+	if not documented.is_empty():
+		return documented
+	# Preserve an explicitly configured legacy effort without inventing other
+	# capabilities for an unknown identity. New unknown models stay Default-only.
+	var legacy := str(get_meta("legacy_reasoning_effort", ""))
+	return [legacy] if not legacy.is_empty() else []
 
 
 func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:

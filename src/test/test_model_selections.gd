@@ -35,6 +35,7 @@ func run() -> void:
 	check("effort is not a selectable model identity", manager.models[0].display_name == "Example" and not manager.models[0].has("reasoning_effort"))
 	check("legacy variant ID and settings remain resolvable", manager.get_model(60002).model_name == "example" and manager.get_model(60002).custom_setting == 42)
 	check("old chat effort retained for both IDs", manager.legacy_effort(60001) == "low" and manager.legacy_effort(60002) == "high")
+	check("archived identity is not an active selection", manager.is_selected(60001) and not manager.is_selected(60002))
 	check("unknown IDs do not invent a model", manager.get_model(69999).is_empty())
 	check("original profile backed up byte-for-byte", FileAccess.get_file_as_string(path + ".before-selection-migration") == JSON.stringify(original))
 	var saved := FileAccess.get_file_as_string(path)
@@ -63,6 +64,8 @@ func run() -> void:
 	check("explicit re-add creates an entry without recycling old ID", added >= 60010 and empty.models.size() == 1)
 	check("repeated add is idempotent", empty.add_model({"model_name": "example"}) == added and empty.models.size() == 1)
 	await check_reasoning()
+	await check_controls_and_requests()
+	await check_delete_buttons()
 	await check_version_resolution()
 	print("Results: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed > 0 else 0)
@@ -75,6 +78,9 @@ func check_saved_chats(manager) -> void:
 	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
 	var legacy = history_script.Deserialize({"Provider": 60002, "HistoryId": "migration-check", "HistoryName": "Legacy", "HistoryItemList": [], "ReasoningEffort": ""})
 	check("real saved chat restores original model and effort", legacy.provider.model_name == "example" and legacy.ReasoningEffort == "high")
+	var mcp_script = load("res://Scripts/Services/MCP/Modules/MCPModelTools.gd")
+	var mcp = mcp_script.new()
+	check("archived model update and delete return truthful errors", not mcp._update_model({"model_id": 60002, "short_name": "wrong"}).get("success", false) and not mcp._remove_model({"model_id": 60002}).get("success", false))
 	var pane_script = load("res://Scripts/UI/Views/ChatPane.gd")
 	var pane = pane_script.new()
 	check("retired picker identity is exact", pane._resolve_provider_enum_id(legacy.provider) == 60002)
@@ -134,8 +140,108 @@ func check_reasoning() -> void:
 	nano.free()
 	var unknown = openai_script.create_from_config({"model_name": "unknown-future-model"})
 	check("unknown API model does not advertise guessed effort", unknown.reasoning_effort_levels().is_empty())
+	unknown.set_meta("legacy_reasoning_effort", "high")
+	check("unknown legacy configuration retains only its explicit effort", unknown.reasoning_effort_levels() == ["high"] and selection.validate("high", unknown.reasoning_effort_levels()) == "high")
 	unknown.free()
+	var previous = openai_script.create_from_config({"model_name": "gpt-5.1"})
+	check("GPT-5.1 preserves supported effort through request validation", previous.reasoning_effort_levels() == ["none", "low", "medium", "high"] and selection.validate("high", previous.reasoning_effort_levels()) == "high")
+	previous.free()
 	await process_frame
+
+
+func check_controls_and_requests() -> void:
+	var fixtures = load("res://test/fixtures/model_request_capture.gd")
+	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
+	var settings_script = load("res://Scripts/UI/Views/AISettings.gd")
+	var chatgpt_script = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTProvider.gd")
+	var auth_script = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTAuth.gd")
+	var original_auth = chatgpt_script.auth
+	var auth = auth_script.new()
+	auth.access_token = "fixture-token"
+	auth.account_id = "fixture-account"
+	auth.expires_at = int(Time.get_unix_time_from_system() * 1000) + 3600000
+	chatgpt_script.auth = auth
+	var api = fixtures.OpenAI.new()
+	var chatgpt = fixtures.ChatGPT.new()
+	chatgpt.supported_reasoning_levels = [{"effort": "low"}, {"effort": "medium"}, {"effort": "high"}]
+	for provider in [api, chatgpt]:
+		var history = history_script.new(provider)
+		var other = history_script.new(provider)
+		var settings = settings_script.new()
+		settings.current_chat_tab_ref = history
+		var container := VBoxContainer.new()
+		var row := HBoxContainer.new()
+		row.name = "ReasoningHBox"
+		container.add_child(row)
+		var picker := OptionButton.new()
+		picker.name = "ReasoningOptionButton"
+		row.add_child(picker)
+		var summary := CheckButton.new()
+		summary.name = "ReasoningSummaryCheck"
+		container.add_child(summary)
+		settings._reasoning_settings_container = container
+		picker.item_selected.connect(settings._on_reasoning_effort_selected)
+		settings._update_reasoning_settings_visibility(provider)
+		check("Off visibility follows actual provider capabilities", (picker.get_item_index(1) >= 0) == (provider == api))
+		for effort: String in ["high", "", "off"]:
+			if effort == "off" and provider != api:
+				continue
+			settings._select_reasoning_value(picker, effort)
+			picker.item_selected.emit(picker.selected)
+			check("picker stores per-chat effort without changing another chat", history.ReasoningEffort == effort and other.ReasoningEffort.is_empty())
+			var params: Dictionary = {}
+			if not effort.is_empty():
+				provider.apply_reasoning_options(params, effort, effort != "off")
+			await provider.generate_content([], params)
+			var body: Dictionary = provider.captured
+			if provider == api:
+				check("OpenAI full request reflects " + ("Default" if effort.is_empty() else effort), not body.has("reasoning_effort") if effort.is_empty() else body.get("reasoning_effort") == ("none" if effort == "off" else effort))
+			else:
+				check("ChatGPT full request reflects " + ("Default" if effort.is_empty() else effort), body.get("reasoning", {}).get("effort") == ("medium" if effort.is_empty() else effort))
+		settings.free()
+		container.free()
+	api.free()
+	chatgpt.free()
+	chatgpt_script.auth = original_auth
+
+
+func check_delete_buttons() -> void:
+	var singleton = root.get_node("SingletonObject")
+	var popup_script = load("res://Scripts/UI/Views/PreferencesPopup.gd")
+	var selected_script = load("res://Scripts/Services/Providers/SelectedModelManager.gd")
+	var router_script = load("res://Scripts/Services/Providers/OpenRouter/OpenRouterModelManager.gd")
+	for router: bool in [false, true]:
+		var path := "user://delete-button-%s-%s.json" % [router, Time.get_ticks_usec()]
+		var manager = router_script.new() if router else selected_script.new(path, 30000)
+		manager.config_path = path
+		var target: int = manager.add_model({"model_name": "delete-target", "api_model_id": "delete-target", "display_name": "Delete target"})
+		var neighbor: int = manager.add_model({"model_name": "keep-neighbor", "api_model_id": "keep-neighbor", "display_name": "Keep neighbor"})
+		var field := "openrouter_model_manager" if router else "openai_model_manager"
+		var original = singleton.get(field)
+		singleton.set(field, manager)
+		var popup = popup_script.new()
+		var rows := VBoxContainer.new()
+		if router:
+			popup._or_model_list_container = rows
+			popup._populate_openrouter_models()
+		else:
+			popup._custom_models_list_container = rows
+			popup._populate_custom_models()
+		var clicked := false
+		for row: Node in rows.get_children():
+			if row is HBoxContainer and row.get_child(0) is Label and row.get_child(0).text == "Delete target":
+				for child: Node in row.get_children():
+					if child is Button and child.text == "Delete":
+						child.pressed.emit()
+						clicked = true
+		await process_frame
+		var reloaded = router_script.new() if router else selected_script.new(path, 30000)
+		reloaded.config_path = path
+		reloaded.load_config()
+		check("Delete button removes only selected row without confirmation (%s)" % router, clicked and popup.get_child_count() == 0 and reloaded.models.size() == 1 and int(reloaded.models[0].id) == neighbor and int(reloaded.models[0].id) != target)
+		singleton.set(field, original)
+		popup.free()
+		rows.free()
 
 
 var version_done: bool = false
