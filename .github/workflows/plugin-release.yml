@@ -145,7 +145,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: imrans-lab/minerva-plugins
-          ref: 10e64cc2c7258ac637c78cc5fb74823458ee1a44
+          ref: aef7b656c9944bc2e863821eceac0d14c12020f5
           path: minerva-plugins
       - uses: actions/setup-python@v5
         with:
