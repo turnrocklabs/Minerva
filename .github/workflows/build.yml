@@ -1582,6 +1582,14 @@ jobs:
       - name: Archive exported desktop builds
         working-directory: src
         run: |
+          # Raw Actions CEF artifacts lose executable modes. Godot copies
+          # those modes into exports; restore the subprocesses in both builds.
+          for tree in build/linux build/linux-debug; do
+            if [ -d "$tree" ]; then
+              chmod +x "$tree/gdcef_helper" "$tree/chrome-sandbox"
+              test -x "$tree/gdcef_helper" && test -x "$tree/chrome-sandbox"
+            fi
+          done
           if [ -d build/linux ]; then tar -I 'gzip -1' -cf build/Minerva-Linux.tar.gz -C build/linux .; fi
           if [ -d build/linux-debug ]; then tar -I 'gzip -1' -cf build/Minerva-Linux-Debug.tar.gz -C build/linux-debug .; fi
           if [ -d build/windows ]; then (cd build/windows && zip -1qr ../Minerva-Windows.zip .); fi
