@@ -3,6 +3,10 @@ name: Build Project
 on:
   workflow_dispatch:
     inputs:
+      scan_base:
+        description: Base commit for the manual outgoing scan
+        default: 'HEAD^'
+        type: string
       platform:
         description: 'Platform to build for'
         required: true
@@ -16,7 +20,7 @@ on:
       create_release:
         description: 'Create GitHub Release'
         required: false
-        default: true
+        default: false
         type: boolean
   push:
     # development is the active integration branch; every push builds.
@@ -29,11 +33,13 @@ on:
 # Single source of truth for the Godot version — every job that installs Godot
 # reads these. Keep in sync with the project's config/features in project.godot.
 env:
+  CEF_PRODUCER_RUN: 38196002368
   GODOT_VERSION: "4.6.2"
   GODOT_RELEASE: "stable"
 
 jobs:
   secret-history:
+    timeout-minutes: 2
     name: Secret history
     runs-on: ubuntu-latest
     steps:
@@ -41,19 +47,23 @@ jobs:
         with:
           fetch-depth: 0
       - name: Test secret history gate
+        if: github.event_name == 'workflow_dispatch'
         run: python3 tests/test_secret_scan.py
-      - name: Scan outgoing push range or manual full history
+      - name: Scan the event commit range
         env:
+          SECRET_SCAN_BASE: ${{ inputs.scan_base }}
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           GITHUB_EVENT_AFTER: ${{ github.event.after }}
-        run: scripts/scan-secret-history-ci.sh
+        run: scripts/ci/scan-secrets.sh
 
   build-godot-cef:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/godot-cef.yml
     with:
       skip_macos: true
 
   build-mcp-schema-helpers:
+    timeout-minutes: 2
     name: MCP schema helper (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -77,13 +87,13 @@ jobs:
         shell: bash
         run: scripts/acquire-mcp-schema.sh
       - name: Verify contributor helper setup (Linux/macOS)
-        if: runner.os != 'Windows'
+        if: github.event_name == 'workflow_dispatch' && (runner.os != 'Windows')
         shell: bash
         run: |
           scripts/build-extensions.sh --helper-only
           scripts/build-extensions.sh --check --helper-only
       - name: Verify contributor helper setup (Windows)
-        if: runner.os == 'Windows'
+        if: github.event_name == 'workflow_dispatch' && (runner.os == 'Windows')
         shell: pwsh
         run: |
           ./scripts/build-extensions.ps1 -HelperOnly
@@ -103,8 +113,10 @@ jobs:
           tar -czf "$archive" -C "$dist" .
           shasum -a 256 "$archive" | cut -d' ' -f1 > "$archive.sha256"
       - name: Check contributor rerun safety
+        if: github.event_name == 'workflow_dispatch'
         run: python tests/test_contributor_setup.py
       - name: Test native helper contract
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
@@ -119,6 +131,7 @@ jobs:
           if-no-files-found: error
 
   check-gdextension:
+    timeout-minutes: 1
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check.outputs.changed }}
@@ -140,7 +153,7 @@ jobs:
           fi
 
   build-windows:
-    needs: check-gdextension
+    timeout-minutes: 3
     if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: windows-latest
     steps:
@@ -148,7 +161,7 @@ jobs:
       with:
         submodules: recursive
         lfs: true
-    
+
     - name: Cache SCons build
       uses: actions/cache@v4
       with:
@@ -169,7 +182,7 @@ jobs:
         key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
         restore-keys: |
           ${{ runner.os }}-godot-cpp-
-        
+
     - name: Setup Python and SCons
       uses: actions/setup-python@v5
       with:
@@ -219,7 +232,7 @@ jobs:
           src/bin/minerva-vt.dll
 
   build-linux:
-    needs: check-gdextension
+    timeout-minutes: 3
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
     runs-on: ubuntu-latest
     steps:
@@ -315,8 +328,9 @@ jobs:
   # per-plugin tier (CAD / presentation / scansort) is heavy/networked and is
   # left for a manual/nightly run: scripts/run-functional-tests.sh --all.
   functional-tests:
+    timeout-minutes: 60
     needs: [build-linux, build-mcp-schema-helpers, build-godot-cef]
-    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
+    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')))
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -501,8 +515,9 @@ jobs:
   # Runs after build-godot publishes Minerva-Linux-Build (NOT create-release):
   # smoke fires on every push, not just push events that create releases.
   tarball-smoke:
+    timeout-minutes: 60
     needs: build-godot
-    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -560,7 +575,7 @@ jobs:
           if-no-files-found: warn
 
   build-macos:
-    needs: check-gdextension
+    timeout-minutes: 3
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     # Pinned to macos-15: macos-latest moved to macos-26 (Xcode 26 SDK), which
     # Zig 0.15.2 cannot link against — the ghostty-vt shim fails with undefined
@@ -672,8 +687,9 @@ jobs:
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
+    timeout-minutes: 60
     needs: [check-gdextension, build-macos, build-mcp-schema-helpers]
-    if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push'))
     continue-on-error: true
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
@@ -1254,15 +1270,16 @@ jobs:
           fi
 
   build-godot:
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 5
     needs: [check-gdextension, build-windows, build-linux, build-mcp-schema-helpers, build-godot-cef]
-    if: >-
-      always() &&
-      needs.build-mcp-schema-helpers.result == 'success' &&
-      needs.build-godot-cef.result == 'success'
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:  
+        with:
           submodules: 'true'
           lfs: true
 
@@ -1271,7 +1288,7 @@ jobs:
         with:
           pattern: minerva-json-schema-helper-*-x86_64
           path: mcp-schema-helpers
-      
+
       - name: Download Current Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -1316,14 +1333,23 @@ jobs:
 
       # The same workflow run builds these source artifacts before packaging.
       # macOS builds directly in export-macos to preserve framework symlinks.
+      - name: Verify pinned CEF build inputs
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/verify-cef-inputs.sh
       - name: Download godot-cef Linux artifact
         uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-linux-x86_64
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
       - name: Download godot-cef Windows artifact
         uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 
@@ -1334,7 +1360,7 @@ jobs:
             libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
             libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm unzip \
             libgtk-3-0
-        
+
       - name: Install Godot
         run: |
           curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64.zip"
@@ -1354,12 +1380,20 @@ jobs:
         run: |
           mkdir -p .godot/editor
           chmod -R 777 .godot
-          
+
       - name: Export Project
         working-directory: src
         run: |
           mkdir -p build
-          timeout 20s godot --headless --import || true
+          set -euo pipefail
+          # Cold editor plugins preload imported icons before the first asset scan.
+          # Bootstrap assets, then require a clean script-load pass; both must exit zero.
+          timeout 120s godot --headless --import 2>&1 | tee import-assets-output.txt
+          timeout 120s godot --headless --import 2>&1 | tee import-output.txt
+          if grep -Eq "SCRIPT ERROR|Parse Error" import-output.txt; then
+            echo "::error::Godot import reported a script or parse error"
+            exit 1
+          fi
           PLATFORM="${{ github.event.inputs.platform }}"
           if [ "${{ github.event_name }}" = "push" ]; then PLATFORM="all"; fi
           IS_DEV_BRANCH="${{ github.ref == 'refs/heads/development' }}"
@@ -1478,20 +1512,14 @@ jobs:
           echo "All required Linux runtime assets present"
 
       - name: Prefetch required-plugin releases
-        if: |
-          github.event_name == 'push' ||
-          github.event.inputs.platform == 'linux' ||
-          github.event.inputs.platform == 'all'
+        if: github.event_name == 'workflow_dispatch' && (github.event_name == 'push' || github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
       - name: Smoke-launch Linux build (extension load only)
-        if: |
-          github.event_name == 'push' ||
-          github.event.inputs.platform == 'linux' ||
-          github.event.inputs.platform == 'all'
+        if: github.event_name == 'workflow_dispatch' && (github.event_name == 'push' || github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all')
         working-directory: src/build/linux
         env:
           MINERVA_REQUIRED_RELEASES_JSON: ${{ runner.temp }}/required-releases.json
@@ -1554,10 +1582,18 @@ jobs:
       - name: Archive exported desktop builds
         working-directory: src
         run: |
-          if [ -d build/linux ]; then tar -czf build/Minerva-Linux.tar.gz -C build/linux .; fi
-          if [ -d build/linux-debug ]; then tar -czf build/Minerva-Linux-Debug.tar.gz -C build/linux-debug .; fi
-          if [ -d build/windows ]; then (cd build/windows && zip -qr ../Minerva-Windows.zip .); fi
-          if [ -d build/windows-debug ]; then (cd build/windows-debug && zip -qr ../Minerva-Windows-Debug.zip .); fi
+          # Raw Actions CEF artifacts lose executable modes. Godot copies
+          # those modes into exports; restore the subprocesses in both builds.
+          for tree in build/linux build/linux-debug; do
+            if [ -d "$tree" ]; then
+              chmod +x "$tree/gdcef_helper" "$tree/chrome-sandbox"
+              test -x "$tree/gdcef_helper" && test -x "$tree/chrome-sandbox"
+            fi
+          done
+          if [ -d build/linux ]; then tar -I 'gzip -1' -cf build/Minerva-Linux.tar.gz -C build/linux .; fi
+          if [ -d build/linux-debug ]; then tar -I 'gzip -1' -cf build/Minerva-Linux-Debug.tar.gz -C build/linux-debug .; fi
+          if [ -d build/windows ]; then (cd build/windows && zip -1qr ../Minerva-Windows.zip .); fi
+          if [ -d build/windows-debug ]; then (cd build/windows-debug && zip -1qr ../Minerva-Windows-Debug.zip .); fi
 
       - name: Upload Windows Build
         if: |
@@ -1567,8 +1603,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Windows-Build
+          compression-level: 0
           path: src/build/Minerva-Windows.zip
-          
+
       - name: Upload Linux Build
         if: |
           github.event_name == 'push' ||
@@ -1577,6 +1614,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Build
+          compression-level: 0
           path: src/build/Minerva-Linux.tar.gz
 
       # Minerva-macOS-Build is uploaded by the export-macos job (macos-latest).
@@ -1593,6 +1631,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Windows-Debug-Build
+          compression-level: 0
           path: src/build/Minerva-Windows-Debug.zip
 
       - name: Upload Linux Debug Build
@@ -1605,6 +1644,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Debug-Build
+          compression-level: 0
           path: src/build/Minerva-Linux-Debug.tar.gz
 
   # Release gate, Windows half: marketplace install suites and native
@@ -1612,14 +1652,14 @@ jobs:
   # is not available to a reusable-workflow call; keep equal to GODOT_VERSION.)
   platform-gate-windows:
     needs: [build-windows, build-godot-cef, build-mcp-schema-helpers]
-    if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push'))
     uses: ./.github/workflows/platform-gate-windows.yml
     with:
       godot_version: "4.6.2"
 
   verify-packaged-native:
     needs: [build-godot, export-macos]
-    if: always()
+    if: github.event_name == 'workflow_dispatch' && (always())
     permissions:
       actions: read
       contents: read
@@ -1630,34 +1670,24 @@ jobs:
       verify_debug: ${{ github.ref == 'refs/heads/development' }}
 
   create-release:
+    timeout-minutes: 3
     needs: [secret-history, build-godot, export-macos, verify-packaged-native, functional-tests, tarball-smoke, platform-gate-windows]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
-    if: |
-      always() &&
-      needs.secret-history.result == 'success' &&
-      needs.verify-packaged-native.result == 'success' &&
-      needs.functional-tests.result == 'success' &&
-      (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/development' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
-       (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' &&
-        ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') ||
-         (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') ||
-         (github.event.inputs.platform == 'linux' && needs.build-godot.result == 'success') ||
-         (github.event.inputs.platform == 'windows' && needs.build-godot.result == 'success' && needs.platform-gate-windows.result == 'success'))))
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/development' && needs.secret-history.result == 'success' && needs.build-godot.result == 'success') || (always() && needs.secret-history.result == 'success' && needs.verify-packaged-native.result == 'success' && needs.functional-tests.result == 'success' && (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) && ((false && github.ref == 'refs/heads/development' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' && ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') || (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') || (github.event.inputs.platform == 'linux' && needs.build-godot.result == 'success') || (github.event.inputs.platform == 'windows' && needs.build-godot.result == 'success' && needs.platform-gate-windows.result == 'success'))))) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: Minerva-*-Build
           path: downloads
-          
+
       - name: Create Release Archives
         run: |
           mkdir -p release-assets
@@ -1688,7 +1718,11 @@ jobs:
 
           echo "Final release assets:"
           ls -la release-assets/
-          
+
+      - name: Generate release checksums
+        working-directory: release-assets
+        run: sha256sum Minerva-* > SHA256SUMS
+
       - name: Generate release tag
         id: tag
         run: |
@@ -1699,7 +1733,7 @@ jobs:
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Generated tag: $TAG"
-          
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3.0.3
         with:

@@ -94,6 +94,11 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 func _handle(tool: String, arguments: Dictionary) -> Dictionary:
 	if tool in failing_tools:
 		return {"error": "injected write failure"}
+	if tool == "docket_schema_declare":
+		return {"version": arguments.version, "projects": []}
+	if tool == "docket_project_bootstrap":
+		master.path = str(arguments.path)
+		return {"status": "installed", "path": master.path, "project": master, "conflicts": [], "capability_gaps": []}
 	if tool == "docket_project_list":
 		return {"success": true, "projects": projects.duplicate(true)}
 	if not tool in ["docket_flush", "docket_query", "docket_get", "docket_create", "docket_update",
@@ -151,17 +156,6 @@ func _handle(tool: String, arguments: Dictionary) -> Dictionary:
 	return {"success": true, "id": id}
 """
 
-## The plugin's private channel: the schema is accepted, the master installed.
-const AUTHORITY_SRC := """
-extends RefCounted
-var store = null
-func host_request(name: String, params: Dictionary) -> Dictionary:
-	if name == "declare_schema":
-		return {"result": {"version": params.version}}
-	store.master.path = str(params.path)
-	return {"result": {"status": "installed", "path": params.path, "project": store.master,
-		"conflicts": [], "capability_gaps": []}}
-"""
 
 ## The plugin manager DocketHost is given.
 const HOST_MANAGER_SRC := """
@@ -171,11 +165,8 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal backend_tool_called(id: String, tool: String)
 var connection = null
-var authority = null
 func get_connection(_id: String):
 	return connection
-func get_panel_authority(_id: String):
-	return authority
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": connection != null}
 func set_backend_tool_guard(_id: String, _guard: Callable) -> void:
@@ -302,15 +293,12 @@ func _run() -> void:
 # Work project (at WORK_A) and Other open, and a PluginManager over MemoryDB.
 func _set_up() -> bool:
 	_store = _make(STORE_SRC)
-	var authority = _make(AUTHORITY_SRC)
 	_host_manager = _make(HOST_MANAGER_SRC)
 	_host = _make("extends \"res://Scripts/Services/DocketHost/DocketHost.gd\"")
-	if _store == null or authority == null or _host_manager == null or _host == null:
+	if _store == null or _host_manager == null or _host == null:
 		return false
 	_store.projects = [_store.master, _project("work", WORK_A), _project("other", OTHER, "Other")]
-	authority.store = _store
 	_host_manager.connection = _store
-	_host_manager.authority = authority
 	root.add_child(_host_manager)
 	root.add_child(_host)
 	_so.docket_host = _host

@@ -942,7 +942,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_required := RequiredPlugins.has(plugin_id)
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
-	_restart_button.disabled = external or not (is_running or is_starting) or is_building
+	_restart_button.disabled = not (is_running or is_starting) or is_building
 	# A required plugin can be stopped and kept from starting, not removed.
 	_remove_button.visible = not is_required
 
@@ -1599,18 +1599,16 @@ func _show_docket_choice(result: Dictionary) -> void:
 	_pending_remove_id = ""
 	_remove_delete_data_check.visible = false
 	_remove_confirm.title = "Registered Docket unavailable"
-	var choices: Array = result.get("choices", ["Update docket.app", "Quit docket.app and let Minerva start its own"])
+	var choices: Array = result.get("choices", ["Update docket.app", "Cancel"])
 	_docket_primary_choice = str(choices[0])
 	_remove_confirm.ok_button_text = _docket_primary_choice
 	_remove_confirm.cancel_button_text = str(choices[1])
-	_remove_confirm.dialog_text = str(result.get("error", "")) + ("\n\nOpen Minerva's master in docket.app, then Stop and Start this connection. Or quit docket.app and press Start here." if _docket_primary_choice == "Open master in docket.app" else "\n\nUpdate docket.app, or quit it yourself and press Start here.")
+	_remove_confirm.dialog_text = str(result.get("error", "")) + ("\n\nOpen Minerva's master in docket.app, then press Restart to reconnect." if _docket_primary_choice == "Open master in docket.app" else "\n\nUpdate docket.app, then press Start to reconnect.")
 	_sync_dialog_scale(_remove_confirm)
 	_remove_confirm.popup_centered()
 
 
 func _on_remove_cancelled() -> void:
-	if _docket_choice:
-		_show_status("Quit docket.app, then press Start to use Minerva's installed Docket.")
 	_docket_choice = false
 	_pending_remove_id = ""
 

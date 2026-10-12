@@ -1014,6 +1014,11 @@ func open_docket_panel(dct_path: String = "", context: MCPExecutionContext = nul
 				return {"ok": false, "errors": [str(added.get("error", "Docket could not open the project"))]}
 	var gui_args := {"focus": true}
 	if new_docket: gui_args["new_docket"] = true
+	if DisplayServer.get_name() == "Windows":
+		var discovery: PluginEndpointDiscovery = plugin_manager.endpoint_discovery
+		var registered: Dictionary = discovery.discover()
+		if registered.get("attached", false):
+			DisplayServer.enable_for_stealing_focus(PluginEndpointDiscovery._integer_value(registered.record.pid))
 	var focused: Dictionary = await plugin_tool_registry.handle_tool_call("minerva_docket_gui_open", gui_args, context)
 	if focused.has("error") or focused.get("success", true) == false:
 		return {"ok": false, "errors": [str(focused.get("error", "Docket could not focus its window"))], "tool_refusal": true}

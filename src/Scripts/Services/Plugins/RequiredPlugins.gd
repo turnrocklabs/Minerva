@@ -43,6 +43,11 @@ const PLUGINS := {
 		"minerva_docket_secret_get", "minerva_docket_secret_set", "minerva_docket_secret_delete",
 		"minerva_docket_subscribe", "minerva_docket_changes_since", "minerva_docket_ack"]},
 }
+## Optional to establish the HTTP connection, required for Minerva's schema,
+## bootstrap and vault features. Older apps stay connected with a reason.
+const DOCKET_CAPABILITIES: Array[String] = [
+	"minerva_docket_schema_declare", "minerva_docket_project_bootstrap", "minerva_docket_vault_control",
+]
 ## The GitHub Releases API listing the pickup reads, newest first, a page at a
 ## time (tests point it at a local fixture).
 static var releases_url := _initial_releases_url(OS.get_environment("MINERVA_REQUIRED_RELEASES_URL"))
@@ -112,6 +117,22 @@ static func host_tools_missing(def: PluginDefinition, conn) -> String:
 	return ("%s %s does not provide %s, which this Minerva needs; it was stopped. Update Minerva, "
 		+ "or install a %s release made for this Minerva.") % [
 		display_name(def.id), def.version, ", ".join(lacking), display_name(def.id)]
+
+
+static func docket_capabilities_missing(conn: Object) -> String:
+	# Object avoids compiling the autoload-dependent connection before the
+	# --script runner has initialized its project context.
+	var raw_tools: Variant = await conn.call("list_tools")
+	var tools: Array = raw_tools if raw_tools is Array else []
+	var listed: Array[String] = []
+	var registry: Script = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
+	for tool: Variant in tools:
+		listed.append(str(registry.call("_apply_prefix", "docket", str(tool.name))))
+	var lacking: Array[String] = []
+	for name in DOCKET_CAPABILITIES:
+		if not name in listed:
+			lacking.append(name.trim_prefix("minerva_"))
+	return "" if lacking.is_empty() else "Attached Docket lacks %s; Minerva schema, bootstrap, vault controls, policy observations, plugin pickup, session handover, project open/forget and session saving are unavailable." % ", ".join(lacking)
 
 
 ## Why an installed release of a required plugin cannot run here, or "" when
