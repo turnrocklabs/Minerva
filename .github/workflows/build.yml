@@ -1389,7 +1389,10 @@ jobs:
           mkdir -p build
           set -euo pipefail
           timeout 120s godot --headless --import 2>&1 | tee import-output.txt
-          ! grep -E "SCRIPT ERROR|Parse Error" import-output.txt
+          if grep -Eq "SCRIPT ERROR|Parse Error" import-output.txt; then
+            echo "::error::Godot import reported a script or parse error"
+            exit 1
+          fi
           PLATFORM="${{ github.event.inputs.platform }}"
           if [ "${{ github.event_name }}" = "push" ]; then PLATFORM="all"; fi
           IS_DEV_BRANCH="${{ github.ref == 'refs/heads/development' }}"
