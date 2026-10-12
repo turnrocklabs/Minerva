@@ -394,7 +394,8 @@ func _test_manual_update_button(port: int) -> void:
 				"attached Docket disables Auto-update and preserves opt-out")
 			var pending_release: Dictionary = panel._update_entries.get(id, {})
 			_check(pending_release.get("version") == "9.9.12" and button.visible
-				and _h.shows_installed_version(panel, "9.9.11"),
+				and panel.find_children("*", "Label", true, false).any(func(label: Label) -> bool:
+					return label.is_visible_in_tree() and label.text.begins_with("Installed: 9.9.11; attached:")),
 				"attached Docket keeps the discovered pending release separate from installed version")
 			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
 			_check(record.get("pid", 0) == _docket_pid and OS.is_process_running(_docket_pid)
