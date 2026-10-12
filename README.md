@@ -136,3 +136,32 @@ Minerva is built on the shoulders of these open-source projects:
 - **EIRTeam.FFmpeg** by Alex Roman / EIRTeam (MIT) — Godot FFmpeg integration
 - **FFmpeg** by the FFmpeg developers (LGPL 2.1) — audio/video codecs
 - **godot-cpp** by Godot Engine contributors (MIT) — C++ GDExtension bindings
+
+## CI lanes
+
+Branch pushes run build/import/link checks and a redacted outgoing-range secret
+scan. Each concrete push job has a deadline of at most ten minutes.
+`scripts/ci/check_push_lanes.py` checks every push workflow and local reusable
+callee; functional suites and packaged-product probes are dispatch-only.
+
+Before integrating a candidate, dispatch the existing workflows on a branch
+pinned to its exact SHA and wait for every required suite. Plain dispatches do
+not publish: release inputs default to false. For example:
+
+```sh
+gh workflow run WORKFLOW.yml --ref CANDIDATE_BRANCH
+```
+
+Manual scans use a commit range (default `HEAD^..HEAD`, with explicit
+`SECRET_SCAN_BASE`/`SECRET_SCAN_HEAD` available to the CI scan wrapper); they
+never scan all history. Push scans use the event's before/after commits. New
+branch scans start at the merge base with the target branch.
+
+`build.yml` dispatch runs the Linux/Windows suites, Windows platform gate,
+packaged probes, and macOS export. Development push auto-build releases retain
+Linux and Windows artifacts; macOS artifacts come from the on-demand lane.
+The push export consumes successful CEF producer run `38196002368` at
+`6da588fd617c8e52a64a8fc444fa295c327426bf`. Input Git objects are checked before
+reuse. Artifacts expire on 2027-01-10: changed inputs or expiry require a new
+`godot-cef.yml` dispatch and an updated pinned producer in the CI recipe.
+No CEF binary or engine is committed to Git.

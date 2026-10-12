@@ -8,6 +8,12 @@ name: Plugin Release
 # packages it without publishing.
 
 on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish after the on-demand package gates
+        type: boolean
+        default: false
   push:
     tags:
       - 'agent_relay-v*'
@@ -30,8 +36,9 @@ permissions:
 
 jobs:
   agent-relay:
+    timeout-minutes: 60
     name: Agent Relay (${{ matrix.target }})
-    if: github.ref_name == 'development' || startsWith(github.ref_name, 'agent_relay-v')
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -71,8 +78,9 @@ jobs:
           if-no-files-found: error
 
   voice:
+    timeout-minutes: 60
     name: Voice Support (${{ matrix.target }})
-    if: github.ref_name == 'development' || startsWith(github.ref_name, 'voice-v')
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -118,8 +126,9 @@ jobs:
           if-no-files-found: error
 
   docket:
+    timeout-minutes: 60
     name: Docket (${{ matrix.target }})
-    if: github.ref_type == 'branch' || startsWith(github.ref_name, 'docket-v')
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -159,12 +168,11 @@ jobs:
           if-no-files-found: error
 
   publish:
+    timeout-minutes: 60
     name: Publish ${{ github.ref_name }}
     needs: [agent-relay, voice, docket]
     # A tag builds only its own plugin; the other job is skipped, not failed.
-    if: >-
-      always() && github.ref_type == 'tag'
-      && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -185,3 +193,17 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes "Minerva's $plugin plugin. Minerva installs it from this release; the archives are not meant to be unpacked by hand." \
             plugin-release/"$plugin"-*
+
+  source-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile Agent Relay worker
+        run: cargo build --locked --manifest-path src/plugins/agent-relay/Cargo.toml
+      - name: Compile Voice worker scripts
+        run: python3 -m compileall -q src/plugins/voice/worker
+
+  secret-scan:
+    uses: ./.github/workflows/secret-scan.yml
