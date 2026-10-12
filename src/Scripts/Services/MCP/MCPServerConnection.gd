@@ -197,6 +197,28 @@ func request_method(method: String, params: Dictionary, timeout_sec: float = 120
 	return response
 
 
+## Method of the host → plugin event notification (PluginHostEventRouter).
+const HOST_EVENT_METHOD := "minerva/host_event"
+
+
+## Write `{"method": "minerva/host_event", "params": {event, payload}}` as a
+## JSON-RPC notification to the running STDIO plugin. Only the legacy profile
+## carries Minerva's proprietary methods, so any other profile is refused.
+## ERR_UNAVAILABLE: not a connected STDIO process of the current generation;
+## ERR_UNCONFIGURED: not the legacy (Minerva plugin) profile; FAILED: the
+## payload did not encode or the write failed.
+func send_host_event(event: String, payload: Dictionary) -> Error:
+	if transport != TransportType.STDIO or not server_connected or _subprocess == null:
+		return ERR_UNAVAILABLE
+	if protocol_profile.generation != _process_generation:
+		return ERR_UNAVAILABLE
+	if protocol_profile.era != Profile.Era.INITIALIZED_LEGACY:
+		return ERR_UNCONFIGURED
+	var notification := {"jsonrpc": Protocol.JSON_RPC_VERSION, "method": HOST_EVENT_METHOD,
+		"params": {"event": event, "payload": payload}}
+	return OK if _write_stdio_notification(notification, _process_generation) else FAILED
+
+
 ## Connect to the MCP server
 func connect_to_server() -> Error:
 	last_failure_reason = ""
