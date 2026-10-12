@@ -6,8 +6,8 @@ probe_events: every notification received so far, in order, as
 that decoded as JSON integers (GD-1: integers must not arrive as 1.0).
 probe_clear: forgets them.
 
-The three host_event_probe* manifests run this one script under different
-plugin ids (subscriber, declared-but-ungranted, undeclared).
+The host_event_probe* manifests and chat_target_probe run this one script
+under different plugin ids.
 """
 import json, sys
 
