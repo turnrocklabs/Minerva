@@ -12,12 +12,15 @@ extends RefCounted
 ## Wire form (built by the injected sender, MCPServerConnection.send_host_event):
 ##   {"jsonrpc":"2.0","method":"minerva/host_event","params":{"event":E,"payload":{...}}}
 
+const JsonSerialization = preload("res://Scripts/Services/MCP/MCPJsonSerialization.gd")
+const PayloadLimits = preload("res://Scripts/Services/Plugins/PluginPayloadLimits.gd")
+
 const EVENT_CHAT_TURN_COMPLETED := "chat.turn_completed"
 const EVENT_CHAT_DIRECTORY_CHANGED := "chat.directory_changed"
 
 ## Bound on a payload's encoded size, below PluginPayloadLimits.CONTROL_BYTES
 ## by headroom for the notification envelope around it.
-const PAYLOAD_MAX_BYTES := PluginPayloadLimits.CONTROL_BYTES - 256
+const PAYLOAD_MAX_BYTES: int = PayloadLimits.CONTROL_BYTES - 256
 
 ## Audit reason of a plugin whose protocol cannot carry host events.
 const REASON_PROTOCOL_UNSUPPORTED := "host_events_unsupported_protocol"
@@ -73,7 +76,7 @@ func publish(event: String, payload: Dictionary) -> Dictionary:
 		return result
 	var bounded := bound_payload(payload)
 	var key: String = PluginDefinition.host_event_grant(event)
-	var size_error: Dictionary = PluginPayloadLimits.check(bounded, "", PAYLOAD_MAX_BYTES)
+	var too_large: bool = encoded_size(bounded) > PAYLOAD_MAX_BYTES
 	var plugins: Array = _running_plugins.call()
 	for plugin: PluginDefinition in plugins:
 		if _refused.has(plugin.id):
@@ -90,7 +93,7 @@ func publish(event: String, payload: Dictionary) -> Dictionary:
 				PluginErrors.CODE_CAPABILITY_NOT_GRANTED)
 			denied.append(plugin.id)
 			continue
-		if not size_error.is_empty():
+		if too_large:
 			_audit(plugin.id, PluginAuditLog.EVENT_CAPABILITY_FAILED, key, event,
 				PluginErrors.CODE_PAYLOAD_TOO_LARGE)
 			failed.append(plugin.id)
@@ -105,9 +108,18 @@ func publish(event: String, payload: Dictionary) -> Dictionary:
 	return result
 
 
-## `payload` with its `text` shortened until the encoded payload fits
-## PAYLOAD_MAX_BYTES; `truncated` says whether it was. Measured encoded, not
-## raw: escapes can more than double text's size. Only payloads carrying
+## UTF-8 bytes of `payload` as the wire encodes it (MCPJsonSerialization,
+## which MCPServerConnection writes with): escapes such as a raw ESC's six
+## bytes count. A payload that cannot be encoded never fits.
+static func encoded_size(payload: Dictionary) -> int:
+	var encoded: Dictionary = JsonSerialization.encode(payload)
+	if not encoded.get("ok", false):
+		return PAYLOAD_MAX_BYTES + 1
+	return str(encoded.raw).to_utf8_buffer().size()
+
+
+## `payload` with its `text` shortened until encoded_size fits
+## PAYLOAD_MAX_BYTES; `truncated` says whether it was. Only payloads carrying
 ## `text` get the `truncated` key. The caller's dictionary is not changed.
 static func bound_payload(payload: Dictionary) -> Dictionary:
 	var bounded := payload.duplicate(true)
@@ -116,15 +128,16 @@ static func bound_payload(payload: Dictionary) -> Dictionary:
 	var text := str(bounded["text"])
 	bounded["text"] = text
 	bounded["truncated"] = false
-	if PluginPayloadLimits.size_bytes(bounded) <= PAYLOAD_MAX_BYTES:
+	if encoded_size(bounded) <= PAYLOAD_MAX_BYTES:
 		return bounded
 	bounded["truncated"] = true
 	var fits := 0
-	var too_long := text.length()
+	# Every character encodes to at least one byte, so no longer prefix can fit.
+	var too_long := mini(text.length(), PAYLOAD_MAX_BYTES)
 	while too_long - fits > 1:
 		var middle: int = (fits + too_long) >> 1
 		bounded["text"] = text.left(middle)
-		if PluginPayloadLimits.size_bytes(bounded) <= PAYLOAD_MAX_BYTES:
+		if encoded_size(bounded) <= PAYLOAD_MAX_BYTES:
 			fits = middle
 		else:
 			too_long = middle

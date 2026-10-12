@@ -669,8 +669,8 @@ func _notify_host_event_refusal(message: String) -> void:
 
 
 func _on_plugin_started_for_host_events(p_id: String) -> void:
-	var def = plugin_manager.get_db().get_by_id(p_id)
-	var conn = plugin_manager.get_connection(p_id)
+	var def: PluginDefinition = plugin_manager.get_db().get_by_id(p_id)
+	var conn: MCPServerConnection = plugin_manager.get_connection(p_id)
 	if def != null:
 		plugin_host_event_router.plugin_started(def, conn != null and conn.accepts_host_events())
 
