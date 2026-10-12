@@ -531,6 +531,8 @@ var plugin_webview_broker = null  # PluginWebviewBroker
 var plugin_scene_panel_broker = null  # PluginScenePanelBroker
 var plugin_chat_provider_registry = null  # PluginChatProviderRegistry (chat-passthrough W1)
 var plugin_settings_store = null  # PluginSettingsStore
+var plugin_host_event_router = null  # PluginHostEventRouter
+var _host_events_wired_pane: ChatPane = null
 
 ## Initialize the plugin system. Call after initialize_mcp().
 ## Uses load() instead of class_name references to avoid autoload parse-order issues.
@@ -640,7 +642,38 @@ func initialize_plugins() -> void:
 	# _wire_plugin_tools_to_mcp() AFTER the signal is connected, so tools
 	# propagate to the search index and tool_registry correctly.
 
+	var RouterClass = load("res://Scripts/Services/Plugins/PluginHostEventRouter.gd")
+	plugin_host_event_router = RouterClass.new(plugin_policy, plugin_audit_log,
+		_plugins_with_connection, _send_plugin_host_event)
+	_wire_chat_host_events()
+
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
+
+
+func _plugins_with_connection() -> Array:
+	var running: Array = []
+	for def in plugin_manager.get_db().get_all():
+		if plugin_manager.get_connection(def.id) != null:
+			running.append(def)
+	return running
+
+
+func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -> Error:
+	var conn = plugin_manager.get_connection(p_id)
+	return conn.send_host_event(event, payload) if conn != null else ERR_UNAVAILABLE
+
+
+## Route ChatPane's chat signals to plugins. Runs from both initialize_plugins
+## and the Chats setter, since either may come first at startup.
+func _wire_chat_host_events() -> void:
+	if plugin_host_event_router == null or not is_instance_valid(Chats) or Chats == _host_events_wired_pane:
+		return
+	_host_events_wired_pane = Chats
+	var router = plugin_host_event_router
+	Chats.chat_turn_completed.connect(func(payload: Dictionary) -> void:
+		router.publish(router.EVENT_CHAT_TURN_COMPLETED, payload))
+	Chats.chat_directory_changed.connect(func(payload: Dictionary) -> void:
+		router.publish(router.EVENT_CHAT_DIRECTORY_CHANGED, payload))
 
 
 ## Wire plugin tool registry signals to MinervaMCPServer's tool_registry and search index.
@@ -1207,7 +1240,10 @@ var last_thread_index: int
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 # var Provider: BaseProvider
-var Chats: ChatPane
+var Chats: ChatPane:
+	set(value):
+		Chats = value
+		_wire_chat_host_events()
 var Notes: NotesPane
 
 var chat: Chat
