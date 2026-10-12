@@ -63,8 +63,8 @@ def main() -> int:
     if mode == "hang":
         while True:
             time.sleep(.1)
-    if mode == "slow":
-        time.sleep(.5)
+    if mode in ("slow", "rapid"):
+        time.sleep(2 if mode == "rapid" else .5)
     subprocess.Popen([sys.executable, __file__, "serve", profile_text, sys.argv[3]],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)

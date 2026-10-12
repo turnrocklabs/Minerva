@@ -130,6 +130,12 @@ var _backend_tool_guards: Dictionary = {}
 var _health_timer_acc: float = 0.0
 ## One-shot launcher grace beyond its own 30-second registration bound.
 var docket_launcher_timeout_ms: int = 35000
+# Stop cancels attachment, while this profile's one-shot launcher keeps its
+# independent app startup. A subsequent Start waits for the same launcher.
+var _docket_launcher_process: Dictionary = {}
+var _docket_launcher_stdout := PackedByteArray()
+var _docket_launcher_stderr := PackedByteArray()
+var _docket_launcher_deadline: int = 0
 
 ## Accumulated time since last file-watch sweep.
 var _file_watch_acc: float = 0.0
@@ -1073,36 +1079,42 @@ func _owns_docket_start(generation: int) -> bool:
 ## Only the one-shot launcher's pipes/PID belong to Minerva. Discovery owns
 ## the app PID, which is never signalled here or by connection cleanup.
 func _run_docket_launcher(command: String, args: PackedStringArray, generation: int) -> Dictionary:
-	var process: Dictionary = OS.execute_with_pipe(command, args, false)
-	if process.is_empty():
+	var existing_pid: int = _docket_launcher_process.get("pid", -1)
+	if _docket_launcher_process.is_empty() or not OS.is_process_running(existing_pid):
+		_docket_launcher_process = OS.execute_with_pipe(command, args, false)
+		_docket_launcher_stdout = PackedByteArray()
+		_docket_launcher_stderr = PackedByteArray()
+		_docket_launcher_deadline = Time.get_ticks_msec() + docket_launcher_timeout_ms
+	if _docket_launcher_process.is_empty():
 		return {"error": "Could not start the Docket launcher: %s" % command}
-	var pid: int = process.get("pid", -1)
-	var stdout_pipe: FileAccess = process.get("stdio")
-	var stderr_pipe: FileAccess = process.get("stderr")
-	var stdout_tail := PackedByteArray()
-	var stderr_tail := PackedByteArray()
-	var deadline: int = Time.get_ticks_msec() + docket_launcher_timeout_ms
+	var pid: int = _docket_launcher_process.get("pid", -1)
+	var stdout_pipe: FileAccess = _docket_launcher_process.get("stdio")
+	var stderr_pipe: FileAccess = _docket_launcher_process.get("stderr")
 	# A project launcher uses a SceneTree, while Engine exposes MainLoop.
 	var loop: SceneTree = Engine.get_main_loop() as SceneTree
 	while OS.is_process_running(pid):
-		stdout_tail = SetupExecutors._drain_available(stdout_pipe, stdout_tail, 64)
-		stderr_tail = SetupExecutors._drain_available(stderr_pipe, stderr_tail, 64)
 		if not _owns_docket_start(generation):
 			return {"error": "Docket start was cancelled"}
-		if Time.get_ticks_msec() >= deadline:
-			OS.kill(pid)  # launcher only; Docket is detached and independently owned
+		_docket_launcher_stdout = SetupExecutors._drain_available(stdout_pipe, _docket_launcher_stdout, 64)
+		_docket_launcher_stderr = SetupExecutors._drain_available(stderr_pipe, _docket_launcher_stderr, 64)
+		if Time.get_ticks_msec() >= _docket_launcher_deadline:
+			OS.kill(pid)  # launcher only; Stop never signals the app or launcher
+			_docket_launcher_process = {}
 			return {"error": "Docket launcher did not finish within %d ms" % docket_launcher_timeout_ms}
 		await loop.process_frame
-	stdout_tail = SetupExecutors._drain_available(stdout_pipe, stdout_tail, 256)
-	stderr_tail = SetupExecutors._drain_available(stderr_pipe, stderr_tail, 256)
-	var parsed: Variant = JSON.parse_string(stdout_tail.get_string_from_utf8().strip_edges())
+	if not _owns_docket_start(generation):
+		return {"error": "Docket start was cancelled"}
+	_docket_launcher_stdout = SetupExecutors._drain_available(stdout_pipe, _docket_launcher_stdout, 256)
+	_docket_launcher_stderr = SetupExecutors._drain_available(stderr_pipe, _docket_launcher_stderr, 256)
+	_docket_launcher_process = {}
+	var parsed: Variant = JSON.parse_string(_docket_launcher_stdout.get_string_from_utf8().strip_edges())
 	var result: Dictionary = parsed if parsed is Dictionary else {}
 	if result.get("status") == "failed" and result.get("reason") is String:
 		return {"error": result.reason}
 	var exit_code: int = OS.get_process_exit_code(pid)
 	if exit_code != 0 or result.get("status") not in ["attached", "spawned"]:
 		return {"error": "Docket launcher failed (exit %d): %s" % [exit_code,
-			stderr_tail.get_string_from_utf8().strip_edges()]}
+			_docket_launcher_stderr.get_string_from_utf8().strip_edges()]}
 	return result
 
 
