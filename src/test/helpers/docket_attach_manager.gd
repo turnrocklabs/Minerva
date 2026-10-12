@@ -10,6 +10,14 @@ var disconnects := 0
 var delay_health := false
 signal health_release
 var discovered: Array[String] = []
+var real_launcher := false
+var real_connection := false
+
+func _run_docket_launcher(_command: String, _args: PackedStringArray, _generation: int) -> Dictionary:
+	stdio_starts += 1
+	if real_launcher:
+		return await super._run_docket_launcher(_command, _args, _generation)
+	return {"error": "Fixture launcher has no registered app"}
 
 func release_health() -> void:
 	health_release.emit()
@@ -56,6 +64,8 @@ class Connection extends MCPServerConnection:
 		return result
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:
+	if real_connection:
+		return super._create_connection(id, url, transport)
 	var conn := Connection.new(id, url, transport)
 	conn.manager = self
 	return conn
