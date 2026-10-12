@@ -5703,7 +5703,10 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	# Passthrough chats are contractually bound to their terminal provider —
 	# the chooser is locked in the UI, and this guard backstops every other
 	# selection route (keyboard, programmatic select, late signals).
-	var bound_key: String = history.provider.entry_key if history.provider is PluginProvider else ""
+	var bound_key := ""
+	if history.provider is PluginProvider:
+		var plugin_provider: PluginProvider = history.provider
+		bound_key = plugin_provider.entry_key
 	if history.PassthroughMode and not (provider_ is PluginProvider and provider_.entry_key == bound_key):
 		sync_provider_picker_to_chat(history.HistoryId)
 		return
