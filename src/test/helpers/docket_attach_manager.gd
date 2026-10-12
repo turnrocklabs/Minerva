@@ -12,6 +12,7 @@ signal health_release
 var discovered: Array[String] = []
 var real_launcher := false
 var real_connection := false
+var capability_tools := false
 
 func _run_docket_launcher(_command: String, _args: PackedStringArray, _generation: int) -> Dictionary:
 	stdio_starts += 1
@@ -39,6 +40,11 @@ class Connection extends MCPServerConnection:
 	func call_tool(name: String, arguments: Dictionary, _timeout_sec: float = 120.0) -> Dictionary:
 		manager.tool_calls.append({"name": name, "arguments": arguments.duplicate(true)})
 		match name:
+			"docket_schema_declare": return {"version":arguments.version, "projects":[{"name":"ordinary", "activated":[], "conflicts":[{"slug":"hint", "reason":"different immutable meaning"}]}]}
+			"docket_project_bootstrap":
+				var project := {"name":"Master", "path":arguments.path, "open_generation":"one"}
+				manager.fake_projects.append(project)
+				return {"project":project, "conflicts":[], "capability_gaps":[]}
 			"docket_project_list": return {"projects": manager.fake_projects.duplicate(true)}
 			"docket_project_add":
 				if manager.refuse_master: return {"error": "Fixture master unavailable"}
@@ -61,6 +67,9 @@ class Connection extends MCPServerConnection:
 			if name == manager.omit_tool:
 				continue
 			result.append(MCPToolDefinition.from_dict({"name": name.trim_prefix("minerva_"), "inputSchema": {"type": "object"}}))
+		if manager.capability_tools:
+			for name in RequiredPlugins.DOCKET_CAPABILITIES:
+				result.append(MCPToolDefinition.from_dict({"name":name.trim_prefix("minerva_"), "inputSchema":{"type":"object"}}))
 		return result
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:

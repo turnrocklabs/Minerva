@@ -20,7 +20,7 @@ extends "res://test/helpers/docket_owner_suite.gd"
 ##
 ## SESSION (sections D-F) — REAL: DocketHost (setup, session file, reconcile,
 ## Retry/Locate/Forget, prompt read). FAKED: the plugin manager, the plugin's
-## connection and its private channel, answering as the Docket plugin does
+## connection and its public endpoint, answering as the Docket plugin does
 ## (project add/list/remove, prompt queries) over an in-memory set of open
 ## projects. The session files DocketHost reads and writes live in user://,
 ## beside the preferences (a person's vault password among them); the test
@@ -78,6 +78,7 @@ var open := {}
 var prompts := {}
 var unopenable := {}
 var listing_fails := false
+var public_api = null
 var _next := 0
 func process_generation() -> int:
 	return generation
@@ -88,7 +89,10 @@ func open_project(path: String) -> Dictionary:
 			"path": path, "open_generation": str(_next)}
 	return open[path]
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
-	public_calls.append(JSON.stringify({"tool": tool, "arguments": arguments}))
+	# The fixture records credential-free routing, never passwords.
+	public_calls.append(JSON.stringify({"tool": tool, "arguments": {"action":arguments.get("action", "")} if tool == "docket_vault_control" else arguments}))
+	if tool in ["docket_schema_declare", "docket_project_bootstrap", "docket_vault_control"]:
+		return await public_api.execute(tool, arguments)
 	match tool:
 		"docket_project_list":
 			return {"error": "listing failed"} if listing_fails else {"success": true, "projects": open.values()}
@@ -111,9 +115,9 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	return {"success": false, "error": "unexpected tool %s" % tool}
 """
 
-## The plugin's private channel: the schema is accepted, the master installed
+## The plugin's public endpoint: the schema is accepted, the master installed
 ## and opened. Vault descriptors/init mirror Docket 466d7b7 (C1a/C1b).
-const AUTHORITY_SRC := """
+const PUBLIC_API_SRC := """
 extends RefCounted
 var connection = null
 var initialized := true
@@ -123,20 +127,28 @@ var password_sends := 0
 var hold := ""
 var gate_open := true
 var entered := 0
-var private_methods := []
-func host_request(name: String, params: Dictionary) -> Dictionary:
-	if name.begins_with("vault_"):
+var public_methods := []
+func execute(tool: String, arguments: Dictionary) -> Dictionary:
+	var name: String = str(arguments.get("action", "")) if tool == "docket_vault_control" else tool
+	var params := arguments.duplicate()
+	if tool == "docket_vault_control":
+		params["path"] = ""
+		for project: Dictionary in connection.open.values():
+			if project.name == arguments.get("project"):
+				params["path"] = project.path
+				break
+	if tool == "docket_vault_control":
 		entered += 1
-		private_methods.append(name)
+		public_methods.append(name)
 		var project: Dictionary = connection.open.get(params.path, {})
 		var descriptor := {"path": params.path, "open_generation": project.get("open_generation", ""), "fingerprint": fingerprint if initialized else "absent", "initialized":initialized, "hint":hint}
-		var reply := {"result": descriptor.merged({"unlocked": name == "vault_unlock"})}
+		var reply := {"result": descriptor.merged({"unlocked": name == "unlock"})}
 		if project.is_empty():
 			reply = {"error": {"message": "Vault request refused"}}
-		elif name == "vault_unlock" and (not initialized or params.get("password") != "D3a-private-session-sentinel" or params.open_generation != descriptor.open_generation or params.fingerprint != descriptor.fingerprint):
+		elif name == "unlock" and (not initialized or params.get("password") != "D3a-private-session-sentinel" or params.open_generation != descriptor.open_generation or params.fingerprint != descriptor.fingerprint):
 			reply = {"error": {"message": "Vault unlock refused"}}
-		if name in ["vault_unlock", "vault_init"]: password_sends += 1
-		if name == "vault_init":
+		if name in ["unlock", "init"]: password_sends += 1
+		if name == "init":
 			if initialized or params.get("password") != "D3a-private-session-sentinel": reply = {"error":{"message":"Vault creation refused"}}
 			else:
 				initialized = true
@@ -144,13 +156,13 @@ func host_request(name: String, params: Dictionary) -> Dictionary:
 				reply = {"result":descriptor.merged({"initialized":true, "fingerprint":fingerprint, "hint":hint, "unlocked":true}, true)}
 		while name == hold and not gate_open:
 			await Engine.get_main_loop().process_frame
-		return reply
-	if name == "declare_schema":
+		return reply.get("result", reply)
+	if name == "docket_schema_declare":
 		while name == hold and not gate_open:
 			await Engine.get_main_loop().process_frame
-		return {"result": {"version": params.version}}
+		return {"version": params.version, "projects": []}
 	var project: Dictionary = connection.open_project(str(params.path))
-	return {"result": {"status": "installed", "path": project.path, "project": project, "conflicts": [], "capability_gaps": []}}
+	return {"status": "installed", "path": project.path, "project": project, "conflicts": [], "capability_gaps": []}
 """
 
 const PLUGIN_MANAGER_SRC := """
@@ -160,13 +172,13 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal backend_tool_called(id: String, tool: String)
 var connection = null
-var authority = null
+var public_api = null
+var capability_reason := ""
 func get_connection(_id: String):
+	connection.public_api = public_api
 	return connection
-func get_panel_authority(_id: String):
-	return authority
 func get_plugin_status(_id: String) -> Dictionary:
-	return {"running": true}
+	return {"running": true, "capability_reason": capability_reason}
 func set_backend_tool_guard(_id: String, _guard: Callable) -> void:
 	pass
 """
@@ -386,11 +398,11 @@ func _test_session() -> void:
 	_write("user://docket_host_session.json", JSON.stringify({"version": 1, "paths": ["/p/a.dct", "/p/gone.dct", "/p/moved.dct"]}))
 	var connection = _make(CONNECTION_SRC)
 	connection.unopenable = {"/p/gone.dct": true, "/p/moved.dct": true}
-	var authority = _make(AUTHORITY_SRC)
+	var authority = _make(PUBLIC_API_SRC)
 	authority.connection = connection
 	var manager: Node = _make(PLUGIN_MANAGER_SRC)
 	manager.connection = connection
-	manager.authority = authority
+	manager.public_api = authority
 	root.add_child(manager)
 	var host: Node = host_script.new()
 	_made_nodes.append(host)
@@ -445,7 +457,7 @@ func _test_session() -> void:
 		joined.get("prompt") == "NEW" and "/p/new.dct" in _saved_session(), "%s %s" % [joined, _saved_session()])
 
 
-# -- Hosted vault: real host/helper/UI, explicitly fake private backend --------
+# -- Public vault: real host/helper/UI, explicitly fake public backend --------
 
 func _vault_form():
 	var form = load("res://Scenes/windows/PreferencesPopup.tscn").instantiate()
@@ -495,15 +507,15 @@ func _profile_has_password(path: String) -> bool:
 func _test_vault_panel_startup(initialized: bool) -> void:
 	_clear_user_files()
 	var connection = _make(CONNECTION_SRC)
-	var authority = _make(AUTHORITY_SRC)
+	var authority = _make(PUBLIC_API_SRC)
 	authority.connection = connection
 	authority.initialized = initialized
 	authority.hint = "00123" if initialized else ""
-	authority.hold = "declare_schema"
+	authority.hold = "docket_schema_declare"
 	authority.gate_open = false
 	var manager: Node = _make(PLUGIN_MANAGER_SRC)
 	manager.connection = connection
-	manager.authority = authority
+	manager.public_api = authority
 	root.add_child(manager)
 	var host: Node = load(DOCKET_HOST_PATH).new()
 	_made_nodes.append(host)
@@ -525,17 +537,17 @@ func _test_vault_panel_startup(initialized: bool) -> void:
 		check("G: fresh hosted session shows the descriptor hint without saved credentials",
 			form.get_node("%VaultStatusLabel").text.contains("Hint (plain text): 00123")
 			and host._vault_session._password.is_empty() and not form._hint.get_parent().visible)
-	var calls: int = authority.private_methods.size()
+	var calls: int = authority.public_methods.size()
 	for repeat in range(3):
 		host.state_changed.emit(host.state)
 		await process_frame
-	check("G: identical host state emissions do not loop through private details", authority.private_methods.size() == calls)
+	check("G: identical host state emissions do not loop through public details", authority.public_methods.size() == calls)
 	form.bind_host(null)
 	var epoch: int = form._view_epoch
 	host.state_changed.emit("unavailable")
 	host.vault_changed.emit()
 	await process_frame
-	check("G: unbound host signals cannot refresh the panel", form._view_epoch == epoch and authority.private_methods.size() == calls)
+	check("G: unbound host signals cannot refresh the panel", form._view_epoch == epoch and authority.public_methods.size() == calls)
 
 
 func _test_vault() -> void:
@@ -543,11 +555,11 @@ func _test_vault() -> void:
 		await _test_vault_panel_startup(initialized)
 	_clear_user_files()
 	var connection = _make(CONNECTION_SRC)
-	var authority = _make(AUTHORITY_SRC)
+	var authority = _make(PUBLIC_API_SRC)
 	authority.connection = connection
 	var manager: Node = _make(PLUGIN_MANAGER_SRC)
 	manager.connection = connection
-	manager.authority = authority
+	manager.public_api = authority
 	root.add_child(manager)
 	var host: Node = load(DOCKET_HOST_PATH).new()
 	_made_nodes.append(host)
@@ -598,21 +610,21 @@ func _test_vault() -> void:
 		and form._confirm.text.is_empty() and form._hint.text.is_empty())
 	form.bind_host(null)
 	await host.unlock_vault(VAULT_PASSWORD)
-	var settled_calls: int = authority.private_methods.size()
+	var settled_calls: int = authority.public_methods.size()
 	connection.open_project("/p/vault-session.dct")
 	manager.backend_tool_called.emit("docket", "docket_project_add")
 	check("G: ordinary session project reconciliation preserves settled unlocked state without resending",
 		await _wait(func() -> bool: return not host._reconciling)
-		and host.vault_status().begins_with("Vault: unlocked") and authority.private_methods.size() == settled_calls)
+		and host.vault_status().begins_with("Vault: unlocked") and authority.public_methods.size() == settled_calls)
 	check("G: oversized UTF-8 input is refused locally", await host.unlock_vault("é".repeat(513)) == "Vault refused: enter a password of at most 1024 UTF-8 bytes.")
 	# Hold old responses across each lifecycle boundary, never printing payloads.
-	for method in ["vault_challenge", "vault_unlock"]:
+	for method in ["status", "unlock"]:
 		for boundary in ["process", "opening", "session"]:
 			authority.hold = method
 			authority.gate_open = false
 			var entered: int = authority.entered
 			var pending := _vault_attempt(host)
-			check("H: held private request reached fake backend", await _wait(func() -> bool: return authority.entered > entered and authority.private_methods.back() == method))
+			check("H: held public request reached fake backend", await _wait(func() -> bool: return authority.entered > entered and authority.public_methods.back() == method))
 			if boundary == "process":
 				manager.plugin_stopped.emit("docket")
 				connection.generation += 1
@@ -621,7 +633,7 @@ func _test_vault() -> void:
 			else:
 				host._session_changes += 1
 			authority.gate_open = true
-			check("H: held private request finishes", await _wait(func() -> bool: return pending.get("done", false)))
+			check("H: held public request finishes", await _wait(func() -> bool: return pending.get("done", false)))
 			check("H: stale %s after %s change cannot publish unlocked state" % [method, boundary],
 				pending.get("message") == "Vault request expired; try again." and host._vault_session._unlocked.is_empty())
 			authority.hold = ""
@@ -635,41 +647,41 @@ func _test_vault() -> void:
 	var restarted = _make(CONNECTION_SRC)
 	restarted.generation = 99
 	manager.connection = restarted
-	authority = _make(AUTHORITY_SRC)
+	authority = _make(PUBLIC_API_SRC)
 	authority.connection = restarted
-	manager.authority = authority
-	var count: int = authority.private_methods.size()
+	manager.public_api = authority
+	var count: int = authority.public_methods.size()
 	manager.plugin_ready.emit("docket")
-	check("I: new connection and new authority receive automatic fresh challenge then resend",
+	check("I: new connection and new public API receive automatic fresh challenge then resend",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
-		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
+		and authority.public_methods.slice(count) == ["status", "unlock"])
 	# A new opening seen by a real refresh also re-challenges automatically.
-	count = authority.private_methods.size()
+	count = authority.public_methods.size()
 	restarted.open[host.master_path].open_generation += "-next"
 	await host._refresh(restarted, restarted.generation)
 	check("I: a new master opening automatically re-challenges before unlock",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
-		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
-	count = authority.private_methods.size()
+		and authority.public_methods.slice(count) == ["status", "unlock"])
+	count = authority.public_methods.size()
 	host._reconciling = true
 	restarted.open[host.master_path].open_generation += "-busy"
 	await host._refresh(restarted, restarted.generation)
 	await process_frame
 	check("I: a resume during reconciliation waits without losing the retained credential",
-		authority.private_methods.size() == count and not host.vault_status().begins_with("Vault: unlocked")
+		authority.public_methods.size() == count and not host.vault_status().begins_with("Vault: unlocked")
 		and host._vault_session._password == VAULT_PASSWORD)
 	host._reconciling = false
 	host._publish()
 	check("I: settled publish re-arms a resume deferred by reconciliation",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked"))
-		and authority.private_methods.slice(count) == ["vault_challenge", "vault_unlock"])
+		and authority.public_methods.slice(count) == ["status", "unlock"])
 	# A real reconcile publishes while a held unlock is still busy.
-	authority.hold = "vault_unlock"
+	authority.hold = "unlock"
 	authority.gate_open = false
 	var busy_entered: int = authority.entered
 	var busy_attempt := _vault_attempt(host)
 	check("I: held unlock starts before actual session reconciliation",
-		await _wait(func() -> bool: return authority.entered > busy_entered and authority.private_methods.back() == "vault_unlock"))
+		await _wait(func() -> bool: return authority.entered > busy_entered and authority.public_methods.back() == "unlock"))
 	restarted.open_project("/p/during-unlock.dct")
 	manager.backend_tool_called.emit("docket", "docket_project_add")
 	await process_frame
@@ -683,15 +695,15 @@ func _test_vault() -> void:
 	check("I: publication during busy unlock eventually re-challenges retained credential",
 		await _wait(func() -> bool: return host.vault_status().begins_with("Vault: unlocked")))
 	# A requested resume must not turn an ordinary password refusal into a loop.
-	authority.hold = "vault_unlock"
+	authority.hold = "unlock"
 	authority.gate_open = false
 	busy_entered = authority.entered
 	var wrong_attempt := _vault_attempt(host, "wrong-password")
 	check("I: wrong-password unlock reaches the held backend",
-		await _wait(func() -> bool: return authority.entered > busy_entered and authority.private_methods.back() == "vault_unlock"))
+		await _wait(func() -> bool: return authority.entered > busy_entered and authority.public_methods.back() == "unlock"))
 	host._publish()
 	await process_frame
-	var refused_calls: int = authority.private_methods.size()
+	var refused_calls: int = authority.public_methods.size()
 	authority.hold = ""
 	authority.gate_open = true
 	check("I: ordinary wrong-password refusal completes",
@@ -699,13 +711,14 @@ func _test_vault() -> void:
 		and wrong_attempt.get("message") == "Vault unlock refused; check the existing vault password.")
 	await process_frame
 	check("I: pending resume is discarded after wrong-password refusal with no retry loop",
-		authority.private_methods.size() == refused_calls and not host._vault_session._resume_pending)
-	manager.authority = null
+		authority.public_methods.size() == refused_calls and not host._vault_session._resume_pending)
+	manager.capability_reason = "Attached Docket lacks docket_vault_control"
 	var no_channel: String = await host.unlock_vault(VAULT_PASSWORD)
 	await process_frame
 	check("I: no-channel refusal does not automatically retry",
-		no_channel == "Vault unavailable: no private host channel." and authority.private_methods.size() == refused_calls)
-	manager.authority = authority
+		no_channel == "Attached Docket lacks docket_vault_control" and authority.public_methods.size() == refused_calls)
+	manager.capability_reason = ""
+	manager.public_api = authority
 	await host.unlock_vault(VAULT_PASSWORD)
 	var known_master: String = host.master_path
 	var unknown_sent: int = authority.password_sends
@@ -725,7 +738,7 @@ func _test_vault() -> void:
 	for chat in _made_chats:
 		for item in chat.HistoryItemList:
 			history_clean = history_clean and not item.Message.contains(VAULT_PASSWORD)
-	check("J: password absent from new profile/session/log files, public tool calls and chat history",
+	check("J: password absent from new profile/session/log files, credential-free tool recordings and chat history",
 		not _profile_has_password("user://") and public_clean and history_clean)
 	host._exit_tree()
 	check("J: explicit host exit drops retained credential and unlocked references",

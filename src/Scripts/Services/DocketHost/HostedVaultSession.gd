@@ -56,7 +56,7 @@ func _current(host: Node, binding: Dictionary, epoch: int) -> bool:
 
 
 func _descriptor(answer: Dictionary) -> Dictionary:
-	var result = answer.get("result")
+	var result = answer.get("value")
 	if answer.has("error") or answer.has("error_code") or not result is Dictionary:
 		return {}
 	for field in ["path", "open_generation", "fingerprint"]:
@@ -73,11 +73,9 @@ func details(host: Node) -> Dictionary:
 	var binding: Dictionary = host._vault_binding()
 	if _busy or binding.is_empty(): return unavailable
 	var epoch := _epoch
-	var authority = host._plugin_manager.get_panel_authority(host.PLUGIN_ID)
-	if authority == null: return unavailable
 	var listed: String = await host._refresh(binding.process[0], binding.process[1])
 	if not _current(host, binding, epoch) or not listed.is_empty(): return unavailable
-	var answer: Dictionary = await authority.host_request("vault_challenge", {"path":host.master_path})
+	var answer: Dictionary = await host._call(binding.process[0], "docket_vault_control", {"action":"status", "project":host.master_project().get("name", "")})
 	if not _current(host, binding, epoch): return unavailable
 	var descriptor := _descriptor(answer)
 	if descriptor.is_empty() or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""): return unavailable
@@ -130,13 +128,10 @@ func _operate(host: Node, password: String, creating: bool = false, hint: String
 		return _finish(host, epoch, "Vault unavailable; wait for the Docket master to open.")
 	var connection = binding.process[0]
 	var generation: int = binding.process[1]
-	var authority = host._plugin_manager.get_panel_authority(host.PLUGIN_ID)
-	if authority == null:
-		return _finish(host, epoch, "Vault unavailable: no private host channel.")
 	var listed: String = await host._refresh(connection, generation)
 	if not _current(host, binding, epoch) or not listed.is_empty():
 		return _finish(host, epoch, "Vault request expired; try again.", true)
-	var answer: Dictionary = await authority.host_request("vault_challenge", {"path": host.master_path})
+	var answer: Dictionary = await host._call(connection, "docket_vault_control", {"action":"status", "project":host.master_project().get("name", "")})
 	if not _current(host, binding, epoch):
 		return _finish(host, epoch, "Vault request expired; try again.", true)
 	var descriptor := _descriptor(answer)
@@ -152,10 +147,10 @@ func _operate(host: Node, password: String, creating: bool = false, hint: String
 	if not _current(host, binding, epoch) or not listed.is_empty() \
 			or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""):
 		return _finish(host, epoch, "Vault request expired; try again.", true)
-	var params := {"path":descriptor.path, "open_generation":descriptor.open_generation, "fingerprint":descriptor.fingerprint}
+	var params := {"action":"init" if creating else "unlock", "project":host.master_project().get("name", ""), "open_generation":descriptor.open_generation, "fingerprint":descriptor.fingerprint}
 	params["password"] = password
 	if creating: params["hint"] = hint
-	answer = await authority.host_request("vault_init" if creating else "vault_unlock", params)
+	answer = await host._call(connection, "docket_vault_control", params)
 	params.clear()
 	if not _current(host, binding, epoch):
 		return _finish(host, epoch, "Vault creation outcome is uncertain; refresh and explicitly unlock." if creating else "Vault request expired; try again.", not creating)
@@ -164,7 +159,7 @@ func _operate(host: Node, password: String, creating: bool = false, hint: String
 		return _finish(host, epoch, "Vault creation outcome is uncertain; refresh and explicitly unlock." if creating else "Vault request expired; try again.", not creating)
 	var settled := _descriptor(answer)
 	var valid: bool = settled == descriptor if not creating else not settled.is_empty() and settled.initialized and settled.path == descriptor.path and settled.open_generation == descriptor.open_generation and settled.fingerprint != descriptor.fingerprint
-	if not valid or answer.get("result", {}).get("unlocked") != true:
+	if not valid or answer.get("value", {}).get("unlocked") != true:
 		return _finish(host, epoch, "Vault creation did not confirm success; refresh and explicitly unlock." if creating else "Vault unlock refused; check the existing vault password.")
 	_password = password
 	_credential = {"path":settled.path, "fingerprint":settled.fingerprint}

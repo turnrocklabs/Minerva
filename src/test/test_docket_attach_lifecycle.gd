@@ -55,7 +55,7 @@ func _run() -> void:
 	check("attached session repair preserves hosted session bytes", not forgot.is_empty()
 		and FileAccess.get_file_as_string("user://docket_host_session.json") == session_text)
 	var vault: Dictionary = await host.vault_details()
-	check("attached vault is disabled with app explanation", vault.get("mode") == "unavailable" and "docket.app" in vault.get("message", ""))
+	check("missing vault capability is named without a private request", vault.get("mode") == "unavailable" and "docket_vault_control" in vault.get("message", ""))
 	var observed: String = await host.write_policy_observation("fixture", "fixture")
 	check("attached policy observation write is refused", "attached" in observed.to_lower())
 	var seeding = load("res://Scripts/Services/Plugins/PluginSeedingDocket.gd").new(host)
@@ -91,6 +91,16 @@ func _run() -> void:
 	focus = await singleton.open_docket_panel()
 	check("attached app can be focused to resolve missing master", focus.get("ok", false))
 	manager.refuse_master = false
+	manager.capability_tools = true
+	manager.stop_plugin("docket")
+	await manager.start_plugin("docket")
+	check("capable attachment declares schema and bootstraps through public tools", host.state == "ready"
+		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_schema_declare")
+		and manager.tool_calls.any(func(call: Dictionary) -> bool: return call.name == "docket_project_bootstrap")
+		and manager.get_panel_authority("docket") == null)
+	check("schema conflicts name the project and slug", host.notices.any(func(notice: String) -> bool: return "ordinary" in notice and "hint" in notice))
+	check("capable attachment permits public policy observations and pickup", await host.write_policy_observation("fixture", "fixture") == ""
+		and load("res://Scripts/Services/Plugins/PluginSeedingDocket.gd").new(host).unavailable().is_empty())
 	var stops: Array = []
 	manager.plugin_stopped.connect(func(id: String) -> void: stops.append(id))
 	var other = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()
