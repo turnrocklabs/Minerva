@@ -4,14 +4,17 @@ extends SceneTree
 ## Run: godot --headless --path src --script test/test_plugin_host_events.gd
 ##
 ## A. PluginHostEventRouter on its own: who receives an event, what is audited,
-##    and how payload text is bounded.
+##    how payload text is bounded, and the refusal of a plugin whose protocol
+##    cannot carry host events.
+## P. ChatEventPayloads: outcome precedence and payload shape (reply only).
 ## B. Manifest permissions.host_events: parse, serialize, validate, grant keys.
 ## C. End to end through the live SingletonObject plugin system and three real
 ##    fixture plugins (fixtures/host_event_probe*): a message sent with
 ##    MCPToolUtils.submit_user_message (the minerva_send_message path) to a chat
 ##    that is NOT on screen reaches the subscribed plugin as exactly one
 ##    chat.turn_completed; error and cancelled turns likewise; the ungranted and
-##    undeclared plugins receive nothing and the denials are audited.
+##    undeclared plugins receive nothing and the denials are audited; a send
+##    the real execute_regular_chat refuses emits nothing.
 ##    ChatPane's real UI turn cannot run headless (see test_chat_outgoing_queue),
 ##    so the harness pane replaces only execute_regular_chat's body; the turn
 ##    gate, _release_chat_turn, _cancel_chat_turn and the signal are ChatPane's.
@@ -29,6 +32,9 @@ const DEFINITION_PATH := "res://Scripts/Services/Plugins/PluginDefinition.gd"
 const TOOL_UTILS_PATH := "res://Scripts/Services/MCP/Modules/MCPToolUtils.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
+const PAYLOADS_PATH := "res://Scripts/Models/ChatEventPayloads.gd"
+const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
+const PAYLOAD_LIMITS_PATH := "res://Scripts/Services/Plugins/PluginPayloadLimits.gd"
 
 const TURN := "chat.turn_completed"
 const DIRECTORY := "chat.directory_changed"
@@ -75,7 +81,28 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, _pr
 	reply.Error = str(errors.get(text, ""))
 	reply.Message = "" if errors.has(text) else "reply:" + text
 	history.HistoryItemList.append(reply)
+	_note_turn_reply(history, turn_token, reply)
 	_release_chat_turn(history, turn_token)
+"""
+
+## ChatPane whose real execute_regular_chat runs up to its network calls, which
+## never resolve: enough to reach the sends it refuses before a request.
+const REAL_TURN_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+func _ready() -> void:
+	pass
+
+func _update_stop_button() -> void:
+	pass
+
+func _update_compact_button() -> void:
+	pass
+
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null, _turn_token: int = -1) -> Array[Variant]:
+	while true:
+		await get_tree().process_frame
+	return []
 """
 
 var _pass := 0
@@ -103,6 +130,7 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 
 func _run() -> void:
 	_test_router()
+	_test_payloads()
 	_test_manifest()
 	await process_frame
 	_so = root.get_node_or_null("SingletonObject")
@@ -122,9 +150,11 @@ func _run() -> void:
 	if not fixtures_ready:
 		return
 	await _test_turn_events()
+	await _test_refused_send_is_silent()
 	await _test_directory_events()
 	for id in [SUBSCRIBER, UNGRANTED, UNDECLARED]:
 		await _so.plugin_manager.stop_plugin(id)
+		await _so.plugin_manager.remove_plugin(id, false)
 
 
 #region A — router
@@ -185,16 +215,51 @@ func _test_router() -> void:
 		str(failed))
 
 	var Router = load(ROUTER_PATH)
+	var Limits = load(PAYLOAD_LIMITS_PATH)
 	var long_text := "é".repeat(40000)
 	var bounded: Dictionary = Router.bound_payload({"text": long_text})
-	var bounded_bytes: int = str(bounded["text"]).to_utf8_buffer().size()
-	check("A13: oversized text is cut on a character boundary and flagged",
-		bounded["truncated"] == true and bounded_bytes <= Router.TEXT_MAX_BYTES
-			and bounded_bytes > Router.TEXT_MAX_BYTES - 2
+	var bounded_size: int = Limits.size_bytes(bounded)
+	check("A13: oversized text is cut to fit the encoded bound, whole characters, flagged",
+		bounded["truncated"] == true and bounded_size <= Router.PAYLOAD_MAX_BYTES
+			and bounded_size > Router.PAYLOAD_MAX_BYTES - 8
 			and long_text.begins_with(str(bounded["text"])),
-		"bytes=%d" % bounded_bytes)
+		"size=%d" % bounded_size)
 	check("A14: a payload without text gets no truncated key",
 		not Router.bound_payload({"chat_id": "c1"}).has("truncated"))
+
+	sent.clear()
+	var escape_heavy := "\"\n".repeat(25000)
+	var heavy_payload := {"chat_id": "c1", "message_index": 1, "role": "assistant",
+		"text": escape_heavy, "outcome": "ok"}
+	check("A15: escape-heavy text is under the raw size yet over the encoded bound",
+		escape_heavy.to_utf8_buffer().size() < Router.PAYLOAD_MAX_BYTES
+			and Limits.size_bytes(heavy_payload) > Router.PAYLOAD_MAX_BYTES)
+	var heavy: Dictionary = router.publish(TURN, heavy_payload)
+	check("A16: and is still delivered, truncated, within the bound",
+		_list(heavy["delivered"]) == ["sub"] and sent.size() == 1
+			and sent[0]["payload"]["truncated"] == true
+			and Limits.size_bytes(sent[0]["payload"]) <= Router.PAYLOAD_MAX_BYTES, str(heavy))
+
+	var notices: Array = []
+	var modern = _definition("modern", [TURN])
+	policy.grant_capability("modern", TURN_GRANT)
+	var refusing = load(ROUTER_PATH).new(policy, audit, func() -> Array: return [modern], send,
+		func(message: String) -> void: notices.append(message))
+	refusing.plugin_started(modern, false)
+	sent.clear()
+	refusing.publish(TURN, payload)
+	refusing.publish(TURN, payload)
+	check("A17: a plugin whose protocol cannot carry host events is refused once, loudly",
+		notices.size() == 1 and _audit_reason(audit, "modern", "capability_denied", "host_events")
+			== Router.REASON_PROTOCOL_UNSUPPORTED
+			and audit.get_entries("modern", "capability_denied").size() == 1, str(notices))
+	check("A18: and is skipped at delivery without further audit",
+		sent.is_empty() and audit.get_entries("modern", "capability_failed").is_empty())
+	refusing.plugin_started(modern, true)
+	refusing.publish(TURN, payload)
+	check("A19: a restart on a protocol that carries them clears the refusal", sent.size() == 1)
+	refusing.plugin_started(_definition("quiet", []), false)
+	check("A20: a plugin that declares no host events is not refused", notices.size() == 1)
 
 
 func _definition(id: String, events: Array):
@@ -211,6 +276,56 @@ func _audit_reason(audit, plugin_id: String, event_type: String, key: String) ->
 		if entry["detail"].get("capability", "") == key:
 			return str(entry["detail"].get("reason", ""))
 	return "<none>"
+
+#endregion
+
+
+#region P — turn payloads
+
+func _test_payloads() -> void:
+	print("\n-- P: ChatEventPayloads --")
+	var Payloads = load(PAYLOADS_PATH)
+	var Item = load(CHAT_HISTORY_ITEM_PATH)
+	var history = _make_history("Payloads")
+	var user_item = _item(Item, Item.ChatRole.USER, "the user's prompt")
+	var reply = _item(Item, Item.ChatRole.MODEL, "Checking.\n\n{{TOOL_BLOCK:2}}\n\nDone.")
+	var tool_item = _item(Item, Item.ChatRole.TOOL, "raw tool output")
+	for entry in [user_item, reply, tool_item]:
+		history.HistoryItemList.append(entry)
+
+	var payload: Dictionary = Payloads.turn_completed(history, reply, "error")
+	check("P1: with a TOOL item newest, the event carries the reply, not tool content",
+		payload["role"] == "assistant" and payload["message_index"] == 1
+			and not str(payload["text"]).contains("raw tool output")
+			and str(payload["text"]).begins_with("Checking."), str(payload))
+	check("P2: tool-block placeholders are not part of the text",
+		not str(payload["text"]).contains("TOOL_BLOCK"), str(payload["text"]))
+	var none: Dictionary = Payloads.turn_completed(history, null, "cancelled")
+	check("P3: a turn with no reply sends no user content: empty text, index -1, role assistant",
+		none["text"] == "" and none["message_index"] == -1 and none["role"] == "assistant")
+
+	var errored = _item(Item, Item.ChatRole.MODEL, "")
+	errored.Error = "boom"
+	check("P4: termination_reason cancelled outranks an errored reply",
+		Payloads.resolve_outcome("", "cancelled", errored) == "cancelled")
+	check("P5: error and quota_exhausted terminations are errors",
+		Payloads.resolve_outcome("", "error", reply) == "error"
+			and Payloads.resolve_outcome("", "quota_exhausted", reply) == "error")
+	check("P6: an explicit stop outranks every termination reason",
+		Payloads.resolve_outcome("cancelled", "error", reply) == "cancelled")
+	check("P7: no reply (a null provider response) is an error",
+		Payloads.resolve_outcome("", "", null) == "error")
+	check("P8: an errored reply is an error; a clean one is ok",
+		Payloads.resolve_outcome("", "completed", errored) == "error"
+			and Payloads.resolve_outcome("", "completed", reply) == "ok")
+
+
+func _item(Item, role: int, message: String):
+	var item = Item.new()
+	item._suppress_save_state = true
+	item.Role = role
+	item.Message = message
+	return item
 
 #endregion
 
@@ -284,6 +399,9 @@ func _test_turn_events() -> void:
 	var pane = _make_harness_pane([visible_chat, target])
 	var previous_chats = _so.Chats
 	_so.Chats = pane
+	_so._wire_chat_host_events()
+	_so.Chats = null
+	_so.Chats = pane
 	pane.current_tab = 0
 	for id in [SUBSCRIBER, UNGRANTED, UNDECLARED]:
 		await _probe(id, "probe_clear")
@@ -297,7 +415,8 @@ func _test_turn_events() -> void:
 	await _until_idle(target)
 	check("C2: the visible chat stayed on screen", pane.current_tab == 0)
 	var turns: Array = await _events(SUBSCRIBER, TURN)
-	check("C3: the subscriber received exactly one chat.turn_completed", turns.size() == 1, str(turns))
+	check("C3: the subscriber received exactly one chat.turn_completed, though the pane was wired repeatedly",
+		turns.size() == 1, str(turns))
 	if turns.size() == 1:
 		var message: Dictionary = turns[0]["message"]
 		var payload: Dictionary = message["params"]["payload"]
@@ -354,15 +473,39 @@ func _test_turn_events() -> void:
 	pane.queue_free()
 
 
+## A send the real execute_regular_chat refuses (the chat already ends on an
+## unanswered user message) starts no answer, so it reports no turn.
+func _test_refused_send_is_silent() -> void:
+	print("\n-- C: refused send --")
+	var Item = load(CHAT_HISTORY_ITEM_PATH)
+	var chat = _make_history("Refused")
+	chat.HistoryItemList.append(_item(Item, Item.ChatRole.USER, "unanswered"))
+	var pane = _make_harness_pane([chat], REAL_TURN_PANE_SRC)
+	var previous_chats = _so.Chats
+	_so.Chats = pane
+	pane.current_tab = 0
+	var emitted: Array = []
+	pane.chat_turn_completed.connect(func(payload: Dictionary) -> void: emitted.append(payload))
+	await _probe(SUBSCRIBER, "probe_clear")
+	pane.execute_regular_chat("second question")
+	await _until_idle(chat)
+	check("C16: the refused send released its turn", not chat.is_request_active)
+	check("C17: and emitted no chat.turn_completed", emitted.is_empty(), str(emitted))
+	check("C18: the subscriber received nothing", (await _events(SUBSCRIBER, TURN)).is_empty())
+	_so.Chats = previous_chats
+	_so.ChatList.erase(chat)
+	pane.queue_free()
+
+
 func _make_history(chat_name: String):
 	var history = load(CHAT_HISTORY_PATH).new(null)
 	history.HistoryName = chat_name
 	return history
 
 
-func _make_harness_pane(chats: Array):
+func _make_harness_pane(chats: Array, source: String = HARNESS_PANE_SRC):
 	var script := GDScript.new()
-	script.source_code = HARNESS_PANE_SRC
+	script.source_code = source
 	script.reload()
 	var pane = script.new()
 	pane.name = "HostEventHarnessPane"
@@ -409,7 +552,7 @@ func _test_directory_events() -> void:
 	pane.chat_directory_changed.connect(func(payload: Dictionary) -> void: seen.append(payload))
 	await _probe(SUBSCRIBER, "probe_clear")
 
-	var history = load(CHAT_HISTORY_PATH).new(_so.API_MODEL_PROVIDER_SCRIPTS.values()[1].new())
+	var history = load(CHAT_HISTORY_PATH).new(_so.API_MODEL_PROVIDER_SCRIPTS[_so.API_MODEL_PROVIDERS.NEMOTRON_NANO].new())
 	history.HistoryName = "Directory probe"
 	_so.ChatList.append(history)
 	pane.render_history(history)
