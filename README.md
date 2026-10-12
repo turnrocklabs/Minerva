@@ -160,8 +160,8 @@ branch scans start at the merge base with the target branch.
 `build.yml` dispatch runs the Linux/Windows suites, Windows platform gate,
 packaged probes, and macOS export. Development push auto-build releases retain
 Linux and Windows artifacts; macOS artifacts come from the on-demand lane.
-The push export consumes successful CEF producer run `38196002368` at
-`6da588fd617c8e52a64a8fc444fa295c327426bf`. Input Git objects are checked before
+The push export consumes the successful CEF producer named by `CEF_PRODUCER_RUN`
+in `build.yml`. Input Git objects and the producer recipe are checked before
 reuse. Artifacts expire on 2027-01-10: changed inputs or expiry require a new
 `godot-cef.yml` dispatch and an updated pinned producer in the CI recipe.
 No CEF binary or engine is committed to Git.

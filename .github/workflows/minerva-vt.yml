@@ -202,6 +202,15 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Cache SCons build
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/.sconsign.dblite
+            src/**/*.os
+            src/**/*.obj
+          key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
+          restore-keys: ${{ runner.os }}-scons-
       - name: Download Linux minerva-vt
         uses: actions/download-artifact@v4
         with:
@@ -238,7 +247,7 @@ jobs:
 
       - name: Build GDExtension (template_release)
         working-directory: src
-        run: scons platform=linux target=template_release
+        run: scons -j$(nproc) platform=linux target=template_release
 
       - name: Upload GDExtension
         uses: actions/upload-artifact@v4
