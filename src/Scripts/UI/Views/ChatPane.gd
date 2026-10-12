@@ -4316,6 +4316,53 @@ signal chat_directory_changed(payload: Dictionary)
 func _emit_directory_change(history: ServiceHistory, change: String) -> void:
 	chat_directory_changed.emit(ChatEventPayloads.directory_changed(history, change, _membership_of(history)))
 
+
+## The chat on screen changed (ChatEventPayloads.active_chat). Checked once at
+## the next frame, so a switch and its deferred restore inside one frame (the
+## MCP send and queue-drain idiom) report nothing, and a re-select reports
+## nothing because the chat is compared, not the tab.
+signal chat_active_changed(payload: Dictionary)
+
+var _active_chat_check_pending := false
+var _reported_active_chat_id := ""
+
+
+func active_chat_payload() -> Dictionary:
+	var history: ChatHistory = current_chat()
+	var group_id: String = _effective_group_id(history) if history != null else ChatGroupRegistry.UNGROUPED
+	return ChatEventPayloads.active_chat(history, group_id, SingletonObject.chat_groups.get_name(group_id))
+
+
+func _schedule_active_chat_check() -> void:
+	if _active_chat_check_pending or not is_inside_tree():
+		return
+	_active_chat_check_pending = true
+	get_tree().process_frame.connect(_check_active_chat, CONNECT_ONE_SHOT)
+
+
+func _check_active_chat() -> void:
+	_active_chat_check_pending = false
+	var history: ChatHistory = current_chat()
+	var chat_id: String = str(history.HistoryId) if history != null else ""
+	if chat_id == _reported_active_chat_id:
+		return
+	_reported_active_chat_id = chat_id
+	chat_active_changed.emit(active_chat_payload())
+
+
+## The input box and mic button, for callers outside the pane that drive them
+## the way the Stream Deck does. Submitting goes through submit_chat.
+func get_user_input_text() -> String:
+	return txt_main_user_input.text
+
+
+func set_user_input_text(text: String) -> void:
+	txt_main_user_input.text = text
+
+
+func get_mic_button() -> BaseButton:
+	return get_node_or_null("%btnMicrophone") as BaseButton
+
 ## Currently selected group VIEW. Either a ChatGroupRegistry sentinel
 ## (VIEW_ALL / VIEW_UNGROUPED / VIEW_DELETED) or a real group id.
 var _active_group_id: String = ChatGroupRegistry.VIEW_ALL
@@ -4436,6 +4483,7 @@ func _apply_tab_filters() -> void:
 
 	_set_pane_empty_state(not any_visible)
 	_refresh_tab_tooltips()
+	_schedule_active_chat_check()
 
 
 ## Show the whole tab container, or the empty-state placeholder instead.
@@ -5875,6 +5923,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 # when tab changes, set the provider picker to the provider that chat tab is using
 func _on_tab_changed(tab: int):
 	sync_provider_picker_to_chat(tab)
+	_schedule_active_chat_check()
 
 	# Passthrough chats lock the chooser onto their bound entry; switching to a
 	# normal chat unlocks it (chat-passthrough W2).
