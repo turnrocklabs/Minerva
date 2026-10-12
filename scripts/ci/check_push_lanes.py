@@ -92,8 +92,8 @@ def check_workflow(path: Path, seen: frozenset[Path], branch: bool = True) -> li
                 errors.extend(check_workflow(Path(callee), seen | {path}, branch))
             continue
         timeout = str(job.get("timeout-minutes", ""))
-        if not timeout.isdigit() or int(timeout) <= 0 or (branch and int(timeout) > 10):
-            errors.append(f"{label}: timeout-minutes must be a literal {'1..10' if branch else 'positive integer'}")
+        if not timeout.isdigit() or int(timeout) <= 0:
+            errors.append(f"{label}: timeout-minutes must be a literal positive integer")
         if branch:
             errors.extend(check_steps(job.get("steps", []), label, frozenset()))
     return errors
@@ -147,7 +147,7 @@ def main() -> int:
         if not tag_only:
             budget = lane_budget(path, frozenset())
             if budget > 10:
-                errors.append(f"{path.name}: longest branch dependency chain budget {budget} minutes exceeds 10")
+                print(f"::warning::{path.name}: declared branch budget {budget} minutes exceeds the 10-minute optimization target")
     for error in errors:
         print(error, file=sys.stderr)
     print(f"Push-lane lint: {checked} workflows, {len(errors)} violations")

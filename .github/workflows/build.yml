@@ -1711,6 +1711,10 @@ jobs:
           echo "Final release assets:"
           ls -la release-assets/
 
+      - name: Generate release checksums
+        working-directory: release-assets
+        run: sha256sum Minerva-* > SHA256SUMS
+
       - name: Generate release tag
         id: tag
         run: |

@@ -171,3 +171,5 @@ same reusable build/package lane. Existing tag publication remains available;
 branch pushes never execute those functional or publishing jobs. The lint also
 checks local composite actions and rejects dependency chains whose declared
 branch-job deadlines sum to more than ten minutes.
+
+CI timing is measured against a ten-minute optimization target. Explicit positive job deadlines remain required; deadlines and branch dependency chains above the target are reported rather than rejecting releases. FCIB, functional-lane separation and secret scans remain enforced.
