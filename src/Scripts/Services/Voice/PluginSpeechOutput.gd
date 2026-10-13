@@ -22,6 +22,8 @@ var _eos_sent: bool = false
 var _wav: PackedByteArray = PackedByteArray()
 var _format: String = ""
 var _volume: float = 1.0
+var _source: PackedByteArray = PackedByteArray()
+var _source_offset: int = 0
 
 
 func _init(stream_id: int, send: Callable, next_frame: Callable, available: Callable) -> void:
@@ -46,8 +48,11 @@ func play(audio: PackedByteArray, volume: float) -> Dictionary:
 	var opened: Dictionary = begin("pcm_s16le", wav.mix_rate, volume)
 	if not opened.success:
 		return opened
-	if not append(wav.data):
-		return VoiceServiceClient.failure("audio_overflow", "Plugin speech buffer could not accept audio.")
+	if wav.data.size() > TOTAL_BYTES or wav.data.size() % 2 != 0:
+		_fail("audio_overflow", "Plugin speech exceeds the total PCM limit.")
+		return VoiceServiceClient.failure("audio_overflow", "Plugin speech exceeds the total PCM limit.")
+	_source = wav.data
+	_total = _source.size()
 	end()
 	return {"success": true}
 
@@ -111,6 +116,7 @@ func stop() -> void:
 	_queue.clear()
 	_pending = 0
 	_wav = PackedByteArray()
+	_source = PackedByteArray()
 	if _opened:
 		_emit({"op": "cancel"})
 
@@ -121,6 +127,9 @@ func acknowledge(success: bool, message: String = "") -> void:
 	if success and not _eos_sent:
 		_fail("audio_protocol", "Plugin acknowledged speech before EOS.")
 		return
+	if success:
+		_stopped = true
+		_source = PackedByteArray()
 	_report_finished({"success": true} if success else VoiceServiceClient.failure("audio_delivery_failed", message))
 
 
@@ -131,6 +140,7 @@ func _emit(payload: Dictionary) -> bool:
 
 
 func _fail(code: String, message: String) -> void:
+	_emit({"op": "error", "error_code": code, "error_message": message})
 	stop()
 	_report_finished(VoiceServiceClient.failure(code, message))
 
@@ -146,6 +156,12 @@ func _pump() -> void:
 			_fail("audio_unavailable", "Plugin speaker disconnected during speech.")
 			return
 		for frame in range(4):
+			if _source_offset < _source.size() and _pending + CHUNK_BYTES <= PENDING_BYTES:
+				var loaded: PackedByteArray = _source.slice(_source_offset, mini(_source_offset + CHUNK_BYTES, _source.size()))
+				_source_offset += loaded.size()
+				_queue.append(loaded)
+				_pending += loaded.size()
+
 			if _queue.is_empty():
 				break
 			var chunk: PackedByteArray = _queue.pop_front()
@@ -156,7 +172,7 @@ func _pump() -> void:
 			_sequence += 1
 			if _sequence == 1:
 				_report_started()
-		if _ended and _queue.is_empty():
+		if _ended and _queue.is_empty() and _source_offset >= _source.size():
 			if not _emit({"op": "end", "sequence": _sequence}):
 				_fail("audio_delivery_failed", "Plugin audio writer could not accept EOS.")
 				return

@@ -400,7 +400,7 @@ func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, op
 	if operation.is_busy():
 		return failure("operation_busy", "Speech operation already owns a request.")
 	if not operation.output_available(player):
-		return failure("no_audio_player", "Speech player is unavailable.")
+		return operation.output_unavailable(player)
 	var voice: String = voice_config.voice_name if not voice_config.voice_name.is_empty() else voice_config.voice_id
 	var inventory := _inventory_for(voice_config.tts_backend)
 	if not inventory.is_empty() and not voice.is_empty():
@@ -467,7 +467,7 @@ func _play_one_shot(text: String, voice: String, backend: String, operation: Spe
 	var synthesized := await synthesize_result(text, voice, backend, operation)
 	if not synthesized.success:
 		return synthesized
-	if not operation.play(player, synthesized.audio, volume):
+	if not operation.play(player if is_instance_valid(player) else null, synthesized.audio, volume):
 		return failure("playback_failed", "Speech playback could not start.")
 	return {"success": true, "streaming": false}
 

@@ -5,6 +5,7 @@ extends VoiceOperation
 signal finished(outcome: Dictionary)
 signal playback_began
 var done := false
+var completion_outcome: Dictionary = {}
 var playback_started := false
 var _output: SpeechOutput
 var _stream_open: bool = false
@@ -19,10 +20,11 @@ func cancel() -> void:
 func finish(outcome: Dictionary) -> void:
 	_complete(outcome, false)
 
-func _complete(outcome: Dictionary, cancel_pending: bool) -> void:
+func _complete(result: Dictionary, cancel_pending: bool) -> void:
 	if done:
 		return
 	done = true
+	completion_outcome = result.duplicate(true)
 	var output: SpeechOutput = _output
 	_output = null
 	_stream_open = false
@@ -38,7 +40,7 @@ func _complete(outcome: Dictionary, cancel_pending: bool) -> void:
 		if pending != null and pending.has_method("accept_stream_open"):
 			_disconnect_stream_request(pending)
 		super.cancel()
-	finished.emit(outcome)
+	finished.emit(completion_outcome)
 
 func play(player: AudioStreamPlayer, audio: PackedByteArray, volume: float) -> bool:
 	if done:
@@ -61,6 +63,12 @@ func bind_output(output: SpeechOutput) -> bool:
 	_output.finished.connect(_on_output_finished)
 	_output.started.connect(_on_output_started)
 	return true
+
+
+func output_unavailable(player: AudioStreamPlayer) -> Dictionary:
+	if _output is PluginSpeechOutput:
+		return VoiceServiceClient.failure("audio_unavailable", "Selected plugin speaker is unreachable.")
+	return VoiceServiceClient.failure("no_audio_player", "Speech player is unavailable.") if not output_available(player) else {"success": true}
 
 
 func output_available(player: AudioStreamPlayer) -> bool:

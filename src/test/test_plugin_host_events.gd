@@ -506,11 +506,11 @@ func _test_turn_events() -> void:
 				and payload["role"] == "assistant" and payload["outcome"] == "ok"
 				and payload["truncated"] == false, str(payload))
 		check("C6: payload keys are exactly the contract",
-			_sorted_keys(payload) == ["chat_id", "message_index", "outcome", "role", "text", "truncated"],
+			_sorted_keys(payload) == ["chat_id", "message_index", "outcome", "plugin_id", "role", "send_id", "text", "truncated"],
 			str(payload.keys()))
 		check("C7: message_index is the reply's index, sent as a JSON integer",
 			int(payload["message_index"]) == target.HistoryItemList.size() - 1
-				and turns[0]["integer_keys"] == ["message_index"], str(turns[0]))
+				and turns[0]["integer_keys"] == ["message_index", "send_id"], str(turns[0]))
 	check("C8: the ungranted plugin received nothing", (await _events(UNGRANTED, TURN)).is_empty())
 	check("C9: its denial is in the audit log",
 		_audit_reason(audit, UNGRANTED, "capability_denied", TURN_GRANT) == "capability_not_granted")
@@ -568,6 +568,37 @@ func _test_public_turn_events() -> void:
 	check("E0: the production chat pane is wired", pane != null and _so.Chats == pane)
 	if pane == null:
 		return
+	var core = root.get_node("Core")
+	var saved_client = core.client
+	var saved_voice = _so.voice_client
+	var cfg = _so.get_voice_config()
+	var saved_voice_state := {"speak": cfg.speak_mode, "provider": cfg.tts_provider, "voice": cfg.voice_id, "name": cfg.voice_name, "output": cfg.output_device}
+	var transport = load("res://test/fixtures/core_lifecycle_client.gd").new()
+	root.add_child(transport)
+	core.client = transport
+	_so.voice_client = load("res://Scripts/Services/Voice/VoiceServiceClient.gd").new()
+	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
+	var enabled: bool = feature.is_enabled()
+	feature.set_enabled(true)
+	cfg.speak_mode = cfg.SpeakMode.OFF
+	cfg.voice_id = ""
+	cfg.voice_name = ""
+	cfg.tts_provider = cfg.TTSProvider.VOICE_SERVICE
+	var conn = _so.plugin_manager.get_connection(SUBSCRIBER)
+	var registered: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "register", "device_id": "speaker", "label": "Fixture speaker", "output": true}})
+	check("E audio: real STDIO plugin registers through broker", registered.get("success", false), str(registered))
+	await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "availability", "device_id": "speaker", "available": true}})
+	var server = _so.get_mcp_manager().minerva_server
+	server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
+	var selected: Dictionary = await server.execute_tool_for_http("minerva_set_audio_device", {"direction": "output", "device_id": "plugin:" + SUBSCRIBER + ":speaker"})
+	var listed: Dictionary = await server.execute_tool_for_http("minerva_list_audio_devices", {})
+	check("E audio: MCP list/set shares persisted endpoint selection", selected.success and listed.selected_output == "plugin:" + SUBSCRIBER + ":speaker")
+	var reloaded = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
+	reloaded.load_from_config()
+	check("E audio: plugin selection survives preference reload", reloaded.output_device == cfg.output_device)
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(PackedByteArray([1, 0, 2, 0, 3, 0, 4, 0]))})
 	var provider_script = _compile(PUBLIC_PROVIDER_SRC)
 	var visible = load(CHAT_HISTORY_PATH).new(provider_script.new())
 	visible.HistoryName = "Public visible"
@@ -580,6 +611,8 @@ func _test_public_turn_events() -> void:
 		{"name": "cancel", "outcome": "cancelled", "held": true},
 		{"name": "deleted", "outcome": "ok", "held": true},
 		{"name": "restored", "outcome": "ok", "held": true},
+		{"name": "remote", "outcome": "ok"},
+		{"name": "keyboard", "outcome": "ok"},
 	]
 	for entry: Dictionary in cases:
 		var label: String = entry["name"]
@@ -596,7 +629,14 @@ func _test_public_turn_events() -> void:
 		pane.current_tab = _so.ChatList.find(visible)
 		await process_frame
 		await _probe(SUBSCRIBER, "probe_clear")
-		var receipt: Dictionary = Utils.submit_user_message(history, "public-send:" + label)
+		cfg.speak_mode = cfg.SpeakMode.FULL if label in ["remote", "keyboard"] else cfg.SpeakMode.OFF
+		var receipt: Dictionary
+		if label == "remote":
+			pane.current_tab = _so.ChatList.find(history)
+			pane.set_user_input_text("public-send:" + label)
+			receipt = await conn.call_tool("probe_capability", {"capability": "host.chat.input", "args": {"op": "submit", "expected_chat_id": str(history.HistoryId)}})
+		else:
+			receipt = Utils.submit_user_message(history, "public-send:" + label)
 		check("E %s: public send accepted" % label, receipt.get("success", false), str(receipt))
 		var deadline: int = Time.get_ticks_msec() + 5000
 		while not provider.entered and Time.get_ticks_msec() < deadline:
@@ -628,6 +668,66 @@ func _test_public_turn_events() -> void:
 			if entry["outcome"] == "ok":
 				check("E %s: completion carries the actual assistant reply" % label,
 					payload["text"] == "real-reply:" + label and payload["role"] == "assistant", str(payload))
+		if label in ["remote", "keyboard"]:
+			var audio: Array = await _events(SUBSCRIBER, "voice.audio")
+			check("E %s: originating turn routes speech correctly" % label, (not audio.is_empty()) if label == "remote" else audio.is_empty(), str(audio))
+			if label == "remote" and turns.size() == 1:
+				var origin_payload: Dictionary = turns[0]["message"]["params"]["payload"]
+				check("E remote: real submit preserves JSON origin through completion", origin_payload.plugin_id == SUBSCRIBER and int(origin_payload.send_id) == int(receipt.get("result", {}).get("send_id", -1)))
+		pane.cancel_tts()
+	await _probe(SUBSCRIBER, "probe_clear")
+	var failures: Array[String] = []
+	var notify: Callable = _so.plugin_audio_devices._notify
+	_so.plugin_audio_devices._notify = func(message: String) -> void: failures.append(message)
+	var long_pcm := PackedByteArray()
+	long_pcm.resize(2 * 1024 * 1024 + 6400)
+	long_pcm.fill(1)
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(long_pcm)})
+	await conn.call_tool("probe_audio_mode", {"success": false})
+	var spoken: Dictionary = await server.execute_tool_for_http("minerva_speak", {"text": "Long reply"})
+	var audio_deadline: int = Time.get_ticks_msec() + 8000
+	while failures.is_empty() and Time.get_ticks_msec() < audio_deadline:
+		await process_frame
+	var audio: Array = await _events(SUBSCRIBER, "voice.audio")
+	var bytes_received: int = 0
+	var eos: bool = false
+	for envelope: Dictionary in audio:
+		var packet: Dictionary = envelope.message.params.payload
+		if str(packet.op) == "chunk":
+			bytes_received += Marshalls.base64_to_raw(str(packet.pcm)).size()
+		if str(packet.op) == "end":
+			eos = true
+	check("E audio: production MCP synthesis sends entire long one-shot through real plugin", spoken.success and bytes_received == long_pcm.size() and eos)
+	check("E audio: negative post-EOS acknowledgement surfaces explicit-speech failure", failures.size() == 1 and failures[0].contains("Fixture speaker rejected EOS"), str(failures))
+	await _probe(SUBSCRIBER, "probe_clear")
+	failures.clear()
+	await server.execute_tool_for_http("minerva_speak", {"text": "Crash during playback"})
+	await _probe(SUBSCRIBER, "probe_exit")
+	var crash_deadline: int = Time.get_ticks_msec() + 3000
+	while failures.is_empty() and Time.get_ticks_msec() < crash_deadline:
+		await process_frame
+	check("E audio: real plugin crash finishes active speech visibly", not failures.is_empty() and _so.plugin_audio_devices._playing.is_empty())
+	await _so.plugin_manager.start_plugin(SUBSCRIBER)
+	_so.plugin_audio_devices._notify = notify
+	_so.config_file.set_value("AudioSettings", "OutputDevice", "obsolete-device")
+	var os_selected: Dictionary = await server.execute_tool_for_http("minerva_set_audio_device", {"direction": "output", "device_id": "os:Default"})
+	reloaded.load_from_config()
+	check("E audio: OS selection persists in the original owner even on no-op", os_selected.success and _so.get_output_device() == "Default" and reloaded.output_device.is_empty())
+	_so.set_output_device("Default")
+	listed = await server.execute_tool_for_http("minerva_list_audio_devices", {})
+	check("E audio: existing OS setting and MCP selection report the same route", listed.selected_output == "os:" + AudioServer.output_device)
+	core.client = saved_client
+	_so.voice_client = saved_voice
+	cfg.speak_mode = saved_voice_state.speak
+	cfg.tts_provider = saved_voice_state.provider
+	cfg.voice_id = saved_voice_state.voice
+	cfg.voice_name = saved_voice_state.name
+	cfg.output_device = saved_voice_state.output
+	cfg.save()
+	feature.set_enabled(enabled)
+	transport.free()
 	_so.Chats = previous_pane
 	scene.queue_free()
 	await process_frame

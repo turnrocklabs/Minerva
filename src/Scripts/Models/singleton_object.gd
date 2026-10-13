@@ -656,7 +656,8 @@ func initialize_plugins() -> void:
 	manager.plugin_crashed.connect(chat_target.plugin_stopped)
 	var policy: PluginPolicy = plugin_policy
 	policy.capability_revoked.connect(chat_target.capability_revoked)
-	plugin_audio_devices = PluginAudioDevices.new(get_voice_config(), policy, _send_plugin_host_event, _next_frame)
+	plugin_audio_devices = PluginAudioDevices.new(get_voice_config(), policy, _send_plugin_host_event, _next_frame,
+		func() -> String: return AudioServer.output_device, set_output_device, _notify_plugin_refusal)
 	plugin_capability_broker.audio_devices = plugin_audio_devices
 	manager.plugin_stopped.connect(plugin_audio_devices.plugin_stopped)
 	manager.plugin_crashed.connect(plugin_audio_devices.plugin_stopped)
@@ -2804,10 +2805,12 @@ func get_output_device() -> String:
 func set_output_device(device: String) -> void:
 	if not (device in AudioServer.get_output_device_list()):
 		return
+	if plugin_audio_devices != null:
+		plugin_audio_devices.os_output_selected()
+	save_to_config_file("AudioSettings", "OutputDevice", device)
 	if AudioServer.output_device == device:
 		return  # no-op; also breaks the output_device_changed → set_output_device self-loop
 	AudioServer.output_device = device
-	save_to_config_file("AudioSettings", "OutputDevice", device)
 	output_device_changed.emit(device)
 
 #endregion Output Device

@@ -411,7 +411,7 @@ func populate_output_devices_button() -> void:
 
 func _on_output_device_button_item_selected(index: int) -> void:
 	var device: = output_device_button.get_item_text(index)
-	SingletonObject.output_device_changed.emit(device)
+	SingletonObject.set_output_device(device)
 
 
 # MODIFIED: Now handles both authentication and WebSocket connection
@@ -2755,7 +2755,6 @@ var _whisper_fallback_check: CheckButton
 var _stt_model_option: OptionButton
 var _vad_silence_slider: HSlider
 var _vad_silence_value_label: Label
-var _voice_input_devices: OptionButton
 var _voice_output_devices: OptionButton
 var _tts_volume_slider: HSlider
 var _voice_status_label: Label
@@ -2914,10 +2913,6 @@ func _create_voice_tab() -> void:
 	var audio_grid := _voice_grid()
 	vbox.add_child(audio_grid)
 
-	audio_grid.add_child(_voice_label("Microphone:"))
-	_voice_input_devices = _voice_option()
-	audio_grid.add_child(_voice_input_devices)
-	_voice_input_devices.item_selected.connect(_select_voice_device.bind("input", _voice_input_devices))
 	audio_grid.add_child(_voice_label("Speaker:"))
 	_voice_output_devices = _voice_option()
 	audio_grid.add_child(_voice_output_devices)
@@ -5229,13 +5224,12 @@ func _refresh_voice_devices() -> void:
 	var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 	if devices == null:
 		return
-	var cfg: VoiceConfig = SingletonObject.get_voice_config()
-	for direction: String in ["input", "output"]:
-		var option: OptionButton = _voice_input_devices if direction == "input" else _voice_output_devices
+	for direction: String in ["output"]:
+		var option: OptionButton = _voice_output_devices
 		if not is_instance_valid(option):
 			continue
 		option.clear()
-		var selected: String = cfg.input_device if direction == "input" else cfg.output_device
+		var selected: String = devices.selected_output()
 		var selected_index: int = -1
 		for device: Dictionary in devices.devices(direction):
 			var index: int = option.item_count
@@ -5257,4 +5251,4 @@ func _select_voice_device(index: int, direction: String, option: OptionButton) -
 		return
 	var result: Dictionary = devices.select(direction, str(option.get_item_metadata(index)))
 	if not result.success:
-		push_warning(str(result.error_message))
+		SingletonObject.create_toast_notification(str(result.error_message), ToastNotification.Type.ERROR)

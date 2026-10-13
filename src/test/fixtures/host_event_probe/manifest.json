@@ -15,7 +15,10 @@
     "ipc_messages": []
   },
   "permissions": {
-    "host_capabilities": [],
+    "host_capabilities": [
+      "host.audio",
+      "host.chat.input"
+    ],
     "network": {
       "mode": "none"
     },
@@ -25,7 +28,8 @@
     },
     "host_events": [
       "chat.turn_completed",
-      "chat.directory_changed"
+      "chat.directory_changed",
+      "voice.audio"
     ]
   }
 }

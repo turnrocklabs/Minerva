@@ -163,7 +163,7 @@ func register_tools() -> void:
 	audio_server._register_tool("minerva_list_audio_devices", "List OS and granted plugin microphone/speaker endpoints, availability and selection.",
 		{"type": "object", "properties": {}}, "chat")
 	audio_server._register_tool("minerva_set_audio_device", "Select a microphone or speaker endpoint; uses the same selection as Voice preferences.",
-		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["input", "output"]},
+		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["output"]},
 			"device_id": {"type": "string"}}, "required": ["direction", "device_id"]}, "chat")
 	# Voice tools
 	server._register_tool("minerva_speak",
@@ -221,9 +221,7 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 			if devices == null:
 				return VoiceServiceClient.failure("audio_unavailable", "Audio endpoint registry is unavailable.")
-			var cfg: VoiceConfig = SingletonObject.get_voice_config()
-			return {"success": true, "input": devices.devices("input"), "output": devices.devices("output"),
-				"selected_input": cfg.input_device, "selected_output": cfg.output_device}
+			return {"success": true, "output": devices.devices("output"), "selected_output": devices.selected_output()}
 		"minerva_set_audio_device":
 			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 			if devices == null:
@@ -892,7 +890,10 @@ func _speak(arguments: Dictionary) -> Dictionary:
 	var operation := SpeechOperation.new()
 	var player := AudioStreamPlayer.new()
 	chats.add_child(player)
-	operation.finished.connect(func(_outcome: Dictionary) -> void:
+	var audio_devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
+	operation.finished.connect(func(completion: Dictionary) -> void:
+		if audio_devices != null:
+			audio_devices.report_failure(completion)
 		if is_instance_valid(player):
 			player.queue_free(), CONNECT_ONE_SHOT)
 	if SingletonObject.plugin_audio_devices != null:
@@ -904,7 +905,7 @@ func _speak(arguments: Dictionary) -> Dictionary:
 	var outcome: Dictionary = await SingletonObject.get_voice_client().synthesize_auto_playback_result(text, speech_cfg, operation, player)
 	if not outcome.success:
 		operation.finish(outcome)
-		return outcome
+		return operation.completion_outcome if operation.done else outcome
 
 	return {
 		"success": true,

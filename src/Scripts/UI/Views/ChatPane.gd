@@ -936,8 +936,10 @@ static func _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node)
 
 func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
 							 model_msg_node: Control, chi: ChatHistoryItem,
-							 bot_response, history: ChatHistory) -> void:
-	var speech_origin: Dictionary = _turn_origin(history, history.request_turn_token)
+							 bot_response, history: ChatHistory, turn_token: int = -1, origin: Dictionary = {}) -> void:
+	if turn_token >= 0 and _turn_stopped(history, turn_token):
+		return
+	var speech_origin: Dictionary = _turn_origin(history, turn_token) if turn_token >= 0 else origin.duplicate(true)
 	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
 		push_warning("[ChatPane] update_ui_after_response: late response dropped — UI node freed (bug 019e5bc8, likely stop+redispatch)")
 		return
@@ -2139,7 +2141,7 @@ func execute_hcp_chat(send_id: int = 0, origin: Dictionary = {}):
 		history.VBox.ensure_node_is_visible(model_msg_node)
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
-		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history, -1, origin)
 	else:
 		model_msg_node.queue_free()
 	# Core sends take no turn (their stop and queue rules differ), so this, the
@@ -2619,7 +2621,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		if history.AgentModeEnabled and bot_response != null and str(bot_response.error).is_empty():
 			history.termination_reason = "completed"
 			history.termination_message = ""
-		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history, turn_token)
 		# W4 (chat-passthrough): a question turn (terminal agent hit a permission
 		# dialog or an AskUserQuestion chooser) gets a clickable option card right
 		# under the bot message.
@@ -3397,7 +3399,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# Use continuation_chi.Message (clean final text) not model_chi.Message
 		# (which has accumulated tool block markers from all rounds)
 		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.Message
-		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not SingletonObject.is_cancelled(history.HistoryId):
+		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not _turn_stopped(history, turn_token) and not SingletonObject.is_cancelled(history.HistoryId):
 			var user_text := user_history_item.Message if user_history_item else ""
 			_voice_speak_response(final_text, user_text, model_chi.rendered_node, _turn_origin(history, turn_token))
 
@@ -3470,7 +3472,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		var turn_reply: ChatHistoryItem = chi
 		var turn_response: BotResponse = bot_response
 		_note_turn_response(history, turn_token, turn_reply, turn_response)
-		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history, turn_token)
 	_release_chat_turn(history, turn_token)
 
 	for i in SingletonObject.notes_container.get_tab_count():
