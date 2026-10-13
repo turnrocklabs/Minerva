@@ -9,7 +9,14 @@ probe_clear: forgets them.
 The three host_event_probe* manifests run this one script under different
 plugin ids (subscriber, declared-but-ungranted, undeclared).
 """
-import json, sys
+import json
+import sys
+from typing import Any, TypedDict
+
+
+class ReceivedEvent(TypedDict):
+    message: dict[str, Any]
+    integer_keys: list[str]
 
 TOOLS = [
     {"name": "probe_events", "description": "Host events received so far.",
@@ -18,20 +25,20 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
 ]
 
-received = []
+received: list[ReceivedEvent] = []
 
 
-def send(msg):
+def send(msg: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
 
 
-def reply_text(req_id, value):
+def reply_text(req_id: int | str | None, value: object) -> None:
     send({"jsonrpc": "2.0", "id": req_id, "result": {
         "content": [{"type": "text", "text": json.dumps(value)}]}})
 
 
-def main():
+def main() -> None:
     while True:
         line = sys.stdin.readline()
         if not line:

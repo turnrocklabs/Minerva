@@ -24,6 +24,9 @@ extends SceneTree
 ##    gate, _release_chat_turn, _cancel_chat_turn and the signal are ChatPane's.
 ## D. chat.directory_changed from a real Chat.tscn pane: created, renamed,
 ##    regrouped, closed, restored — each once, and delivered to the plugin.
+## E. Production execute_regular_chat through the public send path and a
+##    deterministic provider: success/error, the real Stop control, and a turn
+##    completing while its chat is soft-deleted or restored.
 ##
 ## Scripts are load()ed and their instances left untyped: in --script mode the
 ## autoloads register after this file compiles, and the plugin scripts reach
@@ -130,6 +133,37 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 	return response
 """
 
+## The provider controls only its response timing/content. The real scene,
+## production execute_regular_chat, prompt, response handling and Stop button
+## run unchanged; no report/release helper is called by these public-path cases.
+const PUBLIC_PROVIDER_SRC := """
+extends "res://Scripts/Services/Providers/BaseProvider.gd"
+
+var held := false
+var released := false
+var entered := false
+var finished := false
+var response_text := ""
+var response_error := ""
+
+func _init() -> void:
+	PROVIDER = SingletonObject.API_PROVIDER.LOCAL
+	provider_name = "Host event fixture"
+	model_name = "fixture"
+
+func generate_content(_prompt: Array[Variant], _params: Dictionary = {}) -> BotResponse:
+	entered = true
+	var deadline := Time.get_ticks_msec() + 5000
+	while held and not released and Time.get_ticks_msec() < deadline:
+		await Engine.get_main_loop().process_frame
+	var response := BotResponse.new()
+	response.provider = self
+	response.text = response_text
+	response.error = response_error
+	finished = true
+	return response
+"""
+
 var _pass := 0
 var _fail := 0
 var _so: Node = null
@@ -179,6 +213,7 @@ func _run() -> void:
 	if not fixtures_ready:
 		return
 	await _test_turn_events()
+	await _test_public_turn_events()
 	await _test_refused_send_is_silent()
 	await _test_directory_events()
 	for id in [SUBSCRIBER, UNGRANTED, UNDECLARED]:
@@ -515,6 +550,90 @@ func _test_turn_events() -> void:
 	for history in [visible_chat, target]:
 		_so.ChatList.erase(history)
 	pane.queue_free()
+
+
+## Exercise the production turn caller through the public MCP send path and
+## real provider execution, including a hidden chat and deletion during await.
+func _test_public_turn_events() -> void:
+	print("\n-- E: public production turn events --")
+	var previous_notes = [_so.notes_container, _so.drawer_notes_container]
+	var previous_pane = _so.Chats
+	var notes_script = load("res://Scenes/note/NotesContainer.gd")
+	_so.notes_container = notes_script.new()
+	_so.drawer_notes_container = notes_script.new()
+	var scene = load("res://Scenes/Chat.tscn").instantiate()
+	root.add_child(scene)
+	await process_frame
+	await process_frame
+	var pane = scene.find_child("tcChats", true, false)
+	check("E0: the production chat pane is wired", pane != null and _so.Chats == pane)
+	if pane == null:
+		return
+	var provider_script = _compile(PUBLIC_PROVIDER_SRC)
+	var visible = load(CHAT_HISTORY_PATH).new(provider_script.new())
+	visible.HistoryName = "Public visible"
+	_so.ChatList.append(visible)
+	pane.render_history(visible)
+	var Utils = load(TOOL_UTILS_PATH)
+	var cases: Array[Dictionary] = [
+		{"name": "ok", "outcome": "ok"},
+		{"name": "error", "outcome": "error", "error": "Fixture provider failure"},
+		{"name": "cancel", "outcome": "cancelled", "held": true},
+		{"name": "deleted", "outcome": "ok", "held": true},
+		{"name": "restored", "outcome": "ok", "held": true},
+	]
+	for entry: Dictionary in cases:
+		var label: String = entry["name"]
+		var provider = provider_script.new()
+		provider.held = entry.get("held", false)
+		provider.response_text = "real-reply:" + label
+		provider.response_error = entry.get("error", "")
+		var history = load(CHAT_HISTORY_PATH).new(provider)
+		history.HistoryName = "Public " + label
+		history.AgentModeEnabled = false
+		history.SystemPromptEnabled = false
+		_so.ChatList.append(history)
+		pane.render_history(history)
+		pane.current_tab = _so.ChatList.find(visible)
+		await process_frame
+		await _probe(SUBSCRIBER, "probe_clear")
+		var receipt: Dictionary = Utils.submit_user_message(history, "public-send:" + label)
+		check("E %s: public send accepted" % label, receipt.get("success", false), str(receipt))
+		var deadline: int = Time.get_ticks_msec() + 5000
+		while not provider.entered and Time.get_ticks_msec() < deadline:
+			await process_frame
+		check("E %s: production turn reached the provider" % label, provider.entered)
+		if label == "cancel":
+			pane.current_tab = _so.ChatList.find(history)
+			await process_frame
+			pane.get_node("%AudioStop1").pressed.emit()
+		elif label in ["deleted", "restored"]:
+			check("E %s: soft-delete succeeds during the request" % label, pane.delete_chat(history))
+			check("E %s: soft-delete retains the running request" % label, history.is_request_active)
+			if label == "restored":
+				check("E restored: undo restores before completion", pane.restore_chat(history))
+		provider.released = true
+		await _until_idle(history)
+		for _frame in 5:
+			await process_frame
+		check("E %s: provider completed" % label, provider.finished)
+		var turns: Array = await _events(SUBSCRIBER, TURN)
+		check("E %s: exactly one completion after the actual turn" % label, turns.size() == 1, str(turns))
+		if turns.size() == 1:
+			var payload: Dictionary = turns[0]["message"]["params"]["payload"]
+			check("E %s: actual caller reports the correct chat and outcome" % label,
+				payload["chat_id"] == str(history.HistoryId) and payload["outcome"] == entry["outcome"], str(payload))
+			if entry["outcome"] == "ok":
+				check("E %s: completion carries the actual assistant reply" % label,
+					payload["text"] == "real-reply:" + label and payload["role"] == "assistant", str(payload))
+		_so.ChatList.erase(history)
+	_so.ChatList.erase(visible)
+	_so.Chats = previous_pane
+	scene.queue_free()
+	_so.notes_container.free()
+	_so.drawer_notes_container.free()
+	_so.notes_container = previous_notes[0]
+	_so.drawer_notes_container = previous_notes[1]
 
 
 ## Turn-report races, on a harness pane with no plugins involved: a stopped

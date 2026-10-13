@@ -4794,7 +4794,8 @@ func delete_chat(history: ServiceHistory) -> bool:
 	history.DeletedAt = int(Time.get_unix_time_from_system())
 	history.DeletedSeq = _next_delete_seq()
 	history.Deleted = true
-	_turn_reports.erase(history.HistoryId)
+	# Soft-delete leaves the request running and the history restorable. Its
+	# report is consumed by release/cancel, including while the tab is hidden.
 	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()
