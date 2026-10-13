@@ -284,6 +284,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.terminal.read",
 	"host.terminal.write",
 	"host.terminal.wait",
+	"host.chat.active",
+	"host.chat.input",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one
@@ -298,6 +300,7 @@ const ALLOWED_HOST_CAPABILITY_NAMESPACES := [
 const ALLOWED_HOST_EVENTS := [
 	"chat.turn_completed",
 	"chat.directory_changed",
+	"chat.active_changed",
 ]
 
 ## A host-event subscription is granted in PluginPolicy under this prefix, so

@@ -782,7 +782,7 @@ func create_user_history_item(text: String) -> ChatHistoryItem:
 							   text)
 
 # Handle human provider message creation
-func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
+func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem, send_id: int = 0) -> void:
 	# Get working memory/notes
 	var current_history = SingletonObject.ChatList[SingletonObject.Chats.current_tab]
 	var working_memory: Array = await SingletonObject.notes_container.to_prompt(current_history.provider, false, current_history.HistoryId)
@@ -793,6 +793,7 @@ func handle_human_provider_message(history: ChatHistory, user_history_item: Chat
 	
 	# Handle and append user message
 	history.HistoryItemList.append(user_history_item)
+	_settle_box_send(history, send_id)
 	var usr_msg_node: = history.VBox.add_history_item(user_history_item)
 	usr_msg_node.regeneratable = true
 	usr_msg_node.render()
@@ -822,6 +823,19 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 
 static func _is_cancelled_response(bot_response: BotResponse) -> bool:
 	return str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
+
+
+## Why `history_list` must not be sent to `provider`, as {code, message}; empty
+## when it may be. The gate generate_content_from_provider applies, and the one
+## a box send's admission follows.
+static func _dispatch_refusal(provider: BaseProvider, history_list: Array) -> Dictionary:
+	var refusal := _prompt_refusal(history_list)
+	if not refusal.is_empty():
+		return {"code": "system_prompt_unavailable", "message": refusal}
+	if not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
+		return {"code": "provider_disabled",
+			"message": "%s is disabled" % SingletonObject.get_provider_display_name(provider.PROVIDER)}
+	return {}
 
 
 # Generate content from provider
@@ -856,17 +870,12 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if "request_reasoning_summary" in provider:
 		provider.request_reasoning_summary = history.ReasoningSummary
 
-	var refusal := _prompt_refusal(history_list)
+	var refusal := _dispatch_refusal(provider, history_list)
 	if not refusal.is_empty():
 		bot_response = BotResponse.new()
 		bot_response.provider = provider
-		bot_response.error = refusal
-		bot_response.set_meta("error_code", "system_prompt_unavailable")
-	elif not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
-		bot_response = BotResponse.new()
-		bot_response.provider = provider
-		bot_response.error = "%s is disabled" % SingletonObject.get_provider_display_name(provider.PROVIDER)
-		bot_response.set_meta("error_code", "provider_disabled")
+		bot_response.error = str(refusal["message"])
+		bot_response.set_meta("error_code", str(refusal["code"]))
 	else:
 		bot_response = await provider.generate_content(history_list, optional_params)
 	if bot_response and not str(bot_response.error).is_empty():
@@ -1936,8 +1945,11 @@ func _on_chat_pressed():
 ## Public entry point for triggering a chat submit from an external source
 ## (e.g. Stream Deck plugin). `mode` mirrors SendMessageButton indices:
 ## 0 = regular, 1 = parallel, 2 = sequential.
-func submit_chat(mode: int = 0) -> void:
+## Returns the send id that user_message_admitted / user_message_dropped carry
+## for this message.
+func submit_chat(mode: int = 0) -> int:
 	_on_send_message_button_item_selected(mode)
+	return _last_box_send_id
 
 
 func _on_send_message_button_item_selected(index: int) -> void:
@@ -1948,7 +1960,10 @@ func _on_send_message_button_item_selected(index: int) -> void:
 
 	# Clear any leftover cancelled flag from previous requests
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	_last_box_send_id += 1
+	var send_id := _last_box_send_id
 	if history.provider is CoreProvider and not ServiceAccountPrompt.require_account():
+		_settle_box_send(history, send_id, "account_required")
 		return
 	SingletonObject.clear_cancelled(history.HistoryId)
 
@@ -1959,29 +1974,73 @@ func _on_send_message_button_item_selected(index: int) -> void:
 
 	match index:
 		0:
+			# execute_regular_chat claims the id at entry (_claim_box_send) and
+			# settles it wherever the message is committed or dropped.
+			_box_send_id = send_id
 			execute_regular_chat(filteredInput)
+			_box_send_id = 0
 		1:
 			if filteredInput.strip_edges().is_empty():
+				_settle_box_send(history, send_id, "empty_input")
 				return
 			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.PARALLEL):
+				_settle_box_send(history, send_id, "", true)
 				return
+			_settle_box_send(history, send_id)
 			execute_parallel_chat(filteredInput, _begin_chat_turn(history))
 		2:
 			if filteredInput.strip_edges().is_empty():
+				_settle_box_send(history, send_id, "empty_input")
 				return
 			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.SEQUENTIAL):
+				_settle_box_send(history, send_id, "", true)
 				return
+			_settle_box_send(history, send_id)
 			execute_sequential_chat(filteredInput, _begin_chat_turn(history))
 
-func execute_hcp_chat():
-	ensure_chat_open()
-	if not ServiceAccountPrompt.require_account():
-		return
 
+#region Input-box send outcomes
+
+## The message taken from the input box as send `send_id` was committed: its
+## request dispatched, its Human-provider post recorded, or it was queued.
+signal user_message_admitted(history_id: String, send_id: int, queued: bool)
+## It was dropped before being committed, for `reason`.
+signal user_message_dropped(history_id: String, send_id: int, reason: String)
+
+var _last_box_send_id := 0
+## The box send handed to execute_regular_chat, until it claims it.
+var _box_send_id := 0
+
+
+func _claim_box_send() -> int:
+	var send_id := _box_send_id
+	_box_send_id = 0
+	return send_id
+
+
+## Reports box send `send_id` (0: not a box send, nothing to report) as dropped
+## for `dropped_reason`, or else as admitted.
+func _settle_box_send(history: ServiceHistory, send_id: int, dropped_reason: String = "", queued: bool = false) -> void:
+	if send_id <= 0:
+		return
+	var history_id := str(history.HistoryId) if history != null else ""
+	if dropped_reason.is_empty():
+		user_message_admitted.emit(history_id, send_id, queued)
+	else:
+		user_message_dropped.emit(history_id, send_id, dropped_reason)
+
+#endregion
+
+func execute_hcp_chat(send_id: int = 0):
+	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if not ServiceAccountPrompt.require_account():
+		_settle_box_send(history, send_id, "account_required")
+		return
 
 	if not history.provider is CoreProvider:
 		push_error("'execute_hcp_chat' called while current provider is not CoreProvider")
+		_settle_box_send(history, send_id, "not_core_provider")
 		return
 
 	var provider: CoreProvider = history.provider
@@ -1994,6 +2053,7 @@ func execute_hcp_chat():
 		
 		if input_data[field_name] is String:
 			if input_data[field_name].is_empty():
+				_settle_box_send(history, send_id, "missing_required_field")
 				return
 
 	var user_history_item: = ChatHistoryItem.new()
@@ -2022,7 +2082,9 @@ func execute_hcp_chat():
 			user_msg_node.queue_free()
 		if not refusal.is_empty():
 			SingletonObject.ErrorDisplay("Nothing was sent", refusal)
+		_settle_box_send(history, send_id, "stopped" if stale else "prompt_refused")
 		return
+	_settle_box_send(history, send_id)
 
 	# rerender the message since we changed the history item
 	user_msg_node.first_time_message = true
@@ -2354,8 +2416,9 @@ func _blocked_by_trailing_user(last_msg, promoted: bool) -> bool:
 ## _drain_outgoing_queue): it has already left the queue as DISPATCHED, so this
 ## call must send it or the message is lost with a receipt that says otherwise.
 func execute_regular_chat(text: String, generation_options: Dictionary = {}, promoted: bool = false) -> void:
+	var send_id := _claim_box_send()
 	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
-	var _history = SingletonObject.ChatList[current_tab]
+	var _history: ChatHistory = SingletonObject.ChatList[current_tab]
 	print("[ChatPane] current_tab=%d, AgentModeEnabled=%s, provider=%s" % [current_tab, _history.AgentModeEnabled, _history.provider.provider_name if _history.provider else "null"])
 
 	# Check if it's a CoreProvider that requires HCP-style execution
@@ -2363,10 +2426,12 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		var core_provider := SingletonObject.ChatList[current_tab].provider as CoreProvider
 		# Only use HCP chat for non-OpenAI services (ETSU, etc.)
 		if not core_provider._is_openai_compatible_service():
-			execute_hcp_chat()
+			execute_hcp_chat(send_id)
 			return
 
-	if text.is_empty(): return
+	if text.is_empty():
+		_settle_box_send(_history, send_id, "empty_input")
+		return
 
 	ensure_chat_open()
 
@@ -2377,6 +2442,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# a message that arrives while this chat is mid-request is queued, never run
 	# alongside the in-flight one and never dropped.
 	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+		_settle_box_send(history, send_id, "", true)
 		return
 
 	# Track this request so the stop button works
@@ -2392,7 +2458,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	user_history_item.provider = history.provider
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
-		handle_human_provider_message(history, user_history_item)
+		handle_human_provider_message(history, user_history_item, send_id)
 		for i in SingletonObject.notes_container.get_tab_count():
 			SingletonObject.notes_container.disable_notes(i)
 
@@ -2409,6 +2475,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		return # if user is using Human provider we finish here
 
 	if _blocked_by_trailing_user(last_msg, promoted):
+		_settle_box_send(history, send_id, "awaiting_reply")
 		_silence_turn(history, turn_token)
 		_release_chat_turn(history, turn_token)
 		return
@@ -2452,9 +2519,13 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history, turn_token)
 	if _turn_stopped(history, turn_token):
+		_settle_box_send(history, send_id, "stopped")
 		return
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
+	# Admitted only if generate_content_from_provider will dispatch it; a refused
+	# send still shows the message and the refusal, but nothing was sent.
+	_settle_box_send(history, send_id, str(_dispatch_refusal(history.provider, history_list).get("code", "")))
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 
 	# Capture request metadata for debugging expandable block
@@ -4321,6 +4392,46 @@ signal chat_directory_changed(payload: Dictionary)
 
 func _emit_directory_change(history: ServiceHistory, change: String) -> void:
 	chat_directory_changed.emit(ChatEventPayloads.directory_changed(history, change, _membership_of(history)))
+	_schedule_active_chat_check()
+
+
+## The chat on screen, or its name or group, changed
+## (ChatEventPayloads.active_chat); ActiveChatTracker decides when.
+signal chat_active_changed(payload: Dictionary)
+
+var _active_chat_tracker: ActiveChatTracker = ActiveChatTracker.new()
+
+
+func active_chat_payload() -> Dictionary:
+	var history: ChatHistory = current_chat()
+	var group_id: String = _effective_group_id(history) if history != null else ChatGroupRegistry.UNGROUPED
+	return ChatEventPayloads.active_chat(history, group_id, SingletonObject.chat_groups.get_name(group_id))
+
+
+func _schedule_active_chat_check() -> void:
+	if is_inside_tree() and _active_chat_tracker.request_check():
+		get_tree().process_frame.connect(_check_active_chat, CONNECT_ONE_SHOT)
+
+
+func _check_active_chat() -> void:
+	var payload := active_chat_payload()
+	if _active_chat_tracker.settle(payload):
+		chat_active_changed.emit(payload)
+
+
+## The input box and mic button, for callers outside the pane that drive them
+## the way the Stream Deck does. Submitting goes through submit_chat.
+func get_user_input_text() -> String:
+	return txt_main_user_input.text
+
+
+func set_user_input_text(text: String) -> void:
+	txt_main_user_input.text = text
+
+
+func get_mic_button() -> BaseButton:
+	return get_node_or_null("%btnMicrophone") as BaseButton
+
 
 ## Currently selected group VIEW. Either a ChatGroupRegistry sentinel
 ## (VIEW_ALL / VIEW_UNGROUPED / VIEW_DELETED) or a real group id.
@@ -4442,6 +4553,7 @@ func _apply_tab_filters() -> void:
 
 	_set_pane_empty_state(not any_visible)
 	_refresh_tab_tooltips()
+	_schedule_active_chat_check()
 
 
 ## Show the whole tab container, or the empty-state placeholder instead.
@@ -4746,6 +4858,7 @@ func rename_group(group_id: String, group_name: String) -> bool:
 		return false
 	SingletonObject.save_state(false)
 	chat_groups_changed.emit()
+	_schedule_active_chat_check()
 	return true
 
 
@@ -5882,6 +5995,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 # when tab changes, set the provider picker to the provider that chat tab is using
 func _on_tab_changed(tab: int):
 	sync_provider_picker_to_chat(tab)
+	_schedule_active_chat_check()
 
 	# Passthrough chats lock the chooser onto their bound entry; switching to a
 	# normal chat unlocks it (chat-passthrough W2).

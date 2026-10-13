@@ -17,6 +17,7 @@ const PayloadLimits = preload("res://Scripts/Services/Plugins/PluginPayloadLimit
 
 const EVENT_CHAT_TURN_COMPLETED := "chat.turn_completed"
 const EVENT_CHAT_DIRECTORY_CHANGED := "chat.directory_changed"
+const EVENT_CHAT_ACTIVE_CHANGED := "chat.active_changed"
 
 ## Bound on a payload's encoded size, below PluginPayloadLimits.CONTROL_BYTES
 ## by headroom for the notification envelope around it.

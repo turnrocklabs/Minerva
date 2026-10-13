@@ -1,0 +1,33 @@
+{
+  "id": "chat_target_probe",
+  "name": "Chat Target Probe",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": [
+      "../host_event_probe/host_event_probe.py"
+    ]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [
+      "host.chat.active",
+      "host.chat.input"
+    ],
+    "host_events": [
+      "chat.active_changed"
+    ],
+    "network": {
+      "mode": "none"
+    },
+    "filesystem": {
+      "mode": "none",
+      "paths": []
+    }
+  }
+}

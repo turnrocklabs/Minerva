@@ -1,8 +1,9 @@
 class_name ChatEventPayloads
 extends RefCounted
-## Plain-value payloads for ChatPane's chat_turn_completed and
-## chat_directory_changed signals. The turn's end points decide the outcome and
-## the reply; this class only resolves their precedence and shapes the payload.
+## Plain-value payloads for ChatPane's chat_turn_completed,
+## chat_directory_changed and chat_active_changed signals. The turn's end
+## points decide the outcome and the reply; this class only resolves their
+## precedence and shapes the payload.
 
 const OUTCOME_OK := "ok"
 const OUTCOME_ERROR := "error"
@@ -66,6 +67,19 @@ static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outc
 		"role": "assistant",
 		"text": text,
 		"outcome": outcome,
+	}
+
+
+## The visible chat; chat_id is null when none is on screen. `group_id` is the
+## chat's effective group ("" when ungrouped) and `group` its name.
+static func active_chat(history: ServiceHistory, group_id: String, group_name: String) -> Dictionary:
+	if history == null:
+		return {"chat_id": null, "name": "", "group_id": "", "group": ""}
+	return {
+		"chat_id": str(history.HistoryId),
+		"name": str(history.HistoryName),
+		"group_id": group_id,
+		"group": group_name,
 	}
 
 

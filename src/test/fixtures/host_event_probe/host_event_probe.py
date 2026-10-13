@@ -5,9 +5,10 @@ probe_events: every notification received so far, in order, as
 {message, integer_keys}: the whole JSON-RPC message, and the payload keys
 that decoded as JSON integers (GD-1: integers must not arrive as 1.0).
 probe_clear: forgets them.
+probe_exit: answers, then exits with status 3 (an unexpected plugin exit).
 
-The three host_event_probe* manifests run this one script under different
-plugin ids (subscriber, declared-but-ungranted, undeclared).
+The host_event_probe* manifests and chat_target_probe run this one script
+under different plugin ids.
 """
 import json
 import sys
@@ -22,6 +23,8 @@ TOOLS = [
     {"name": "probe_events", "description": "Host events received so far.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
     {"name": "probe_clear", "description": "Forget received host events.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "probe_exit", "description": "Answer, then exit with status 3.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
 ]
 
@@ -65,6 +68,9 @@ def main() -> None:
             elif name == "probe_clear":
                 received.clear()
                 reply_text(req_id, {"success": True})
+            elif name == "probe_exit":
+                reply_text(req_id, {"success": True})
+                sys.exit(3)
             else:
                 send({"jsonrpc": "2.0", "id": req_id,
                       "error": {"code": -32601, "message": f"Unknown tool: {name}"}})

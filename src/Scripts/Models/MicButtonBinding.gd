@@ -12,7 +12,27 @@ const MIC_ICON_PATH := "res://assets/icons/mic_icons/microphone_24.png"
 const LOADING_ICON_PATH := "res://assets/icons/loading_white-16-16.png"
 const META_KEY := &"_mic_button_binding"
 
+## The Stream Deck mic_state vocabulary, for a recorder outside Minerva.
+const EXTERNAL_STATES: Dictionary[String, int] = {
+	"idle": AudioToTexts.PTTState.READY,
+	"recording": AudioToTexts.PTTState.LISTENING,
+	"transcribing": AudioToTexts.PTTState.TRANSCRIBING,
+	"error": AudioToTexts.PTTState.ERROR,
+}
+
 var _button: BaseButton
+
+
+## Show an external recorder's `state` (a key of EXTERNAL_STATES) on `button`.
+## Visuals only: no PTT session is started, stopped or joined. False for an
+## unknown state or a missing button.
+static func show_external_state(button: BaseButton, state: String) -> bool:
+	if button == null or not is_instance_valid(button) or not EXTERNAL_STATES.has(state):
+		return false
+	var binding := MicButtonBinding.new()
+	binding._button = button
+	binding._apply_state(EXTERNAL_STATES[state])
+	return true
 
 
 ## Idempotently attach a binding to `button`. Safe to call every start_ptt.
@@ -43,6 +63,10 @@ func _on_state_changed(new_state: int, info: Dictionary) -> void:
 		# Not our session — keep READY so only one button reflects active state.
 		_apply_ready()
 		return
+	_apply_state(new_state)
+
+
+func _apply_state(new_state: int) -> void:
 	match new_state:
 		AudioToTexts.PTTState.READY:
 			_apply_ready()
