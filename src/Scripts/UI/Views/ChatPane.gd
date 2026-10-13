@@ -2481,7 +2481,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# the turn looks alive, until the generate resolves. The relay reuses the
 	# accumulator idiom: content lives on dummy_item, the wave shows via
 	# loading_append, and the SAME node finalizes below.
-	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
+	var _pt_status: PassthroughTurnStatusScript = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
 	var bot_response = await generate_content_from_provider(history, history_list)
