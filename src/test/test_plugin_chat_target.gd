@@ -265,6 +265,8 @@ func _test_input(chat_a, chat_b) -> void:
 	check("13c: a submit to a busy chat is queued behind its turn",
 		queued.get("success", false) and queued.get("result", {}).get("queued") == true
 			and _pane._outgoing_queue.pending_count(str(chat_b.HistoryId)) == 1, str(queued))
+	var queued_entry = _pane._outgoing_queue.peek(str(chat_b.HistoryId))
+	check("13e: plugin send origin survives the busy-chat FIFO", queued_entry.origin.get("plugin_id") == PROBE and int(queued_entry.origin.get("send_id", 0)) == int(queued.get("result", {}).get("send_id", -1)))
 	_pane._clear_outgoing_queue(chat_b)
 	chat_b.is_request_active = false
 	check("13d: the queued entry is cleaned up", _pane._outgoing_queue.pending_count(str(chat_b.HistoryId)) == 0)
@@ -347,7 +349,7 @@ func get_user_input_text() -> String:
 func set_user_input_text(text: String) -> void:
 	box_text = text
 
-func submit_chat(_mode: int = 0) -> int:
+func submit_chat(_mode: int = 0, _plugin_id: String = "") -> int:
 	_last_box_send_id += 1
 	var send_id := _last_box_send_id
 	var history: ChatHistory = current_chat()

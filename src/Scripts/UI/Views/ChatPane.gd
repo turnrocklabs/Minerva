@@ -937,6 +937,7 @@ static func _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node)
 func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
+	var speech_origin: Dictionary = _turn_origin(history, history.request_turn_token)
 	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
 		push_warning("[ChatPane] update_ui_after_response: late response dropped — UI node freed (bug 019e5bc8, likely stop+redispatch)")
 		return
@@ -960,7 +961,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
 		if chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId):
-			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node)
+			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node, speech_origin)
 	else:
 		model_msg_node.queue_free()
 
@@ -1947,12 +1948,12 @@ func _on_chat_pressed():
 ## 0 = regular, 1 = parallel, 2 = sequential.
 ## Returns the send id that user_message_admitted / user_message_dropped carry
 ## for this message.
-func submit_chat(mode: int = 0) -> int:
-	_on_send_message_button_item_selected(mode)
+func submit_chat(mode: int = 0, plugin_id: String = "") -> int:
+	_on_send_message_button_item_selected(mode, plugin_id)
 	return _last_box_send_id
 
 
-func _on_send_message_button_item_selected(index: int) -> void:
+func _on_send_message_button_item_selected(index: int, plugin_id: String = "") -> void:
 
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
@@ -1977,7 +1978,7 @@ func _on_send_message_button_item_selected(index: int) -> void:
 			# execute_regular_chat claims the id at entry (_claim_box_send) and
 			# settles it wherever the message is committed or dropped.
 			_box_send_id = send_id
-			execute_regular_chat(filteredInput)
+			execute_regular_chat(filteredInput, {}, false, {"plugin_id": plugin_id, "send_id": send_id} if not plugin_id.is_empty() else {})
 			_box_send_id = 0
 		1:
 			if filteredInput.strip_edges().is_empty():
@@ -2031,7 +2032,7 @@ func _settle_box_send(history: ServiceHistory, send_id: int, dropped_reason: Str
 
 #endregion
 
-func execute_hcp_chat(send_id: int = 0):
+func execute_hcp_chat(send_id: int = 0, origin: Dictionary = {}):
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	if not ServiceAccountPrompt.require_account():
@@ -2108,7 +2109,7 @@ func execute_hcp_chat(send_id: int = 0):
 	# during the await above. Guard before touching them directly below.
 	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
 		push_warning("[ChatPane] execute_hcp_chat: late response dropped — UI node freed (bug 019e5bc8)")
-		_emit_turn_completed(history, null, ChatEventPayloads.OUTCOME_CANCELLED)
+		_emit_turn_completed(history, null, ChatEventPayloads.OUTCOME_CANCELLED, origin)
 		return
 
 	var chi = ChatHistoryItem.new()
@@ -2147,7 +2148,7 @@ func execute_hcp_chat(send_id: int = 0):
 	var core_response: BotResponse = bot_response
 	var stopped: bool = core_response != null and _is_cancelled_response(core_response)
 	_emit_turn_completed(history, reply, ChatEventPayloads.resolve_outcome(
-		ChatEventPayloads.OUTCOME_CANCELLED if stopped else "", "", reply))
+		ChatEventPayloads.OUTCOME_CANCELLED if stopped else "", "", reply), origin)
 
 #region Outgoing message queue
 
@@ -2166,13 +2167,13 @@ var _outgoing_queue: ChatOutgoingQueue = ChatOutgoingQueueScript.new()
 ## about to start a turn MUST return when this returns true.
 func _queue_if_busy(history: ChatHistory, text: String,
 		mode: ChatOutgoingQueue.Mode = ChatOutgoingQueue.Mode.REGULAR,
-		generation_options: Dictionary = {}) -> bool:
+		generation_options: Dictionary = {}, origin: Dictionary = {}) -> bool:
 	if history == null or not history.is_request_active:
 		return false
 	if text.strip_edges().is_empty():
 		return false
 	var entry: ChatOutgoingQueue.Entry = _outgoing_queue.enqueue(
-		history.HistoryId, text, mode, generation_options)
+		history.HistoryId, text, mode, generation_options, false, origin)
 	entry.bubble = _add_pending_bubble(history, entry)
 	print("[ChatPane] Chat busy — queued message (%d pending)" % _outgoing_queue.pending_count(history.HistoryId))
 	return true
@@ -2217,12 +2218,14 @@ func _on_pending_bubble_removal_requested(bubble: PendingMessageBubble,
 ## Claim the chat for a new turn and return that turn's token. The caller MUST
 ## keep the token and hand it back to _release_chat_turn: it is what tells this
 ## turn apart from the one that replaces it after a stop.
-func _begin_chat_turn(history: ChatHistory) -> int:
+func _begin_chat_turn(history: ChatHistory, origin: Dictionary = {}) -> int:
 	if history == null:
 		return -1
 	history.request_turn_token += 1
 	history.is_request_active = true
-	_turn_reports[history.HistoryId] = ChatEventPayloads.TurnReport.new(history.request_turn_token)
+	var report := ChatEventPayloads.TurnReport.new(history.request_turn_token)
+	report.origin = origin.duplicate(true)
+	_turn_reports[history.HistoryId] = report
 	_update_stop_button()
 	return history.request_turn_token
 
@@ -2246,7 +2249,7 @@ func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
 	var report: ChatEventPayloads.TurnReport = _take_turn_report(history, turn_token)
 	if report != null and not report.silent:
 		_emit_turn_completed(history, report.reply, ChatEventPayloads.resolve_outcome(
-			report.outcome, report.termination, report.reply))
+			report.outcome, report.termination, report.reply), report.origin)
 	_drain_outgoing_queue(history)
 
 
@@ -2274,7 +2277,7 @@ func _cancel_chat_turn(history: ChatHistory) -> void:
 	history.is_request_active = false
 	_clear_outgoing_queue(history)
 	if report != null and not report.silent:
-		_emit_turn_completed(history, report.reply, ChatEventPayloads.OUTCOME_CANCELLED)
+		_emit_turn_completed(history, report.reply, ChatEventPayloads.OUTCOME_CANCELLED, report.origin)
 
 
 #region Turn reports (chat_turn_completed)
@@ -2347,8 +2350,13 @@ func _silence_turn(history: ServiceHistory, turn_token: int) -> void:
 		report.silent = true
 
 
-func _emit_turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outcome: String) -> void:
-	chat_turn_completed.emit(ChatEventPayloads.turn_completed(history, reply, outcome))
+func _emit_turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outcome: String, origin: Dictionary = {}) -> void:
+	chat_turn_completed.emit(ChatEventPayloads.turn_completed(history, reply, outcome, origin))
+
+
+func _turn_origin(history: ServiceHistory, turn_token: int) -> Dictionary:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	return report.origin.duplicate(true) if report != null else {}
 
 #endregion
 
@@ -2382,7 +2390,7 @@ func _drain_outgoing_queue(history: ChatHistory) -> void:
 		ChatOutgoingQueue.Mode.SEQUENTIAL:
 			execute_sequential_chat(entry.text, _begin_chat_turn(history), true)
 		_:
-			execute_regular_chat(entry.text, entry.generation_options, true)
+			execute_regular_chat(entry.text, entry.generation_options, true, entry.origin)
 	if original_tab != tab_index:
 		call_deferred("set_current_tab", original_tab)
 
@@ -2415,7 +2423,7 @@ func _blocked_by_trailing_user(last_msg, promoted: bool) -> bool:
 ## `promoted` marks a message the outgoing queue just handed over (see
 ## _drain_outgoing_queue): it has already left the queue as DISPATCHED, so this
 ## call must send it or the message is lost with a receipt that says otherwise.
-func execute_regular_chat(text: String, generation_options: Dictionary = {}, promoted: bool = false) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, promoted: bool = false, origin: Dictionary = {}) -> void:
 	var send_id := _claim_box_send()
 	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
 	var _history: ChatHistory = SingletonObject.ChatList[current_tab]
@@ -2426,7 +2434,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		var core_provider := SingletonObject.ChatList[current_tab].provider as CoreProvider
 		# Only use HCP chat for non-OpenAI services (ETSU, etc.)
 		if not core_provider._is_openai_compatible_service():
-			execute_hcp_chat(send_id)
+			execute_hcp_chat(send_id, origin)
 			return
 
 	if text.is_empty():
@@ -2441,13 +2449,13 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# minerva_send_message, worker-completion injection, trigger MESSAGE_EXISTING):
 	# a message that arrives while this chat is mid-request is queued, never run
 	# alongside the in-flight one and never dropped.
-	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options, origin):
 		_settle_box_send(history, send_id, "", true)
 		return
 
 	# Track this request so the stop button works
 	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
-	var turn_token: int = _begin_chat_turn(history)
+	var turn_token: int = _begin_chat_turn(history, origin)
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 
 	# Reset termination tracking for this new turn
@@ -3391,7 +3399,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.Message
 		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not SingletonObject.is_cancelled(history.HistoryId):
 			var user_text := user_history_item.Message if user_history_item else ""
-			_voice_speak_response(final_text, user_text, model_chi.rendered_node)
+			_voice_speak_response(final_text, user_text, model_chi.rendered_node, _turn_origin(history, turn_token))
 
 		history.termination_reason = "completed"
 		history.termination_message = ""
@@ -5567,7 +5575,7 @@ func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_second
 			label.queue_free()
 	, CONNECT_ONE_SHOT)
 
-func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
+func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null, origin: Dictionary = {}) -> void:
 	if _voice_tearing_down:
 		return
 	if not preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
@@ -5580,6 +5588,8 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	cancel_tts()
 	var operation := SpeechOperation.new()
 	_speech_operation = operation
+	if SingletonObject.plugin_audio_devices != null:
+		operation.bind_output(SingletonObject.plugin_audio_devices.speech_output(_tts_player, origin))
 	_update_stop_button()
 	var status_label: RichTextLabel = _create_voice_status_label(msg_node) if is_instance_valid(msg_node) else null
 	var context := {"status": status_label, "summary": cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE, "text": response_text}

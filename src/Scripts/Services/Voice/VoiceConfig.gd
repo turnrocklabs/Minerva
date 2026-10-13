@@ -7,6 +7,10 @@ enum STTTransport { BUFFERED, STREAMED }
 enum TTSProvider { VOICE_SERVICE, NONE }
 enum SpeakMode { OFF, FULL, SUMMARIZE }
 
+## Internal endpoint selections; OS devices retain their ordinary AudioServer route.
+var input_device: String = "os:Default"
+var output_device: String = "os:Default"
+
 ## Current STT provider selection
 var stt_provider: STTProvider = STTProvider.VOICE_SERVICE
 
@@ -63,6 +67,8 @@ var stt_model: String = "small.en"
 
 
 func save() -> void:
+	SingletonObject.save_to_config_file("Voice", "input_device", input_device)
+	SingletonObject.save_to_config_file("Voice", "output_device", output_device)
 	SingletonObject.save_to_config_file("Voice", "stt_provider", stt_provider)
 	SingletonObject.save_to_config_file("Voice", "stt_backend", stt_backend)
 	SingletonObject.save_to_config_file("Voice", "stt_transport", stt_transport)
@@ -87,6 +93,8 @@ func load_from_config() -> void:
 	if not SingletonObject.config_has_saved_section("Voice"):
 		return
 
+	input_device = str(SingletonObject.config_file.get_value("Voice", "input_device", "os:Default"))
+	output_device = str(SingletonObject.config_file.get_value("Voice", "output_device", "os:Default"))
 	stt_provider = SingletonObject.config_file.get_value("Voice", "stt_provider", STTProvider.VOICE_SERVICE)
 	stt_backend = SingletonObject.config_file.get_value("Voice", "stt_backend", "faster-whisper")
 	stt_transport = SingletonObject.config_file.get_value("Voice", "stt_transport", STTTransport.BUFFERED) as STTTransport

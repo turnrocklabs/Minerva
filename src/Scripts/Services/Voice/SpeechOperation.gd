@@ -43,7 +43,7 @@ func _complete(outcome: Dictionary, cancel_pending: bool) -> void:
 func play(player: AudioStreamPlayer, audio: PackedByteArray, volume: float) -> bool:
 	if done:
 		return false
-	if not is_instance_valid(player):
+	if _output == null and not is_instance_valid(player):
 		finish({"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."})
 		return false
 	_ensure_output(player)
@@ -55,12 +55,16 @@ func play(player: AudioStreamPlayer, audio: PackedByteArray, volume: float) -> b
 
 
 func bind_output(output: SpeechOutput) -> bool:
-	if _output != null or not can_start() or is_busy():
+	if output == null or _output != null or not can_start() or is_busy():
 		return false
 	_output = output
 	_output.finished.connect(_on_output_finished)
 	_output.started.connect(_on_output_started)
 	return true
+
+
+func output_available(player: AudioStreamPlayer) -> bool:
+	return _output.is_available() if _output != null else is_instance_valid(player)
 
 
 func _ensure_output(player: AudioStreamPlayer) -> void:
@@ -81,7 +85,7 @@ func prepare_stream(request, player: AudioStreamPlayer, volume: float) -> Dictio
 	if _request != null:
 		request.cancel()
 		return {"success": false, "error_code": "operation_busy", "error_message": "Voice operation already has an active request."}
-	if not is_instance_valid(player):
+	if _output == null and not is_instance_valid(player):
 		request.cancel()
 		return {"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."}
 	_ensure_output(player)

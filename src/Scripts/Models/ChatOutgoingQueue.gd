@@ -32,6 +32,7 @@ class Entry extends RefCounted:
 	var text: String = ""
 	var mode: ChatOutgoingQueue.Mode = ChatOutgoingQueue.Mode.REGULAR
 	var generation_options: Dictionary = {}
+	var origin: Dictionary = {}
 	var bubble: Node = null
 	## A background message (a notify envelope) rather than something a human
 	## typed. Deferred entries are skipped by the drain while the chat is
@@ -63,7 +64,7 @@ var _next_id: int = 1
 ## Append a message to the chat's queue and return the created entry so the caller
 ## can attach its pending bubble.
 func enqueue(history_id: String, text: String, mode: Mode = Mode.REGULAR,
-		generation_options: Dictionary = {}, deferred: bool = false) -> Entry:
+		generation_options: Dictionary = {}, deferred: bool = false, origin: Dictionary = {}) -> Entry:
 	var entry: = Entry.new()
 	entry.deferred = deferred
 	entry.id = _next_id
@@ -72,6 +73,7 @@ func enqueue(history_id: String, text: String, mode: Mode = Mode.REGULAR,
 	entry.text = text
 	entry.mode = mode
 	entry.generation_options = generation_options.duplicate(true)
+	entry.origin = origin.duplicate(true)
 	if not _pending.has(history_id):
 		_pending[history_id] = []
 	var queue: Array = _pending[history_id]

@@ -115,7 +115,7 @@ func _submit(plugin_id: String, pane: ChatPane, expected_chat_id: String) -> Dic
 		outcomes[dropped_send_id] = {"dropped": reason}
 	pane.user_message_admitted.connect(on_admitted)
 	pane.user_message_dropped.connect(on_dropped)
-	var send_id: int = pane.submit_chat(0)
+	var send_id: int = pane.submit_chat(0, plugin_id)
 	var deadline: int = Time.get_ticks_msec() + submit_timeout_ms
 	while not outcomes.has(send_id) and Time.get_ticks_msec() < deadline and is_instance_valid(pane):
 		await _next_frame.call()
@@ -123,14 +123,14 @@ func _submit(plugin_id: String, pane: ChatPane, expected_chat_id: String) -> Dic
 		pane.user_message_admitted.disconnect(on_admitted)
 		pane.user_message_dropped.disconnect(on_dropped)
 	if not outcomes.has(send_id):
-		return PluginErrors.success({"chat_id": visible_id, "status": "pending"})
+		return PluginErrors.success({"chat_id": visible_id, "send_id": send_id, "status": "pending"})
 	var outcome: Dictionary = outcomes[send_id]
 	if outcome.has("dropped"):
 		var refused := _refuse(plugin_id, ERROR_NOT_SENT, "Not sent (%s): the chat did not take the message (plugin '%s')." % [
 			outcome["dropped"], plugin_id])
 		refused["reason"] = outcome["dropped"]
 		return refused
-	return PluginErrors.success({"chat_id": visible_id, "queued": outcome["queued"]})
+	return PluginErrors.success({"chat_id": visible_id, "send_id": send_id, "queued": outcome["queued"]})
 
 
 func _set_external_ptt_state(plugin_id: String, pane: ChatPane, state: String) -> Dictionary:

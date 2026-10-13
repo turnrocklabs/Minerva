@@ -399,7 +399,7 @@ func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, op
 		return failure("cancelled", "Speech operation is already cancelled.")
 	if operation.is_busy():
 		return failure("operation_busy", "Speech operation already owns a request.")
-	if not is_instance_valid(player):
+	if not operation.output_available(player):
 		return failure("no_audio_player", "Speech player is unavailable.")
 	var voice: String = voice_config.voice_name if not voice_config.voice_name.is_empty() else voice_config.voice_id
 	var inventory := _inventory_for(voice_config.tts_backend)

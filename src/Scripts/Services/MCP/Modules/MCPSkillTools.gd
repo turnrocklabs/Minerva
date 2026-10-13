@@ -17,6 +17,8 @@ func get_tool_names() -> Array[String]:
 		"minerva_update_skill_instructions",
 		"minerva_speak",
 		"minerva_list_voices",
+		"minerva_list_audio_devices",
+		"minerva_set_audio_device",
 	]
 
 
@@ -157,6 +159,11 @@ func register_tools() -> void:
 		}
 	, "utility")
 
+	server._register_tool("minerva_list_audio_devices", "List OS and granted plugin microphone/speaker endpoints, availability and selection.",
+		{"type": "object", "properties": {}}, "chat")
+	server._register_tool("minerva_set_audio_device", "Select a microphone or speaker endpoint; uses the same selection as Voice preferences.",
+		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["input", "output"]},
+			"device_id": {"type": "string"}}, "required": ["direction", "device_id"]}, "chat")
 	# Voice tools
 	server._register_tool("minerva_speak",
 		"Speak text aloud using text-to-speech. Works regardless of auto-play TTS preference — use this when you want to audibly communicate something to the user. Requires voice-service via Core.",
@@ -209,6 +216,18 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
 		"minerva_speak": return await _speak(arguments)
 		"minerva_list_voices": return await _list_voices(arguments)
+		"minerva_list_audio_devices":
+			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
+			if devices == null:
+				return VoiceServiceClient.failure("audio_unavailable", "Audio endpoint registry is unavailable.")
+			var cfg: VoiceConfig = SingletonObject.get_voice_config()
+			return {"success": true, "input": devices.devices("input"), "output": devices.devices("output"),
+				"selected_input": cfg.input_device, "selected_output": cfg.output_device}
+		"minerva_set_audio_device":
+			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
+			if devices == null:
+				return VoiceServiceClient.failure("audio_unavailable", "Audio endpoint registry is unavailable.")
+			return devices.select(str(arguments.get("direction", "")), str(arguments.get("device_id", "")))
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -866,28 +885,25 @@ func _speak(arguments: Dictionary) -> Dictionary:
 	if backend.is_empty():
 		backend = cfg.tts_backend
 
-	var client := SingletonObject.get_voice_client()
-	var outcome := await client.synthesize_result(text, voice_id, backend)
+	var chats: ChatPane = SingletonObject.Chats
+	if not is_instance_valid(chats):
+		return VoiceServiceClient.failure("no_audio_player", "No chat pane is available for speech.")
+	var operation := SpeechOperation.new()
+	var player := AudioStreamPlayer.new()
+	chats.add_child(player)
+	operation.finished.connect(func(_outcome: Dictionary) -> void:
+		if is_instance_valid(player):
+			player.queue_free(), CONNECT_ONE_SHOT)
+	if SingletonObject.plugin_audio_devices != null:
+		operation.bind_output(SingletonObject.plugin_audio_devices.speech_output(player, {}, true))
+	var speech_cfg := VoiceConfig.new()
+	speech_cfg.voice_id = voice_id
+	speech_cfg.tts_backend = backend
+	speech_cfg.tts_volume = cfg.tts_volume
+	var outcome: Dictionary = await SingletonObject.get_voice_client().synthesize_auto_playback_result(text, speech_cfg, operation, player)
 	if not outcome.success:
+		operation.finish(outcome)
 		return outcome
-	var wav_data: PackedByteArray = outcome.audio
-
-	# The pane supplies playback availability; MCP owns a separate player.
-	var chats = SingletonObject.Chats
-	if is_instance_valid(chats) and is_instance_valid(chats._tts_player):
-		var stream := VoiceServiceClient.decode_audio(wav_data)
-		if stream == null:
-			return VoiceServiceClient.failure("invalid_audio", "Speech audio could not be decoded.")
-		# MCP playback owns its player, independent of an in-flight chat speech.
-		var player := AudioStreamPlayer.new()
-		chats.add_child(player)
-		player.stream = stream
-		player.volume_db = linear_to_db(cfg.tts_volume)
-		player.finished.connect(player.queue_free, CONNECT_ONE_SHOT)
-		player.play()
-	else:
-		push_warning("[MCPSkillTools] No TTS player available for minerva_speak")
-		return VoiceServiceClient.failure("no_audio_player", "No audio player available")
 
 	return {
 		"success": true,

@@ -34,6 +34,8 @@ class TurnReport:
 	var termination: String = ""
 	## A Human-provider pseudo-turn or a refused send: no event at all.
 	var silent: bool = false
+	## Captured at submit and carried through the FIFO, never inferred from focus.
+	var origin: Dictionary = {}
 
 	func _init(p_token: int) -> void:
 		token = p_token
@@ -57,7 +59,7 @@ static func resolve_outcome(noted: String, termination_reason: String, reply: Ch
 ## or tool content. message_index is the reply's index in the chat, or -1.
 ## Core (HCP) replies carry only structured HcpData with no plain-text form, so
 ## their text is empty.
-static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outcome: String) -> Dictionary:
+static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outcome: String, origin: Dictionary = {}) -> Dictionary:
 	var text := ""
 	if reply != null:
 		text = _tool_block_marker.sub(reply.Message, "", true).strip_edges()
@@ -67,6 +69,8 @@ static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outc
 		"role": "assistant",
 		"text": text,
 		"outcome": outcome,
+		"plugin_id": str(origin.get("plugin_id", "")),
+		"send_id": int(origin.get("send_id", 0)),
 	}
 
 

@@ -656,6 +656,11 @@ func initialize_plugins() -> void:
 	manager.plugin_crashed.connect(chat_target.plugin_stopped)
 	var policy: PluginPolicy = plugin_policy
 	policy.capability_revoked.connect(chat_target.capability_revoked)
+	plugin_audio_devices = PluginAudioDevices.new(get_voice_config(), policy, _send_plugin_host_event, _next_frame)
+	plugin_capability_broker.audio_devices = plugin_audio_devices
+	manager.plugin_stopped.connect(plugin_audio_devices.plugin_stopped)
+	manager.plugin_crashed.connect(plugin_audio_devices.plugin_stopped)
+	policy.capability_revoked.connect(plugin_audio_devices.capability_revoked)
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
 
@@ -1038,6 +1043,7 @@ func get_terminal_session_registry():
 
 #region Voice
 var voice_config: VoiceConfig = null
+var plugin_audio_devices: PluginAudioDevices = null
 var voice_client: VoiceServiceClient = null
 
 func get_voice_config() -> VoiceConfig:

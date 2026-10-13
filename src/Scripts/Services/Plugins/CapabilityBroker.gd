@@ -394,6 +394,8 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 			named_result = _handle_host_project_open(plugin_id, args)
 		"host.project.current":
 			named_result = _handle_host_project_current(plugin_id, args)
+		"host.audio":
+			named_result = audio_devices.handle(plugin_id, args) if audio_devices != null else PluginErrors.backend_error(plugin_id, "audio endpoints are not wired")
 		"host.chat.active", "host.chat.input":
 			if chat_target != null:
 				named_result = await chat_target.handle(plugin_id, capability, args)
@@ -3264,6 +3266,7 @@ var chat_provider_registry = null  # PluginChatProviderRegistry
 
 ## host.chat.active / host.chat.input. Injected by SingletonObject.initialize_plugins.
 var chat_target: PluginHostChatTarget = null
+var audio_devices: PluginAudioDevices = null
 
 const _CHAT_PROVIDER_VALID_HISTORY_MODES := ["newest_only", "full"]
 

@@ -286,6 +286,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.terminal.wait",
 	"host.chat.active",
 	"host.chat.input",
+	"host.audio",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one
@@ -298,6 +299,8 @@ const ALLOWED_HOST_CAPABILITY_NAMESPACES := [
 
 ## Event names a manifest may list in permissions.host_events.
 const ALLOWED_HOST_EVENTS := [
+	"voice.audio",
+	"voice.transcript",
 	"chat.turn_completed",
 	"chat.directory_changed",
 	"chat.active_changed",
