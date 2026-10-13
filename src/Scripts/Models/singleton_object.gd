@@ -657,8 +657,11 @@ func initialize_plugins() -> void:
 	var policy: PluginPolicy = plugin_policy
 	policy.capability_revoked.connect(chat_target.capability_revoked)
 	plugin_audio_devices = PluginAudioDevices.new(get_voice_config(), policy, _send_plugin_host_event, _next_frame,
-		func() -> String: return AudioServer.output_device, set_output_device, _notify_plugin_refusal)
+		func() -> String: return AudioServer.output_device, set_output_device, _notify_plugin_refusal,
+		func() -> String: return AudioServer.input_device, set_microphone)
 	plugin_capability_broker.audio_devices = plugin_audio_devices
+	plugin_capability_broker.audio_input = PluginAudioInput.new(plugin_audio_devices, chat_target, get_voice_config(),
+		get_voice_client, _send_plugin_transcript, _notify_plugin_refusal, _next_frame, _plugin_accepts_transcript)
 	manager.plugin_stopped.connect(plugin_audio_devices.plugin_stopped)
 	manager.plugin_crashed.connect(plugin_audio_devices.plugin_stopped)
 	policy.capability_revoked.connect(plugin_audio_devices.capability_revoked)
@@ -680,6 +683,17 @@ func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -
 	var manager: PluginManager = plugin_manager
 	var conn: MCPServerConnection = manager.get_connection(p_id)
 	return conn.send_host_event(event, payload) if conn != null else ERR_UNAVAILABLE
+
+
+func _plugin_accepts_transcript(p_id: String) -> bool:
+	for def: PluginDefinition in _plugins_with_connection():
+		if def.id == p_id:
+			return "voice.transcript" in def.host_events and plugin_policy.is_capability_granted(p_id, "host_event:voice.transcript")
+	return false
+
+
+func _send_plugin_transcript(p_id: String, event: String, payload: Dictionary) -> Error:
+	return _send_plugin_host_event(p_id, event, payload) if _plugin_accepts_transcript(p_id) else ERR_UNAUTHORIZED
 
 
 func _chat_pane_if_live() -> ChatPane:
@@ -2690,6 +2704,8 @@ func get_microphone():
 
 func set_microphone(mic: String) -> void:
 	AudioServer.set_input_device(mic)
+	if plugin_audio_devices != null:
+		plugin_audio_devices.os_input_selected()
 	save_to_config_file("AudioSettings", "SelectedMic", mic)
 	mic_changed.emit(mic)
 

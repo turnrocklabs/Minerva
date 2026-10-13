@@ -160,10 +160,10 @@ func register_tools() -> void:
 	, "utility")
 
 	var audio_server: MinervaMCPServer = server
-	audio_server._register_tool("minerva_list_audio_devices", "List OS and granted plugin speaker endpoints, availability and selection.",
+	audio_server._register_tool("minerva_list_audio_devices", "List OS and granted plugin microphone and speaker endpoints, availability and selection.",
 		{"type": "object", "properties": {}}, "chat")
-	audio_server._register_tool("minerva_set_audio_device", "Select a speaker endpoint; uses the same selection as Voice preferences.",
-		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["output"]},
+	audio_server._register_tool("minerva_set_audio_device", "Select a microphone or speaker endpoint; uses the same selection as Voice preferences.",
+		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["input", "output"]},
 			"device_id": {"type": "string"}}, "required": ["direction", "device_id"]}, "chat")
 	# Voice tools
 	server._register_tool("minerva_speak",
@@ -221,7 +221,8 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 			if devices == null:
 				return VoiceServiceClient.failure("audio_unavailable", "Audio endpoint registry is unavailable.")
-			return {"success": true, "output": devices.devices("output"), "selected_output": devices.selected_output()}
+			return {"success": true, "output": devices.devices("output"), "selected_output": devices.selected_output(),
+				"input": devices.devices("input"), "selected_input": devices.selected_input()}
 		"minerva_set_audio_device":
 			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 			if devices == null:

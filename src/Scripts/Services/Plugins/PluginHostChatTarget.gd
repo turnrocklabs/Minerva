@@ -57,8 +57,7 @@ func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictiona
 		"append":
 			if not (args.get("text") is String):
 				return PluginErrors.schema_validation_failed(plugin_id, "append requires a string 'text'")
-			pane.set_user_input_text(pane.get_user_input_text() + str(args["text"]))
-			return PluginErrors.success({})
+			return append_transcript(plugin_id, str(args.get("expected_chat_id", active_chat_id())), str(args.text))
 		"clear":
 			pane.set_user_input_text("")
 			return PluginErrors.success({})
@@ -71,6 +70,27 @@ func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictiona
 			return _set_external_ptt_state(plugin_id, pane, str(args.get("state", "")))
 	return PluginErrors.schema_validation_failed(plugin_id,
 		"op must be one of append, clear, submit, set_external_ptt_state")
+
+
+func active_chat_id() -> String:
+	var pane: ChatPane = _chat_pane.call()
+	var chat_id: Variant = pane.active_chat_payload().get("chat_id") if pane != null else null
+	return chat_id if chat_id is String else ""
+
+
+func set_external_state(plugin_id: String, state: String) -> Dictionary:
+	var pane: ChatPane = _chat_pane.call()
+	return _set_external_ptt_state(plugin_id, pane, state) if pane != null else _error(plugin_id, ERROR_NO_CHAT_PANE, "The chat pane is not available")
+
+
+func append_transcript(plugin_id: String, expected_chat_id: String, text: String) -> Dictionary:
+	var pane: ChatPane = _chat_pane.call()
+	if pane == null:
+		return _error(plugin_id, ERROR_NO_CHAT_PANE, "The chat pane is not available")
+	if expected_chat_id.is_empty() or expected_chat_id != active_chat_id():
+		return _refuse(plugin_id, ERROR_CHAT_CHANGED, "Not appended: the visible chat changed during microphone input.")
+	pane.set_user_input_text(pane.get_user_input_text() + text)
+	return PluginErrors.success({"text": text})
 
 
 ## Call when a plugin stops or crashes: a button left showing its state is

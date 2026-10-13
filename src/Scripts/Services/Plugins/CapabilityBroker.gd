@@ -274,7 +274,9 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 		gate_capability = "host.chat_providers.register"
 
 	if policy != null:
-		var check := policy.check_capability(plugin_id, gate_capability)
+		# PCM chunks use the admitted session bounds instead of the control-call quota.
+		var pcm_chunk: bool = capability == "host.audio" and args.get("op") == "input_chunk"
+		var check: Dictionary = {"allowed": policy.is_capability_granted(plugin_id, gate_capability)} if pcm_chunk else policy.check_capability(plugin_id, gate_capability)
 		if not check.get("allowed", false):
 			# Policy already logged the denial via _record_decision; log at
 			# broker level too so capability-request outcomes are queryable
@@ -395,7 +397,10 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 		"host.project.current":
 			named_result = _handle_host_project_current(plugin_id, args)
 		"host.audio":
-			named_result = audio_devices.handle(plugin_id, args) if audio_devices != null else PluginErrors.backend_error(plugin_id, "audio endpoints are not wired")
+			if str(args.get("op", "")).begins_with("input_"):
+				named_result = await audio_input.handle(plugin_id, args) if audio_input != null else PluginErrors.backend_error(plugin_id, "audio input is not wired")
+			else:
+				named_result = audio_devices.handle(plugin_id, args) if audio_devices != null else PluginErrors.backend_error(plugin_id, "audio endpoints are not wired")
 		"host.chat.active", "host.chat.input":
 			if chat_target != null:
 				named_result = await chat_target.handle(plugin_id, capability, args)
@@ -3147,7 +3152,7 @@ const _AUDIT_REDACT_FIELDS := [
 	# Free text, redacted wherever a capability's args carry a top-level or
 	# one-level-nested "text" key, for every capability (host.chat.input's
 	# typed words among them).
-	"text",
+	"text", "pcm",
 ]
 const _AUDIT_STRING_CAP := 256
 
@@ -3267,6 +3272,7 @@ var chat_provider_registry = null  # PluginChatProviderRegistry
 ## host.chat.active / host.chat.input. Injected by SingletonObject.initialize_plugins.
 var chat_target: PluginHostChatTarget = null
 var audio_devices: PluginAudioDevices = null
+var audio_input: PluginAudioInput = null
 
 const _CHAT_PROVIDER_VALID_HISTORY_MODES := ["newest_only", "full"]
 

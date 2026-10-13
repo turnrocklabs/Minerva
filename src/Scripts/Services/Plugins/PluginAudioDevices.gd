@@ -14,13 +14,15 @@ var _send: Callable
 var _next_frame: Callable
 var _get_os_output: Callable
 var _set_os_output: Callable
+var _get_os_input: Callable
+var _set_os_input: Callable
 var _notify: Callable
 var _devices: Dictionary = {}
 var _playing: Dictionary = {}
 var _next_stream: int = 0
 
 
-func _init(config: VoiceConfig, policy: PluginPolicy, send: Callable, next_frame: Callable, get_os_output: Callable, set_os_output: Callable, notify: Callable) -> void:
+func _init(config: VoiceConfig, policy: PluginPolicy, send: Callable, next_frame: Callable, get_os_output: Callable, set_os_output: Callable, notify: Callable, get_os_input: Callable = Callable(), set_os_input: Callable = Callable()) -> void:
 	_config = config
 	_policy = policy
 	_send = send
@@ -28,6 +30,8 @@ func _init(config: VoiceConfig, policy: PluginPolicy, send: Callable, next_frame
 	_get_os_output = get_os_output
 	_set_os_output = set_os_output
 	_notify = notify
+	_get_os_input = get_os_input
+	_set_os_input = set_os_input
 
 
 func handle(plugin_id: String, args: Dictionary) -> Dictionary:
@@ -39,11 +43,11 @@ func handle(plugin_id: String, args: Dictionary) -> Dictionary:
 		"register":
 			if not args.get("label") is String or str(args.label).is_empty() or str(args.label).length() > 160:
 				return PluginErrors.schema_validation_failed(plugin_id, "register requires a label of 1–160 characters")
-			if args.has("input") or args.get("output", false) != true:
-				return PluginErrors.schema_validation_failed(plugin_id, "register requires output:true; microphone endpoints are unavailable")
+			if not args.get("input", false) is bool or not args.get("output", false) is bool or not (args.get("input", false) or args.get("output", false)):
+				return PluginErrors.schema_validation_failed(plugin_id, "register requires input:true or output:true")
 			_remove(key)
 			_devices[key] = {"id": key, "plugin_id": plugin_id, "device_id": device_id,
-				"label": str(args.label), "output": true, "available": false}
+				"label": str(args.label), "input": args.get("input", false), "output": args.get("output", false), "available": false}
 			changed.emit()
 			return PluginErrors.success({"id": key})
 		"availability":
@@ -77,9 +81,9 @@ func handle(plugin_id: String, args: Dictionary) -> Dictionary:
 
 func devices(direction: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	if direction != "output":
+	if direction not in ["input", "output"]:
 		return result
-	var native: PackedStringArray = AudioServer.get_output_device_list()
+	var native: PackedStringArray = AudioServer.get_input_device_list() if direction == "input" else AudioServer.get_output_device_list()
 	for name: String in native:
 		result.append({"id": "os:" + name, "label": name, "available": true})
 	for key: String in _devices:
@@ -91,17 +95,18 @@ func devices(direction: String) -> Array[Dictionary]:
 
 
 func select(direction: String, device_id: String) -> Dictionary:
-	if direction != "output":
-		return VoiceServiceClient.failure("invalid_audio_device", "Only speaker selection is available.")
+	if direction not in ["input", "output"] or (direction == "input" and not _set_os_input.is_valid()):
+		return VoiceServiceClient.failure("invalid_audio_device", "Audio direction is unavailable.")
 	var found: bool = false
 	for device: Dictionary in devices(direction):
 		if str(device.id) == device_id:
 			found = true
 	if not found:
 		return VoiceServiceClient.failure("invalid_audio_device", "Audio device is not registered.")
-	_config.output_device = device_id if device_id.begins_with("plugin:") else ""
+	_config.set(direction + "_device", device_id if device_id.begins_with("plugin:") else "")
 	if device_id.begins_with("os:"):
-		_set_os_output.call(device_id.trim_prefix("os:"))
+		var setter: Callable = _set_os_input if direction == "input" else _set_os_output
+		setter.call(device_id.trim_prefix("os:"))
 	_config.save()
 	changed.emit()
 	return {"success": true, "direction": direction, "device_id": device_id}
@@ -109,6 +114,20 @@ func select(direction: String, device_id: String) -> Dictionary:
 
 func selected_output() -> String:
 	return _config.output_device if _config.output_device.begins_with("plugin:") else "os:" + str(_get_os_output.call())
+
+
+func selected_input() -> String:
+	return _config.input_device if _config.input_device.begins_with("plugin:") else "os:" + (str(_get_os_input.call()) if _get_os_input.is_valid() else AudioServer.input_device)
+
+
+func os_input_selected() -> void:
+	_config.input_device = ""
+	_config.save()
+	changed.emit()
+
+
+func endpoint_available(key: String, direction: String) -> bool:
+	return _available(key) and _devices.get(key, {}).get(direction, false)
 
 
 func os_output_selected() -> void:
@@ -132,7 +151,8 @@ func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit:
 	_cancel(key)
 	_next_stream += 1
 	var output := PluginSpeechOutput.new(_next_stream,
-		_send_audio.bind(key), _next_frame, _available.bind(key))
+		_send_audio.bind(key), _next_frame, _available.bind(key),
+		{"kind": "explicit"} if explicit else ({"kind": "turn", "chat_id": str(origin.chat_id), "send_id": origin.get("send_id", 0)} if not str(origin.get("chat_id", "")).is_empty() else {}))
 	_playing[key] = output
 	_stream_ids[key] = _next_stream
 	output.finished.connect(_finished.bind(key, output), CONNECT_ONE_SHOT)

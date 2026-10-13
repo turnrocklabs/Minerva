@@ -573,7 +573,7 @@ func _test_public_turn_events() -> void:
 	var saved_registered: bool = core.registered
 	var saved_voice = _so.voice_client
 	var cfg = _so.get_voice_config()
-	var saved_voice_state := {"speak": cfg.speak_mode, "provider": cfg.tts_provider, "voice": cfg.voice_id, "name": cfg.voice_name, "output": cfg.output_device}
+	var saved_voice_state := {"speak": cfg.speak_mode, "provider": cfg.tts_provider, "voice": cfg.voice_id, "name": cfg.voice_name, "output": cfg.output_device, "input": cfg.input_device, "stt": cfg.stt_transport, "stt_provider": cfg.stt_provider, "fallback": cfg.whisper_fallback}
 	var transport = load("res://test/fixtures/core_lifecycle_client.gd").new()
 	root.add_child(transport)
 	core.client = transport
@@ -606,6 +606,8 @@ func _test_public_turn_events() -> void:
 	visible.HistoryName = "Public visible"
 	_so.ChatList.append(visible)
 	pane.render_history(visible)
+	await _test_public_microphone(conn, server, pane, visible, transport, cfg)
+	conn = _so.plugin_manager.get_connection(SUBSCRIBER)
 	var Utils = load(TOOL_UTILS_PATH)
 	var cases: Array[Dictionary] = [
 		{"name": "ok", "outcome": "ok"},
@@ -673,6 +675,9 @@ func _test_public_turn_events() -> void:
 		if label in ["remote", "keyboard"]:
 			var turn_audio: Array = await _events(SUBSCRIBER, "voice.audio")
 			check("E %s: originating turn routes speech correctly" % label, (not turn_audio.is_empty()) if label == "remote" else turn_audio.is_empty(), str(turn_audio))
+			if label == "remote" and not turn_audio.is_empty():
+				var begin_payload: Dictionary = turn_audio[0].message.params.payload
+				check("E remote: begin carries exact turn provenance", begin_payload.get("origin", {}) == {"kind": "turn", "chat_id": str(history.HistoryId), "send_id": receipt.get("result", {}).get("send_id", -1)}, str(begin_payload))
 			if label == "remote" and turns.size() == 1:
 				var origin_payload: Dictionary = turns[0]["message"]["params"]["payload"]
 				check("E remote: real submit preserves JSON origin through completion", origin_payload.plugin_id == SUBSCRIBER and int(origin_payload.send_id) == int(receipt.get("result", {}).get("send_id", -1)))
@@ -728,6 +733,10 @@ func _test_public_turn_events() -> void:
 	cfg.voice_id = saved_voice_state.voice
 	cfg.voice_name = saved_voice_state.name
 	cfg.output_device = saved_voice_state.output
+	cfg.input_device = saved_voice_state.input
+	cfg.stt_transport = saved_voice_state.stt
+	cfg.stt_provider = saved_voice_state.stt_provider
+	cfg.whisper_fallback = saved_voice_state.fallback
 	cfg.save()
 	feature.set_enabled(enabled)
 	transport.free()
@@ -736,6 +745,152 @@ func _test_public_turn_events() -> void:
 	await process_frame
 	_so.ChatList.assign(previous_chats)
 	host_render.restore()
+
+
+## Public STDIO ingress, real pane, and real voice client/Core request builders.
+func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> void:
+	var key: String = "plugin:" + SUBSCRIBER + ":microphone"
+	var result: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "register", "device_id": "microphone", "label": "Fixture microphone", "input": true}})
+	check("E input: public registration accepts microphone", result.get("success", false), str(result))
+	await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "availability", "device_id": "microphone", "available": true}})
+	result = await server.execute_tool_for_http("minerva_set_audio_device", {"direction": "input", "device_id": key})
+	check("E input: MCP selects microphone", result.get("success", false), str(result))
+	var listed: Dictionary = await server.execute_tool_for_http("minerva_list_audio_devices", {})
+	var reloaded = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
+	reloaded.load_from_config()
+	check("E input: MCP and persisted selection share owner", listed.selected_input == key and reloaded.input_device == key)
+	cfg.stt_provider = cfg.STTProvider.VOICE_SERVICE
+	cfg.whisper_fallback = false
+	var pcm := PackedByteArray([1, 0, 2, 0])
+	var request_ids: Dictionary = {}
+	var captured: Dictionary = {"buffered": PackedByteArray(), "streamed": PackedByteArray()}
+	transport.on_packet = func(packet: PackedByteArray) -> void:
+		if packet[0] == 0:
+			var envelope: Dictionary = JSON.parse_string(packet.slice(25).get_string_from_utf8())
+			request_ids[packet.slice(1, 17).hex_encode()] = envelope.params.request_id
+		elif packet[0] == 2:
+			captured.streamed.append_array(packet.slice(21))
+		elif packet[0] == 3:
+			transport._handle_message({"cmd": "response", "topic": "voice/stt/stream", "params": {"request_id": request_ids[packet.slice(1, 17).hex_encode()], "result": {"text": "streamed words"}}})
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/stt/transcribe":
+			var wav: PackedByteArray = Marshalls.base64_to_raw(message.params.data.audio_base64)
+			captured.buffered = wav.slice(44)
+			transport.reply(str(message.params.request_id), {"text": "buffered words"})
+	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
+	feature.set_enabled(false)
+	for streamed: bool in [false, true]:
+		cfg.stt_transport = cfg.STTTransport.STREAMED if streamed else cfg.STTTransport.BUFFERED
+		cfg.whisper_fallback = not streamed
+		pane.set_user_input_text("draft:")
+		await _probe(SUBSCRIBER, "probe_clear")
+		var begun: Dictionary = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+		check("E input: manual PTT begins with Voice Support off", begun.get("success", false), str(begun))
+		if not begun.get("success", false):
+			continue
+		var session_id: int = int(begun.result.session_id)
+		# More than the generic 60-call quota: PCM uses the session's byte bounds.
+		var chunks_ok: bool = true
+		for sequence: int in 65:
+			var chunk: Dictionary = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": sequence, "pcm": Marshalls.raw_to_base64(pcm)})
+			chunks_ok = chunks_ok and chunk.get("success", false)
+		check("E input: sustained public PCM remains admitted", chunks_ok)
+		var expected := PackedByteArray()
+		for _chunk in 65:
+			expected.append_array(pcm)
+		result = await _microphone_call(conn, {"op": "input_end", "session_id": session_id, "sequence": 65})
+		check("E input: normal client carries byte-exact PCM", captured.streamed == expected if streamed else captured.buffered == expected)
+		var words: String = "streamed words" if streamed else "buffered words"
+		check("E input: normal transcription appends exactly once", result.get("success", false) and pane.get_user_input_text() == "draft:" + words, str(result))
+		var events: Array = await _events(SUBSCRIBER, "voice.transcript")
+		var outsider_events: Array = await _events(UNDECLARED, "voice.transcript")
+		check("E input: non-owning plugin receives no transcript", outsider_events.is_empty())
+		check("E input: targeted terminal transcript", events.size() == 1 and events[0].message.params.payload.text == words and int(events[0].message.params.payload.session_id) == session_id, str(events))
+		result = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": 65, "pcm": Marshalls.raw_to_base64(pcm)})
+		check("E input: completed session refuses late PCM", not result.get("success", false))
+		check("E input: external PTT never starts native recorder", _so._minerva_ptt_idle())
+	cfg.stt_transport = cfg.STTTransport.BUFFERED
+	var begun: Dictionary = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+	var session_id: int = int(begun.get("result", {}).get("session_id", -1))
+	result = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id + 0.5, "sequence": 0, "pcm": Marshalls.raw_to_base64(pcm)})
+	check("E input: fractional session cannot steal capture", not result.get("success", false))
+	result = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": 0.5, "pcm": Marshalls.raw_to_base64(pcm)})
+	check("E input: fractional sequence terminates capture", not result.get("success", false) and _so.plugin_capability_broker.audio_input._active == null)
+	pane.set_user_input_text("unchanged")
+	begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+	session_id = int(begun.get("result", {}).get("session_id", -1))
+	await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": 0, "pcm": Marshalls.raw_to_base64(pcm)})
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/stt/transcribe":
+			_so.plugin_policy.revoke_capability(SUBSCRIBER, "host_event:voice.transcript")
+			transport.reply(str(message.params.request_id), {"text": "must not append"})
+	result = await _microphone_call(conn, {"op": "input_end", "session_id": session_id, "sequence": 1})
+	check("E input: revoke during Core response prevents late append", not result.get("success", false) and pane.get_user_input_text() == "unchanged")
+	_so.plugin_policy.grant_capability(SUBSCRIBER, "host_event:voice.transcript")
+	transport.on_send = Callable()
+	cfg.stt_transport = cfg.STTTransport.STREAMED
+	begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+	var input_owner = _so.plugin_capability_broker.audio_input
+	var stream_request = input_owner._active.stream.request if input_owner._active != null else null
+	if stream_request != null:
+		_so.plugin_policy.revoke_capability(SUBSCRIBER, "host.audio")
+		check("E input: streamed audio revoke releases capture", input_owner._active == null)
+		_so.plugin_policy.grant_capability(SUBSCRIBER, "host.audio")
+		await _microphone_call(conn, {"op": "register", "label": "Fixture microphone", "input": true})
+		await _microphone_call(conn, {"op": "availability", "available": true})
+		begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+		stream_request = input_owner._active.stream.request if input_owner._active != null else null
+	if stream_request != null:
+		transport._handle_message({"cmd": "error", "topic": "voice/stt/stream", "params": {"request_id": stream_request.request_id, "error_code": "service_failed", "error": "Fixture Core failure"}})
+	check("E input: terminal Core error immediately releases capture", stream_request != null and input_owner._active == null)
+	cfg.stt_transport = cfg.STTTransport.BUFFERED
+	_so.plugin_policy.grant_capability(UNDECLARED, "host.audio")
+	for invalid_pcm: PackedByteArray in [PackedByteArray([1]), PackedByteArray(), PackedByteArray([1, 0])]:
+		begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+		session_id = int(begun.get("result", {}).get("session_id", -1))
+		if invalid_pcm.is_empty():
+			invalid_pcm.resize(6402)
+		var outsider: Dictionary = await _so.plugin_capability_broker.dispatch(UNDECLARED, "host.audio", {"op": "input_cancel", "device_id": "microphone", "session_id": session_id})
+		check("E input: another plugin cannot cancel session", not outsider.get("success", false) and input_owner._active != null)
+		result = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": 0, "pcm": Marshalls.raw_to_base64(invalid_pcm)})
+		if invalid_pcm.size() > 6400 or invalid_pcm.size() % 2 != 0:
+			check("E input: oversized or unaligned PCM terminates capture", not result.get("success", false) and input_owner._active == null)
+		else:
+			result = await _microphone_call(conn, {"op": "input_cancel", "session_id": session_id})
+			check("E input: explicit cancel releases without append", not result.get("success", false) and input_owner._active == null and pane.get_user_input_text() == "unchanged")
+	_so.plugin_policy.revoke_capability(UNDECLARED, "host.audio")
+	begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+	session_id = int(begun.get("result", {}).get("session_id", -1))
+	var other = _make_history("Microphone focus target")
+	_so.ChatList.append(other)
+	pane.current_tab = _so.ChatList.find(other)
+	await process_frame
+	await process_frame
+	check("E input: focus change clears capture", input_owner._active == null)
+	result = await _microphone_call(conn, {"op": "input_end", "session_id": session_id, "sequence": 0})
+	check("E input: late end after focus change refuses", not result.get("success", false))
+	pane.current_tab = _so.ChatList.find(visible)
+	begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+	await _so.plugin_manager.stop_plugin(SUBSCRIBER)
+	check("E input: actual plugin stop releases capture", begun.get("success", false) and input_owner._active == null)
+	await _so.plugin_manager.start_plugin(SUBSCRIBER)
+	conn = _so.plugin_manager.get_connection(SUBSCRIBER)
+	await server.execute_tool_for_http("minerva_set_audio_device", {"direction": "input", "device_id": "os:Default"})
+	check("E input: OS microphone uses existing preference owner", cfg.input_device.is_empty() and _so.get_microphone() == "Default")
+	# Revocation removes all endpoints owned by the plugin; restore the output
+	# fixture before the existing output assertions below.
+	await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "register", "device_id": "speaker", "label": "Fixture speaker", "output": true}})
+	await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "availability", "device_id": "speaker", "available": true}})
+	feature.set_enabled(true)
+	transport.on_packet = Callable()
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(PackedByteArray([1, 0, 2, 0, 3, 0, 4, 0]))})
+
+
+func _microphone_call(conn, args: Dictionary) -> Dictionary:
+	args["device_id"] = "microphone"
+	return await conn.call_tool("probe_capability", {"capability": "host.audio", "args": args})
 
 
 ## Turn-report races, on a harness pane with no plugins involved: a stopped

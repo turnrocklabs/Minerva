@@ -29,7 +29,8 @@
     "host_events": [
       "chat.turn_completed",
       "chat.directory_changed",
-      "voice.audio"
+      "voice.audio",
+      "voice.transcript"
     ]
   }
 }

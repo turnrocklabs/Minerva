@@ -2755,6 +2755,7 @@ var _whisper_fallback_check: CheckButton
 var _stt_model_option: OptionButton
 var _vad_silence_slider: HSlider
 var _vad_silence_value_label: Label
+var _voice_input_devices: OptionButton
 var _voice_output_devices: OptionButton
 var _tts_volume_slider: HSlider
 var _voice_status_label: Label
@@ -2912,6 +2913,11 @@ func _create_voice_tab() -> void:
 
 	var audio_grid := _voice_grid()
 	vbox.add_child(audio_grid)
+
+	audio_grid.add_child(_voice_label("Microphone:"))
+	_voice_input_devices = _voice_option()
+	audio_grid.add_child(_voice_input_devices)
+	_voice_input_devices.item_selected.connect(_select_voice_device.bind("input", _voice_input_devices))
 
 	audio_grid.add_child(_voice_label("Speaker:"))
 	_voice_output_devices = _voice_option()
@@ -5224,13 +5230,16 @@ func _refresh_voice_devices() -> void:
 	var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 	if devices == null:
 		return
-	var option: OptionButton = _voice_output_devices
+	_refresh_voice_direction(devices, "input", _voice_input_devices, devices.selected_input())
+	_refresh_voice_direction(devices, "output", _voice_output_devices, devices.selected_output())
+
+
+func _refresh_voice_direction(devices: PluginAudioDevices, direction: String, option: OptionButton, selected: String) -> void:
 	if not is_instance_valid(option):
 		return
 	option.clear()
-	var selected: String = devices.selected_output()
 	var selected_index: int = -1
-	for device: Dictionary in devices.devices("output"):
+	for device: Dictionary in devices.devices(direction):
 		var index: int = option.item_count
 		var available: bool = device.available
 		option.add_item(str(device.label) + (" (unreachable)" if not available else ""))

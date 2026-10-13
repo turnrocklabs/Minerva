@@ -7,6 +7,7 @@ const CHUNK_BYTES: int = 6400
 const PENDING_BYTES: int = 2 * 1024 * 1024
 const TOTAL_BYTES: int = 20 * 1024 * 1024
 
+var _origin: Dictionary
 var _send: Callable
 var _next_frame: Callable
 var _available: Callable
@@ -27,8 +28,9 @@ var _source_offset: int = 0
 var _partial_sample: PackedByteArray = PackedByteArray()
 
 
-func _init(stream_id: int, send: Callable, next_frame: Callable, available: Callable) -> void:
+func _init(stream_id: int, send: Callable, next_frame: Callable, available: Callable, origin: Dictionary = {}) -> void:
 	_stream_id = stream_id
+	_origin = origin.duplicate(true)
 	_send = send
 	_next_frame = next_frame
 	_available = available
@@ -149,6 +151,8 @@ func acknowledge(success: bool, message: String = "") -> void:
 
 
 func _emit(payload: Dictionary) -> bool:
+	if payload.get("op") == "begin" and not _origin.is_empty():
+		payload["origin"] = _origin
 	payload["stream_id"] = _stream_id
 	var sent: bool = _send.call(payload)
 	return sent

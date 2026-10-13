@@ -2357,7 +2357,9 @@ func _emit_turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outco
 
 func _turn_origin(history: ServiceHistory, turn_token: int) -> Dictionary:
 	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
-	return report.origin.duplicate(true) if report != null else {}
+	var origin: Dictionary = report.origin.duplicate(true) if report != null else {}
+	origin["chat_id"] = str(history.HistoryId)
+	return origin
 
 #endregion
 
