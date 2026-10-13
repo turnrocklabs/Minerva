@@ -570,12 +570,14 @@ func _test_public_turn_events() -> void:
 		return
 	var core = root.get_node("Core")
 	var saved_client = core.client
+	var saved_registered: bool = core.registered
 	var saved_voice = _so.voice_client
 	var cfg = _so.get_voice_config()
 	var saved_voice_state := {"speak": cfg.speak_mode, "provider": cfg.tts_provider, "voice": cfg.voice_id, "name": cfg.voice_name, "output": cfg.output_device}
 	var transport = load("res://test/fixtures/core_lifecycle_client.gd").new()
 	root.add_child(transport)
 	core.client = transport
+	core.registered = true
 	_so.voice_client = load("res://Scripts/Services/Voice/VoiceServiceClient.gd").new()
 	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var enabled: bool = feature.is_enabled()
@@ -669,8 +671,8 @@ func _test_public_turn_events() -> void:
 				check("E %s: completion carries the actual assistant reply" % label,
 					payload["text"] == "real-reply:" + label and payload["role"] == "assistant", str(payload))
 		if label in ["remote", "keyboard"]:
-			var audio: Array = await _events(SUBSCRIBER, "voice.audio")
-			check("E %s: originating turn routes speech correctly" % label, (not audio.is_empty()) if label == "remote" else audio.is_empty(), str(audio))
+			var turn_audio: Array = await _events(SUBSCRIBER, "voice.audio")
+			check("E %s: originating turn routes speech correctly" % label, (not turn_audio.is_empty()) if label == "remote" else turn_audio.is_empty(), str(turn_audio))
 			if label == "remote" and turns.size() == 1:
 				var origin_payload: Dictionary = turns[0]["message"]["params"]["payload"]
 				check("E remote: real submit preserves JSON origin through completion", origin_payload.plugin_id == SUBSCRIBER and int(origin_payload.send_id) == int(receipt.get("result", {}).get("send_id", -1)))
@@ -719,6 +721,7 @@ func _test_public_turn_events() -> void:
 	listed = await server.execute_tool_for_http("minerva_list_audio_devices", {})
 	check("E audio: existing OS setting and MCP selection report the same route", listed.selected_output == "os:" + AudioServer.output_device)
 	core.client = saved_client
+	core.registered = saved_registered
 	_so.voice_client = saved_voice
 	cfg.speak_mode = saved_voice_state.speak
 	cfg.tts_provider = saved_voice_state.provider
