@@ -61,6 +61,7 @@ func add_log_line(text: String, type: = LOG_TYPE.INFO, detailed_data: Dictionary
 
 
 func _on_message_received(msg: Dictionary) -> void:
+	msg = CoreClient.log_summary(msg)
 
 	var cmd: String = msg.get("cmd", "NA")
 	var topic: String = msg.get("topic", msg.get("entity_type", "NA"))

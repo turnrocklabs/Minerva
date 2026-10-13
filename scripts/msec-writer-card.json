@@ -1,0 +1,47 @@
+{
+  "base": "d1604e88c9241ba4395201017fb9380c4b89cf33",
+  "allowed_paths": [
+    "src/Scripts/Services/Providers/Core/Core.gd",
+    "src/test/test_core_auth_logs.gd",
+    "src/test/test_core_auth_logs.gd.uid",
+    "scripts/run-functional-tests.sh",
+    "scripts/msec-writer-card.json",
+    "scripts/msec-exits.md",
+    "src/Scripts/Services/Providers/Core/core_client.gd",
+    "src/Scripts/UI/Views/HcpLogs.gd"
+  ],
+  "production_prefixes": [
+    "src/Scripts/"
+  ],
+  "production_cap": 60,
+  "failure_patterns": [
+    "push_error",
+    "ErrorDisplay",
+    "add_log_line"
+  ],
+  "failure_disposition": "Typed diagnostic allowlist removes raw Core payloads only from logging; transport packets unchanged. Original failures clear tokens and fixed diagnostic outcome remains visible.",
+  "persisted_setting_owners": {
+    "hcp.log": "HcpLogs existing owner; safe status payload only; no new preferences"
+  },
+  "exit_table": "scripts/msec-exits.md",
+  "exit_tests": {
+    "Response callback/Success": [
+      "src/test/test_core_auth_logs.gd::run"
+    ],
+    "Response callback/Refusal": [
+      "src/test/test_core_auth_logs.gd::run"
+    ],
+    "Response callback/Malformed": [
+      "src/test/test_core_auth_logs.gd::run"
+    ],
+    "Persisted/UI log/Success": [
+      "src/test/test_core_auth_logs.gd::run"
+    ],
+    "Persisted/UI log/Refusal": [
+      "src/test/test_core_auth_logs.gd::run"
+    ],
+    "Persisted/UI log/Malformed": [
+      "src/test/test_core_auth_logs.gd::run"
+    ]
+  }
+}

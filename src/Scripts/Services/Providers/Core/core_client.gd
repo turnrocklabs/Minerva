@@ -132,7 +132,7 @@ func _ready():
 	
 	client_id = UUIDGen.v7()
 	if SingletonObject.verbose_logging:
-		print("Client ID is %s" % client_id)
+		print("Core client initialized")
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.set_one_shot(false)
 	_heartbeat_timer.set_wait_time(HEARTBEAT_INTERVAL)
@@ -346,13 +346,24 @@ func is_complete_json(text: String) -> bool:
 	return brace_count == 0 and not in_string
 
 
+## Diagnostic allowlist: transport consumers retain original packets; logs never do.
+static func log_summary(message: Variant) -> Dictionary:
+	var packet: Dictionary = message if message is Dictionary else {}
+	var operation: String = str(packet.get("cmd", "unknown"))
+	if operation not in ["register", "registration_confirmed", "request", "response", "error", "notification", "subscribe", "heartbeat"]:
+		operation = "unknown"
+	var params: Dictionary = packet.get("params", {}) if packet.get("params", {}) is Dictionary else {}
+	var code: String = "AUTH_FAILED_PROFILE_CMD_ERROR" if params.get("error_code") == "AUTH_FAILED_PROFILE_CMD_ERROR" else "CORE_ERROR"
+	return {"cmd": operation, "entity_type": "core", "topic": "core", "params": {"error_code": code, "error": "Core operation failed." if operation == "error" else ""}}
+
+
 func parse_json_packet(packet_str):
 	var json = JSON.new()
 	var err = json.parse(packet_str)
 	if err == OK:
 		return json.get_data()
 	else:
-		print("Error parsing JSON: ", json.get_error_message())
+		print("Error parsing Core JSON packet.")
 		return null
 
 var _max_chunk_length: = 400
@@ -371,7 +382,7 @@ func _handle_message(data: Variant) -> void:
 		if error_code == "AUTH_FAILED_PROFILE_CMD_ERROR" or "token" in error_msg.to_lower():
 			# Deliver terminal errors before the auth-recovery early return.
 			message_received.emit(data)
-			push_warning("Authentication failed: %s" % error_msg)
+			push_warning("Authentication failed: %s" % log_summary(data).params.error_code)
 
 			# Only attempt auto-login once per connection
 			if not _auth_retry_attempted:
@@ -415,7 +426,7 @@ func _handle_message(data: Variant) -> void:
 		# Handle final response for an image generation request that included binary transfer
 		if request_id == _current_binary_request_id:
 			if SingletonObject.verbose_logging:
-				print("  ✔️ Final SUCCESS for request_id=%s: %s" % [request_id, JSON.stringify(result, "\t", false)])
+				print("  ✔️ Final SUCCESS for request_id=%s: %s" % [request_id, JSON.stringify(log_summary(data))])
 			if _binary_expected_files > 0 and _binary_files_completed == _binary_expected_files:
 				if SingletonObject.verbose_logging:
 					print("  📦 All %s files for request %s successfully saved." % [_binary_files_completed, request_id])
@@ -433,7 +444,7 @@ func _handle_message(data: Variant) -> void:
 	message_received.emit(data)
 	
 	if request_id != _current_binary_request_id and SingletonObject.verbose_logging:
-		var json_str = JSON.stringify(data)
+		var json_str = JSON.stringify(log_summary(data))
 		print("📥 Received text message length: %s bytes" % json_str.length())
 		
 		print(json_str)
@@ -497,7 +508,7 @@ func send_text_message_to_core(message: Dictionary) -> Error:
 		return ERR_CONNECTION_ERROR
 	var json_string = JSON.stringify(message)
 	if SingletonObject.verbose_logging:
-		print("Sending message: ", json_string)
+		print("Sending message: ", JSON.stringify(log_summary(message)))
 	return _client.send_text(json_string)
 
 
@@ -653,7 +664,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 
 				if SingletonObject.verbose_logging:
 					print("   📋 Binary header: %s files" % num_files)
-					print("   📋 Header: %s" % JSON.stringify(header, "\t", false))
+					print("   📋 Header: %s" % JSON.stringify(log_summary(header)))
 				
 				# Validate this binary stream is for our request
 				var req_id: String = header.get("params", {}).get("request_id", "") # Explicitly type
@@ -1166,7 +1177,7 @@ func send_message_to_core(message: Dictionary) -> void: # Explicitly type parame
 	if validate_message(message):
 		var json_string: String = JSON.stringify(message) # Explicitly type
 		if SingletonObject.verbose_logging:
-			print("Sending message: %s" % json_string)
+			print("Sending message: %s" % JSON.stringify(log_summary(message)))
 
 		if json_string.length() > 65536:  # 64KB threshold
 			if SingletonObject.verbose_logging:

@@ -194,11 +194,11 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	if SingletonObject.preferences_popup and SingletonObject.preferences_popup.logs_window:
 		SingletonObject.preferences_popup.logs_window.add_log_line(
-			"Attempting authentication to %s" % auth_endpoint,
+			"Attempting authentication",
 			HcpLogs.LOG_TYPE.INFO
 		)
 
-	print("Attempting authentication to: ", auth_endpoint)
+	print("Attempting authentication")
 	print("core: starting auth request")
 	if not is_instance_valid(http_request):
 		http_request = HTTPRequest.new()
@@ -253,10 +253,10 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	)
 
 	# --- 3. Connect to Core WebSocket ---
-	print("Attempting WebSocket connection to: ", core_ws_url)
+	print("Attempting Core WebSocket connection")
 
 	SingletonObject.preferences_popup.logs_window.add_log_line(
-		"Attempting WebSocket connection to: %s" % core_ws_url,
+		"Attempting Core WebSocket connection",
 		HcpLogs.LOG_TYPE.INFO,
 	)
 
@@ -313,7 +313,6 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 
 	var response_body_text = body.get_string_from_utf8()
 	print("Auth Response Code: ", response_code)
-	print("Auth Response Body: ", response_body_text)
 
 	var json = JSON.parse_string(response_body_text)
 
@@ -322,15 +321,14 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 		HcpLogs.LOG_TYPE.INFO,
 		{
 			"status": response_code,
-			"response_body": json if json else response_body_text
 		}
 	)
 
 	if response_code != 200: # Check for successful HTTP status
-		var err_msg = "Authentication Failed: Server returned status %d. Response: %s" % [response_code, response_body_text]
+		var err_msg = "Authentication Failed: Server returned status %d." % response_code
 		push_error(err_msg)
 
-		var core_error_message: String = json.get("error", {}).get("message", "") if json else ""
+		var core_error_message: String = err_msg
 
 		if core_error_message.is_empty():
 			core_error_message = "Server returned status %d. Unknown error, check logs." % response_code
@@ -347,7 +345,6 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 			HcpLogs.LOG_TYPE.ERROR,
 			{
 				"status": response_code,
-				"response_body": json if json else response_body_text
 			}
 		)
 
@@ -366,7 +363,6 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 			"Authentication failed: Failed to parse authentication response JSON",
 			HcpLogs.LOG_TYPE.ERROR,
 			{
-				"invalid_json": response_body_text
 			}
 		)
 
@@ -376,14 +372,13 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 
 	if not json.has("data"):
 		var err_msg = "Authentication response missing data."
-		push_error(err_msg, " Received JSON: ", json)
+		push_error(err_msg)
 		if should_display_error:
 			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain required data field",
 			HcpLogs.LOG_TYPE.ERROR,
-			json
 		)
 
 		_jwt_token = ""
@@ -404,7 +399,6 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 			SingletonObject.preferences_popup.logs_window.add_log_line(
 				"Authentication failed: Authentication response token is invalid or empty",
 				HcpLogs.LOG_TYPE.ERROR,
-				json
 			)
 			
 			_jwt_token = ""
@@ -412,14 +406,13 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 			return
 	else:
 		var err_msg = "Authentication response does not contain a 'token'."
-		push_error(err_msg, " Received JSON: ", json)
+		push_error(err_msg)
 		if should_display_error:
 			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain a 'token'",
 			HcpLogs.LOG_TYPE.ERROR,
-			json
 		)
 
 		_jwt_token = ""
@@ -437,7 +430,6 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 			SingletonObject.preferences_popup.logs_window.add_log_line(
 				"Authentication failed: Authentication response client id (user/id) is invalid or empty",
 				HcpLogs.LOG_TYPE.ERROR,
-				json
 			)
 			
 			_jwt_token = ""
@@ -445,14 +437,13 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 			return
 	else:
 		var err_msg = "Authentication response does not contain a client id (user/id)."
-		push_error(err_msg, " Received JSON: ", json)
+		push_error(err_msg)
 		if should_display_error:
 			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain a client id (user/id)",
 			HcpLogs.LOG_TYPE.ERROR,
-			json
 		)
 
 		_jwt_token = ""
@@ -610,7 +601,7 @@ func fetch_services(use_cache: = true) -> Array[Service]:
 	if body is Dictionary and body.get("services") is Array:
 		services_array = body.services
 	else:
-		push_error("Received skills/discovery response in unexpected format: ", msg)
+		push_error("Received skills/discovery response in unexpected format: ", CoreClient.log_summary(msg))
 		_services_fetch_in_flight = false
 		_services_fetch_completed.emit()
 		return []
@@ -621,7 +612,7 @@ func fetch_services(use_cache: = true) -> Array[Service]:
 		if srvc_dta.has("params") and typeof(srvc_dta["params"]) == TYPE_DICTIONARY:
 			services.append(Service.new(srvc_dta["params"]))
 		else:
-			push_warning("Skipping service entry with invalid format: ", srvc_dta)
+			push_warning("Skipping service entry with invalid format.")
 
 	_services_last_fetch = Time.get_unix_time_from_system()
 	_services_fetch_in_flight = false
