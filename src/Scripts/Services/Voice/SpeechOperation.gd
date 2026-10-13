@@ -7,7 +7,7 @@ signal playback_began
 var done := false
 var playback_started := false
 var _output: SpeechOutput
-var _stream_open := false
+var _stream_open: bool = false
 var _stream_volume := 1.0
 
 func can_start() -> bool:
@@ -23,7 +23,7 @@ func _complete(outcome: Dictionary, cancel_pending: bool) -> void:
 	if done:
 		return
 	done = true
-	var output := _output
+	var output: SpeechOutput = _output
 	_output = null
 	_stream_open = false
 	if output != null:
@@ -47,7 +47,7 @@ func play(player: AudioStreamPlayer, audio: PackedByteArray, volume: float) -> b
 		finish({"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."})
 		return false
 	_ensure_output(player)
-	var played := _output.play(audio, volume)
+	var played: Dictionary = _output.play(audio, volume)
 	if not played.success:
 		finish(played)
 		return false
@@ -105,7 +105,7 @@ func _on_stream_open(meta: Dictionary) -> void:
 	if _output == null or not _output.is_available():
 		_complete({"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."}, true)
 		return
-	var opened := _output.begin(str(meta.format), int(meta.sample_rate), _stream_volume)
+	var opened: Dictionary = _output.begin(str(meta.format), int(meta.sample_rate), _stream_volume)
 	if not opened.success:
 		_complete(opened, true)
 		return

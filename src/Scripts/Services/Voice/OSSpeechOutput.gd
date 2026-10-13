@@ -20,7 +20,7 @@ func is_available() -> bool:
 func play(audio: PackedByteArray, volume: float) -> Dictionary:
 	if not is_available():
 		return VoiceServiceClient.failure("no_audio_player", "Speech player is unavailable.")
-	var stream := VoiceServiceClient.decode_audio(audio)
+	var stream: AudioStream = VoiceServiceClient.decode_audio(audio)
 	if stream == null:
 		return VoiceServiceClient.failure("invalid_audio", "Speech audio could not be decoded.")
 	_owned_stream = stream
@@ -75,7 +75,7 @@ func _on_stream_started() -> void:
 
 
 func _on_stream_finished(outcome: Dictionary) -> void:
-	var completed := _stream_sink
+	var completed: StreamPlayback = _stream_sink
 	_stream_sink = null
 	if is_instance_valid(completed):
 		completed.queue_free()
