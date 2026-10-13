@@ -725,7 +725,7 @@ func _test_public_turn_events() -> void:
 	var queued_bytes: Dictionary = {"delivery": queued.delivery, "device": queued.device, "log_id": queued.log_id, "unheard_count": queued.unheard_count}
 	check("E log: queued receipt matches the fixed serialized byte vector", JSON.stringify(queued_bytes).to_utf8_buffer() == str(fixed.queued_receipt_json).to_utf8_buffer())
 	var count_events: Array = await _events(SUBSCRIBER, "speech_log.changed")
-	check("E log: actual scoped count event contains only frozen counters", not count_events.is_empty() and JSON.stringify(count_events.back().message.params.payload) == JSON.stringify({"unheard": 1, "total": 1}))
+	check("E log: actual scoped count event contains only frozen integer counters", not count_events.is_empty() and count_events.back().integer_keys == ["total", "unheard"] and count_events.back().message.params.payload.size() == 2 and int(count_events.back().message.params.payload.unheard) == 1 and int(count_events.back().message.params.payload.total) == 1)
 	var published: Dictionary = await _so.speech_delivery.handle({"op": "list"}, SUBSCRIBER)
 	check("E log: owning plugin sees explicit statuses routed to its speaker", published.success and published.items.any(func(item: Dictionary) -> bool: return item.log_id == spoken.log_id))
 	var denied: Dictionary = await _so.speech_delivery.handle({"op": "state", "log_id": spoken.log_id}, UNGRANTED)
@@ -799,6 +799,20 @@ func _test_public_turn_events() -> void:
 	while _so.plugin_audio_devices.output_busy(before_selection) and Time.get_ticks_msec() < recovery_deadline:
 		await process_frame
 	await conn.call_tool("probe_audio_mode", {"success": false})
+	transport.on_send = Callable()
+	var bulk_pending: Dictionary = {}
+	_capture_mcp(server, {"text": "pending delete all", "topic": "bulk"}, bulk_pending)
+	var bulk_request: String = str(transport.sent.back().params.request_id)
+	var foreign_record: Dictionary = _so.speech_delivery._store.get_record(failed_id)
+	foreign_record["device"] = "plugin:foreign:speaker"
+	var foreign_admission: Dictionary = _so.speech_delivery._store.admit(foreign_record)
+	var unconfirmed: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.speech_log", "args": {"op": "delete_all", "confirmed": false}})
+	check("E log: bulk deletion requires explicit confirmation without cancelling active speech", not unconfirmed.success and transport._pending_requests.has(bulk_request))
+	var cleared: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.speech_log", "args": {"op": "delete_all", "confirmed": true}})
+	check("E log: confirmed scoped bulk delete cancels active speech and preserves foreign content", cleared.success and cleared.result.total == 0 and not _so.plugin_audio_devices.output_busy(before_selection) and not transport._pending_requests.has(bulk_request) and not _so.speech_delivery._store.get_record(foreign_admission.record.log_id).is_empty())
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
 
 	await _probe(SUBSCRIBER, "probe_clear")
 	failures.clear()

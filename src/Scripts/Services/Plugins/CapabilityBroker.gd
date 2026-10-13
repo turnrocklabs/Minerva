@@ -397,7 +397,7 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 		"host.project.current":
 			named_result = _handle_host_project_current(plugin_id, args)
 		"host.speech_log":
-			named_result = await speech_delivery.handle(args, plugin_id) if speech_delivery != null else PluginErrors.backend_error(plugin_id, "speech log is not wired")
+			named_result = speech_delivery.handle(args, plugin_id) if speech_delivery != null else PluginErrors.backend_error(plugin_id, "speech log is not wired")
 			if named_result.get("success", false):
 				named_result = PluginErrors.success(named_result)
 		"host.audio":

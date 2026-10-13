@@ -125,6 +125,21 @@ func handle(args: Dictionary, producer: String = "") -> Dictionary:
 	var op: String = str(args.get("op", "list"))
 	var id: String = str(args.get("log_id", ""))
 	var topic: String = str(args.get("topic", ""))
+	if op == "delete_all":
+		if not args.get("confirmed") is bool or not args.confirmed:
+			return VoiceServiceClient.failure("confirmation_required", "Confirm deletion of all speech in this scope.")
+		for record: Dictionary in _visible_records(producer, ""):
+			var record_id: String = record.log_id
+			if _active.has(record_id):
+				var active: SpeechOperation = _active[record_id]
+				active.cancel()
+			var removed: Dictionary = _store.delete_record(record_id)
+			if not removed.success:
+				_notify.call(removed.error_message)
+				_changed()
+				return removed
+		_changed()
+		return state(producer)
 	if op in ["list", "state"]:
 		var page: Dictionary = state(producer, topic)
 		if op == "state":

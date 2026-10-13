@@ -167,8 +167,9 @@ func register_tools() -> void:
 		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["input", "output"]},
 			"device_id": {"type": "string"}}, "required": ["direction", "device_id"]}, "chat")
 	audio_server._register_tool("minerva_speech_log", "List, inspect, replay, mark or explicitly delete persisted speech. Replay uses a plugin speaker or the current PC output, without changing selection.",
-		{"type": "object", "properties": {"op": {"type": "string", "enum": ["list", "state", "play", "mark", "delete"]},
+		{"type": "object", "properties": {"op": {"type": "string", "enum": ["list", "state", "play", "mark", "delete", "delete_all"]},
 			"log_id": {"type": "string"}, "topic": {"type": "string"}, "device_id": {"type": "string"},
+			"confirmed": {"type": "boolean", "description": "Required true for explicit delete_all after user confirmation."},
 			"heard": {"type": "boolean"}, "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["op"]}, "chat")
 	# Voice tools
 	server._register_tool("minerva_speak",
@@ -223,7 +224,7 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
 		"minerva_speech_log":
-			return await SingletonObject.speech_delivery.handle(arguments) if SingletonObject.speech_delivery != null else VoiceServiceClient.failure("speech_log_unavailable", "Speech log is unavailable.")
+			return SingletonObject.speech_delivery.handle(arguments) if SingletonObject.speech_delivery != null else VoiceServiceClient.failure("speech_log_unavailable", "Speech log is unavailable.")
 		"minerva_speak": return await _speak(arguments)
 		"minerva_list_voices": return await _list_voices(arguments)
 		"minerva_list_audio_devices":

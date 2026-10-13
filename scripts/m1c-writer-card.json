@@ -24,7 +24,8 @@
     "src/Scripts/Services/Voice/PluginSpeechOutput.gd",
     "src/test/test_voice_contracts.gd",
     "src/test/fixtures/speech_log_crash.gd",
-    "src/test/fixtures/speech_log_crash.gd.uid"
+    "src/test/fixtures/speech_log_crash.gd.uid",
+    "scripts/check-writer.py"
   ],
   "production_cap": 850,
   "failure_disposition": "SpeechDelivery surfaces failed store writes to caller and notification; SpeechLog errors are returned and retained; counts surface through UI and granted endpoint event. Existing failures outside the diff remain owned by the base.",
@@ -33,5 +34,143 @@
     "voice_preferences": "VoiceConfig (unchanged setting owner)",
     "os_output_selection": "singleton_object original AudioSettings owner; replay does not mutate it"
   },
-  "exit_table": "src/Scripts/Services/Voice/README-speech-log.md"
+  "exit_table": "src/Scripts/Services/Voice/README-speech-log.md",
+  "production_prefixes": [
+    "src/Scripts/",
+    "src/Scenes/"
+  ],
+  "failure_patterns": [
+    "push_(error|warning)",
+    "_notify\\.call",
+    "errors\\.append"
+  ],
+  "exit_tests": {
+    "Admission/Cancel": [
+      "src/test/test_plugin_host_events.gd::_test_public_turn_events"
+    ],
+    "Admission/Timeout": [
+      "src/test/test_plugin_host_events.gd::_test_public_turn_events"
+    ],
+    "Admission/Disconnect": [
+      "src/test/test_plugin_host_events.gd::_test_public_turn_events"
+    ],
+    "Admission/Revoke": [
+      "src/test/test_plugin_host_events.gd::_test_public_turn_events"
+    ],
+    "Admission/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "Admission/Reconnect": [
+      "src/test/test_plugin_host_events.gd::_test_public_turn_events"
+    ],
+    "Summary/synthesis/Cancel": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Summary/synthesis/Timeout": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Summary/synthesis/Disconnect": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Summary/synthesis/Revoke": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Summary/synthesis/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "Summary/synthesis/Reconnect": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Streaming/Cancel": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Streaming/Timeout": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Streaming/Disconnect": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Streaming/Revoke": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Streaming/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "Streaming/Reconnect": [
+      "src/test/test_voice_contracts.gd::_run"
+    ],
+    "Drain pending/Cancel": [
+      "src/test/test_voice_contracts.gd::_plugin_output_contracts"
+    ],
+    "Drain pending/Timeout": [
+      "src/test/test_voice_contracts.gd::_plugin_output_contracts"
+    ],
+    "Drain pending/Disconnect": [
+      "src/test/test_voice_contracts.gd::_plugin_output_contracts"
+    ],
+    "Drain pending/Revoke": [
+      "src/test/test_voice_contracts.gd::_plugin_output_contracts"
+    ],
+    "Drain pending/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "Drain pending/Reconnect": [
+      "src/test/test_voice_contracts.gd::_plugin_output_contracts"
+    ],
+    "Q/Cancel": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "Q/Timeout": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "Q/Disconnect": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "Q/Revoke": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "Q/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "Q/Reconnect": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "H/Cancel": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "H/Timeout": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "H/Disconnect": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "H/Revoke": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "H/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "H/Reconnect": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "X/Cancel": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "X/Timeout": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "X/Disconnect": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "X/Revoke": [
+      "src/test/test_speech_log.gd::_run"
+    ],
+    "X/Crash": [
+      "src/test/test_speech_log.gd::_crash_recovery"
+    ],
+    "X/Reconnect": [
+      "src/test/test_speech_log.gd::_run"
+    ]
+  },
+  "exit_test_limits": "Named broad suites identify source/runtime coverage entry points; physical device/OLED end-to-end exit observations remain F2/I. No fsync/power-loss guarantee."
 }

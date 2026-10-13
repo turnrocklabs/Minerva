@@ -32,3 +32,5 @@ is the plugin's projection of receipt/count and connection loss, tested in F2/I.
 Positive terminal completion after EOS gives H. Mark/delete persist before their
 receipt and count event. Store failure refuses success and surfaces the error to
 caller/UI. Explicit delete cancels active playback before committing its tombstone; replay refuses an already active item. Explicit mark changes heard state independently.
+
+Explicit delete_all requires confirmed=true and applies to all records in the caller scope; plugin calls cannot delete another plugin’s records. It cancels active work before tombstoning. Each file commits independently; a write failure reports failure with the remaining records retained, and never claims an atomic bulk deletion.
