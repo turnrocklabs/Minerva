@@ -889,6 +889,9 @@ func _speak(arguments: Dictionary) -> Dictionary:
 		return VoiceServiceClient.failure("no_audio_player", "No chat pane is available for speech.")
 	var operation := SpeechOperation.new()
 	var player := AudioStreamPlayer.new()
+	# Synthesis can return before playback completes; the playback owner
+	# retains the operation so late output failures still reach finished.
+	player.set_meta("speech_operation", operation)
 	chats.add_child(player)
 	var audio_devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 	operation.finished.connect(func(completion: Dictionary) -> void:
