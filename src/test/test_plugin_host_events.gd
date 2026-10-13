@@ -784,29 +784,29 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 		cfg.whisper_fallback = not streamed
 		pane.set_user_input_text("draft:")
 		await _probe(SUBSCRIBER, "probe_clear")
-		var begun: Dictionary = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
-		check("E input: manual PTT begins with Voice Support off", begun.get("success", false), str(begun))
-		if not begun.get("success", false):
+		var transport_begin: Dictionary = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
+		check("E input: manual PTT begins with Voice Support off", transport_begin.get("success", false), str(transport_begin))
+		if not transport_begin.get("success", false):
 			continue
-		var session_id: int = int(begun.result.session_id)
+		var capture_id: int = int(transport_begin.result.session_id)
 		# More than the generic 60-call quota: PCM uses the session's byte bounds.
 		var chunks_ok: bool = true
 		for sequence: int in 65:
-			var chunk: Dictionary = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": sequence, "pcm": Marshalls.raw_to_base64(pcm)})
+			var chunk: Dictionary = await _microphone_call(conn, {"op": "input_chunk", "session_id": capture_id, "sequence": sequence, "pcm": Marshalls.raw_to_base64(pcm)})
 			chunks_ok = chunks_ok and chunk.get("success", false)
 		check("E input: sustained public PCM remains admitted", chunks_ok)
 		var expected := PackedByteArray()
 		for _chunk in 65:
 			expected.append_array(pcm)
-		result = await _microphone_call(conn, {"op": "input_end", "session_id": session_id, "sequence": 65})
+		result = await _microphone_call(conn, {"op": "input_end", "session_id": capture_id, "sequence": 65})
 		check("E input: normal client carries byte-exact PCM", captured.streamed == expected if streamed else captured.buffered == expected)
 		var words: String = "streamed words" if streamed else "buffered words"
 		check("E input: normal transcription appends exactly once", result.get("success", false) and pane.get_user_input_text() == "draft:" + words, str(result))
 		var events: Array = await _events(SUBSCRIBER, "voice.transcript")
 		var outsider_events: Array = await _events(UNDECLARED, "voice.transcript")
 		check("E input: non-owning plugin receives no transcript", outsider_events.is_empty())
-		check("E input: targeted terminal transcript", events.size() == 1 and events[0].message.params.payload.text == words and int(events[0].message.params.payload.session_id) == session_id, str(events))
-		result = await _microphone_call(conn, {"op": "input_chunk", "session_id": session_id, "sequence": 65, "pcm": Marshalls.raw_to_base64(pcm)})
+		check("E input: targeted terminal transcript", events.size() == 1 and events[0].message.params.payload.text == words and int(events[0].message.params.payload.session_id) == capture_id, str(events))
+		result = await _microphone_call(conn, {"op": "input_chunk", "session_id": capture_id, "sequence": 65, "pcm": Marshalls.raw_to_base64(pcm)})
 		check("E input: completed session refuses late PCM", not result.get("success", false))
 		check("E input: external PTT never starts native recorder", _so._minerva_ptt_idle())
 	cfg.stt_transport = cfg.STTTransport.BUFFERED
@@ -832,6 +832,7 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 	begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
 	var input_owner = _so.plugin_capability_broker.audio_input
 	var stream_request = input_owner._active.stream.request if input_owner._active != null else null
+	check("E input: streamed revoke probe has a real request", stream_request != null)
 	if stream_request != null:
 		_so.plugin_policy.revoke_capability(SUBSCRIBER, "host.audio")
 		check("E input: streamed audio revoke releases capture", input_owner._active == null)
@@ -863,6 +864,7 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 	session_id = int(begun.get("result", {}).get("session_id", -1))
 	var other = _make_history("Microphone focus target")
 	_so.ChatList.append(other)
+	pane.render_history(other)
 	pane.current_tab = _so.ChatList.find(other)
 	await process_frame
 	await process_frame

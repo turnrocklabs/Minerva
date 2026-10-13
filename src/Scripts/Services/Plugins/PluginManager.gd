@@ -1361,7 +1361,8 @@ func _verify_release_artifact(def) -> Dictionary:
 ## own resolution, including the Windows ".exe" suffix a cross-platform manifest
 ## entrypoint omits — otherwise every Windows release would verify as missing.
 func _artifact_exists(abs_path: String) -> bool:
-	return not PluginArtifactPath.resolve(abs_path).is_empty()
+	var resolved: String = PluginArtifactPath.resolve(abs_path)
+	return not resolved.is_empty() and not DirAccess.dir_exists_absolute(resolved)
 
 
 ## Build + start a SetupPipeline for `id`, transition to S_BUILDING, and wire

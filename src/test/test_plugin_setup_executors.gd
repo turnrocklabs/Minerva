@@ -117,7 +117,9 @@ func test_copy_executable_suffix() -> void:
 		check("entrypoint resolution shares artifact owner " + str(windows), PluginArtifactPath.resolve(plugin_dir.path_join("bin/plugin"), "Windows" if windows else "Linux") == plugin_dir.path_join("bin/plugin" + suffix))
 		# Use a real successful subprocess; only the platform lookup is injected.
 		var command: String = "cmd.exe" if OS.get_name() == "Windows" else "/bin/true"
-		var argv: Array[String] = [command, "/c", "exit", "0"] if OS.get_name() == "Windows" else [command]
+		var argv: Array[String] = [command]
+		if OS.get_name() == "Windows":
+			argv.append_array(["/c", "exit", "0"])
 		result = SetupExecutors._run_and_check(argv, plugin_dir, 5, "cargo_build", 0, "producer", windows)
 		check("cargo post-build resolves canonical artifact " + str(windows), result.get("ok", false), str(result))
 

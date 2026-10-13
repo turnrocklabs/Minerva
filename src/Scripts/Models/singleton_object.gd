@@ -686,9 +686,10 @@ func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -
 
 
 func _plugin_accepts_transcript(p_id: String) -> bool:
+	var policy: PluginPolicy = plugin_policy
 	for def: PluginDefinition in _plugins_with_connection():
 		if def.id == p_id:
-			return "voice.transcript" in def.host_events and plugin_policy.is_capability_granted(p_id, "host_event:voice.transcript")
+			return "voice.transcript" in def.host_events and policy.is_capability_granted(p_id, "host_event:voice.transcript")
 	return false
 
 

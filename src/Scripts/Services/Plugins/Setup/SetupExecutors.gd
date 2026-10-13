@@ -59,9 +59,10 @@ static func run_step(step: Dictionary, step_index: int, ctx: Dictionary) -> Dict
 	var step_type: String = str(step.get("type", ""))
 	var plugin_dir: String = str(ctx.get("plugin_dir", ""))
 	var tool_paths: Dictionary = ctx.get("tool_paths", {})
+	var windows: bool = ctx.get("windows", OS.get_name() == "Windows")
 
 	if step_type == "copy":
-		return _run_copy(step, step_index, plugin_dir, bool(ctx.get("windows", OS.get_name() == "Windows")))
+		return _run_copy(step, step_index, plugin_dir, windows)
 
 	if not SetupSteps.STEP_TYPES.has(step_type):
 		# SetupSchema.validate_setup() should already have rejected this at
@@ -77,7 +78,7 @@ static func run_step(step: Dictionary, step_index: int, ctx: Dictionary) -> Dict
 		for a in argv_raw:
 			argv.append(str(a))
 		var result := _run_and_check(
-			argv, plugin_dir, timeout_s, step_type, step_index, str(phase.get("artifact", "")), bool(ctx.get("windows", OS.get_name() == "Windows"))
+			argv, plugin_dir, timeout_s, step_type, step_index, str(phase.get("artifact", "")), windows
 		)
 		if result.has("error"):
 			return result

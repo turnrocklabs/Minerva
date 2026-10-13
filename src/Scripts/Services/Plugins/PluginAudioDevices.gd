@@ -127,7 +127,8 @@ func os_input_selected() -> void:
 
 
 func endpoint_available(key: String, direction: String) -> bool:
-	return _available(key) and _devices.get(key, {}).get(direction, false)
+	var device: Dictionary = _devices.get(key, {})
+	return _available(key) and device.get(direction, false)
 
 
 func os_output_selected() -> void:

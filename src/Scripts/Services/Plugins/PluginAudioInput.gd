@@ -114,8 +114,11 @@ func _begin(plugin_id: String, device_id: String, key: String, args: Dictionary)
 
 
 func _chunk(session: Session, args: Dictionary) -> Dictionary:
-	var encoded: Variant = args.get("pcm")
-	if not encoded is String or encoded.is_empty() or encoded.length() > 8536:
+	var value: Variant = args.get("pcm")
+	if not value is String:
+		return _complete(session, VoiceServiceClient.failure("invalid_audio_chunk", "Microphone chunk must be base64 text."))
+	var encoded: String = value
+	if encoded.is_empty() or encoded.length() > 8536:
 		return _complete(session, VoiceServiceClient.failure("invalid_audio_chunk", "Microphone chunk is missing or too large."))
 	var pcm: PackedByteArray = Marshalls.base64_to_raw(encoded)
 	if pcm.is_empty() or pcm.size() > MAX_CHUNK_BYTES or pcm.size() % 2 != 0 or Marshalls.raw_to_base64(pcm) != encoded:
@@ -150,7 +153,8 @@ func _end(session: Session) -> Dictionary:
 	if outcome.get("success", false):
 		outcome = _target.append_transcript(session.plugin_id, session.chat_id, str(outcome.get("text", "")))
 		if outcome.get("success", false):
-			outcome["text"] = str(outcome.get("result", {}).get("text", ""))
+			var appended: Dictionary = outcome.get("result", {})
+			outcome["text"] = str(appended.get("text", ""))
 	return _complete(session, outcome)
 
 
