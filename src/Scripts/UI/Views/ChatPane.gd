@@ -2552,11 +2552,17 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# the turn looks alive, until the generate resolves. The relay reuses the
 	# accumulator idiom: content lives on dummy_item, the wave shows via
 	# loading_append, and the SAME node finalizes below.
-	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
+	var _pt_status: PassthroughTurnStatusScript = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
 	var bot_response = await generate_content_from_provider(history, history_list)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
+	# Stop invalidates the turn and frees its loading message. A late response
+	# must not pass that freed node into the relay or write into a newer turn.
+	if _turn_stopped(history, turn_token):
+		if _pt_status != null:
+			_pt_status.finish("cancelled")
+		return
 
 	# Stop the status relay the instant the generate resolves (success/error/cancel).
 	_passthrough_end_relay(_pt_status, bot_response, model_msg_node, dummy_item)
@@ -4907,7 +4913,8 @@ func delete_chat(history: ServiceHistory) -> bool:
 	history.DeletedAt = int(Time.get_unix_time_from_system())
 	history.DeletedSeq = _next_delete_seq()
 	history.Deleted = true
-	_turn_reports.erase(history.HistoryId)
+	# Soft-delete leaves the request running and the history restorable. Its
+	# report is consumed by release/cancel, including while the tab is hidden.
 	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()

@@ -10,7 +10,14 @@ probe_exit: answers, then exits with status 3 (an unexpected plugin exit).
 The host_event_probe* manifests and chat_target_probe run this one script
 under different plugin ids.
 """
-import json, sys
+import json
+import sys
+from typing import Any, TypedDict
+
+
+class ReceivedEvent(TypedDict):
+    message: dict[str, Any]
+    integer_keys: list[str]
 
 TOOLS = [
     {"name": "probe_events", "description": "Host events received so far.",
@@ -21,20 +28,20 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
 ]
 
-received = []
+received: list[ReceivedEvent] = []
 
 
-def send(msg):
+def send(msg: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
 
 
-def reply_text(req_id, value):
+def reply_text(req_id: int | str | None, value: object) -> None:
     send({"jsonrpc": "2.0", "id": req_id, "result": {
         "content": [{"type": "text", "text": json.dumps(value)}]}})
 
 
-def main():
+def main() -> None:
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -66,10 +73,10 @@ def main():
                 sys.exit(3)
             else:
                 send({"jsonrpc": "2.0", "id": req_id,
-                      "error": {"code": -32601, "message": "Unknown tool: %s" % name}})
+                      "error": {"code": -32601, "message": f"Unknown tool: {name}"}})
         elif req_id is not None:
             send({"jsonrpc": "2.0", "id": req_id,
-                  "error": {"code": -32601, "message": "Unknown method: %s" % method}})
+                  "error": {"code": -32601, "message": f"Unknown method: {method}"}})
 
 
 if __name__ == "__main__":
