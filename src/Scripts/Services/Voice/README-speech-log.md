@@ -8,7 +8,7 @@ metadata tombstone, preserving supersede ordering. A playing item's exemption is
 stored on the new admission, so it also survives process restart.
 
 Replay supports granted plugin speakers and the current OS output. It never
-changes device preferences. A playing receipt means live delivery remains in flight. A queued receipt confirms saved undeliverable text, not playback.
+changes device preferences. Control calls return immediately after admission; a playing receipt means synthesis or playback remains in flight. A queued receipt confirms saved undeliverable text, not playback.
 Only terminal successful output completion marks heard. Active items are excluded from missed counts. Replay is an explicit output action; historical origin remains record metadata. Reconnect never starts
 automatic playback. Topic keys are exact `(producer namespace, topic)` pairs;
 explicit statuses use `explicit`, remote turns use their plugin id. Already

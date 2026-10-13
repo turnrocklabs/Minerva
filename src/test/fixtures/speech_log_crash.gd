@@ -10,8 +10,6 @@ func marker(directory: String, phase: String, unheard: int) -> void:
 
 
 func _init() -> void:
-	await process_frame
-	await process_frame
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	if args.size() != 2 or args[1] not in ["before", "after", "active"]:
 		quit(2)
@@ -31,8 +29,8 @@ func _init() -> void:
 			func(_device: String) -> void: pass, func(_message: String) -> void: pass)
 		devices.handle("crash_fixture", {"op": "register", "device_id": "speaker", "label": "Crash fixture", "output": true})
 		devices.handle("crash_fixture", {"op": "availability", "device_id": "speaker", "available": true})
-		var store = Log.new(directory)
-		var delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(store, devices, null, Callable(),
+		var active_store = Log.new(directory)
+		var delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(active_store, devices, null, Callable(),
 			func(_message: String) -> void: pass, func(_delivery) -> void: pass)
 		var operation = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
 		delivery.prepare(operation, null, config, "active before crash", {}, true)

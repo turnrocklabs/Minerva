@@ -5628,7 +5628,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		context["fallback"] = summary.get("fallback_reason", "")
 		context["status_text"] = "Voice: Shortened response (%s): %s" % [context.fallback, context.text] if not context.fallback.is_empty() else "Voice: %s" % context.text
 	if is_instance_valid(status_label):
-		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % context.fallback if not context.get("fallback", "").is_empty() else "Voice: Synthesizing speech..."
+		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % context.fallback if not str(context.get("fallback", "")).is_empty() else "Voice: Synthesizing speech..."
 	if delivery != null:
 		var saved: Dictionary = delivery.save_spoken(str(prepared.log_id), str(context.text), str(context.get("fallback", "")))
 		if not saved.success:

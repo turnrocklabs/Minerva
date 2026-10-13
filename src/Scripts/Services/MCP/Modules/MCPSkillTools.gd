@@ -921,7 +921,7 @@ func _speak(arguments: Dictionary) -> Dictionary:
 		return prepared
 	var outcome: Dictionary
 	if delivery != null:
-		outcome = await delivery.synthesize(str(prepared.log_id), text, speech_cfg, operation, player, str(prepared.device))
+		outcome = delivery.start(str(prepared.log_id), text, speech_cfg, operation, player, str(prepared.device))
 	else:
 		outcome = await SingletonObject.get_voice_client().synthesize_auto_playback_result(text, speech_cfg, operation, player)
 		if not outcome.success:

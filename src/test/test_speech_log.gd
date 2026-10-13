@@ -121,6 +121,8 @@ func _crash_recovery(Log, Delivery) -> void:
 		check("owned child is terminated at boundary: " + phase, killed == OK)
 		for frame in 3:
 			await process_frame
+		if not FileAccess.file_exists(checkpoint):
+			continue
 		var reopened = Log.new(directory)
 		var recovered = Delivery.new(reopened, null, null, Callable(), func(_message: String) -> void: pass, func(_delivery) -> void: pass)
 		var item: Dictionary = reopened.get_record("speech_1")

@@ -208,7 +208,13 @@ func _replay(record: Dictionary, device: String) -> Dictionary:
 	var text: String = record.text
 	# Replay is a fresh explicit playback action; historical origin stays saved.
 	_bind(id, operation, player, device, {"kind": "explicit"}, true)
-	return await synthesize(id, text, config, operation, player, device)
+	return start(id, text, config, operation, player, device)
+
+
+func start(id: String, text: String, config: VoiceConfig, operation: SpeechOperation, player: AudioStreamPlayer, device: String) -> Dictionary:
+	# Retain the operation while synthesis runs; control RPCs never await audio.
+	synthesize(id, text, config, operation, player, device)
+	return receipt(id, device, operation)
 
 
 func synthesize(id: String, text: String, config: VoiceConfig, operation: SpeechOperation, player: AudioStreamPlayer, device: String) -> Dictionary:
@@ -218,8 +224,7 @@ func synthesize(id: String, text: String, config: VoiceConfig, operation: Speech
 	if not result.get("success", false) and not operation.done:
 		operation.finish(result)
 	# Pending live delivery returns playing. Undeliverable saved work is queued.
-	# The retained
-	# operation updates heard only when its terminal acknowledgement arrives.
+	# The retained operation updates heard only when its terminal acknowledgement arrives.
 	if id.is_empty() and not result.get("success", false):
 		result.merge({"device": "os", "unheard_count": state().unheard})
 		return result
@@ -235,6 +240,10 @@ func receipt(id: String, device: String, operation: SpeechOperation) -> Dictiona
 		result["log_id"] = id
 	if outcome.get("error_code") == "speech_log_write":
 		return outcome
+	if id.is_empty() and operation.done and not outcome.get("success", false):
+		var failed: Dictionary = outcome.duplicate()
+		failed.merge({"device": "os", "unheard_count": state().unheard})
+		return failed
 	if operation.done and not outcome.get("success", false):
 		result["error_code"] = outcome.get("error_code", "pending")
 		result["error_message"] = outcome.get("error_message", "Speech is queued.")

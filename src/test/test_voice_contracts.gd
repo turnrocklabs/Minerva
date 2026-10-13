@@ -994,5 +994,5 @@ func _voice_snapshot_contract(so, voice, transport, config) -> void:
 	devices.handle("voice_snapshot", {"op": "output_complete", "device_id": "remote", "stream_id": packets.back().stream_id, "success": true})
 	check("actual terminal ACK ends snapshotted speech and marks its record heard", active_operation.done and store.get_record(admitted.log_id).heard)
 	so.speech_delivery = original_delivery
-	so.Chats = previous_chats
+	so.Chats = previous_chats if is_instance_valid(previous_chats) else null
 	snapshot_pane.queue_free()

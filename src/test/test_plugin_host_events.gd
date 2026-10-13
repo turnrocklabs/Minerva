@@ -725,7 +725,7 @@ func _test_public_turn_events() -> void:
 	var queued_bytes: Dictionary = {"delivery": queued.delivery, "device": queued.device, "log_id": queued.log_id, "unheard_count": queued.unheard_count}
 	check("E log: queued receipt matches the fixed serialized byte vector", JSON.stringify(queued_bytes).to_utf8_buffer() == str(fixed.queued_receipt_json).to_utf8_buffer())
 	var count_events: Array = await _events(SUBSCRIBER, "speech_log.changed")
-	check("E log: actual scoped count event contains only frozen counters", not count_events.is_empty() and count_events.back().message.params.payload == {"unheard": 1, "total": 1})
+	check("E log: actual scoped count event contains only frozen counters", not count_events.is_empty() and JSON.stringify(count_events.back().message.params.payload) == JSON.stringify({"unheard": 1, "total": 1}))
 	var published: Dictionary = await _so.speech_delivery.handle({"op": "list"}, SUBSCRIBER)
 	check("E log: owning plugin sees explicit statuses routed to its speaker", published.success and published.items.any(func(item: Dictionary) -> bool: return item.log_id == spoken.log_id))
 	var denied: Dictionary = await _so.speech_delivery.handle({"op": "state", "log_id": spoken.log_id}, UNGRANTED)
@@ -774,19 +774,22 @@ func _test_public_turn_events() -> void:
 	_capture_mcp(server, {"text": "first pending", "topic": "same"}, held)
 	var first_request: String = str(transport.sent.back().params.request_id)
 	var old_id: String = str(_so.speech_delivery._active.keys().back())
+	var old_operation = _so.speech_delivery._active[old_id]
+	check("E log: synthesis admission returns playing before Core replies", held.get("result", {}).get("delivery") == "playing" and not old_operation.done)
 	var second_held: Dictionary = {}
 	_capture_mcp(server, {"text": "second pending", "topic": "same"}, second_held)
 	var new_request: String = str(transport.sent.back().params.request_id)
 	var new_id: String = str(_so.speech_delivery._active.keys().back())
-	check("E log: supersede cancels pending producer and fresh endpoint remains admitted", first_request != new_request and not transport._pending_requests.has(first_request) and held.get("result", {}).get("delivery") == "queued" and _so.plugin_audio_devices.output_busy(before_selection))
+	check("E log: supersede cancels pending producer and fresh endpoint remains admitted", first_request != new_request and not transport._pending_requests.has(first_request) and old_operation.done and _so.speech_delivery.receipt(old_id, before_selection, old_operation).delivery == "queued" and _so.plugin_audio_devices.output_busy(before_selection))
 	var deleted_active: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "delete", "log_id": new_id})
 	var old_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": old_id})
 	check("E log: active delete cancels ownership and tombstone prevents resurrection", deleted_active.success and not _so.plugin_audio_devices.output_busy(before_selection) and old_state.item.superseded and not transport._pending_requests.has(new_request))
 	var failing: Dictionary = {}
 	_capture_mcp(server, {"text": "failed provider", "topic": "provider"}, failing)
 	var failed_id: String = str(_so.speech_delivery._active.keys().back())
+	var failed_operation = _so.speech_delivery._active[failed_id]
 	transport._handle_message({"cmd": "error", "entity_type": "core", "topic": "voice/tts/synthesize", "params": {"request_id": str(transport.sent.back().params.request_id), "error_code": "FIXTURE_FAIL", "error": "Synthetic provider failure"}})
-	check("E log: synthesis failure releases speaker and persists queued text", failing.get("result", {}).get("delivery") == "queued" and not _so.plugin_audio_devices.output_busy(before_selection))
+	check("E log: synthesis failure releases speaker and persists queued text", failing.get("result", {}).get("delivery") == "playing" and failed_operation.done and _so.speech_delivery.receipt(failed_id, before_selection, failed_operation).delivery == "queued" and not _so.plugin_audio_devices.output_busy(before_selection))
 	transport.on_send = func(message: Dictionary) -> void:
 		if str(message.topic) == "voice/tts/synthesize":
 			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
@@ -933,7 +936,8 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 		begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
 		stream_request = input_owner._active.stream.request if input_owner._active != null else null
 	if stream_request != null:
-		transport._handle_message({"cmd": "error", "topic": "voice/stt/stream", "params": {"request_id": stream_request.request_id, "error_code": "service_failed", "error": "Fixture Core failure"}})
+		var failed_operation = _so.speech_delivery._active[failed_id]
+	transport._handle_message({"cmd": "error", "topic": "voice/stt/stream", "params": {"request_id": stream_request.request_id, "error_code": "service_failed", "error": "Fixture Core failure"}})
 	check("E input: terminal Core error immediately releases capture", stream_request != null and input_owner._active == null)
 	cfg.stt_transport = cfg.STTTransport.BUFFERED
 	_so.plugin_policy.grant_capability(UNDECLARED, "host.audio")
