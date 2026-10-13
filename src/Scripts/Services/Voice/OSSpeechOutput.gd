@@ -28,7 +28,7 @@ func play(audio: PackedByteArray, volume: float) -> Dictionary:
 	_player.volume_db = linear_to_db(volume)
 	_player.finished.connect(_on_playback_finished)
 	_player.play()
-	started.emit()
+	_report_started()
 	return {"success": true}
 
 
@@ -71,7 +71,7 @@ func stop() -> void:
 
 
 func _on_stream_started() -> void:
-	started.emit()
+	_report_started()
 
 
 func _on_stream_finished(outcome: Dictionary) -> void:
@@ -79,8 +79,8 @@ func _on_stream_finished(outcome: Dictionary) -> void:
 	_stream_sink = null
 	if is_instance_valid(completed):
 		completed.queue_free()
-	finished.emit(outcome)
+	_report_finished(outcome)
 
 
 func _on_playback_finished() -> void:
-	finished.emit({"success": true})
+	_report_finished({"success": true})

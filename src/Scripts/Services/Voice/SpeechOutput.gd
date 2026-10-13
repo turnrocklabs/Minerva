@@ -6,6 +6,14 @@ signal finished(outcome: Dictionary)
 signal started
 
 
+func _report_started() -> void:
+	started.emit()
+
+
+func _report_finished(outcome: Dictionary) -> void:
+	finished.emit(outcome)
+
+
 func is_available() -> bool:
 	return false
 
