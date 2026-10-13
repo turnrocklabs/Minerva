@@ -21,12 +21,9 @@ const ERROR_PTT_BUSY := "minerva_ptt_active"
 const ERROR_EXTERNAL_PTT_BUSY := "external_ptt_busy"
 const ERROR_NO_MIC_BUTTON := "mic_button_unavailable"
 
-## A submit is confirmed when the chat records the user's message. Without a
-## turn in flight, that must happen within this many frames (a Human-provider
-## post waits only on the notes); with one, it may take until SUBMIT_TIMEOUT_MS
-## (the prompt is still being built).
-const SUBMIT_IDLE_FRAMES := 30
-const SUBMIT_TIMEOUT_MS := 30000
+## How long a submit waits for the pane's admit/drop outcome before reporting
+## it as pending (still in progress, neither sent nor refused).
+var submit_timeout_ms := 30000
 
 ## () -> ChatPane: the chat pane, or null.
 var _chat_pane: Callable
@@ -100,30 +97,31 @@ func _submit(plugin_id: String, pane: ChatPane, expected_chat_id: String) -> Dic
 	if text.strip_edges().is_empty():
 		return _refuse(plugin_id, ERROR_EMPTY_INPUT,
 			"Not sent: the chat input is empty (plugin '%s')." % plugin_id)
-	var items_before: int = visible.HistoryItemList.size()
-	var queued_before: int = pane.pending_message_count(visible)
-	pane.submit_chat(0)
-	if pane.pending_message_count(visible) > queued_before:
-		return PluginErrors.success({"chat_id": visible_id, "queued": true})
-	# The send paths can each drop the message after taking the input box (an
-	# account prompt declined, an empty Core field, a refused prompt, a chat
-	# still awaiting its last reply), so only the recorded message confirms it.
-	var idle_frames := 0
-	var deadline: int = Time.get_ticks_msec() + SUBMIT_TIMEOUT_MS
-	while not _user_message_since(visible, items_before):
-		idle_frames = 0 if visible.is_request_active else idle_frames + 1
-		if idle_frames > SUBMIT_IDLE_FRAMES or Time.get_ticks_msec() > deadline:
-			return _refuse(plugin_id, ERROR_NOT_SENT,
-				"Not sent: the chat did not take the message (plugin '%s')." % plugin_id)
+	# The pane reports this send's outcome under the id submit_chat returns;
+	# outcomes can arrive before it returns, so they are collected from before.
+	var outcomes: Dictionary = {}
+	var on_admitted := func(_history_id: String, send_id: int, queued: bool) -> void:
+		outcomes[send_id] = {"queued": queued}
+	var on_dropped := func(_history_id: String, send_id: int, reason: String) -> void:
+		outcomes[send_id] = {"dropped": reason}
+	pane.user_message_admitted.connect(on_admitted)
+	pane.user_message_dropped.connect(on_dropped)
+	var send_id: int = pane.submit_chat(0)
+	var deadline: int = Time.get_ticks_msec() + submit_timeout_ms
+	while not outcomes.has(send_id) and Time.get_ticks_msec() < deadline and is_instance_valid(pane):
 		await _next_frame.call()
-	return PluginErrors.success({"chat_id": visible_id, "queued": false})
-
-
-static func _user_message_since(history: ServiceHistory, index: int) -> bool:
-	for i in range(index, history.HistoryItemList.size()):
-		if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.USER:
-			return true
-	return false
+	if is_instance_valid(pane):
+		pane.user_message_admitted.disconnect(on_admitted)
+		pane.user_message_dropped.disconnect(on_dropped)
+	if not outcomes.has(send_id):
+		return PluginErrors.success({"chat_id": visible_id, "status": "pending"})
+	var outcome: Dictionary = outcomes[send_id]
+	if outcome.has("dropped"):
+		var refused := _refuse(plugin_id, ERROR_NOT_SENT, "Not sent (%s): the chat did not take the message (plugin '%s')." % [
+			outcome["dropped"], plugin_id])
+		refused["reason"] = outcome["dropped"]
+		return refused
+	return PluginErrors.success({"chat_id": visible_id, "queued": outcome["queued"]})
 
 
 func _set_external_ptt_state(plugin_id: String, pane: ChatPane, state: String) -> Dictionary:
