@@ -5239,7 +5239,8 @@ func _refresh_voice_devices() -> void:
 		var selected_index: int = -1
 		for device: Dictionary in devices.devices(direction):
 			var index: int = option.item_count
-			option.add_item(str(device.label) + (" (unreachable)" if not bool(device.available) else ""))
+			var available: bool = device.available
+			option.add_item(str(device.label) + (" (unreachable)" if not available else ""))
 			option.set_item_metadata(index, str(device.id))
 			if str(device.id) == selected:
 				selected_index = index

@@ -61,11 +61,11 @@ func _update_stop_button() -> void:
 func _update_compact_button() -> void:
 	pass
 
-func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false, origin: Dictionary = {}) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options, origin):
 		return
-	var turn_token: int = _begin_chat_turn(history)
+	var turn_token: int = _begin_chat_turn(history, origin)
 	# Stands in for PluginProvider._report_notify: the fake provider IS the
 	# harness here, so the turn starting is the harness taking the line.
 	load("res://Scripts/Services/Terminal/NotifyDeliveryLedger.gd").shared().note_chat_outcome(

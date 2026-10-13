@@ -98,11 +98,11 @@ func _update_stop_button() -> void:
 func _update_compact_button() -> void:
 	pass
 
-func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false, origin: Dictionary = {}) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options, origin):
 		return
-	var turn_token: int = _begin_chat_turn(history)
+	var turn_token: int = _begin_chat_turn(history, origin)
 	events.append("start:" + text)
 	var answer = await provider.generate_content(text)
 	events.append("answer:" + str(answer))
@@ -181,9 +181,9 @@ func _update_compact_button() -> void:
 
 ## The queue gate is ChatPane's own; only the turn body is replaced, because the
 ## real one needs the booted UI.
-func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false, origin: Dictionary = {}) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options, origin):
 		return
 	drained.append(text)
 
@@ -593,7 +593,7 @@ func _test_wiring_is_present() -> void:
 	var source: = FileAccess.get_file_as_string(CHATPANE_PATH)
 	var body_start: = source.find("func execute_regular_chat(")
 	var gate: = source.find("_queue_if_busy(history, text", body_start)
-	var activate: = source.find("_begin_chat_turn(history)", body_start)
+	var activate: = source.find("_begin_chat_turn(history, origin)", body_start)
 	check("F2: the real execute_regular_chat gates on the queue before starting a turn",
 		body_start != -1 and gate != -1 and activate != -1 and gate < activate,
 		"gate=%d activate=%d" % [gate, activate])

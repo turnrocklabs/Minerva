@@ -32,7 +32,8 @@ func _init(stream_id: int, send: Callable, next_frame: Callable, available: Call
 
 
 func is_available() -> bool:
-	return not _stopped and bool(_available.call())
+	var available: bool = _available.call()
+	return not _stopped and available
 
 
 func play(audio: PackedByteArray, volume: float) -> Dictionary:
@@ -125,7 +126,8 @@ func acknowledge(success: bool, message: String = "") -> void:
 
 func _emit(payload: Dictionary) -> bool:
 	payload["stream_id"] = _stream_id
-	return bool(_send.call(payload))
+	var sent: bool = _send.call(payload)
+	return sent
 
 
 func _fail(code: String, message: String) -> void:

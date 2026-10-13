@@ -23,7 +23,7 @@ func _init() -> void:
 
 func _ready() -> void:
 	pass
-func _on_send_message_button_item_selected(_index: int) -> void:
+func _on_send_message_button_item_selected(_index: int, _plugin_id: String = "") -> void:
 	# Keep the production voice-to-composer delivery; only replace LLM dispatch.
 	sent_utterances.append(%txtMainUserInput.text)
 

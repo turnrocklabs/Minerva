@@ -63,6 +63,7 @@ static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outc
 	var text := ""
 	if reply != null:
 		text = _tool_block_marker.sub(reply.Message, "", true).strip_edges()
+	var send_id: int = origin.get("send_id", 0)
 	return {
 		"chat_id": str(history.HistoryId),
 		"message_index": history.HistoryItemList.find(reply) if reply != null else -1,
@@ -70,7 +71,7 @@ static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outc
 		"text": text,
 		"outcome": outcome,
 		"plugin_id": str(origin.get("plugin_id", "")),
-		"send_id": int(origin.get("send_id", 0)),
+		"send_id": send_id,
 	}
 
 

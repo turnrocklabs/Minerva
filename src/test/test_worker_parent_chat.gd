@@ -39,7 +39,7 @@ var turns: Array[Dictionary] = []
 func _ready() -> void:
 	pass
 
-func execute_regular_chat(text: String, _generation_options: Dictionary = {}, _promoted: bool = false) -> void:
+func execute_regular_chat(text: String, _generation_options: Dictionary = {}, _promoted: bool = false, _origin: Dictionary = {}) -> void:
 	turns.append({"tab": current_tab, "text": text})
 """
 

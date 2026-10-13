@@ -159,9 +159,10 @@ func register_tools() -> void:
 		}
 	, "utility")
 
-	server._register_tool("minerva_list_audio_devices", "List OS and granted plugin microphone/speaker endpoints, availability and selection.",
+	var audio_server: MinervaMCPServer = server
+	audio_server._register_tool("minerva_list_audio_devices", "List OS and granted plugin microphone/speaker endpoints, availability and selection.",
 		{"type": "object", "properties": {}}, "chat")
-	server._register_tool("minerva_set_audio_device", "Select a microphone or speaker endpoint; uses the same selection as Voice preferences.",
+	audio_server._register_tool("minerva_set_audio_device", "Select a microphone or speaker endpoint; uses the same selection as Voice preferences.",
 		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["input", "output"]},
 			"device_id": {"type": "string"}}, "required": ["direction", "device_id"]}, "chat")
 	# Voice tools

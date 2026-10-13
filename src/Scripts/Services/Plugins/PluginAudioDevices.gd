@@ -35,12 +35,14 @@ func handle(plugin_id: String, args: Dictionary) -> Dictionary:
 				return PluginErrors.schema_validation_failed(plugin_id, "register requires a label of 1–160 characters")
 			if not args.get("input", false) is bool or not args.get("output", false) is bool:
 				return PluginErrors.schema_validation_failed(plugin_id, "input and output must be booleans")
-			if not bool(args.get("input", false)) and not bool(args.get("output", false)):
+			var has_input: bool = args.get("input", false)
+			var has_output: bool = args.get("output", false)
+			if not has_input and not has_output:
 				return PluginErrors.schema_validation_failed(plugin_id, "register requires input or output")
 			_remove(key)
 			_devices[key] = {"id": key, "plugin_id": plugin_id, "device_id": device_id,
-				"label": str(args.label), "input": bool(args.get("input", false)),
-				"output": bool(args.get("output", false)), "available": false}
+				"label": str(args.label), "input": has_input,
+				"output": has_output, "available": false}
 			changed.emit()
 			return PluginErrors.success({"id": key})
 		"availability":
@@ -57,12 +59,17 @@ func handle(plugin_id: String, args: Dictionary) -> Dictionary:
 			return PluginErrors.success({})
 		"output_complete":
 			var stream: Variant = args.get("stream_id")
-			if not (stream is int or stream is float) or not is_finite(float(stream)) or float(stream) != floor(float(stream)) or not args.get("success") is bool:
+			if not (stream is int or stream is float) or not args.get("success") is bool:
 				return PluginErrors.schema_validation_failed(plugin_id, "output_complete requires integer stream_id and boolean success")
+			var stream_number: float = stream
+			if not is_finite(stream_number) or stream_number != floor(stream_number) or stream_number < 1 or stream_number > 9007199254740991.0:
+				return PluginErrors.schema_validation_failed(plugin_id, "stream_id is outside the exact integer range")
+			var stream_id: int = int(stream_number)
+			var delivered: bool = args.success
 			var output: PluginSpeechOutput = _playing.get(key)
-			if output == null or int(stream) != output_stream_id(key):
+			if output == null or stream_id != output_stream_id(key):
 				return PluginErrors.schema_validation_failed(plugin_id, "output_complete names no active stream")
-			output.acknowledge(bool(args.success), str(args.get("error_message", "Plugin audio delivery failed.")))
+			output.acknowledge(delivered, str(args.get("error_message", "Plugin audio delivery failed.")))
 			return PluginErrors.success({})
 	return PluginErrors.schema_validation_failed(plugin_id, "unknown host.audio operation")
 
@@ -74,7 +81,8 @@ func devices(direction: String) -> Array[Dictionary]:
 		result.append({"id": "os:" + name, "label": name, "available": true})
 	for key: String in _devices:
 		var device: Dictionary = _devices[key]
-		if bool(device.get(direction, false)) and _granted(str(device.plugin_id)):
+		var supported: bool = device.get(direction, false)
+		if supported and _granted(str(device.plugin_id)):
 			result.append(device.duplicate(true))
 	return result
 
@@ -122,7 +130,8 @@ var _stream_ids: Dictionary = {}
 
 
 func output_stream_id(key: String) -> int:
-	return int(_stream_ids.get(key, 0))
+	var stream_id: int = _stream_ids.get(key, 0)
+	return stream_id
 
 
 func plugin_stopped(plugin_id: String) -> void:
@@ -143,15 +152,19 @@ func _granted(plugin_id: String) -> bool:
 
 func _available(key: String) -> bool:
 	var device: Dictionary = _devices.get(key, {})
-	return not device.is_empty() and bool(device.available) and _granted(str(device.plugin_id))
+	var available: bool = device.get("available", false)
+	return not device.is_empty() and available and _granted(str(device.plugin_id))
 
 
 func _send_audio(payload: Dictionary, key: String) -> bool:
-	if not _available(key):
+	# Teardown may send cancel after a grant is revoked: it carries no audio
+	# and releases the already admitted playback, never admits new work.
+	if not _devices.has(key) or (str(payload.get("op", "")) != "cancel" and not _available(key)):
 		return false
 	var device: Dictionary = _devices[key]
 	payload["device_id"] = device.device_id
-	return int(_send.call(str(device.plugin_id), OUTPUT_EVENT, payload)) == OK
+	var sent: Error = _send.call(str(device.plugin_id), OUTPUT_EVENT, payload)
+	return sent == OK
 
 
 func _finished(_outcome: Dictionary, key: String, output: PluginSpeechOutput) -> void:
