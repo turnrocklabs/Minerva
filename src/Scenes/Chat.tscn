@@ -390,6 +390,12 @@ clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 10
 
+[node name="SpeechMissedCount" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "0 speech missed"
+
 [node name="EstimatedTokensLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2

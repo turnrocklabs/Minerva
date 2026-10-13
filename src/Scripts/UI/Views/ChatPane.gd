@@ -3908,6 +3908,12 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	var delivery: SpeechDelivery = SingletonObject.speech_delivery
+	var count: Label = get_node_or_null("%SpeechMissedCount")
+	if delivery != null and count != null:
+		delivery.changed.connect(_refresh_speech_count.bind(delivery, count))
+		_refresh_speech_count(delivery, count)
+
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 
@@ -5591,13 +5597,20 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	cancel_tts()
 	var operation := SpeechOperation.new()
 	_speech_operation = operation
-	if SingletonObject.plugin_audio_devices != null:
+	var delivery: SpeechDelivery = SingletonObject.speech_delivery
+	var prepared: Dictionary = {"success": true, "log_id": ""}
+	if delivery != null:
+		prepared = delivery.prepare(operation, _tts_player, cfg, response_text, origin)
+	elif SingletonObject.plugin_audio_devices != null:
 		operation.bind_output(SingletonObject.plugin_audio_devices.speech_output(_tts_player, origin))
 	_update_stop_button()
 	var status_label: RichTextLabel = _create_voice_status_label(msg_node) if is_instance_valid(msg_node) else null
 	var context := {"status": status_label, "summary": cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE, "text": response_text}
 	operation.finished.connect(_finish_speech.bind(operation, context), CONNECT_ONE_SHOT)
 	operation.playback_began.connect(_on_speech_playback_began.bind(operation, cfg, msg_node, context), CONNECT_ONE_SHOT)
+	if not prepared.success or operation.done:
+		_finish_speech(operation.completion_outcome if operation.done else prepared, operation, context)
+		return
 	var voice_client := SingletonObject.get_voice_client()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
 		if cfg.summary_model.is_empty():
@@ -5616,6 +5629,11 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		context["status_text"] = "Voice: Shortened response (%s): %s" % [context.fallback, context.text] if not context.fallback.is_empty() else "Voice: %s" % context.text
 	if is_instance_valid(status_label):
 		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % context.fallback if not context.get("fallback", "").is_empty() else "Voice: Synthesizing speech..."
+	if delivery != null:
+		var saved: Dictionary = delivery.save_spoken(str(prepared.log_id), str(context.text), str(context.get("fallback", "")))
+		if not saved.success:
+			operation.finish(saved)
+			return
 	var synthesized := await voice_client.synthesize_auto_playback_result(context.text, cfg, operation, _tts_player)
 	if operation.done:
 		return
@@ -6333,3 +6351,14 @@ func get_available_models() -> Array:
 			"selected": (i == selected_index),
 		})
 	return result
+
+
+func _refresh_speech_count(delivery: SpeechDelivery, label: Label) -> void:
+	if not is_instance_valid(label):
+		return
+	var state: Dictionary = delivery.state()
+	var unheard: int = state.unheard
+	label.text = "%d speech missed" % unheard
+	label.visible = unheard > 0 or not state.success
+	var errors: PackedStringArray = state.errors
+	label.tooltip_text = "; ".join(errors) if not state.success else "Persisted unheard speech; manage with minerva_speech_log."

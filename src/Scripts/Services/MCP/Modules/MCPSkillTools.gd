@@ -16,6 +16,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_deactivate_skill",
 		"minerva_update_skill_instructions",
 		"minerva_speak",
+		"minerva_speech_log",
 		"minerva_list_voices",
 		"minerva_list_audio_devices",
 		"minerva_set_audio_device",
@@ -165,6 +166,10 @@ func register_tools() -> void:
 	audio_server._register_tool("minerva_set_audio_device", "Select a microphone or speaker endpoint; uses the same selection as Voice preferences.",
 		{"type": "object", "properties": {"direction": {"type": "string", "enum": ["input", "output"]},
 			"device_id": {"type": "string"}}, "required": ["direction", "device_id"]}, "chat")
+	audio_server._register_tool("minerva_speech_log", "List, inspect, replay, mark or explicitly delete persisted speech. Replay uses a plugin speaker or the current PC output, without changing selection.",
+		{"type": "object", "properties": {"op": {"type": "string", "enum": ["list", "state", "play", "mark", "delete"]},
+			"log_id": {"type": "string"}, "topic": {"type": "string"}, "device_id": {"type": "string"},
+			"heard": {"type": "boolean"}, "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["op"]}, "chat")
 	# Voice tools
 	server._register_tool("minerva_speak",
 		"Speak text aloud using text-to-speech. Works regardless of auto-play TTS preference — use this when you want to audibly communicate something to the user. Requires voice-service via Core.",
@@ -175,6 +180,8 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "The text to speak aloud"
 				},
+				"topic": {"type": "string", "description": "Exact topic key for replacing older unheard queued statuses"},
+				"summary": {"type": "string", "description": "Short display summary (21 characters)"},
 				"voice_id": {
 					"type": "string",
 					"description": "Optional voice ID (uses preference default if omitted)"
@@ -215,6 +222,8 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 		"minerva_activate_skill": return await _skill_activate(arguments, context)
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
+		"minerva_speech_log":
+			return await SingletonObject.speech_delivery.handle(arguments) if SingletonObject.speech_delivery != null else VoiceServiceClient.failure("speech_log_unavailable", "Speech log is unavailable.")
 		"minerva_speak": return await _speak(arguments)
 		"minerva_list_voices": return await _list_voices(arguments)
 		"minerva_list_audio_devices":
@@ -900,24 +909,27 @@ func _speak(arguments: Dictionary) -> Dictionary:
 			audio_devices.report_failure(completion)
 		if is_instance_valid(player):
 			player.queue_free(), CONNECT_ONE_SHOT)
-	if SingletonObject.plugin_audio_devices != null:
-		operation.bind_output(SingletonObject.plugin_audio_devices.speech_output(player, {}, true))
 	var speech_cfg := VoiceConfig.new()
 	speech_cfg.voice_id = voice_id
 	speech_cfg.tts_backend = backend
 	speech_cfg.tts_volume = cfg.tts_volume
-	var outcome: Dictionary = await SingletonObject.get_voice_client().synthesize_auto_playback_result(text, speech_cfg, operation, player)
+	var delivery: SpeechDelivery = SingletonObject.speech_delivery
+	var prepared: Dictionary = {"success": true, "log_id": "", "device": "os:" + AudioServer.output_device}
+	if delivery != null:
+		prepared = delivery.prepare(operation, player, speech_cfg, text, {}, true, str(arguments.get("topic", "")), str(arguments.get("summary", "")))
+	if not prepared.success:
+		return prepared
+	var outcome: Dictionary
+	if delivery != null:
+		outcome = await delivery.synthesize(str(prepared.log_id), text, speech_cfg, operation, player, str(prepared.device))
+	else:
+		outcome = await SingletonObject.get_voice_client().synthesize_auto_playback_result(text, speech_cfg, operation, player)
+		if not outcome.success:
+			operation.finish(outcome)
 	if not outcome.success:
-		operation.finish(outcome)
-		return operation.completion_outcome if operation.done else outcome
-
-	return {
-		"success": true,
-		"message": "Speaking: %s" % text.substr(0, 100),
-		"text_length": text.length(),
-		"voice_id": voice_id,
-		"backend": backend,
-	}
+		return outcome
+	outcome.merge({"message": "Speech delivery: " + str(outcome.get("delivery", "speaking")), "text_length": text.length(), "voice_id": voice_id, "backend": backend})
+	return outcome
 
 
 func _list_voices(arguments: Dictionary) -> Dictionary:

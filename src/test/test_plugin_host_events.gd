@@ -571,6 +571,7 @@ func _test_public_turn_events() -> void:
 	var core = root.get_node("Core")
 	var saved_client = core.client
 	var saved_registered: bool = core.registered
+	var saved_delivery = _so.speech_delivery
 	var saved_voice = _so.voice_client
 	var cfg = _so.get_voice_config()
 	var saved_voice_state := {"speak": cfg.speak_mode, "provider": cfg.tts_provider, "voice": cfg.voice_id, "name": cfg.voice_name, "output": cfg.output_device, "input": cfg.input_device, "stt": cfg.stt_transport, "stt_provider": cfg.stt_provider, "fallback": cfg.whisper_fallback}
@@ -579,6 +580,10 @@ func _test_public_turn_events() -> void:
 	core.client = transport
 	core.registered = true
 	_so.voice_client = load("res://Scripts/Services/Voice/VoiceServiceClient.gd").new()
+	_so.speech_delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(
+		load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://speech-fixture")),
+		_so.plugin_audio_devices, _so.voice_client, _so._new_speech_player, _so._notify_plugin_refusal, _so._publish_speech_log)
+	_so.plugin_capability_broker.speech_delivery = _so.speech_delivery
 	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var enabled: bool = feature.is_enabled()
 	feature.set_enabled(true)
@@ -708,6 +713,41 @@ func _test_public_turn_events() -> void:
 			eos = true
 	check("E audio: production MCP synthesis sends entire long one-shot through real plugin", spoken.success and bytes_received == long_pcm.size() and eos)
 	check("E audio: negative post-EOS acknowledgement surfaces explicit-speech failure", failures.size() == 1 and failures[0].contains("Fixture speaker rejected EOS"), str(failures))
+	var log_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.get("log_id", "")})
+	check("E log: MCP log_state retains exact full text, unheard state and explicit origin", spoken.delivery == "queued" and log_state.success and not log_state.item.heard and log_state.item.text == "Long reply" and log_state.item.producer == "explicit")
+	var published: Dictionary = await _so.speech_delivery.handle({"op": "list"}, SUBSCRIBER)
+	check("E log: owning plugin sees explicit statuses routed to its speaker", published.success and published.items.any(func(item: Dictionary) -> bool: return item.log_id == spoken.log_id))
+	var denied: Dictionary = await _so.speech_delivery.handle({"op": "state", "log_id": spoken.log_id}, UNGRANTED)
+	check("E log: other plugin cannot read persisted content", not denied.success)
+	var log_page: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.speech_log", "args": {"op": "list", "offset": 0, "limit": 20}})
+	check("E log: real STDIO capability receives the frozen scoped page", log_page.success and log_page.result.items.any(func(item: Dictionary) -> bool: return item.log_id == spoken.log_id))
+	var before_total: int = log_state.total
+	var before_selection: String = cfg.output_device
+	var replay_calls: Array[Dictionary] = []
+	var fixture_pcm := PackedByteArray([0, 0, 1, 0, 255, 127, 0, 128])
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			replay_calls.append(message.params.data.duplicate(true))
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
+	await conn.call_tool("probe_audio_mode", {"success": true})
+	var replay: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "plugin:" + SUBSCRIBER + ":speaker"})
+	var heard_deadline: int = Time.get_ticks_msec() + 3000
+	var replay_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.log_id})
+	while not replay_state.item.heard and Time.get_ticks_msec() < heard_deadline:
+		await process_frame
+		replay_state = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.log_id})
+	check("E log: replay keeps one record and terminal post-EOS ACK marks heard", replay.success and replay_state.item.heard and replay_state.total == before_total)
+	check("E log: replay uses saved text and parameters without setting mutation", replay_calls.size() == 1 and replay_calls[0].text == "Long reply" and replay_calls[0].backend == log_state.item.backend and cfg.output_device == before_selection)
+	var os_replay: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "os:" + AudioServer.output_device})
+	var os_deadline: int = Time.get_ticks_msec() + 2000
+	while _so.speech_delivery._active.has(spoken.log_id) and Time.get_ticks_msec() < os_deadline:
+		await process_frame
+	check("E log: current OS replay completes through real player with selection preserved", os_replay.success and not _so.speech_delivery._active.has(spoken.log_id) and cfg.output_device == before_selection)
+	var rejected_os: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "os:not-current"})
+	check("E log: named non-current OS target is refused", not rejected_os.success)
+	await conn.call_tool("probe_audio_mode", {"success": false})
+
+
 	await _probe(SUBSCRIBER, "probe_clear")
 	failures.clear()
 	await server.execute_tool_for_http("minerva_speak", {"text": "Crash during playback"})
@@ -727,6 +767,8 @@ func _test_public_turn_events() -> void:
 	check("E audio: existing OS setting and MCP selection report the same route", listed.selected_output == "os:" + AudioServer.output_device)
 	core.client = saved_client
 	core.registered = saved_registered
+	_so.speech_delivery = saved_delivery
+	_so.plugin_capability_broker.speech_delivery = saved_delivery
 	_so.voice_client = saved_voice
 	cfg.speak_mode = saved_voice_state.speak
 	cfg.tts_provider = saved_voice_state.provider

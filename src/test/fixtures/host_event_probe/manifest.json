@@ -17,7 +17,8 @@
   "permissions": {
     "host_capabilities": [
       "host.audio",
-      "host.chat.input"
+      "host.chat.input",
+      "host.speech_log"
     ],
     "network": {
       "mode": "none"
@@ -30,7 +31,8 @@
       "chat.turn_completed",
       "chat.directory_changed",
       "voice.audio",
-      "voice.transcript"
+      "voice.transcript",
+      "speech_log.changed"
     ]
   }
 }

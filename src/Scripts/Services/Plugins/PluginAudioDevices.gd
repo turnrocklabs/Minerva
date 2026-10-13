@@ -142,13 +142,32 @@ func report_failure(outcome: Dictionary) -> void:
 		_notify.call("Speech: " + str(outcome.get("error_message", "Playback failed.")))
 
 
-func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit: bool = false) -> SpeechOutput:
+func route_output(origin: Dictionary = {}, explicit: bool = false) -> String:
 	var key: String = _config.output_device
-	# Ordinary replies retain OS playback even while a plugin is selected.
-	# An unavailable selected plugin is still a plugin route: never silently
-	# spill a remote/status message onto a different speaker.
 	if not key.begins_with("plugin:") or (not explicit and (str(origin.get("plugin_id", "")).is_empty() or not key.begins_with("plugin:" + str(origin.get("plugin_id", "")) + ":"))):
+		return "os:" + str(_get_os_output.call())
+	return key
+
+
+func replay_target_valid(key: String) -> bool:
+	if key == "os:" + str(_get_os_output.call()):
+		return true
+	var device: Dictionary = _devices.get(key, {})
+	return not device.is_empty() and device.get("output", false) and _granted(str(device.plugin_id))
+
+
+func output_busy(key: String) -> bool:
+	return _playing.has(key)
+
+
+func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit: bool = false) -> SpeechOutput:
+	return output_for_device(player, route_output(origin, explicit), origin, explicit)
+
+
+func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionary = {}, explicit: bool = false) -> SpeechOutput:
+	if key == "os:" + str(_get_os_output.call()):
 		return OSSpeechOutput.new(player)
+	# An unavailable plugin remains a plugin route, with a visible failure.
 	_cancel(key)
 	_next_stream += 1
 	var output := PluginSpeechOutput.new(_next_stream,

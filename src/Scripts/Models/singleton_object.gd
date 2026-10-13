@@ -659,6 +659,10 @@ func initialize_plugins() -> void:
 	plugin_audio_devices = PluginAudioDevices.new(get_voice_config(), policy, _send_plugin_host_event, _next_frame,
 		func() -> String: return AudioServer.output_device, set_output_device, _notify_plugin_refusal,
 		func() -> String: return AudioServer.input_device, set_microphone)
+	speech_delivery = SpeechDelivery.new(SpeechLog.new(ProjectSettings.globalize_path("user://speech-log")),
+		plugin_audio_devices, get_voice_client(), _new_speech_player, _notify_plugin_refusal, _publish_speech_log)
+	plugin_capability_broker.speech_delivery = speech_delivery
+	manager.plugin_started.connect(func(_plugin_id: String) -> void: _publish_speech_log(speech_delivery))
 	plugin_capability_broker.audio_devices = plugin_audio_devices
 	plugin_capability_broker.audio_input = PluginAudioInput.new(plugin_audio_devices, chat_target, get_voice_config(),
 		get_voice_client, _send_plugin_transcript, _notify_plugin_refusal, _next_frame, _plugin_accepts_transcript)
@@ -683,6 +687,23 @@ func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -
 	var manager: PluginManager = plugin_manager
 	var conn: MCPServerConnection = manager.get_connection(p_id)
 	return conn.send_host_event(event, payload) if conn != null else ERR_UNAVAILABLE
+
+
+func _new_speech_player() -> AudioStreamPlayer:
+	if not is_instance_valid(Chats):
+		return null
+	var player := AudioStreamPlayer.new()
+	Chats.add_child(player)
+	return player
+
+
+func _publish_speech_log(delivery: SpeechDelivery) -> void:
+	var policy: PluginPolicy = plugin_policy
+	for def: PluginDefinition in _plugins_with_connection():
+		if "speech_log.changed" in def.host_events and policy.is_capability_granted(def.id, "host.speech_log") and policy.is_capability_granted(def.id, "host_event:speech_log.changed"):
+			var count: Dictionary = delivery.state(def.id)
+			if _send_plugin_host_event(def.id, "speech_log.changed", {"unheard": count.unheard, "total": count.total}) != OK:
+				_notify_plugin_refusal("Speech log count could not reach " + def.id)
 
 
 func _plugin_accepts_transcript(p_id: String) -> bool:
@@ -1060,6 +1081,7 @@ func get_terminal_session_registry():
 #region Voice
 var voice_config: VoiceConfig = null
 var plugin_audio_devices: PluginAudioDevices = null
+var speech_delivery: SpeechDelivery = null
 var voice_client: VoiceServiceClient = null
 
 func get_voice_config() -> VoiceConfig:

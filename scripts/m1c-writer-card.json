@@ -1,0 +1,33 @@
+{
+  "base": "fc6dc6f0642ac8c1df7a52125bad80de6df998f1",
+  "allowed_paths": [
+    "src/Scenes/Chat.tscn",
+    "src/Scripts/Models/singleton_object.gd",
+    "src/Scripts/Services/MCP/Modules/MCPSkillTools.gd",
+    "src/Scripts/Services/Plugins/CapabilityBroker.gd",
+    "src/Scripts/Services/Plugins/PluginAudioDevices.gd",
+    "src/Scripts/Services/Plugins/PluginDefinition.gd",
+    "src/Scripts/UI/Views/ChatPane.gd",
+    "src/Scripts/Services/Voice/README-speech-log.md",
+    "src/test/test_plugin_host_events.gd",
+    "scripts/run-functional-tests.sh",
+    "scripts/check-m1c-writer.py",
+    "scripts/m1c-writer-card.json",
+    "src/test/fixtures/speech-log-bytes.json",
+    "src/Scripts/Services/Voice/SpeechLog.gd",
+    "src/Scripts/Services/Voice/SpeechDelivery.gd",
+    "src/test/test_speech_log.gd",
+    "src/Scripts/Services/Voice/SpeechLog.gd.uid",
+    "src/Scripts/Services/Voice/SpeechDelivery.gd.uid",
+    "src/test/test_speech_log.gd.uid",
+    "src/test/fixtures/host_event_probe/manifest.json"
+  ],
+  "production_cap": 850,
+  "failure_disposition": "SpeechDelivery surfaces failed store writes to caller and notification; SpeechLog errors are returned and retained; counts surface through UI and granted endpoint event. Existing failures outside the diff remain owned by the base.",
+  "persisted_setting_owners": {
+    "speech_records": "SpeechLog per-item atomic files; producer/topic/exempt metadata derives supersede",
+    "voice_preferences": "VoiceConfig (unchanged setting owner)",
+    "os_output_selection": "singleton_object original AudioSettings owner; replay does not mutate it"
+  },
+  "exit_table": "src/Scripts/Services/Voice/README-speech-log.md"
+}

@@ -396,6 +396,10 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 			named_result = _handle_host_project_open(plugin_id, args)
 		"host.project.current":
 			named_result = _handle_host_project_current(plugin_id, args)
+		"host.speech_log":
+			named_result = await speech_delivery.handle(args, plugin_id) if speech_delivery != null else PluginErrors.backend_error(plugin_id, "speech log is not wired")
+			if named_result.get("success", false):
+				named_result = PluginErrors.success(named_result)
 		"host.audio":
 			if str(args.get("op", "")).begins_with("input_"):
 				named_result = await audio_input.handle(plugin_id, args) if audio_input != null else PluginErrors.backend_error(plugin_id, "audio input is not wired")
@@ -3271,6 +3275,7 @@ var chat_provider_registry = null  # PluginChatProviderRegistry
 
 ## host.chat.active / host.chat.input. Injected by SingletonObject.initialize_plugins.
 var chat_target: PluginHostChatTarget = null
+var speech_delivery: SpeechDelivery
 var audio_devices: PluginAudioDevices = null
 var audio_input: PluginAudioInput = null
 
@@ -3808,7 +3813,7 @@ const _POLICY_DENY_CODES := [
 func _audit_dispatch(plugin_id: String, capability: String, args: Dictionary, result: Dictionary) -> void:
 	if audit_log == null:
 		return
-	var args_summary := _redact_args(args)
+	var args_summary: Dictionary = {"op": str(args.get("op", ""))} if capability == "host.speech_log" else _redact_args(args)
 	if result.get("success", false):
 		audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DISPATCHED, {
 			"capability": capability,

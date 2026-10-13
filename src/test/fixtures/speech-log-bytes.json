@@ -1,0 +1,26 @@
+{
+  "text": "Build complete\n日本語",
+  "summary": "Build complete",
+  "pcm": [
+    0,
+    0,
+    1,
+    0,
+    255,
+    127,
+    0,
+    128
+  ],
+  "base64": "AAABAP9/AIA=",
+  "origin": {
+    "kind": "turn",
+    "chat_id": "fixture_chat",
+    "send_id": 7
+  },
+  "queued_receipt": {
+    "delivery": "queued",
+    "device": "plugin:audio_probe:speaker",
+    "log_id": "fixture_001",
+    "unheard_count": 1
+  }
+}
