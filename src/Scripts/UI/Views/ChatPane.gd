@@ -2418,7 +2418,7 @@ func _blocked_by_trailing_user(last_msg, promoted: bool) -> bool:
 func execute_regular_chat(text: String, generation_options: Dictionary = {}, promoted: bool = false) -> void:
 	var send_id := _claim_box_send()
 	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
-	var _history = SingletonObject.ChatList[current_tab]
+	var _history: ChatHistory = SingletonObject.ChatList[current_tab]
 	print("[ChatPane] current_tab=%d, AgentModeEnabled=%s, provider=%s" % [current_tab, _history.AgentModeEnabled, _history.provider.provider_name if _history.provider else "null"])
 
 	# Check if it's a CoreProvider that requires HCP-style execution

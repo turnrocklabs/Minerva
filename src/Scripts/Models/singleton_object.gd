@@ -648,11 +648,14 @@ func initialize_plugins() -> void:
 	var manager: PluginManager = plugin_manager
 	manager.plugin_started.connect(_on_plugin_started_for_host_events)
 	_wire_chat_host_events()
-	var ChatTargetClass = load("res://Scripts/Services/Plugins/PluginHostChatTarget.gd")
-	plugin_capability_broker.chat_target = ChatTargetClass.new(_chat_pane_if_live, _notify_plugin_refusal,
+	var ChatTargetClass: GDScript = load("res://Scripts/Services/Plugins/PluginHostChatTarget.gd")
+	var chat_target: PluginHostChatTarget = ChatTargetClass.new(_chat_pane_if_live, _notify_plugin_refusal,
 		_minerva_ptt_idle, _next_frame)
-	plugin_manager.plugin_stopped.connect(plugin_capability_broker.chat_target.plugin_stopped)
-	plugin_manager.plugin_crashed.connect(plugin_capability_broker.chat_target.plugin_stopped)
+	plugin_capability_broker.chat_target = chat_target
+	manager.plugin_stopped.connect(chat_target.plugin_stopped)
+	manager.plugin_crashed.connect(chat_target.plugin_stopped)
+	var policy: PluginPolicy = plugin_policy
+	policy.capability_revoked.connect(chat_target.capability_revoked)
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
 

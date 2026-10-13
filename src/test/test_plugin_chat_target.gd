@@ -33,6 +33,7 @@ const ACTIVE_CHANGED := "chat.active_changed"
 var _pass := 0
 var _fail := 0
 var _so: Node = null
+var _host_render := preload("res://test/helpers/chat_host_render_fixture.gd").new()
 var _pane = null
 var _broker = null
 var _seen: Array = []
@@ -115,6 +116,8 @@ func _run() -> void:
 	for history in [chat_a, chat_b]:
 		_so.ChatList.erase(history)
 	chat_scene.queue_free()
+	await process_frame
+	_host_render.restore()
 
 
 #region Tracker
@@ -484,7 +487,8 @@ func _test_external_ptt() -> void:
 	check("16: recording shows the listening visuals",
 		recording.get("success", false) and mic.modulate == Color.LIME_GREEN and not mic.disabled, str(recording))
 	check("17: and never starts Minerva's own recording",
-		att.ptt_state == _ptt_ready and att._active_ptt_req == null and att.mic_player == null)
+		att.ptt_state == _ptt_ready and att._active_ptt_req == null
+			and not att.mic_player.playing and not att.effect.is_recording_active())
 	await _input({"op": "set_external_ptt_state", "state": "transcribing"})
 	check("18: transcribing disables the button", mic.disabled)
 	await _input({"op": "set_external_ptt_state", "state": "idle"})
@@ -507,8 +511,34 @@ func _test_external_ptt() -> void:
 		own.get("success", false)
 			and (await _broker.dispatch(SECOND, INPUT, {"op": "set_external_ptt_state", "state": "idle"})).get("success", false))
 	_so.plugin_policy.revoke_capability(SECOND, INPUT)
+	await _input({"op": "set_external_ptt_state", "state": "recording"})
+	att.ptt_state = _ptt_listening
+	look = [mic.modulate, mic.disabled]
+	var released: Dictionary = await _input({"op": "set_external_ptt_state", "state": "idle"})
+	check("20d: the owner can finish during local PTT without changing its visuals",
+		released.get("success", false) and [mic.modulate, mic.disabled] == look, str(released))
+	att.ptt_state = _ptt_ready
+	_so.plugin_policy.grant_capability(SECOND, INPUT)
+	var next_owner: Dictionary = await _broker.dispatch(SECOND, INPUT,
+		{"op": "set_external_ptt_state", "state": "recording"})
+	check("20e: another plugin can own the button after that local session",
+		next_owner.get("success", false), str(next_owner))
+	await _broker.dispatch(SECOND, INPUT, {"op": "set_external_ptt_state", "state": "idle"})
+	await _input({"op": "set_external_ptt_state", "state": "transcribing"})
+	_so.plugin_policy.revoke_capability(PROBE, INPUT)
+	check("20f: revoking the owner's input grant restores the button",
+		not mic.disabled and mic.modulate == Color.WHITE)
+	var revoked_idle: Dictionary = await _input({"op": "set_external_ptt_state", "state": "idle"})
+	check("20g: the revoked plugin remains denied", revoked_idle.get("error_code") == "capability_not_granted")
+	var after_revoke: Dictionary = await _broker.dispatch(SECOND, INPUT,
+		{"op": "set_external_ptt_state", "state": "recording"})
+	check("20h: revocation releases ownership for another granted plugin", after_revoke.get("success", false), str(after_revoke))
+	await _broker.dispatch(SECOND, INPUT, {"op": "set_external_ptt_state", "state": "idle"})
+	_so.plugin_policy.grant_capability(PROBE, INPUT)
+	_so.plugin_policy.revoke_capability(SECOND, INPUT)
 	check("21: Minerva's recorder is still idle after all of it",
-		att.ptt_state == _ptt_ready and att._active_ptt_req == null and att.mic_player == null)
+		att.ptt_state == _ptt_ready and att._active_ptt_req == null
+			and not att.mic_player.playing and not att.effect.is_recording_active())
 
 #endregion
 
@@ -606,11 +636,7 @@ func _start_probe() -> bool:
 
 
 func _mount_pane():
-	var notes_script = load("res://Scenes/note/NotesContainer.gd")
-	if _so.notes_container == null:
-		_so.notes_container = notes_script.new()
-	if _so.drawer_notes_container == null:
-		_so.drawer_notes_container = notes_script.new()
+	_host_render.install(_so)
 	var chat_scene = load("res://Scenes/Chat.tscn").instantiate()
 	root.add_child(chat_scene)
 	_pane = chat_scene.find_child("tcChats", true, false)

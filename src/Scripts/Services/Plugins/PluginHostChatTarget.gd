@@ -76,6 +76,15 @@ func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictiona
 ## Call when a plugin stops or crashes: a button left showing its state is
 ## returned to ready.
 func plugin_stopped(plugin_id: String) -> void:
+	_release_external_ptt(plugin_id)
+
+
+func capability_revoked(plugin_id: String, capability: String) -> void:
+	if capability == CAPABILITY_INPUT:
+		_release_external_ptt(plugin_id)
+
+
+func _release_external_ptt(plugin_id: String) -> void:
 	if plugin_id.is_empty() or plugin_id != _external_ptt_owner:
 		return
 	_external_ptt_owner = ""
@@ -100,10 +109,10 @@ func _submit(plugin_id: String, pane: ChatPane, expected_chat_id: String) -> Dic
 	# The pane reports this send's outcome under the id submit_chat returns;
 	# outcomes can arrive before it returns, so they are collected from before.
 	var outcomes: Dictionary = {}
-	var on_admitted := func(_history_id: String, send_id: int, queued: bool) -> void:
-		outcomes[send_id] = {"queued": queued}
-	var on_dropped := func(_history_id: String, send_id: int, reason: String) -> void:
-		outcomes[send_id] = {"dropped": reason}
+	var on_admitted := func(_history_id: String, admitted_send_id: int, queued: bool) -> void:
+		outcomes[admitted_send_id] = {"queued": queued}
+	var on_dropped := func(_history_id: String, dropped_send_id: int, reason: String) -> void:
+		outcomes[dropped_send_id] = {"dropped": reason}
 	pane.user_message_admitted.connect(on_admitted)
 	pane.user_message_dropped.connect(on_dropped)
 	var send_id: int = pane.submit_chat(0)
@@ -129,6 +138,11 @@ func _set_external_ptt_state(plugin_id: String, pane: ChatPane, state: String) -
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"state must be one of %s" % str(MicButtonBinding.EXTERNAL_STATES.keys()))
 	if not _minerva_ptt_idle.call():
+		# Finishing an external session releases its ownership even while the
+		# local recorder owns the button; its visuals must remain untouched.
+		if state == "idle" and _external_ptt_owner == plugin_id:
+			_external_ptt_owner = ""
+			return PluginErrors.success({"state": state})
 		return _error(plugin_id, ERROR_PTT_BUSY,
 			"Minerva's own push-to-talk is in use; the mic button shows that session.")
 	if not _external_ptt_owner.is_empty() and _external_ptt_owner != plugin_id:

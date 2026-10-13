@@ -13,7 +13,7 @@ const LOADING_ICON_PATH := "res://assets/icons/loading_white-16-16.png"
 const META_KEY := &"_mic_button_binding"
 
 ## The Stream Deck mic_state vocabulary, for a recorder outside Minerva.
-const EXTERNAL_STATES := {
+const EXTERNAL_STATES: Dictionary[String, int] = {
 	"idle": AudioToTexts.PTTState.READY,
 	"recording": AudioToTexts.PTTState.LISTENING,
 	"transcribing": AudioToTexts.PTTState.TRANSCRIBING,

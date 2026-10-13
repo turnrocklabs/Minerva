@@ -22,6 +22,8 @@ const POLICY_VERSION := 1
 ## allowed: true if the check passed, false if denied
 ## reason: short machine-readable reason string (e.g. "granted", "not_granted")
 signal policy_decision(plugin_id: String, capability: String, allowed: bool, reason: String)
+## A removed grant releases any host presentation owned through that capability.
+signal capability_revoked(plugin_id: String, capability: String)
 
 ## Reference to the PluginDB used to look up manifest-declared capabilities.
 ## Must be set before calling get_requested_capabilities().
@@ -106,6 +108,7 @@ func revoke_capability(plugin_id: String, capability: String) -> void:
 			audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_REVOKE,
 				{"capability": capability})
 		print("[PluginPolicy] Revoked '%s' from plugin '%s'" % [capability, plugin_id])
+		capability_revoked.emit(plugin_id, capability)
 
 
 # ---------------------------------------------------------------------------
