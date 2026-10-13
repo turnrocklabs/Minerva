@@ -4355,6 +4355,11 @@ func set_user_input_text(text: String) -> void:
 func get_mic_button() -> BaseButton:
 	return get_node_or_null("%btnMicrophone") as BaseButton
 
+
+## Messages waiting in `history`'s outgoing queue behind its active turn.
+func pending_message_count(history: ServiceHistory) -> int:
+	return _outgoing_queue.pending_count(str(history.HistoryId)) if history != null else 0
+
 ## Currently selected group VIEW. Either a ChatGroupRegistry sentinel
 ## (VIEW_ALL / VIEW_UNGROUPED / VIEW_DELETED) or a real group id.
 var _active_group_id: String = ChatGroupRegistry.VIEW_ALL
@@ -4780,6 +4785,7 @@ func rename_group(group_id: String, group_name: String) -> bool:
 		return false
 	SingletonObject.save_state(false)
 	chat_groups_changed.emit()
+	_schedule_active_chat_check()
 	return true
 
 

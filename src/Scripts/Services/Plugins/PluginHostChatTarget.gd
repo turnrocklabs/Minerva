@@ -18,6 +18,15 @@ const ERROR_CHAT_CHANGED := "chat_changed"
 const ERROR_EMPTY_INPUT := "empty_input"
 const ERROR_NOT_SENT := "not_sent"
 const ERROR_PTT_BUSY := "minerva_ptt_active"
+const ERROR_EXTERNAL_PTT_BUSY := "external_ptt_busy"
+const ERROR_NO_MIC_BUTTON := "mic_button_unavailable"
+
+## A submit is confirmed when the chat records the user's message. Without a
+## turn in flight, that must happen within this many frames (a Human-provider
+## post waits only on the notes); with one, it may take until SUBMIT_TIMEOUT_MS
+## (the prompt is still being built).
+const SUBMIT_IDLE_FRAMES := 30
+const SUBMIT_TIMEOUT_MS := 30000
 
 ## () -> ChatPane: the chat pane, or null.
 var _chat_pane: Callable
@@ -26,15 +35,19 @@ var _notify: Callable
 ## () -> bool: whether Minerva's own push-to-talk is idle. While it is not,
 ## the mic button is Minerva's (AudioToTexts._set_ptt_state alone drives it).
 var _minerva_ptt_idle: Callable
+## () -> void, awaitable: resumes at the next frame.
+var _next_frame: Callable
 ## The plugin whose external state the mic button shows, "" when none: its
-## stop or crash must not leave the button frozen in that state.
+## stop or crash must not leave the button frozen in that state, and no other
+## plugin may overwrite it meanwhile.
 var _external_ptt_owner := ""
 
 
-func _init(chat_pane: Callable, notify: Callable, minerva_ptt_idle: Callable) -> void:
+func _init(chat_pane: Callable, notify: Callable, minerva_ptt_idle: Callable, next_frame: Callable) -> void:
 	_chat_pane = chat_pane
 	_notify = notify
 	_minerva_ptt_idle = minerva_ptt_idle
+	_next_frame = next_frame
 
 
 func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
@@ -56,7 +69,7 @@ func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictiona
 			var expected: Variant = args.get("expected_chat_id")
 			if not (expected is String) or str(expected).is_empty():
 				return PluginErrors.schema_validation_failed(plugin_id, "submit requires a string 'expected_chat_id'")
-			return _submit(plugin_id, pane, str(expected))
+			return await _submit(plugin_id, pane, str(expected))
 		"set_external_ptt_state":
 			return _set_external_ptt_state(plugin_id, pane, str(args.get("state", "")))
 	return PluginErrors.schema_validation_failed(plugin_id,
@@ -87,14 +100,30 @@ func _submit(plugin_id: String, pane: ChatPane, expected_chat_id: String) -> Dic
 	if text.strip_edges().is_empty():
 		return _refuse(plugin_id, ERROR_EMPTY_INPUT,
 			"Not sent: the chat input is empty (plugin '%s')." % plugin_id)
-	var was_busy: bool = visible.is_request_active
+	var items_before: int = visible.HistoryItemList.size()
+	var queued_before: int = pane.pending_message_count(visible)
 	pane.submit_chat(0)
-	# The pane empties the input box exactly when it takes the message; an early
-	# return (an account prompt the user declined, say) leaves it in place.
-	if pane.get_user_input_text() == text:
-		return _refuse(plugin_id, ERROR_NOT_SENT,
-			"Not sent: the chat did not accept the message (plugin '%s')." % plugin_id)
-	return PluginErrors.success({"chat_id": visible_id, "queued": was_busy})
+	if pane.pending_message_count(visible) > queued_before:
+		return PluginErrors.success({"chat_id": visible_id, "queued": true})
+	# The send paths can each drop the message after taking the input box (an
+	# account prompt declined, an empty Core field, a refused prompt, a chat
+	# still awaiting its last reply), so only the recorded message confirms it.
+	var idle_frames := 0
+	var deadline: int = Time.get_ticks_msec() + SUBMIT_TIMEOUT_MS
+	while not _user_message_since(visible, items_before):
+		idle_frames = 0 if visible.is_request_active else idle_frames + 1
+		if idle_frames > SUBMIT_IDLE_FRAMES or Time.get_ticks_msec() > deadline:
+			return _refuse(plugin_id, ERROR_NOT_SENT,
+				"Not sent: the chat did not take the message (plugin '%s')." % plugin_id)
+		await _next_frame.call()
+	return PluginErrors.success({"chat_id": visible_id, "queued": false})
+
+
+static func _user_message_since(history: ServiceHistory, index: int) -> bool:
+	for i in range(index, history.HistoryItemList.size()):
+		if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.USER:
+			return true
+	return false
 
 
 func _set_external_ptt_state(plugin_id: String, pane: ChatPane, state: String) -> Dictionary:
@@ -104,8 +133,11 @@ func _set_external_ptt_state(plugin_id: String, pane: ChatPane, state: String) -
 	if not _minerva_ptt_idle.call():
 		return _error(plugin_id, ERROR_PTT_BUSY,
 			"Minerva's own push-to-talk is in use; the mic button shows that session.")
+	if not _external_ptt_owner.is_empty() and _external_ptt_owner != plugin_id:
+		return _error(plugin_id, ERROR_EXTERNAL_PTT_BUSY,
+			"Plugin '%s' is showing its push-to-talk state on the mic button." % _external_ptt_owner)
 	if not MicButtonBinding.show_external_state(pane.get_mic_button(), state):
-		return _error(plugin_id, ERROR_NO_CHAT_PANE, "The chat pane has no mic button")
+		return _error(plugin_id, ERROR_NO_MIC_BUTTON, "The chat pane has no mic button")
 	_external_ptt_owner = "" if state == "idle" else plugin_id
 	return PluginErrors.success({"state": state})
 

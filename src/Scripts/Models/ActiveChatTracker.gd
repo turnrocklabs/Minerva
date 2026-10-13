@@ -5,7 +5,8 @@ extends RefCounted
 ## might have changed and runs it once, a frame later; a change is reported
 ## only when the whole payload (ChatEventPayloads.active_chat) differs from the
 ## last one reported. So re-selects and a switch-and-restore inside one frame
-## report nothing, while a rename or regroup of the visible chat does.
+## report nothing, while a rename or regroup of the visible chat does. The
+## first check only records the starting chat: start-up is not a change.
 
 var _pending := false
 var _reported: Dictionary = {}
@@ -26,6 +27,7 @@ func settle(payload: Dictionary) -> bool:
 	_pending = false
 	if _has_reported and payload == _reported:
 		return false
+	var first := not _has_reported
 	_reported = payload.duplicate()
 	_has_reported = true
-	return true
+	return not first

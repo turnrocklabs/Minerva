@@ -395,8 +395,10 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 		"host.project.current":
 			named_result = _handle_host_project_current(plugin_id, args)
 		"host.chat.active", "host.chat.input":
-			named_result = chat_target.handle(plugin_id, capability, args) if chat_target != null \
-				else PluginErrors.backend_error(plugin_id, "the chat target is not wired")
+			if chat_target != null:
+				named_result = await chat_target.handle(plugin_id, capability, args)
+			else:
+				named_result = PluginErrors.backend_error(plugin_id, "the chat target is not wired")
 		_:
 			named_result = {
 				"success": false,
