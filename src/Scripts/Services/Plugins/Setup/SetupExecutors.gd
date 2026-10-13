@@ -61,7 +61,7 @@ static func run_step(step: Dictionary, step_index: int, ctx: Dictionary) -> Dict
 	var tool_paths: Dictionary = ctx.get("tool_paths", {})
 
 	if step_type == "copy":
-		return _run_copy(step, step_index, plugin_dir)
+		return _run_copy(step, step_index, plugin_dir, bool(ctx.get("windows", OS.get_name() == "Windows")))
 
 	if not SetupSteps.STEP_TYPES.has(step_type):
 		# SetupSchema.validate_setup() should already have rejected this at
@@ -77,7 +77,7 @@ static func run_step(step: Dictionary, step_index: int, ctx: Dictionary) -> Dict
 		for a in argv_raw:
 			argv.append(str(a))
 		var result := _run_and_check(
-			argv, plugin_dir, timeout_s, step_type, step_index, str(phase.get("artifact", ""))
+			argv, plugin_dir, timeout_s, step_type, step_index, str(phase.get("artifact", "")), bool(ctx.get("windows", OS.get_name() == "Windows"))
 		)
 		if result.has("error"):
 			return result
@@ -89,11 +89,15 @@ static func run_step(step: Dictionary, step_index: int, ctx: Dictionary) -> Dict
 # copy — pure filesystem op, no subprocess
 # ---------------------------------------------------------------------------
 
-static func _run_copy(step: Dictionary, step_index: int, plugin_dir: String) -> Dictionary:
+static func _run_copy(step: Dictionary, step_index: int, plugin_dir: String, windows: bool) -> Dictionary:
 	var from_rel: String = str(step.get("from", ""))
 	var to_rel: String = str(step.get("to", ""))
-	var from_abs: String = plugin_dir.path_join(from_rel)
+	var source: String = plugin_dir.path_join(from_rel)
+	var resolved: String = PluginArtifactPath.resolve(source, "Windows" if windows else "Linux")
+	var from_abs: String = source if resolved.is_empty() else resolved
 	var to_abs: String = plugin_dir.path_join(to_rel)
+	if from_abs != source and not to_abs.ends_with(".exe"):
+		to_abs += ".exe"
 
 	var to_dir := to_abs.get_base_dir()
 	if not to_dir.is_empty() and not DirAccess.dir_exists_absolute(to_dir):
@@ -136,7 +140,7 @@ static func _run_copy(step: Dictionary, step_index: int, plugin_dir: String) -> 
 ## post-phase check entirely (exec steps with no declared `artifact`).
 static func _run_and_check(
 	argv: Array[String], plugin_dir: String, timeout_s: int,
-	step_type: String, step_index: int, expected_artifact_rel: String
+	step_type: String, step_index: int, expected_artifact_rel: String, windows: bool
 ) -> Dictionary:
 	var run := spawn(argv, timeout_s)
 
@@ -153,7 +157,7 @@ static func _run_and_check(
 
 	if not expected_artifact_rel.is_empty():
 		var artifact_abs: String = plugin_dir.path_join(expected_artifact_rel)
-		if not FileAccess.file_exists(artifact_abs) and not DirAccess.dir_exists_absolute(artifact_abs):
+		if PluginArtifactPath.resolve(artifact_abs, "Windows" if windows else "Linux").is_empty():
 			return _failure_artifact_missing(
 				step_type, step_index, argv, 0, str(run.get("stderr", "")), expected_artifact_rel
 			)

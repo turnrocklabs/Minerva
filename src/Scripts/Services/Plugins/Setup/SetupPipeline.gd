@@ -174,7 +174,7 @@ func _run_worker(plugin_id: String, setup: Dictionary, plugin_dir: String, entry
 
 	if not entrypoint_artifact.is_empty():
 		var artifact_abs: String = plugin_dir.path_join(entrypoint_artifact)
-		if not FileAccess.file_exists(artifact_abs) and not DirAccess.dir_exists_absolute(artifact_abs):
+		if PluginArtifactPath.resolve(artifact_abs).is_empty():
 			var missing_envelope := {
 				"error": "setup_step_failed",
 				"step_type": "entrypoint_check",

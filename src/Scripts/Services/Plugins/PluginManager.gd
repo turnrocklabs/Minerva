@@ -927,14 +927,9 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# since the args resolution loop below only handles .py/.js/.sh/.gd files.
 	if command.begins_with("./"):
 		var abs_command: String = plugin_dir.path_join(command.substr(2))
-		if FileAccess.file_exists(abs_command) or FileAccess.file_exists(ProjectSettings.localize_path(abs_command)):
-			command = abs_command
-		elif OS.get_name() == "Windows" and (FileAccess.file_exists(abs_command + ".exe") or FileAccess.file_exists(ProjectSettings.localize_path(abs_command + ".exe"))):
-			# Windows builds carry a .exe suffix that the cross-platform manifest
-			# entrypoint omits (e.g. manifest says "./drive-plugin" but the
-			# packaged binary is "drive-plugin.exe"). Resolve the suffix here so
-			# plugins don't need a Windows-specific manifest.
-			command = abs_command + ".exe"
+		var resolved: String = PluginArtifactPath.resolve(abs_command)
+		if not resolved.is_empty() and not DirAccess.dir_exists_absolute(resolved):
+			command = resolved
 		else:
 			# Binary not found — plugin probably wasn't compiled for this platform.
 			# Fail early so the UI shows "error" with a clear message instead of
@@ -1366,12 +1361,7 @@ func _verify_release_artifact(def) -> Dictionary:
 ## own resolution, including the Windows ".exe" suffix a cross-platform manifest
 ## entrypoint omits — otherwise every Windows release would verify as missing.
 func _artifact_exists(abs_path: String) -> bool:
-	if FileAccess.file_exists(abs_path) or FileAccess.file_exists(ProjectSettings.localize_path(abs_path)):
-		return true
-	if OS.get_name() == "Windows":
-		return (FileAccess.file_exists(abs_path + ".exe")
-			or FileAccess.file_exists(ProjectSettings.localize_path(abs_path + ".exe")))
-	return false
+	return not PluginArtifactPath.resolve(abs_path).is_empty()
 
 
 ## Build + start a SetupPipeline for `id`, transition to S_BUILDING, and wire

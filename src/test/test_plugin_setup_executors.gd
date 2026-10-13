@@ -41,6 +41,7 @@ func _init() -> void:
 
 	print("-- F1: copy-only happy path --")
 	test_copy_happy_path()
+	test_copy_executable_suffix()
 	test_copy_preserves_executable_bit()
 
 	print("\n-- go_build happy path (fake-go fixture) --")
@@ -101,6 +102,24 @@ func test_copy_happy_path() -> void:
 		var content := df.get_as_text()
 		df.close()
 		check("copy destination content matches source", content == "hello from setup pipeline test\n", "got: %s" % content)
+
+
+func test_copy_executable_suffix() -> void:
+	for windows: bool in [false, true]:
+		var plugin_dir := _fresh_plugin_dir("copy_suffix_" + str(windows))
+		var suffix: String = ".exe" if windows else ""
+		var source := plugin_dir.path_join("producer" + suffix)
+		var file := FileAccess.open(source, FileAccess.WRITE)
+		file.store_string("fixture executable")
+		file.close()
+		var result := SetupExecutors.run_step({"type": "copy", "from": "producer", "to": "bin/plugin"}, 0, {"plugin_dir": plugin_dir, "windows": windows})
+		check("copy resolves canonical executable path " + str(windows), result.get("ok", false) and FileAccess.file_exists(plugin_dir.path_join("bin/plugin" + suffix)), str(result))
+		check("entrypoint resolution shares artifact owner " + str(windows), PluginArtifactPath.resolve(plugin_dir.path_join("bin/plugin"), "Windows" if windows else "Linux") == plugin_dir.path_join("bin/plugin" + suffix))
+		# Use a real successful subprocess; only the platform lookup is injected.
+		var command: String = "cmd.exe" if OS.get_name() == "Windows" else "/bin/true"
+		var argv: Array[String] = [command, "/c", "exit", "0"] if OS.get_name() == "Windows" else [command]
+		result = SetupExecutors._run_and_check(argv, plugin_dir, 5, "cargo_build", 0, "producer", windows)
+		check("cargo post-build resolves canonical artifact " + str(windows), result.get("ok", false), str(result))
 
 
 ## A `copy` step's canonical job is staging a BUILD PRODUCT where the manifest
