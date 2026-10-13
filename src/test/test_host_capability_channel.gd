@@ -107,14 +107,12 @@ func _run_unit_tests() -> void:
 	# --- Happy path: host.echo returns echo of args ---
 	var echo_result: Dictionary = await broker.dispatch("probe_test", "host.echo",
 		{"msg": "hello", "n": 42})
-	# Successful broker dispatch returns payload directly (no {success, result} wrap).
-	# Error path still has success=false + error_code; see deny tests below.
-	check("host.echo result has 'echo' key",
-		echo_result.has("echo"),
-		"result keys: %s" % str(echo_result.keys()))
+	# Named capabilities return the PluginErrors.success envelope.
+	check("host.echo succeeds", echo_result.get("success", false), str(echo_result))
+	var payload: Dictionary = echo_result.get("result", {})
+	check("host.echo result has 'echo' key", payload.has("echo"), str(echo_result))
 	check("host.echo echoes args back intact",
-		echo_result.get("echo", {}).get("msg", "") == "hello",
-		"got echo: %s" % str(echo_result.get("echo")))
+		payload.get("echo") == {"msg": "hello", "n": 42}, str(payload))
 
 	# --- Audit: dispatched event logged ---
 	var dispatched_entries: Array = audit.get_entries("probe_test", "capability_dispatched")

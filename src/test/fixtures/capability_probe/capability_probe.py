@@ -49,9 +49,9 @@ def handle_tools_call(req_id, name, args):
         result = call_capability("host.echo", payload)
         send({"jsonrpc": "2.0", "id": req_id, "result": {
             "content": [{"type": "text", "text": json.dumps({
-                "success": True,
+                "success": result.get("success", False),
                 "capability_result": result,
-                "echo": result.get("echo"),
+                "echo": result.get("result", {}).get("echo"),
             })}]
         }})
     elif name == "probe_denied":

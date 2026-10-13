@@ -22,6 +22,16 @@ var _tmp_root: String = ""
 # ---------------------------------------------------------------------------
 
 func _initialize() -> void:
+	_run_tests.call_deferred()
+
+
+func _run_tests() -> void:
+	await process_frame
+	_BrokerStatic = load("res://Scripts/Services/Plugins/CapabilityBroker.gd")
+	if _BrokerStatic == null or not _BrokerStatic.can_instantiate():
+		_check("CapabilityBroker loads after autoload startup", false)
+		quit(1)
+		return
 	_tmp_root = OS.get_user_data_dir().path_join("test_plugin_capabilities_%d" % Time.get_ticks_msec())
 	DirAccess.make_dir_recursive_absolute(_tmp_root)
 
@@ -569,7 +579,9 @@ func test_plugindb_install_succeeds_when_capabilities_satisfied() -> void:
 # wires it in. These tests pin the contract so the T5 implementer can lean on
 # the success/error envelope shape without re-validating it.
 
-const _BrokerStatic = preload("res://Scripts/Services/Plugins/CapabilityBroker.gd")
+# CapabilityBroker references SingletonObject; loading it before autoload
+# registration in --script mode poisons the shared script resource.
+var _BrokerStatic: GDScript
 
 
 func test_validate_files_path_empty_input() -> void:
