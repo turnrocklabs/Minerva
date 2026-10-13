@@ -21,6 +21,8 @@ const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
 const AUDIO_TO_TEXT_PATH := "res://Scripts/Models/AudioToText.gd"
 const CHAT_GROUP_REGISTRY_PATH := "res://Scripts/Models/ChatGroupRegistry.gd"
+const TRACKER_PATH := "res://Scripts/Models/ActiveChatTracker.gd"
+const SECOND := "chat_target_second"
 
 const PROBE := "chat_target_probe"
 const UNGRANTED := "chat_target_ungranted"
@@ -81,6 +83,7 @@ func _run() -> void:
 	if OS.execute("python3", ["--version"], [], true) != OK:
 		print("SKIP: python3 not available — skipping the fixture plugin suite")
 		return
+	_test_tracker()
 	var probe_ready: bool = await _start_probe()
 	if not probe_ready:
 		return
@@ -101,6 +104,7 @@ func _run() -> void:
 	await _test_external_ptt()
 	await _test_denied()
 	await _test_close_visible(chat_a, chat_b)
+	await _test_crash_releases_mic()
 	await _test_plugin_stop_releases_mic()
 
 	await _so.plugin_manager.stop_plugin(PROBE)
@@ -108,6 +112,27 @@ func _run() -> void:
 	for history in [chat_a, chat_b]:
 		_so.ChatList.erase(history)
 	chat_scene.queue_free()
+
+
+#region Tracker
+
+func _test_tracker() -> void:
+	print("\n-- ActiveChatTracker --")
+	var tracker = load(TRACKER_PATH).new()
+	var none := {"chat_id": null, "name": "", "group_id": "", "group": ""}
+	var first := {"chat_id": "a", "name": "A", "group_id": "", "group": ""}
+	tracker.request_check()
+	check("T1: the first check records the starting chat without reporting it", not tracker.settle(none))
+	check("T2: a real change is reported", tracker.request_check() and tracker.settle(first))
+	tracker.request_check()
+	check("T3: the same payload again is not", not tracker.settle(first.duplicate()))
+	check("T4: a second request while one is pending is not scheduled twice",
+		tracker.request_check() and not tracker.request_check())
+	var renamed := first.duplicate()
+	renamed["name"] = "A2"
+	check("T5: a renamed chat is a change", tracker.settle(renamed))
+
+#endregion
 
 
 #region Active chat
@@ -148,15 +173,16 @@ func _test_active_changed(chat_a, chat_b) -> void:
 		_seen.size() == before + 1 and _seen[-1]["name"] == "Beta renamed", str(_seen))
 
 	var Registry = load(CHAT_GROUP_REGISTRY_PATH)
-	var group_b: String = _so.chat_groups.create_group("Group B")
+	var tag := str(Time.get_ticks_usec())
+	var group_b: String = _so.chat_groups.create_group("Group B " + tag)
 	before = _seen.size()
 	_pane.set_chat_group(chat_b, group_b)
 	await _frames(3)
 	check("6c: regrouping the visible chat emits one, naming the group",
-		_seen.size() == before + 1 and _seen[-1]["group_id"] == group_b and _seen[-1]["group"] == "Group B",
+		_seen.size() == before + 1 and _seen[-1]["group_id"] == group_b and _seen[-1]["group"] == "Group B " + tag,
 		str(_seen))
 
-	var group_a: String = _so.chat_groups.create_group("Group A")
+	var group_a: String = _so.chat_groups.create_group("Group A " + tag)
 	_pane.set_chat_group(chat_a, group_a)
 	await _frames(3)
 	before = _seen.size()
@@ -170,6 +196,11 @@ func _test_active_changed(chat_a, chat_b) -> void:
 	check("6e: widening the view while that chat stays on screen emits nothing", _seen.size() == before, str(_seen))
 	_pane.set_chat_group(chat_a, "")
 	_pane.set_chat_group(chat_b, "")
+	for gid in [group_a, group_b]:
+		if _so.chat_groups.has_group(gid):
+			_pane.delete_group(gid)
+	check("6f: the groups this test made are gone",
+		not _so.chat_groups.has_group(group_a) and not _so.chat_groups.has_group(group_b))
 	_show(chat_b)
 	await _frames(3)
 
@@ -220,6 +251,38 @@ func _test_input(chat_a, chat_b) -> void:
 		no_text.get("error_code") == "schema_validation_failed"
 			and no_target.get("error_code") == "schema_validation_failed", "%s %s" % [no_text, no_target])
 
+	_show(chat_b)
+	await _frames(3)
+	chat_b.is_request_active = true
+	await _input({"op": "append", "text": "while busy"})
+	var queued: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_b.HistoryId)})
+	check("13c: a submit to a busy chat is queued behind its turn",
+		queued.get("success", false) and queued.get("result", {}).get("queued") == true
+			and _pane.pending_message_count(chat_b) == 1, str(queued))
+	_pane._clear_outgoing_queue(chat_b)
+	chat_b.is_request_active = false
+	check("13d: the queued entry is cleaned up", _pane.pending_message_count(chat_b) == 0)
+
+	var chat_c = _add_chat("Gamma", _so.API_MODEL_PROVIDERS.NEMOTRON_NANO)
+	var Item = load(CHAT_HISTORY_ITEM_PATH)
+	var unanswered = Item.new()
+	unanswered.Role = Item.ChatRole.USER
+	unanswered.Message = "still waiting"
+	chat_c.HistoryItemList.append(unanswered)
+	_show(chat_c)
+	await _frames(3)
+	var items_c: int = chat_c.HistoryItemList.size()
+	notices_before = _notices.size()
+	await _input({"op": "append", "text": "second question"})
+	var dropped: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_c.HistoryId)})
+	check("13e: a message the chat drops (it is still waiting on a reply) is reported not_sent, loudly",
+		dropped.get("error_code") == "not_sent" and _notices.size() == notices_before + 1
+			and chat_c.HistoryItemList.size() == items_c, str(dropped))
+	_show(chat_b)
+	await _frames(3)
+	_pane.delete_chat(chat_c)
+	await _frames(3)
+
 	var audit = _so.plugin_audit_log
 	var leaked := false
 	for entry: Dictionary in audit.get_entries(PROBE, "", 200):
@@ -268,10 +331,42 @@ func _test_external_ptt() -> void:
 	att.ptt_state = _ptt_ready
 	var bad: Dictionary = await _input({"op": "set_external_ptt_state", "state": "shouting"})
 	check("20: an unknown state is refused", not bad.get("success", true), str(bad))
+	_so.plugin_policy.grant_capability(SECOND, INPUT)
+	await _input({"op": "set_external_ptt_state", "state": "recording"})
+	var other: Dictionary = await _broker.dispatch(SECOND, INPUT, {"op": "set_external_ptt_state", "state": "idle"})
+	check("20b: another plugin cannot overwrite a state the first plugin is showing",
+		other.get("error_code") == "external_ptt_busy" and mic.modulate == Color.LIME_GREEN, str(other))
+	var own: Dictionary = await _input({"op": "set_external_ptt_state", "state": "idle"})
+	check("20c: the owner can set idle, after which the other plugin may show its state",
+		own.get("success", false)
+			and (await _broker.dispatch(SECOND, INPUT, {"op": "set_external_ptt_state", "state": "idle"})).get("success", false))
+	_so.plugin_policy.revoke_capability(SECOND, INPUT)
 	check("21: Minerva's recorder is still idle after all of it",
 		att.ptt_state == _ptt_ready and att._active_ptt_req == null and att.mic_player == null)
 
 #endregion
+
+
+## A plugin that crashes while the button shows its state must not leave the
+## button frozen there: the probe exits with status 3 on PluginManager's real
+## unexpected-exit path.
+func _test_crash_releases_mic() -> void:
+	print("\n-- plugin crash releases the mic button --")
+	var mic = _pane.get_mic_button()
+	if mic == null:
+		return
+	await _input({"op": "set_external_ptt_state", "state": "transcribing"})
+	check("29: the button shows the plugin's transcribing state", mic.disabled)
+	var crashes: Array = []
+	_so.plugin_manager.plugin_crashed.connect(func(id: String) -> void: crashes.append(id))
+	await _probe("probe_exit")
+	var deadline: int = Time.get_ticks_msec() + 10000
+	while not crashes.has(PROBE) and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check("30: the plugin's exit is reported as a crash", crashes.has(PROBE), str(crashes))
+	check("31: and the button is back to ready", not mic.disabled and mic.modulate == Color.WHITE)
+	var restarted: Dictionary = await _so.plugin_manager.start_plugin(PROBE)
+	check("the probe plugin restarts", restarted.get("ok", false) == true, str(restarted))
 
 
 ## A plugin that stops while the button shows its state must not leave the
@@ -352,17 +447,19 @@ func _mount_pane():
 		_so.drawer_notes_container = notes_script.new()
 	var chat_scene = load("res://Scenes/Chat.tscn").instantiate()
 	root.add_child(chat_scene)
-	await _frames(2)
 	_pane = chat_scene.find_child("tcChats", true, false)
-	check("a real chat pane is mounted and is SingletonObject.Chats", _pane != null and _so.Chats == _pane)
 	if _pane != null:
 		_pane.chat_active_changed.connect(func(payload: Dictionary) -> void: _seen.append(payload))
+	await _frames(3)
+	check("a real chat pane is mounted and is SingletonObject.Chats", _pane != null and _so.Chats == _pane)
+	check("0: mounting the pane reports no chat.active_changed (start-up is not a change)",
+		_seen.is_empty(), str(_seen))
 	return chat_scene
 
 
-func _add_chat(chat_name: String):
-	var human = _so.API_MODEL_PROVIDER_SCRIPTS[_so.API_MODEL_PROVIDERS.HUMAN].new()
-	var history = load(CHAT_HISTORY_PATH).new(human)
+func _add_chat(chat_name: String, provider_key: int = -1):
+	var key: int = _so.API_MODEL_PROVIDERS.HUMAN if provider_key < 0 else provider_key
+	var history = load(CHAT_HISTORY_PATH).new(_so.API_MODEL_PROVIDER_SCRIPTS[key].new())
 	history.HistoryName = chat_name
 	_so.ChatList.append(history)
 	_pane.render_history(history)
