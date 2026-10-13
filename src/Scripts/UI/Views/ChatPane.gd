@@ -4315,16 +4315,14 @@ signal chat_directory_changed(payload: Dictionary)
 
 func _emit_directory_change(history: ServiceHistory, change: String) -> void:
 	chat_directory_changed.emit(ChatEventPayloads.directory_changed(history, change, _membership_of(history)))
+	_schedule_active_chat_check()
 
 
-## The chat on screen changed (ChatEventPayloads.active_chat). Checked once at
-## the next frame, so a switch and its deferred restore inside one frame (the
-## MCP send and queue-drain idiom) report nothing, and a re-select reports
-## nothing because the chat is compared, not the tab.
+## The chat on screen, or its name or group, changed
+## (ChatEventPayloads.active_chat); ActiveChatTracker decides when.
 signal chat_active_changed(payload: Dictionary)
 
-var _active_chat_check_pending := false
-var _reported_active_chat_id := ""
+var _active_chat_tracker: ActiveChatTracker = ActiveChatTracker.new()
 
 
 func active_chat_payload() -> Dictionary:
@@ -4334,20 +4332,14 @@ func active_chat_payload() -> Dictionary:
 
 
 func _schedule_active_chat_check() -> void:
-	if _active_chat_check_pending or not is_inside_tree():
-		return
-	_active_chat_check_pending = true
-	get_tree().process_frame.connect(_check_active_chat, CONNECT_ONE_SHOT)
+	if is_inside_tree() and _active_chat_tracker.request_check():
+		get_tree().process_frame.connect(_check_active_chat, CONNECT_ONE_SHOT)
 
 
 func _check_active_chat() -> void:
-	_active_chat_check_pending = false
-	var history: ChatHistory = current_chat()
-	var chat_id: String = str(history.HistoryId) if history != null else ""
-	if chat_id == _reported_active_chat_id:
-		return
-	_reported_active_chat_id = chat_id
-	chat_active_changed.emit(active_chat_payload())
+	var payload := active_chat_payload()
+	if _active_chat_tracker.settle(payload):
+		chat_active_changed.emit(payload)
 
 
 ## The input box and mic button, for callers outside the pane that drive them
