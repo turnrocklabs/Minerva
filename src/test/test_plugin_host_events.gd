@@ -137,7 +137,7 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 ## production execute_regular_chat, prompt, response handling and Stop button
 ## run unchanged; no report/release helper is called by these public-path cases.
 const PUBLIC_PROVIDER_SRC := """
-extends "res://Scripts/Services/Providers/BaseProvider.gd"
+extends "res://Scripts/Services/Providers/PluginProvider.gd"
 
 var held := false
 var released := false
@@ -558,6 +558,7 @@ func _test_public_turn_events() -> void:
 	print("\n-- E: public production turn events --")
 	var previous_notes = [_so.notes_container, _so.drawer_notes_container]
 	var previous_pane = _so.Chats
+	var previous_chats: Array = _so.ChatList.duplicate()
 	var notes_script = load("res://Scenes/note/NotesContainer.gd")
 	_so.notes_container = notes_script.new()
 	_so.drawer_notes_container = notes_script.new()
@@ -626,10 +627,10 @@ func _test_public_turn_events() -> void:
 			if entry["outcome"] == "ok":
 				check("E %s: completion carries the actual assistant reply" % label,
 					payload["text"] == "real-reply:" + label and payload["role"] == "assistant", str(payload))
-		_so.ChatList.erase(history)
-	_so.ChatList.erase(visible)
 	_so.Chats = previous_pane
 	scene.queue_free()
+	await process_frame
+	_so.ChatList.assign(previous_chats)
 	_so.notes_container.free()
 	_so.drawer_notes_container.free()
 	_so.notes_container = previous_notes[0]

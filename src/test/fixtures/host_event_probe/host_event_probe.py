@@ -67,10 +67,10 @@ def main() -> None:
                 reply_text(req_id, {"success": True})
             else:
                 send({"jsonrpc": "2.0", "id": req_id,
-                      "error": {"code": -32601, "message": "Unknown tool: %s" % name}})
+                      "error": {"code": -32601, "message": f"Unknown tool: {name}"}})
         elif req_id is not None:
             send({"jsonrpc": "2.0", "id": req_id,
-                  "error": {"code": -32601, "message": "Unknown method: %s" % method}})
+                  "error": {"code": -32601, "message": f"Unknown method: {method}"}})
 
 
 if __name__ == "__main__":
