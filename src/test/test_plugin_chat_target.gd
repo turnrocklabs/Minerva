@@ -19,6 +19,8 @@ extends SceneTree
 
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
+const AUDIO_TO_TEXT_PATH := "res://Scripts/Models/AudioToText.gd"
+const CHAT_GROUP_REGISTRY_PATH := "res://Scripts/Models/ChatGroupRegistry.gd"
 
 const PROBE := "chat_target_probe"
 const UNGRANTED := "chat_target_ungranted"
@@ -32,6 +34,10 @@ var _so: Node = null
 var _pane = null
 var _broker = null
 var _seen: Array = []
+## Refusal messages shown to the user (the chat target's notifier, observed).
+var _notices: Array = []
+var _ptt_ready := 0
+var _ptt_listening := 1
 
 
 func _init() -> void:
@@ -65,6 +71,13 @@ func _run() -> void:
 	check("the broker has its chat target", _broker != null and _broker.chat_target != null)
 	if _broker == null or _broker.chat_target == null:
 		return
+	var ptt_states: Dictionary = load(AUDIO_TO_TEXT_PATH).PTTState
+	_ptt_ready = ptt_states["READY"]
+	_ptt_listening = ptt_states["LISTENING"]
+	var show_to_user: Callable = _broker.chat_target._notify
+	_broker.chat_target._notify = func(message: String) -> void:
+		_notices.append(message)
+		show_to_user.call(message)
 	if OS.execute("python3", ["--version"], [], true) != OK:
 		print("SKIP: python3 not available — skipping the fixture plugin suite")
 		return
@@ -88,6 +101,7 @@ func _run() -> void:
 	await _test_external_ptt()
 	await _test_denied()
 	await _test_close_visible(chat_a, chat_b)
+	await _test_plugin_stop_releases_mic()
 
 	await _so.plugin_manager.stop_plugin(PROBE)
 	await _so.plugin_manager.remove_plugin(PROBE, false)
@@ -127,6 +141,38 @@ func _test_active_changed(chat_a, chat_b) -> void:
 			and result.get("name") == "Beta" and result.has("group_id") and result.has("group"),
 		str(active))
 
+	var before: int = _seen.size()
+	_pane.rename_chat(_so.ChatList.find(chat_b), "Beta renamed")
+	await _frames(3)
+	check("6b: renaming the visible chat emits one chat.active_changed with the new name",
+		_seen.size() == before + 1 and _seen[-1]["name"] == "Beta renamed", str(_seen))
+
+	var Registry = load(CHAT_GROUP_REGISTRY_PATH)
+	var group_b: String = _so.chat_groups.create_group("Group B")
+	before = _seen.size()
+	_pane.set_chat_group(chat_b, group_b)
+	await _frames(3)
+	check("6c: regrouping the visible chat emits one, naming the group",
+		_seen.size() == before + 1 and _seen[-1]["group_id"] == group_b and _seen[-1]["group"] == "Group B",
+		str(_seen))
+
+	var group_a: String = _so.chat_groups.create_group("Group A")
+	_pane.set_chat_group(chat_a, group_a)
+	await _frames(3)
+	before = _seen.size()
+	_pane.set_active_group(group_a)
+	await _frames(3)
+	check("6d: switching to another group emits one, for the chat it shows",
+		_seen.size() == before + 1 and _seen[-1]["chat_id"] == str(chat_a.HistoryId), str(_seen))
+	before = _seen.size()
+	_pane.set_active_group(Registry.VIEW_ALL)
+	await _frames(3)
+	check("6e: widening the view while that chat stays on screen emits nothing", _seen.size() == before, str(_seen))
+	_pane.set_chat_group(chat_a, "")
+	_pane.set_chat_group(chat_b, "")
+	_show(chat_b)
+	await _frames(3)
+
 #endregion
 
 
@@ -151,19 +197,28 @@ func _test_input(chat_a, chat_b) -> void:
 	_show(chat_a)
 	await _frames(3)
 	var counts := [chat_a.HistoryItemList.size(), chat_b.HistoryItemList.size()]
+	var notices_before: int = _notices.size()
 	var stale: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_b.HistoryId)})
 	await _frames(5)
-	check("10: a submit after the visible chat changed is refused",
-		not stale.get("success", true) and stale.get("error_code") == "chat_changed", str(stale))
+	check("10: a submit after the visible chat changed is refused, and the user is shown why",
+		not stale.get("success", true) and stale.get("error_code") == "chat_changed"
+			and _notices.size() == notices_before + 1, str(stale))
 	check("11: and nothing is posted to either chat; the draft stays",
 		[chat_a.HistoryItemList.size(), chat_b.HistoryItemList.size()] == counts
 			and _pane.get_user_input_text() == "stale draft")
 
 	await _input({"op": "clear"})
 	check("12: clear empties the input box", _pane.get_user_input_text().is_empty())
+	notices_before = _notices.size()
 	var empty: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_a.HistoryId)})
-	check("13: an empty input is refused",
-		not empty.get("success", true) and empty.get("error_code") == "empty_input", str(empty))
+	check("13: an empty input is refused, and the user is shown why",
+		not empty.get("success", true) and empty.get("error_code") == "empty_input"
+			and _notices.size() == notices_before + 1, str(empty))
+	var no_text: Dictionary = await _input({"op": "append"})
+	var no_target: Dictionary = await _input({"op": "submit"})
+	check("13b: append without text and submit without expected_chat_id are malformed requests",
+		no_text.get("error_code") == "schema_validation_failed"
+			and no_target.get("error_code") == "schema_validation_failed", "%s %s" % [no_text, no_target])
 
 	var audit = _so.plugin_audit_log
 	var leaked := false
@@ -193,24 +248,45 @@ func _test_external_ptt() -> void:
 	var mic = _pane.get_mic_button()
 	var att = _so.AtT
 	check("15: the pane has a mic button and Minerva's recorder is idle",
-		mic != null and att != null and att.ptt_state == 0 and att._active_ptt_req == null)
+		mic != null and att != null and att.ptt_state == _ptt_ready and att._active_ptt_req == null)
 	if mic == null or att == null:
 		return
 	var recording: Dictionary = await _input({"op": "set_external_ptt_state", "state": "recording"})
 	check("16: recording shows the listening visuals",
 		recording.get("success", false) and mic.modulate == Color.LIME_GREEN and not mic.disabled, str(recording))
 	check("17: and never starts Minerva's own recording",
-		att.ptt_state == 0 and att._active_ptt_req == null and att.mic_player == null)
+		att.ptt_state == _ptt_ready and att._active_ptt_req == null and att.mic_player == null)
 	await _input({"op": "set_external_ptt_state", "state": "transcribing"})
 	check("18: transcribing disables the button", mic.disabled)
 	await _input({"op": "set_external_ptt_state", "state": "idle"})
 	check("19: idle restores the ready visuals", mic.modulate == Color.WHITE and not mic.disabled)
+	att.ptt_state = _ptt_listening
+	var look := [mic.modulate, mic.disabled]
+	var busy: Dictionary = await _input({"op": "set_external_ptt_state", "state": "transcribing"})
+	check("19b: while Minerva's own push-to-talk is in use an external state is refused, button untouched",
+		busy.get("error_code") == "minerva_ptt_active" and [mic.modulate, mic.disabled] == look, str(busy))
+	att.ptt_state = _ptt_ready
 	var bad: Dictionary = await _input({"op": "set_external_ptt_state", "state": "shouting"})
 	check("20: an unknown state is refused", not bad.get("success", true), str(bad))
 	check("21: Minerva's recorder is still idle after all of it",
-		att.ptt_state == 0 and att._active_ptt_req == null and att.mic_player == null)
+		att.ptt_state == _ptt_ready and att._active_ptt_req == null and att.mic_player == null)
 
 #endregion
+
+
+## A plugin that stops while the button shows its state must not leave the
+## button frozen there.
+func _test_plugin_stop_releases_mic() -> void:
+	print("\n-- plugin stop releases the mic button --")
+	var mic = _pane.get_mic_button()
+	if mic == null:
+		return
+	await _input({"op": "set_external_ptt_state", "state": "transcribing"})
+	check("27: the button shows the plugin's transcribing state", mic.disabled)
+	await _so.plugin_manager.stop_plugin(PROBE)
+	await _frames(2)
+	check("28: stopping the plugin returns the button to ready",
+		not mic.disabled and mic.modulate == Color.WHITE)
 
 
 #region Denial
