@@ -101,6 +101,8 @@ func _run() -> void:
 
 	await _test_active_changed(chat_a, chat_b)
 	await _test_input(chat_a, chat_b)
+	await _test_slow_admission(chat_b)
+	await _test_provisional_append_is_not_success()
 	await _test_external_ptt()
 	await _test_denied()
 	await _test_close_visible(chat_a, chat_b)
@@ -258,10 +260,10 @@ func _test_input(chat_a, chat_b) -> void:
 	var queued: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_b.HistoryId)})
 	check("13c: a submit to a busy chat is queued behind its turn",
 		queued.get("success", false) and queued.get("result", {}).get("queued") == true
-			and _pane.pending_message_count(chat_b) == 1, str(queued))
+			and _pane._outgoing_queue.pending_count(str(chat_b.HistoryId)) == 1, str(queued))
 	_pane._clear_outgoing_queue(chat_b)
 	chat_b.is_request_active = false
-	check("13d: the queued entry is cleaned up", _pane.pending_message_count(chat_b) == 0)
+	check("13d: the queued entry is cleaned up", _pane._outgoing_queue.pending_count(str(chat_b.HistoryId)) == 0)
 
 	var chat_c = _add_chat("Gamma", _so.API_MODEL_PROVIDERS.NEMOTRON_NANO)
 	var Item = load(CHAT_HISTORY_ITEM_PATH)
@@ -276,8 +278,8 @@ func _test_input(chat_a, chat_b) -> void:
 	await _input({"op": "append", "text": "second question"})
 	var dropped: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_c.HistoryId)})
 	check("13e: a message the chat drops (it is still waiting on a reply) is reported not_sent, loudly",
-		dropped.get("error_code") == "not_sent" and _notices.size() == notices_before + 1
-			and chat_c.HistoryItemList.size() == items_c, str(dropped))
+		dropped.get("error_code") == "not_sent" and dropped.get("reason") == "awaiting_reply"
+			and _notices.size() == notices_before + 1 and chat_c.HistoryItemList.size() == items_c, str(dropped))
 	_show(chat_b)
 	await _frames(3)
 	_pane.delete_chat(chat_c)
@@ -300,6 +302,129 @@ func _has_user_message(history, text: String, from_index: int) -> bool:
 		if item.Role == Item.ChatRole.USER and item.Message == text:
 			return true
 	return false
+
+#endregion
+
+
+#region Submit outcomes
+
+## Notes container whose prompt build waits for the test to open its gate, so a
+## Human-provider post lands as late as the test chooses.
+const GATED_NOTES_SRC := """
+extends "res://Scenes/note/NotesContainer.gd"
+
+var released := false
+
+func to_prompt(provider: BaseProvider, refresh_detached: = false, history_id: String = "") -> Array[Variant]:
+	while not released:
+		await Engine.get_main_loop().process_frame
+	return []
+"""
+
+## A pane standing in for the Core (HCP) send: it records the user's message
+## provisionally, then takes it back and drops the send, as execute_hcp_chat
+## does for a refused or stale prompt. The submit must report not_sent, never
+## success on the provisional entry.
+const PROVISIONAL_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+var box_text := ""
+var chat: ChatHistory = null
+
+func _ready() -> void:
+	pass
+
+func current_chat() -> ChatHistory:
+	return chat
+
+func get_user_input_text() -> String:
+	return box_text
+
+func set_user_input_text(text: String) -> void:
+	box_text = text
+
+func submit_chat(_mode: int = 0) -> int:
+	_last_box_send_id += 1
+	var send_id := _last_box_send_id
+	var history: ChatHistory = current_chat()
+	var provisional := ChatHistoryItem.new()
+	provisional.Role = ChatHistoryItem.ChatRole.USER
+	history.HistoryItemList.append(provisional)
+	box_text = ""
+	_drop_later(history, provisional, send_id)
+	return send_id
+
+func _drop_later(history: ChatHistory, provisional: ChatHistoryItem, send_id: int) -> void:
+	for i in 5:
+		await get_tree().process_frame
+	history.HistoryItemList.erase(provisional)
+	_settle_box_send(history, send_id, "prompt_refused")
+"""
+
+
+func _test_slow_admission(chat_b) -> void:
+	print("\n-- submit outcomes: slow admission and pending --")
+	var real_notes = _so.notes_container
+	var gated = _compile(GATED_NOTES_SRC).new()
+	_so.notes_container = gated
+	_show(chat_b)
+	await _frames(3)
+
+	var before: int = chat_b.HistoryItemList.size()
+	await _input({"op": "append", "text": "slow notes"})
+	create_timer(0.5).timeout.connect(func() -> void: gated.released = true)
+	var slow: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_b.HistoryId)})
+	await _frames(3)
+	check("32: a post that waits on slow notes is reported admitted, not a false not_sent",
+		slow.get("success", false) and slow.get("result", {}).get("queued") == false
+			and _has_user_message(chat_b, "slow notes", before), str(slow))
+
+	gated.released = false
+	_broker.chat_target.submit_timeout_ms = 200
+	var notices_before: int = _notices.size()
+	before = chat_b.HistoryItemList.size()
+	await _input({"op": "append", "text": "very slow"})
+	var pending: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat_b.HistoryId)})
+	check("33: no outcome before the timeout is pending, with no toast and no not_sent",
+		pending.get("success", false) and pending.get("result", {}).get("status") == "pending"
+			and _notices.size() == notices_before, str(pending))
+	gated.released = true
+	await _frames(5)
+	check("34: and the message still posts once the chat takes it", _has_user_message(chat_b, "very slow", before))
+	_broker.chat_target.submit_timeout_ms = 30000
+	_so.notes_container = real_notes
+	gated.free()
+
+
+func _test_provisional_append_is_not_success() -> void:
+	print("\n-- submit outcomes: provisional append then drop --")
+	var chat = _make_plain_history("Provisional")
+	var stand_in = _compile(PROVISIONAL_PANE_SRC).new()
+	root.add_child(stand_in)
+	stand_in.chat = chat
+	var real_pane = _so.Chats
+	_so.Chats = stand_in
+	stand_in.box_text = "refused text"
+	var notices_before: int = _notices.size()
+	var refused: Dictionary = await _input({"op": "submit", "expected_chat_id": str(chat.HistoryId)})
+	check("35: a provisionally recorded message that is then dropped is not_sent, not success",
+		refused.get("error_code") == "not_sent" and refused.get("reason") == "prompt_refused"
+			and _notices.size() == notices_before + 1 and chat.HistoryItemList.is_empty(), str(refused))
+	_so.Chats = real_pane
+	stand_in.queue_free()
+
+
+func _make_plain_history(chat_name: String):
+	var history = load(CHAT_HISTORY_PATH).new(null)
+	history.HistoryName = chat_name
+	return history
+
+
+func _compile(source: String) -> GDScript:
+	var script := GDScript.new()
+	script.source_code = source
+	script.reload()
+	return script
 
 #endregion
 
