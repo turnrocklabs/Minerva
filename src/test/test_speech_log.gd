@@ -80,14 +80,15 @@ func _run() -> void:
 	check("JSON integer paging and display contract are exact", list.success and list.items.size() == 2 and list.items[0].keys().size() == 6 and list.items[0].summary == "Final spoken summary")
 	var hidden: Dictionary = await service.handle({"op": "state", "log_id": producer.record.log_id}, "other_plugin")
 	check("foreign endpoint content is unavailable", not hidden.success)
-	var corrupt: String = directory.path_join("unsupported.json")
+	var corrupt: String = directory.path_join("speech_500.json")
 	file = FileAccess.open(corrupt, FileAccess.WRITE)
 	file.store_string('{"version":99}')
 	file.close()
 	var broken = Log.new(directory)
-	check("unsupported record retained and visibly blocks admission", FileAccess.file_exists(corrupt) and not broken.errors.is_empty() and not broken.admit(fields()).success)
+	var continued: Dictionary = broken.admit(fields())
+	check("unsupported record retained and surfaced while valid admissions continue", FileAccess.file_exists(corrupt) and not broken.errors.is_empty() and continued.success and continued.record.log_id == "speech_501")
 	var broken_service = Delivery.new(broken, null, null, Callable(), func(_message: String) -> void: pass, func(_delivery) -> void: pass)
-	check("corruption remains visible in state with valid records preserved", not broken_service.state().success and broken_service.state().total == reopened.list_records().size())
+	check("corruption remains visible in state with valid records preserved", broken_service.state().success and not broken_service.state().errors.is_empty() and broken_service.state().total == reopened.list_records().size() + 1)
 	var blocked: String = directory.path_join("not_a_directory")
 	file = FileAccess.open(blocked, FileAccess.WRITE)
 	file.store_string("collision")
@@ -97,4 +98,36 @@ func _run() -> void:
 	var blocked_record: String = directory.path_join(fourth.record.log_id + ".json.tmp")
 	DirAccess.make_dir_absolute(blocked_record)
 	check("failed atomic replace leaves previous durable record unchanged", not reopened.update_record(fourth.record.log_id, {"heard": false}).success and Log.new(directory)._records[fourth.record.log_id].heard == unchanged.heard)
+	await _crash_recovery(Log, Delivery)
 	_completed = true
+
+
+func _crash_recovery(Log, Delivery) -> void:
+	for phase: String in ["before", "after", "active"]:
+		var directory: String = ProjectSettings.globalize_path("user://speech-kill-" + phase + "-" + str(Time.get_ticks_usec()))
+		var store = Log.new(directory)
+		if phase != "active":
+			store.admit(fields())
+		var pid: int = OS.create_process(OS.get_executable_path(), ["--headless", "--path", ProjectSettings.globalize_path("res://"),
+			"--script", "res://test/fixtures/speech_log_crash.gd", "--", directory, phase])
+		var checkpoint: String = directory.path_join("checkpoint.json")
+		var deadline: int = Time.get_ticks_msec() + 10000
+		while not FileAccess.file_exists(checkpoint) and Time.get_ticks_msec() < deadline and pid > 0 and OS.is_process_running(pid):
+			await process_frame
+		check("kill boundary reached: " + phase, pid > 0 and FileAccess.file_exists(checkpoint))
+		if pid <= 0:
+			continue
+		var killed: Error = OS.kill(pid)
+		check("owned child is terminated at boundary: " + phase, killed == OK)
+		for frame in 3:
+			await process_frame
+		var reopened = Log.new(directory)
+		var recovered = Delivery.new(reopened, null, null, Callable(), func(_message: String) -> void: pass, func(_delivery) -> void: pass)
+		var item: Dictionary = reopened.get_record("speech_1")
+		if phase == "before":
+			check("mid-commit temp remains while old admission/replay state survives", FileAccess.file_exists(directory.path_join("speech_1.json.tmp")) and recovered.state().unheard == 1 and item.text == fields().text and not item.heard)
+		elif phase == "after":
+			check("committed admission and heard state survive forced process death", recovered.state().unheard == 0 and item.text == "committed after replace" and item.heard)
+		else:
+			var observed: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(checkpoint))
+			check("crash recovers active playback as missed without inferred hearing", observed.unheard == 0 and recovered.state().unheard == 1 and not item.heard and item.text == "active before crash")

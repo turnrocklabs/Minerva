@@ -8,21 +8,28 @@ var _write: Callable
 var _records: Dictionary = {}
 var _order: int = 0
 var errors: Array[String] = []
+var ready: bool = true
 
 
 func _init(directory: String, writer: Callable = Atomic.write) -> void:
 	_directory = directory
 	_write = writer
 	if DirAccess.make_dir_recursive_absolute(directory) != OK:
+		ready = false
 		errors.append("Speech log directory is unavailable.")
 		return
 	var folder: DirAccess = DirAccess.open(directory)
 	if folder == null:
+		ready = false
 		errors.append("Speech log directory cannot be read.")
 		return
 	for filename: String in folder.get_files():
 		if not filename.ends_with(".json"):
 			continue
+		# Reserve even corrupt admission filenames before parsing their content.
+		var filename_order: int = filename.get_basename().trim_prefix("speech_").to_int()
+		if filename_order > 0 and filename_order <= 9007199254740991:
+			_order = maxi(_order, filename_order)
 		var file: FileAccess = FileAccess.open(directory.path_join(filename), FileAccess.READ)
 		var parsed: Variant = JSON.parse_string(file.get_as_text()) if file != null else null
 		if file != null:
@@ -39,7 +46,7 @@ func _init(directory: String, writer: Callable = Atomic.write) -> void:
 		_order = maxi(_order, int(order_number))
 
 
-static func _integer(value: Variant) -> bool:
+static func is_integer(value: Variant) -> bool:
 	if not (value is int or value is float):
 		return false
 	var number: float = value
@@ -49,7 +56,7 @@ static func _integer(value: Variant) -> bool:
 static func _valid(record: Dictionary) -> bool:
 	if record.get("version") != VERSION or not record.get("log_id") is String or not str(record.log_id).is_valid_identifier():
 		return false
-	if not _integer(record.get("admission_order")) or not _integer(record.get("created_at")):
+	if not is_integer(record.get("admission_order")) or not is_integer(record.get("created_at")):
 		return false
 	for key: String in ["producer", "topic"]:
 		if not record.get(key) is String:
@@ -73,9 +80,11 @@ static func _valid(record: Dictionary) -> bool:
 
 
 func admit(fields: Dictionary, exempt_ids: Array[String] = []) -> Dictionary:
-	if not errors.is_empty():
-		return _failure("Speech log requires attention: " + "; ".join(errors))
+	if not ready:
+		return _failure("Speech log directory is unavailable: " + "; ".join(errors))
 	_order += 1
+	while FileAccess.file_exists(_directory.path_join("speech_%d.json" % _order)):
+		_order += 1
 	var record: Dictionary = fields.duplicate(true)
 	record.merge({"version": VERSION, "log_id": "speech_%d" % _order, "admission_order": _order,
 		"created_at": int(Time.get_unix_time_from_system()), "deleted": false, "heard": false, "exempt_ids": exempt_ids.duplicate()}, true)
@@ -104,7 +113,7 @@ func delete_record(id: String) -> Dictionary:
 
 
 func _commit(record: Dictionary) -> Dictionary:
-	if not errors.is_empty() or not _valid(record):
+	if not ready or not _valid(record):
 		return _failure("Speech log validation failed; existing records are retained.")
 	var id: String = record.log_id
 	if not _write.call(_directory.path_join(id + ".json"), JSON.stringify(record)):

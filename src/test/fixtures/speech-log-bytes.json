@@ -19,8 +19,9 @@
   },
   "queued_receipt": {
     "delivery": "queued",
-    "device": "plugin:audio_probe:speaker",
-    "log_id": "fixture_001",
+    "device": "plugin:host_event_probe:speaker",
+    "log_id": "speech_1",
     "unheard_count": 1
-  }
+  },
+  "queued_receipt_json": "{\"delivery\":\"queued\",\"device\":\"plugin:host_event_probe:speaker\",\"log_id\":\"speech_1\",\"unheard_count\":1}"
 }

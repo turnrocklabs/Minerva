@@ -5590,7 +5590,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	if not preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
 		_voice_on_response_complete()
 		return
-	var cfg := SingletonObject.get_voice_config()
+	var cfg: VoiceConfig = SpeechDelivery.snapshot(SingletonObject.get_voice_config())
 	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF or cfg.tts_provider == VoiceConfig.TTSProvider.NONE:
 		_voice_on_response_complete()
 		return
@@ -6359,6 +6359,6 @@ func _refresh_speech_count(delivery: SpeechDelivery, label: Label) -> void:
 	var state: Dictionary = delivery.state()
 	var unheard: int = state.unheard
 	label.text = "%d speech missed" % unheard
-	label.visible = unheard > 0 or not state.success
+	label.visible = unheard > 0 or not state.errors.is_empty() or not state.success
 	var errors: PackedStringArray = state.errors
-	label.tooltip_text = "; ".join(errors) if not state.success else "Persisted unheard speech; manage with minerva_speech_log."
+	label.tooltip_text = "; ".join(errors) if not errors.is_empty() else "Open the missed list on the remote."

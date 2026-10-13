@@ -691,6 +691,10 @@ func _test_public_turn_events() -> void:
 	var failures: Array[String] = []
 	var notify: Callable = _so.plugin_audio_devices._notify
 	_so.plugin_audio_devices._notify = func(message: String) -> void: failures.append(message)
+	_so.speech_delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(
+		load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://receipt-fixture")),
+		_so.plugin_audio_devices, _so.voice_client, _so._new_speech_player, _so._notify_plugin_refusal, _so._publish_speech_log)
+	_so.plugin_capability_broker.speech_delivery = _so.speech_delivery
 	var long_pcm := PackedByteArray()
 	long_pcm.resize(2 * 1024 * 1024 + 6400)
 	long_pcm.fill(1)
@@ -699,6 +703,7 @@ func _test_public_turn_events() -> void:
 			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(long_pcm)})
 	await conn.call_tool("probe_audio_mode", {"success": false})
 	var spoken: Dictionary = await server.execute_tool_for_http("minerva_speak", {"text": "Long reply"})
+	var live_operation = _so.speech_delivery._active.get(spoken.get("log_id", ""))
 	var audio_deadline: int = Time.get_ticks_msec() + 8000
 	while failures.is_empty() and Time.get_ticks_msec() < audio_deadline:
 		await process_frame
@@ -714,7 +719,13 @@ func _test_public_turn_events() -> void:
 	check("E audio: production MCP synthesis sends entire long one-shot through real plugin", spoken.success and bytes_received == long_pcm.size() and eos)
 	check("E audio: negative post-EOS acknowledgement surfaces explicit-speech failure", failures.size() == 1 and failures[0].contains("Fixture speaker rejected EOS"), str(failures))
 	var log_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.get("log_id", "")})
-	check("E log: MCP log_state retains exact full text, unheard state and explicit origin", spoken.delivery == "queued" and log_state.success and not log_state.item.heard and log_state.item.text == "Long reply" and log_state.item.producer == "explicit")
+	check("E log: MCP log_state retains exact full text, unheard state and explicit origin", spoken.delivery == "playing" and log_state.success and not log_state.item.heard and log_state.item.text == "Long reply" and log_state.item.producer == "explicit")
+	var fixed: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/speech-log-bytes.json"))
+	var queued: Dictionary = _so.speech_delivery.receipt(spoken.log_id, str(log_state.item.device), live_operation)
+	var queued_bytes: Dictionary = {"delivery": queued.delivery, "device": queued.device, "log_id": queued.log_id, "unheard_count": queued.unheard_count}
+	check("E log: queued receipt matches the fixed serialized byte vector", JSON.stringify(queued_bytes).to_utf8_buffer() == str(fixed.queued_receipt_json).to_utf8_buffer())
+	var count_events: Array = await _events(SUBSCRIBER, "speech_log.changed")
+	check("E log: actual scoped count event contains only frozen counters", not count_events.is_empty() and count_events.back().message.params.payload == {"unheard": 1, "total": 1})
 	var published: Dictionary = await _so.speech_delivery.handle({"op": "list"}, SUBSCRIBER)
 	check("E log: owning plugin sees explicit statuses routed to its speaker", published.success and published.items.any(func(item: Dictionary) -> bool: return item.log_id == spoken.log_id))
 	var denied: Dictionary = await _so.speech_delivery.handle({"op": "state", "log_id": spoken.log_id}, UNGRANTED)
@@ -731,22 +742,60 @@ func _test_public_turn_events() -> void:
 			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
 	await conn.call_tool("probe_audio_mode", {"success": true})
 	var replay: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "plugin:" + SUBSCRIBER + ":speaker"})
+	var replay_operation = _so.speech_delivery._active.get(spoken.log_id)
 	var heard_deadline: int = Time.get_ticks_msec() + 3000
 	var replay_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.log_id})
 	while not replay_state.item.heard and Time.get_ticks_msec() < heard_deadline:
 		await process_frame
 		replay_state = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.log_id})
 	check("E log: replay keeps one record and terminal post-EOS ACK marks heard", replay.success and replay_state.item.heard and replay_state.total == before_total)
+	check("E log: live replay receipt is playing until terminal ACK", replay.delivery == "playing" and replay.unheard_count == 0)
+	var played_receipt: Dictionary = _so.speech_delivery.receipt(spoken.log_id, str(log_state.item.device), replay_operation)
+	check("E log: played_live receipt requires the actual terminal operation", played_receipt.delivery == "played_live")
+	var replay_audio: Array = await _events(SUBSCRIBER, "voice.audio")
+	check("E log: replay transport uses explicit origin and byte-exact fixed PCM", replay_audio.any(func(envelope: Dictionary) -> bool:
+		var payload: Dictionary = envelope.message.params.payload
+		return payload.get("op") == "begin" and payload.get("origin", {}) == {"kind": "explicit"}) and replay_audio.any(func(envelope: Dictionary) -> bool:
+		var payload: Dictionary = envelope.message.params.payload
+		return payload.get("op") == "chunk" and Marshalls.base64_to_raw(str(payload.get("pcm", ""))) == fixture_pcm))
+	var marked_unheard: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "mark", "log_id": spoken.log_id, "heard": false})
+	check("E log: MCP mark updates authoritative missed count", marked_unheard.success and marked_unheard.unheard == 1)
 	check("E log: replay uses saved text and parameters without setting mutation", replay_calls.size() == 1 and replay_calls[0].text == "Long reply" and replay_calls[0].backend == log_state.item.backend and cfg.output_device == before_selection)
 	var os_replay: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "os:" + AudioServer.output_device})
 	var os_deadline: int = Time.get_ticks_msec() + 2000
 	while _so.speech_delivery._active.has(spoken.log_id) and Time.get_ticks_msec() < os_deadline:
 		await process_frame
-	check("E log: current OS replay completes through real player with selection preserved", os_replay.success and not _so.speech_delivery._active.has(spoken.log_id) and cfg.output_device == before_selection)
+	check("E log: current OS replay completes through real player with selection preserved", os_replay.success and os_replay.device == "os" and os_replay.delivery in ["playing", "played_live"] and not _so.speech_delivery._active.has(spoken.log_id) and cfg.output_device == before_selection)
 	var rejected_os: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "os:not-current"})
 	check("E log: named non-current OS target is refused", not rejected_os.success)
+	# Hold real Core requests to cover supersede, cancel/delete and failed synthesis.
+	transport.on_send = Callable()
+	var held: Dictionary = {}
+	_capture_mcp(server, {"text": "first pending", "topic": "same"}, held)
+	var first_request: String = str(transport.sent.back().params.request_id)
+	var old_id: String = str(_so.speech_delivery._active.keys().back())
+	var second_held: Dictionary = {}
+	_capture_mcp(server, {"text": "second pending", "topic": "same"}, second_held)
+	var new_request: String = str(transport.sent.back().params.request_id)
+	var new_id: String = str(_so.speech_delivery._active.keys().back())
+	check("E log: supersede cancels pending producer and fresh endpoint remains admitted", first_request != new_request and not transport._pending_requests.has(first_request) and held.get("result", {}).get("delivery") == "queued" and _so.plugin_audio_devices.output_busy(before_selection))
+	var deleted_active: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "delete", "log_id": new_id})
+	var old_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": old_id})
+	check("E log: active delete cancels ownership and tombstone prevents resurrection", deleted_active.success and not _so.plugin_audio_devices.output_busy(before_selection) and old_state.item.superseded and not transport._pending_requests.has(new_request))
+	var failing: Dictionary = {}
+	_capture_mcp(server, {"text": "failed provider", "topic": "provider"}, failing)
+	var failed_id: String = str(_so.speech_delivery._active.keys().back())
+	transport._handle_message({"cmd": "error", "entity_type": "core", "topic": "voice/tts/synthesize", "params": {"request_id": str(transport.sent.back().params.request_id), "error_code": "FIXTURE_FAIL", "error": "Synthetic provider failure"}})
+	check("E log: synthesis failure releases speaker and persists queued text", failing.get("result", {}).get("delivery") == "queued" and not _so.plugin_audio_devices.output_busy(before_selection))
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
+	var recovered: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": failed_id, "device_id": before_selection})
+	check("E log: replay after synthesis failure is admitted through public gate", recovered.success and recovered.delivery in ["playing", "played_live"])
+	var recovery_deadline: int = Time.get_ticks_msec() + 3000
+	while _so.plugin_audio_devices.output_busy(before_selection) and Time.get_ticks_msec() < recovery_deadline:
+		await process_frame
 	await conn.call_tool("probe_audio_mode", {"success": false})
-
 
 	await _probe(SUBSCRIBER, "probe_clear")
 	failures.clear()
@@ -1160,3 +1209,7 @@ func _sorted_keys(payload: Dictionary) -> Array:
 	return keys
 
 #endregion
+
+
+func _capture_mcp(server, arguments: Dictionary, result: Dictionary) -> void:
+	result["result"] = await server.execute_tool_for_http("minerva_speak", arguments)

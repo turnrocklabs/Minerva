@@ -22,6 +22,21 @@ func _init(store: SpeechLog, devices: PluginAudioDevices, client: VoiceServiceCl
 		_notify.call("Speech log: " + "; ".join(store.errors))
 
 
+static func snapshot(config: VoiceConfig) -> VoiceConfig:
+	var result := VoiceConfig.new()
+	result.voice_id = config.voice_id
+	result.voice_name = config.voice_name
+	result.tts_backend = config.tts_backend
+	result.tts_provider = config.tts_provider
+	result.tts_volume = config.tts_volume
+	result.speak_mode = config.speak_mode
+	result.summary_model = config.summary_model
+	result.summary_timeout = config.summary_timeout
+	result.summary_prompt = config.summary_prompt
+	result.summary_max_tokens = config.summary_max_tokens
+	return result
+
+
 func prepare(operation: SpeechOperation, player: AudioStreamPlayer, config: VoiceConfig, text: String, origin: Dictionary = {}, explicit: bool = false, topic: String = "", summary: String = "") -> Dictionary:
 	var device: String = _devices.route_output(origin, explicit)
 	if not device.begins_with("plugin:"):
@@ -33,8 +48,10 @@ func prepare(operation: SpeechOperation, player: AudioStreamPlayer, config: Voic
 		var active: SpeechOperation = _active[id]
 		if active.playback_started and not active.done:
 			exempt_ids.append(id)
+	var logged_origin: Dictionary = origin.duplicate(true)
+	logged_origin["kind"] = "explicit" if explicit else "turn"
 	var result: Dictionary = _store.admit({"producer": producer, "topic": topic, "text": text, "original_text": text,
-		"summary": (summary if not summary.is_empty() else text).substr(0, 21), "summary_explicit": not summary.is_empty(), "origin": origin.duplicate(true),
+		"summary": (summary if not summary.is_empty() else text).substr(0, 21), "summary_explicit": not summary.is_empty(), "origin": logged_origin,
 		"device": device, "voice_id": config.voice_id, "voice_name": config.voice_name, "backend": config.tts_backend,
 		"volume": config.tts_volume, "error": "", "fallback_reason": ""}, exempt_ids)
 	if not result.success:
@@ -99,9 +116,9 @@ func state(producer: String = "", topic: String = "") -> Dictionary:
 	var records: Array[Dictionary] = _visible_records(producer, topic)
 	var unheard: int = 0
 	for record: Dictionary in records:
-		if not record.heard and not record.superseded:
+		if not record.heard and not record.superseded and not _active.has(str(record.log_id)):
 			unheard += 1
-	return {"success": _store.errors.is_empty(), "unheard": unheard, "total": records.size(), "errors": _store.errors.duplicate()}
+	return {"success": _store.ready, "unheard": unheard, "total": records.size(), "errors": _store.errors.duplicate()}
 
 
 func handle(args: Dictionary, producer: String = "") -> Dictionary:
@@ -119,7 +136,7 @@ func handle(args: Dictionary, producer: String = "") -> Dictionary:
 			return page
 		var offset: Variant = args.get("offset", 0)
 		var limit: Variant = args.get("limit", 20)
-		if not SpeechLog._integer(offset) or not SpeechLog._integer(limit):
+		if not SpeechLog.is_integer(offset) or not SpeechLog.is_integer(limit):
 			return VoiceServiceClient.failure("invalid_speech_log", "offset must be nonnegative and limit 1–100.")
 		var offset_number: float = offset
 		var limit_number: float = limit
@@ -145,7 +162,10 @@ func handle(args: Dictionary, producer: String = "") -> Dictionary:
 			var target: String = str(args.get("device_id", ""))
 			if not producer.is_empty() and not target.begins_with("plugin:" + producer + ":"):
 				return VoiceServiceClient.failure("invalid_audio_device", "Plugin replay requires its own speaker.")
-			return await _replay(record, target)
+			var played: Dictionary = await _replay(record, target)
+			if not producer.is_empty() and played.get("success", false):
+				played["unheard_count"] = state(producer).unheard
+			return played
 		"mark":
 			if not args.get("heard") is bool:
 				return VoiceServiceClient.failure("invalid_speech_log", "heard must be a boolean.")
@@ -186,9 +206,8 @@ func _replay(record: Dictionary, device: String) -> Dictionary:
 	config.tts_volume = record.volume
 	var id: String = record.log_id
 	var text: String = record.text
-	var origin: Dictionary = record.origin
-	var explicit: bool = record.producer == "explicit"
-	_bind(id, operation, player, device, origin, explicit)
+	# Replay is a fresh explicit playback action; historical origin stays saved.
+	_bind(id, operation, player, device, {"kind": "explicit"}, true)
 	return await synthesize(id, text, config, operation, player, device)
 
 
@@ -198,20 +217,25 @@ func synthesize(id: String, text: String, config: VoiceConfig, operation: Speech
 	var result: Dictionary = await _client.synthesize_auto_playback_result(text, config, operation, player)
 	if not result.get("success", false) and not operation.done:
 		operation.finish(result)
-	# Pending physical delivery returns a durable queued receipt. The retained
+	# Pending live delivery returns playing. Undeliverable saved work is queued.
+	# The retained
 	# operation updates heard only when its terminal acknowledgement arrives.
-	if id.is_empty():
-		return operation.completion_outcome if operation.done else result
+	if id.is_empty() and not result.get("success", false):
+		result.merge({"device": "os", "unheard_count": state().unheard})
+		return result
 	return receipt(id, device, operation)
 
 
 func receipt(id: String, device: String, operation: SpeechOperation) -> Dictionary:
 	var outcome: Dictionary = operation.completion_outcome
-	var result: Dictionary = {"success": true, "delivery": "played_live" if operation.done and outcome.get("success", false) else "queued",
-		"log_id": id, "device": device, "unheard_count": state().unheard}
+	var delivery: String = "playing" if not operation.done else ("played_live" if outcome.get("success", false) else "queued")
+	var result: Dictionary = {"success": true, "delivery": delivery,
+		"device": "os" if device.begins_with("os:") else device, "unheard_count": state().unheard}
+	if not id.is_empty():
+		result["log_id"] = id
 	if outcome.get("error_code") == "speech_log_write":
 		return outcome
-	if not outcome.get("success", false):
+	if operation.done and not outcome.get("success", false):
 		result["error_code"] = outcome.get("error_code", "pending")
 		result["error_message"] = outcome.get("error_message", "Speech is queued.")
 	return result

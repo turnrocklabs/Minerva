@@ -126,6 +126,9 @@ func stop() -> void:
 	_discard()
 	if _opened:
 		_emit({"op": "cancel"})
+	# The operation disconnects its own completion before stopping output.
+	# The endpoint registry still needs a terminal release with identity guard.
+	_report_finished(VoiceServiceClient.failure("cancelled", "Speech stopped."))
 
 
 func _discard() -> void:

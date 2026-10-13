@@ -845,6 +845,7 @@ func _run() -> void:
 	transport.reply(pending_speech_id, {"audio_base64": Marshalls.raw_to_base64(bytes)})
 	check("one-shot client refuses a player freed during synthesis without typed-call errors", pending_speech.done and output.result.error_code == "no_audio_player")
 
+	await _voice_snapshot_contract(so, voice, transport, config)
 	core.client = saved.client
 	core.registered = saved.registered
 	core.services.assign(saved.services)
@@ -942,3 +943,56 @@ func _plugin_output_contracts() -> void:
 	revoked_output.begin("pcm_s16le", 24000, 1.0)
 	policy.revoke_capability("audio_probe", "host.audio")
 	check("grant revocation cancels active output and unregisters endpoint", revoked.done and not revoked_output.is_available() and devices.devices("output").all(func(device: Dictionary) -> bool: return not str(device.id).begins_with("plugin:")))
+
+
+func _voice_snapshot_contract(so, voice, transport, config) -> void:
+	var original_delivery = so.speech_delivery
+	var previous_chats = so.Chats
+	var snapshot_pane = load("res://test/fixtures/voice_speech_pane.gd").new()
+	root.add_child(snapshot_pane)
+	var player := AudioStreamPlayer.new()
+	snapshot_pane.add_child(player)
+	snapshot_pane._tts_player = player
+	so.Chats = snapshot_pane
+	config.tts_backend = "kokoro"
+	config.tts_volume = 0.2
+	config.voice_name = ""
+	config.voice_id = ""
+	config.speak_mode = config.SpeakMode.SUMMARIZE
+	config.output_device = "plugin:voice_snapshot:remote"
+	var policy = load("res://Scripts/Services/Plugins/PluginPolicy.gd").new(null, null, false)
+	policy.grant_capability("voice_snapshot", "host.audio")
+	var packets: Array[Dictionary] = []
+	var sender := func(_plugin: String, _event: String, payload: Dictionary) -> Error:
+		packets.append(payload.duplicate(true))
+		return OK
+	var next_frame := func() -> void: await process_frame
+	var devices = load("res://Scripts/Services/Plugins/PluginAudioDevices.gd").new(config, policy, sender, next_frame,
+		func() -> String: return AudioServer.output_device, func(_device: String) -> void: pass, func(_message: String) -> void: pass)
+	devices.handle("voice_snapshot", {"op": "register", "device_id": "remote", "label": "Snapshot speaker", "output": true})
+	devices.handle("voice_snapshot", {"op": "availability", "device_id": "remote", "available": true})
+	var store = load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://voice-snapshot-fixture"))
+	so.speech_delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(store, devices, voice, Callable(),
+		func(_message: String) -> void: pass, func(_delivery) -> void: pass)
+	var fixed: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/speech-log-bytes.json"))
+	var origin: Dictionary = fixed.origin.duplicate(true)
+	origin["plugin_id"] = "voice_snapshot"
+	snapshot_pane._voice_speak_response("voice snapshot original", "user", null, origin)
+	var summary_id: String = _last_id(transport)
+	var admitted: Dictionary = store.list_records()[0]
+	config.tts_backend = "changed-during-summary"
+	config.tts_volume = 0.9
+	config.voice_name = "Changed Voice"
+	transport.reply(summary_id, {"choices": [{"message": {"content": "saved summary"}}]})
+	check("summary preference mutation preserves admitted synthesis backend and voice", transport.sent.back().topic == "voice/tts/synthesize" and transport.sent.back().params.data.backend == admitted.backend and not transport.sent.back().params.data.has("voice_id"))
+	var active_operation = snapshot_pane._speech_operation
+	transport.reply(_last_id(transport), {"audio_base64": str(fixed.base64)})
+	for frame in 3:
+		await process_frame
+	check("live volume and origin match the persisted admission and independent byte fixture", packets[0].volume == admitted.volume and JSON.stringify(packets[0].origin) == JSON.stringify(fixed.origin))
+	check("saved final text is the actual summarized synthesis text", store.get_record(admitted.log_id).text == "saved summary" and transport.sent.back().params.data.text == "saved summary")
+	devices.handle("voice_snapshot", {"op": "output_complete", "device_id": "remote", "stream_id": packets.back().stream_id, "success": true})
+	check("actual terminal ACK ends snapshotted speech and marks its record heard", active_operation.done and store.get_record(admitted.log_id).heard)
+	so.speech_delivery = original_delivery
+	so.Chats = previous_chats
+	snapshot_pane.queue_free()

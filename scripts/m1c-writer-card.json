@@ -20,7 +20,11 @@
     "src/Scripts/Services/Voice/SpeechLog.gd.uid",
     "src/Scripts/Services/Voice/SpeechDelivery.gd.uid",
     "src/test/test_speech_log.gd.uid",
-    "src/test/fixtures/host_event_probe/manifest.json"
+    "src/test/fixtures/host_event_probe/manifest.json",
+    "src/Scripts/Services/Voice/PluginSpeechOutput.gd",
+    "src/test/test_voice_contracts.gd",
+    "src/test/fixtures/speech_log_crash.gd",
+    "src/test/fixtures/speech_log_crash.gd.uid"
   ],
   "production_cap": 850,
   "failure_disposition": "SpeechDelivery surfaces failed store writes to caller and notification; SpeechLog errors are returned and retained; counts surface through UI and granted endpoint event. Existing failures outside the diff remain owned by the base.",

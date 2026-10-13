@@ -3,13 +3,13 @@ SpeechLog stores version 1 JSON records in the profile's `speech-log/` directory
 No audio is stored, and no record is automatically deleted or capped. AtomicFile
 provides old-or-new replacement after a process restart; it does not provide an
 fsync guarantee across power loss. Corrupt or unsupported records are retained
-and surfaced. Explicit delete removes text and voice parameters through a hidden
+and surfaced while valid records continue; their filenames reserve IDs. Explicit delete removes text and voice parameters through a hidden
 metadata tombstone, preserving supersede ordering. A playing item's exemption is
 stored on the new admission, so it also survives process restart.
 
 Replay supports granted plugin speakers and the current OS output. It never
-changes device preferences. A queued receipt confirms saved text, not playback.
-Only terminal successful output completion marks heard. Reconnect never starts
+changes device preferences. A playing receipt means live delivery remains in flight. A queued receipt confirms saved undeliverable text, not playback.
+Only terminal successful output completion marks heard. Active items are excluded from missed counts. Replay is an explicit output action; historical origin remains record metadata. Reconnect never starts
 automatic playback. Topic keys are exact `(producer namespace, topic)` pairs;
 explicit statuses use `explicit`, remote turns use their plugin id. Already
 playing speech is excluded from supersede; separate cancel and barge-in still
