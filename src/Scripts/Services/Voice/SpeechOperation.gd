@@ -6,9 +6,8 @@ signal finished(outcome: Dictionary)
 signal playback_began
 var done := false
 var playback_started := false
-var _player: AudioStreamPlayer
-var _owned_stream: AudioStream
-var _stream_sink: Node
+var _output: SpeechOutput
+var _stream_open := false
 var _stream_volume := 1.0
 
 func can_start() -> bool:
@@ -24,20 +23,15 @@ func _complete(outcome: Dictionary, cancel_pending: bool) -> void:
 	if done:
 		return
 	done = true
-	if is_instance_valid(_stream_sink):
-		if _stream_sink.finished.is_connected(_on_stream_playback_finished):
-			_stream_sink.finished.disconnect(_on_stream_playback_finished)
-		_stream_sink.stop()
-		_stream_sink.queue_free()
-	elif is_instance_valid(_player):
-		if _player.finished.is_connected(_on_playback_finished):
-			_player.finished.disconnect(_on_playback_finished)
-		if _owned_stream != null and _player.stream == _owned_stream:
-			_player.stop()
-			_player.stream = null
-	_stream_sink = null
-	_owned_stream = null
-	_player = null
+	var output := _output
+	_output = null
+	_stream_open = false
+	if output != null:
+		if output.finished.is_connected(_on_output_finished):
+			output.finished.disconnect(_on_output_finished)
+		if output.started.is_connected(_on_output_started):
+			output.started.disconnect(_on_output_started)
+		output.stop()
 	# Mark terminal before cancel resumes pending adapter coroutines synchronously.
 	if cancel_pending:
 		var pending := _request
@@ -52,19 +46,27 @@ func play(player: AudioStreamPlayer, audio: PackedByteArray, volume: float) -> b
 	if not is_instance_valid(player):
 		finish({"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."})
 		return false
-	var stream := VoiceServiceClient.decode_audio(audio)
-	if stream == null:
-		finish({"success": false, "error_code": "invalid_audio", "error_message": "Speech audio could not be decoded."})
+	_ensure_output(player)
+	var played := _output.play(audio, volume)
+	if not played.success:
+		finish(played)
 		return false
-	_player = player
-	_player.stream = stream
-	_owned_stream = stream
-	_player.volume_db = linear_to_db(volume)
-	_player.finished.connect(_on_playback_finished)
-	playback_started = true
-	_player.play()
-	playback_began.emit()
 	return true
+
+
+func bind_output(output: SpeechOutput) -> bool:
+	if _output != null or not can_start() or is_busy():
+		return false
+	_output = output
+	_output.finished.connect(_on_output_finished)
+	_output.started.connect(_on_output_started)
+	return true
+
+
+func _ensure_output(player: AudioStreamPlayer) -> void:
+	if _output == null:
+		bind_output(OSSpeechOutput.new(player))
+
 
 func receive_stream(request, player: AudioStreamPlayer, volume: float) -> Dictionary:
 	var prepared := prepare_stream(request, player, volume)
@@ -82,7 +84,7 @@ func prepare_stream(request, player: AudioStreamPlayer, volume: float) -> Dictio
 	if not is_instance_valid(player):
 		request.cancel()
 		return {"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."}
-	_player = player
+	_ensure_output(player)
 	_stream_volume = volume
 	_request = request
 	request.stream_opened.connect(_on_stream_open, CONNECT_ONE_SHOT)
@@ -100,41 +102,36 @@ func receive_prepared_stream(request) -> Dictionary:
 func _on_stream_open(meta: Dictionary) -> void:
 	if done:
 		return
-	if not is_instance_valid(_player):
+	if _output == null or not _output.is_available():
 		_complete({"success": false, "error_code": "no_audio_player", "error_message": "Speech player is unavailable."}, true)
 		return
-	_stream_sink = load("res://Scripts/Services/Voice/StreamingSpeechPlayback.gd").new()
-	_player.add_child(_stream_sink)
-	_stream_sink.finished.connect(_on_stream_playback_finished, CONNECT_ONE_SHOT)
-	_stream_sink.started.connect(_on_stream_playback_began, CONNECT_ONE_SHOT)
-	if not _stream_sink.begin(_player, str(meta.format), int(meta.sample_rate), _stream_volume):
-		_complete({"success": false, "error_code": "unsupported_audio_stream", "error_message": "Speech stream layout is unsupported."}, true)
+	var opened := _output.begin(str(meta.format), int(meta.sample_rate), _stream_volume)
+	if not opened.success:
+		_complete(opened, true)
+		return
+	_stream_open = true
 
 func _on_stream_chunk(audio: PackedByteArray) -> void:
-	if done or not is_instance_valid(_stream_sink):
+	if done or not _stream_open or _output == null:
 		return
-	if not _stream_sink.append(audio):
+	if not _output.append(audio):
 		var active := _request
 		if active != null:
 			active.cancel()
 
 func _on_stream_end() -> void:
-	if not done and is_instance_valid(_stream_sink):
-		_stream_sink.end()
+	if not done and _stream_open and _output != null:
+		_output.end()
 
-func _on_stream_playback_began() -> void:
+func _on_output_started() -> void:
 	if done:
 		return
 	playback_started = true
 	playback_began.emit()
 
-func _on_stream_playback_finished(outcome: Dictionary) -> void:
+func _on_output_finished(outcome: Dictionary) -> void:
 	if done:
 		return
-	var completed_sink := _stream_sink
-	_stream_sink = null
-	if is_instance_valid(completed_sink):
-		completed_sink.queue_free()
 	if outcome.get("success", false):
 		finish(outcome)
 	else:
@@ -144,6 +141,3 @@ func _disconnect_stream_request(request) -> void:
 	for pair in [[request.stream_opened, _on_stream_open], [request.stream_chunk, _on_stream_chunk], [request.stream_ended, _on_stream_end]]:
 		if pair[0].is_connected(pair[1]):
 			pair[0].disconnect(pair[1])
-
-func _on_playback_finished() -> void:
-	finish({"success": true})
