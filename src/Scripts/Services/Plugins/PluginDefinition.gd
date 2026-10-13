@@ -138,6 +138,10 @@ var settings_title: String = ""
 ## Flat list of host capability grants (e.g. ["notes.create", "artifacts.read"])
 var host_capabilities: Array[String] = []
 
+## Host events the plugin subscribes to (permissions.host_events), delivered
+## as `minerva/host_event` notifications once granted. See ALLOWED_HOST_EVENTS.
+var host_events: Array[String] = []
+
 ## Network mode ("none" | "localhost" | "unrestricted")
 var network_mode: String = "none"
 
@@ -290,6 +294,29 @@ const ALLOWED_HOST_CAPABILITY_NAMESPACES := [
 	"secrets:",
 ]
 
+## Event names a manifest may list in permissions.host_events.
+const ALLOWED_HOST_EVENTS := [
+	"chat.turn_completed",
+	"chat.directory_changed",
+]
+
+## A host-event subscription is granted in PluginPolicy under this prefix, so
+## it shares the capability grant store, auto-grant and revoke UI, and cannot
+## collide with a host_capability (none may start with it).
+const HOST_EVENT_GRANT_PREFIX := "host_event:"
+
+
+static func host_event_grant(event: String) -> String:
+	return HOST_EVENT_GRANT_PREFIX + event
+
+
+## Policy grant keys for this plugin's declared host_events.
+func host_event_grants() -> Array[String]:
+	var keys: Array[String] = []
+	for event in host_events:
+		keys.append(host_event_grant(event))
+	return keys
+
 ## Required fields on each entry of manifest.skills[] (DCR 019df57b).
 ## "optimization" is allowed but optional; absent → record stores {}.
 const REQUIRED_SKILL_FIELDS := [
@@ -403,6 +430,7 @@ func to_dict() -> Dictionary:
 		"tools": tools.duplicate(true),
 		"permissions": {
 			"host_capabilities": Array(host_capabilities),
+			"host_events": Array(host_events),
 			"network": {
 				"mode": network_mode,
 			},
@@ -616,6 +644,9 @@ func validate() -> Array[String]:
 	var hcap_errors := validate_host_capabilities()
 	for e in hcap_errors:
 		errors.append(e)
+	for event in host_events:
+		if not ALLOWED_HOST_EVENTS.has(event):
+			errors.append("unknown host_event '%s' (allowed: %s)" % [event, str(ALLOWED_HOST_EVENTS)])
 
 	# Validate settings declarations: unique non-empty keys, a known type, and
 	# enum entries carrying a non-empty options array.
@@ -843,6 +874,8 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	var perms: Dictionary = data.get("permissions", {})
 	for cap in perms.get("host_capabilities", []):
 		def.host_capabilities.append(str(cap))
+	for event: Variant in perms.get("host_events", []):
+		def.host_events.append(str(event))
 	var network: Dictionary = perms.get("network", {})
 	def.network_mode = network.get("mode", "none")
 	var filesystem: Dictionary = perms.get("filesystem", {})

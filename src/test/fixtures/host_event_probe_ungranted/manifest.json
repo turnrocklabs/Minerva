@@ -1,0 +1,31 @@
+{
+  "id": "host_event_probe_ungranted",
+  "name": "Host Event Probe (ungranted)",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": [
+      "../host_event_probe/host_event_probe.py"
+    ]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [],
+    "network": {
+      "mode": "none"
+    },
+    "filesystem": {
+      "mode": "none",
+      "paths": []
+    },
+    "host_events": [
+      "chat.turn_completed",
+      "chat.directory_changed"
+    ]
+  }
+}

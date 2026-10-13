@@ -156,6 +156,7 @@ PLUGIN_TESTS=(
 	test/test_marketplace_install_start_codetools.gd
 	test/test_codetools_panel_gate.gd
 	test/test_passthrough_e2e.gd
+	test/test_plugin_host_events.gd
 )
 PLATFORM_GATE_TESTS=(
 	test/test_plugin_natural_exit.gd

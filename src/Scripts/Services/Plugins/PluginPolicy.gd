@@ -137,7 +137,7 @@ func get_requested_capabilities(plugin_id: String) -> Array:
 	if def == null:
 		return []
 
-	return Array(def.host_capabilities)
+	return Array(def.host_capabilities) + Array(def.host_event_grants())
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +177,15 @@ func check_capability(plugin_id: String, capability: String) -> Dictionary:
 	else:
 		_record_decision(plugin_id, capability, false, "not_granted")
 		return PluginErrors.capability_not_granted(plugin_id, capability)
+
+
+## Grant check for host-initiated traffic (host events), recorded like
+## check_capability's decision. No rate limit applies: the host sets the pace,
+## and a dropped event would leave the plugin waiting for it.
+func check_grant(plugin_id: String, capability: String) -> bool:
+	var granted := is_capability_granted(plugin_id, capability)
+	_record_decision(plugin_id, capability, granted, "granted" if granted else "not_granted")
+	return granted
 
 
 ## Check whether a plugin has exceeded its rate limit for a specific capability.

@@ -820,6 +820,10 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 	model_msg_node.loading = true
 	return model_msg_node
 
+static func _is_cancelled_response(bot_response: BotResponse) -> bool:
+	return str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
+
+
 # Generate content from provider
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
@@ -868,8 +872,8 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if bot_response and not str(bot_response.error).is_empty():
 		if provider_override == null or provider_override == history.provider:
 			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
-		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
-		history.termination_reason = "cancelled" if was_cancelled else "error"
+		var failed_response: BotResponse = bot_response
+		history.termination_reason = "cancelled" if _is_cancelled_response(failed_response) else "error"
 		history.termination_message = str(bot_response.error)
 
 	# Record cost with chat context
@@ -1877,6 +1881,9 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.Message = bot_response.text
 	existing_response.Error = bot_response.error
+	var turn_reply: ChatHistoryItem = existing_response
+	var turn_response: BotResponse = bot_response
+	_note_turn_response(history, turn_token, turn_reply, turn_response)
 	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
 	existing_response.OutputTokens = bot_response.completion_tokens
@@ -2039,6 +2046,7 @@ func execute_hcp_chat():
 	# during the await above. Guard before touching them directly below.
 	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
 		push_warning("[ChatPane] execute_hcp_chat: late response dropped — UI node freed (bug 019e5bc8)")
+		_emit_turn_completed(history, null, ChatEventPayloads.OUTCOME_CANCELLED)
 		return
 
 	var chi = ChatHistoryItem.new()
@@ -2071,6 +2079,13 @@ func execute_hcp_chat():
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	else:
 		model_msg_node.queue_free()
+	# Core sends take no turn (their stop and queue rules differ), so this, the
+	# send's single end, reports it; termination_reason is not theirs to read.
+	var reply: ChatHistoryItem = chi if bot_response != null else null
+	var core_response: BotResponse = bot_response
+	var stopped: bool = core_response != null and _is_cancelled_response(core_response)
+	_emit_turn_completed(history, reply, ChatEventPayloads.resolve_outcome(
+		ChatEventPayloads.OUTCOME_CANCELLED if stopped else "", "", reply))
 
 #region Outgoing message queue
 
@@ -2145,6 +2160,7 @@ func _begin_chat_turn(history: ChatHistory) -> int:
 		return -1
 	history.request_turn_token += 1
 	history.is_request_active = true
+	_turn_reports[history.HistoryId] = ChatEventPayloads.TurnReport.new(history.request_turn_token)
 	_update_stop_button()
 	return history.request_turn_token
 
@@ -2165,6 +2181,10 @@ func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
 	history.is_request_active = false
 	_update_stop_button()
 	_update_compact_button()
+	var report: ChatEventPayloads.TurnReport = _take_turn_report(history, turn_token)
+	if report != null and not report.silent:
+		_emit_turn_completed(history, report.reply, ChatEventPayloads.resolve_outcome(
+			report.outcome, report.termination, report.reply))
 	_drain_outgoing_queue(history)
 
 
@@ -2187,9 +2207,88 @@ func _drop_item(history: ChatHistory, item: ChatHistoryItem) -> void:
 func _cancel_chat_turn(history: ChatHistory) -> void:
 	if history == null:
 		return
+	var report: ChatEventPayloads.TurnReport = _take_turn_report(history, history.request_turn_token)
 	history.request_turn_token += 1
 	history.is_request_active = false
 	_clear_outgoing_queue(history)
+	if report != null and not report.silent:
+		_emit_turn_completed(history, report.reply, ChatEventPayloads.OUTCOME_CANCELLED)
+
+
+#region Turn reports (chat_turn_completed)
+
+## HistoryId -> ChatEventPayloads.TurnReport of the chat's in-flight turn.
+## Taking a report removes it, so each turn emits at most once.
+var _turn_reports: Dictionary = {}
+
+
+## The report of turn `turn_token`, or null when that turn is over or replaced:
+## a stopped turn's coroutine must not write into its successor's report.
+func _turn_report(history: ServiceHistory, turn_token: int) -> ChatEventPayloads.TurnReport:
+	var report: ChatEventPayloads.TurnReport = _turn_reports.get(history.HistoryId)
+	return report if report != null and report.token == turn_token else null
+
+
+func _take_turn_report(history: ServiceHistory, turn_token: int) -> ChatEventPayloads.TurnReport:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null:
+		_turn_reports.erase(history.HistoryId)
+	return report
+
+
+## Only a model item is a reply: an empty item built from a null response is none.
+static func _is_model_item(item: ChatHistoryItem) -> bool:
+	return item != null and (item.Role == ChatHistoryItem.ChatRole.MODEL
+		or item.Role == ChatHistoryItem.ChatRole.ASSISTANT)
+
+
+func _note_turn_reply(history: ServiceHistory, turn_token: int, reply: ChatHistoryItem) -> void:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null:
+		report.reply = reply if _is_model_item(reply) else null
+
+
+## The provider response that ends turn `turn_token`, and the item built from
+## it: a null response leaves no reply, an errored one ends the turn so.
+## Recorded here, where the turn ends on it, never inside the request: a
+## request that is retried, or whose turn was stopped, must not decide it.
+func _note_turn_response(history: ServiceHistory, turn_token: int, reply: ChatHistoryItem, bot_response: BotResponse) -> void:
+	_note_turn_reply(history, turn_token, reply if bot_response != null else null)
+	if bot_response != null and not str(bot_response.error).is_empty():
+		_note_turn_termination(history, turn_token,
+			"cancelled" if _is_cancelled_response(bot_response) else "error")
+
+
+func _note_turn_termination(history: ServiceHistory, turn_token: int, reason: String) -> void:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null:
+		report.termination = reason
+
+
+## Record why turn `turn_token` ended. The chat-wide termination_reason keeps
+## its other readers; the event reads the token-guarded report instead.
+func _terminate_turn(history: ServiceHistory, turn_token: int, reason: String, message: String) -> void:
+	history.termination_reason = reason
+	history.termination_message = message
+	_note_turn_termination(history, turn_token, reason)
+
+
+func _note_turn_outcome(history: ServiceHistory, turn_token: int, outcome: String) -> void:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null:
+		report.outcome = outcome
+
+
+func _silence_turn(history: ServiceHistory, turn_token: int) -> void:
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null:
+		report.silent = true
+
+
+func _emit_turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outcome: String) -> void:
+	chat_turn_completed.emit(ChatEventPayloads.turn_completed(history, reply, outcome))
+
+#endregion
 
 
 ## Start the oldest queued message of `history`, if the chat is now idle.
@@ -2305,10 +2404,12 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		# The turn is over the moment the human "provider" has its message, so
 		# release here: an early return that left the flag set would wedge the
 		# chat's queue closed forever.
+		_silence_turn(history, turn_token)
 		_release_chat_turn(history, turn_token)
 		return # if user is using Human provider we finish here
 
 	if _blocked_by_trailing_user(last_msg, promoted):
+		_silence_turn(history, turn_token)
 		_release_chat_turn(history, turn_token)
 		return
 
@@ -2380,11 +2481,17 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# the turn looks alive, until the generate resolves. The relay reuses the
 	# accumulator idiom: content lives on dummy_item, the wave shows via
 	# loading_append, and the SAME node finalizes below.
-	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
+	var _pt_status: PassthroughTurnStatusScript = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
 	var bot_response = await generate_content_from_provider(history, history_list)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
+	# Stop invalidates the turn and frees its loading message. A late response
+	# must not pass that freed node into the relay or write into a newer turn.
+	if _turn_stopped(history, turn_token):
+		if _pt_status != null:
+			_pt_status.finish("cancelled")
+		return
 
 	# Stop the status relay the instant the generate resolves (success/error/cancel).
 	_passthrough_end_relay(_pt_status, bot_response, model_msg_node, dummy_item)
@@ -2392,6 +2499,9 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
 	var chi = process_bot_response(bot_response, history.provider)
+	var turn_reply: ChatHistoryItem = chi
+	var turn_response: BotResponse = bot_response
+	_note_turn_response(history, turn_token, turn_reply, turn_response)
 	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
 
 	# W5: carry passthrough question options (W1 contract) onto the finalized CHI
@@ -2874,8 +2984,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Max tool call rounds (%d) reached" % max_rounds)
-		history.termination_reason = "quota_exhausted"
-		history.termination_message = "Max tool call rounds (%d) reached" % max_rounds
+		_terminate_turn(history, turn_token, "quota_exhausted", "Max tool call rounds (%d) reached" % max_rounds)
 		finish_with_signal.call()
 		return
 
@@ -2884,8 +2993,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		SingletonObject.clear_cancelled(history.HistoryId)
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Cancelled by user")
-		history.termination_reason = "cancelled"
-		history.termination_message = "Cancelled by user"
+		_terminate_turn(history, turn_token, "cancelled", "Cancelled by user")
 		finish_with_signal.call()
 		return
 
@@ -2909,8 +3017,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			# Add tool_results for remaining unexecuted tools (current + rest)
 			var remaining_tools = tool_calls.slice(i)
 			_add_unexecuted_tool_results(history, remaining_tools, "Cancelled by user")
-			history.termination_reason = "cancelled"
-			history.termination_message = "Cancelled by user during tool execution"
+			_terminate_turn(history, turn_token, "cancelled", "Cancelled by user during tool execution")
 			finish_with_signal.call()
 			return
 
@@ -3028,8 +3135,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 					"Stopped after a repeated non-retryable document operation")
 			var explanation := str(result.get("error_message", result.get("error", "")))
 			model_chi.Message += ("\n\n" if not model_chi.Message.is_empty() else "") + explanation
-			history.termination_reason = "unsupported_operation_loop"
-			history.termination_message = explanation
+			_terminate_turn(history, turn_token, "unsupported_operation_loop", explanation)
 			if is_instance_valid(model_chi.rendered_node):
 				model_chi.rendered_node.loading_append = false
 				model_chi.rendered_node.render()
@@ -3049,8 +3155,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	if not context_status.ok:
 		# Hard limit exceeded - stop the agent loop
 		push_warning("Agent mode: %s" % context_status.message)
-		history.termination_reason = "quota_exhausted"
-		history.termination_message = context_status.message
+		var stop_message: String = context_status.message
+		_terminate_turn(history, turn_token, "quota_exhausted", stop_message)
 		finish_with_signal.call()
 		return
 	elif context_status.warning:
@@ -3068,8 +3174,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# Check for cancellation before continuation
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
-		history.termination_reason = "cancelled"
-		history.termination_message = "Cancelled by user before continuation"
+		_terminate_turn(history, turn_token, "cancelled", "Cancelled by user before continuation")
 		finish_with_signal.call()
 		return
 
@@ -3098,8 +3203,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		print("[Agent] ERROR: No continuation response received")
 		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = false
-		history.termination_reason = "error"
-		history.termination_message = "No continuation response received"
+		_terminate_turn(history, turn_token, "error", "No continuation response received")
 		finish_with_signal.call()
 		return
 
@@ -3110,6 +3214,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		if current_round > 0 and "empty response" in continuation_response.error.to_lower():
 			print("[Agent] Retrying continuation after empty response (round %d)..." % current_round)
 			await get_tree().create_timer(1.0).timeout
+			if turn_token >= 0 and _turn_stopped(history, turn_token):
+				return
 			continuation_response = await generate_content_from_provider(history, continuation_list)
 			if continuation_response and not continuation_response.error:
 				# Retry succeeded — continue processing below
@@ -3121,8 +3227,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				if is_instance_valid(model_chi.rendered_node):
 					model_chi.rendered_node.loading_append = false
 					model_chi.rendered_node.render()
-				history.termination_reason = "error"
-				history.termination_message = err_msg
+				var retry_error: String = err_msg
+				_terminate_turn(history, turn_token, "error", retry_error)
 				finish_with_signal.call()
 				return
 		else:
@@ -3131,8 +3237,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			if is_instance_valid(model_chi.rendered_node):
 				model_chi.rendered_node.loading_append = false
 				model_chi.rendered_node.render()
-			history.termination_reason = "error"
-			history.termination_message = continuation_response.error
+			var continuation_error: String = continuation_response.error
+			_terminate_turn(history, turn_token, "error", continuation_error)
 			finish_with_signal.call()
 			return
 
@@ -3180,8 +3286,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			SingletonObject.clear_cancelled(history.HistoryId)
 			# Add tool_results for unexecuted tools so conversation can continue
 			_add_unexecuted_tool_results(history, continuation_response.tool_calls, "Cancelled by user")
-			history.termination_reason = "cancelled"
-			history.termination_message = "Cancelled by user before continuation"
+			_terminate_turn(history, turn_token, "cancelled", "Cancelled by user before continuation")
 			finish_with_signal.call()
 			return
 
@@ -3235,6 +3340,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 	for i in _inputs:
 		if SingletonObject.is_cancelled(history.HistoryId):
 			SingletonObject.clear_cancelled(history.HistoryId)
+			_note_turn_outcome(history, turn_token, ChatEventPayloads.OUTCOME_CANCELLED)
 			_release_chat_turn(history, turn_token)
 			return
 		var user_history_item = create_user_history_item(i)
@@ -3250,10 +3356,12 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 			
 			SingletonObject.clear_consumed_proxies(history.HistoryId)
 
+			_silence_turn(history, turn_token)
 			_release_chat_turn(history, turn_token)
 			return # if user is using Human provider we finish here
 		
 		if _blocked_by_trailing_user(last_msg, promoted):
+			_silence_turn(history, turn_token)
 			_release_chat_turn(history, turn_token)
 			return
 		
@@ -3280,6 +3388,9 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		var bot_response = await generate_content_from_provider(history, history_list)
 		
 		var chi = process_bot_response(bot_response, history.provider)
+		var turn_reply: ChatHistoryItem = chi
+		var turn_response: BotResponse = bot_response
+		_note_turn_response(history, turn_token, turn_reply, turn_response)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	_release_chat_turn(history, turn_token)
 
@@ -3366,7 +3477,14 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
 	bot_response.SliderContainerId = run.model_slider_uuid
 	user_msg.MultiSliderContainerId = run.multi_slider_uuid
 	bot_response.MultiSliderContainerId = run.multi_slider_uuid
+	# Every worker's response counts: one that failed fails the turn, even when
+	# a later worker's reply is the one reported.
+	if not _is_model_item(bot_response) or not bot_response.Error.is_empty():
+		_note_turn_termination(history, run.turn_token, "error")
 	if run_complete:
+		if history.provider is HumanProvider:
+			_silence_turn(history, run.turn_token)
+		_note_turn_reply(history, run.turn_token, bot_response)
 		_release_chat_turn(history, run.turn_token)
 
 	if SingletonObject.is_cancelled(history.HistoryId):
@@ -3672,6 +3790,8 @@ func render_history(chat_history: ChatHistory):
 	# Deferred so the new tab is fully registered first.
 	call_deferred("_apply_tab_filters")
 	call_deferred("_refresh_group_dock")
+	if not _initializing_pane:
+		_emit_directory_change(chat_history, ChatEventPayloads.CHANGE_CREATED)
 
 	# Eagerly create the agent-notes tab for agent chats so it's visible
 	# before any tool calls happen.
@@ -4084,12 +4204,21 @@ func _on_edit_title_dialog_confirmed():
 
 	var tab = %EditTitleDialog.get_meta("tab")
 	var new_name: String = %LineEdit.text
-	if tab == null or int(tab) < 0 or int(tab) >= SingletonObject.ChatList.size():
+	if tab == null:
 		return
+	rename_chat(int(tab), new_name)
+
+
+## Retitle the chat at tab index `tab`. False when no chat is at that index.
+func rename_chat(tab: int, new_name: String) -> bool:
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		return false
 	set_tab_title(tab, new_name)
 	var history: ChatHistory = SingletonObject.ChatList[tab]
 	history.HistoryName = new_name
 	_sync_agent_notes_tab_title(history)
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_RENAMED)
+	return true
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:
@@ -4180,6 +4309,18 @@ func set_show_archived(show_archived: bool) -> void:
 ## Emitted whenever group membership, the active group, or the deleted set
 ## changes — the dock re-renders from this rather than polling.
 signal chat_groups_changed()
+
+## One turn of a chat ended (see ChatEventPayloads.turn_completed): emitted
+## once per turn, by _release_chat_turn or, for a stopped turn, _cancel_chat_turn.
+signal chat_turn_completed(payload: Dictionary)
+
+## A chat was created, renamed, regrouped, closed or restored
+## (ChatEventPayloads.directory_changed). Project load emits nothing.
+signal chat_directory_changed(payload: Dictionary)
+
+
+func _emit_directory_change(history: ServiceHistory, change: String) -> void:
+	chat_directory_changed.emit(ChatEventPayloads.directory_changed(history, change, _membership_of(history)))
 
 ## Currently selected group VIEW. Either a ChatGroupRegistry sentinel
 ## (VIEW_ALL / VIEW_UNGROUPED / VIEW_DELETED) or a real group id.
@@ -4411,6 +4552,7 @@ func set_chat_group(history: ServiceHistory, group_id: String) -> bool:
 		return false
 	if not group_id.is_empty() and not SingletonObject.chat_groups.has_group(group_id):
 		return false
+	var previous_group := _membership_of(history)
 	if history.Deleted:
 		# A deleted chat's membership lives in PreDeleteGroupId; writing
 		# ChatGroupId here would resurrect an empty group.
@@ -4424,6 +4566,8 @@ func set_chat_group(history: ServiceHistory, group_id: String) -> bool:
 	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()
+	if _membership_of(history) != previous_group:
+		_emit_directory_change(history, ChatEventPayloads.CHANGE_REGROUPED)
 	return true
 
 
@@ -4494,6 +4638,7 @@ func delete_group(group_id: String, reassign_to: String = ChatGroupRegistry.UNGR
 			touched = true
 		if touched:
 			moved.append(str(history.HistoryId))
+			_emit_directory_change(history, ChatEventPayloads.CHANGE_REGROUPED)
 
 	_last_dissolved_group = {
 		"id": group_id,
@@ -4569,6 +4714,7 @@ func undo_group_delete() -> Dictionary:
 			continue
 		_set_membership(history, restored)
 		reattached.append(str(raw_id))
+		_emit_directory_change(history, ChatEventPayloads.CHANGE_REGROUPED)
 
 	# Restore the prunable-or-not state rather than inferring it: a group that
 	# was populated before the delete stays prunable even if every one of its
@@ -4654,9 +4800,12 @@ func delete_chat(history: ServiceHistory) -> bool:
 	history.DeletedAt = int(Time.get_unix_time_from_system())
 	history.DeletedSeq = _next_delete_seq()
 	history.Deleted = true
+	# Soft-delete leaves the request running and the history restorable. Its
+	# report is consumed by release/cancel, including while the tab is hidden.
 	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_CLOSED)
 	SingletonObject.create_toast_notification("Chat deleted: %s (restore from the Deleted group)" % history.HistoryName)
 	return true
 
@@ -4676,6 +4825,7 @@ func restore_chat(history: ServiceHistory) -> bool:
 	history.PreDeleteGroupId = ""
 	_apply_tab_filters()
 	chat_groups_changed.emit()
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_RESTORED)
 	SingletonObject.create_toast_notification("Chat restored: %s" % history.HistoryName)
 	# Bring the restored chat back on screen.
 	var idx := SingletonObject.ChatList.find(history)
@@ -5917,6 +6067,10 @@ func _on_audio_stop_1_pressed() -> void:
 			for worker in workers:
 				if not registry.is_terminal_status(worker.status):
 					SingletonObject.cancelled_history_ids.append(worker.worker_chat_id)
+					var worker_chat_id: String = worker.worker_chat_id
+					var worker_chat: ServiceHistory = find_chat_by_id(worker_chat_id)
+					if worker_chat != null:
+						_note_turn_outcome(worker_chat, worker_chat.request_turn_token, ChatEventPayloads.OUTCOME_CANCELLED)
 					SingletonObject.stop_all_requests.emit(worker.worker_chat_id)
 					registry.update_worker_status(worker.worker_id, "cancelled", "Parent supervisor stopped")
 					print("[ChatPane] Cascade stop: cancelled worker '%s'" % worker.worker_name)
@@ -5933,6 +6087,7 @@ func _try_interrupt_plugin_turn(history: ChatHistory) -> bool:
 		return false
 	if not history.provider.interrupt_active_request():
 		return false
+	_note_turn_outcome(history, history.request_turn_token, ChatEventPayloads.OUTCOME_CANCELLED)
 	_clear_outgoing_queue(history)
 	return true
 
