@@ -649,7 +649,10 @@ func initialize_plugins() -> void:
 	manager.plugin_started.connect(_on_plugin_started_for_host_events)
 	_wire_chat_host_events()
 	var ChatTargetClass = load("res://Scripts/Services/Plugins/PluginHostChatTarget.gd")
-	plugin_capability_broker.chat_target = ChatTargetClass.new(_chat_pane_if_live, _notify_plugin_refusal)
+	plugin_capability_broker.chat_target = ChatTargetClass.new(_chat_pane_if_live, _notify_plugin_refusal,
+		_minerva_ptt_idle)
+	plugin_manager.plugin_stopped.connect(plugin_capability_broker.chat_target.plugin_stopped)
+	plugin_manager.plugin_crashed.connect(plugin_capability_broker.chat_target.plugin_stopped)
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
 
@@ -672,6 +675,10 @@ func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -
 
 func _chat_pane_if_live() -> ChatPane:
 	return Chats if is_instance_valid(Chats) else null
+
+
+func _minerva_ptt_idle() -> bool:
+	return AtT == null or AtT.ptt_state == AudioToTexts.PTTState.READY
 
 
 func _notify_plugin_refusal(message: String) -> void:
