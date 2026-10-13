@@ -556,12 +556,10 @@ func _test_turn_events() -> void:
 ## real provider execution, including a hidden chat and deletion during await.
 func _test_public_turn_events() -> void:
 	print("\n-- E: public production turn events --")
-	var previous_notes = [_so.notes_container, _so.drawer_notes_container]
+	var host_render := preload("res://test/helpers/chat_host_render_fixture.gd").new()
+	host_render.install(_so)
 	var previous_pane = _so.Chats
 	var previous_chats: Array = _so.ChatList.duplicate()
-	var notes_script = load("res://Scenes/note/NotesContainer.gd")
-	_so.notes_container = notes_script.new()
-	_so.drawer_notes_container = notes_script.new()
 	var scene = load("res://Scenes/Chat.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
@@ -605,8 +603,11 @@ func _test_public_turn_events() -> void:
 			await process_frame
 		check("E %s: production turn reached the provider" % label, provider.entered)
 		if label == "cancel":
-			pane.current_tab = _so.ChatList.find(history)
+			# Public send restores the visible tab deferred; let that settle before
+			# selecting the target and pressing its real Stop control.
 			await process_frame
+			await process_frame
+			pane.current_tab = _so.ChatList.find(history)
 			pane.get_node("%AudioStop1").pressed.emit()
 		elif label in ["deleted", "restored"]:
 			check("E %s: soft-delete succeeds during the request" % label, pane.delete_chat(history))
@@ -631,10 +632,7 @@ func _test_public_turn_events() -> void:
 	scene.queue_free()
 	await process_frame
 	_so.ChatList.assign(previous_chats)
-	_so.notes_container.free()
-	_so.drawer_notes_container.free()
-	_so.notes_container = previous_notes[0]
-	_so.drawer_notes_container = previous_notes[1]
+	host_render.restore()
 
 
 ## Turn-report races, on a harness pane with no plugins involved: a stopped
