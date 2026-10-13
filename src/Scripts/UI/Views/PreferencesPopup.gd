@@ -5224,26 +5224,24 @@ func _refresh_voice_devices() -> void:
 	var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
 	if devices == null:
 		return
-	for direction: String in ["output"]:
-		var option: OptionButton = _voice_output_devices
-		if not is_instance_valid(option):
-			continue
-		option.clear()
-		var selected: String = devices.selected_output()
-		var selected_index: int = -1
-		for device: Dictionary in devices.devices(direction):
-			var index: int = option.item_count
-			var available: bool = device.available
-			option.add_item(str(device.label) + (" (unreachable)" if not available else ""))
-			option.set_item_metadata(index, str(device.id))
-			if str(device.id) == selected:
-				selected_index = index
-		if selected_index < 0:
-			selected_index = option.item_count
-			option.add_item(selected + " (unavailable)")
-			option.set_item_metadata(selected_index, selected)
-		option.select(selected_index)
-
+	var option: OptionButton = _voice_output_devices
+	if not is_instance_valid(option):
+		return
+	option.clear()
+	var selected: String = devices.selected_output()
+	var selected_index: int = -1
+	for device: Dictionary in devices.devices("output"):
+		var index: int = option.item_count
+		var available: bool = device.available
+		option.add_item(str(device.label) + (" (unreachable)" if not available else ""))
+		option.set_item_metadata(index, str(device.id))
+		if str(device.id) == selected:
+			selected_index = index
+	if selected_index < 0:
+		selected_index = option.item_count
+		option.add_item(selected + " (unavailable)")
+		option.set_item_metadata(selected_index, selected)
+	option.select(selected_index)
 
 func _select_voice_device(index: int, direction: String, option: OptionButton) -> void:
 	var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices

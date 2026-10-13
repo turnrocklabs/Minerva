@@ -468,7 +468,7 @@ func _play_one_shot(text: String, voice: String, backend: String, operation: Spe
 	if not synthesized.success:
 		return synthesized
 	if not operation.play(player if is_instance_valid(player) else null, synthesized.audio, volume):
-		return failure("playback_failed", "Speech playback could not start.")
+		return operation.completion_outcome if operation.done else failure("playback_failed", "Speech playback could not start.")
 	return {"success": true, "streaming": false}
 
 func _log_tts(diagnostic_id: String, stage: String, started_msec: int, backend: String, status: String, audio_bytes := 0, sample_rate := 0, audio_format := "unknown") -> void:

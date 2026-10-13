@@ -24,6 +24,7 @@ var _format: String = ""
 var _volume: float = 1.0
 var _source: PackedByteArray = PackedByteArray()
 var _source_offset: int = 0
+var _partial_sample: PackedByteArray = PackedByteArray()
 
 
 func _init(stream_id: int, send: Callable, next_frame: Callable, available: Callable) -> void:
@@ -83,12 +84,17 @@ func append(audio: PackedByteArray) -> bool:
 	if _format == "wav":
 		_wav.append_array(audio)
 		return true
-	if audio.size() % 2 != 0 or _pending + audio.size() > PENDING_BYTES:
-		push_warning("[PluginSpeechOutput] Dropped overflowing or unaligned PCM; terminating stream.")
+	var aligned: PackedByteArray = _partial_sample + audio
+	_partial_sample = PackedByteArray()
+	if aligned.size() % 2 != 0:
+		_partial_sample = aligned.slice(aligned.size() - 1)
+		aligned = aligned.slice(0, aligned.size() - 1)
+	if _pending + aligned.size() + _partial_sample.size() > PENDING_BYTES:
+		push_warning("[PluginSpeechOutput] Dropped overflowing PCM; terminating stream.")
 		_fail("audio_overflow", "Plugin speaker cannot keep up with speech.")
 		return false
-	for offset in range(0, audio.size(), CHUNK_BYTES):
-		var chunk: PackedByteArray = audio.slice(offset, mini(offset + CHUNK_BYTES, audio.size()))
+	for offset in range(0, aligned.size(), CHUNK_BYTES):
+		var chunk: PackedByteArray = aligned.slice(offset, mini(offset + CHUNK_BYTES, aligned.size()))
 		_queue.append(chunk)
 		_pending += chunk.size()
 	return true
@@ -106,19 +112,27 @@ func end() -> void:
 		if not result.success:
 			_fail(str(result.error_code), str(result.error_message))
 		return
+	if not _partial_sample.is_empty():
+		_fail("invalid_audio_stream", "Speech ended with an incomplete PCM sample.")
+		return
 	_ended = true
 
 
 func stop() -> void:
 	if _stopped:
 		return
+	_discard()
+	if _opened:
+		_emit({"op": "cancel"})
+
+
+func _discard() -> void:
 	_stopped = true
 	_queue.clear()
 	_pending = 0
 	_wav = PackedByteArray()
 	_source = PackedByteArray()
-	if _opened:
-		_emit({"op": "cancel"})
+	_partial_sample = PackedByteArray()
 
 
 func acknowledge(success: bool, message: String = "") -> void:
@@ -128,9 +142,10 @@ func acknowledge(success: bool, message: String = "") -> void:
 		_fail("audio_protocol", "Plugin acknowledged speech before EOS.")
 		return
 	if success:
-		_stopped = true
-		_source = PackedByteArray()
-	_report_finished({"success": true} if success else VoiceServiceClient.failure("audio_delivery_failed", message))
+		_discard()
+		_report_finished({"success": true})
+	else:
+		_fail("audio_delivery_failed", message)
 
 
 func _emit(payload: Dictionary) -> bool:
@@ -141,7 +156,7 @@ func _emit(payload: Dictionary) -> bool:
 
 func _fail(code: String, message: String) -> void:
 	_emit({"op": "error", "error_code": code, "error_message": message})
-	stop()
+	_discard()
 	_report_finished(VoiceServiceClient.failure(code, message))
 
 

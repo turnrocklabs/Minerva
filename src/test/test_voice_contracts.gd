@@ -343,6 +343,7 @@ func _run() -> void:
 	var core = root.get_node("Core")
 	var so = root.get_node("SingletonObject")
 	_no_builtin_voice_container(so)
+	await _plugin_output_contracts()
 	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging, "docker": so.docker_manager}
 	so.verbose_logging = false
 	so.config_file = ConfigFile.new()
@@ -834,6 +835,15 @@ func _run() -> void:
 	pane.free()
 	transport.reply(reloading_speak_id, {"audio_base64": Marshalls.raw_to_base64(bytes)})
 	check("MCP completion after pane deletion refuses unavailable playback", output.result.error_code == "no_audio_player")
+	var pending_player := AudioStreamPlayer.new()
+	root.add_child(pending_player)
+	var pending_speech = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	output.clear()
+	_capture(voice, "synthesize_auto_playback_result", ["lost player", config, pending_speech, pending_player], output)
+	var pending_speech_id := _last_id(transport)
+	pending_player.free()
+	transport.reply(pending_speech_id, {"audio_base64": Marshalls.raw_to_base64(bytes)})
+	check("one-shot client refuses a player freed during synthesis without typed-call errors", pending_speech.done and output.result.error_code == "no_audio_player")
 
 	core.client = saved.client
 	core.registered = saved.registered
@@ -848,3 +858,87 @@ func _run() -> void:
 	so.docker_manager = saved.docker
 	transport.free()
 	_completed = true
+
+
+## The real endpoint owner and speech operation cross the transport boundary;
+## only the injected native-writer edge is observed, without an OS driver.
+func _plugin_output_contracts() -> void:
+	var config = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
+	var policy = load("res://Scripts/Services/Plugins/PluginPolicy.gd").new(null, null, false)
+	policy.grant_capability("audio_probe", "host.audio")
+	var sent: Array[Dictionary] = []
+	var sender := func(plugin_id: String, event: String, payload: Dictionary) -> Error:
+		check("audio transport stays targeted to its owner", plugin_id == "audio_probe" and event == "voice.audio")
+		sent.append(payload.duplicate(true))
+		return OK
+	var next_frame := func() -> void: await process_frame
+	var devices = load("res://Scripts/Services/Plugins/PluginAudioDevices.gd").new(config, policy, sender, next_frame, func() -> String: return AudioServer.output_device, func(device: String) -> void: AudioServer.output_device = device, func(_message: String) -> void: pass)
+	policy.capability_revoked.connect(devices.capability_revoked)
+	var registered: Dictionary = devices.handle("audio_probe", {"op": "register", "device_id": "remote", "label": "Remote", "output": true})
+	check("registration returns a stable namespaced endpoint", registered.get("result", {}).get("id") == "plugin:audio_probe:remote")
+	config.output_device = "plugin:audio_probe:remote"
+	var unavailable = devices.speech_output(null, {"plugin_id": "audio_probe", "send_id": 1})
+	check("unreachable remote route refuses without spilling to OS", unavailable.get_script().get_global_name() == "PluginSpeechOutput" and not unavailable.is_available())
+	devices.handle("audio_probe", {"op": "availability", "device_id": "remote", "available": true})
+	var ordinary = devices.speech_output(null)
+	check("keyboard replies retain OS output while plugin speaker selected", ordinary.get_script().get_global_name() == "OSSpeechOutput")
+	var operation = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	var output = devices.speech_output(null, {"plugin_id": "audio_probe", "send_id": 2})
+	check("speech operation accepts internal output without OS player", operation.bind_output(output) and operation.output_available(null))
+	var completed: Array[Dictionary] = []
+	operation.finished.connect(func(outcome: Dictionary) -> void: completed.append(outcome))
+	var opened: Dictionary = output.begin("pcm_s16le", 24000, 0.5)
+	var pcm := PackedByteArray()
+	pcm.resize(24000)
+	for offset in range(0, pcm.size(), 2):
+		pcm.encode_s16(offset, offset % 2000)
+	check("normal voice-service sample rate reaches plugin unchanged", opened.success and sent.back().sample_rate == 24000)
+	check("split samples remain valid PCM across arbitrary chunks", output.append(pcm.slice(0, 333)) and output.append(pcm.slice(333)))
+	output.end()
+	for frame in 5:
+		await process_frame
+	var received := PackedByteArray()
+	var expected_sequence: int = 0
+	for message: Dictionary in sent:
+		if str(message.op) == "chunk":
+			var chunk: PackedByteArray = Marshalls.base64_to_raw(str(message.pcm))
+			check("chunks preserve sequence and JSON payload bound", message.sequence == expected_sequence and chunk.size() <= 6400 and JSON.stringify(message).to_utf8_buffer().size() < 65536)
+			expected_sequence += 1
+			received.append_array(chunk)
+	check("real transport preserves complete PCM through EOS", received == pcm and str(sent.back().op) == "end" and not operation.done)
+	var ack: Dictionary = JSON.parse_string(JSON.stringify({"op": "output_complete", "device_id": "remote", "stream_id": sent.back().stream_id, "success": true}))
+	var accepted: Dictionary = devices.handle("audio_probe", ack)
+	check("JSON-number completion ends the speech exactly once", accepted.success and operation.done and completed.size() == 1 and completed[0].success)
+	check("successful EOS acknowledgement sends no cancel", sent.all(func(packet: Dictionary) -> bool: return str(packet.op) != "cancel"))
+	var invalid: Dictionary = devices.handle("audio_probe", {"op": "output_complete", "device_id": "remote", "stream_id": 1.5, "success": true})
+	check("fractional completion identity is refused", not invalid.success)
+	var barge = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	var barge_output = devices.speech_output(null, {"plugin_id": "audio_probe"})
+	barge.bind_output(barge_output)
+	barge_output.begin("pcm_s16le", 24000, 1.0)
+	barge_output.append(pcm)
+	barge.cancel()
+	var at_cancel: int = sent.size()
+	for frame in 3:
+		await process_frame
+	check("barge-in cancels immediately and no later PCM escapes", str(sent.back().op) == "cancel" and sent.size() == at_cancel and barge.done)
+	var overflow = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	var overflow_output = devices.speech_output(null, {"plugin_id": "audio_probe"})
+	overflow.bind_output(overflow_output)
+	overflow_output.begin("pcm_s16le", 24000, 1.0)
+	var oversized := PackedByteArray()
+	oversized.resize(2 * 1024 * 1024 + 2)
+	check("producer overflow fails the operation without unbounded queueing", not overflow_output.append(oversized) and overflow.done)
+	var incomplete = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	var incomplete_output = devices.speech_output(null, {"plugin_id": "audio_probe"})
+	incomplete.bind_output(incomplete_output)
+	incomplete_output.begin("pcm_s16le", 24000, 1.0)
+	incomplete_output.append(PackedByteArray([1]))
+	incomplete_output.end()
+	check("only an incomplete final PCM sample fails at EOS", incomplete.done and incomplete.completion_outcome.error_code == "invalid_audio_stream" and str(sent.back().op) == "error")
+	var revoked = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	var revoked_output = devices.speech_output(null, {"plugin_id": "audio_probe"})
+	revoked.bind_output(revoked_output)
+	revoked_output.begin("pcm_s16le", 24000, 1.0)
+	policy.revoke_capability("audio_probe", "host.audio")
+	check("grant revocation cancels active output and unregisters endpoint", revoked.done and not revoked_output.is_available() and devices.devices("output").all(func(device: Dictionary) -> bool: return not str(device.id).begins_with("plugin:")))

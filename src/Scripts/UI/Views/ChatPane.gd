@@ -937,8 +937,6 @@ static func _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node)
 func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory, turn_token: int = -1, origin: Dictionary = {}) -> void:
-	if turn_token >= 0 and _turn_stopped(history, turn_token):
-		return
 	var speech_origin: Dictionary = _turn_origin(history, turn_token) if turn_token >= 0 else origin.duplicate(true)
 	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
 		push_warning("[ChatPane] update_ui_after_response: late response dropped — UI node freed (bug 019e5bc8, likely stop+redispatch)")
@@ -962,7 +960,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		model_msg_node.first_time_message = true
 
 		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
-		if chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId):
+		if chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId) and (turn_token < 0 or not _turn_stopped(history, turn_token)):
 			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node, speech_origin)
 	else:
 		model_msg_node.queue_free()
@@ -1965,6 +1963,7 @@ func _on_send_message_button_item_selected(index: int, plugin_id: String = "") -
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	_last_box_send_id += 1
 	var send_id := _last_box_send_id
+	var origin: Dictionary = {"plugin_id": plugin_id, "send_id": send_id} if not plugin_id.is_empty() else {}
 	if history.provider is CoreProvider and not ServiceAccountPrompt.require_account():
 		_settle_box_send(history, send_id, "account_required")
 		return
@@ -1980,26 +1979,26 @@ func _on_send_message_button_item_selected(index: int, plugin_id: String = "") -
 			# execute_regular_chat claims the id at entry (_claim_box_send) and
 			# settles it wherever the message is committed or dropped.
 			_box_send_id = send_id
-			execute_regular_chat(filteredInput, {}, false, {"plugin_id": plugin_id, "send_id": send_id} if not plugin_id.is_empty() else {})
+			execute_regular_chat(filteredInput, {}, false, origin)
 			_box_send_id = 0
 		1:
 			if filteredInput.strip_edges().is_empty():
 				_settle_box_send(history, send_id, "empty_input")
 				return
-			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.PARALLEL):
+			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.PARALLEL, {}, origin):
 				_settle_box_send(history, send_id, "", true)
 				return
 			_settle_box_send(history, send_id)
-			execute_parallel_chat(filteredInput, _begin_chat_turn(history))
+			execute_parallel_chat(filteredInput, _begin_chat_turn(history, origin))
 		2:
 			if filteredInput.strip_edges().is_empty():
 				_settle_box_send(history, send_id, "empty_input")
 				return
-			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.SEQUENTIAL):
+			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.SEQUENTIAL, {}, origin):
 				_settle_box_send(history, send_id, "", true)
 				return
 			_settle_box_send(history, send_id)
-			execute_sequential_chat(filteredInput, _begin_chat_turn(history))
+			execute_sequential_chat(filteredInput, _begin_chat_turn(history, origin))
 
 
 #region Input-box send outcomes
@@ -2388,9 +2387,9 @@ func _drain_outgoing_queue(history: ChatHistory) -> void:
 	current_tab = tab_index
 	match entry.mode:
 		ChatOutgoingQueue.Mode.PARALLEL:
-			execute_parallel_chat(entry.text, _begin_chat_turn(history))
+			execute_parallel_chat(entry.text, _begin_chat_turn(history, entry.origin))
 		ChatOutgoingQueue.Mode.SEQUENTIAL:
-			execute_sequential_chat(entry.text, _begin_chat_turn(history), true)
+			execute_sequential_chat(entry.text, _begin_chat_turn(history, entry.origin), true)
 		_:
 			execute_regular_chat(entry.text, entry.generation_options, true, entry.origin)
 	if original_tab != tab_index:
