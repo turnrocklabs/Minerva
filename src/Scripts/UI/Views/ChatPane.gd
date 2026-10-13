@@ -825,6 +825,19 @@ static func _is_cancelled_response(bot_response: BotResponse) -> bool:
 	return str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
 
 
+## Why `history_list` must not be sent to `provider`, as {code, message}; empty
+## when it may be. The gate generate_content_from_provider applies, and the one
+## a box send's admission follows.
+static func _dispatch_refusal(provider: BaseProvider, history_list: Array) -> Dictionary:
+	var refusal := _prompt_refusal(history_list)
+	if not refusal.is_empty():
+		return {"code": "system_prompt_unavailable", "message": refusal}
+	if not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
+		return {"code": "provider_disabled",
+			"message": "%s is disabled" % SingletonObject.get_provider_display_name(provider.PROVIDER)}
+	return {}
+
+
 # Generate content from provider
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
@@ -857,17 +870,12 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if "request_reasoning_summary" in provider:
 		provider.request_reasoning_summary = history.ReasoningSummary
 
-	var refusal := _prompt_refusal(history_list)
+	var refusal := _dispatch_refusal(provider, history_list)
 	if not refusal.is_empty():
 		bot_response = BotResponse.new()
 		bot_response.provider = provider
-		bot_response.error = refusal
-		bot_response.set_meta("error_code", "system_prompt_unavailable")
-	elif not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
-		bot_response = BotResponse.new()
-		bot_response.provider = provider
-		bot_response.error = "%s is disabled" % SingletonObject.get_provider_display_name(provider.PROVIDER)
-		bot_response.set_meta("error_code", "provider_disabled")
+		bot_response.error = str(refusal["message"])
+		bot_response.set_meta("error_code", str(refusal["code"]))
 	else:
 		bot_response = await provider.generate_content(history_list, optional_params)
 	if bot_response and not str(bot_response.error).is_empty():
@@ -2515,7 +2523,9 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		return
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
-	_settle_box_send(history, send_id)
+	# Admitted only if generate_content_from_provider will dispatch it; a refused
+	# send still shows the message and the refusal, but nothing was sent.
+	_settle_box_send(history, send_id, str(_dispatch_refusal(history.provider, history_list).get("code", "")))
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 
 	# Capture request metadata for debugging expandable block

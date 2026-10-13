@@ -103,6 +103,7 @@ func _run() -> void:
 	await _test_input(chat_a, chat_b)
 	await _test_slow_admission(chat_b)
 	await _test_provisional_append_is_not_success()
+	await _test_refused_dispatch(chat_b)
 	await _test_external_ptt()
 	await _test_denied()
 	await _test_close_visible(chat_a, chat_b)
@@ -412,6 +413,46 @@ func _test_provisional_append_is_not_success() -> void:
 			and _notices.size() == notices_before + 1 and chat.HistoryItemList.is_empty(), str(refused))
 	_so.Chats = real_pane
 	stand_in.queue_free()
+
+
+## Local provider that counts the requests it is given instead of making them.
+const COUNTING_LOCAL_SRC := """
+extends "res://Scripts/Services/Providers/LocalProvider.gd"
+
+var calls := 0
+
+func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
+	calls += 1
+	return BotResponse.new()
+"""
+
+
+## The regular send's dispatch gate (a disabled provider here) refuses after
+## the message is recorded; the submit must report that, not admission.
+func _test_refused_dispatch(chat_b) -> void:
+	print("\n-- submit outcomes: dispatch gate refusal --")
+	var provider = _compile(COUNTING_LOCAL_SRC).new()
+	var was_enabled: bool = _so.is_provider_enabled(provider.PROVIDER)
+	_so.set_provider_enabled(provider.PROVIDER, false)
+	var history = load(CHAT_HISTORY_PATH).new(provider)
+	history.HistoryName = "Refusing"
+	_so.ChatList.append(history)
+	_pane.render_history(history)
+	_show(history)
+	await _frames(3)
+	var notices_before: int = _notices.size()
+	await _input({"op": "append", "text": "to a disabled provider"})
+	var refused: Dictionary = await _input({"op": "submit", "expected_chat_id": str(history.HistoryId)})
+	await _frames(5)
+	check("36: a send the dispatch gate refuses is not_sent with the gate's reason, loudly, and nothing is dispatched",
+		refused.get("error_code") == "not_sent"
+			and refused.get("reason") in ["provider_disabled", "system_prompt_unavailable"]
+			and _notices.size() == notices_before + 1 and provider.calls == 0, str(refused))
+	_so.set_provider_enabled(provider.PROVIDER, was_enabled)
+	_show(chat_b)
+	await _frames(3)
+	_pane.delete_chat(history)
+	await _frames(3)
 
 
 func _make_plain_history(chat_name: String):
