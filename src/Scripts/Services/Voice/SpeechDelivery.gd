@@ -162,7 +162,7 @@ func handle(args: Dictionary, producer: String = "") -> Dictionary:
 			var target: String = str(args.get("device_id", ""))
 			if not producer.is_empty() and not target.begins_with("plugin:" + producer + ":"):
 				return VoiceServiceClient.failure("invalid_audio_device", "Plugin replay requires its own speaker.")
-			var played: Dictionary = await _replay(record, target)
+			var played: Dictionary = _replay(record, target)
 			if not producer.is_empty() and played.get("success", false):
 				played["unheard_count"] = state(producer).unheard
 			return played

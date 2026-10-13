@@ -10,6 +10,10 @@ func marker(directory: String, phase: String, unheard: int) -> void:
 
 
 func _init() -> void:
+	var arguments: PackedStringArray = OS.get_cmdline_user_args()
+	if arguments.size() == 2:
+		# Child autoloads must not contend for the parent CEF profile lock.
+		ProjectSettings.set_setting("godot_cef/storage/data_path", arguments[0].path_join("cef"))
 	_run.call_deferred()
 
 
