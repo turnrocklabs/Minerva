@@ -16,6 +16,9 @@ func install(so: Node) -> void:
 	var suite = load("res://test/test_docket_trigger_feed.gd")
 	_wire = _make(suite.WIRE_SRC)
 	_plugins = _make(suite.PLUGINS_SRC)
+	# This detached manager never runs _ready; initialize its real registry so
+	# completion routing sees the same manager contract as production.
+	_plugins._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	_host = load("res://Scripts/Services/DocketHost/DocketHost.gd").new()
 	_broker = load(suite.BROKER_PATH).new()
 	_wire.plugin_id = "docket"
