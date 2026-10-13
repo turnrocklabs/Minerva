@@ -10,6 +10,10 @@ func marker(directory: String, phase: String, unheard: int) -> void:
 
 
 func _init() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	if args.size() != 2 or args[1] not in ["before", "after", "active"]:
 		quit(2)

@@ -936,7 +936,6 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 		begun = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
 		stream_request = input_owner._active.stream.request if input_owner._active != null else null
 	if stream_request != null:
-		var failed_operation = _so.speech_delivery._active[failed_id]
 	transport._handle_message({"cmd": "error", "topic": "voice/stt/stream", "params": {"request_id": stream_request.request_id, "error_code": "service_failed", "error": "Fixture Core failure"}})
 	check("E input: terminal Core error immediately releases capture", stream_request != null and input_owner._active == null)
 	cfg.stt_transport = cfg.STTTransport.BUFFERED

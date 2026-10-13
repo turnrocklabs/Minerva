@@ -344,7 +344,7 @@ func _run() -> void:
 	var so = root.get_node("SingletonObject")
 	_no_builtin_voice_container(so)
 	await _plugin_output_contracts()
-	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging, "docker": so.docker_manager}
+	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging, "docker": so.docker_manager, "delivery": so.speech_delivery}
 	so.verbose_logging = false
 	so.config_file = ConfigFile.new()
 	so._config_file_name = ProjectSettings.globalize_path("user://minerva-t8-voice.cfg")
@@ -356,6 +356,9 @@ func _run() -> void:
 	so.voice_client = voice
 	var config = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
 	so.voice_config = config
+	so.speech_delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(
+		load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://voice-contract-log")),
+		so.plugin_audio_devices, voice, so._new_speech_player, func(_message: String) -> void: pass, func(_delivery) -> void: pass)
 	var scope_script = load("res://Scripts/Services/Voice/VoiceOperation.gd")
 	var voice_feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var selection = load("res://Scripts/Services/Voice/VoiceSelection.gd")
@@ -505,8 +508,10 @@ func _run() -> void:
 	server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 	output.clear()
 	_capture(server, "execute_tool_for_http", ["minerva_speak", {"text": "bad audio"}], output)
+	var bad_audio_operation = mcp_chat.get_children().filter(func(child: Node) -> bool: return child is AudioStreamPlayer).back().get_meta("speech_operation")
+	check("MCP admits synthesis without waiting for Core audio", output.result.delivery == "playing" and not bad_audio_operation.done)
 	transport.reply(_last_id(transport), {"audio_base64": Marshalls.raw_to_base64(PackedByteArray([1, 2]))})
-	check("MCP refuses undecodable audio before starting playback", output.result.error_code == "invalid_audio")
+	check("MCP refuses undecodable audio before starting playback", bad_audio_operation.done and bad_audio_operation.completion_outcome.error_code == "invalid_audio" and not bad_audio_operation.playback_started)
 	output.clear()
 	_capture(server, "execute_tool_for_http", ["minerva_list_voices", {"backend": "kokoro"}], output)
 	transport.reply(_last_id(transport), {"voices": []})
@@ -832,9 +837,11 @@ func _run() -> void:
 	output.clear()
 	_capture(server, "execute_tool_for_http", ["minerva_speak", {"text": "pane reload"}], output)
 	var reloading_speak_id := _last_id(transport)
+	var reloading_operation = pane.get_children().filter(func(child: Node) -> bool: return child is AudioStreamPlayer).back().get_meta("speech_operation")
+	check("MCP pane-reload request returns live admission before Core reply", output.result.delivery == "playing" and not reloading_operation.done)
 	pane.free()
 	transport.reply(reloading_speak_id, {"audio_base64": Marshalls.raw_to_base64(bytes)})
-	check("MCP completion after pane deletion refuses unavailable playback", output.result.error_code == "no_audio_player")
+	check("MCP completion after pane deletion refuses unavailable playback", reloading_operation.done and reloading_operation.completion_outcome.error_code == "no_audio_player")
 	var pending_player := AudioStreamPlayer.new()
 	root.add_child(pending_player)
 	var pending_speech = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
@@ -849,6 +856,7 @@ func _run() -> void:
 	core.client = saved.client
 	core.registered = saved.registered
 	core.services.assign(saved.services)
+	so.speech_delivery = saved.delivery
 	so.voice_client = saved.voice
 	so.voice_config = saved.config
 	so._enabled_providers = saved.enabled
