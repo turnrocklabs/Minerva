@@ -13,13 +13,13 @@
   "production_prefixes": [
     "src/Scripts/"
   ],
-  "production_cap": 60,
+  "production_cap": 75,
   "failure_patterns": [
     "push_error",
     "ErrorDisplay",
     "add_log_line"
   ],
-  "failure_disposition": "Typed diagnostic allowlist removes raw Core payloads only from logging; transport packets unchanged. Original failures clear tokens and fixed diagnostic outcome remains visible.",
+  "failure_disposition": "Core log allowlist removes raw payload and remote binary command/request-id echo sites; capture test observes actual stdout/stderr via existing Logger, wire values unchanged. Cumulative75 authorized relay3091; final delta16.",
   "persisted_setting_owners": {
     "hcp.log": "HcpLogs existing owner; safe status payload only; no new preferences"
   },

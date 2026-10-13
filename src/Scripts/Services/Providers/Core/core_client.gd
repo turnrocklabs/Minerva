@@ -426,15 +426,15 @@ func _handle_message(data: Variant) -> void:
 		# Handle final response for an image generation request that included binary transfer
 		if request_id == _current_binary_request_id:
 			if SingletonObject.verbose_logging:
-				print("  ✔️ Final SUCCESS for request_id=%s: %s" % [request_id, JSON.stringify(log_summary(data))])
+				print("  ✔️ Final SUCCESS: %s" % JSON.stringify(log_summary(data)))
 			if _binary_expected_files > 0 and _binary_files_completed == _binary_expected_files:
 				if SingletonObject.verbose_logging:
-					print("  📦 All %s files for request %s successfully saved." % [_binary_files_completed, request_id])
+					print("  📦 All %s files successfully saved: %s" % [_binary_files_completed, JSON.stringify(log_summary(data))])
 				binary_transfer_complete.emit(request_id)
 				_reset_binary_transfer_state() # Reset state after full completion
 			elif _binary_expected_files > 0:
 				if SingletonObject.verbose_logging:
-					print("  ⚠️ Received final response but only %s/%s files completed for request %s" % [_binary_files_completed, _binary_expected_files, request_id])
+					print("  ⚠️ Final response with only %s/%s files completed: %s" % [_binary_files_completed, _binary_expected_files, JSON.stringify(log_summary(data))])
 				_reset_binary_transfer_state() # Reset anyway to prevent stale state
 		
 		# Always emit the response_received signal
@@ -632,7 +632,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 
 	var frame_name: String = frame_names.get(frame_type, "UNKNOWN(%d)" % frame_type)
 	if SingletonObject.verbose_logging:
-		print("🔷 Binary frame: %s, size: %s bytes, transfer_mode=%s, expected_req=%s" % [frame_name, msg.size(), _binary_transfer_mode, _current_binary_request_id])
+		print("🔷 Binary frame: %s, size: %s bytes, transfer_mode=%s, summary=%s" % [frame_name, msg.size(), _binary_transfer_mode, JSON.stringify(log_summary({"cmd": "response", "params": {"request_id": _current_binary_request_id}}))])
 	
 	match frame_type:
 		NEW_MESSAGE:
@@ -673,7 +673,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				
 				if hdr_cmd != "response":
 					if SingletonObject.verbose_logging:
-						print("  ℹ️ Binary header cmd=%s not a response, ignoring." % hdr_cmd)
+						print("  ℹ️ Binary header not a response, ignoring: %s" % JSON.stringify(log_summary(header)))
 					return
 
 				# Voice streams are routed by their own msg_id and kept OUT of the
@@ -698,7 +698,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				# _reset_binary_transfer_state() clears the mode, so resetting after
 				# the assignment wiped it and broke binary decode (no FILE_END match).
 				if SingletonObject.verbose_logging:
-					print("  ℹ️ New binary stream for request_id=%s. Resetting previous state." % req_id)
+					print("  ℹ️ New binary stream; resetting previous state: %s" % JSON.stringify(log_summary(header)))
 				_reset_binary_transfer_state()
 
 				if hdr_topic.begins_with("media_gen/"):
@@ -716,7 +716,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				_binary_expected_files = num_files
 				_binary_files_completed = 0
 				if SingletonObject.verbose_logging:
-					print("🎯 Expecting %s files in binary transfer for request %s" % [_binary_expected_files, req_id])
+					print("🎯 Expecting %s files in binary transfer: %s" % [_binary_expected_files, JSON.stringify(log_summary(header))])
 				
 				binary_new_message_received.emit(header, num_files)
 			else:
@@ -888,7 +888,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				if _binary_files.has(file_index) and _binary_filenames.has(file_index):
 					var buf: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"]
 					var fname: String = _binary_filenames[file_index]
-					print("   ✅ FILE_END (artifact) idx=%s name=%s size=%s bytes, emitting signal with req_id=%s" % [file_index, fname, buf.size(), _current_binary_request_id])
+					print("   ✅ FILE_END (artifact) idx=%s size=%s bytes, summary=%s" % [file_index, buf.size(), JSON.stringify(log_summary({"cmd": "response", "params": {"request_id": _current_binary_request_id}}))])
 					artifact_binary_received.emit(_current_binary_request_id, fname, buf)
 					_binary_files_completed += 1
 					if _binary_files_completed == _binary_expected_files:
