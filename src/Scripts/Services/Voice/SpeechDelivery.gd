@@ -223,6 +223,7 @@ func _replay(record: Dictionary, device: String) -> Dictionary:
 	var text: String = record.text
 	# Replay is a fresh explicit playback action; historical origin stays saved.
 	_bind(id, operation, player, device, {"kind": "explicit"}, true)
+	_changed()
 	return start(id, text, config, operation, player, device)
 
 

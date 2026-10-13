@@ -98,6 +98,7 @@ func _run() -> void:
 	var blocked_record: String = directory.path_join(fourth.record.log_id + ".json.tmp")
 	DirAccess.make_dir_absolute(blocked_record)
 	check("failed atomic replace leaves previous durable record unchanged", not reopened.update_record(fourth.record.log_id, {"heard": false}).success and Log.new(directory)._records[fourth.record.log_id].heard == unchanged.heard)
+	_partial_bulk_failure(Log, Delivery)
 	await _crash_recovery(Log, Delivery)
 	_completed = true
 
@@ -133,3 +134,21 @@ func _crash_recovery(Log, Delivery) -> void:
 		else:
 			var observed: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(checkpoint))
 			check("crash recovers active playback as missed without inferred hearing", observed.unheard == 0 and recovered.state().unheard == 1 and not item.heard and item.text == "active before crash")
+
+
+func _partial_bulk_failure(Log, Delivery) -> void:
+	var directory: String = ProjectSettings.globalize_path("user://speech-bulk-" + str(Time.get_ticks_usec()))
+	var store = Log.new(directory)
+	var first: Dictionary = store.admit(fields("first"))
+	var second: Dictionary = store.admit(fields("second"))
+	var foreign: Dictionary = fields("foreign")
+	foreign["device"] = "plugin:foreign:speaker"
+	var untouched: Dictionary = store.admit(foreign)
+	var notices: Array[String] = []
+	var service = Delivery.new(store, null, null, Callable(), func(message: String) -> void: notices.append(message), func(_delivery) -> void: pass)
+	var refused: Dictionary = service.handle({"op": "delete_all", "confirmed": 1}, "probe")
+	check("numeric bulk confirmation is refused without deleting records", not refused.success and store.list_records().size() == 3)
+	DirAccess.make_dir_absolute(directory.path_join(str(first.record.log_id) + ".json.tmp"))
+	var failed: Dictionary = service.handle({"op": "delete_all", "confirmed": true}, "probe")
+	check("partial bulk filesystem failure returns failure and visibly preserves remaining records", not failed.success and not notices.is_empty() and service.state("probe").total == 1 and not store.get_record(first.record.log_id).is_empty() and store.get_record(second.record.log_id).is_empty())
+	check("partial scoped bulk failure retains foreign content after restart", not Log.new(directory).get_record(untouched.record.log_id).is_empty() and Log.new(directory).list_records().size() == 2)

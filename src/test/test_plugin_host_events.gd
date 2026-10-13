@@ -739,10 +739,11 @@ func _test_public_turn_events() -> void:
 	transport.on_send = func(message: Dictionary) -> void:
 		if str(message.topic) == "voice/tts/synthesize":
 			replay_calls.append(message.params.data.duplicate(true))
-			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
 	await conn.call_tool("probe_audio_mode", {"success": true})
 	var replay: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "plugin:" + SUBSCRIBER + ":speaker"})
 	var replay_operation = _so.speech_delivery._active.get(spoken.log_id)
+	check("E log: held replay publishes missed-count transition before Core audio", not replay_operation.done and await _log_count_is(SUBSCRIBER, 0, before_total))
+	transport.reply(str(transport.sent.back().params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
 	var heard_deadline: int = Time.get_ticks_msec() + 3000
 	var replay_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": spoken.log_id})
 	while not replay_state.item.heard and Time.get_ticks_msec() < heard_deadline:
@@ -752,6 +753,7 @@ func _test_public_turn_events() -> void:
 	check("E log: live replay receipt is playing until terminal ACK", replay.delivery == "playing" and replay.unheard_count == 0)
 	var played_receipt: Dictionary = _so.speech_delivery.receipt(spoken.log_id, str(log_state.item.device), replay_operation)
 	check("E log: played_live receipt requires the actual terminal operation", played_receipt.delivery == "played_live")
+	check("E log: successful play publishes authoritative heard counters", await _log_count_is(SUBSCRIBER, 0, before_total))
 	var replay_audio: Array = await _events(SUBSCRIBER, "voice.audio")
 	check("E log: replay transport uses explicit origin and byte-exact fixed PCM", replay_audio.any(func(envelope: Dictionary) -> bool:
 		var payload: Dictionary = envelope.message.params.payload
@@ -760,6 +762,10 @@ func _test_public_turn_events() -> void:
 		return payload.get("op") == "chunk" and Marshalls.base64_to_raw(str(payload.get("pcm", ""))) == fixture_pcm))
 	var marked_unheard: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "mark", "log_id": spoken.log_id, "heard": false})
 	check("E log: MCP mark updates authoritative missed count", marked_unheard.success and marked_unheard.unheard == 1)
+	check("E log: mark publishes changed missed counters", await _log_count_is(SUBSCRIBER, 1, before_total))
+	transport.on_send = func(message: Dictionary) -> void:
+		if str(message.topic) == "voice/tts/synthesize":
+			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
 	check("E log: replay uses saved text and parameters without setting mutation", replay_calls.size() == 1 and replay_calls[0].text == "Long reply" and replay_calls[0].backend == log_state.item.backend and cfg.output_device == before_selection)
 	var os_replay: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "play", "log_id": spoken.log_id, "device_id": "os:" + AudioServer.output_device})
 	var os_deadline: int = Time.get_ticks_msec() + 2000
@@ -781,9 +787,11 @@ func _test_public_turn_events() -> void:
 	var new_request: String = str(transport.sent.back().params.request_id)
 	var new_id: String = str(_so.speech_delivery._active.keys().back())
 	check("E log: supersede cancels pending producer and fresh endpoint remains admitted", first_request != new_request and not transport._pending_requests.has(first_request) and old_operation.done and _so.speech_delivery.receipt(old_id, before_selection, old_operation).delivery == "queued" and _so.plugin_audio_devices.output_busy(before_selection))
+	check("E log: supersede admission publishes updated total without counting active work", await _log_count_is(SUBSCRIBER, 0, before_total + 2))
 	var deleted_active: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "delete", "log_id": new_id})
 	var old_state: Dictionary = await server.execute_tool_for_http("minerva_speech_log", {"op": "state", "log_id": old_id})
 	check("E log: active delete cancels ownership and tombstone prevents resurrection", deleted_active.success and not _so.plugin_audio_devices.output_busy(before_selection) and old_state.item.superseded and not transport._pending_requests.has(new_request))
+	check("E log: active delete publishes retained supersede counters", await _log_count_is(SUBSCRIBER, 0, before_total + 1))
 	var failing: Dictionary = {}
 	_capture_mcp(server, {"text": "failed provider", "topic": "provider"}, failing)
 	var failed_id: String = str(_so.speech_delivery._active.keys().back())
@@ -810,6 +818,7 @@ func _test_public_turn_events() -> void:
 	check("E log: bulk deletion requires explicit confirmation without cancelling active speech", not unconfirmed.success and transport._pending_requests.has(bulk_request))
 	var cleared: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.speech_log", "args": {"op": "delete_all", "confirmed": true}})
 	check("E log: confirmed scoped bulk delete cancels active speech and preserves foreign content", cleared.success and cleared.result.total == 0 and not _so.plugin_audio_devices.output_busy(before_selection) and not transport._pending_requests.has(bulk_request) and not _so.speech_delivery._store.get_record(foreign_admission.record.log_id).is_empty())
+	check("E log: confirmed delete_all publishes empty scoped counters", await _log_count_is(SUBSCRIBER, 0, 0))
 	transport.on_send = func(message: Dictionary) -> void:
 		if str(message.topic) == "voice/tts/synthesize":
 			transport.reply(str(message.params.request_id), {"audio_base64": Marshalls.raw_to_base64(fixture_pcm)})
@@ -1230,3 +1239,12 @@ func _sorted_keys(payload: Dictionary) -> Array:
 
 func _capture_mcp(server, arguments: Dictionary, result: Dictionary) -> void:
 	result["result"] = await server.execute_tool_for_http("minerva_speak", arguments)
+
+
+func _log_count_is(plugin_id: String, unheard: int, total: int) -> bool:
+	var events: Array = await _events(plugin_id, "speech_log.changed")
+	if events.is_empty():
+		return false
+	var last: Dictionary = events.back()
+	var payload: Dictionary = last.message.params.payload
+	return last.integer_keys == ["total", "unheard"] and payload.size() == 2 and int(payload.unheard) == unheard and int(payload.total) == total
