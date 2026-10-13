@@ -531,7 +531,7 @@ var plugin_webview_broker = null  # PluginWebviewBroker
 var plugin_scene_panel_broker = null  # PluginScenePanelBroker
 var plugin_chat_provider_registry = null  # PluginChatProviderRegistry (chat-passthrough W1)
 var plugin_settings_store = null  # PluginSettingsStore
-var plugin_host_event_router = null  # PluginHostEventRouter
+var plugin_host_event_router: PluginHostEventRouter = null
 var _host_events_wired_pane: ChatPane = null
 
 ## Initialize the plugin system. Call after initialize_mcp().
@@ -642,10 +642,11 @@ func initialize_plugins() -> void:
 	# _wire_plugin_tools_to_mcp() AFTER the signal is connected, so tools
 	# propagate to the search index and tool_registry correctly.
 
-	var RouterClass = load("res://Scripts/Services/Plugins/PluginHostEventRouter.gd")
+	var RouterClass: GDScript = load("res://Scripts/Services/Plugins/PluginHostEventRouter.gd")
 	plugin_host_event_router = RouterClass.new(plugin_policy, plugin_audit_log,
 		_plugins_with_connection, _send_plugin_host_event, _notify_host_event_refusal)
-	plugin_manager.plugin_started.connect(_on_plugin_started_for_host_events)
+	var manager: PluginManager = plugin_manager
+	manager.plugin_started.connect(_on_plugin_started_for_host_events)
 	_wire_chat_host_events()
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
@@ -653,14 +654,17 @@ func initialize_plugins() -> void:
 
 func _plugins_with_connection() -> Array:
 	var running: Array = []
-	for def in plugin_manager.get_db().get_all():
-		if plugin_manager.get_connection(def.id) != null:
+	var manager: PluginManager = plugin_manager
+	var db: PluginDB = manager.get_db()
+	for def: PluginDefinition in db.get_all():
+		if manager.get_connection(def.id) != null:
 			running.append(def)
 	return running
 
 
 func _send_plugin_host_event(p_id: String, event: String, payload: Dictionary) -> Error:
-	var conn = plugin_manager.get_connection(p_id)
+	var manager: PluginManager = plugin_manager
+	var conn: MCPServerConnection = manager.get_connection(p_id)
 	return conn.send_host_event(event, payload) if conn != null else ERR_UNAVAILABLE
 
 
@@ -669,8 +673,10 @@ func _notify_host_event_refusal(message: String) -> void:
 
 
 func _on_plugin_started_for_host_events(p_id: String) -> void:
-	var def: PluginDefinition = plugin_manager.get_db().get_by_id(p_id)
-	var conn: MCPServerConnection = plugin_manager.get_connection(p_id)
+	var manager: PluginManager = plugin_manager
+	var db: PluginDB = manager.get_db()
+	var def: PluginDefinition = db.get_by_id(p_id)
+	var conn: MCPServerConnection = manager.get_connection(p_id)
 	if def != null:
 		plugin_host_event_router.plugin_started(def, conn != null and conn.accepts_host_events())
 

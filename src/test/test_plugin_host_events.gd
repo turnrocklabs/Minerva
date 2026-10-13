@@ -201,8 +201,8 @@ func _test_router() -> void:
 	var sent: Array = []
 	var running := func() -> Array:
 		return [subscriber, ungranted, undeclared, bystander]
-	var send := func(plugin_id: String, event: String, payload: Dictionary) -> Error:
-		sent.append({"plugin_id": plugin_id, "event": event, "payload": payload})
+	var send := func(plugin_id: String, event: String, sent_payload: Dictionary) -> Error:
+		sent.append({"plugin_id": plugin_id, "event": event, "payload": sent_payload})
 		return OK
 	var router = load(ROUTER_PATH).new(policy, audit, running, send)
 
@@ -275,9 +275,9 @@ func _test_router() -> void:
 	var control: Dictionary = router.publish(TURN, control_payload)
 	var wire_size := -1
 	if sent.size() == 1:
-		var notification := {"jsonrpc": "2.0", "method": "minerva/host_event",
+		var host_note := {"jsonrpc": "2.0", "method": "minerva/host_event",
 			"params": {"event": TURN, "payload": sent[0]["payload"]}}
-		wire_size = str(load(JSON_SERIALIZATION_PATH).encode(notification).raw).to_utf8_buffer().size()
+		wire_size = str(load(JSON_SERIALIZATION_PATH).encode(host_note).raw).to_utf8_buffer().size()
 	check("A16b: raw control characters (6 wire bytes each) deliver truncated within the wire limit",
 		_list(control["delivered"]) == ["sub"] and sent.size() == 1
 			and sent[0]["payload"]["truncated"] == true

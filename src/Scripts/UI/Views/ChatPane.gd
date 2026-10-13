@@ -872,7 +872,8 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if bot_response and not str(bot_response.error).is_empty():
 		if provider_override == null or provider_override == history.provider:
 			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
-		history.termination_reason = "cancelled" if _is_cancelled_response(bot_response) else "error"
+		var failed_response: BotResponse = bot_response
+		history.termination_reason = "cancelled" if _is_cancelled_response(failed_response) else "error"
 		history.termination_message = str(bot_response.error)
 
 	# Record cost with chat context
@@ -1880,7 +1881,9 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.Message = bot_response.text
 	existing_response.Error = bot_response.error
-	_note_turn_response(history, turn_token, existing_response, bot_response)
+	var turn_reply: ChatHistoryItem = existing_response
+	var turn_response: BotResponse = bot_response
+	_note_turn_response(history, turn_token, turn_reply, turn_response)
 	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
 	existing_response.OutputTokens = bot_response.completion_tokens
@@ -2079,7 +2082,8 @@ func execute_hcp_chat():
 	# Core sends take no turn (their stop and queue rules differ), so this, the
 	# send's single end, reports it; termination_reason is not theirs to read.
 	var reply: ChatHistoryItem = chi if bot_response != null else null
-	var stopped: bool = bot_response != null and _is_cancelled_response(bot_response)
+	var core_response: BotResponse = bot_response
+	var stopped: bool = core_response != null and _is_cancelled_response(core_response)
 	_emit_turn_completed(history, reply, ChatEventPayloads.resolve_outcome(
 		ChatEventPayloads.OUTCOME_CANCELLED if stopped else "", "", reply))
 
@@ -2489,7 +2493,9 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
 	var chi = process_bot_response(bot_response, history.provider)
-	_note_turn_response(history, turn_token, chi, bot_response)
+	var turn_reply: ChatHistoryItem = chi
+	var turn_response: BotResponse = bot_response
+	_note_turn_response(history, turn_token, turn_reply, turn_response)
 	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
 
 	# W5: carry passthrough question options (W1 contract) onto the finalized CHI
@@ -3143,7 +3149,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	if not context_status.ok:
 		# Hard limit exceeded - stop the agent loop
 		push_warning("Agent mode: %s" % context_status.message)
-		_terminate_turn(history, turn_token, "quota_exhausted", context_status.message)
+		var stop_message: String = context_status.message
+		_terminate_turn(history, turn_token, "quota_exhausted", stop_message)
 		finish_with_signal.call()
 		return
 	elif context_status.warning:
@@ -3214,7 +3221,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				if is_instance_valid(model_chi.rendered_node):
 					model_chi.rendered_node.loading_append = false
 					model_chi.rendered_node.render()
-				_terminate_turn(history, turn_token, "error", err_msg)
+				var retry_error: String = err_msg
+				_terminate_turn(history, turn_token, "error", retry_error)
 				finish_with_signal.call()
 				return
 		else:
@@ -3223,7 +3231,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			if is_instance_valid(model_chi.rendered_node):
 				model_chi.rendered_node.loading_append = false
 				model_chi.rendered_node.render()
-			_terminate_turn(history, turn_token, "error", continuation_response.error)
+			var continuation_error: String = continuation_response.error
+			_terminate_turn(history, turn_token, "error", continuation_error)
 			finish_with_signal.call()
 			return
 
@@ -3373,7 +3382,9 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		var bot_response = await generate_content_from_provider(history, history_list)
 		
 		var chi = process_bot_response(bot_response, history.provider)
-		_note_turn_response(history, turn_token, chi, bot_response)
+		var turn_reply: ChatHistoryItem = chi
+		var turn_response: BotResponse = bot_response
+		_note_turn_response(history, turn_token, turn_reply, turn_response)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	_release_chat_turn(history, turn_token)
 
@@ -6049,7 +6060,8 @@ func _on_audio_stop_1_pressed() -> void:
 			for worker in workers:
 				if not registry.is_terminal_status(worker.status):
 					SingletonObject.cancelled_history_ids.append(worker.worker_chat_id)
-					var worker_chat: ServiceHistory = find_chat_by_id(worker.worker_chat_id)
+					var worker_chat_id: String = worker.worker_chat_id
+					var worker_chat: ServiceHistory = find_chat_by_id(worker_chat_id)
 					if worker_chat != null:
 						_note_turn_outcome(worker_chat, worker_chat.request_turn_token, ChatEventPayloads.OUTCOME_CANCELLED)
 					SingletonObject.stop_all_requests.emit(worker.worker_chat_id)

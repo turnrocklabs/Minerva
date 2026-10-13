@@ -874,7 +874,7 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	var perms: Dictionary = data.get("permissions", {})
 	for cap in perms.get("host_capabilities", []):
 		def.host_capabilities.append(str(cap))
-	for event in perms.get("host_events", []):
+	for event: Variant in perms.get("host_events", []):
 		def.host_events.append(str(event))
 	var network: Dictionary = perms.get("network", {})
 	def.network_mode = network.get("mode", "none")

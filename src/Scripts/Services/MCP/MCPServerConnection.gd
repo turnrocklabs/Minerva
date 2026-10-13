@@ -220,9 +220,9 @@ func send_host_event(event: String, payload: Dictionary) -> Error:
 		return ERR_UNAVAILABLE
 	if not accepts_host_events():
 		return ERR_UNCONFIGURED
-	var notification := {"jsonrpc": Protocol.JSON_RPC_VERSION, "method": HOST_EVENT_METHOD,
+	var host_note := {"jsonrpc": Protocol.JSON_RPC_VERSION, "method": HOST_EVENT_METHOD,
 		"params": {"event": event, "payload": payload}}
-	return OK if _write_stdio_notification(notification, _process_generation) else FAILED
+	return OK if _write_stdio_notification(host_note, _process_generation) else FAILED
 
 
 ## Connect to the MCP server
