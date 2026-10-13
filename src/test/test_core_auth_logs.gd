@@ -5,28 +5,7 @@ var failed: int = 0
 const CANARY: String = "eyJ" + "hbGciOiJIUzI1NiJ9.eyJ" + "zdWIiOiJzeW50aGV0aWMifQ.synthetic_auth_canary"
 
 func _init() -> void:
-	if OS.get_cmdline_user_args().has("--auth-log-leak-probe"):
-		print(CANARY)
-		printerr(CANARY)
-		quit()
-	else:
-		call_deferred("run" if OS.get_cmdline_user_args().has("--auth-log-child") else "check_capture")
-
-func check_capture() -> void:
-	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"), "--script", "res://test/test_core_auth_logs.gd", "--"])
-	var probe: Array = []
-	var probe_args := args.duplicate()
-	probe_args.append("--auth-log-leak-probe")
-	check("stdout/stderr canary capture is live", OS.execute(OS.get_executable_path(), probe_args, probe, true) == 0 and CANARY in str(probe))
-	var captured: Array = []
-	args.append("--auth-log-child")
-	var result: int = OS.execute(OS.get_executable_path(), args, captured, true)
-	var output: String = str(captured)
-	check("actual auth and binary log paths pass", result == 0 and "Results: 24 passed, 0 failed" in output)
-	check("captured stdout/stderr contain no credential", not CANARY in output and not "synthetic_auth_canary" in output and not "eyJ" in output)
-	check("captured child has no script errors", not "SCRIPT ERROR" in output)
-	print("Results: %d passed, %d failed" % [passed, failed])
-	quit(1 if failed else 0)
+	call_deferred("run")
 
 func check(label: String, condition: bool) -> void:
 	if condition:
@@ -37,6 +16,11 @@ func check(label: String, condition: bool) -> void:
 		printerr("FAIL: ", label)
 
 func run() -> void:
+	var capture = load("res://test/helpers/log_capture.gd").new()
+	OS.add_logger(capture)
+	print("AUTH_LOG_STDOUT_PROBE")
+	printerr("AUTH_LOG_STDERR_PROBE")
+	check("stdout and stderr capture is live", "AUTH_LOG_STDOUT_PROBE" in capture.combined() and "AUTH_LOG_STDERR_PROBE" in capture.combined())
 	var so = root.get_node("SingletonObject")
 	var core = root.get_node("Core")
 	var prior = so.preferences_popup
@@ -76,6 +60,9 @@ func run() -> void:
 	preferences.free()
 	logs.free()
 	label.free()
+	var output: String = capture.combined()
+	OS.remove_logger(capture)
+	check("actual stdout/stderr contain no credential", not CANARY in output and not "synthetic_auth_canary" in output and not "eyJ" in output)
 	print("Results: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
 
@@ -118,7 +105,7 @@ func check_protocol_logs(token: String, so: Node, logs: Node, label: RichTextLab
 	var captured: String = FileAccess.get_file_as_string("user://hcp.log") + label.get_parsed_text() + JSON.stringify(logs._details_data)
 	check("auth error and raw HCP signal retain no credential", not token in captured and not "eyJ" in captured and not "synthetic_auth_canary" in captured)
 	check("safe operation and auth error code remain visible", "AUTH_FAILED_PROFILE_CMD_ERROR" in captured and "register" in JSON.stringify(client.log_summary(packet)))
-	check_binary_logs(client, token)
+	await check_binary_logs(client, token)
 	so.verbose_logging = prior_verbose
 	client._client.close()
 	peer.close()
@@ -146,7 +133,7 @@ func check_binary_logs(client: Node, token: String) -> void:
 	var end := PackedByteArray()
 	end.resize(4)
 	client._handle_binary_frame(binary_frame(3, id, end))
-	client._handle_message({"cmd": "response", "entity_type": "core", "params": {"request_id": token}})
+	await client._handle_message({"cmd": "response", "entity_type": "core", "params": {"request_id": token}})
 	check("binary completion clears transfer state", client._current_binary_request_id.is_empty())
 
 func binary_frame(kind: int, id: PackedByteArray, payload: PackedByteArray) -> PackedByteArray:
