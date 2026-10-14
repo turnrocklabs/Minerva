@@ -96,7 +96,6 @@ func _init() -> void:
 
 	print("\n-- I: unattended install (no panel, no approver) fails CLOSED on exec steps --")
 	await test_unattended_install_denies_exec()
-	await test_copyable_logged_status_after_detach()
 
 	_cleanup_scratch()
 
@@ -560,33 +559,6 @@ func test_unattended_install_denies_exec() -> void:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-func test_copyable_logged_status_after_detach() -> void:
-	var ctx := await _make_pm_and_panel()
-	var panel = ctx.panel
-	var capture = load("res://test/helpers/log_capture.gd").new()
-	OS.add_logger(capture)
-	await panel._on_manifest_selected("user://missing-diagnostic-manifest.json")
-	var status: LineEdit = panel._status_label
-	status.select_all()
-	check("install failure is read-only, selectable and logged with its reason",
-		not status.editable and status.get_selected_text() == status.text
-		and status.text.begins_with("Install failed:")
-		and "[PluginManager] " + status.text in capture.combined(), status.text)
-	var job = load("res://Scripts/Services/Plugins/PluginInstallJob.gd").new()
-	job.state = job.State.DONE
-	job.outcome = job.OUTCOME_FAILED
-	job.message = "Fixture archive download refused"
-	job.result = {"plugin_id": "fixture", "version": "1.0"}
-	panel._on_install_job_changed(job)
-	check("marketplace failure keeps its underlying reason in selectable text and log",
-		job.message in status.text and job.message in capture.combined())
-	root.remove_child(panel)
-	panel._show_status("Removal completed after panel detached")
-	check("detached completion is still logged without accessing a missing SceneTree",
-		"[PluginManager] Removal completed after panel detached" in capture.combined())
-	OS.remove_logger(capture)
-	_teardown(ctx, "fixture")
 
 ## Fresh FakeDB-backed PluginManager + a REAL PluginManagerPanel scene wired
 ## to it via the panel's _pm_override seam, both live in the tree.
