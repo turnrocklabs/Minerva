@@ -23,7 +23,7 @@ Pre-approved defaults for implementation of DCR-1, DCR-2, DCR-3, DCR-4 and relat
 
 ## Conventions
 
-- A top-level manifest `"log_stderr": true` opts a plugin into Minerva's diagnostic log (`[plugin:<id>]`, at most 10 lines per one-second window, 1024 characters per line, control characters stripped). Missing or non-boolean flags keep stderr discarded; opted-in plugins must keep credentials and wire payloads out of their diagnostics.
+- A top-level manifest `"log_stderr": true` opts a plugin into Minerva's connection diagnostic log (`[plugin:<id>]`, at most 10 lines per one-second window, 1024 characters per line, control characters stripped). Missing or non-boolean flags keep the connection drainer's discard policy; the separate legacy tool-completion error/warning toasts are unchanged. Opted-in plugins must keep credentials and wire payloads out of their diagnostics.
 
 - Plugin `class_name` prefix = plugin id (`Cad_Viewer`, not `Viewer`).
 - Plugin-contributed annotation kinds named `<plugin>_<kind>` (e.g., `cad_3d_plane`).
