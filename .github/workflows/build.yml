@@ -695,7 +695,7 @@ jobs:
     # Zig 0.15.2 ghostty-vt shim link).
     runs-on: macos-15
     env:
-      BLUETOOTH_USAGE: Minerva connects to Bluetooth bench instruments such as multimeters through its plugins.
+      BLUETOOTH_USAGE: Minerva uses Bluetooth to pair your Smart Remote.
     steps:
       - uses: actions/checkout@v4
         with:
