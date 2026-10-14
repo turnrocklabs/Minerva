@@ -140,7 +140,7 @@ var _browse_button: Button = null
 var _required_button: Button = null
 ## Required plugins the last full check (every listed file) found broken.
 var _broken_required: Array[String] = []
-var _status_label: Label = null
+var _status_label: LineEdit = null
 
 
 # ---------------------------------------------------------------------------
@@ -679,17 +679,14 @@ func _build_bottom_toolbar() -> HBoxContainer:
 	_required_button.visible = false
 	hbox.add_child(_required_button)
 
-	# An unwrapped Label's minimum width is its full text width, and that
-	# minimum propagates through the layout regardless of clip_contents — a
-	# long status message would shove the whole panel wider than its pane.
-	# Expand + ellipsis keeps the toolbar's minimum width text-independent.
-	_status_label = Label.new()
+	# Read-only selection keeps long diagnostics copyable without widening the pane.
+	_status_label = LineEdit.new()
+	_status_label.editable = false
 	_status_label.text = ""
 	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_status_label.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_status_label.mouse_filter = Control.MOUSE_FILTER_STOP
-	_status_label.add_theme_color_override("font_color", Color(0.6, 0.8, 0.6))
+	_status_label.add_theme_color_override("font_uneditable_color", Color(0.6, 0.8, 0.6))
 	hbox.add_child(_status_label)
 
 	return hbox
@@ -1519,11 +1516,11 @@ func _on_install_job_changed(job) -> void:
 		return
 	var label := "%s v%s" % [job.plugin_id(), str(job.result.get("version", ""))]
 	if job.outcome == job.OUTCOME_FAILED:
-		_show_status("Marketplace install of '%s' failed." % job.plugin_id(), true)
+		_show_status("Marketplace install of '%s' failed: %s" % [job.plugin_id(), job.message], true)
 	elif job.outcome == job.OUTCOME_RECOVERY_NEEDED:
-		_show_status("Marketplace install of '%s' failed and its previous version is not fully restored; see the marketplace window." % job.plugin_id(), true)
+		_show_status("Marketplace install of '%s' failed and its previous version is not fully restored: %s" % [job.plugin_id(), job.message], true)
 	elif job.outcome == job.OUTCOME_START_FAILED:
-		_show_status("Installed %s from marketplace, but it failed to start." % label, true)
+		_show_status("Installed %s from marketplace, but it failed to start: %s" % [label, job.message], true)
 	else:
 		_show_status("Installed %s from marketplace." % label, false)
 	_refresh_plugin_list()
@@ -1664,14 +1661,18 @@ func _sync_dialog_scale(dialog: Window) -> void:
 
 
 func _show_status(message: String, is_error: bool = false) -> void:
-	if not _status_label:
+	if is_error:
+		push_error("[PluginManager] %s" % message)
+	else:
+		print("[PluginManager] %s" % message)
+	if not is_inside_tree() or not _status_label:
 		return
 	_status_label.text = message
 	_status_label.tooltip_text = message
 	if is_error:
-		_status_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+		_status_label.add_theme_color_override("font_uneditable_color", Color(1.0, 0.4, 0.4))
 	else:
-		_status_label.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6))
+		_status_label.add_theme_color_override("font_uneditable_color", Color(0.6, 0.85, 0.6))
 
 	# Clear after 5 seconds
 	get_tree().create_timer(5.0).timeout.connect(func():

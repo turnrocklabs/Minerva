@@ -973,6 +973,7 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 
 	# Tag the connection with the plugin id so _stdio_request can pass it to the handler.
 	conn.plugin_id = id
+	conn.log_stderr = def.log_stderr
 
 	# Wire bidirectional capability request handler so the plugin can call
 	# Minerva tools mid-execution via minerva/capability on stdout.

@@ -50,6 +50,9 @@ var version: String = ""
 ## Minimum host API version this plugin requires (currently "1")
 var host_api_version: String = "1"
 
+## Explicit opt-in to bounded stderr diagnostics in the Minerva log.
+var log_stderr: bool = false
+
 # ---------------------------------------------------------------------------
 # Backend / launch configuration
 # ---------------------------------------------------------------------------
@@ -425,6 +428,7 @@ func to_dict() -> Dictionary:
 		"name": name,
 		"version": version,
 		"host_api_version": host_api_version,
+		"log_stderr": log_stderr,
 		"backend": {
 			"transport": transport,
 			"entrypoint": entrypoint,
@@ -805,6 +809,7 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	def.name = data.get("name", "")
 	def.version = data.get("version", "")
 	def.host_api_version = str(data.get("host_api_version", "1"))
+	def.log_stderr = data.get("log_stderr") is bool and data.get("log_stderr") == true
 
 	# Backend
 	var backend: Dictionary = data.get("backend", {})

@@ -128,6 +128,11 @@ var capability_request_handler: Callable = Callable()
 ## Plugin ID associated with this connection (set when used as a plugin connection).
 var plugin_id: String = ""
 
+## Only explicitly opted-in plugins copy diagnostics: 10 lines/second, 1024 characters/line.
+var log_stderr: bool = false
+var _stderr_log_window_ms: int = 0
+var _stderr_log_count: int = 0
+
 ## Reference to PluginEventBroker for routing async events/state.
 var event_broker = null
 
@@ -1639,8 +1644,9 @@ func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
 
 ## Drain worker diagnostics continuously so a chatty but healthy MCP server
 ## cannot fill the native bounded stderr queue. Diagnostic content is
-## deliberately discarded: peer-controlled stderr may contain tool payloads,
-## credentials, or multiline terminal control data. The captured process
+## discarded unless the manifest explicitly opts in: peer-controlled stderr may
+## contain payloads or credentials. Opted-in lines are capped and control-stripped.
+## The captured process
 ## identity prevents a deferred signal from draining a replacement process.
 func _drain_stderr(expected_process = null) -> void:
 	var process = _subprocess
@@ -1654,8 +1660,17 @@ func _drain_stderr(expected_process = null) -> void:
 	var drained := 0
 	while drained < MAX_STDERR_LINES_PER_DRAIN and process == _subprocess \
 			and is_instance_valid(process) and process.has_stderr():
-		process.read_stderr_line()
+		var line: String = process.read_stderr_line()
 		drained += 1
+		if not log_stderr:
+			continue
+		var now_ms := Time.get_ticks_msec()
+		if now_ms - _stderr_log_window_ms >= 1000:
+			_stderr_log_window_ms = now_ms
+			_stderr_log_count = 0
+		if _stderr_log_count < 10:
+			_stderr_log_count += 1
+			print("[plugin:%s] %s" % [plugin_id, line.substr(0, 1024).strip_escapes()])
 
 
 func _matches_stdio_catalog_watch(message: Dictionary) -> bool:

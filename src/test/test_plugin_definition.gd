@@ -73,6 +73,7 @@ func _init() -> void:
 	test_duplicate_panel_names_fail_validate()
 	test_from_dict_does_not_duplicate_top_level_arrays()
 	test_process_authority_contract()
+	test_stderr_logging_opt_in_round_trip()
 
 	print("\n-- render_mode + layout_hint (DCR 019dfa66 §T5) --")
 	test_render_mode_defaults_to_single()
@@ -128,6 +129,17 @@ func _init() -> void:
 # ---------------------------------------------------------------------------
 # Assertion helpers
 # ---------------------------------------------------------------------------
+
+func test_stderr_logging_opt_in_round_trip() -> void:
+	var manifest := _minimal_manifest()
+	check("stderr logging defaults to discard", not PluginDefinition_.from_dict(manifest).log_stderr)
+	for value: Variant in [true, false, "true", 1, null]:
+		manifest["log_stderr"] = value
+		var decoded: Dictionary = JSON.parse_string(JSON.stringify(manifest))
+		var definition = PluginDefinition_.from_dict(decoded)
+		var restored = PluginDefinition_.from_dict(JSON.parse_string(JSON.stringify(definition.to_dict())))
+		check("only literal true opts in and survives persistence: %s" % str(value),
+			restored.log_stderr == (value is bool and value == true))
 
 func check(description: String, condition: bool) -> void:
 	if condition:

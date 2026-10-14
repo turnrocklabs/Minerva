@@ -155,6 +155,7 @@ func _run() -> void:
 	check("replacement after validation cancellation remains usable",
 		validation_echo.get("echo", {}).get("marker") == "validation-owner")
 	var stderr_calls_ok := true
+	log_start = capture.size()
 	# The native subprocess queue holds 32 stderr lines. More than one queue's
 	# worth of paced, valid requests proves diagnostics are consumed throughout
 	# the session rather than only at startup or teardown. Keep this negative
@@ -170,6 +171,33 @@ func _run() -> void:
 	check("paced worker diagnostics beyond the native queue remain bounded",
 		stderr_calls_ok and modern.server_connected
 		and after_stderr.get("echo", {}).get("marker") == "stderr-drained")
+	check("non-opted worker stderr stays out of the host log",
+		"paced diagnostic" not in capture.since(log_start))
+	modern.plugin_id = "diagnostic_fixture"
+	modern.log_stderr = true
+	log_start = capture.size()
+	var diagnostic_start := Time.get_ticks_msec()
+	var noisy: Dictionary = await modern.call_tool("stderr_line", {
+		"index": 99, "count": 40, "text": "\u001b\t" + "x".repeat(1100) + "TAIL_NOT_LOGGED"}, 5.0)
+	await process_frame
+	var logged := capture.since(log_start)
+	var diagnostic_lines := 0
+	var capped := true
+	for line: String in logged.split("\n"):
+		if line.begins_with("[plugin:diagnostic_fixture] "):
+			diagnostic_lines += 1
+			capped = capped and line.length() <= 1024 + "[plugin:diagnostic_fixture] ".length()
+	var windows := ceili(float(Time.get_ticks_msec() - diagnostic_start) / 1000.0) + 1
+	check("opted diagnostics are prefixed, capped, control stripped and rate bounded while draining",
+		noisy.get("index") == 99 and modern.server_connected and diagnostic_lines > 0
+		and diagnostic_lines <= 10 * windows and diagnostic_lines < 40 and capped
+		and "TAIL_NOT_LOGGED" not in logged and "\u001b" not in logged and "\t" not in logged)
+	await create_timer(1.05).timeout
+	log_start = capture.size()
+	await modern.call_tool("stderr_line", {"index": 100}, 5.0)
+	await process_frame
+	check("stderr logging resumes after the rate window",
+		"[plugin:diagnostic_fixture] paced diagnostic 100" in capture.since(log_start))
 	modern.disconnect_from_server()
 
 	var reentrant = connection_script.new("reentrant-fixture")
