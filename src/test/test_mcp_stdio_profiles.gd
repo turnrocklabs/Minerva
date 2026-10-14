@@ -180,7 +180,7 @@ func _run() -> void:
 	var noisy: Dictionary = await modern.call_tool("stderr_line", {
 		"index": 99, "count": 40, "text": "\u001b\t" + "x".repeat(1100) + "TAIL_NOT_LOGGED"}, 5.0)
 	await process_frame
-	var logged := capture.since(log_start)
+	var logged: String = capture.since(log_start)
 	var diagnostic_lines := 0
 	var capped := true
 	for line: String in logged.split("\n"):
