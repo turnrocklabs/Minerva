@@ -896,13 +896,25 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 			transport.reply(str(message.params.request_id), {"text": "buffered words"})
 	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	feature.set_enabled(false)
+	await server.execute_tool_for_http("minerva_set_audio_device", {"direction": "input", "device_id": "os:Default"})
+	for refused_args: Dictionary in [
+		{"op": "input_begin", "expected_chat_id": "wrong-chat", "format": "pcm_s16le", "sample_rate": 16000, "channels": 1},
+		{"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "wrong-format", "sample_rate": 16000, "channels": 1},
+		{"op": "input_begin", "device_id": "not_registered", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1},
+	]:
+		var refused: Dictionary = await _microphone_call(conn, refused_args)
+		check("E input: refused begin preserves the selected OS microphone", not refused.get("success", false) and cfg.input_device.is_empty(), str(refused))
 	for streamed: bool in [false, true]:
+		await server.execute_tool_for_http("minerva_set_audio_device", {"direction": "input", "device_id": "os:Default"})
 		cfg.stt_transport = cfg.STTTransport.STREAMED if streamed else cfg.STTTransport.BUFFERED
 		cfg.whisper_fallback = not streamed
 		pane.set_user_input_text("draft:")
 		await _probe(SUBSCRIBER, "probe_clear")
 		var transport_begin: Dictionary = await _microphone_call(conn, {"op": "input_begin", "expected_chat_id": str(visible.HistoryId), "format": "pcm_s16le", "sample_rate": 16000, "channels": 1})
 		check("E input: manual PTT begins with Voice Support off", transport_begin.get("success", false), str(transport_begin))
+		listed = await server.execute_tool_for_http("minerva_list_audio_devices", {})
+		reloaded.load_from_config()
+		check("E input: remote PTT selects and persists its microphone through the shared owner", listed.selected_input == key and reloaded.input_device == key)
 		if not transport_begin.get("success", false):
 			continue
 		var capture_id: int = int(transport_begin.result.session_id)
@@ -1008,7 +1020,7 @@ func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> voi
 
 
 func _microphone_call(conn, args: Dictionary) -> Dictionary:
-	args["device_id"] = "microphone"
+	args["device_id"] = args.get("device_id", "microphone")
 	return await conn.call_tool("probe_capability", {"capability": "host.audio", "args": args})
 
 

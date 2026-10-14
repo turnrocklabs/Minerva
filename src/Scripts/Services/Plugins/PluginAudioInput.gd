@@ -84,11 +84,16 @@ func _begin(plugin_id: String, device_id: String, key: String, args: Dictionary)
 	var expected: String = args.expected_chat_id
 	if expected != _target.active_chat_id():
 		return _error(plugin_id, "chat_changed", "The visible chat changed before microphone input.")
-	if _devices.selected_input() != key or not _devices.endpoint_available(key, "input"):
+	if not _devices.endpoint_available(key, "input"):
 		return _error(plugin_id, "audio_unavailable", "The selected microphone endpoint is unavailable.")
 	var state: Dictionary = _target.set_external_state(plugin_id, "recording")
 	if not state.get("success", false):
 		return state
+	if _devices.selected_input() != key:
+		var selection: Dictionary = _devices.select("input", key)
+		if not selection.get("success", false):
+			_target.set_external_state(plugin_id, "idle")
+			return selection
 	_next_id += 1
 	var session := Session.new()
 	session.operation.voice_owner = VoiceFeatureControl.MANUAL_PTT_OWNER
