@@ -1574,11 +1574,7 @@ func _ready():
 	else:
 		last_saved_path = "/"
 	
-	var mic_selected = get_microphone()
-	if mic_selected:
-		call_deferred("set_microphone", mic_selected)
-
-	set_output_device(get_output_device())
+	_restore_audio_devices.call_deferred()
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 
@@ -2723,6 +2719,16 @@ func set_theme(themeID: int) -> void:
 #region Audio Settings
 @warning_ignore("unused_signal")
 signal mic_changed(microphone)
+
+## Startup restores OS routes only when the saved selection belongs to the OS.
+func _restore_audio_devices() -> void:
+	var preferences: VoiceConfig = get_voice_config()
+	var microphone: String = str(get_microphone())
+	if not preferences.input_device.begins_with("plugin:") and not microphone.is_empty():
+		set_microphone(microphone)
+	if not preferences.output_device.begins_with("plugin:"):
+		set_output_device(get_output_device())
+
 
 func get_microphone():
 	return config_file.get_value("AudioSettings", "SelectedMic",  "Default")

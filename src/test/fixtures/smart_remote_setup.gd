@@ -5,6 +5,7 @@ var _so: Node
 var _connection: RefCounted
 var _ensure_calls: int = 0
 var _captured: bool = false
+var _startup_selection_preserved: bool = false
 var _mode: String
 
 func _initialize() -> void:
@@ -26,6 +27,9 @@ func _run() -> void:
 	var deadline: int = Time.get_ticks_msec() + 15000
 	while _so.plugin_capability_broker == null and Time.get_ticks_msec() < deadline:
 		await process_frame
+	var saved = _so.get_voice_config()
+	var expected: String = "plugin:smart_remote:remote_a4cf12b03e5d"
+	_startup_selection_preserved = saved.input_device == expected and saved.output_device == expected
 	var render = load("res://test/helpers/chat_host_render_fixture.gd").new()
 	render.install(_so)
 	var chat_scene: Node = load("res://Scenes/Chat.tscn").instantiate()
@@ -98,7 +102,10 @@ func _audio_picker() -> bool:
 	if passed:
 		popup._on_microphones_item_selected(input_index)
 		popup._on_output_device_button_item_selected(output_index)
-		passed = devices.selected_input() == key and devices.selected_output() == key \
+		_so._restore_audio_devices()
+		var restored = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
+		restored.load_from_config()
+		passed = _startup_selection_preserved and restored.input_device == key and restored.output_device == key 			and devices.selected_input() == key and devices.selected_output() == key \
 			and popup._voice_input_devices.get_item_metadata(popup._voice_input_devices.selected) == key \
 			and popup._voice_output_devices.get_item_metadata(popup._voice_output_devices.selected) == key
 	devices.changed.disconnect(popup._refresh_voice_devices)

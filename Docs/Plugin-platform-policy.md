@@ -31,6 +31,13 @@ Pre-approved defaults for implementation of DCR-1, DCR-2, DCR-3, DCR-4 and relat
 - Prefer few composable MCP tools over many narrow tools.
 - Closed-enum parameters when possible; open strings only for plugin-registered kinds.
 
+## Host chat input
+
+`host.chat.input` supports `ensure_chat`: it uses the chat pane's normal
+`ensure_chat_open` action and returns the visible chat payload. A granted plugin
+may use it when a user starts PTT with no chat open; later audio requests still
+carry that exact `expected_chat_id` and retain the normal chat-change checks.
+
 ## Error handling
 
 - Fail gracefully + warn. Never silently drop.
@@ -147,8 +154,3 @@ referenced in `initial_message` templates (e.g. `{terminal_id}`).
 - Each task's Definition-of-Done (filed as a comment on the task's docket item) is mandatory for task completion.
 - Build green + tests green + DoD criteria verified → task done.
 - Do not ship a task with zero test coverage; add tests inside task scope.
-
-`host.chat.input` supports `ensure_chat`: it uses the chat pane's normal
-`ensure_chat_open` action and returns the visible chat payload. A granted plugin
-may use it when a user starts PTT with no chat open; later audio requests still
-carry that exact `expected_chat_id` and retain the normal chat-change checks.
