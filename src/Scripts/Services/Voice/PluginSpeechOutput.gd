@@ -44,6 +44,10 @@ func is_available() -> bool:
 	return not _stopped and available
 
 
+func has_begun() -> bool:
+	return _opened
+
+
 func play(audio: PackedByteArray, volume: float) -> Dictionary:
 	var decoded: AudioStream = VoiceServiceClient.decode_audio(audio)
 	if not decoded is AudioStreamWAV:

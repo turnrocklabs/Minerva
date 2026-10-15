@@ -923,10 +923,10 @@ func _notification_interruption_contracts() -> void:
 	var store = load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://tone-order-log"))
 	var delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(store, devices, null, Callable(),
 		func(message: String) -> void: notices.append(message), func(_delivery) -> void: pass)
-	# Real response order: notification, prepare, then ready speech in the same frame.
-	so.play_chat_notification()
+	# Agentic completion reserves speech before emitting response_arrived.
 	var prepared: Dictionary = delivery.prepare(operation, player, config, "summary", {"plugin_id": "audio_probe", "chat_id": "tone_order", "send_id": 1})
-	check("speech is admitted during the completion tone", prepared.success and not operation.done)
+	so.play_chat_notification()
+	check("speech reservation survives arrival of completion tone", prepared.success and not operation.done)
 	check("ready speech can buffer while the tone drains", operation.play(player, FileAccess.get_file_as_bytes("res://assets/Audio/notification-pcm.wav"), 1.0))
 	await create_timer(0.30).timeout
 	check("plugin begins tone first without cancelling it or opening speech", order == ["tone_begin"] and sent.all(func(packet: Dictionary) -> bool: return packet.op != "cancel"))

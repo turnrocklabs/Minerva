@@ -169,8 +169,8 @@ func play_notification(player: AudioStreamPlayer, tone: AudioStreamWAV) -> void:
 		return
 	_notification_pending = true
 	var key: String = selected_output()
-	# Completion tones follow existing speech, without replacing its stream.
-	while output_busy(key) or output_busy(key + ":tone"):
+	# A reservation is not live speech; only an opened stream must finish first.
+	while _speech_begun(key) or output_busy(key + ":tone"):
 		await _next_frame.call()
 		key = selected_output()
 	_notification_pending = false
@@ -210,6 +210,11 @@ func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionar
 	_stream_ids[active_key] = _next_stream
 	output.finished.connect(_finished.bind(active_key, output), CONNECT_ONE_SHOT)
 	return output
+
+
+func _speech_begun(key: String) -> bool:
+	var output: PluginSpeechOutput = _playing.get(key)
+	return output != null and output.has_begun()
 
 
 func _tone_finished(key: String) -> bool:
