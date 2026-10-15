@@ -889,16 +889,23 @@ func _run() -> void:
 	_completed = true
 
 
-## Expected tone replacement is quiet; endpoint failures remain visible.
+## Completion uses its own stream; synthesis can finish while that stream drains.
 func _notification_interruption_contracts() -> void:
 	# Autoload-dependent classes are runtime-loaded for the --script runner.
+	var so = root.get_node("SingletonObject")
+	var previous = so.plugin_audio_devices
 	var config = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
 	var policy = load("res://Scripts/Services/Plugins/PluginPolicy.gd").new(null, null, false)
 	policy.grant_capability("audio_probe", "host.audio")
 	var sent: Array[Dictionary] = []
+	var order: Array[String] = []
 	var notices: Array[String] = []
+	var began_at: int = Time.get_ticks_msec()
 	var sender := func(_plugin_id: String, _event: String, payload: Dictionary) -> Error:
 		sent.append(payload.duplicate(true))
+		if payload.op == "begin":
+			order.append("tone_begin" if payload.origin.kind == "explicit" else "speech_begin")
+			print("ORDER %s +%dms stream=%s" % [order.back(), Time.get_ticks_msec() - began_at, payload.stream_id])
 		return OK
 	var next_frame := func() -> void: await process_frame
 	var devices = load("res://Scripts/Services/Plugins/PluginAudioDevices.gd").new(config, policy, sender, next_frame,
@@ -908,24 +915,42 @@ func _notification_interruption_contracts() -> void:
 	devices.handle("audio_probe", {"op": "availability", "device_id": "remote", "available": true})
 	var key: String = "plugin:audio_probe:remote"
 	config.output_device = key
+	so.plugin_audio_devices = devices
 	var player := AudioStreamPlayer.new()
 	var tone: AudioStreamWAV = load("res://assets/Audio/notification-pcm.wav")
-	devices.play_notification(player, tone)
-	for frame in 3:
-		await process_frame
-	check("tone is active and has delivered PCM before replacement", devices.output_busy(key) and sent.any(func(packet: Dictionary) -> bool: return packet.op == "chunk"))
 	var operation = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
-	var speech = devices.speech_output(player, {}, true)
 	operation.finished.connect(devices.report_failure)
-	check("new speech supersedes a playing tone without a toast", notices.is_empty() and operation.bind_output(speech))
-	var opened: Dictionary = speech.begin("pcm_s16le", 16000, 1.0)
-	check("replacement speech still starts", opened.success and speech.append(PackedByteArray([0, 0])))
-	speech.end()
+	var store = load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://tone-order-log"))
+	var delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(store, devices, null, Callable(),
+		func(message: String) -> void: notices.append(message), func(_delivery) -> void: pass)
+	# Real response order: notification, prepare, then ready speech in the same frame.
+	so.play_chat_notification()
+	var prepared: Dictionary = delivery.prepare(operation, player, config, "summary", {"plugin_id": "audio_probe", "chat_id": "tone_order", "send_id": 1})
+	check("speech is admitted during the completion tone", prepared.success and not operation.done)
+	check("ready speech can buffer while the tone drains", operation.play(player, FileAccess.get_file_as_bytes("res://assets/Audio/notification-pcm.wav"), 1.0))
+	await create_timer(0.30).timeout
+	check("plugin begins tone first without cancelling it or opening speech", order == ["tone_begin"] and sent.all(func(packet: Dictionary) -> bool: return packet.op != "cancel"))
+	var first_stream: int = sent[0].stream_id
+	check("tone has reached EOS but waits for endpoint drain", sent.any(func(packet: Dictionary) -> bool: return packet.op == "end" and packet.stream_id == first_stream) and not operation.done)
+	order.append("tone_complete")
+	var acknowledged_at: int = Time.get_ticks_msec()
+	var ack: Dictionary = devices.handle("audio_probe", JSON.parse_string(JSON.stringify({"op": "output_complete", "device_id": "remote", "stream_id": first_stream, "success": true})))
+	await process_frame
+	await process_frame
+	check("endpoint drain precedes speech begin", ack.success and order == ["tone_begin", "tone_complete", "speech_begin"])
+	print("ORDER speech released within %dms of tone completion; tone PCM duration %.3fs" % [Time.get_ticks_msec() - acknowledged_at, float(tone.data.size()) / (2.0 * tone.mix_rate)])
+	# A later completion cannot preempt speech already on the speaker.
+	devices.play_notification(player, tone)
+	for frame in 12:
+		await process_frame
+	check("another tone never cuts live speech", order.size() == 3 and sent.all(func(packet: Dictionary) -> bool: return packet.op != "cancel"))
 	var failed: Dictionary = devices.handle("audio_probe", {"op": "output_complete", "device_id": "remote", "stream_id": devices.output_stream_id(key), "success": false, "error_message": "Radio playback failed."})
 	check("real speech failure still finishes visibly", failed.success and operation.done and notices == ["Speech: Radio playback failed."])
-	devices.play_notification(player, tone)
-	failed = devices.handle("audio_probe", {"op": "output_complete", "device_id": "remote", "stream_id": devices.output_stream_id(key), "success": false, "error_message": "Tone transport failed."})
+	await process_frame
+	var tone_stream: int = sent.back().stream_id
+	failed = devices.handle("audio_probe", {"op": "output_complete", "device_id": "remote", "stream_id": tone_stream, "success": false, "error_message": "Tone transport failed."})
 	check("genuine tone failure still reports", failed.success and notices.back() == "Speech: Tone transport failed." and not devices.output_busy(key))
+	so.plugin_audio_devices = previous
 	await process_frame
 	player.free()
 

@@ -7,6 +7,8 @@ const CHUNK_BYTES: int = 6400
 const PENDING_BYTES: int = 2 * 1024 * 1024
 const TOTAL_BYTES: int = 20 * 1024 * 1024
 
+var _ready: Callable
+var _waiting: bool = false
 var _origin: Dictionary
 var _send: Callable
 var _next_frame: Callable
@@ -28,7 +30,8 @@ var _source_offset: int = 0
 var _partial_sample: PackedByteArray = PackedByteArray()
 
 
-func _init(stream_id: int, send: Callable, next_frame: Callable, available: Callable, origin: Dictionary = {}) -> void:
+func _init(stream_id: int, send: Callable, next_frame: Callable, available: Callable, origin: Dictionary = {}, ready: Callable = Callable()) -> void:
+	_ready = ready
 	_stream_id = stream_id
 	_origin = origin.duplicate(true)
 	_send = send
@@ -63,17 +66,31 @@ func play(audio: PackedByteArray, volume: float) -> Dictionary:
 func begin(format: String, sample_rate: int, volume: float) -> Dictionary:
 	if not is_available():
 		return VoiceServiceClient.failure("audio_unavailable", "Selected plugin speaker is unreachable.")
-	if _opened or format not in ["pcm_s16le", "wav"] or sample_rate <= 0:
+	if _opened or _waiting or format not in ["pcm_s16le", "wav"] or sample_rate <= 0:
 		return VoiceServiceClient.failure("unsupported_audio_stream", "Plugin output requires PCM or WAV with a sample rate.")
 	_format = format
 	_volume = volume
 	if format == "wav":
+		return {"success": true}
+	if _ready.is_valid() and not _ready.call():
+		_waiting = true
+		_begin_after_tone(format, sample_rate, volume)
 		return {"success": true}
 	if not _emit({"op": "begin", "format": format, "sample_rate": sample_rate, "channels": 1, "volume": volume}):
 		return VoiceServiceClient.failure("audio_unavailable", "Plugin speaker refused the stream.")
 	_opened = true
 	_pump()
 	return {"success": true}
+
+
+func _begin_after_tone(format: String, sample_rate: int, volume: float) -> void:
+	while not _stopped and not _ready.call():
+		await _next_frame.call()
+	_waiting = false
+	if not _stopped:
+		var result: Dictionary = begin(format, sample_rate, volume)
+		if not result.success:
+			_fail(str(result.error_code), str(result.error_message))
 
 
 func append(audio: PackedByteArray) -> bool:

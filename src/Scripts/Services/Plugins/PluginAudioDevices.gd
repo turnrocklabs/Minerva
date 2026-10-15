@@ -57,6 +57,7 @@ func handle(plugin_id: String, args: Dictionary) -> Dictionary:
 			_devices[key]["available"] = args.available
 			if not args.available:
 				_cancel(key)
+				_cancel(key + ":tone")
 			changed.emit()
 			return PluginErrors.success({})
 		"unregister":
@@ -74,7 +75,9 @@ func handle(plugin_id: String, args: Dictionary) -> Dictionary:
 			var delivered: bool = args.success
 			var output: PluginSpeechOutput = _playing.get(key)
 			if output == null or stream_id != output_stream_id(key):
-				return PluginErrors.schema_validation_failed(plugin_id, "output_complete names no active stream")
+				output = _playing.get(key + ":tone")
+				if output == null or stream_id != output_stream_id(key + ":tone"):
+					return PluginErrors.schema_validation_failed(plugin_id, "output_complete names no active stream")
 			output.acknowledge(delivered, str(args.get("error_message", "Plugin audio delivery failed.")))
 			return PluginErrors.success({})
 	return PluginErrors.schema_validation_failed(plugin_id, "unknown host.audio operation")
@@ -167,15 +170,14 @@ func play_notification(player: AudioStreamPlayer, tone: AudioStreamWAV) -> void:
 	_notification_pending = true
 	var key: String = selected_output()
 	# Completion tones follow existing speech, without replacing its stream.
-	while output_busy(key):
+	while output_busy(key) or output_busy(key + ":tone"):
 		await _next_frame.call()
 		key = selected_output()
 	_notification_pending = false
 	if key.begins_with("os:"):
 		player.play()
 		return
-	var output: SpeechOutput = output_for_device(player, key, {}, true)
-	output.set_meta("completion_tone", true)
+	var output: SpeechOutput = output_for_device(player, key, {}, true, true)
 	output.finished.connect(report_failure, CONNECT_ONE_SHOT)
 	var opened: Dictionary = output.begin("pcm_s16le", tone.mix_rate, minf(db_to_linear(player.volume_db), 1.0))
 	if not opened.success:
@@ -192,23 +194,26 @@ func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit:
 	return output_for_device(player, route_output(origin, explicit), origin, explicit)
 
 
-func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionary = {}, explicit: bool = false) -> SpeechOutput:
+func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionary = {}, explicit: bool = false, notification: bool = false) -> SpeechOutput:
 	if key == "os:" + str(_get_os_output.call()):
 		return OSSpeechOutput.new(player)
 	# An unavailable plugin remains a plugin route, with a visible failure.
-	var previous: PluginSpeechOutput = _playing.get(key)
-	if previous != null and previous.has_meta("completion_tone") and previous.finished.is_connected(report_failure):
-		# New speech superseding a tone is expected; genuine failures still report.
-		previous.finished.disconnect(report_failure)
-	_cancel(key)
+	# A tone and reserved speech have separate lifetimes on the same device.
+	var active_key: String = key + ":tone" if notification else key
+	_cancel(active_key)
 	_next_stream += 1
 	var output := PluginSpeechOutput.new(_next_stream,
 		_send_audio.bind(key), _next_frame, _available.bind(key),
-		{"kind": "explicit"} if explicit else ({"kind": "turn", "chat_id": str(origin.chat_id), "send_id": origin.get("send_id", 0)} if not str(origin.get("chat_id", "")).is_empty() else {}))
-	_playing[key] = output
-	_stream_ids[key] = _next_stream
-	output.finished.connect(_finished.bind(key, output), CONNECT_ONE_SHOT)
+		{"kind": "explicit"} if explicit else ({"kind": "turn", "chat_id": str(origin.chat_id), "send_id": origin.get("send_id", 0)} if not str(origin.get("chat_id", "")).is_empty() else {}),
+		Callable() if notification else _tone_finished.bind(key))
+	_playing[active_key] = output
+	_stream_ids[active_key] = _next_stream
+	output.finished.connect(_finished.bind(active_key, output), CONNECT_ONE_SHOT)
 	return output
+
+
+func _tone_finished(key: String) -> bool:
+	return not output_busy(key + ":tone")
 
 
 var _stream_ids: Dictionary = {}
@@ -266,5 +271,6 @@ func _cancel(key: String) -> void:
 
 
 func _remove(key: String) -> void:
+	_cancel(key + ":tone")
 	_cancel(key)
 	_devices.erase(key)

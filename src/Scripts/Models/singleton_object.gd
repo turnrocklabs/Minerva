@@ -2759,7 +2759,8 @@ func hide_loading_screen():
 
 #region ChatNotification Player
 func play_chat_notification() -> void:
-	await get_tree().create_timer(0.25).timeout
+	if plugin_audio_devices == null or not plugin_audio_devices.selected_output().begins_with("plugin:"):
+		await get_tree().create_timer(0.25).timeout
 	if plugin_audio_devices != null:
 		var tone: AudioStreamWAV = load("res://assets/Audio/notification-pcm.wav")
 		plugin_audio_devices.play_notification(chat_notification_player, tone)
