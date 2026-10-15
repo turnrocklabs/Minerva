@@ -17,6 +17,7 @@ extends SceneTree
 ##
 ## Run: godot --headless --path src --script test/test_marketplace_browse.gd
 
+const DOWNLOADER_GD := "res://Scripts/Services/Plugins/PluginDownloader.gd"
 const HELPERS_GD := "res://test/marketplace_test_helpers.gd"
 const DIALOG_TSCN := "res://Scenes/MarketplaceBrowseDialog.tscn"
 const PANEL_TSCN := "res://Scenes/PluginManagerPanel.tscn"
@@ -43,6 +44,8 @@ func _init() -> void:
 		print("FAIL: timed out")
 		_finish(1))
 	await process_frame
+	var failure: Dictionary = load(DOWNLOADER_GD)._result("download_bad_status", {"url": "https://example.invalid/archive?signature=public-sentinel#secret", "code": 403})
+	_check(failure.detail.url == "https://example.invalid/archive" and failure.detail.code == 403 and not str(failure).contains("public-sentinel"), "download diagnostics redact signed query and preserve status")
 	_h = load(HELPERS_GD).new(self)
 	_temp = "%s/test_marketplace_browse_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
 	var port: int = _h.random_high_port()
