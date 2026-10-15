@@ -7,9 +7,9 @@ static func warning() -> String:
 		return ""
 	var missing: PackedStringArray = []
 	for method: String in ["try_lock_status", "try_lock", "unlock", "is_locked", "replace_file"]:
-		if not ClassDB.class_has_method("ProcessFileLock", method):
+		if not ClassDB.class_exists("ProcessFileLock") or not ClassDB.class_has_method("ProcessFileLock", method):
 			missing.append("ProcessFileLock." + method)
-	if not ClassDB.class_has_method("SubProcess", "stop_gracefully"):
+	if not ClassDB.class_exists("SubProcess") or not ClassDB.class_has_method("SubProcess", "stop_gracefully"):
 		missing.append("SubProcess.stop_gracefully")
 	if missing.is_empty():
 		return ""
