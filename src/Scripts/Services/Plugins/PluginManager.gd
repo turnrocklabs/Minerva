@@ -80,6 +80,7 @@ signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
 signal plugin_status_changed(id: String)
+signal plugin_cleanup_status(id: String, message: String, is_error: bool)
 signal plugin_file_changed(id: String)
 ## A reconcile_recovered drain finished.
 signal content_drained
@@ -636,6 +637,7 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		_content_busy.erase(id)
 		return removed
 
+	_report_plugin_cleanup(id, "Cleaning up %s's skills…" % def.name)
 	_runtime.erase(id)
 	_setup_pipelines.erase(id)
 	_build_progress.erase(id)
@@ -659,14 +661,25 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	# customised ones kept as the user's), then recompute skill reactivity.
 	# Runs AFTER _db.remove so the uninstalled plugin's tools are no longer
 	# counted as available.
-	var result: Dictionary = await Seeding.unseed(self, id, removal_docket)
+	var result: Dictionary = await Seeding.unseed(self, id, removal_docket, def)
 	result["ok"] = true
 	if Seeding.complete(result):
 		Transaction.content_done(cleanup_path)
 	elif not Transaction.requeue_content(cleanup_path, id, cleanup, false, Seeding.unfinished_reason(result)):
 		push_error("[PluginManager] '%s''s leftover Docket content could not be queued for cleanup" % id)
 	_content_busy.erase(id)
+	var note: String = Seeding.content_note(result)
+	_report_plugin_cleanup(id, "Cleanup finished for %s. %s" % [def.name, note], not note.is_empty())
 	return result
+
+
+## Cleanup belongs to the manager; its diagnostics survive a closed panel.
+func _report_plugin_cleanup(id: String, message: String, is_error: bool = false) -> void:
+	if is_error:
+		push_error("[PluginManager] %s" % message)
+	else:
+		print("[PluginManager] %s" % message)
+	plugin_cleanup_status.emit(id, message, is_error)
 
 
 # Stops plugin `id` and removes its record, holding the staging lock until

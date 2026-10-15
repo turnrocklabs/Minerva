@@ -126,7 +126,7 @@ func _handle(tool: String, arguments: Dictionary) -> Dictionary:
 			var found := []
 			for item in items.values():
 				if item._path == path and filter.keys().all(func(field) -> bool: return item.get(field) == filter[field]):
-					found.append({"id": item.id, "type": item.type})
+					found.append(item.duplicate(true) if arguments.get("detail") == "full" else {"id": item.id, "type": item.type})
 			return {"success": true, "items": found}
 		"docket_get":
 			return items[id].merged({"success": true}) if here else {"success": false, "error": "Item not found: %s" % id}

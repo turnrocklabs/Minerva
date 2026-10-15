@@ -428,7 +428,7 @@ static func content_committed_problem(journal: Dictionary) -> String:
 ## (source "user", provenance cleared). Returns the result fields.
 ## `operation`, when given, is the Docket binding of an operation this is part
 ## of.
-static func unseed(manager, plugin_id: String, operation: SeedingDocket = null) -> Dictionary:
+static func unseed(manager, plugin_id: String, operation: SeedingDocket = null, removed_definition: PluginDefinition = null) -> Dictionary:
 	var docket_caller := operation if operation != null else docket()
 	var why: String = docket_caller.unavailable()
 	if not why.is_empty():
@@ -456,7 +456,7 @@ static func unseed(manager, plugin_id: String, operation: SeedingDocket = null) 
 			missing.append("master" if str(name).is_empty() else str(name))
 	if not missing.is_empty():
 		result["knowledge_missing_project"] = ", ".join(missing)
-	result.merge(await recompute_reactivity(manager, docket_caller))
+	result.merge(await recompute_reactivity(manager, docket_caller, removed_definition))
 	return _finish(result, docket_caller, plugin_id, "removed")
 
 
@@ -464,11 +464,11 @@ static func unseed(manager, plugin_id: String, operation: SeedingDocket = null) 
 ## change; returns the reactivity_* result fields when anything changed.
 ## `operation`, when given, is the Docket binding of an operation this is
 ## part of (a stopped one writes nothing more).
-static func recompute_reactivity(manager, operation: SeedingDocket = null) -> Dictionary:
+static func recompute_reactivity(manager, operation: SeedingDocket = null, removed_definition: PluginDefinition = null) -> Dictionary:
 	var docket_caller := operation if operation != null else docket()
 	if not docket_caller.unavailable().is_empty():
 		return {}
-	var reactivity: Dictionary = await SkillSeeder.recompute_unsatisfied(available_tools(manager), docket_caller)
+	var reactivity: Dictionary = await SkillSeeder.recompute_unsatisfied(available_tools(manager), docket_caller, removed_definition)
 	if reactivity.get("updated", 0) == 0:
 		return {}
 	return {

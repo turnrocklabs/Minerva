@@ -482,21 +482,39 @@ static func _extract_plugin_id(skill: Dictionary) -> String:
 ##
 ## Failures here log but don't propagate — DoD says lifecycle reactivity must
 ## not roll back the install/uninstall transaction that triggered it.
-static func recompute_unsatisfied(available_tools: Dictionary, docket_caller) -> Dictionary:
+## A removal supplies its definition: only exact declared-tool dependants are fetched.
+static func recompute_unsatisfied(available_tools: Dictionary, docket_caller, removed_definition: PluginDefinition = null) -> Dictionary:
 	var updated := 0
 	var now_satisfied := 0
 	var now_unsatisfied := 0
 	if docket_caller == null:
 		return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
 
-	var query_result = await docket_caller.call_tool("docket_query", {
-		"filter": {"type": "skill"},
-	})
+	var removed_tools: Dictionary = {}
+	if removed_definition != null:
+		for tool: Dictionary in removed_definition.tools:
+			removed_tools[str(tool.get("name", ""))] = true
+		if removed_tools.is_empty():
+			return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
+	var query := {"filter": {"type": "skill"}}
+	if removed_definition != null:
+		query["detail"] = "full"
+	var query_result = await docket_caller.call_tool("docket_query", query)
 	if not (query_result is Dictionary):
 		return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
 	var items: Array = query_result.get("items", [])
 
 	for item in items:
+		if removed_definition != null:
+			var affected := false
+			var listed_deps: Variant = item.get("tool_deps", [])
+			if listed_deps is Array:
+				for dep: Variant in listed_deps:
+					if removed_tools.has(str(dep)):
+						affected = true
+						break
+			if not affected:
+				continue
 		var record_id := str(item.get("id", ""))
 		if record_id.is_empty():
 			continue

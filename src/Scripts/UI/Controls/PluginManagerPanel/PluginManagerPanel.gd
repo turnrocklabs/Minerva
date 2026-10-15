@@ -706,6 +706,8 @@ func _connect_signals() -> void:
 		pm.plugin_state_changed.connect(_on_plugin_state_changed)
 	if not pm.plugin_status_changed.is_connected(_on_plugin_event):
 		pm.plugin_status_changed.connect(_on_plugin_event)
+	if not pm.plugin_cleanup_status.is_connected(_on_plugin_cleanup_status):
+		pm.plugin_cleanup_status.connect(_on_plugin_cleanup_status)
 	if not pm.plugin_started.is_connected(_on_plugin_event):
 		pm.plugin_started.connect(_on_plugin_event)
 	if not pm.plugin_stopped.is_connected(_on_plugin_event):
@@ -756,6 +758,8 @@ func _disconnect_signals() -> void:
 		pm.plugin_state_changed.disconnect(_on_plugin_state_changed)
 	if pm.plugin_status_changed.is_connected(_on_plugin_event):
 		pm.plugin_status_changed.disconnect(_on_plugin_event)
+	if pm.plugin_cleanup_status.is_connected(_on_plugin_cleanup_status):
+		pm.plugin_cleanup_status.disconnect(_on_plugin_cleanup_status)
 	if pm.plugin_started.is_connected(_on_plugin_event):
 		pm.plugin_started.disconnect(_on_plugin_event)
 	if pm.plugin_stopped.is_connected(_on_plugin_event):
@@ -1212,6 +1216,15 @@ func _on_plugin_state_changed(_id: String, _old: int, _new: int) -> void:
 		_populate_detail_panel(_selected_plugin_id)
 
 
+func _on_plugin_cleanup_status(id: String, message: String, is_error: bool) -> void:
+	if _selected_plugin_id == id:
+		_selected_plugin_id = ""
+		_detail_placeholder.show()
+		_detail_panel.hide()
+	_refresh_plugin_list()
+	_display_status(message, is_error)
+
+
 func _on_plugin_event(_id: String) -> void:
 	_refresh_plugin_list()
 	if not _selected_plugin_id.is_empty():
@@ -1640,6 +1653,8 @@ func _on_remove_confirmed() -> void:
 		if not content_note.is_empty():
 			msg += " %s." % content_note
 		_show_status(msg, not content_note.is_empty())
+		if not is_inside_tree():
+			return
 		_selected_plugin_id = ""
 		_detail_placeholder.visible = true
 		_detail_panel.visible = false
@@ -1665,6 +1680,10 @@ func _show_status(message: String, is_error: bool = false) -> void:
 		push_error("[PluginManager] %s" % message)
 	else:
 		print("[PluginManager] %s" % message)
+	_display_status(message, is_error)
+
+
+func _display_status(message: String, is_error: bool = false) -> void:
 	if not is_inside_tree() or not _status_label:
 		return
 	_status_label.text = message
