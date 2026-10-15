@@ -175,6 +175,7 @@ func play_notification(player: AudioStreamPlayer, tone: AudioStreamWAV) -> void:
 		player.play()
 		return
 	var output: SpeechOutput = output_for_device(player, key, {}, true)
+	output.set_meta("completion_tone", true)
 	output.finished.connect(report_failure, CONNECT_ONE_SHOT)
 	var opened: Dictionary = output.begin("pcm_s16le", tone.mix_rate, minf(db_to_linear(player.volume_db), 1.0))
 	if not opened.success:
@@ -195,6 +196,10 @@ func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionar
 	if key == "os:" + str(_get_os_output.call()):
 		return OSSpeechOutput.new(player)
 	# An unavailable plugin remains a plugin route, with a visible failure.
+	var previous: PluginSpeechOutput = _playing.get(key)
+	if previous != null and previous.has_meta("completion_tone") and previous.finished.is_connected(report_failure):
+		# New speech superseding a tone is expected; genuine failures still report.
+		previous.finished.disconnect(report_failure)
 	_cancel(key)
 	_next_stream += 1
 	var output := PluginSpeechOutput.new(_next_stream,

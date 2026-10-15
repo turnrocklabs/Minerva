@@ -340,10 +340,15 @@ func _stream_id(seed: int) -> PackedByteArray:
 	return id
 
 func _run() -> void:
+	if "--notification-interruption" in OS.get_cmdline_user_args():
+		await _notification_interruption_contracts()
+		_completed = true
+		return
 	var core = root.get_node("Core")
 	var so = root.get_node("SingletonObject")
 	_no_builtin_voice_container(so)
 	await _plugin_output_contracts()
+	await _notification_interruption_contracts()
 	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging, "docker": so.docker_manager, "delivery": so.speech_delivery}
 	so.verbose_logging = false
 	so.config_file = ConfigFile.new()
@@ -867,6 +872,47 @@ func _run() -> void:
 	so.docker_manager = saved.docker
 	transport.free()
 	_completed = true
+
+
+## Expected tone replacement is quiet; endpoint failures remain visible.
+func _notification_interruption_contracts() -> void:
+	# Autoload-dependent classes are runtime-loaded for the --script runner.
+	var config = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
+	var policy = load("res://Scripts/Services/Plugins/PluginPolicy.gd").new(null, null, false)
+	policy.grant_capability("audio_probe", "host.audio")
+	var sent: Array[Dictionary] = []
+	var notices: Array[String] = []
+	var sender := func(_plugin_id: String, _event: String, payload: Dictionary) -> Error:
+		sent.append(payload.duplicate(true))
+		return OK
+	var next_frame := func() -> void: await process_frame
+	var devices = load("res://Scripts/Services/Plugins/PluginAudioDevices.gd").new(config, policy, sender, next_frame,
+		func() -> String: return AudioServer.output_device, func(_device: String) -> void: pass,
+		func(message: String) -> void: notices.append(message))
+	devices.handle("audio_probe", {"op": "register", "device_id": "remote", "label": "Remote", "output": true})
+	devices.handle("audio_probe", {"op": "availability", "device_id": "remote", "available": true})
+	var key: String = "plugin:audio_probe:remote"
+	config.output_device = key
+	var player := AudioStreamPlayer.new()
+	var tone: AudioStreamWAV = load("res://assets/Audio/notification-pcm.wav")
+	devices.play_notification(player, tone)
+	for frame in 3:
+		await process_frame
+	check("tone is active and has delivered PCM before replacement", devices.output_busy(key) and sent.any(func(packet: Dictionary) -> bool: return packet.op == "chunk"))
+	var operation = load("res://Scripts/Services/Voice/SpeechOperation.gd").new()
+	var speech = devices.speech_output(player, {}, true)
+	operation.finished.connect(devices.report_failure)
+	check("new speech supersedes a playing tone without a toast", notices.is_empty() and operation.bind_output(speech))
+	var opened: Dictionary = speech.begin("pcm_s16le", 16000, 1.0)
+	check("replacement speech still starts", opened.success and speech.append(PackedByteArray([0, 0])))
+	speech.end()
+	var failed: Dictionary = devices.handle("audio_probe", {"op": "output_complete", "device_id": "remote", "stream_id": devices.output_stream_id(key), "success": false, "error_message": "Radio playback failed."})
+	check("real speech failure still finishes visibly", failed.success and operation.done and notices == ["Speech: Radio playback failed."])
+	devices.play_notification(player, tone)
+	failed = devices.handle("audio_probe", {"op": "output_complete", "device_id": "remote", "stream_id": devices.output_stream_id(key), "success": false, "error_message": "Tone transport failed."})
+	check("genuine tone failure still reports", failed.success and notices.back() == "Speech: Tone transport failed." and not devices.output_busy(key))
+	await process_frame
+	player.free()
 
 
 ## The real endpoint owner and speech operation cross the transport boundary;
