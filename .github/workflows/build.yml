@@ -1284,15 +1284,34 @@ jobs:
           lfs: true
 
       - name: Download MCP schema helpers
+        id: download_helpers
+        continue-on-error: true
         uses: actions/download-artifact@v4
-        timeout-minutes: 2
+        timeout-minutes: 1
+        with:
+          pattern: minerva-json-schema-helper-*-x86_64
+          path: mcp-schema-helpers
+      - name: Retry Download MCP schema helpers
+        if: steps.download_helpers.outcome != 'success'
+        uses: actions/download-artifact@v4
+        timeout-minutes: 1
         with:
           pattern: minerva-json-schema-helper-*-x86_64
           path: mcp-schema-helpers
 
       - name: Download Current Artifacts
+        id: download_native
+        continue-on-error: true
         uses: actions/download-artifact@v4
-        timeout-minutes: 2
+        timeout-minutes: 1
+        with:
+          pattern: terminal-*
+          path: src/bin/
+          merge-multiple: true
+      - name: Retry Download Current Artifacts
+        if: steps.download_native.outcome != 'success'
+        uses: actions/download-artifact@v4
+        timeout-minutes: 1
         with:
           pattern: terminal-*
           path: src/bin/
@@ -1341,16 +1360,38 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/verify-cef-inputs.sh
       - name: Download godot-cef Linux artifact
+        id: download_cef_linux
+        continue-on-error: true
         uses: actions/download-artifact@v4
-        timeout-minutes: 2
+        timeout-minutes: 1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
+          name: godot-cef-linux-x86_64
+          path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
+      - name: Retry Download godot-cef Linux artifact
+        if: steps.download_cef_linux.outcome != 'success'
+        uses: actions/download-artifact@v4
+        timeout-minutes: 1
         with:
           github-token: ${{ github.token }}
           run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-linux-x86_64
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
       - name: Download godot-cef Windows artifact
+        id: download_cef_windows
+        continue-on-error: true
         uses: actions/download-artifact@v4
-        timeout-minutes: 2
+        timeout-minutes: 1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
+          name: godot-cef-windows-x86_64
+          path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
+      - name: Retry Download godot-cef Windows artifact
+        if: steps.download_cef_windows.outcome != 'success'
+        uses: actions/download-artifact@v4
+        timeout-minutes: 1
         with:
           github-token: ${{ github.token }}
           run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}

@@ -22,6 +22,11 @@ func _init(store: SpeechLog, devices: PluginAudioDevices, client: VoiceServiceCl
 		_notify.call("Speech log: " + "; ".join(store.errors))
 
 
+func _report_stall(outcome: Dictionary) -> void:
+	if outcome.get("error_code") == "voice_engine_stalled":
+		_notify.call("Speech: " + str(outcome.error_message))
+
+
 static func snapshot(config: VoiceConfig) -> VoiceConfig:
 	var result := VoiceConfig.new()
 	result.voice_id = config.voice_id
@@ -38,6 +43,7 @@ static func snapshot(config: VoiceConfig) -> VoiceConfig:
 
 
 func prepare(operation: SpeechOperation, player: AudioStreamPlayer, config: VoiceConfig, text: String, origin: Dictionary = {}, explicit: bool = false, topic: String = "", summary: String = "") -> Dictionary:
+	operation.finished.connect(_report_stall, CONNECT_ONE_SHOT)
 	var device: String = _devices.route_output(origin, explicit)
 	if not device.begins_with("plugin:"):
 		operation.bind_output(OSSpeechOutput.new(player))
