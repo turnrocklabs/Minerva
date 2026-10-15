@@ -355,24 +355,12 @@ func _on_theme_option_button_item_selected(index: int) -> void:
 
 #region Mic preferences
 
-func set_microphone_option_menu(mic_to_set):
-	# Get the list of available microphones
-	var input_devices = AudioServer.get_input_device_list()
-
-	# Clear any existing options in the OptionButton
-	microphones.clear()
-
-	# Add each microphone to the OptionButton
-	var index = 0
-	for device in input_devices:
-		microphones.add_item(device)
-		if mic_to_set == device:
-			microphones.selected = index
-		index += 1
+func set_microphone_option_menu(_mic_to_set: Variant) -> void:
+	_refresh_voice_devices()
 
 
 func _on_microphones_item_selected(index: int) -> void:
-	SingletonObject.set_microphone(microphones.get_item_text(index))
+	_select_voice_device(index, "input", microphones)
 
 #endregion Mic preferences
 
@@ -398,20 +386,11 @@ func _apply_staged_verbose_logging() -> void:
 
 
 func populate_output_devices_button() -> void:
-	output_device_button.clear()
-	for item in AudioServer.get_output_device_list():
-		output_device_button.add_item(item)
-
-	var device = SingletonObject.get_output_device()
-	for i in output_device_button.get_item_count():
-		if device == output_device_button.get_item_text(i):
-			output_device_button.select(i)
-			break
+	_refresh_voice_devices()
 
 
 func _on_output_device_button_item_selected(index: int) -> void:
-	var device: = output_device_button.get_item_text(index)
-	SingletonObject.set_output_device(device)
+	_select_voice_device(index, "output", output_device_button)
 
 
 # MODIFIED: Now handles both authentication and WebSocket connection
@@ -5232,6 +5211,8 @@ func _refresh_voice_devices() -> void:
 		return
 	_refresh_voice_direction(devices, "input", _voice_input_devices, devices.selected_input())
 	_refresh_voice_direction(devices, "output", _voice_output_devices, devices.selected_output())
+	_refresh_voice_direction(devices, "input", microphones, devices.selected_input())
+	_refresh_voice_direction(devices, "output", output_device_button, devices.selected_output())
 
 
 func _refresh_voice_direction(devices: PluginAudioDevices, direction: String, option: OptionButton, selected: String) -> void:
