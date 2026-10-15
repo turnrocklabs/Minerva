@@ -4,10 +4,13 @@
 import json
 import os
 from contextlib import contextmanager
+from dataclasses import dataclass
+from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import re
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -192,6 +195,27 @@ def _stop_private_docket(root: Path) -> None:
         raise RuntimeError("private Docket did not exit before profile cleanup")
 
 
+@dataclass
+class ProbeProfile:
+    root: Path
+    cleanup_error: str = ""
+
+
+@contextmanager
+def _private_profile() -> Iterator[ProbeProfile]:
+    profile = ProbeProfile(Path(tempfile.mkdtemp(prefix="minerva-packaged-mcp-")))
+    try:
+        yield profile
+    finally:
+        try:
+            _stop_private_docket(profile.root)
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            profile.cleanup_error = str(error)
+            print(f"exported native probe cleanup failed: {error}; retained {profile.root}", file=sys.stderr)
+        else:
+            shutil.rmtree(profile.root, ignore_errors=os.name == "nt")
+
+
 def main() -> int:
     if len(sys.argv) >= 3 and sys.argv[1] == "--with-required-releases":
         with _required_releases() as releases_url:
@@ -212,10 +236,8 @@ def main() -> int:
         print(f"exported Minerva executable is missing: {executable}", file=sys.stderr)
         return 1
 
-    with tempfile.TemporaryDirectory(
-            prefix="minerva-packaged-mcp-",
-            ignore_cleanup_errors=os.name == "nt") as temporary, _required_releases() as releases_url:
-        temporary_root = Path(temporary)
+    with _private_profile() as profile, _required_releases() as releases_url:
+        temporary_root = profile.root
         env = os.environ.copy()
         if releases_url is not None:
             env["MINERVA_REQUIRED_RELEASES_URL"] = releases_url
@@ -295,7 +317,6 @@ def main() -> int:
                     finally:
                         if diagnostic_log is not None:
                             diagnostic_log.close()
-                _stop_private_docket(temporary_root)
         elapsed_seconds = time.monotonic() - started_at
         stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
         stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
@@ -335,6 +356,7 @@ def main() -> int:
         and marker_found
         and fatal is None
         and not missing_cef_phases
+        and not profile.cleanup_error
     )
     if not passed:
         print(
