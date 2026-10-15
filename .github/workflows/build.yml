@@ -1285,12 +1285,14 @@ jobs:
 
       - name: Download MCP schema helpers
         uses: actions/download-artifact@v4
+        timeout-minutes: 2
         with:
           pattern: minerva-json-schema-helper-*-x86_64
           path: mcp-schema-helpers
 
       - name: Download Current Artifacts
         uses: actions/download-artifact@v4
+        timeout-minutes: 2
         with:
           pattern: terminal-*
           path: src/bin/
@@ -1340,6 +1342,7 @@ jobs:
         run: scripts/ci/verify-cef-inputs.sh
       - name: Download godot-cef Linux artifact
         uses: actions/download-artifact@v4
+        timeout-minutes: 2
         with:
           github-token: ${{ github.token }}
           run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
@@ -1347,6 +1350,7 @@ jobs:
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
       - name: Download godot-cef Windows artifact
         uses: actions/download-artifact@v4
+        timeout-minutes: 2
         with:
           github-token: ${{ github.token }}
           run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}

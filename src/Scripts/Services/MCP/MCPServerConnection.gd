@@ -132,6 +132,7 @@ var plugin_id: String = ""
 var log_stderr: bool = false
 var _stderr_log_window_ms: int = 0
 var _stderr_log_count: int = 0
+var _stderr_suppressed: int = 0
 
 ## Reference to PluginEventBroker for routing async events/state.
 var event_broker = null
@@ -1668,9 +1669,15 @@ func _drain_stderr(expected_process = null) -> void:
 		if now_ms - _stderr_log_window_ms >= 1000:
 			_stderr_log_window_ms = now_ms
 			_stderr_log_count = 0
+			if _stderr_suppressed > 0:
+				print("[plugin:%s] %d lines suppressed" % [plugin_id, _stderr_suppressed])
+				_stderr_suppressed = 0
+				_stderr_log_count = 1
 		if _stderr_log_count < 10:
 			_stderr_log_count += 1
 			print("[plugin:%s] %s" % [plugin_id, line.substr(0, 1024).strip_escapes()])
+		else:
+			_stderr_suppressed += 1
 
 
 func _matches_stdio_catalog_watch(message: Dictionary) -> bool:

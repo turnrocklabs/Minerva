@@ -38,6 +38,8 @@ func _init() -> void:
 	f.store_buffer(Crypto.new().generate_random_bytes(SIZE))
 	f.close()
 
+	var failure: Dictionary = load(DOWNLOADER_GD)._result("download_bad_status", {"url": "https://example.invalid/archive?signature=public-sentinel#secret", "code": 403})
+	_check(failure.detail.url == "https://example.invalid/archive" and failure.detail.code == 403 and not str(failure).contains("public-sentinel"), "download diagnostics redact signed query and preserve status")
 	var skip_fixtures := OS.get_name() == "macOS"
 	if skip_fixtures:
 		_report_macos_fixture_skip()

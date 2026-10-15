@@ -161,6 +161,37 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
                   file=sys.stderr)
 
 
+def _stop_private_docket(root: Path) -> None:
+    """Retire only Docket registered in this disposable macOS profile."""
+    if sys.platform != "darwin":
+        return
+    for path in root.rglob("instance.json"):
+        if path.parent.name != "Docket":
+            continue
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(record, dict) or record.get("profile") != str(path.parent):
+            raise RuntimeError("private Docket registration does not match its profile")
+        pid = record.get("pid")
+        if type(pid) is not int or pid <= 1:
+            raise RuntimeError("private Docket registration has invalid pid")
+        command = subprocess.run(["ps", "-p", str(pid), "-o", "comm="],
+                                 capture_output=True, text=True, timeout=5, check=False)
+        if command.returncode == 1:
+            continue  # Already exited; no PID is signalled.
+        if command.returncode != 0 or not Path(command.stdout.strip()).name.lower().startswith("docket"):
+            raise RuntimeError("private Docket pid no longer names Docket")
+        try:
+            os.kill(pid, signal.SIGTERM)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                os.kill(pid, 0)
+                time.sleep(0.05)
+        except ProcessLookupError:
+            print(f"exported native probe cleanup: private Docket pid={pid} exited")
+            continue
+        raise RuntimeError("private Docket did not exit before profile cleanup")
+
+
 def main() -> int:
     if len(sys.argv) >= 3 and sys.argv[1] == "--with-required-releases":
         with _required_releases() as releases_url:
@@ -170,10 +201,13 @@ def main() -> int:
             env["MINERVA_REQUIRED_RELEASES_URL"] = releases_url
             result = subprocess.call(sys.argv[2:], env=env)
             return result if result >= 0 else 128 - result
-    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--bridge"):
-        raise SystemExit("usage: verify-packaged-mcp-app.py <Minerva executable> [--bridge]")
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] not in ("--bridge", "--warmup")):
+        raise SystemExit("usage: verify-packaged-mcp-app.py <Minerva executable> [--bridge|--warmup]")
     executable = Path(sys.argv[1]).resolve()
-    bridge_probe = len(sys.argv) == 3
+    bridge_probe = len(sys.argv) == 3 and sys.argv[2] == "--bridge"
+    warmup = len(sys.argv) == 3 and sys.argv[2] == "--warmup"
+    if warmup and os.name != "nt":
+        raise SystemExit("--warmup is Windows-only")
     if not executable.is_file():
         print(f"exported Minerva executable is missing: {executable}", file=sys.stderr)
         return 1
@@ -221,7 +255,7 @@ def main() -> int:
                         stdout=diagnostic_log, stderr=subprocess.STDOUT)
                 try:
                     process.wait(
-                        timeout=BRIDGE_TIMEOUT_SECONDS if bridge_probe else TIMEOUT_SECONDS)
+                        timeout=BRIDGE_TIMEOUT_SECONDS if bridge_probe else (90 if warmup else TIMEOUT_SECONDS))
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     # Snapshot the last flushed phase while the hung process is
@@ -261,6 +295,7 @@ def main() -> int:
                     finally:
                         if diagnostic_log is not None:
                             diagnostic_log.close()
+                _stop_private_docket(temporary_root)
         elapsed_seconds = time.monotonic() - started_at
         stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
         stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
@@ -309,7 +344,7 @@ def main() -> int:
             f"missing_cef_phases={missing_cef_phases}",
             file=sys.stderr)
     else:
-        print(f"exported native probe passed in {elapsed_seconds:.1f}s")
+        print(f"exported native {'warm-up' if warmup else 'probe'} passed in {elapsed_seconds:.1f}s")
     return 0 if passed else 1
 
 

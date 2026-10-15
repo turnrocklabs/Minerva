@@ -62,8 +62,7 @@ func download(url: String, dest_path: String, tree: SceneTree) -> Dictionary:
 		_worker = null
 		file.close()
 		DirAccess.remove_absolute(dest_path)
-		return {"ok": false, "error": "download_request_failed",
-			"detail": {"url": url, "reason": "the download thread could not start", "godot_err": started}}
+		return _result("download_request_failed", {"url": url, "reason": "the download thread could not start", "godot_err": started})
 	Workers.track(_worker, _request_stop)
 	while _worker.is_alive():
 		if op != null:
@@ -277,4 +276,8 @@ static func _resolve(base: String, location: String) -> String:
 
 
 static func _result(code: String, detail: Dictionary, retry: bool = false) -> Dictionary:
+	# Diagnostic URLs never retain signed query parameters or fragments.
+	if detail.get("url") is String:
+		detail = detail.duplicate()
+		detail.url = str(detail.url).get_slice("?", 0).get_slice("#", 0)
 	return {"ok": false, "error": code, "detail": detail, "retry": retry}

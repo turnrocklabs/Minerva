@@ -669,7 +669,7 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		push_error("[PluginManager] '%s''s leftover Docket content could not be queued for cleanup" % id)
 	_content_busy.erase(id)
 	var note: String = Seeding.content_note(result)
-	_report_plugin_cleanup(id, "Cleanup finished for %s. %s" % [def.name, note], not note.is_empty())
+	_report_plugin_cleanup(id, "Cleanup finished for %s." % def.name + (" " + note if not note.is_empty() else ""), not note.is_empty())
 	return result
 
 

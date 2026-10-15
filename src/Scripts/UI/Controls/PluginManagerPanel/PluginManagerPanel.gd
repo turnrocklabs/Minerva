@@ -1653,7 +1653,7 @@ func _on_remove_confirmed() -> void:
 		var content_note: String = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd").content_note(result)
 		if not content_note.is_empty():
 			msg += " %s." % content_note
-		_show_status(msg, not content_note.is_empty())
+		_display_status(msg, not content_note.is_empty())
 		if not is_inside_tree():
 			return
 		_refresh_plugin_list()

@@ -709,6 +709,19 @@ func _run() -> void:
 	gateway.starts = 0
 	gateway.finishes = 0
 
+	pane._voice_speak_response("stalled voice engine")
+	var stalled_id: String = _last_id(transport)
+	var stalled_frame_id := _stream_id(906)
+	var stall_started_ms := Time.get_ticks_msec()
+	_deliver_stream_open(transport, stalled_id, stalled_frame_id)
+	var stalled_operation = pane._speech_operation
+	while pane._tts_busy and Time.get_ticks_msec() - stall_started_ms < 23000:
+		await process_frame
+	check("opened synthesis without PCM fails visibly at bounded deadline", not pane._tts_busy and stalled_operation.done and stalled_operation.completion_outcome.error_code == "voice_engine_stalled" and str(stalled_operation.completion_outcome.error_message).contains("Voice engine stalled") and Time.get_ticks_msec() - stall_started_ms >= 20000)
+	check("stalled producer cancelled and output released", not player.playing and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == stalled_id)
+	gateway.starts = 0
+	gateway.finishes = 0
+
 	pane._voice_speak_response("error after playable audio")
 	var played_error_id := _last_id(transport)
 	var played_error_frame_id := _stream_id(904)

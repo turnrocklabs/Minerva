@@ -429,21 +429,29 @@ func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, op
 	var diagnostic_id := "tts-%d" % _tts_sequence
 	var started_msec := Time.get_ticks_msec()
 	var metrics := {"first": false, "bytes": 0, "rate": 0, "format": "unknown"}
+	var first_chunk_deadline := MCPMonotonicDeadline.new()
+	first_chunk_deadline.expired.connect(func() -> void:
+		request.fail("voice_engine_stalled", "Voice engine stalled: no audio arrived within 20 seconds."), CONNECT_ONE_SHOT)
 	_log_tts(diagnostic_id, "request", started_msec, voice_config.tts_backend, "pending")
 	var prepared: Dictionary = operation.prepare_stream(request, player, voice_config.tts_volume)
 	if not prepared.success:
 		request.fail(str(prepared.get("error_code", "operation_rejected")), str(prepared.get("error_message", "Speech operation rejected streaming.")))
 		return prepared
 	var on_open := func(meta: Dictionary):
+		first_chunk_deadline.start(20.0)
 		metrics.rate = int(meta.sample_rate)
 		metrics.format = str(meta.format)
 		_log_tts(diagnostic_id, "open", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
 	var on_chunk := func(audio: PackedByteArray):
+		if not audio.is_empty():
+			first_chunk_deadline.cancel()
 		metrics.bytes += audio.size()
 		if not metrics.first:
 			metrics.first = true
 			_log_tts(diagnostic_id, "first_chunk", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
-	var on_end := func(): _log_tts(diagnostic_id, "input_end", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
+	var on_end := func() -> void:
+		first_chunk_deadline.cancel()
+		_log_tts(diagnostic_id, "input_end", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
 	var on_playback := func(): _log_tts(diagnostic_id, "playback", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
 	request.stream_opened.connect(on_open, CONNECT_ONE_SHOT)
 	request.stream_chunk.connect(on_chunk)
@@ -453,6 +461,7 @@ func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, op
 	# Every consumer is attached before send; local transports may reply inline.
 	Core.send_prepared_audio_stream(request, service, action, data)
 	var result: Dictionary = await operation.receive_prepared_stream(request)
+	first_chunk_deadline.cancel()
 	for pair in [[request.stream_opened, on_open], [request.stream_chunk, on_chunk], [request.stream_ended, on_end], [operation.playback_began, on_playback]]:
 		if pair[0].is_connected(pair[1]):
 			pair[0].disconnect(pair[1])
