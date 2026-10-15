@@ -504,7 +504,7 @@ static func recompute_unsatisfied(available_tools: Dictionary, docket_caller, re
 		return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
 	var items: Array = query_result.get("items", [])
 
-	for item in items:
+	for item: Dictionary in items:
 		if removed_definition != null:
 			var affected := false
 			var listed_deps: Variant = item.get("tool_deps", [])

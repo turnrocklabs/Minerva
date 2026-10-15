@@ -1635,6 +1635,7 @@ func _on_remove_confirmed() -> void:
 		return
 
 	var delete_data := _remove_delete_data_check.button_pressed if _remove_delete_data_check else false
+	var removed_id := _pending_remove_id
 	var result: Dictionary = await _pm().remove_plugin(_pending_remove_id, delete_data)
 	if result.has("error"):
 		_show_status("Remove failed: %s" % result["error"], true)
@@ -1655,12 +1656,10 @@ func _on_remove_confirmed() -> void:
 		_show_status(msg, not content_note.is_empty())
 		if not is_inside_tree():
 			return
-		_selected_plugin_id = ""
-		_detail_placeholder.visible = true
-		_detail_panel.visible = false
 		_refresh_plugin_list()
 
-	_pending_remove_id = ""
+	if _pending_remove_id == removed_id:
+		_pending_remove_id = ""
 
 
 # ---------------------------------------------------------------------------

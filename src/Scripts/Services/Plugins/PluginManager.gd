@@ -575,7 +575,7 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
-	var def = _db.get_by_id(id)
+	var def: PluginDefinition = _db.get_by_id(id)
 
 	# Setup-pipeline guard (review MF1): while S_BUILDING, _setup_pipelines
 	# holds the manager's ONLY strong reference to the RefCounted SetupPipeline

@@ -2,10 +2,9 @@ extends SceneTree
 ## One happy-path removal: real manager, PluginDB, panel and cleanup journal;
 ## existing hermetic Docket protocol store behind the real hosted binding.
 
-const SEEDING := preload("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
 const TXN := preload("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
 const PLUGIN_ID := "remove_latency_fixture"
-const REMOVED_TOOL := "remove_latency_fixture_tool"
+const REMOVED_TOOL := "minerva_remove_latency_fixture_tool"
 
 var passed: int = 0
 var failed: int = 0
@@ -17,6 +16,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	await process_frame
+	var seeding = load("res://Scripts/Services/Plugins/PluginContentSeeding.gd")
 	var registry = load("res://test/helpers/content_registry_fixture.gd").new(
 		ProjectSettings.globalize_path("user://remove_latency_master.dct"))
 	for index in range(124):
@@ -28,7 +28,7 @@ func _run() -> void:
 		"tool_deps": [REMOVED_TOOL], "unsatisfied_deps": []})
 	var affected_id: String = str(affected.id)
 	var gate = load("res://test/helpers/removal_docket_gate.gd").new(registry.host)
-	SEEDING.docket_override = gate
+	seeding.docket_override = gate
 	# Runtime loading keeps the real manager's autoload context intact.
 	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
 	manager._db = PluginDB.new()
@@ -66,7 +66,7 @@ func _run() -> void:
 	var changed: Dictionary = registry.call_tool("docket_get", {"id": affected_id})
 	check("the dependent skill becomes unsatisfied", changed.get("unsatisfied_deps", []) == [REMOVED_TOOL])
 	check("successful cleanup settles its existing journal", TXN.content_pending(staging).is_empty())
-	SEEDING.docket_override = null
+	seeding.docket_override = null
 	panel.free()
 	manager.free()
 	registry.close()
