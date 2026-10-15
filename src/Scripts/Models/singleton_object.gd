@@ -1462,6 +1462,9 @@ func _load_chat_font_size() -> void:
 #endregion Chat text size
 
 func _ready():
+	var native_warning: String = NativeExtensionContract.warning()
+	if not native_warning.is_empty():
+		push_warning(native_warning)
 	# Sub-windows follow the UI zoom from here on (chore 019fb90972).
 	UiScaleSync.install(get_tree())
 	SingletonObject.notes_draw_state_changed.connect(
