@@ -209,11 +209,10 @@ def _private_profile() -> Iterator[ProbeProfile]:
     finally:
         try:
             _stop_private_docket(profile.root)
+            shutil.rmtree(profile.root, ignore_errors=os.name == "nt")
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
             profile.cleanup_error = str(error)
             print(f"exported native probe cleanup failed: {error}; retained {profile.root}", file=sys.stderr)
-        else:
-            shutil.rmtree(profile.root, ignore_errors=os.name == "nt")
 
 
 def main() -> int:
