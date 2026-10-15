@@ -61,6 +61,9 @@ func _run() -> void:
 	deadline = Time.get_ticks_msec() + 15000
 	var passed: bool = false
 	while Time.get_ticks_msec() < deadline:
+		if _mode == "notification" and FileAccess.file_exists(OS.get_environment("SMART_REMOTE_SETUP_READY")):
+			passed = await _completion_tone()
+			break
 		if _mode == "audio" and FileAccess.file_exists(OS.get_environment("SMART_REMOTE_SETUP_READY")):
 			passed = _audio_picker()
 			break
@@ -76,6 +79,44 @@ func _run() -> void:
 	render.restore()
 	print("SETUP_PASS" if passed else "SETUP_FAIL")
 	quit(0 if passed else 1)
+
+func _completion_tone() -> bool:
+	var devices = _so.plugin_audio_devices
+	var player: AudioStreamPlayer = _so.chat_notification_player
+	var key: String = "plugin:smart_remote:remote_a4cf12b03e5d"
+	if not devices.select("output", key).get("success", false):
+		return false
+	var speech = devices.speech_output(player, {}, true)
+	var opened: Dictionary = speech.begin("pcm_s16le", 16000, 1.0)
+	if not opened.success or not speech.append(PackedByteArray([0, 0, 0, 0])):
+		return false
+	speech.end()
+	var speech_id: int = devices.output_stream_id(key)
+	_so.play_chat_notification()
+	_so.play_chat_notification()
+	await create_timer(0.4).timeout
+	if player.playing or devices.output_stream_id(key) != speech_id:
+		return false
+	var queued: FileAccess = FileAccess.open(OS.get_environment("SMART_REMOTE_SETUP_READY") + ".queued", FileAccess.WRITE)
+	queued.store_string("queued")
+	queued.close()
+	var deadline: int = Time.get_ticks_msec() + 10000
+	while Time.get_ticks_msec() < deadline and devices.output_stream_id(key) in [0, speech_id]:
+		await process_frame
+	if devices.output_stream_id(key) in [0, speech_id] or player.playing:
+		return false
+	while devices.output_busy(key) and Time.get_ticks_msec() < deadline:
+		await process_frame
+	await create_timer(0.2).timeout
+	if devices.output_busy(key) or player.playing:
+		return false
+	if not devices.select("output", "os:" + AudioServer.output_device).get("success", false):
+		return false
+	await _so.play_chat_notification()
+	var passed: bool = player.playing
+	player.stop()
+	print("NOTIFICATION_REMOTE_QUEUE_AND_OS_PASS" if passed else "NOTIFICATION_OS_FAIL")
+	return passed
 
 func _audio_picker() -> bool:
 	# Detached real preferences retain the exact production callbacks without

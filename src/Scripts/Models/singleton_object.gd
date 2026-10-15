@@ -2760,7 +2760,13 @@ func hide_loading_screen():
 #region ChatNotification Player
 func play_chat_notification() -> void:
 	await get_tree().create_timer(0.25).timeout
-	chat_notification_player.play()
+	if plugin_audio_devices != null:
+		var tone: AudioStreamWAV = load("res://assets/Audio/notification-pcm.wav")
+		plugin_audio_devices.play_notification(chat_notification_player, tone)
+	elif not get_voice_config().output_device.begins_with("plugin:"):
+		chat_notification_player.play()
+	else:
+		_notify_plugin_refusal("Selected plugin speaker is unavailable.")
 
 
 #endregion ChatNotification Player

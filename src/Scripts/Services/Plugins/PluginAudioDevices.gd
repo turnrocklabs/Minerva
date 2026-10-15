@@ -20,6 +20,7 @@ var _notify: Callable
 var _devices: Dictionary = {}
 var _playing: Dictionary = {}
 var _next_stream: int = 0
+var _notification_pending: bool = false
 
 
 func _init(config: VoiceConfig, policy: PluginPolicy, send: Callable, next_frame: Callable, get_os_output: Callable, set_os_output: Callable, notify: Callable, get_os_input: Callable = Callable(), set_os_input: Callable = Callable()) -> void:
@@ -158,6 +159,32 @@ func replay_target_valid(key: String) -> bool:
 
 func output_busy(key: String) -> bool:
 	return _playing.has(key)
+
+
+func play_notification(player: AudioStreamPlayer, tone: AudioStreamWAV) -> void:
+	if _notification_pending:
+		return
+	_notification_pending = true
+	var key: String = selected_output()
+	# Completion tones follow existing speech, without replacing its stream.
+	while output_busy(key):
+		await _next_frame.call()
+		key = selected_output()
+	_notification_pending = false
+	if key.begins_with("os:"):
+		player.play()
+		return
+	var output: SpeechOutput = output_for_device(player, key, {}, true)
+	output.finished.connect(report_failure, CONNECT_ONE_SHOT)
+	var opened: Dictionary = output.begin("pcm_s16le", tone.mix_rate, minf(db_to_linear(player.volume_db), 1.0))
+	if not opened.success:
+		report_failure(opened)
+		output.stop()
+		return
+	if not output.append(tone.data):
+		output.stop()
+		return
+	output.end()
 
 
 func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit: bool = false) -> SpeechOutput:
