@@ -194,18 +194,18 @@ func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit:
 	return output_for_device(player, route_output(origin, explicit), origin, explicit)
 
 
-func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionary = {}, explicit: bool = false, notification: bool = false) -> SpeechOutput:
+func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionary = {}, explicit: bool = false, completion_tone: bool = false) -> SpeechOutput:
 	if key == "os:" + str(_get_os_output.call()):
 		return OSSpeechOutput.new(player)
 	# An unavailable plugin remains a plugin route, with a visible failure.
 	# A tone and reserved speech have separate lifetimes on the same device.
-	var active_key: String = key + ":tone" if notification else key
+	var active_key: String = key + ":tone" if completion_tone else key
 	_cancel(active_key)
 	_next_stream += 1
 	var output := PluginSpeechOutput.new(_next_stream,
 		_send_audio.bind(key), _next_frame, _available.bind(key),
 		{"kind": "explicit"} if explicit else ({"kind": "turn", "chat_id": str(origin.chat_id), "send_id": origin.get("send_id", 0)} if not str(origin.get("chat_id", "")).is_empty() else {}),
-		Callable() if notification else _tone_finished.bind(key))
+		Callable() if completion_tone else _tone_finished.bind(key))
 	_playing[active_key] = output
 	_stream_ids[active_key] = _next_stream
 	output.finished.connect(_finished.bind(active_key, output), CONNECT_ONE_SHOT)
