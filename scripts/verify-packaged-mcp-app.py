@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import re
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -71,6 +72,10 @@ def _required_releases():
 
 
 def _seed_profile(root: Path, env: dict[str, str]) -> None:
+    # Docket survives Minerva, so private profiles also need separate ports.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
+        port_probe.bind(("127.0.0.1", 0))
+        docket_port = port_probe.getsockname()[1]
     for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
         directory = root / key.lower()
         directory.mkdir(parents=True)
@@ -90,6 +95,10 @@ def _seed_profile(root: Path, env: dict[str, str]) -> None:
     config = "[Voice]\nturnrock_enabled=false\nalways_listening=false\n\n[HCP]\nauto_connect=false\n"
     for profile in profile_roots:
         profile.mkdir(parents=True, exist_ok=True)
+        docket_profile = profile.with_name("Docket")
+        docket_profile.mkdir(parents=True, exist_ok=True)
+        (docket_profile / "docket_prefs.json").write_text(
+            json.dumps({"mcp_port": docket_port}), encoding="utf-8")
         (profile / "config_file.cfg").write_text(config, encoding="utf-8")
         disabled_servers = [{
             "name": name,
