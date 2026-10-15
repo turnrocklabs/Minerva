@@ -216,6 +216,7 @@ func _replay(record: Dictionary, device: String) -> Dictionary:
 	if not is_instance_valid(player):
 		return VoiceServiceClient.failure("no_audio_player", "No chat pane is available for speech.")
 	var operation := SpeechOperation.new()
+	operation.finished.connect(_report_stall, CONNECT_ONE_SHOT)
 	player.set_meta("speech_operation", operation)
 	operation.finished.connect(func(_outcome: Dictionary) -> void:
 		if is_instance_valid(player):

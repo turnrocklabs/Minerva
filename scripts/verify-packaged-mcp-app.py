@@ -172,7 +172,7 @@ def _stop_private_docket(root: Path) -> None:
         if path.parent.name != "Docket":
             continue
         record = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(record, dict) or not isinstance(record.get("profile"), str) or Path(record["profile"]) != path.parent:
+        if not isinstance(record, dict) or not isinstance(record.get("profile"), str) or Path(record["profile"]).resolve() != path.parent.resolve():
             raise RuntimeError("private Docket registration does not match its profile")
         pid = record.get("pid")
         if type(pid) is not int or pid <= 1:
