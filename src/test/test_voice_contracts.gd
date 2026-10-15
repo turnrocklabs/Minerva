@@ -364,7 +364,7 @@ func _run() -> void:
 	var voice_notices: Array[String] = []
 	so.speech_delivery = load("res://Scripts/Services/Voice/SpeechDelivery.gd").new(
 		load("res://Scripts/Services/Voice/SpeechLog.gd").new(ProjectSettings.globalize_path("user://voice-contract-log")),
-		so.plugin_audio_devices, voice, so._new_speech_player, func(message: String) -> void: voice_notices.append(message), func(_delivery) -> void: pass)
+		so.plugin_audio_devices, voice, so._new_speech_player, func(voice_notice: String) -> void: voice_notices.append(voice_notice), func(_delivery) -> void: pass)
 	var scope_script = load("res://Scripts/Services/Voice/VoiceOperation.gd")
 	var voice_feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var selection = load("res://Scripts/Services/Voice/VoiceSelection.gd")
@@ -719,7 +719,7 @@ func _run() -> void:
 	while pane._tts_busy and Time.get_ticks_msec() - stall_started_ms < 23000:
 		await process_frame
 	check("opened synthesis without PCM fails visibly at bounded deadline", not pane._tts_busy and stalled_operation.done and stalled_operation.completion_outcome.error_code == "voice_engine_stalled" and str(stalled_operation.completion_outcome.error_message).contains("Voice engine stalled") and Time.get_ticks_msec() - stall_started_ms >= 20000)
-	check("voice stall reaches copyable error notification", voice_notices.any(func(message: String) -> bool: return message.contains("Voice engine stalled")))
+	check("voice stall reaches copyable error notification", voice_notices.any(func(voice_notice: String) -> bool: return voice_notice.contains("Voice engine stalled")))
 	check("stalled producer cancelled and output released", not player.playing and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == stalled_id)
 	gateway.starts = 0
 	gateway.finishes = 0

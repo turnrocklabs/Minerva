@@ -4,6 +4,7 @@ extends RefCounted
 ## Uses the standard Core.send_message() / AwaitMessage pattern.
 
 const VOICE_SERVICE_ID := "voice-service"
+const TTSStreamRequest = preload("res://Scripts/Services/Providers/Core/CoreAudioStreamRequest.gd")
 ## Successful discovery is cached per exact backend filter and connection lifetime.
 var _voice_inventories: Dictionary = {}
 var _inventory_client: CoreClient
@@ -424,7 +425,7 @@ func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, op
 		_log_tts("tts-%d" % _tts_sequence, "not_advertised", Time.get_ticks_msec(), voice_config.tts_backend, "oneshot")
 		return await _play_one_shot(text, voice, voice_config.tts_backend, operation, player, voice_config.tts_volume)
 	var data := {"text": text, "voice_id": voice, "backend": voice_config.tts_backend}
-	var request = Core.prepare_audio_stream(service, action, 120.0)
+	var request: TTSStreamRequest = Core.prepare_audio_stream(service, action, 120.0)
 	_tts_sequence += 1
 	var diagnostic_id := "tts-%d" % _tts_sequence
 	var started_msec := Time.get_ticks_msec()
