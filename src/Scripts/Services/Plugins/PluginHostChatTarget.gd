@@ -54,6 +54,9 @@ func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictiona
 	if capability == CAPABILITY_ACTIVE:
 		return PluginErrors.success(pane.active_chat_payload())
 	match str(args.get("op", "")):
+		"ensure_chat":
+			pane.ensure_chat_open()
+			return PluginErrors.success(pane.active_chat_payload())
 		"append":
 			if not (args.get("text") is String):
 				return PluginErrors.schema_validation_failed(plugin_id, "append requires a string 'text'")
@@ -69,7 +72,7 @@ func handle(plugin_id: String, capability: String, args: Dictionary) -> Dictiona
 		"set_external_ptt_state":
 			return _set_external_ptt_state(plugin_id, pane, str(args.get("state", "")))
 	return PluginErrors.schema_validation_failed(plugin_id,
-		"op must be one of append, clear, submit, set_external_ptt_state")
+		"op must be one of ensure_chat, append, clear, submit, set_external_ptt_state")
 
 
 func active_chat_id() -> String:
