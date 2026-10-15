@@ -573,7 +573,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 
 	# --- Step 6: drain stderr to Minerva's error display ---
 	# Plugin stderr is diagnostic output, not tool results. Route it to
-	# Minerva's toast system so the user sees it, not the LLM.
+	# Minerva's toast system only when its manifest opts into stderr logging.
 	# BUT apply rate limiting to prevent log spam from flooding the UI.
 	var stderr_output := _drain_plugin_stderr(plugin_id)
 	if not stderr_output.is_empty():
@@ -924,7 +924,7 @@ func _drain_plugin_stderr(plugin_id: String) -> String:
 	var lines: String = ""
 	while conn._subprocess.has_stderr():
 		var line: String = conn._subprocess.read_stderr_line()
-		if not line.is_empty():
+		if conn.log_stderr and not line.is_empty():
 			if not lines.is_empty():
 				lines += "\n"
 			lines += line
