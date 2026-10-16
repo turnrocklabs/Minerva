@@ -314,7 +314,9 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	op.enter(PluginInstallOperation.STAGE_WAIT)
 	# Removal needs this same lock to commit. Wait for its live cleanup before
 	# taking the install lock; a leftover repair record alone never means busy.
-	while installer != null and installer.has_method("is_content_busy") and installer.is_content_busy(plugin_id):
+	var content_owner: Object = installer
+	while content_owner != null and content_owner.has_method("is_content_busy") \
+			and bool(content_owner.call("is_content_busy", plugin_id)):
 		if op.cancelled:
 			return _err("cancelled", {})
 		await get_tree().process_frame
