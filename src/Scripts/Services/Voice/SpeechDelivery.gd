@@ -44,7 +44,7 @@ static func snapshot(config: VoiceConfig) -> VoiceConfig:
 
 func prepare(operation: SpeechOperation, player: AudioStreamPlayer, config: VoiceConfig, text: String, origin: Dictionary = {}, explicit: bool = false, topic: String = "", summary: String = "") -> Dictionary:
 	operation.finished.connect(_report_stall, CONNECT_ONE_SHOT)
-	var device: String = _devices.route_output(origin, explicit)
+	var device: String = _devices.selected_output()
 	if not device.begins_with("plugin:"):
 		operation.bind_output(OSSpeechOutput.new(player))
 		return {"success": true, "log_id": "", "device": device}
