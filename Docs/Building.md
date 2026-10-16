@@ -158,6 +158,38 @@ Minerva carries local patches against vendored dependencies.
 Patches are rebased by hand when a submodule is bumped. Keep them minimal so
 upstream drift does not break them all at once.
 
+## macOS editor Bluetooth permission
+
+macOS attributes the Smart Remote plugin's Bluetooth access to its parent app.
+Minerva's macOS export preset declares `NSBluetoothAlwaysUsageDescription` for
+local and CI exports. When running from the editor, the Godot app itself must
+declare it; changing the export preset does not change an installed editor.
+
+Prepare a separate editor copy before using Smart Remote provisioning:
+
+```bash
+python3 scripts/prepare-macos-editor.py /Applications/Godot.app "$HOME/Applications/Minerva Godot.app"
+```
+
+The script reads the purpose string from the export preset, refuses an existing
+destination, and ad-hoc signs the copy while preserving the source entitlements
+and runtime flags. It skips copying download quarantine onto the locally rebuilt
+bundle. The installed editor stays intact. The copy retains Godot's
+bundle identifier; its signature changes, so macOS may request permissions again.
+Run preparation again with a fresh destination after upgrading Godot.
+
+After closing the current editor and its running Minerva instance, explicitly
+open the copied editor by executable path, then open `src/project.godot` and
+press F5:
+
+```bash
+"$HOME/Applications/Minerva Godot.app/Contents/MacOS/Godot" --project-manager
+```
+
+Use this executable path to select the copy; choosing by bundle identifier can
+select the original editor. Provisioning remains a human check: grant Bluetooth
+access when requested and confirm setup continues without a TCC crash.
+
 ## macOS: clear quarantine before the FIRST launch
 
 For a **packaged** `.app` (a downloaded or distributed build, not one you run

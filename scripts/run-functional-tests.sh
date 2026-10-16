@@ -64,6 +64,7 @@ TURNROCK_TESTS=(
 	test/test_core_request_lifecycle.gd
 	test/test_core_binary_voice_routing.gd
 	test/test_voice_contracts.gd
+	test/test_selected_speaker.gd
 	test/test_core_auth_logs.gd
 	test/test_speech_log.gd
 	test/test_bundled_voice_detector_adapter.gd

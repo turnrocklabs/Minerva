@@ -1069,20 +1069,6 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
-      - name: Declare Bluetooth usage in Info.plist
-        # macOS charges a child process's CoreBluetooth use to the app that
-        # started it, so a plugin driving a BLE instrument is aborted on its
-        # first Bluetooth call unless Minerva's own Info.plist carries a usage
-        # string. Godot 4.6's macOS export preset has no Bluetooth key, so the
-        # exported plist lacks it and it is inserted here, before signing seals
-        # the plist. The "Verify macOS build assets" step checks the exact
-        # string; should a later export write the key, the preset should carry
-        # it instead.
-        working-directory: src/build/macos
-        run: |
-          plutil -insert NSBluetoothAlwaysUsageDescription -string "$BLUETOOTH_USAGE" Minerva.app/Contents/Info.plist
-          plutil -lint Minerva.app/Contents/Info.plist
-
       - name: Ad-hoc sign app
         # Codesign iteration history (in build.yml git log):
         #   - 913b18a1: `--force --deep --sign -` → per-library Gatekeeper

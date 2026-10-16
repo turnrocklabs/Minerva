@@ -146,13 +146,6 @@ func report_failure(outcome: Dictionary) -> void:
 		_notify.call("Speech: " + str(outcome.get("error_message", "Playback failed.")))
 
 
-func route_output(origin: Dictionary = {}, explicit: bool = false) -> String:
-	var key: String = _config.output_device
-	if not key.begins_with("plugin:") or (not explicit and (str(origin.get("plugin_id", "")).is_empty() or not key.begins_with("plugin:" + str(origin.get("plugin_id", "")) + ":"))):
-		return "os:" + str(_get_os_output.call())
-	return key
-
-
 func replay_target_valid(key: String) -> bool:
 	if key == "os:" + str(_get_os_output.call()):
 		return true
@@ -191,7 +184,7 @@ func play_notification(player: AudioStreamPlayer, tone: AudioStreamWAV) -> void:
 
 
 func speech_output(player: AudioStreamPlayer, origin: Dictionary = {}, explicit: bool = false) -> SpeechOutput:
-	return output_for_device(player, route_output(origin, explicit), origin, explicit)
+	return output_for_device(player, selected_output(), origin, explicit)
 
 
 func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionary = {}, explicit: bool = false, completion_tone: bool = false) -> SpeechOutput:
@@ -202,9 +195,14 @@ func output_for_device(player: AudioStreamPlayer, key: String, origin: Dictionar
 	var active_key: String = key + ":tone" if completion_tone else key
 	_cancel(active_key)
 	_next_stream += 1
+	# Speaker selection authorizes playback independently of who sent the chat.
+	# Keep remote-owned turns correlated; other replies use explicit playback
+	# without claiming that the selected speaker originated their turn.
+	var producer: String = str(origin.get("plugin_id", ""))
+	var owns_turn: bool = not producer.is_empty() and key.begins_with("plugin:" + producer + ":")
 	var output := PluginSpeechOutput.new(_next_stream,
 		_send_audio.bind(key), _next_frame, _available.bind(key),
-		{"kind": "explicit"} if explicit else ({"kind": "turn", "chat_id": str(origin.chat_id), "send_id": origin.get("send_id", 0)} if not str(origin.get("chat_id", "")).is_empty() else {}),
+		{"kind": "explicit"} if explicit or not owns_turn else ({"kind": "turn", "chat_id": str(origin.chat_id), "send_id": origin.get("send_id", 0)} if not str(origin.get("chat_id", "")).is_empty() else {}),
 		Callable() if completion_tone else _tone_finished.bind(key))
 	_playing[active_key] = output
 	_stream_ids[active_key] = _next_stream

@@ -87,6 +87,9 @@ including per-platform prerequisites and the vendor patch system.
 
 Open `src/project.godot` in Godot Editor 4.6+ and press F5.
 
+On macOS, Smart Remote provisioning needs a Godot editor copy with a Bluetooth
+purpose string. Prepare it with the [macOS editor instructions](Docs/Building.md#macos-editor-bluetooth-permission).
+
 ### If You Already Cloned Without --recursive
 
 ```bash

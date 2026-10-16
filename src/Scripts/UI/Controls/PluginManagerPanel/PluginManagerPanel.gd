@@ -68,6 +68,7 @@ func _pm():  # -> PluginManager
 # UI References — left pane
 # ---------------------------------------------------------------------------
 
+var _content_split: SplitContainer = null
 var _plugin_list: ItemList = null
 var _refresh_button: Button = null
 
@@ -140,7 +141,7 @@ var _browse_button: Button = null
 var _required_button: Button = null
 ## Required plugins the last full check (every listed file) found broken.
 var _broken_required: Array[String] = []
-var _status_label: LineEdit = null
+var _status_label: TextEdit = null
 
 
 # ---------------------------------------------------------------------------
@@ -176,10 +177,11 @@ func _build_ui() -> void:
 	add_child(main_vbox)
 
 	# ── Content area (left list + right detail) ──
-	var split := HSplitContainer.new()
+	var split := SplitContainer.new()
+	_content_split = split
 	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	split.split_offset = 220
+	split.split_offset = 40
 	main_vbox.add_child(split)
 
 	# Left pane
@@ -192,13 +194,17 @@ func _build_ui() -> void:
 
 	# ── Bottom toolbar ──
 	main_vbox.add_child(HSeparator.new())
-	var bottom_hbox := _build_bottom_toolbar()
-	main_vbox.add_child(bottom_hbox)
+	main_vbox.add_child(_build_bottom_toolbar())
+	_build_status_area(main_vbox)
+	resized.connect(_update_content_layout)
+	_content_split.resized.connect(_update_content_layout)
+	theme_changed.connect(_update_content_layout)
+	_update_content_layout.call_deferred()
 
 
 func _build_left_pane() -> VBoxContainer:
 	var vbox := VBoxContainer.new()
-	vbox.custom_minimum_size.x = 200
+	vbox.custom_minimum_size.x = 0
 	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	var header_row := HBoxContainer.new()
@@ -240,6 +246,7 @@ func _build_right_pane() -> ScrollContainer:
 	# Placeholder shown when nothing is selected.
 	_detail_placeholder = Label.new()
 	_detail_placeholder.text = "Select a plugin to view details."
+	_detail_placeholder.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_detail_placeholder.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_detail_placeholder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -267,39 +274,43 @@ func _build_right_pane() -> ScrollContainer:
 
 func _build_detail_header(parent: VBoxContainer) -> void:
 	# Plugin name (large)
-	# The right pane's ScrollContainer has horizontal scrolling DISABLED, which
-	# folds every child's minimum width into the panel's own minimum width —
-	# so every label that can carry unbounded text (ids, errors, paths, hints)
-	# must trim or wrap, or it widens the panel past its pane.
+	# Disabled horizontal scrolling propagates child minima: variable text
+	# must wrap, and action rows must flow, to keep the pane bounded.
 	_detail_name_label = Label.new()
+	_detail_name_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	_detail_name_label.text = ""
 	_detail_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_detail_name_label.add_theme_font_size_override("font_size", 16)
 	parent.add_child(_detail_name_label)
 
-	# Version + ID row
+	# Version and ID can each wrap without sharing a minimum width.
 	var meta_row := HBoxContainer.new()
 	parent.add_child(meta_row)
 
 	var ver_title := Label.new()
-	ver_title.text = "Version: "
+	ver_title.text = "Version:"
 	ver_title.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	meta_row.add_child(ver_title)
 
 	_detail_version_label = Label.new()
 	_detail_version_label.text = "-"
+	_detail_version_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_version_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	meta_row.add_child(_detail_version_label)
 
+	var id_row := HBoxContainer.new()
+	parent.add_child(id_row)
 	var id_sep := Label.new()
-	id_sep.text = "  |  ID: "
+	id_sep.text = "ID:"
 	id_sep.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	meta_row.add_child(id_sep)
+	id_row.add_child(id_sep)
 
 	_detail_id_label = Label.new()
+	_detail_id_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	_detail_id_label.text = "-"
 	_detail_id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_id_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	meta_row.add_child(_detail_id_label)
+	id_row.add_child(_detail_id_label)
 
 	# Status row
 	var status_row := HBoxContainer.new()
@@ -311,22 +322,25 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	status_row.add_child(status_title)
 
 	_detail_status_label = Label.new()
+	_detail_status_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	_detail_status_label.text = "-"
+	_detail_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_row.add_child(_detail_status_label)
 
+	var uptime_row := HBoxContainer.new()
+	parent.add_child(uptime_row)
 	var uptime_sep := Label.new()
-	uptime_sep.text = "  Uptime: "
+	uptime_sep.text = "Uptime:"
 	uptime_sep.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	status_row.add_child(uptime_sep)
+	uptime_row.add_child(uptime_sep)
 
 	_detail_uptime_label = Label.new()
 	_detail_uptime_label.text = "-"
-	status_row.add_child(_detail_uptime_label)
+	uptime_row.add_child(_detail_uptime_label)
 
-	# Control buttons — split across two rows so the detail pane doesn't
-	# overflow at narrow widths. Row 1: lifecycle and Update.
-	# Row 2: maintenance + remove (Reload / Open Panel / Remove Plugin).
-	var btn_row := HBoxContainer.new()
+	# Flow rows keep every action reachable as the pane or UI scale changes.
+	var btn_row := HFlowContainer.new()
 	parent.add_child(btn_row)
 
 	_start_button = Button.new()
@@ -350,7 +364,7 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_update_button.pressed.connect(_on_update_pressed)
 	btn_row.add_child(_update_button)
 
-	var btn_row2 := HBoxContainer.new()
+	var btn_row2 := HFlowContainer.new()
 	parent.add_child(btn_row2)
 
 	_reload_button = Button.new()
@@ -366,18 +380,13 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_panel_button.visible = false  # shown only if plugin declares ui.panels
 	btn_row2.add_child(_panel_button)
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn_row2.add_child(spacer)
-
 	_remove_button = Button.new()
 	_remove_button.text = "Remove Plugin"
 	_remove_button.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 	_remove_button.pressed.connect(_on_remove_pressed)
 	btn_row2.add_child(_remove_button)
 
-	# Control toggles — row 2: Auto-start / Auto-reload / files-changed indicator
-	var toggle_row := HBoxContainer.new()
+	var toggle_row := HFlowContainer.new()
 	parent.add_child(toggle_row)
 
 	_autostart_check = CheckButton.new()
@@ -475,6 +484,7 @@ func _add_missing_binary_rows(plugin_id: String, pm) -> void:
 
 	var hdr := Label.new()
 	hdr.text = "Plugin binary missing for this platform"
+	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hdr.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
 	hdr.add_theme_font_size_override("font_size", 13)
 	_setup_status_container.add_child(hdr)
@@ -553,7 +563,7 @@ func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> vo
 			denied_lbl.text = "Exec step denied automatically (no confirmation dialog was available). Click Rebuild to approve it interactively."
 		else:
 			denied_lbl.text = "You declined this exec step."
-		denied_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		denied_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		denied_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
 		_setup_status_container.add_child(denied_lbl)
 		return
@@ -563,14 +573,14 @@ func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> vo
 		var bug_lbl := Label.new()
 		bug_lbl.text = "Manifest bug: step exited 0 but declared artifact '%s' is missing." % artifact_expected
 		bug_lbl.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
-		bug_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		bug_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_setup_status_container.add_child(bug_lbl)
 
 	var stderr_tail: String = str(envelope.get("stderr_tail", ""))
 	if not stderr_tail.is_empty():
 		var stderr_lbl := Label.new()
 		stderr_lbl.text = stderr_tail
-		stderr_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		stderr_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		stderr_lbl.add_theme_font_size_override("font_size", 11)
 		stderr_lbl.add_theme_color_override("font_color", Color(0.7, 0.5, 0.5))
 		_setup_status_container.add_child(stderr_lbl)
@@ -607,7 +617,7 @@ func _build_caps_section(parent: VBoxContainer) -> void:
 	var desc := Label.new()
 	desc.text = "Toggle to grant or revoke plugin permissions."
 	desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_caps_container.add_child(desc)
 
 
@@ -616,7 +626,7 @@ func _build_audit_section(parent: VBoxContainer) -> void:
 	_audit_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(_audit_container)
 
-	var hdr_row := HBoxContainer.new()
+	var hdr_row := HFlowContainer.new()
 	_audit_container.add_child(hdr_row)
 
 	var hdr := Label.new()
@@ -656,8 +666,8 @@ func _build_tools_section(parent: VBoxContainer) -> void:
 	_tools_container.add_child(_tools_list)
 
 
-func _build_bottom_toolbar() -> HBoxContainer:
-	var hbox := HBoxContainer.new()
+func _build_bottom_toolbar() -> HFlowContainer:
+	var hbox := HFlowContainer.new()
 	hbox.custom_minimum_size.y = 32
 
 	_install_button = Button.new()
@@ -679,17 +689,43 @@ func _build_bottom_toolbar() -> HBoxContainer:
 	_required_button.visible = false
 	hbox.add_child(_required_button)
 
-	# Read-only selection keeps long diagnostics copyable without widening the pane.
-	_status_label = LineEdit.new()
-	_status_label.editable = false
-	_status_label.text = ""
-	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_status_label.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status_label.mouse_filter = Control.MOUSE_FILTER_STOP
-	_status_label.add_theme_color_override("font_uneditable_color", Color(0.6, 0.8, 0.6))
-	hbox.add_child(_status_label)
-
 	return hbox
+
+
+func _build_status_area(parent: VBoxContainer) -> void:
+	# TextEdit keeps the complete diagnostic selectable while wrapping and
+	# scrolling inside a fixed-height surface, independent of toolbar width.
+	_status_label = TextEdit.new()
+	_status_label.editable = false
+	_status_label.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_label.add_theme_color_override("font_readonly_color", Color(0.6, 0.8, 0.6))
+	parent.add_child(_status_label)
+
+
+func _update_content_layout() -> void:
+	if not is_instance_valid(_content_split):
+		return
+	var font_size := get_theme_default_font_size()
+	var ui_scale := float(font_size) / 16.0
+	var stacked := size.x < 600.0 * ui_scale
+	var left := _content_split.get_child(0) as Control
+	var changed := _content_split.vertical != stacked
+	_content_split.vertical = stacked
+	var row_height := _plugin_list.get_theme_font("font").get_height(_plugin_list.get_theme_font_size("font_size"))
+	if _plugin_list.item_count > 0:
+		row_height = maxf(row_height, _plugin_list.get_item_rect(0).size.y)
+	_plugin_list.custom_minimum_size.y = row_height + _plugin_list.get_theme_stylebox("panel").get_minimum_size().y if stacked else 0.0
+	# Give the stacked plugin list about 30% of the pane's height.
+	left.custom_minimum_size = Vector2(0, size.y * 0.3) if stacked else Vector2(180.0 * ui_scale, 0)
+	# Split offsets are relative to the children's expansion allocation. Keep
+	# the list at its minimum on the split axis, leaving the rest for details.
+	left.size_flags_horizontal = Control.SIZE_FILL
+	left.size_flags_vertical = Control.SIZE_FILL if stacked else Control.SIZE_EXPAND_FILL
+	if changed:
+		_content_split.split_offset = 0 if stacked else int(40.0 * ui_scale)
+	# Two lines at the active theme size; longer diagnostics scroll vertically.
+	_status_label.custom_minimum_size.y = _status_label.get_line_height() * 2 + 12.0 * ui_scale
 
 
 # ---------------------------------------------------------------------------
@@ -909,10 +945,12 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var external: bool = status.get("attached", false) or status.get("attach_refused", false)
 	# Header
 	_detail_name_label.text = status.get("name", plugin_id)
+	_detail_name_label.tooltip_text = _detail_name_label.text
 	_detail_version_label.text = status.get("version", "-")
 	if status.get("attached", false):
 		_detail_version_label.text = "Installed: %s; attached: %s (not managed)" % [status.get("version", "-"), status.get("attached_version", "unknown")]
 	_detail_id_label.text = plugin_id
+	_detail_id_label.tooltip_text = plugin_id
 
 	if status.get("attach_refused", false):
 		_detail_version_label.text = "Installed: %s; registered: %s (refused)" % [status.get("version", "-"), status.get("registered_version", "unknown")]
@@ -921,6 +959,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_detail_status_label.text = state_name
 	if not str(status.get("notice", "")).is_empty():
 		_detail_status_label.text += " — " + str(status.notice)
+	_detail_status_label.tooltip_text = _detail_status_label.text
 	_detail_status_label.add_theme_color_override("font_color", _state_color(state))
 
 	var uptime: float = status.get("uptime_sec", 0.0)
@@ -1001,6 +1040,7 @@ func _populate_capabilities(plugin_id: String) -> void:
 
 	if requested.is_empty():
 		var none_label := Label.new()
+		none_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		none_label.text = "No capabilities requested."
 		none_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		_caps_container.add_child(none_label)
@@ -1073,6 +1113,7 @@ func _populate_audit_log(plugin_id: String) -> void:
 
 	if entries.is_empty():
 		var none_label := Label.new()
+		none_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		none_label.text = "No audit events yet."
 		none_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		_audit_list.add_child(none_label)
@@ -1084,7 +1125,7 @@ func _populate_audit_log(plugin_id: String) -> void:
 		var detail: Dictionary = entry.get("detail", {})
 		var is_denial := event_type == PluginAuditLog.EVENT_POLICY_DENY
 
-		var row := HBoxContainer.new()
+		var row := VBoxContainer.new()
 		_audit_list.add_child(row)
 
 		# Timestamp
@@ -1094,15 +1135,14 @@ func _populate_audit_log(plugin_id: String) -> void:
 		if "T" in timestamp:
 			ts_short = timestamp.split("T")[1].left(8)
 		ts_label.text = ts_short
-		ts_label.custom_minimum_size.x = 65
+		ts_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ts_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		row.add_child(ts_label)
 
 		# Event type (colored red for denials)
 		var type_label := Label.new()
 		type_label.text = event_type
-		type_label.custom_minimum_size.x = 120
-		type_label.clip_text = true
+		type_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		if is_denial:
 			type_label.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
 		else:
@@ -1119,8 +1159,9 @@ func _populate_audit_log(plugin_id: String) -> void:
 			var detail_label := Label.new()
 			detail_label.text = detail_str
 			detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			detail_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			detail_label.clip_text = true
+			detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			detail_label.tooltip_text = detail_str
+			detail_label.mouse_filter = Control.MOUSE_FILTER_PASS
 			detail_label.add_theme_color_override("font_color", Color(0.65, 0.65, 0.65))
 			row.add_child(detail_label)
 
@@ -1154,6 +1195,7 @@ func _populate_tools(plugin_id: String) -> void:
 
 	if def == null or def.tools.is_empty():
 		var none_label := Label.new()
+		none_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		none_label.text = "No tools declared."
 		none_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		_tools_list.add_child(none_label)
@@ -1171,29 +1213,31 @@ func _populate_tools(plugin_id: String) -> void:
 		var tool_desc: String = tool_entry.get("description", "")
 		var is_registered: bool = registered_names.has(tool_name)
 
-		var row := HBoxContainer.new()
+		var row := VBoxContainer.new()
 		_tools_list.add_child(row)
 
+		var tool_header := HBoxContainer.new()
+		row.add_child(tool_header)
 		var status_dot := Label.new()
 		status_dot.text = "●  "
 		status_dot.add_theme_color_override("font_color",
 			Color(0.3, 0.9, 0.4) if is_registered else Color(0.5, 0.5, 0.5))
-		row.add_child(status_dot)
+		tool_header.add_child(status_dot)
 
 		var name_label := Label.new()
 		name_label.text = tool_name
-		name_label.custom_minimum_size.x = 200
-		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_label.tooltip_text = tool_name
 		name_label.mouse_filter = Control.MOUSE_FILTER_STOP
-		row.add_child(name_label)
+		tool_header.add_child(name_label)
 
 		if not tool_desc.is_empty():
 			var desc_label := Label.new()
 			desc_label.text = tool_desc
 			desc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			desc_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
-			desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+			desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			row.add_child(desc_label)
 
 
@@ -1687,10 +1731,12 @@ func _display_status(message: String, is_error: bool = false) -> void:
 		return
 	_status_label.text = message
 	_status_label.tooltip_text = message
+	_status_label.scroll_vertical = 0
+	_status_label.deselect()
 	if is_error:
-		_status_label.add_theme_color_override("font_uneditable_color", Color(1.0, 0.4, 0.4))
+		_status_label.add_theme_color_override("font_readonly_color", Color(1.0, 0.4, 0.4))
 	else:
-		_status_label.add_theme_color_override("font_uneditable_color", Color(0.6, 0.85, 0.6))
+		_status_label.add_theme_color_override("font_readonly_color", Color(0.6, 0.85, 0.6))
 
 	# Clear after 5 seconds
 	get_tree().create_timer(5.0).timeout.connect(func():
