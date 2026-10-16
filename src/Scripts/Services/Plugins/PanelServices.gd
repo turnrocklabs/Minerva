@@ -121,6 +121,8 @@ static func capture(target: Dictionary) -> Image:
 	# Defer the one idle draw until the await is listening for it.
 	if idle: RenderingServer.force_draw.call_deferred()
 	await RenderingServer.frame_post_draw
+	if is_instance_valid(subviewport) and previous_mode not in [SubViewport.UPDATE_ALWAYS, SubViewport.UPDATE_ONCE]:
+		subviewport.render_target_update_mode = previous_mode
 	# Freed Objects can compare equal to null; inspect raw values before typing.
 	var raw_viewport: Variant = target.get("viewport")
 	var raw_surface: Variant = target.get("surface")
@@ -131,8 +133,6 @@ static func capture(target: Dictionary) -> Image:
 	var surface: Control = raw_surface
 	var texture := viewport.get_texture()
 	var image: Image = texture.get_image() if texture != null else null
-	if is_instance_valid(subviewport) and previous_mode not in [SubViewport.UPDATE_ALWAYS, SubViewport.UPDATE_ONCE]:
-		subviewport.render_target_update_mode = previous_mode
 	if image != null and surface != null:
 		var rect := Rect2i(surface.get_global_rect()).intersection(Rect2i(Vector2i.ZERO, image.get_size()))
 		return image.get_region(rect) if rect.has_area() else null
