@@ -462,7 +462,7 @@ func _pack(id: String, payload_bytes: int,
 	var dir := _temp.path_join(archive)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var manifest := {
-		"id": id, "name": id, "version": "1.0.0", "host_api_version": "1",
+		"id": id, "name": id, "version": "1.0.0", "host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": backend.entrypoint, "args": backend.args},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
 		"permissions": {"host_capabilities": []}, "auto_reload": false,

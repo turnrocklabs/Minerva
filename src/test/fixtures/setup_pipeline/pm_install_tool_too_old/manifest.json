@@ -2,7 +2,7 @@
   "id": "setup_pipeline_pm_too_old_test",
   "name": "Setup Pipeline PluginManager Too-Old-Tool Test Fixture",
   "version": "0.1.0",
-  "host_api_version": "1",
+  "host_api_version": "2",
   "backend": {
     "transport": "stdio",
     "entrypoint": "python3",

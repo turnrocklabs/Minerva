@@ -280,7 +280,7 @@ func _pack(id: String, payload_bytes: int, version: String = "1.0.0") -> bool:
 	DirAccess.make_dir_recursive_absolute(dir)
 	var f := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
 	f.store_string(JSON.stringify({
-		"id": id, "name": id, "version": version, "host_api_version": "1",
+		"id": id, "name": id, "version": version, "host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "./test-binary", "args": []},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
 		"permissions": {"host_capabilities": []}, "autostart": false, "auto_reload": false,

@@ -218,7 +218,7 @@ func _make_def_dict(plugin_id: String, tools: Array) -> Dictionary:
 		"id": plugin_id,
 		"name": plugin_id,
 		"version": "0.0.1",
-		"host_api_version": "1",
+		"host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "stub.py", "args": [], "working_dir": ""},
 		"ui": {"panels": [], "ipc_messages": []},
 		"tools": tools,

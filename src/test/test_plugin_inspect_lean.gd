@@ -27,7 +27,7 @@ class FakeDef extends RefCounted:
 	var id := "pcb"
 	var name := "PCB Plugin"
 	var version := "1.2.3"
-	var host_api_version := "1"
+	var host_api_version := "2"
 	var transport := "stdio"
 	var entrypoint := "pcb-plugin"
 	var args := []

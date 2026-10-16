@@ -24,6 +24,7 @@ func _run() -> void:
 	var manifest := DIRECTORY.path_join("manifest.json")
 	var file := FileAccess.open(manifest, FileAccess.WRITE)
 	file.store_string(JSON.stringify({"id": PLUGIN_ID, "name": "Guidance contract", "version": "1.0.0",
+		"host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "python3"}, "ui": {"panels": [{
 			"name": "guide", "kind": "godot_scene", "entry_scene": "Guide.tscn",
 			"scripts": ["Guide.gd"], "write_guidance": GUIDANCE}]}}))

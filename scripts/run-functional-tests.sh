@@ -105,7 +105,6 @@ HERMETIC_TESTS=(
 	test/test_self_scene_resource_lifecycle.gd
 	test/test_markdownlabel_tables.gd
 	test/test_mcp_schema_coercion.gd
-	test/test_mcp_cad_tools.gd
 	test/test_plugin_inspect_lean.gd
 	test/test_buffer_sync_undo_caret.gd
 	test/test_doc_version_guard.gd

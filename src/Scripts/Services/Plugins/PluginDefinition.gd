@@ -4,7 +4,7 @@ extends RefCounted
 ## Plugins are supervised out-of-process services that communicate via stdio MCP transport.
 ## A plugin is defined by a manifest.json file in its directory.
 
-const HOST_API_VERSION: String = "1"
+const HOST_API_VERSION: String = "2"
 
 # ---------------------------------------------------------------------------
 # Runtime state enum

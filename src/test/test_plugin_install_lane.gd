@@ -373,7 +373,7 @@ func _fixture_manifest_json(id: String, with_stanza: bool = true) -> String:
 		"id": id,
 		"name": "Install Lane Fixture",
 		"version": "0.1.0",
-		"host_api_version": "1",
+		"host_api_version": "2",
 		"backend": {
 			"transport": "stdio",
 			"entrypoint": "./bin/plugin.txt",

@@ -239,6 +239,7 @@ func _panel_route() -> void:
 	cad_view.type = editor_script.Type.PLUGIN_SCENE
 	cad_view.plugin_id = "cad"
 	cad_view.plugin_panel_key = "cad-panel"
+	cad_view.plugin_write_guidance = "Use minerva_doc_write with complete source; inspect last_eval."
 	cad_view.plugin_scene_root = cad_panel
 	pane.Tabs.add_child(cad_view)
 	broker.register_panel(cad_panel, "cad", "cad-panel", PackedStringArray(),
@@ -249,13 +250,6 @@ func _panel_route() -> void:
 	check("paired CAD identity advertises explicit full-write guidance",
 		str(cad_profile.get("write_guidance", "")).contains("minerva_doc_write")
 		and str(cad_profile.get("write_guidance", "")).contains("last_eval"))
-	var cad_tools = load(
-		"res://Scripts/Services/MCP/Modules/MCPCadTools.gd").new(null)
-	var legacy_source_target: Dictionary = await cad_tools.handle(
-		"minerva_cad_get_mesh_info", {"editor_name": "cad-source.mcad"})
-	check("legacy CAD inspection maps a unique source-tab name to its paired panel",
-		legacy_source_target.get("success", false)
-		and legacy_source_target.get("vertex_count", 0) == 2)
 	broker.unregister_panel("cad", "cad-panel")
 	cad_source_view._detach_document_buffer()
 	DocumentRegistry.get_instance().dispose_buffer(cad_buffer.file_path)

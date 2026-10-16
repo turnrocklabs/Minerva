@@ -492,7 +492,7 @@ func _pack_required_plugin(id: String, version: String, host_tools: bool = true,
 		args.assign(["capability_probe.py", "spawn", profile, tools_path])
 		source = DOCKET_LAUNCHER_PY
 	var manifest := {
-		"id": id, "name": RequiredPlugins.display_name(id), "version": version, "host_api_version": "1",
+		"id": id, "name": RequiredPlugins.display_name(id), "version": version, "host_api_version": "2",
 		"release_targets": MarketplaceClient.platform_targets(),
 		"backend": {"transport": "stdio", "entrypoint": _h.python_cmd(), "args": args},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},

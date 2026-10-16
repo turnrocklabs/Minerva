@@ -2,7 +2,7 @@
   "id": "setup_pipeline_pm_shim_test",
   "name": "Setup Pipeline PluginManager Shim-Only-Candidate Test Fixture",
   "version": "0.1.0",
-  "host_api_version": "1",
+  "host_api_version": "2",
   "backend": {
     "transport": "stdio",
     "entrypoint": "python3",

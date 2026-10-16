@@ -2,7 +2,7 @@ extends SceneTree
 ## One incompatible package through real install, visible diagnostics and start.
 const DIRECTORY := "user://host_api_contract"
 const PLUGIN_ID := "host_api_contract"
-const EXPECTED := "Plugin 'host_api_contract' v1.0.0 was built for Minerva host API 0; this Minerva provides host API 1. Update it from the Marketplace, or reinstall from a manifest built for API 1."
+const EXPECTED := "Plugin 'host_api_contract' v1.0.0 was built for Minerva host API 0; this Minerva provides host API 2. Update it from the Marketplace, or reinstall from a manifest built for API 2."
 var passed: int = 0
 var failed: int = 0
 
@@ -21,6 +21,9 @@ func _run() -> void:
 		"host_api_version": "0", "backend": {"transport": "stdio", "entrypoint": "python3"}}))
 	file.close()
 	# Runtime load preserves the real manager's autoload dependency context.
+	var omitted := PluginDefinition.from_dict({"id": "legacy", "name": "Legacy", "version": "1.0.0"})
+	check(omitted.host_api_version == "1" and omitted.host_api_error().contains("host API 1;"),
+		"omitted host API stays legacy API 1 and refuses on API 2")
 	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
 	manager._db = PluginDB.new()
 	var installed: Dictionary = await manager.install_plugin(manifest, true)
@@ -62,7 +65,7 @@ func _run() -> void:
 	check(visible, "opening a panel without start also displays the same refusal")
 	mount.free()
 	var compatible: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest))
-	compatible["host_api_version"] = "1"
+	compatible["host_api_version"] = "2"
 	compatible["version"] = "1.0.1"
 	file = FileAccess.open(manifest, FileAccess.WRITE)
 	file.store_string(JSON.stringify(compatible))

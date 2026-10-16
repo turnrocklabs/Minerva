@@ -73,27 +73,6 @@ static func resolve(editor_name: String, broker: Variant = null,
 		"plugin_id": owner, "broker_bound": broker_bound}
 
 
-static func resolve_cad_host(editor_name: String) -> AnnotationHost:
-	var host := AnnotationHostRegistry.get_host(editor_name)
-	if host != null and host.has_method("get_mesh_data"):
-		return host
-	var panel_host := AnnotationHostRegistry.get_panel_host(editor_name)
-	if panel_host != null:
-		return panel_host
-	var ctx := context()
-	var resolved := resolve(editor_name, ctx.broker, ctx.editors, true)
-	if resolved.ok and resolved.host != null and resolved.panel != null:
-		return resolved.host
-	var editor: Variant = resolved.get("editor")
-	if is_instance_valid(editor) and is_instance_valid(ctx.broker):
-		var live_editors: Array = ctx.editors.filter(func(candidate: Variant) -> bool: return is_instance_valid(candidate))
-		var paired := DocumentIdentity.owning_plugin_view(editor, ctx.broker, live_editors,
-			DocumentIdentity.buffer_for(editor, ctx.broker))
-		if paired != null and "plugin_id" in paired and str(paired.plugin_id) == "cad":
-			return AnnotationHostRegistry.get_panel_host(str(paired.plugin_panel_key))
-	return null
-
-
 static func views(panel: Variant) -> Array[String]:
 	var names: Array[String] = ["active"]
 	if is_instance_valid(panel) and panel.has_method("get_viewports"):

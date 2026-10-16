@@ -30,7 +30,7 @@ my_plugin/
   "id": "my_plugin",
   "name": "My Plugin",
   "version": "0.1.0",
-  "host_api_version": "1",
+  "host_api_version": "2",
   "backend": {
     "transport": "stdio",
     "entrypoint": "python3",

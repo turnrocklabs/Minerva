@@ -178,7 +178,7 @@ class FixturePanel extends Control:
 
 func _definition(plugin_id: String, authority: bool) -> PluginDefinition:
 	var data := {
-		"id": plugin_id, "name": plugin_id, "version": "1.0.0", "host_api_version": "1",
+		"id": plugin_id, "name": plugin_id, "version": "1.0.0", "host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "./bin/backend", "args": []},
 		"ui": {"panels": [{"name": "main", "kind": "godot_scene", "entry_scene": "panel.tscn",
 			"scripts": ["panel.gd"], "ipc_channels": ["docket_comment"], "save_mode": "none"}],

@@ -261,7 +261,7 @@ def stop_docket_fixture(pid: int) -> None:
     raise SystemExit(f"Docket fixture PID {pid} did not stop")
 
 
-def probe_docket(root: Path, manifest: dict) -> None:
+def probe_docket(root: Path, manifest: dict, release_lock: Path) -> None:
     """Probe the bundled launcher with a fresh profile, never an owner's server."""
     if manifest.get("tools") or manifest["backend"].get("args"):
         raise SystemExit("Docket launcher must have empty tools and arguments")
@@ -270,7 +270,8 @@ def probe_docket(root: Path, manifest: dict) -> None:
     if len(receipts) != 1:
         raise SystemExit("Docket package must contain one acquisition receipt")
     receipt = json.loads(receipts[0].read_text(encoding="utf-8"))
-    if receipt.get("Tag") != "v" + manifest["version"] or not receipt.get("Source"):
+    pinned = json.loads(release_lock.read_text(encoding="utf-8"))
+    if receipt.get("Tag") != pinned["tag"] or not receipt.get("Source"):
         raise SystemExit("Docket acquisition receipt does not identify this release")
     identity = receipt["Tag"] + "+" + receipt["Source"]
     mac_profile_link = None
@@ -397,7 +398,9 @@ def main() -> None:
         with tarfile.open(archive) as tar:
             tar.extractall(extracted, filter="tar")
         if manifest["id"] == "docket":
-            probe_docket(extracted, manifest)
+            if args.docket_source is None:
+                raise SystemExit("Docket packaging requires --docket-source for its signed release pin")
+            probe_docket(extracted, manifest, args.docket_source / "docket/release.lock.json")
         else:
             probe_tools(extracted, manifest)
     print(f"packaged {archive}")

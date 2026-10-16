@@ -187,7 +187,7 @@ func _make_def_dict(
 		"id": "testplugin",
 		"name": "Test Plugin",
 		"version": "1.0.0",
-		"host_api_version": "1",
+		"host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "plugin.py",
 			"args": [], "working_dir": ""},
 		"ui": {

@@ -6,9 +6,6 @@ class ProbeEditor extends Control:
 	var tab_title: String = "Duplicate"
 	var plugin_scene_root: Control
 
-class ServicesRoot extends Node:
-	var plugin_scene_panel_broker: Object
-
 class FallbackHost extends AnnotationHost:
 	var panel: Control
 	func get_panel() -> Control:
@@ -96,21 +93,6 @@ func _init() -> void:
 		"live editor with freed scene root resolves without typed assignment")
 	first.free()
 	var fallback := FallbackHost.new()
-	var singleton = root.get_node_or_null("SingletonObject")
-	var created_singleton := singleton == null
-	if created_singleton:
-		singleton = ServicesRoot.new()
-		singleton.name = "SingletonObject"
-		root.add_child(singleton)
-	var prior_broker = singleton.get("plugin_scene_panel_broker")
-	singleton.set("plugin_scene_panel_broker", broker)
-	AnnotationHostRegistry.register("Probe", fallback)
-	check(services.resolve_cad_host("Probe") == panel.host,
-		"explicit panel-host fallback precedes registry host with no live panel")
-	AnnotationHostRegistry.deregister("Probe", fallback)
-	singleton.set("plugin_scene_panel_broker", prior_broker)
-	if created_singleton:
-		singleton.free()
 	fallback.panel = panel
 	AnnotationHostRegistry.register("Fallback", fallback)
 	check(registry._prepare_panel_call("probe", "echo", {"editor_name": "Fallback"}).ok,

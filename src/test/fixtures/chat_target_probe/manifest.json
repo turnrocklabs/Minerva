@@ -2,7 +2,7 @@
   "id": "chat_target_probe",
   "name": "Chat Target Probe",
   "version": "0.1.0",
-  "host_api_version": "1",
+  "host_api_version": "2",
   "backend": {
     "transport": "stdio",
     "entrypoint": "python3",
