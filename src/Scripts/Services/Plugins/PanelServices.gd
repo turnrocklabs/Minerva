@@ -114,7 +114,8 @@ static func capture_target(resolved: Dictionary, slot: String = "active") -> Dic
 	if not is_instance_valid(surface) or not surface.is_visible_in_tree():
 		return {"ok": false, "error": "View '%s' is not visible in the tree" % slot, "views": available}
 	var viewport: Viewport = null
-	var slots: Dictionary = panel.get_viewports() if is_instance_valid(panel) and panel.has_method("get_viewports") else {}
+	var live_panel: Object = panel if is_instance_valid(panel) else null
+	var slots: Dictionary = live_panel.call("get_viewports") if live_panel != null and live_panel.has_method("get_viewports") else {}
 	var panel_slot := slots.has(slot)
 	if slot == "active" and not panel_slot:
 		viewport = surface.get_viewport() if is_instance_valid(surface) else null

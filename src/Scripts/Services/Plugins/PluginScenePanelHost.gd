@@ -78,7 +78,8 @@ static func instantiate_into(
 	if def == null:
 		return _mount_placeholder(vbox,
 			"[PluginScenePanelHost] Plugin '%s' not found in DB" % plugin_id)
-	var api_error: String = def.host_api_error()
+	var definition: Object = def
+	var api_error: String = definition.call("host_api_error")
 	if not api_error.is_empty():
 		return _mount_placeholder(vbox, api_error)
 	if plugin_manager.has_method("get_restart_required_reason"):

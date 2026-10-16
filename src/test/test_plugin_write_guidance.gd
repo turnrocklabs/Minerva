@@ -39,7 +39,7 @@ func _run() -> void:
 	singleton.plugin_manager = manager
 	singleton.plugin_scene_panel_broker = load("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd").new()
 	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
-	var editor = editor_script.create_plugin_scene(PLUGIN_ID, "guide", null, "Guidance")
+	var editor = editor_script.create_plugin_scene(PLUGIN_ID, "guide")
 	var identity = load("res://Scripts/Services/Documents/DocumentIdentity.gd")
 	var profile: Dictionary = identity.operation_profile(editor)
 	check(editor.plugin_write_guidance == GUIDANCE and profile.get("write_guidance") == GUIDANCE

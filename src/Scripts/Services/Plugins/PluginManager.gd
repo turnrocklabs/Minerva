@@ -331,7 +331,7 @@ func _process(delta: float) -> void:
 func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-	var check_def = PluginDef.from_manifest(manifest_path, lane)
+	var check_def: PluginDefinition = PluginDef.from_manifest(manifest_path, lane)
 	if check_def != null:
 		var api_error: String = check_def.host_api_error()
 		if not api_error.is_empty():
@@ -440,7 +440,7 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-	var def = PluginDef.from_manifest(manifest_path, lane)
+	var def: PluginDefinition = PluginDef.from_manifest(manifest_path, lane)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
 	var api_error: String = def.host_api_error()
@@ -731,7 +731,9 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
-	var api_error := _check_host_api(_db.get_by_id(id))
+	var db: Object = _db
+	var definition: PluginDefinition = db.call("get_by_id", id)
+	var api_error := _check_host_api(definition)
 	if not api_error.is_empty():
 		return {"error": api_error}
 	# Refused before PluginPendingUpgrade, which would take a refusal for a

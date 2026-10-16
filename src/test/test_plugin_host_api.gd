@@ -60,7 +60,6 @@ func _run() -> void:
 	for label: Label in placeholder.find_children("*", "Label", true, false):
 		visible = visible or label.text == EXPECTED
 	check(visible, "opening a panel without start also displays the same refusal")
-	singleton.plugin_manager = previous
 	mount.free()
 	var compatible: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest))
 	compatible["host_api_version"] = "1"
@@ -71,6 +70,7 @@ func _run() -> void:
 	var repaired: Dictionary = await manager.update_plugin(manifest, true)
 	check(not repaired.has("error") and manager.get_plugin_status(PLUGIN_ID).notice.is_empty(),
 		"a compatible update retires its old compatibility diagnostic")
+	singleton.plugin_manager = previous
 	panel.free()
 	manager.get_db().remove(PLUGIN_ID)
 	manager.free()

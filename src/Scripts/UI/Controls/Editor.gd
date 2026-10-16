@@ -326,7 +326,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 				for pd in def.ui_panels:
 					if pd is Dictionary and pd.get("name", "") == p_name:
 						editor.plugin_save_mode = pd.get("save_mode", "host_owned")
-						editor.plugin_write_guidance = pd.get("write_guidance", "")
+						editor.plugin_write_guidance = (pd as Dictionary).get("write_guidance", "")
 						var cs_raw: Variant = pd.get("chrome_suppress", [])
 						var cs_list: Array[String] = []
 						if cs_raw is Array:
