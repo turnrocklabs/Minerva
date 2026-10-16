@@ -316,7 +316,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# taking the install lock; a leftover repair record alone never means busy.
 	var content_owner: Object = installer
 	while content_owner != null and content_owner.has_method("is_content_busy") \
-			and bool(content_owner.call("is_content_busy", plugin_id)):
+			and content_owner.call("is_content_busy", plugin_id) == true:
 		if op.cancelled:
 			return _err("cancelled", {})
 		await get_tree().process_frame
