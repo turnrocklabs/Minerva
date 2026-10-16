@@ -742,7 +742,6 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
 	var docket_start := 0
 	if id == "docket":
-		var db: Object = _db
 		var current: PluginDefinition = db.call("get_by_id", id)
 		var runtime := _ensure_runtime(id)
 		if _shutting_down or runtime.get("start_pending", false) \
