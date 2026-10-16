@@ -36,6 +36,7 @@ func _run() -> void:
 		return
 	manager._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	var def = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()
+	def.host_api_version = "2"
 	def.id = "docket"
 	def.version = "installed"
 	def.entrypoint = "unused-fixture"
@@ -174,6 +175,7 @@ func _launcher_checks(profile: String) -> void:
 		manager.real_connection = true
 		manager._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 		var def = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()
+		def.host_api_version = "2"
 		def.id = "docket"
 		def.entrypoint = "python3"
 		var directory: String = profile.path_join("launcher-" + mode)

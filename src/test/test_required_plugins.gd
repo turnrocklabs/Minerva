@@ -77,6 +77,7 @@ func _init() -> void:
 	await _test_required_plugin_is_kept()
 	await _test_required_update_choices(port)
 	await _test_manual_update_button(port)
+	await _test_host_api_upgrade(port)
 	_finish(1 if _fail else 0)
 
 
@@ -562,3 +563,78 @@ func _finish(code: int) -> void:
 		_h.remove_tree(_temp)
 	print("=== %s ===" % ("FAIL" if code else "PASS"))
 	quit(code)
+
+
+## Persisted API-1 required releases recover through the real install queue,
+## even with updates off; the external HTTP Docket fixture is reattached.
+func _test_host_api_upgrade(port: int) -> void:
+	var ids: Array[String] = RequiredPlugins.ids()
+	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
+	var was_enabled: bool = feature.is_enabled()
+	feature.set_enabled(true)
+	for id: String in ids:
+		await _h.scrub_plugin(_pm, id)
+		_check(_pack_required_plugin(id, "9.9.20"), "pack old required release for " + id)
+	_check(_write_releases(port, ids, "9.9.20"), "publish initial required releases")
+	var registry := FileAccess.open(_temp.path_join("registry.json"), FileAccess.WRITE)
+	registry.store_string(JSON.stringify({"registry_version": 2, "plugins": []}))
+	registry.close()
+	var queued: Dictionary = await RequiredPlugins.ensure(_pm)
+	for id: String in ids:
+		var job = queued.get(id)
+		if job != null:
+			await _until(func() -> bool: return job.state == job.State.DONE)
+	await _until(func() -> bool: return ids.all(func(id: String) -> bool:
+		var def = _pm.get_db().get_by_id(id)
+		return def != null and def.state == _pm.S_RUNNING))
+	await _until(func() -> bool: return root.get_node("SingletonObject").plugin_tool_registry.get_plugin_tools("docket").size() >= RequiredPlugins.PLUGINS.docket.host_tools.size())
+	var registration: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
+	_docket_pid = int(registration.get("pid", 0))
+	_check(_docket_pid > 0 and _pm.is_attached("docket"), "upgrade begins with a real attached HTTP Docket fixture")
+	# Seed whole API-1 marketplace packages and persisted A-era records.
+	for id: String in ids:
+		await _pm.stop_plugin(id)
+		var def = _pm.get_db().get_by_id(id)
+		def.host_api_version = "1"
+		def.autostart = true
+		def.auto_update = false
+		var path: String = def.data_directory.path_join("manifest.json")
+		var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
+		manifest.host_api_version = "1"
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		file.store_string(JSON.stringify(manifest))
+		file.close()
+		_check(_h.pack_plugin_dir(ProjectSettings.globalize_path(def.data_directory), _temp.path_join(id + "-api1.tar.gz")), "retain valid API-1 package checksums for " + id)
+	var cad := PluginDefinition.from_dict({"id": "cad", "name": "CAD", "version": "0.3.17",
+		"host_api_version": "1", "install_lane": "marketplace", "autostart": true,
+		"auto_update": false, "backend": {"transport": "stdio", "entrypoint": "python3"}})
+	_pm.get_db()._plugins.cad = cad
+	_check(_pm.get_db().save() and _pm.get_db().load_db() == OK,
+		"the real PluginDB restores the A-era records")
+	_check((ids + ["cad"]).all(func(id: String) -> bool:
+		return _pm.get_db().get_by_id(id).host_api_version == "1"), "restored records retain API 1 before upgrade")
+	for id: String in ids:
+		_check(_pack_required_plugin(id, "9.9.21"), "pack API-2 required release for " + id)
+	_check(_write_releases(port, ids, "9.9.21"), "publish local API-2 required releases")
+	await _pm.start_plugins_at_launch("http://127.0.0.1:%d/registry.json" % port)
+	await _until(func() -> bool: return ids.all(func(id: String) -> bool:
+		var def = _pm.get_db().get_by_id(id)
+		return def != null and def.host_api_version == "2" and def.state == _pm.S_RUNNING), 20.0)
+	for id: String in ids:
+		var def = _pm.get_db().get_by_id(id)
+		_check(def.host_api_version == "2" and def.version == "9.9.21" and def.state == _pm.S_RUNNING
+			and not def.auto_update, "required API-1 " + id + " is repaired and starts while preserving update opt-out")
+	await _until(func() -> bool: return root.get_node("SingletonObject").plugin_tool_registry.get_plugin_tools("docket").size() >= RequiredPlugins.PLUGINS.docket.host_tools.size(), 20.0)
+	var tools: Array = root.get_node("SingletonObject").plugin_tool_registry.get_plugin_tools("docket")
+	_check(_pm.is_attached("docket") and int(_pm.endpoint_discovery.discover().get("record", {}).get("pid", 0)) == _docket_pid
+		and RequiredPlugins.PLUGINS.docket.host_tools.all(func(name: String) -> bool:
+			return tools.any(func(tool: Dictionary) -> bool: return tool.get("name") == name)), "Docket reattaches to the same app and its tools register")
+	for id: String in ids:
+		_check(not str(_pm.get_plugin_status(id).get("notice", "")).contains("host API"),
+			"required " + id + " clears its stale host-API notice after repair")
+	var status: Dictionary = _pm.get_plugin_status("cad")
+	var expected := "Plugin 'cad' v0.3.17 was built for Minerva host API 1; this Minerva provides host API 2. Update it from the Marketplace, or reinstall from a manifest built for API 2."
+	_check(not status.get("running", false) and status.get("notice") == expected,
+		"non-required API-1 CAD keeps the exact actionable compatibility notice")
+	await _h.scrub_plugin(_pm, "cad")
+	feature.set_enabled(was_enabled)

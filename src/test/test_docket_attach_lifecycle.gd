@@ -24,6 +24,7 @@ func _run() -> void:
 	var manager = load("res://test/helpers/docket_attach_manager.gd").new()
 	manager._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	var def = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()
+	def.host_api_version = "2"
 	def.id = "docket"
 	def.entrypoint = "unused-fixture"
 	manager._db._plugins.docket = def

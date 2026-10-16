@@ -136,12 +136,15 @@ static func docket_capabilities_missing(conn: Object) -> String:
 
 
 ## Why an installed release of a required plugin cannot run here, or "" when
-## it can (PluginArchive.installed_issue; `every_file` false skips the listed
-## files for a cheap look). A manifest-lane (developer) copy is always "": it
+## it can (host API compatibility and PluginArchive.installed_issue).
+## `every_file` false skips the listed files for a cheap look. A manifest-lane (developer) copy is always "": it
 ## is the developer's to fix, never replaced from a release.
 static func runtime_issue(def: PluginDefinition, every_file: bool = true) -> String:
 	if def.install_lane != PluginDefinition.LANE_MARKETPLACE:
 		return ""
+	var api_error := def.host_api_error()
+	if not api_error.is_empty():
+		return api_error
 	return PluginArchive.installed_issue(ProjectSettings.globalize_path(def.data_directory),
 		def.entrypoint, MarketplaceClient.platform_targets(), every_file)
 
