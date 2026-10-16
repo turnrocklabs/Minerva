@@ -112,7 +112,7 @@ static func capture(target: Dictionary) -> Image:
 	var selected: Variant = target.get("viewport")
 	if not is_instance_valid(selected): return null
 	var subviewport: SubViewport = selected if selected is SubViewport else null
-	var previous_mode: int = SubViewport.UPDATE_ALWAYS
+	var previous_mode: SubViewport.UpdateMode = SubViewport.UPDATE_ALWAYS
 	var idle := OS.low_processor_usage_mode and not RenderingServer.has_changed()
 	if subviewport != null:
 		previous_mode = subviewport.render_target_update_mode
