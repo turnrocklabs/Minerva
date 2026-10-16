@@ -720,12 +720,12 @@ func _update_content_layout() -> void:
 	var details := _content_split.get_child(1) as Control
 	details.custom_minimum_size.y = float(font_size) * 3.0 if stacked else 0.0
 	left.custom_minimum_size = Vector2.ZERO if stacked else Vector2(180.0 * ui_scale, 0)
-	# Split offsets add to the list's natural row minimum. Prefer 30% of the
-	# pane, letting the split clamp that preference to the details' minimum.
+	# The non-expanding list's split offset starts at zero; the split clamps
+	# its preferred 30% of the pane between the list and details minima.
 	left.size_flags_horizontal = Control.SIZE_FILL
 	left.size_flags_vertical = Control.SIZE_FILL if stacked else Control.SIZE_EXPAND_FILL
 	if stacked:
-		_content_split.split_offset = maxi(0, int(size.y * 0.3 - left.get_combined_minimum_size().y))
+		_content_split.split_offset = int(size.y * 0.3)
 	elif changed:
 		_content_split.split_offset = int(40.0 * ui_scale)
 	# Two lines at the active theme size; longer diagnostics scroll vertically.
