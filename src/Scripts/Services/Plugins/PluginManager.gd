@@ -456,6 +456,7 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 
 	if not _db.update_definition(def):
 		return {"error": "Failed to update plugin definition for '%s'" % def.id}
+	_check_host_api(def)
 
 	_register_manifest_tools(def.id)
 
@@ -730,13 +731,9 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
-	var definition: PluginDefinition = _db.get_by_id(id)
-	if definition != null:
-		var api_error := definition.host_api_error()
-		if not api_error.is_empty():
-			_ensure_runtime(id)["notice"] = api_error
-			_transition_state(id, S_ERROR)
-			return {"error": api_error}
+	var api_error := _check_host_api(_db.get_by_id(id))
+	if not api_error.is_empty():
+		return {"error": api_error}
 	# Refused before PluginPendingUpgrade, which would take a refusal for a
 	# failed first start and roll a pending update back.
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
@@ -774,6 +771,27 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	if id == "docket" and _ensure_runtime(id).get("start_generation", 0) == docket_start:
 		_ensure_runtime(id)["start_pending"] = false
 	return started
+
+
+## The same gate covers admission and the definition restored by rollback.
+func _check_host_api(definition: PluginDefinition) -> String:
+	if definition == null:
+		return ""
+	var rt := _ensure_runtime(definition.id)
+	var previous_notice: String = rt.get("notice", "")
+	var reason := definition.host_api_error()
+	if reason.is_empty():
+		var previous_error: String = rt.get("host_api_error", "")
+		if not previous_error.is_empty() and previous_notice == previous_error:
+			rt["notice"] = ""
+		rt.erase("host_api_error")
+	else:
+		rt["host_api_error"] = reason
+		rt["notice"] = reason
+		_transition_state(definition.id, S_ERROR)
+	if str(rt.get("notice", "")) != previous_notice:
+		plugin_status_changed.emit(definition.id)
+	return reason
 
 
 func is_attached(id: String) -> bool:
@@ -873,6 +891,12 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	var db: Object = _db
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
+	var def: PluginDefinition = db.call("get_by_id", id)
+	if def == null:
+		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
+	var api_error := _check_host_api(def)
+	if not api_error.is_empty():
+		return {"error": api_error}
 	if id == "docket":
 		var runtime := _ensure_runtime(id)
 		# Rollback stops the connection and cancels its lease, but cannot run
@@ -882,9 +906,6 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		if runtime.get("start_generation", 0) != docket_start or not runtime.get("start_pending", false):
 			return {"error": "Docket start was cancelled"}
 
-	var def: PluginDefinition = db.call("get_by_id", id)
-	if def == null:
-		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
 	if RequiredPlugins.has(id):
 		var runtime_issue := RequiredPlugins.runtime_issue(def)
 		if not runtime_issue.is_empty():

@@ -131,7 +131,7 @@ func on_ipc_error(channel: String, error: Dictionary) -> void:
 	push_warning("[%s] %s: %s" % [name, channel, error.get("error_message", "IPC error")])
 
 
-## Named render slots for host snapshots. "active" remains the visible panel.
+## Named render slots for host snapshots. An "active" slot overrides panel cropping.
 func get_viewports() -> Dictionary[String, SubViewport]:
 	return {}
 

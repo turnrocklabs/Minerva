@@ -62,6 +62,15 @@ func _run() -> void:
 	check(visible, "opening a panel without start also displays the same refusal")
 	singleton.plugin_manager = previous
 	mount.free()
+	var compatible: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest))
+	compatible["host_api_version"] = "1"
+	compatible["version"] = "1.0.1"
+	file = FileAccess.open(manifest, FileAccess.WRITE)
+	file.store_string(JSON.stringify(compatible))
+	file.close()
+	var repaired: Dictionary = await manager.update_plugin(manifest, true)
+	check(not repaired.has("error") and manager.get_plugin_status(PLUGIN_ID).notice.is_empty(),
+		"a compatible update retires its old compatibility diagnostic")
 	panel.free()
 	manager.get_db().remove(PLUGIN_ID)
 	manager.free()
