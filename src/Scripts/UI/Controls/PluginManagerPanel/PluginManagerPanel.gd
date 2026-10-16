@@ -716,8 +716,13 @@ func _update_content_layout() -> void:
 	if _plugin_list.item_count > 0:
 		row_height = maxf(row_height, _plugin_list.get_item_rect(0).size.y)
 	_plugin_list.custom_minimum_size.y = row_height + _plugin_list.get_theme_stylebox("panel").get_minimum_size().y if stacked else 0.0
-	# Give the stacked plugin list about 30% of the pane's height.
-	left.custom_minimum_size = Vector2(0, size.y * 0.3) if stacked else Vector2(180.0 * ui_scale, 0)
+	# Keep three readable lines of details, including after the toolbar wraps.
+	var details := _content_split.get_child(1) as Control
+	details.custom_minimum_size.y = float(font_size) * 3.0 if stacked else 0.0
+	var list_height := minf(size.y * 0.3, maxf(0.0, _content_split.size.y
+		- details.custom_minimum_size.y - _content_split.get_theme_constant("separation")))
+	# Preserve the owner's 30% initial list height whenever the split has room.
+	left.custom_minimum_size = Vector2(0, list_height) if stacked else Vector2(180.0 * ui_scale, 0)
 	# Split offsets are relative to the children's expansion allocation. Keep
 	# the list at its minimum on the split axis, leaving the rest for details.
 	left.size_flags_horizontal = Control.SIZE_FILL
