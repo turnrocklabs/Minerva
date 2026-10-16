@@ -17,9 +17,13 @@ func _run() -> void:
 	assert((await registry.register_backend_tools("probe", connection)).get("ok", false))
 	var corrected = await registry.handle_tool_call_outcome("minerva_probe_canonical_decimal", {})
 	print("CORRECTION_OUTCOME: ", corrected.application)
-	# Compile-time float literals do not pass through Godot's JSON parser.
+	# Encode the independently known IEEE-754 words: GDScript's decimal literal
+	# parser can itself round this value, so a decimal literal is not an oracle.
+	var expected := PackedByteArray()
+	expected.resize(8)
+	expected.encode_u64(0, 0x3f8948b0f90591e6)
 	check("canonical decimal reaches application with exact source binary64",
-		not corrected.application.has("error") and corrected.application.get("n") == 0.012345678901234568)
+		not corrected.application.has("error") and corrected.application.get("n") == expected.decode_double(0))
 	var unsafe = await registry.handle_tool_call_outcome("minerva_probe_nested_precision_loss", {})
 	check("noncanonical nested decimal remains unsupported_number",
 		unsafe.application.get("error_code") == "unsupported_number"
