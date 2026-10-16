@@ -69,13 +69,14 @@ func _run() -> void:
 	# only this fixture's journal and registration in the shared suite profile.
 	TXN.content_done(pending)
 	var fixture_removed: bool = manager._db.remove(ID) == true
-	assert(fixture_removed and not FileAccess.file_exists(pending) and manager._db.has_plugin(ID) == false)
+	check("anti-case cleans up its own journal and fixture",
+		fixture_removed and not FileAccess.file_exists(pending) and manager._db.has_plugin(ID) == false)
 	seeding.docket_override = null
 	client.free()
 	manager.free()
 	content.close()
 	helpers.stop_http_server()
-	print("=== Results: %d passed, %d failed ===" % [2 - failed, failed])
+	print("=== Results: %d passed, %d failed ===" % [3 - failed, failed])
 	quit(1 if failed else 0)
 
 func _remove(manager, results: Array[Dictionary]) -> void:
