@@ -3,6 +3,7 @@ extends MinervaPluginPanel
 var plugin_id: String = "probe"
 var slot := SubViewport.new()
 var host := AnnotationHost.new()
+var active_slot: bool = false
 
 func _init() -> void:
 	slot.size = Vector2i(24, 12)
@@ -12,7 +13,10 @@ func get_annotation_host() -> RefCounted:
 	return host
 
 func get_viewports() -> Dictionary[String, SubViewport]:
-	return {"detail": slot}
+	var slots: Dictionary[String, SubViewport] = {"detail": slot}
+	if active_slot:
+		slots["active"] = slot
+	return slots
 
 func snapshot_extra(view: String) -> Dictionary:
 	return {"projection": view, "width": -1, "path": "wrong", "base64": "wrong", "image_base64": "wrong"}

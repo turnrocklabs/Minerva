@@ -332,6 +332,10 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
 	var check_def = PluginDef.from_manifest(manifest_path, lane)
+	if check_def != null:
+		var api_error: String = check_def.host_api_error()
+		if not api_error.is_empty():
+			return {"error": api_error}
 	# Docket content an earlier removal or install of this plugin left to
 	# finish goes first: a new install would be taken for it (as MarketplaceClient).
 	if check_def != null and load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(
@@ -439,6 +443,9 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	var def = PluginDef.from_manifest(manifest_path, lane)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
+	var api_error: String = def.host_api_error()
+	if not api_error.is_empty():
+		return {"error": api_error}
 	if not _db.has_plugin(def.id):
 		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
 	var previous_def = _db.get_by_id(def.id)
@@ -723,6 +730,13 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
+	var definition: PluginDefinition = _db.get_by_id(id)
+	if definition != null:
+		var api_error := definition.host_api_error()
+		if not api_error.is_empty():
+			_ensure_runtime(id)["notice"] = api_error
+			_transition_state(id, S_ERROR)
+			return {"error": api_error}
 	# Refused before PluginPendingUpgrade, which would take a refusal for a
 	# failed first start and roll a pending update back.
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():

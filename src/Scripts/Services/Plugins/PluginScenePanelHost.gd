@@ -78,6 +78,9 @@ static func instantiate_into(
 	if def == null:
 		return _mount_placeholder(vbox,
 			"[PluginScenePanelHost] Plugin '%s' not found in DB" % plugin_id)
+	var api_error: String = def.host_api_error()
+	if not api_error.is_empty():
+		return _mount_placeholder(vbox, api_error)
 	if plugin_manager.has_method("get_restart_required_reason"):
 		var restart_reason: String = plugin_manager.get_restart_required_reason(plugin_id)
 		if not restart_reason.is_empty():
@@ -778,7 +781,7 @@ static func _build_ctx(
 		"file_path":        file_path,
 		"associated_object": associated_object,
 		"editor":           editor,
-		"host_api_version": "1",
+		"host_api_version": PluginDefinition.HOST_API_VERSION,
 		"project_id": SingletonObject.project_identity.project_id if SingletonObject.project_identity != null else "",
 	}
 

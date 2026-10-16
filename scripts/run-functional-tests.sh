@@ -96,6 +96,8 @@ HERMETIC_TESTS=(
 	test/test_mcp_diagnostics.gd
 	test/test_preferences_verbose_logging.gd
 	test/test_plugin_manager_diagnostics.gd
+	test/test_plugin_host_api.gd
+	test/test_plugin_write_guidance.gd
 	test/test_plugin_remove_latency.gd
 	test/test_bounded_process.gd
 	test/test_mcp_loop_tracker.gd

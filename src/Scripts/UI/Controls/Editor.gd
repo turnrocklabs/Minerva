@@ -100,6 +100,7 @@ var plugin_panel_key: String = ""
 ## save_mode mirrors the manifest's panel save_mode ("host_owned" | "plugin_owned").
 ## Set during create() from the panel definition; defaults to "host_owned".
 var plugin_save_mode: String = "host_owned"
+var plugin_write_guidance: String = ""
 ## Chrome actions the plugin manifest asks Minerva to hide on this PLUGIN_SCENE tab.
 ## Each entry is one of "save_all" | "save" | "create_note" | "inject_toggle".
 ## Populated from manifest panel.chrome.suppress in create_plugin_scene().
@@ -325,6 +326,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 				for pd in def.ui_panels:
 					if pd is Dictionary and pd.get("name", "") == p_name:
 						editor.plugin_save_mode = pd.get("save_mode", "host_owned")
+						editor.plugin_write_guidance = pd.get("write_guidance", "")
 						var cs_raw: Variant = pd.get("chrome_suppress", [])
 						var cs_list: Array[String] = []
 						if cs_raw is Array:

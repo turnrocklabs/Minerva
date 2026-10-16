@@ -38,7 +38,7 @@ extends SceneTree
 const PLUGIN_MANAGER_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginManager.gd"
 const BROKER_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginScenePanelBroker.gd"
 const PLUGIN_ID := "cad"
-const PLUGIN_DIR_REL := "/github/plugins/cad"
+const PLUGIN_DIR_REL := "/github/minerva-plugins/cad"
 const BINARY_REL := "/cad-plugin"
 const MANIFEST_REL := "/manifest.json"
 

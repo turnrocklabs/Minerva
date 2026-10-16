@@ -114,14 +114,8 @@ static func _is_error(result: Dictionary) -> bool:
 	return result.has("error") or result.get("success", true) == false or result.get("ok", true) == false or result.get("isError", false) == true
 
 
-static func _is_pending(tool_name: String, result: Dictionary) -> bool:
+static func _is_pending(_tool_name: String, result: Dictionary) -> bool:
 	var payload := _payload(result)
-	# Legacy CAD exports predate status + job handles. Match the structured
-	# error kind only for that tool, never arbitrary error-message text.
-	if tool_name in ["cad.export", "minerva_cad_export", "minerva_cad_cad_export"]:
-		var error = payload.get("error")
-		if error is Dictionary and error.get("kind") == "running":
-			return true
 	if _is_error(payload):
 		return false
 	# A wait that expired with the work still unfinished is a continuation the

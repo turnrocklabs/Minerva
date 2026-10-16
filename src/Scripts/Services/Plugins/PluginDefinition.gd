@@ -4,6 +4,8 @@ extends RefCounted
 ## Plugins are supervised out-of-process services that communicate via stdio MCP transport.
 ## A plugin is defined by a manifest.json file in its directory.
 
+const HOST_API_VERSION: String = "1"
+
 # ---------------------------------------------------------------------------
 # Runtime state enum
 # ---------------------------------------------------------------------------
@@ -47,7 +49,7 @@ var name: String = ""
 ## Semantic version string (e.g. "0.1.0")
 var version: String = ""
 
-## Minimum host API version this plugin requires (currently "1")
+## Exact host API version this plugin was built for.
 var host_api_version: String = "1"
 
 ## Explicit opt-in to bounded stderr diagnostics in the Minerva log.
@@ -420,6 +422,15 @@ static func from_manifest(path: String, lane: String = "") -> PluginDefinition:
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
+
+## Compatibility is checked at install/start, not while loading saved records.
+func host_api_error() -> String:
+	if host_api_version == HOST_API_VERSION:
+		return ""
+	return ("Plugin '%s' v%s was built for Minerva host API %s; this Minerva provides host API %s. "
+		+ "Update it from the Marketplace, or reinstall from a manifest built for API %s.") % [
+		id, version, host_api_version, HOST_API_VERSION, HOST_API_VERSION]
+
 
 ## Serialize to a Dictionary (for JSON persistence in plugins.json).
 func to_dict() -> Dictionary:
@@ -1112,6 +1123,10 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 					"allowed": ["host_owned", "plugin_owned", "none"]},
 			}
 		result["save_mode"] = save_mode
+	var write_guidance: Variant = panel.get("write_guidance", "")
+	if not write_guidance is String:
+		return {"error": "panel_write_guidance_not_string", "detail": {"name": panel_name}}
+	result["write_guidance"] = write_guidance
 
 	# --- chrome (optional) — Editor-tab chrome contract for PLUGIN_SCENE ---
 	# Schema: {"suppress": [<action>, ...]} where each action is one of

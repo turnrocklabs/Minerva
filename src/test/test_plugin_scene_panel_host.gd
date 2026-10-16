@@ -144,6 +144,8 @@ class StubPluginDef extends RefCounted:
 	## Dictionary {name, kind, entry_scene, scripts, ipc_channels, ...} (typed).
 	var ui_panels: Array = []
 	var state: int = 2  # PluginDefinition.State.RUNNING
+	func host_api_error() -> String:
+		return ""
 
 
 ## Stub PluginDB that returns a pre-configured def.

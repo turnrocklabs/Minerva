@@ -137,7 +137,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_list_editors",
-		"List all open editor tabs with live document/view identity, supported document operations, and CAD whole-document write guidance.",
+		"List all open editor tabs with live document/view identity and supported document operations. Structured plugin documents advertise write_guidance; follow it.",
 		{
 			"type": "object",
 			"properties": {},
