@@ -65,6 +65,11 @@ func _run() -> void:
 		stuck.get("error") == "content_repair_pending" and direct.has("error")
 		and FileAccess.file_exists(pending) and "restart Minerva" in message
 		and "delete" not in message and "content-pending" not in message)
+	# The assertion above proves refusal preserves the journal. Teardown owns
+	# only this fixture's journal and registration in the shared suite profile.
+	TXN.content_done(pending)
+	var fixture_removed: bool = manager._db.remove(ID) == true
+	assert(fixture_removed and not FileAccess.file_exists(pending) and manager._db.has_plugin(ID) == false)
 	seeding.docket_override = null
 	client.free()
 	manager.free()
