@@ -67,7 +67,8 @@ func _register_fixture_tools(manager, server, fixture: Dictionary) -> void:
 
 func _run() -> void:
 	await process_frame
-	var manager = SingletonObject.get_mcp_manager()
+	# Resolve the autoload at runtime for the --script runner.
+	var manager = root.get_node("SingletonObject").get_mcp_manager()
 	check("MCP manager is available", manager != null)
 	if manager == null:
 		quit(1)
