@@ -83,8 +83,9 @@ func _run() -> void:
 	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(FIXTURE))
 	_register_fixture_tools(manager, server, fixture)
 	var skill_module = null
+	var skill_script = load("res://Scripts/Services/MCP/Modules/MCPSkillTools.gd")
 	for module in server._modules:
-		if module is MCPSkillTools:
+		if module.get_script() == skill_script:
 			skill_module = module
 			break
 	check("real skill module is registered", skill_module != null)
