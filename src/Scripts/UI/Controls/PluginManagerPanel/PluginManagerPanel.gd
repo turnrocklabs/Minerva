@@ -721,7 +721,7 @@ func _update_content_layout() -> void:
 	details.custom_minimum_size.y = float(font_size) * 3.0 if stacked else 0.0
 	var list_height := minf(size.y * 0.3, maxf(0.0, _content_split.size.y
 		- details.custom_minimum_size.y - _content_split.get_theme_constant("separation")))
-	# Preserve the owner's 30% initial list height whenever the split has room.
+	# Use 30% of the pane for the list whenever the split leaves room for the details.
 	left.custom_minimum_size = Vector2(0, list_height) if stacked else Vector2(180.0 * ui_scale, 0)
 	# Split offsets are relative to the children's expansion allocation. Keep
 	# the list at its minimum on the split axis, leaving the rest for details.
