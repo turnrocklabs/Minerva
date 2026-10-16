@@ -312,6 +312,12 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# Holds the staging lock from here to the end of the install (released by
 	# install_from_url); waiting for another process's install is cancellable.
 	op.enter(PluginInstallOperation.STAGE_WAIT)
+	# Removal needs this same lock to commit. Wait for its live cleanup before
+	# taking the install lock; a leftover repair record alone never means busy.
+	while installer != null and installer.has_method("is_content_busy") and installer.is_content_busy(plugin_id):
+		if op.cancelled:
+			return _err("cancelled", {})
+		await get_tree().process_frame
 	var entered: Dictionary = await txn.enter(ProjectSettings.globalize_path(STAGING_DIR), db, op, get_tree())
 	if not entered.is_empty():
 		return entered
@@ -726,11 +732,10 @@ static func format_install_error(result: Dictionary) -> String:
 			cause = str(detail_dict.get("reason", "An unfinished install left files Minerva could not restore."))
 			hint = "Resolve that first (restart Minerva to retry automatically), then install again. Nothing was changed."
 		"content_repair_pending":
-			title = "An earlier install of this plugin has not put its skills and knowledge back yet"
-			cause = "Putting back the skills and knowledge of an earlier install has not finished: %s." % "; ".join(
+			title = "This plugin's skills or knowledge still need cleanup"
+			cause = "An earlier install or removal could not finish: %s." % "; ".join(
 				PackedStringArray(detail_dict.get("reasons", [])))
-			hint = "Fix that, then install again: the repair runs first. To give it up instead, delete %s and install again: those skills and knowledge stay as they are now, and any text of yours it was holding to put back is lost. Nothing was changed." % ", ".join(
-				PackedStringArray(detail_dict.get("paths", [])))
+			hint = "Make sure Docket is running and its projects are available, then restart Minerva and try installing again. Nothing was changed."
 		"staging_failed":
 			title = "Could not prepare the install"
 			cause = "Minerva could not write its install record in %s." % str(detail_dict.get("dir", "?"))

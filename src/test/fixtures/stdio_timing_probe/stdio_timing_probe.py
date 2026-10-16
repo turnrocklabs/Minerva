@@ -103,6 +103,9 @@ TOOLS = [
     {"name": "nested_precision_loss",
      "description": "Returns a lossy number only inside a JSON text part.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "canonical_decimal",
+     "description": "Returns a canonical decimal Godot rounds by multiple ULPs.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
     {"name": "scalar_precision_loss",
      "description": "Returns an unsafe integer as the entire JSON text part.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
@@ -253,6 +256,9 @@ async def handle_tools_call(req_id, name, args):
         await send_raw('{"jsonrpc":"2.0","id":%s,"error":'
                        '{"code":-32000,"message":"fixture error","data":'
                        '{"n":0.10000000000000001}}}' % json.dumps(req_id))
+
+    elif name == "canonical_decimal":
+        await send(_text_result(req_id, {"n": 0.012345678901234568}))
 
     elif name == "nested_precision_loss":
         await send_raw('{"jsonrpc":"2.0","id":%s,"result":'
