@@ -719,16 +719,15 @@ func _update_content_layout() -> void:
 	# Keep three readable lines of details, including after the toolbar wraps.
 	var details := _content_split.get_child(1) as Control
 	details.custom_minimum_size.y = float(font_size) * 3.0 if stacked else 0.0
-	var list_height := minf(size.y * 0.3, maxf(0.0, _content_split.size.y
-		- details.custom_minimum_size.y - _content_split.get_theme_constant("separation")))
-	# Use 30% of the pane for the list whenever the split leaves room for the details.
-	left.custom_minimum_size = Vector2(0, list_height) if stacked else Vector2(180.0 * ui_scale, 0)
-	# Split offsets are relative to the children's expansion allocation. Keep
-	# the list at its minimum on the split axis, leaving the rest for details.
+	left.custom_minimum_size = Vector2.ZERO if stacked else Vector2(180.0 * ui_scale, 0)
+	# Split offsets add to the list's natural row minimum. Prefer 30% of the
+	# pane, letting the split clamp that preference to the details' minimum.
 	left.size_flags_horizontal = Control.SIZE_FILL
 	left.size_flags_vertical = Control.SIZE_FILL if stacked else Control.SIZE_EXPAND_FILL
-	if changed:
-		_content_split.split_offset = 0 if stacked else int(40.0 * ui_scale)
+	if stacked:
+		_content_split.split_offset = maxi(0, int(size.y * 0.3 - left.get_combined_minimum_size().y))
+	elif changed:
+		_content_split.split_offset = int(40.0 * ui_scale)
 	# Two lines at the active theme size; longer diagnostics scroll vertically.
 	_status_label.custom_minimum_size.y = _status_label.get_line_height() * 2 + 12.0 * ui_scale
 
