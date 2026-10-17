@@ -90,6 +90,7 @@ var _start_button: Button = null
 var _stop_button: Button = null
 var _restart_button: Button = null
 var _reload_button: Button = null
+var _revert_button: Button = null
 var _autostart_check: CheckButton = null
 var _auto_reload_check: CheckButton = null
 var _auto_update_check: CheckButton = null
@@ -372,6 +373,12 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_reload_button.tooltip_text = "Kill, recompile/reinitialise, and restart the plugin to pick up code changes"
 	_reload_button.pressed.connect(_on_reload_pressed)
 	btn_row2.add_child(_reload_button)
+	_revert_button = Button.new()
+	_revert_button.name = "RevertPluginGeneration"
+	_revert_button.text = "Revert to previous version"
+	_revert_button.pressed.connect(_on_revert_pressed)
+	_revert_button.visible = false
+	btn_row2.add_child(_revert_button)
 
 	_panel_button = Button.new()
 	_panel_button.text = "Open Panel"
@@ -961,6 +968,9 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var state: int = status.get("state", PluginDefinition.State.INSTALLED)
 	var state_name: String = status.get("state_name", "UNKNOWN")
 	_detail_status_label.text = state_name
+	var live_status: Dictionary = status.get("live_reload", {})
+	if not str(live_status.get("message", "")).is_empty():
+		_detail_status_label.text += " — " + str(live_status.message)
 	if not str(status.get("notice", "")).is_empty():
 		_detail_status_label.text += " — " + str(status.notice)
 	_detail_status_label.tooltip_text = _detail_status_label.text
@@ -987,6 +997,11 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting) or is_building
+	var live_reload := pm.supports_scene_live_reload(plugin_id)
+	_reload_button.text = "Retry live reload" if live_reload and live_status.get("restart_pending", false) else "Reload"
+	_reload_button.tooltip_text = "Swap scene code and preserve unsaved state" if live_reload else "Restart the plugin backend to load changed code"
+	_revert_button.visible = live_reload
+	_revert_button.disabled = is_building
 	# A required plugin can be stopped and kept from starting, not removed.
 	_remove_button.visible = not is_required
 
@@ -1394,9 +1409,25 @@ func _on_reload_pressed() -> void:
 	_reload_button.disabled = true
 	if _files_changed_label:
 		_files_changed_label.visible = false
-	var result: Dictionary = await _pm().restart_plugin(_selected_plugin_id)
+	var result: Dictionary
+	if _pm().supports_scene_live_reload(_selected_plugin_id):
+		result = await _pm().reload_scene_plugin(_selected_plugin_id)
+		_show_status(str(result.get("message", result.get("error", "Live reload refused"))))
+	else:
+		result = await _pm().restart_plugin(_selected_plugin_id)
 	_reload_button.disabled = false
-	_report_lifecycle_result("Reload", _selected_plugin_id, result)
+	if not _pm().supports_scene_live_reload(_selected_plugin_id):
+		_report_lifecycle_result("Reload", _selected_plugin_id, result)
+	_refresh_plugin_list()
+
+
+func _on_revert_pressed() -> void:
+	if _selected_plugin_id.is_empty():
+		return
+	_revert_button.disabled = true
+	var result: Dictionary = await _pm().revert_scene_plugin(_selected_plugin_id)
+	_show_status(str(result.get("message", result.get("error", "Revert refused"))))
+	_revert_button.disabled = false
 	_refresh_plugin_list()
 
 

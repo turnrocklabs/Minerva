@@ -141,6 +141,8 @@ HERMETIC_TESTS=(
 	test/test_plugin_live_swap_store.gd
 	test/test_plugin_live_swap.gd
 	test/test_plugin_live_reload.gd
+	test/test_plugin_generation_cleanup.gd
+	test/test_plugin_live_actions.gd
 	test/test_marketplace_install_from_url.gd
 	test/test_plugin_downloader.gd
 	test/test_marketplace_install_transaction.gd

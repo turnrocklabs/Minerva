@@ -134,6 +134,7 @@ func get_tool_definitions() -> Array:
 		_get_plugin_stop_tool_def(),
 		_get_plugin_restart_tool_def(),
 		_get_plugin_reload_tool_def(),
+		_get_plugin_revert_tool_def(),
 		_get_plugin_inspect_tool_def(),
 		_get_plugin_state_tool_def(),
 		_get_plugin_help_tool_def(),
@@ -170,6 +171,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return await _handle_plugin_restart(args)
 		"minerva_plugin_reload":
 			return await _handle_plugin_reload(args)
+		"minerva_plugin_revert":
+			return await _handle_plugin_revert(args)
 		"minerva_plugin_inspect":
 			return _handle_plugin_inspect(args)
 		"minerva_plugin_state":
@@ -375,7 +378,7 @@ func _get_plugin_restart_tool_def() -> Dictionary:
 func _get_plugin_reload_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_reload",
-		"description": "Reload a plugin after code changes — kill the current process, recompile/reinitialise, and reconnect. Use this when you have modified the plugin's source files and want Minerva to pick up the new code. Semantically different from restart (process misbehaving) — reload means 'I changed the code, load the new version'.",
+		"description": "Load changed plugin code. Opt-in live_reload scene plugins swap their panels while preserving unsaved state; other plugins restart their backend. Use minerva_plugin_restart to restart an opt-in plugin's backend process.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -387,6 +390,13 @@ func _get_plugin_reload_tool_def() -> Dictionary:
 			"required": ["id"]
 		}
 	}
+
+
+func _get_plugin_revert_tool_def() -> Dictionary:
+	var definition := _get_plugin_reload_tool_def()
+	definition.name = "minerva_plugin_revert"
+	definition.description = "Restore an opt-in live_reload plugin's retained previous scene version, preserving current user data and unsaved state. Refuses if no previous version exists. After a marketplace update this may require an application restart to finish; inspect the returned status."
+	return definition
 
 
 func _get_plugin_state_tool_def() -> Dictionary:
@@ -659,6 +669,11 @@ func _handle_plugin_reload(args: Dictionary) -> Dictionary:
 	var plugin_manager = _get_plugin_manager()
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
+	if plugin_manager.supports_scene_live_reload(str(id)):
+		var reply: Dictionary = await plugin_manager.reload_scene_plugin(str(id))
+		reply["success"] = reply.get("ok", false)
+		reply["status"] = plugin_manager.get_plugin_status(str(id))
+		return reply
 
 	# Reload == restart, but semantically signals "code was changed".
 	# Returns status after restart so the caller can confirm the new process is up.
@@ -672,6 +687,19 @@ func _handle_plugin_reload(args: Dictionary) -> Dictionary:
 		"message": "Plugin '%s' reloaded successfully." % id,
 		"status": status,
 	}
+
+
+func _handle_plugin_revert(args: Dictionary) -> Dictionary:
+	var id := str(args.get("id", ""))
+	if id.is_empty():
+		return {"error": "id is required"}
+	var manager: PluginManager = _get_plugin_manager()
+	if manager == null:
+		return {"error": "Plugin manager not available"}
+	var reply: Dictionary = await manager.revert_scene_plugin(id)
+	reply["success"] = reply.get("ok", false)
+	reply["status"] = manager.get_plugin_status(id)
+	return reply
 
 
 func _handle_plugin_inspect(args: Dictionary) -> Dictionary:

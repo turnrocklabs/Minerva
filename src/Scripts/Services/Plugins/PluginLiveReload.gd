@@ -6,6 +6,7 @@ const Store := preload("res://Scripts/Services/Plugins/PluginGenerationStore.gd"
 const Swap := preload("res://Scripts/Services/Plugins/PluginLiveSwap.gd")
 const Host := preload("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
 const Atomic := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
+const Cleanup := preload("res://Scripts/Services/Plugins/PluginGenerationCleanup.gd")
 const InstallTransaction := preload("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
 var _manager: Object
 var _broker: PluginScenePanelBroker
@@ -56,7 +57,7 @@ func _result(plugin_id: String, reply: Dictionary, installed: bool = false) -> D
 		if not previous.get("restart_pending", false):
 			push_warning("[PluginLiveReload] Backend/panel version mismatch: " + message)
 	_status[plugin_id] = {"ok": reply.get("ok", false), "message": message,
-		"restart_pending": installed and not reply.get("ok", false)}
+		"restart_pending": reply.get("restart_pending", installed and not reply.get("ok", false))}
 	if not reply.get("ok", false):
 		push_warning("[PluginLiveReload] " + message)
 		if _notify.is_valid():
@@ -206,7 +207,7 @@ func resolve(plugin_id: String, panel_name: String) -> Dictionary:
 	return _result(plugin_id, {"ok": false, "error": "Panel absent from selected build: " + panel_name})
 
 
-func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = false) -> Dictionary:
+func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = false, preserve_pending: bool = false) -> Dictionary:
 	if not supports(plugin_id):
 		return {"ok": false, "error": "Plugin has not opted into live reload"}
 	var machine := _machine(plugin_id)
@@ -260,12 +261,65 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 		if not checked.get("ok", false):
 			return _result(plugin_id, checked, installed)
 	var reply := await machine.swap(build, entries, _wire, _retire)
-	if reply.get("ok", false):
+	if reply.get("ok", false) and not preserve_pending:
 		var pending_path := _pending_path(machine)
 		if pending_path.is_empty() or not Atomic.write(pending_path, "{}"):
 			reply["message"] = "Live reload complete; pending-update metadata could not be cleared"
 			push_warning("[PluginLiveReload] " + str(reply.message))
+	if reply.get("ok", false):
+		var cleaned := _cleanup(machine)
+		if not cleaned.get("ok", false):
+			reply["message"] = "Live reload complete; " + str(cleaned.error)
+			push_warning("[PluginLiveReload] " + str(reply.message))
 	return _result(plugin_id, reply, installed)
+
+
+func revert(plugin_id: String) -> Dictionary:
+	if not supports(plugin_id):
+		return _result(plugin_id, {"ok": false, "error": "Plugin has not opted into live reload"})
+	var machine := _machine(plugin_id)
+	var initialized := _ensure_current(plugin_id, machine)
+	if not initialized.get("ok", false):
+		return _result(plugin_id, initialized)
+	var previous := str(machine.record.get("lkg", ""))
+	if previous.is_empty():
+		return _result(plugin_id, {"ok": false, "error": "No retained previous scene version"})
+	var build := machine.store.read_archive(previous)
+	if not build.get("ok", false):
+		return _result(plugin_id, build)
+	var marketplace := _definition(plugin_id).install_lane == PluginDefinition.LANE_MARKETPLACE
+	if marketplace:
+		var installed := _capture_installed(plugin_id, machine)
+		var pending_digest := str(machine.record.active)
+		if installed.get("ok", false):
+			var archived := machine.store.archive(installed)
+			if not archived.get("ok", false):
+				return _result(plugin_id, archived)
+			pending_digest = str(installed.digest)
+		var pending_path := _pending_path(machine)
+		if pending_path.is_empty() or not Atomic.write(pending_path, JSON.stringify({"digest": pending_digest})):
+			return _result(plugin_id, {"ok": false, "error": "Cannot retain installed update for restart"})
+	var reply := await reload(plugin_id, build, false, marketplace)
+	if reply.get("ok", false):
+		reply["restart_pending"] = marketplace
+		reply["message"] = "Previous scene version restored"
+		if marketplace:
+			reply.message = "Previous scene restored; backend remains the installed version. Restart to finish the installed update."
+		return _result(plugin_id, reply)
+	return reply
+
+
+func _cleanup(machine: PluginLiveSwap) -> Dictionary:
+	var pending_digest := ""
+	var path := _pending_path(machine)
+	if path.is_empty():
+		return {"ok": false, "error": "Generation cleanup refused linked pending metadata"}
+	if FileAccess.file_exists(path):
+		var pending: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if pending is Dictionary:
+			var pending_record: Dictionary = pending
+			pending_digest = str(pending_record.get("digest", ""))
+	return Cleanup.collect(machine.store, machine.record, pending_digest)
 
 
 func _wire(entry: Dictionary, panel: Control, first_load: bool) -> bool:

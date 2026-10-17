@@ -2187,6 +2187,10 @@ func activate_live_plugin_update(id: String) -> Dictionary:
 	return await _scene_reload_service().call("activate_update", id)
 
 
+func revert_scene_plugin(id: String) -> Dictionary:
+	return await _scene_reload_service().call("revert", id)
+
+
 func finish_live_plugin_update(id: String) -> void:
 	if _scene_reload != null:
 		_scene_reload.call("finish_update", id)
