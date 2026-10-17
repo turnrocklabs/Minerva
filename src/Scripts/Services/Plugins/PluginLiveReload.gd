@@ -6,6 +6,7 @@ const Store := preload("res://Scripts/Services/Plugins/PluginGenerationStore.gd"
 const Swap := preload("res://Scripts/Services/Plugins/PluginLiveSwap.gd")
 const Host := preload("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
 const Atomic := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
+const InstallTransaction := preload("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
 var _manager: Object
 var _broker: PluginScenePanelBroker
 var _notify: Callable
@@ -209,6 +210,8 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 	if not supports(plugin_id):
 		return {"ok": false, "error": "Plugin has not opted into live reload"}
 	var machine := _machine(plugin_id)
+	if _staged.has(plugin_id) or _install_pending(plugin_id):
+		return _result(plugin_id, {"ok": false, "error": "Scene reload waits for the installed backend to commit"}, installed)
 	var current_status: Dictionary = _status.get(plugin_id, {})
 	var pending: bool = current_status.get("restart_pending", false)
 	installed = installed or pending
@@ -241,6 +244,10 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 				selected = definition
 		if selected.is_empty():
 			return _result(plugin_id, {"ok": false, "error": "Updated build omits an open panel"}, installed)
+		var editor: Object = entry.editor
+		if is_instance_valid(editor) and editor.has_method("accepts_scene_panel_definition") \
+			and not editor.call("accepts_scene_panel_definition", selected):
+			return _result(plugin_id, {"ok": false, "error": "Restart to update: open panel save or chrome policy changed"}, installed)
 		entry["panel_definition"] = selected
 		entry["old_panel_definition"] = selected
 		for old_definition: Dictionary in old_definitions:
@@ -310,7 +317,15 @@ func _retire(panel: Control) -> void:
 
 func can_replace(plugin_id: String) -> Dictionary:
 	return {"error": "reload_in_progress", "message": "Wait for live reload to finish"} \
-		if _machine(plugin_id).busy else {"ok": true}
+		if _machine(plugin_id).busy or _staged.has(plugin_id) else {"ok": true}
+
+
+func _install_pending(plugin_id: String) -> bool:
+	return InstallTransaction.pending_for(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), plugin_id) != null
+
+
+func finish_update(plugin_id: String) -> void:
+	_staged.erase(plugin_id)
 
 
 ## Stage before installation changes files. A crash only admits this pending
@@ -320,7 +335,7 @@ func stage_update(plugin_id: String, candidate_directory: String) -> Dictionary:
 	if source != source.simplify_path() or Store._has_link(source):
 		return {"ok": false, "error": "Update staging path must be canonical and contain no symlinks"}
 	var machine := _machine(plugin_id)
-	if machine.busy:
+	if machine.busy or _staged.has(plugin_id):
 		return {"ok": false, "error": "Live reload is already preparing"}
 	var initialized := _ensure_current(plugin_id, machine)
 	if not initialized.get("ok", false):
@@ -355,6 +370,9 @@ func activate_update(plugin_id: String) -> Dictionary:
 
 
 func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
+	if _install_pending(plugin_id):
+		_result(plugin_id, {"ok": false, "error": "Installed backend awaits its first successful start"}, true)
+		return
 	var path := _pending_path(machine)
 	if path.is_empty():
 		_result(plugin_id, {"ok": false, "error": "Pending-update symlink refused"}, true)

@@ -2187,6 +2187,11 @@ func activate_live_plugin_update(id: String) -> Dictionary:
 	return await _scene_reload_service().call("activate_update", id)
 
 
+func finish_live_plugin_update(id: String) -> void:
+	if _scene_reload != null:
+		_scene_reload.call("finish_update", id)
+
+
 func repoint_live_panel(id: String, panel_key: String, root: Control) -> void:
 	for entry: Dictionary in _live_scene_panels.get(id, []):
 		if str(entry.get("panel_key", "")) == panel_key:

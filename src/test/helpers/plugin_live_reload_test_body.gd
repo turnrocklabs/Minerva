@@ -45,6 +45,10 @@ func _fixture(plugin_id: String, version: int, directory: String = "") -> String
 
 func _run() -> void:
 	await get_tree().create_timer(3.0).timeout
+	if "--live-integration-baseline" in OS.get_cmdline_user_args():
+		print("BASELINE_DONE")
+		completed.emit(0)
+		return
 	get_tree().create_timer(90.0).timeout.connect(func() -> void: completed.emit(1))
 	manager = PluginManager.new()
 	manager._db = PluginDB.new()
@@ -98,6 +102,15 @@ func _run() -> void:
 		_assert_wiring(version)
 		check(await conn.refresh_tools() == OK and conn.tools.size() == 2
 			and registry.get_plugin_tools(IDS[0]) == tools_before, "tools/list and installation catalog remain exactly once")
+	_fixture(IDS[0], 5)
+	var changed_policy_path := "user://plugins/" + IDS[0] + "/manifest.json"
+	var changed_policy: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(changed_policy_path))
+	changed_policy.ui.panels[0].save_mode = "none"
+	_write(changed_policy_path, JSON.stringify(changed_policy))
+	var policy_refusal: Dictionary = await manager.reload_scene_plugin(IDS[0])
+	check(not policy_refusal.get("ok", true) and str(policy_refusal.error).contains("policy changed")
+		and editors[0].plugin_scene_root.VERSION == 4 and editors[0].plugin_save_mode == "host_owned", "incompatible save policy refuses without changing current tabs")
+	_fixture(IDS[0], 4)
 	# Change document attachment in the actual preparation frame window.
 	var changed_buffer: DocumentBuffer = DocumentRegistry.get_instance().create_unbacked_buffer().buffer
 	changed_buffer.apply_edit("unsaved buffer 0")
@@ -171,7 +184,8 @@ func _run() -> void:
 	var protected_path := "user://live-reload-protected.txt"
 	_write(protected_path, "unrelated document remains exact")
 	var pending_tmp := store.directory.path_join("pending-install.json.tmp")
-	check(DirAccess.create_link(ProjectSettings.globalize_path(protected_path), pending_tmp) == OK, "create actual linked pending metadata temp")
+	var metadata_dir := DirAccess.open(store.directory)
+	check(metadata_dir.create_link(ProjectSettings.globalize_path(protected_path), pending_tmp) == OK, "create actual linked pending metadata temp")
 	var linked_stage: Dictionary = manager.stage_live_plugin_update(IDS[0], staged_dir)
 	check(not linked_stage.get("ok", true) and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact", "staging refuses temp symlink without truncating unrelated document")
 	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false)
@@ -197,6 +211,7 @@ func _run() -> void:
 		and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "fresh service boot rejects loaded-lifecycle fault and retains selected old build")
 	boot.free()
 	manager.get_db().remove(closed_id)
+	await _marketplace_race()
 	for index: int in buffers.size():
 		check(buffers[index].text == "unsaved buffer %d" % index and buffers[index].dirty, "newer buffer text remains untouched")
 	conn.disconnect_from_server()
@@ -256,6 +271,71 @@ func _publication_fault(plugin_id: String, _key: String) -> void:
 	_write(path.path_join("occupied"), "fault")
 	blocked = true
 	block_publication = false
+
+
+func _marketplace_race() -> void:
+	var plugin_id := "live_install_race"
+	var directory := _fixture(plugin_id, 1)
+	DirAccess.rename_absolute(directory.path_join("nested/Dependency.gd"), directory.path_join("Dependency.gd"))
+	_write(directory.path_join("Panel.gd"), FileAccess.get_file_as_string(directory.path_join("Panel.gd")).replace("nested/Dependency.gd", "Dependency.gd"))
+	_write(directory.path_join("late_fail.py"), "import time\ntime.sleep(3)\nraise SystemExit(1)\n")
+	var path := directory.path_join("manifest.json")
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
+	manifest.backend.args = ["late_fail.py"]
+	manifest.ui.panels[0].scripts = ["Panel.gd", "Dependency.gd"]
+	_write(path, JSON.stringify(manifest))
+	var definition: PluginDefinition = manager.get_db().install(path)
+	check(definition != null, "real marketplace-race plugin installs")
+	definition.auto_reload = true
+	definition.state = PluginDefinition.State.RUNNING
+	var editor := Editor.create_plugin_scene(plugin_id, "main")
+	add_child(editor)
+	await get_tree().process_frame
+	var old_root: int = editor.plugin_scene_root.get_instance_id()
+	var store := Store.new(plugin_id)
+	var selector := FileAccess.get_file_as_bytes(store.selector_path())
+	var staged := _fixture(plugin_id, 2, "user://race-archive-source")
+	# Keep manifest/backend bytes identical; only scene code changes.
+	_write(staged.path_join("manifest.json"), JSON.stringify(manifest))
+	_write(staged.path_join("late_fail.py"), FileAccess.get_file_as_string(directory.path_join("late_fail.py")))
+	# These autoload-aware fixture classes are loaded after project startup.
+	var helpers = load("res://test/marketplace_test_helpers.gd").new(get_tree())
+	var serve := ProjectSettings.globalize_path("user://race-archive-http")
+	DirAccess.make_dir_recursive_absolute(serve)
+	# Shared packer handles flat files. This fixture's one relative dependency
+	# is flattened before packaging, preserving the same scene contract.
+	DirAccess.rename_absolute(staged.path_join("nested/Dependency.gd"), staged.path_join("Dependency.gd"))
+	_write(staged.path_join("Panel.gd"), FileAccess.get_file_as_string(staged.path_join("Panel.gd")).replace("nested/Dependency.gd", "Dependency.gd"))
+	manifest.ui.panels[0].scripts = ["Panel.gd", "Dependency.gd"]
+	_write(staged.path_join("manifest.json"), JSON.stringify(manifest))
+	check(helpers.pack_plugin_dir(ProjectSettings.globalize_path(staged), serve.path_join("plugin.tar.gz")), "pack actual marketplace archive")
+	var listener := TCPServer.new()
+	check(listener.listen(0, "127.0.0.1") == OK, "reserve free HTTP port")
+	var port := listener.get_local_port()
+	listener.stop()
+	check(await helpers.start_http_server(serve, port), "real HTTP archive server starts")
+	var client := MarketplaceClient.new()
+	add_child(client)
+	var operation = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
+	operation.start_after_install = true
+	operation.stage_changed.connect(func(stage: String) -> void:
+		if stage == "start":
+			_try_install_watch.call_deferred(plugin_id, editor, old_root, selector))
+	var installed: Dictionary = await client.install_from_url("http://127.0.0.1:%d/plugin.tar.gz" % port, manager, true, operation)
+	check(not installed.get("ok", true) and installed.error == "start_failed", "actual delayed backend failure rolls installation back")
+	check(editor.plugin_scene_root.get_instance_id() == old_root and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "failed install never publishes new scene or replaces old root")
+	check((await manager.reload_scene_plugin(plugin_id)).get("ok", false), "install exclusion releases after real rollback")
+	editor.free()
+	manager.get_db().remove(plugin_id)
+	client.free()
+	helpers.teardown()
+
+
+func _try_install_watch(plugin_id: String, editor: Editor, old_root: int, selector: PackedByteArray) -> void:
+	manager._pending_changed_paths[plugin_id] = ["user://plugins/" + plugin_id + "/Panel.gd"]
+	await manager._on_reload_debounce_expired(plugin_id)
+	check(editor.plugin_scene_root.get_instance_id() == old_root
+		and FileAccess.get_file_as_bytes(Store.new(plugin_id).selector_path()) == selector, "watcher during actual backend startup retains exact pre-install generation")
 
 
 func check(condition: bool, label: String) -> void:

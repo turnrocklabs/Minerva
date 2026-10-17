@@ -226,6 +226,10 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		return _err("staging_failed", {"dir": staging_root})
 	op.staging_dir = txn.op_dir
 	var result := await _install(tarball_url, installer, auto_confirm_skills, op, expected, txn)
+	var live_owner: Object = installer
+	if op.get_meta("live_scene_staged", false) and live_owner != null and live_owner.has_method("finish_live_plugin_update"):
+		live_owner.call("finish_live_plugin_update", op.plugin_id)
+		op.remove_meta("live_scene_staged")
 	txn.leave()
 	# An incomplete rollback keeps the operation (and its backup) for a later
 	# recovery pass.
@@ -308,6 +312,8 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		live_stage = live_installer.call("stage_live_plugin_update", plugin_id, extract_abs)
 		if not live_stage.get("ok", false):
 			return _err("live_reload_staging_refused", live_stage)
+		if live_stage.get("staged", false):
+			op.set_meta("live_scene_staged", true)
 
 	# --- 5. Replace user://plugins/<id>/, keeping the old copy until the new
 	# registration is saved (PluginInstallTransaction) ---

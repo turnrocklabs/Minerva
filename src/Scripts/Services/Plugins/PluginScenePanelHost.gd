@@ -107,6 +107,9 @@ static func instantiate_into(
 			return _mount_placeholder(vbox, str(generation.get("error", "Scene generation refused")))
 		data_dir = str(generation.directory)
 		panel_def = generation.panel
+		var live_editor: Object = editor
+		if live_editor != null and live_editor.has_method("apply_scene_panel_definition"):
+			live_editor.call("apply_scene_panel_definition", panel_def)
 	if panel_def.is_empty():
 		return _mount_placeholder(vbox,
 			(("[PluginScenePanelHost] Panel '%s' not found in plugin '%s' typed panel definitions. " +

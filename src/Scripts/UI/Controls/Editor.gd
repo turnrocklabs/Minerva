@@ -843,6 +843,21 @@ func discard_plugin_surface_actions(surface: Control) -> void:
 	surface.remove_meta("_minerva_editor_actions")
 
 
+func accepts_scene_panel_definition(definition: Dictionary) -> bool:
+	return plugin_save_mode == str(definition.get("save_mode", "host_owned")) \
+		and plugin_write_guidance == str(definition.get("write_guidance", "")) \
+		and plugin_chrome_suppress == definition.get("chrome_suppress", [])
+
+
+func apply_scene_panel_definition(definition: Dictionary) -> void:
+	plugin_save_mode = str(definition.get("save_mode", "host_owned"))
+	plugin_write_guidance = str(definition.get("write_guidance", ""))
+	var suppressed: Array = definition.get("chrome_suppress", [])
+	plugin_chrome_suppress.assign(suppressed)
+	if is_node_ready():
+		_apply_plugin_chrome_visibility()
+
+
 func _try_mount_plugin_annotation_dock() -> void:
 	if type != Type.PLUGIN_SCENE or plugin_scene_root == null:
 		return
