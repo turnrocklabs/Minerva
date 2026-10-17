@@ -1407,18 +1407,19 @@ func _on_restart_pressed() -> void:
 func _on_reload_pressed() -> void:
 	if _selected_plugin_id.is_empty():
 		return
+	var manager: PluginManager = _pm()
 	_show_status("Reloading %s..." % _selected_plugin_id)
 	_reload_button.disabled = true
 	if _files_changed_label:
 		_files_changed_label.visible = false
 	var result: Dictionary
-	if _pm().supports_scene_live_reload(_selected_plugin_id):
-		result = await _pm().reload_scene_plugin(_selected_plugin_id)
+	if manager.supports_scene_live_reload(_selected_plugin_id):
+		result = await manager.reload_scene_plugin(_selected_plugin_id)
 		_show_status(str(result.get("message", result.get("error", "Live reload refused"))))
 	else:
-		result = await _pm().restart_plugin(_selected_plugin_id)
+		result = await manager.restart_plugin(_selected_plugin_id)
 	_reload_button.disabled = false
-	if not _pm().supports_scene_live_reload(_selected_plugin_id):
+	if not manager.supports_scene_live_reload(_selected_plugin_id):
 		_report_lifecycle_result("Reload", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
@@ -1426,8 +1427,9 @@ func _on_reload_pressed() -> void:
 func _on_revert_pressed() -> void:
 	if _selected_plugin_id.is_empty():
 		return
+	var manager: PluginManager = _pm()
 	_revert_button.disabled = true
-	var result: Dictionary = await _pm().revert_scene_plugin(_selected_plugin_id)
+	var result: Dictionary = await manager.revert_scene_plugin(_selected_plugin_id)
 	_show_status(str(result.get("message", result.get("error", "Revert refused"))))
 	_revert_button.disabled = false
 	_refresh_plugin_list()

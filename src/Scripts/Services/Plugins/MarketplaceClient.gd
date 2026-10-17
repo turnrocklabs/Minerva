@@ -360,8 +360,9 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	op.enter(PluginInstallOperation.STAGE_REGISTER)
 	# Consent, lock acquisition and reconciliation can yield. Recheck after
 	# them; no await separates this admission from the replacing journal.
-	if installer != null and installer.has_method("can_replace_plugin_files"):
-		var replacement: Dictionary = installer.can_replace_plugin_files(plugin_id)
+	var replacement_owner: Object = installer
+	if replacement_owner != null and replacement_owner.has_method("can_replace_plugin_files"):
+		var replacement: Dictionary = replacement_owner.call("can_replace_plugin_files", plugin_id)
 		if replacement.has("error"):
 			return _err("restart_required", replacement)
 	_ensure_dir(PLUGINS_DIR)
