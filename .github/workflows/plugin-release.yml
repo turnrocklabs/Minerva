@@ -145,14 +145,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: imrans-lab/minerva-plugins
-          ref: 110987b4fde075551bdb1218f01bcd79354763ba
+          ref: 1865c7c0176fd7479f5a6cb5b836db6cd0f2383b
           path: minerva-plugins
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - uses: actions/setup-go@v5
         with:
-          go-version-file: minerva-plugins/docket/go.mod
+          go-version-file: minerva-plugins/.go-version
       - name: Package verified Docket runtime
         shell: bash
         run: |
