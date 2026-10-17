@@ -55,6 +55,7 @@ func _run() -> void:
 	var singleton: Node = get_tree().root.get_node("SingletonObject")
 	var old_manager: Variant = singleton.plugin_manager
 	var old_broker: Variant = singleton.plugin_scene_panel_broker
+	var old_registry: Variant = singleton.plugin_tool_registry
 	var policy := PluginPolicy.new(manager.get_db(), null, false)
 	var capabilities := CapabilityBroker.new(policy)
 	broker = PluginScenePanelBroker.new(manager, policy, capabilities)
@@ -90,6 +91,7 @@ func _run() -> void:
 	check(await conn.connect_to_server() == OK, "real stdio MCP peer connects")
 	manager._runtime[IDS[0]] = {"connection": conn}
 	var registry := PluginToolRegistry.new(manager, policy)
+	singleton.plugin_tool_registry = registry
 	var registered := await registry.register_backend_tools(IDS[0], conn)
 	check(not registered.has("error") and registry.get_plugin_tools(IDS[0]).size() == 2, "nonempty real MCP tools catalog")
 	var tools_before: Array = registry.get_plugin_tools(IDS[0]).duplicate(true)
@@ -227,6 +229,7 @@ func _run() -> void:
 		manager.get_db().remove(plugin_id)
 	singleton.plugin_manager = old_manager
 	singleton.plugin_scene_panel_broker = old_broker
+	singleton.plugin_tool_registry = old_registry
 	manager.free()
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])
 	completed.emit(1 if failed else 0)
@@ -278,10 +281,11 @@ func _marketplace_race() -> void:
 	var directory := _fixture(plugin_id, 1)
 	DirAccess.rename_absolute(directory.path_join("nested/Dependency.gd"), directory.path_join("Dependency.gd"))
 	_write(directory.path_join("Panel.gd"), FileAccess.get_file_as_string(directory.path_join("Panel.gd")).replace("nested/Dependency.gd", "Dependency.gd"))
-	_write(directory.path_join("late_fail.py"), "import time\ntime.sleep(3)\nraise SystemExit(1)\n")
+	_write(directory.path_join("late_fail.py"), "from pathlib import Path\nimport sys, time\nPath(sys.argv[1]).write_text(str(time.time()))\ntime.sleep(3)\nraise SystemExit(1)\n")
 	var path := directory.path_join("manifest.json")
 	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
-	manifest.backend.args = ["late_fail.py"]
+	var marker_path := ProjectSettings.globalize_path("user://real-backend-started.txt")
+	manifest.backend.args = ["late_fail.py", marker_path]
 	manifest.ui.panels[0].scripts = ["Panel.gd", "Dependency.gd"]
 	_write(path, JSON.stringify(manifest))
 	var definition: PluginDefinition = manager.get_db().install(path)
@@ -322,7 +326,9 @@ func _marketplace_race() -> void:
 		if stage == "start":
 			_try_install_watch.call_deferred(plugin_id, editor, old_root, selector))
 	var installed: Dictionary = await client.install_from_url("http://127.0.0.1:%d/plugin.tar.gz" % port, manager, true, operation)
-	check(not installed.get("ok", true) and installed.error == "start_failed", "actual delayed backend failure rolls installation back")
+	check(FileAccess.file_exists(marker_path) and Time.get_unix_time_from_system() - float(FileAccess.get_file_as_string(marker_path)) >= 2.9,
+		"real backend start marker and elapsed delay prove actual process ran")
+	check(not installed.get("ok", true) and installed.get("error", "") in ["start_failed", "cancelled"], "actual delayed backend failure rolls installation back")
 	check(editor.plugin_scene_root.get_instance_id() == old_root and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "failed install never publishes new scene or replaces old root")
 	check((await manager.reload_scene_plugin(plugin_id)).get("ok", false), "install exclusion releases after real rollback")
 	editor.free()
