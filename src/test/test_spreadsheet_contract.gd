@@ -183,6 +183,8 @@ func package_roundtrip(container_script: Script, container: Object, tabs: TabCon
 	var workspace := ProjectSettings.globalize_path("user://sheet-package-contract")
 	var unpack_dir := workspace.path_join("unpacked")
 	check("package destination starts clean", not DirAccess.dir_exists_absolute(unpack_dir))
+	if DirAccess.dir_exists_absolute(unpack_dir):
+		return
 	DirAccess.make_dir_recursive_absolute(workspace)
 	var source := workspace.path_join("sheet.minsheet")
 	check("stage frozen sheet file", DirAccess.copy_absolute(FIXTURE + "baseline.minsheet", source) == OK)
@@ -236,3 +238,25 @@ func package_roundtrip(container_script: Script, container: Object, tabs: TabCon
 	for view: Control in views:
 		view.free()
 	manager.free()
+	check("remove only test-owned package workspace", remove_package_workspace(workspace) == OK
+		and not DirAccess.dir_exists_absolute(workspace))
+
+func remove_package_workspace(path: String) -> Error:
+	var workspace := ProjectSettings.globalize_path("user://sheet-package-contract").simplify_path()
+	if path != path.simplify_path() or (path != workspace and not path.begins_with(workspace + "/")):
+		return ERR_INVALID_PARAMETER
+	var parent := DirAccess.open(path.get_base_dir())
+	if parent == null or parent.is_link(path.get_file()):
+		return ERR_INVALID_PARAMETER
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return ERR_CANT_OPEN
+	for name: String in directory.get_files():
+		var error := directory.remove(name)
+		if error != OK:
+			return error
+	for name: String in directory.get_directories():
+		var error := remove_package_workspace(path.path_join(name))
+		if error != OK:
+			return error
+	return DirAccess.remove_absolute(path)
