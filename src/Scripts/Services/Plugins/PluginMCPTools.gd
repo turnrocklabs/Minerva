@@ -666,7 +666,7 @@ func _handle_plugin_reload(args: Dictionary) -> Dictionary:
 	if id.is_empty():
 		return {"error": "id is required"}
 
-	var plugin_manager = _get_plugin_manager()
+	var plugin_manager: PluginManager = _get_plugin_manager()
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 	if plugin_manager.supports_scene_live_reload(str(id)):
