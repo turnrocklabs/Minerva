@@ -224,18 +224,18 @@ func _run() -> void:
 	next_boot.free()
 	var saved_service: Node = manager._scene_reload
 	manager._scene_reload = boot
-	var panel: Control = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
-	panel._pm_override = manager
-	add_child(panel)
-	panel._selected_plugin_id = closed_id
-	panel._populate_detail_panel(closed_id)
-	check(not panel._reload_button.disabled, "boot validation refusal leaves real UI Reload enabled")
+	var manager_panel: Control = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
+	manager_panel._pm_override = manager
+	add_child(manager_panel)
+	manager_panel._selected_plugin_id = closed_id
+	manager_panel._populate_detail_panel(closed_id)
+	check(not manager_panel._reload_button.disabled, "boot validation refusal leaves real UI Reload enabled")
 	_fixture(closed_id, 7)
 	var tools_script: Script = load("res://Scripts/Services/Plugins/PluginMCPTools.gd")
 	var tools: RefCounted = tools_script.new(manager)
 	var repaired: Dictionary = await tools.handle_tool_call("minerva_plugin_reload", {"id": closed_id})
 	check(repaired.get("success", false) and not repaired.status.live_reload.restart_pending, "MCP Reload fixes forward after failed boot without another restart")
-	panel.free()
+	manager_panel.free()
 	manager._scene_reload = saved_service
 	boot.free()
 	manager.get_db().remove(closed_id)
