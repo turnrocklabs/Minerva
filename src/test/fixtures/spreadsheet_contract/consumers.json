@@ -1,0 +1,76 @@
+{
+  "base_host": "38cab76815ce5b74ba1644597d94f404c327ef82",
+  "base_plugins": "b99ef01ceaeb459632d3b36c0035d2200f7195b9",
+  "contracts": [
+    {
+      "owner": "nametag-maker",
+      "path": "nametag-maker/manifest.json",
+      "kind": "tool_deps",
+      "tools": [
+        "minerva_create_spreadsheet_editor",
+        "minerva_get_spreadsheet_data",
+        "minerva_update_spreadsheet_data",
+        "minerva_add_spreadsheet_row",
+        "minerva_delete_spreadsheet_row",
+        "minerva_add_spreadsheet_column",
+        "minerva_delete_spreadsheet_column"
+      ],
+      "skills": [
+        {
+          "name": "Nametag Maker",
+          "tool_deps": [
+            "minerva_plugin_list",
+            "minerva_plugin_start",
+            "minerva_read_document",
+            "minerva_list_note_tabs",
+            "minerva_list_notes",
+            "minerva_get_note",
+            "minerva_create_note",
+            "minerva_update_note",
+            "minerva_delete_note",
+            "minerva_create_spreadsheet_editor",
+            "minerva_get_spreadsheet_data",
+            "minerva_update_spreadsheet_data",
+            "minerva_add_spreadsheet_row",
+            "minerva_delete_spreadsheet_row",
+            "minerva_add_spreadsheet_column",
+            "minerva_delete_spreadsheet_column",
+            "minerva_nametag_maker_nametag_build_from_sheet",
+            "minerva_nametag_maker_nametag_save",
+            "minerva_open_file",
+            "minerva_close_editor",
+            "minerva_annotations_list",
+            "minerva_disk_exists"
+          ]
+        }
+      ]
+    },
+    {
+      "owner": "multimeter",
+      "path": "multimeter/ui/multimeter_panel.html",
+      "tool": "minerva_create_spreadsheet_editor",
+      "arguments": [
+        "name",
+        "file_path"
+      ]
+    },
+    {
+      "owner": "webview_bridge",
+      "path": "src/Scripts/UI/Controls/WebViewEditor/minerva_bridge.gd",
+      "helpers": [
+        "getSpreadsheet",
+        "updateSpreadsheet"
+      ]
+    },
+    {
+      "owner": "capability_broker",
+      "path": "src/Scripts/Services/Plugins/CapabilityBroker.gd",
+      "artifact_kind": "spreadsheet"
+    },
+    {
+      "owner": "linked_note",
+      "field": "LinkedSpreadsheet",
+      "value_kind": "editor tab name string"
+    }
+  ]
+}

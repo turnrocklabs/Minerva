@@ -1,0 +1,14 @@
+{
+  "native_chart_drop": "minerva:01a14b6689f0",
+  "future_version": "minerva:01a14b668a56",
+  "import_save_overwrite": "minerva:01a14b11f066",
+  "volatile_note_fields": [
+    "SHA256",
+    "Entries",
+    "Revision",
+    "ExpandedHeight"
+  ],
+  "session_unsaved_state": "Document content only. Undo, selection and scroll are not currently persisted.",
+  "session_chart_restore": "minerva:01a14b693555",
+  "xlsx_inline_strings": "minerva:01a14b6935b8"
+}

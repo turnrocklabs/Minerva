@@ -1,0 +1,158 @@
+artifact	matching_lines	sha256
+scripts/run-functional-tests.sh	121,122,123	6c23aa2dae55d62dac4eea2e6bebde2ba1c379bd9799be0680fe882ff0219e45
+src/Data/master.dct	4,6,8,11,12,16,17,18	405c656f3a8a082c26be98e7c85cc2f64650917237dedc2f0a940e0942cd62e6
+src/Docs/design-tool-facades.md	16,50,83,87,88,188	24f8c6ab5a2939ec47032adafb47a19b063c9f1410180002153fee04373b4f11
+src/Scenes/MainScene.tscn	55	40b0c00b0042ff98ad0389f85890b6be91d6d45d94f8efc672a8f05c3c783a16
+src/Scenes/SpreadsheetAutoFilterPopup.tscn	3,5	6f9333007694f15b41d7b50e27791c2f5b9dfd6576e6fdcc503c6fc464c5af96
+src/Scenes/SpreadsheetEditor.tscn	3,5	b26bef3995d21876028bf978176d56cf639fd5f9fd11957957388aa9ebf8e8ff
+src/Scripts/Models/singleton_object.gd	1637,1640,1641,1848,1916,1917,1918,1978	7e218401a2856c6479de4fb76e8b110f52eba8f74b98867d85e6c53487c3a46b
+src/Scripts/Services/Documents/OOXMLReader.gd	169	03e984c41fed5ea3723ea35bc62219ebceef2c6c73bb1dadf23d0d44845d246f
+src/Scripts/Services/MCP/MCPToolDefinition.gd	26	bc093ce70aff0815b2a1b9b96b45977b13562faa668b82f59ac8e5a846ebe08e
+src/Scripts/Services/MCP/MinervaMCPServer.gd	83,102,103,629	a84d0d9390d808cbacbcbda68c6263529c96bd7e38d79d8c25b31b9c76f420ea
+src/Scripts/Services/MCP/Modules/MCPDocumentTools.gd	8,9,26,49,50	c294d88c74f3ff6cc5fb573f1eaf4703492e17d7e039f88bd3319d04cc9f698b
+src/Scripts/Services/MCP/Modules/MCPEditorTools.gd	149,761,762	4474c9fc7d62006d2a5855f769e1fec3ea52a4d11bbe84adf7347c23ada462d6
+src/Scripts/Services/MCP/Modules/MCPModelTools.gd	252	58fa11e7d260e2628e5969fb919452f870a0d1615b712e593b31883a828e0195
+src/Scripts/Services/MCP/Modules/MCPSpreadsheetFilterTools.gd	1,3,7,8,14,16,17,18,22,26,27,32,43,44,45,46,51,53,54,63,65,66,77,79,80,90,92,93,103,115,117,119,121,123,142,167,193,225,257,273,274,284,285,289,294,296,297,298,299,300,302,303,304	5f961f52850f47801fe8c79dc1ac890914140484a100c4e37421fe3779d55570
+src/Scripts/Services/MCP/Modules/MCPSpreadsheetFilterTools.gd.uid		38e98d50bddc24d8d32908ac25a9bb3e9ed6a50587ec8c1dfe4431e4583fab45
+src/Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd	1,3,5,6,7,8,14,15,16,17,18,19,20,21,22,27,33,35,36,37,44,45,51,55,59,64,66,67,73,91,93,94,100,121,123,124,130,144,146,147,153,171,173,174,180,189,191,192,198,207,209,216,225,227,234,243,252,291,294,300,323,326,332,355,364,377,379,380,386,390,394,417,420,426,430,443,446,452,457,460,466,470,474,478,482,529,532,538,542,546,551,554,560,565,567,568,574,578,587,590,596,613,618,620,621,627,636,638,639,645,654,656,657,663,668,677,696,699,705,710,715,716,717,718,719,720,721,722,723,724,725,726,727,728,729,730,731,732,741,753,754,757,758,759,760,761,762,764,766,767,798,799,816,817,832,844,848,849,863,865,867,884,912,952,953,972,977,979,980,984,985,990,994,999,1000,1009,1018,1020,1022,1023,1025,1027,1061,1076,1078,1080,1081,1083,1085,1091,1102,1105,1110,1114,1122,1124,1126,1127,1129,1131,1141,1144,1153,1162,1164,1166,1167,1169,1171,1182,1187,1190,1195,1200,1210,1212,1214,1215,1217,1219,1228,1239,1249,1251,1253,1254,1256,1258,1266,1269,1281,1291,1293,1295,1296,1298,1300,1306,1307,1316,1326,1328,1330,1331,1333,1335,1340,1343,1344,1364,1366,1368,1369,1371,1373,1381,1382,1390,1425,1445,1447,1449,1450,1452,1454,1469,1473,1477,1478,1479,1498,1500,1502,1503,1505,1507,1523,1528,1532,1536,1537,1538,1561,1563,1565,1566,1568,1570,1573,1582,1598,1614,1616,1618,1619,1621,1622,1623,1624,1625,1626,1627,1632,1634,1635,1639,1640,1641,1654,1656,1658,1659,1661,1662,1663,1665,1667,1669,1670,1672,1674,1678,1698,1700,1702,1703,1706,1707,1709,1717,1718,1719,1720,1721,1722,1729,1741,1743,1745,1746,1748,1751,1755,1756,1788,1789,1792,1794,1797,1800,1812,1814,1816,1817,1819,1822,1826,1827,1829,1830,1835,1836,1846,1848,1850,1851,1853,1857,1858,1862,1865,1870,1872,1874,1875,1877,1881,1882,1886,1901,1902,1922,1924,1926,1927,1929,1938,1946,1948,1949,1951,1953,1954,1955,1956,1957,1960,1973,1977,1978,1985,1987,1989,1990,1992,1994,1999,2004,2012,2013,2018,2019,2026,2028,2030,2031,2033,2035,2039,2045,2053,2054,2059,2060,2066,2068,2070,2071,2073,2077,2078,2079,2080,2085,2100,2102,2104,2105,2107,2108,2124,2149,2161,2175,2177,2178,2183,2195,2196,2202,2204,2206,2207,2209,2210	35ae89fdfb95db23b34936e160d2eb86ccd5c6f5abf937e7d3663df43ed75c95
+src/Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd.uid		e813baa48719c68da740fa8e42b776b548f0b5c6033a901589c65e670dcf5b74
+src/Scripts/Services/MCP/Modules/MCPToolUtils.gd	185,207,217,218,219	2c64c911eba4e9fd225cfedae90778f36bee59188c461e44341b2fc3d3a3a78b
+src/Scripts/Services/MCP/Modules/MCPWebviewTools.gd	70	1b39b59953c12f1b5024f39a5537db15ddd0762b11138f71eab0607ebc1bdca1
+src/Scripts/Services/Plugins/CapabilityBroker.gd	2593	26dbfe843a83f8cbfa75acc060198d8fd2f93629de2827fdc8063cd9cbfbceaf
+src/Scripts/Services/Plugins/PluginEditorRegistry.gd	36	42709a9440a81c033a68c50210682601c051dd313cf9d429fe5a4dd3e522e982
+src/Scripts/Services/Skills/SkillPresets.gd	37,39,41	82a33de88918849f5ba19e8f7ae5317191bf3cd9382757ad40a6d8f88e61a6e3
+src/Scripts/UI/Controls/Editor.gd	39,40,83,141,456,457,458,461,462,464,465,621,625,1256,1257,1259,1260,1262,1263,1265,1407,1408,1530,1531,1532,1535,1693,1694,1695,1701,1781,1782,1783,2118,2119,2120,2135,2136,2137,2173,2201,2202,2203,2204,2205,2378,2380,2522	7e773ab74264383b3069d5519d06fcdc24a2bc65a91410228a8392f31ce8f38b
+src/Scripts/UI/Controls/Note.gd	123,124,125,256,257,258,259,274,625,626,627,657,658,662,664,669,670,672,673,676,677,678,1067,1068,1069,1287	3272ef0d0e7939d6de98a8fddbf9e59755d17dd12675ca3883b7d54ab6330046
+src/Scripts/UI/Controls/SpreadsheetEditor/CellsCanvas.gd	1,3,5,6,16,17,65,215,229,745	8ecd1cecc6623c5eb92050aedd5c20d756e4e95498aa33e84b6322be7bab66f3
+src/Scripts/UI/Controls/SpreadsheetEditor/CellsCanvas.gd.uid		e185d24c875d943bbd9aa8ea92f5a3d2bea3ec6e42002a062eea8e50940e5d75
+src/Scripts/UI/Controls/SpreadsheetEditor/ChartCanvas.gd	3,5,6,8,9,11,26,37,42,45,57,64,65,67,71,78,87,90,94,105,119,129,137,150,156,177,183,188,189,193,196,197,201,224,296,345,346,347,351,357,358,359,360,364,365,367,368,373,381,408	82063b3bf7f8de70569c2c6c186c9573f285ff8338676456287f45646c589d0b
+src/Scripts/UI/Controls/SpreadsheetEditor/ChartCanvas.gd.uid		c2b33e7f3ad3e68dede17db70bc3686a0ca21cb0f99c94d9dbff06b167fa8392
+src/Scripts/UI/Controls/SpreadsheetEditor/ChartRenderer.gd	3,5,6,8,20,21,25,30,35,36,64,71,79,97,115,116,130,140,141,156,180	a20ea0ed16b768254c8ad0ce617cb513a7aae0e623d85a32e6b7edc4a43c4efe
+src/Scripts/UI/Controls/SpreadsheetEditor/ChartRenderer.gd.uid		598dbc325485d463c6b595a290c5cacb34de4107c81ee50be0952c7043418fad
+src/Scripts/UI/Controls/SpreadsheetEditor/ColumnHeaders.gd	1,3,5,17,18,130,254,255,321	f4436c046c6841948d3dbc8a7b909d36322fbddc504db7fa2dea29a802617fe0
+src/Scripts/UI/Controls/SpreadsheetEditor/ColumnHeaders.gd.uid		bfeb07142b6991db7fc927841063e573617cbd478d8b5e2a7a20e94de79986de
+src/Scripts/UI/Controls/SpreadsheetEditor/ExcelHandler.gd	6,7,10,11,36,37,50,123,188,218,219,220,221,236,238,256,269,290,292,301,311,312,326,333,339,341	39e993fc504f9c983f698bd25f9312533471d24b3b07698ca0133f0ccce99eb7
+src/Scripts/UI/Controls/SpreadsheetEditor/ExcelHandler.gd.uid		576afa1551f6f3938cf77fc8e44b237e9690869af4ad18bf9a706c3fe3b50343
+src/Scripts/UI/Controls/SpreadsheetEditor/FormulaEngine.gd	3,5,136,137,169,297,306,308,324,335,339,346,348,565,605,610,645,647,651,653,661,1440,1454,1458	c9313df8c2b2e1deab8b63107db1a5f8be174283aedb4a94d01854127f64e8f4
+src/Scripts/UI/Controls/SpreadsheetEditor/FormulaEngine.gd.uid		47ccf4ae51d580d4b85ab26c64cbbc65d7228c4c0b3fe79b8d0d3d4f5feba352
+src/Scripts/UI/Controls/SpreadsheetEditor/RowHeaders.gd	1,3,5,6,14,15,180,181,235,236	897ee89afec9983a4874b104a6c26751e3978b798dcb7affc5607cffd2c715a5
+src/Scripts/UI/Controls/SpreadsheetEditor/RowHeaders.gd.uid		bf736c3e4b206b4fc530e889d2e1f50b8361c34719eaa87ad151872f95681acb
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilter.gd	1,5,7,10,13,54,57,66,68,69,70,71,149,151,152,154,166,167,256,286,287,289,290,295	8cce806c9850a093b952d71c5e8104005d044651fe3168366acea452280ae793
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterActions.gd	1,10,12,13,21,26,31,36,40,45,51,61,76,77,87,98,102,120,124	f37c53ff2915ee03e6d1494931e99d44a5457c312200320bd695bc48ae475737
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterActions.gd.uid		73cf50b864d6b4790c72722ec00777e2cb189de978f5792f61d9c7d00006b420
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterPopup.gd	1,3,6,7,48	e35e5a06df954850368239f941488ef0d71de3c96999901519e7e79560b05a00
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterPopup.gd.uid		347d34cba0e5b334f9eeac261af7161dac497a18ad6af4ec4ffb4480f32d014c
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterUI.gd	1,3,4,7,10,12,13,14,15,16,17,24,25,28,44,46,47,56,73,74,123	287e71ca83d284a9e847f5f5bd9b0c5df84fd735864bb20a7267245223658fd4
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetAutoFilterUI.gd.uid		8b64c987c1e4dd6d7d8c4d7c2659ddf5d13356bf1fd8689ceed6fb2c8a0450b2
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetCell.gd	1,3	ef326ffdae891ea6dfae058a9cd67d4dd6a6794213064ab3f38a4729754f01a5
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetCell.gd.uid		1951f600bbf82392959c4ea34aa20f92ab85443d5c65a289173182a901667836
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd	1,3,10,13,14,16,37,83,111,149,152,191	5d1a567aa8fe75335b0cbd173fe13f5cedecc1b07fea4455d2e2d377c34dd6a5
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd.uid		baf0d0ac37d79d25aaa3681e27638abba8cda6021c1028012c1630e22d1beef0
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetData.gd	1,3,5,6,7,8,53,62,63,66,67,147,345,553,570,767,807,813,1031,1088,1130,1131,1133,1134,1136,1170,1176,1178,1187,1188,1192,1195,1201,1220,1240,1245,1254,1255,1256	01af8b0db2ee0357aa16644e430c7771f00e91751f8cc4e4ba98713a85549516
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetData.gd.uid		2673c94d76031e7866190768b28a931615b72feb83b7229b6600476ebe1f98ba
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd	1,3,5,6,7,8,9,10,11,12,13,14,16,17,18,23,24,27,38,39,40,48,54,86,88,89,91,96,113,115,116,120,135,136,137,143,144,149,161,163,164,165,183,196,200,323,326,376,378,382,384,388,389,420,435,443,453,457,497,498,499,620,622,631,632,640,645,650,654,662,669,673,686,689,690,691,695,696,707,711,719,747,783,792,823,824,826,827,831,839,842,852,856,886,954,960,964,1073,1074,1096,1101,1103,1107,1129,1144,1159,1170,1173,1183,1186,1189,1203,1206,1265,1266,1273,1276,1300,1323,1326,1327,1331,1332,1343,1344,1346,1347,1349,1350,1352,1353,1355,1358,1378,1460,1478,1483,1497,1502,1504,1505,1507,1513,1515,1516,1518,1525,1539,1542,1545,1548,1551,1555,1558,1561,1574,1578,1582,1585,1588,1601,1605,1606,1621,1625,1669,1677,1680,1694,1748,1753,1754,1768,1771,1787,1792,1793,1807,1810,1855,1856,1865,1866,1871,1872,1874,1876,1880,1881,1882,1898,1903,1906,1930,1931,1937,1938,1956,1990,2002,2003,2081,2082,2083,2084,2085,2086,2095,2097,2098,2103,2104,2107,2108,2110,2112,2114,2118,2122,2123,2125,2128,2137,2140,2141,2144,2146,2155,2156,2158,2159,2161,2162,2163,2167,2169,2170,2175,2177,2180,2184,2187,2189,2191,2193,2195,2197,2199,2201,2203,2205,2207,2211,2214,2221,2223,2230,2233,2236,2241,2245,2248,2249,2254,2255,2256,2257,2259,2261,2263,2267,2268,2270,2274,2276,2278,2280,2281,2282,2287,2289,2292,2296,2297,2298,2299,2300,2302,2303,2304,2305,2306,2307,2308,2315,2316,2321,2323,2324,2325,2327,2333,2334,2340,2350	e676a95b09d2e8c7a2ceab5cbb142c13af2f5f542c8d27b6706490fd25b52ee5
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd.uid		afe2c9125bbdff2ebe9228cea1d143506dca9272942c48515a0b192f9c8cbfaa
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetFileHandler.gd	1,3,5,6,9,10,22,23,34,35,47,48,59,60,81,82,95,103,104,113,121,122,136,146	02498ff38e926330636f8125a0cfab699bc678d21ab147de26843277a101d988
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetFileHandler.gd.uid		c3045afe226aca6ddbf146ade3b11b9ea654ec31d5b4817eb2ac489381b57ea9
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetHistory.gd	1,3,140,141	33fcea45576d2ea7da0eb7c44493227c9d46814b4a06b77db0fcbea1b4a4af01
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetHistory.gd.uid		aa40d3f7c53a94605ce9e989d20cea7f46ae2e227f0dac14284b36ea6d13b5fd
+src/Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetRowGeometry.gd	1,4,12,15,20,24,25,36,51,63,68,76,85	458cc96fa787d898f6e4a6f91a7f30d28d9e0383ae5c11baf60b49986f43e29c
+src/Scripts/UI/Controls/WebViewEditor/minerva_bridge.gd	43,48,49,50,53,54,55	20eb05e571c536d7bc0644f17568871c27e7aafd1d5e1a2e69e4f5139326e0a3
+src/Scripts/UI/Controls/vboxEditor.gd	46,47,48,235,236,239	d7a2b0745a47362e5d7eb7202ef9246d445297acb9ab67127f0b2f986d067f97
+src/Scripts/UI/Views/EditorPane.gd	229,230	d91b64a236cfe41339ffd9866c243bd1544ece9fac5a17f79b1dd69eb95045fa
+src/Scripts/UI/Views/MainScene.gd	219,221,225	4224f98034fe8634c40b5571a4ef2f138d55e3e7d59ed9959c4159b5693162c9
+src/assets/icons/spreadsheet/align_center.png		96afd34f4080e92c86e50a6a3b6565df82a217d755e63d9b1a9c84eee6612373
+src/assets/icons/spreadsheet/align_center.png.import	13	46026042847f4b49c3d4ddd000748822df9808fcfcdaeb9ea1d4cb874319734a
+src/assets/icons/spreadsheet/align_center_48.png		97cfa9bff7c0a2ffa9c61e5b719857df6b48eb6b207ff9b5f5f147bae34b4e1b
+src/assets/icons/spreadsheet/align_center_48.png.import	13	4adf75122ef1f835663ed545c4a079e016d6a1ab62d5654c33f5d2a998608dbf
+src/assets/icons/spreadsheet/align_center_64.png		fa3887d36eea11eaa799539d8fe27f40deb813e76d052e88a94769763681f837
+src/assets/icons/spreadsheet/align_center_64.png.import	13	4b6d76b4ae6bb8b1368b24f165107b49e18af3caf477d17cc44eab3db5daad43
+src/assets/icons/spreadsheet/align_icon.png		482adecb16d18e611427f91b4b8f840d4b9a540f5aaddd9b7157fdb5224bc14e
+src/assets/icons/spreadsheet/align_icon.png.import	13	5cfb355317fd415b93346fd5c2ded483915d7998b491b21fe5e2a0d88e508334
+src/assets/icons/spreadsheet/align_left_24.png		cd5592ad391566b178a87863f78ea9d69ced8a38aaaf0f5be41d6fd3f3896398
+src/assets/icons/spreadsheet/align_left_24.png.import	13	c2f51db00d0d59f2367676c61250cad869293237399f8e9da13049a1f09d4bd0
+src/assets/icons/spreadsheet/align_left_48.png		17027316f5d782014da4b0ffacd1fe836bbd5064160b5b49daaca508748b9dfa
+src/assets/icons/spreadsheet/align_left_48.png.import	13	c58bcf553544753ce6989832118e66062b0c2cca2f44fac8f9b5972bda813e2e
+src/assets/icons/spreadsheet/align_left_64.png		45854be473ef5079de7ce26d2b72027a1d01686e226a3155020e10dcd9a11017
+src/assets/icons/spreadsheet/align_left_64.png.import	13	76ae735456bd1d640d9a3f63bd24c47fb5a6ac59944f416d65ec5dfa2a8913ef
+src/assets/icons/spreadsheet/align_right_24.png		cdbc77cdd17051d3a35d59e9a9c45fc8e588a7fef5478db0f2aedfcf4c942511
+src/assets/icons/spreadsheet/align_right_24.png.import	13	8abe4358331f79f38c0d8ac7a88573dcdfa550e7b3532a8ca005c13e929dbd3b
+src/assets/icons/spreadsheet/align_right_48.png		a4c865a20ee06f786ca25820a33b0ef67275860c278901d14e8bdc54225e30a1
+src/assets/icons/spreadsheet/align_right_48.png.import	13	572ce25bcbb94362c0e824acef81d4c00577481d278cba78bbd1b5ee97cdedf9
+src/assets/icons/spreadsheet/align_right_64.png		d4a202b696e92dc1c1ceaadd395862f7b6ff333279e6b6805ec395e19608e0d8
+src/assets/icons/spreadsheet/align_right_64.png.import	13	a94661d84dc265a7738f2032b484e0db4efdcf7532565f22b2a58484cc97e3c4
+src/assets/icons/spreadsheet/bold_icon_24.png		835df444c76a0e9f5d4ef547978484a486ae8ea81462d4d3f646ad28aee95e13
+src/assets/icons/spreadsheet/bold_icon_24.png.import	13	6fda655c43f1f1d394fe086cf6fb3a24336dbb04da318e7d9d42ec70b4acfd21
+src/assets/icons/spreadsheet/bold_icon_48.png		5b3d066cea1db867b7fb0a3f915cf2d59c44be76e9e9fe49d7d086b13657186e
+src/assets/icons/spreadsheet/bold_icon_48.png.import	13	072144c16636f0c04840e48d642a98dc561de6fed1ac9bc4be0d48abe808745e
+src/assets/icons/spreadsheet/bold_icon_64.png		e5595ca89648172f81d66c617443f7cf83d3294f068d68903f268836193eae7f
+src/assets/icons/spreadsheet/bold_icon_64.png.import	13	42170f8b52da96bf5f361bdddb97d165833a9d295b0d001bde42a8ee19588da6
+src/assets/icons/spreadsheet/chart_icon_24.png		7a73332432501ca783e9493823eb34d3ae4d41beeeb5b5c010791afb8b1e3d5f
+src/assets/icons/spreadsheet/chart_icon_24.png.import	13	5b7b69f62135dc70c2b87e2df8555ac0d3251008d93970e27af515431e6ea4ce
+src/assets/icons/spreadsheet/chart_icon_48.png		227770ce6c7143f3349b72ea8570026d86e4b45491c98aca856cec79aabb256c
+src/assets/icons/spreadsheet/chart_icon_48.png.import	13	7eaccc87a40bfebca271cf55959a0167131d524ba7f8685f5c473423c5720bfe
+src/assets/icons/spreadsheet/chart_icon_64.png		c7c2c451aaa6008d572682a2a148431f12ec43f51ff5b67d864c5f021a767443
+src/assets/icons/spreadsheet/chart_icon_64.png.import	13	2e36aca4862a28bd00d3e8bb0d7ae6e90e81ca74b17340f2dcf0c2f2bef82426
+src/assets/icons/spreadsheet/export_icon_24.png		79796d0fdd3daa64057eca96f5837fef765b424cd016a07b2df67d1ef6208ee0
+src/assets/icons/spreadsheet/export_icon_24.png.import	13	abf0defdd7e421cf9c494d9d481938523609c048255fb8d2bcd2c9feefa98eea
+src/assets/icons/spreadsheet/export_icon_48.png		ac6add92892a28647f758ae0432d01cee9d323515a4e359c20a03c2b3cdc0598
+src/assets/icons/spreadsheet/export_icon_48.png.import	13	4fd3970c832543202351def9c70f958fb6c567ab1990311388560ee522af1c98
+src/assets/icons/spreadsheet/export_icon_64.png		6921944c441b7f9759cd1cbca1dd6e64639a6ff8755f5ee71c8fcae428329d35
+src/assets/icons/spreadsheet/export_icon_64.png.import	13	8ec1d9184a1cfda10fd69799ebee483f5b916620d2a3556505dd6d6055814f88
+src/assets/icons/spreadsheet/fill_down_icon_24.png		8ab03fc30656723fe5f13043d35e19b33622922099c23867b7ea3653a94f606a
+src/assets/icons/spreadsheet/fill_down_icon_24.png.import	13	1fbb21e66d6c0e0aa099315e7b3f60541fae780424528c69469ca95d360a68ff
+src/assets/icons/spreadsheet/fill_down_icon_48.png		4b6740bad7a2a154530dfad3a442e0536bd4217f65f4f5614b7b0675b0b731dc
+src/assets/icons/spreadsheet/fill_down_icon_48.png.import	13	10ac354fd87e9b31c3bd2cd914b48556b5415c952bbc6b2cb868d789b2f8afb7
+src/assets/icons/spreadsheet/fill_down_icon_64.png		9eb59e385b09fcc5df02dba2a218f96503c153f1b772c017149a625866f96ce0
+src/assets/icons/spreadsheet/fill_down_icon_64.png.import	13	184c3825c9b3d5f71698220bfed1f27d81fafd8f0140730fc92c0a201c5c7d30
+src/assets/icons/spreadsheet/freeze_rows_24.png		dd7f0a8b8c26181171dd38ee30391eeafcbd0bec88b1c009f1c79f2040ba99df
+src/assets/icons/spreadsheet/freeze_rows_24.png.import	13	20282c15ac7955833277835fd223f65076d4a092eac3003afc80c4f7b2ee2d21
+src/assets/icons/spreadsheet/freeze_rows_48.png		ae4e190724bb50deba902f7e275804c528aed4ac4ad407496dce945d77bfc2a4
+src/assets/icons/spreadsheet/freeze_rows_48.png.import	13	7d2279433b6de9cce8dfdb589818626811f4b156743cecd43cf1dec81cfaac3b
+src/assets/icons/spreadsheet/freeze_rows_64.png		1d855850138c1173f4f37aad3fa9a224c79328b2a04959e826f4b2e43c167d1f
+src/assets/icons/spreadsheet/freeze_rows_64.png.import	13	2e38bb5e1243183f36273156e20f417145f7398bb2fd7b84b3483ebedb28643f
+src/assets/icons/spreadsheet/header_icon_24.png		ec8133766ab39e9f80180609c99c791ded631356cd8c5c5f369297deee496814
+src/assets/icons/spreadsheet/header_icon_24.png.import	13	1a3dd57180fb68791320c9c6a4a9081442b76095cf1d947d65a3b277feb75bc3
+src/assets/icons/spreadsheet/header_icon_48.png		afb5fd7eb1f78cefe3c79cdc36c57a515b2bb34af56dd920e1768d58f42b5662
+src/assets/icons/spreadsheet/header_icon_48.png.import	13	956fb75f56758c5bcce114d85f126aff23bba3572e8e98d870f896935086c29f
+src/assets/icons/spreadsheet/header_icon_64.png		3a7f0d890483eb110a0f82821432f0a58af7e1055dd1c4a1009a2b8e4e94eb04
+src/assets/icons/spreadsheet/header_icon_64.png.import	13	e08516df5cfad350796fda9f4c81029f388597441c85be3624241926c5fbc6db
+src/assets/icons/spreadsheet/import_icon_24.png		9b0ab203c2b6480ce8ecbee87d21cfacab4b633a5e53c481ea7501a51975a3fa
+src/assets/icons/spreadsheet/import_icon_24.png.import	13	3e82f41e74f6a17b92ddcc490553cea1c70f47fd2d3b6593e2b148881f4d64c7
+src/assets/icons/spreadsheet/import_icon_48.png		4e1b169c1f5691c42a16f201faf89e85b46c928a7a5121d9f8b6fdc401160e76
+src/assets/icons/spreadsheet/import_icon_48.png.import	13	8c321197ee698c22e5e6b4c43a00f7d95afa961e560b7670dc8933db822451b7
+src/assets/icons/spreadsheet/import_icon_64.png		d113c5ad3c29579367057227fb9833dc7b5b08a2aa66c4394f34da368f51d378
+src/assets/icons/spreadsheet/import_icon_64.png.import	13	940ee2a185843d707f9f2b0e26d202ab3f8e42231c3ee9ddda5fcdfac3511338
+src/assets/icons/spreadsheet/italics_icon_24.png		3928fa13988f3dfab9cdb45d83fc0a28507aa15b8a6bae987c5564a9c7b28e62
+src/assets/icons/spreadsheet/italics_icon_24.png.import	13	48ff48af6fbf752600f8b294c11db11d76c3be5ef6e1a080515ffcccd9996f69
+src/assets/icons/spreadsheet/italics_icon_48.png		bf05b304a0d9beee77c82d3a8eb91fe2f728005ceb3bd5690742ab2c525800cf
+src/assets/icons/spreadsheet/italics_icon_48.png.import	13	1ae817ae4adfd680ddc288b4435dde3077698d00f7214bfd4c44b604f9d7545d
+src/assets/icons/spreadsheet/italics_icon_64.png		dcc409f62a9d28b12ae28730676d102cb50b94a1c4933c3f29edcc71168ab6ae
+src/assets/icons/spreadsheet/italics_icon_64.png.import	13	b5b5637403c57b975e98c45a38ee9915d43d0ccfb926ba9dccba734ea99521ba
+src/assets/icons/spreadsheet/recalc_icon_24.png		ec7781e3eca613ee9a4da48fb5c09a1ec3ea3c467e4dcce11f0ad46a2b3d4959
+src/assets/icons/spreadsheet/recalc_icon_24.png.import	13	7d9cdd6be2389b91ba2cf8c748a67bdceb612a51305bb59e48edead9b85d7249
+src/assets/icons/spreadsheet/recalc_icon_48.png		6545eeec861d793af4943b706087c37526b26052438df32722f95ee2c505b2a9
+src/assets/icons/spreadsheet/recalc_icon_48.png.import	13	5f132eda9887c357fce0fee1899f4a0e872b4649a44a69c3cd108e3d1046b8b9
+src/assets/icons/spreadsheet/recalc_icon_64.png		6bffcef744a4a7f28a5485c1bb336efb9aaeaa0709fd216427b8ea5fff50a202
+src/assets/icons/spreadsheet/recalc_icon_64.png.import	13	570a1177de373739b6509a2f190a27c3dbb9c4b9f08584677e5d89e1adb1df78
+src/assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_24.png		6e98f84d115728801616439c302441b65b88bd21523d47237b9233f1b4f1e17f
+src/assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_24.png.import	6,13,14	e76393a54f06f668b63286365f95eae3c5d2acd8d21e79d39e1862fc02b90e85
+src/assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_48.png		d1815a9e0c3de8df65956ddae708b04a6b2b6bb073fba0ce0f5f6fb4a96bb7ad
+src/assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_48.png.import	6,13,14	d7b3ae32dfbeddcc376711c0e811dd7da0f770d026c8c80e29e6f154ffa6223c
+src/assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_64.png		f74e818dea5720aa8e1f897ca55b2c778261c17fb109bd59422009c958076665
+src/assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_64.png.import	6,13,14	9483eb51c5f2b15e6c6726b30814fb183fc1e5f98942602bbc6549ed347ffdcd
+src/test/fixtures/presentation/README.md	42	5162d50cbe0b6fe6792673cb269301c002c1f5e02ff65118c6addb9f0f295e96
+src/test/fixtures/tool_memory_manager_suite.gd	136,137,138,141,255,273,285,326,329	9b2372ef7ea83927745bb50e18462ff82be72332114f21494b36f5c7d0150c56
+src/test/test_mcp_document_tools.gd	71	63815bab16798012ce0fd5cbfcb400904d5929494ee4ecc8f321bbc9721ac11e
+src/test/test_mcp_open_file.gd	67,421,422,447,448,449	f12dab8bd01fa617109557809509a6b89f1284bafbbd82273680274cec5a5738
+src/test/test_mcp_snapshot.gd	49,50,51,53,54,94,99,101,131	0c66724d65102d95cdeda160e427b6b06152c621dcd939deceeac2d23bed9466
+src/test/test_mcp_spreadsheet_filter_tools.gd	2,4,5,9,10,16,18,19,20,24,57,74,75,82,98,100,112,113,129,135,141,143,153,160,166,172,177,185,189,194,200,203,205,207,209,210,211,213,215,217,219,220,223,227,237,239,240,241,242,243	86c133bde01ac8fd1cd9dfeaaf37094664effca3263c7feb583cf2ffab75b737
+src/test/test_os_open_policy.gd	64	93cd374b05d32d6b722106f5d1796b83338a8f8a62e34892d0e9da85d1cc7338
+src/test/test_plugin_editor_integration.gd	342	8b9b4fa6a62c61a8ae88b8e301d55914bbc987dc05930c79b1d90c4760125ed7
+src/test/test_presentation_panel_note_hooks.gd	42,207,208,215,216,227	8250068e5ace0680b05084b0f9ab9b6243f498c6be67e2ab0b6461be7cf58ec4
+src/test/test_scansort_panel_smoke.gd	1391,1393,1470	3842863a0e132ce677d6ab0c0cb489bc55b9a2b1a89f4394ab17f5dc24ce579a
+src/test/test_self_scene_resource_lifecycle.gd	22	9d663f9797c5158f011114349eb04e2b94cc1172d7a382ad8ae71e489edc9784
+src/test/test_spreadsheet_autofilter.gd	2,11,21,23,24,25,26,27,29,65,90,99,107,108,119,126,145,146,192,261,263,306,307	35987676dcc70db8f16f200f1e211a7e74355d7d4fab7694a87343d8289f1c00
+src/test/test_spreadsheet_autofilter_undo.gd	2,4,5,14,16,17,18,53,70,88,96,97,100,105,108,113,129,135	766cedcbe5e3a768da0b047e50f0a1634d85d07aa91e6073e65552c43ab1d36b
+src/test/test_tool_search_index.gd	45,46,47,88,90,92,93,94	3187849e8a7628c67c1bc45a3e201ffb7a152cb61575ae86ee0be0410931a672
+tests/test_autocoder_mcp_tools.py	187	03575cfb858a5f34625cae30406ca16b6a4fb8e3a6ec9d49766d99a27e311991

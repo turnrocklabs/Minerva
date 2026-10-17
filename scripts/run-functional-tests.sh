@@ -75,6 +75,7 @@ TURNROCK_TESTS=(
 	test/test_plugin_bridge_limits.js
 )
 HERMETIC_TESTS=(
+	test/test_spreadsheet_contract.gd
 	"${TURNROCK_TESTS[@]}"
 	test/test_skill_presets.gd
 	test/test_plugin_skill_seeding.gd

@@ -1,0 +1,890 @@
+[
+	{
+		"description": "Add a line or bar chart visualization to an existing spreadsheet. Requires an already-created spreadsheet (minerva_create_spreadsheet_editor) with data. This does NOT create a spreadsheet — use minerva_create_spreadsheet_editor for that. After creating, use minerva_get_chart_image to view the chart, minerva_update_chart to modify it.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"first_row_is_header": {
+					"description": "Whether first row contains headers (skip for data, use for labels). Default: true",
+					"type": "boolean"
+				},
+				"series": {
+					"description": "Array of series ranges (e.g., ['B1:B10', 'C1:C10'])",
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"title": {
+					"description": "Chart title",
+					"type": "string"
+				},
+				"type": {
+					"description": "Chart type: 'line' or 'bar'. Default: 'line'",
+					"enum": [
+						"line",
+						"bar"
+					],
+					"type": "string"
+				},
+				"x_is_date": {
+					"description": "Whether X-axis contains date values. Default: false",
+					"type": "boolean"
+				},
+				"x_range": {
+					"description": "Cell range for X-axis values (e.g., 'A1:A10')",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"x_range",
+				"series"
+			],
+			"type": "object"
+		},
+		"name": "minerva_add_spreadsheet_chart"
+	},
+	{
+		"description": "Add a new column to the spreadsheet with optional header.",
+		"inputSchema": {
+			"properties": {
+				"at_col": {
+					"description": "Column index to insert at (0-based). If not specified, appends at the end.",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"header": {
+					"description": "Header text for the new column",
+					"type": "string"
+				},
+				"values": {
+					"description": "Array of values for the column (starting from row 1 if header is provided)",
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_add_spreadsheet_column"
+	},
+	{
+		"description": "Add a new row to the spreadsheet with optional values.",
+		"inputSchema": {
+			"properties": {
+				"at_row": {
+					"description": "Row index to insert at (0-based). If not specified, appends at the end.",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"values": {
+					"description": "Array of values for the new row (one per column)",
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_add_spreadsheet_row"
+	},
+	{
+		"description": "Create a new spreadsheet. Use this when asked to 'make a spreadsheet', 'create a table', or organize data into rows and columns. Returns an editor_name for subsequent operations. Next steps: use minerva_update_spreadsheet_data to populate cells, minerva_format_cells for styling, minerva_link_spreadsheet_to_note to save as a note.",
+		"inputSchema": {
+			"properties": {
+				"csv_content": {
+					"description": "Optional initial CSV content to populate the spreadsheet",
+					"type": "string"
+				},
+				"file_path": {
+					"description": "Optional file path to load (CSV, TSV, XLSX, or .minsheet)",
+					"type": "string"
+				},
+				"name": {
+					"description": "Display name for the spreadsheet tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_create_spreadsheet_editor"
+	},
+	{
+		"description": "Delete a chart from a spreadsheet editor.",
+		"inputSchema": {
+			"properties": {
+				"chart_id": {
+					"description": "The chart ID to delete",
+					"type": "string"
+				},
+				"chart_index": {
+					"description": "Alternative: chart index (0-based) if chart_id not provided",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_delete_chart"
+	},
+	{
+		"description": "Delete a column from the spreadsheet. All columns to the right shift left. This action can be undone.",
+		"inputSchema": {
+			"properties": {
+				"column": {
+					"description": "Column number to delete (1-based). Column 1 is A, column 2 is B, etc.",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"column"
+			],
+			"type": "object"
+		},
+		"name": "minerva_delete_spreadsheet_column"
+	},
+	{
+		"description": "Delete a row from the spreadsheet. All rows below shift up. This action can be undone.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"row": {
+					"description": "Row number to delete (1-based, like Excel). Row 1 is the first row.",
+					"type": "integer"
+				}
+			},
+			"required": [
+				"editor_name",
+				"row"
+			],
+			"type": "object"
+		},
+		"name": "minerva_delete_spreadsheet_row"
+	},
+	{
+		"description": "Export spreadsheet data to the Nudge MCP hint system for quick LLM retrieval.",
+		"inputSchema": {
+			"properties": {
+				"component": {
+					"description": "Nudge component name for organizing hints (e.g., 'finance', 'inventory')",
+					"type": "string"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"format": {
+					"description": "Export format: 'raw' (full JSON), 'summary' (row/col counts, totals), 'schema' (column names/types), 'timeseries' (date-indexed), 'kv_pairs' (two-column key-value)",
+					"enum": [
+						"raw",
+						"summary",
+						"schema",
+						"timeseries",
+						"kv_pairs"
+					],
+					"type": "string"
+				},
+				"include_charts": {
+					"description": "Include chart descriptions in the export. Default: false",
+					"type": "boolean"
+				},
+				"key": {
+					"description": "Nudge key for this data (e.g., 'monthly_revenue', 'stock_levels')",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"component",
+				"key"
+			],
+			"type": "object"
+		},
+		"name": "minerva_export_to_nudge"
+	},
+	{
+		"description": "Fill down formulas/values from a source row to target rows. Copies the content from the source row and adjusts relative cell references (e.g., A1 becomes A2, A3, etc.). Absolute references ($A$1) are preserved. This is equivalent to Excel's Ctrl+D fill down feature.",
+		"inputSchema": {
+			"properties": {
+				"columns": {
+					"description": "Array of column letters to fill (e.g., ['B', 'C', 'D'] or ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']). If omitted, fills all columns with data in the source row.",
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"source_row": {
+					"description": "The 1-based row number containing the formulas/values to copy (e.g., 2 for row 2)",
+					"type": "integer"
+				},
+				"target_rows": {
+					"description": "Array of 1-based row numbers to fill into (e.g., [3, 4, 5] to fill rows 3-5)",
+					"items": {
+						"type": "integer"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"editor_name",
+				"source_row",
+				"target_rows"
+			],
+			"type": "object"
+		},
+		"name": "minerva_fill_down"
+	},
+	{
+		"description": "Apply formatting to cells or a range of cells. Requires editor_name from minerva_list_editors.",
+		"inputSchema": {
+			"properties": {
+				"alignment": {
+					"description": "Text alignment: 'left', 'center', or 'right'",
+					"enum": [
+						"left",
+						"center",
+						"right"
+					],
+					"type": "string"
+				},
+				"bg_color": {
+					"description": "Background color as hex (e.g., '#FFFF00' for yellow)",
+					"type": "string"
+				},
+				"bold": {
+					"description": "Set text bold",
+					"type": "boolean"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"italic": {
+					"description": "Set text italic",
+					"type": "boolean"
+				},
+				"number_format": {
+					"description": "Number display format: 'none' (default), 'currency' or 'usd' ($X,XXX.XX), 'percent' (X.XX%), 'decimal' (X.XX)",
+					"enum": [
+						"none",
+						"currency",
+						"usd",
+						"percent",
+						"decimal"
+					],
+					"type": "string"
+				},
+				"range": {
+					"description": "Cell range to format (e.g., 'A1', 'A1:C1', 'A:A' for whole column)",
+					"type": "string"
+				},
+				"text_color": {
+					"description": "Text color as hex (e.g., '#FF0000' for red)",
+					"type": "string"
+				},
+				"wrap_text": {
+					"description": "Enable text wrapping in cell (displays text on multiple lines)",
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"editor_name",
+				"range"
+			],
+			"type": "object"
+		},
+		"name": "minerva_format_cells"
+	},
+	{
+		"description": "Export a chart as a base64-encoded PNG image for LLM viewing. Requires editor_name and chart_id from minerva_list_charts.",
+		"inputSchema": {
+			"properties": {
+				"chart_index": {
+					"description": "Index of the chart to export (0-based). Default: 0 (first chart)",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"height": {
+					"description": "Image height in pixels. Default: 400",
+					"type": "integer"
+				},
+				"width": {
+					"description": "Image width in pixels. Default: 800",
+					"type": "integer"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_get_chart_image"
+	},
+	{
+		"description": "Get the data from a spreadsheet in various formats. Returns data_starts_at_row (1-based) to show where content begins. Requires editor_name from minerva_list_editors.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"format": {
+					"description": "Output format: 'csv', 'json', or 'markdown'. Default: 'csv'",
+					"enum": [
+						"csv",
+						"json",
+						"markdown"
+					],
+					"type": "string"
+				},
+				"include_empty_rows": {
+					"description": "If true, include leading empty rows in output. Default: false (only returns used data range).",
+					"type": "boolean"
+				},
+				"range": {
+					"description": "Optional cell range to get (e.g., 'A1:C10'). If not specified, returns all data.",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_get_spreadsheet_data"
+	},
+	{
+		"description": "Get the undo/redo history status of a spreadsheet editor.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_get_spreadsheet_history"
+	},
+	{
+		"description": "Insert an empty column at a specific position. All columns at and to the right shift right.",
+		"inputSchema": {
+			"properties": {
+				"at_column": {
+					"description": "Column index where the empty column will be inserted (0-based). 0 = A.",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"at_column"
+			],
+			"type": "object"
+		},
+		"name": "minerva_insert_spreadsheet_column"
+	},
+	{
+		"description": "Insert an empty row at a specific position. All rows at and below shift down.",
+		"inputSchema": {
+			"properties": {
+				"at_row": {
+					"description": "Row index where the empty row will be inserted (0-based).",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"at_row"
+			],
+			"type": "object"
+		},
+		"name": "minerva_insert_spreadsheet_row"
+	},
+	{
+		"description": "Create a linked note from a spreadsheet. The note displays the spreadsheet as a markdown table. Editing the note opens the spreadsheet editor. Changes sync bidirectionally.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab to link",
+					"type": "string"
+				},
+				"note_title": {
+					"description": "Title for the new note. Defaults to spreadsheet name if not provided",
+					"type": "string"
+				},
+				"thread_name": {
+					"description": "Name of the notes thread/tab to add the note to. Creates new thread if doesn't exist",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_link_spreadsheet_to_note"
+	},
+	{
+		"description": "List all charts in a spreadsheet editor.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_list_charts"
+	},
+	{
+		"description": "Recalculate all formulas in a spreadsheet. Use this after bulk operations or when cross-sheet references need refreshing.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_recalculate"
+	},
+	{
+		"description": "Redo a previously undone action in a spreadsheet editor.",
+		"inputSchema": {
+			"properties": {
+				"count": {
+					"description": "Number of actions to redo (default: 1). Use this to redo multiple steps at once.",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_redo_spreadsheet"
+	},
+	{
+		"description": "Refresh all charts in a spreadsheet to reflect current data. Call this after updating spreadsheet data.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_refresh_charts"
+	},
+	{
+		"description": "Set a formula in a specific cell. Requires editor_name from minerva_list_editors.",
+		"inputSchema": {
+			"properties": {
+				"cell": {
+					"description": "Cell reference (e.g., 'A1', 'B2')",
+					"type": "string"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"formula": {
+					"description": "Formula to set (e.g., '=SUM(A1:A10)', '=A1+B1'). The '=' prefix is optional.",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"cell",
+				"formula"
+			],
+			"type": "object"
+		},
+		"name": "minerva_set_cell_formula"
+	},
+	{
+		"description": "Set the width of one or more spreadsheet columns. Use to make content fully visible.",
+		"inputSchema": {
+			"properties": {
+				"columns": {
+					"description": "Array of column configs. Column can be a letter (A, B, ...) or 1-based number.",
+					"items": {
+						"properties": {
+							"column": {
+								"description": "Column letter (e.g., 'A', 'B') or 1-based number (e.g., '1', '2')",
+								"type": "string"
+							},
+							"width": {
+								"description": "Width in pixels (min 30, max 500)",
+								"type": "number"
+							}
+						},
+						"required": [
+							"column",
+							"width"
+						],
+						"type": "object"
+					},
+					"type": "array"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name",
+				"columns"
+			],
+			"type": "object"
+		},
+		"name": "minerva_set_column_width"
+	},
+	{
+		"description": "Set the height of one or more spreadsheet rows. Use to make wrapped text visible.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"rows": {
+					"description": "Array of row configs. Row numbers are 1-based.",
+					"items": {
+						"properties": {
+							"height": {
+								"description": "Height in pixels (min 16, max 200)",
+								"type": "number"
+							},
+							"row": {
+								"description": "Row number (1-based)",
+								"type": "integer"
+							}
+						},
+						"required": [
+							"row",
+							"height"
+						],
+						"type": "object"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"editor_name",
+				"rows"
+			],
+			"type": "object"
+		},
+		"name": "minerva_set_row_height"
+	},
+	{
+		"description": "Clear AutoFilter criteria. With column: clear that column's criterion. Without: clear every criterion and keep the filter range. With remove=true: turn AutoFilter off entirely. Returns the filter state. Undoable with minerva_undo_spreadsheet.",
+		"inputSchema": {
+			"properties": {
+				"column": {
+					"description": "Column number (1-based) whose criterion to clear",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"remove": {
+					"description": "Turn AutoFilter off (range and criteria). Default: false",
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_spreadsheet_autofilter_clear"
+	},
+	{
+		"description": "Turn on AutoFilter over a range whose first row is the header. Without a range, the sheet's used range is filtered. Filtering hides rows from view only; it never deletes or moves data. Returns the filter state (see minerva_spreadsheet_autofilter_get). Undoable with minerva_undo_spreadsheet.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"range": {
+					"description": "Range to filter, header row first (e.g. 'A1:D20'). Default: the used range.",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_spreadsheet_autofilter_enable"
+	},
+	{
+		"description": "Read a spreadsheet's AutoFilter state: criteria, filter_range, visible_rows (1-based sheet rows of the range's data rows, header excluded), visible_count, total_rows, and scope ('visible' when criteria hide rows from the list, 'all' when it covers every data row). With AutoFilter off, rows are the used range below its first row. Cell reads (minerva_get_spreadsheet_data) are unfiltered: they return every row, hidden ones included.",
+		"inputSchema": {
+			"properties": {
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"limit": {
+					"description": "Maximum rows in visible_rows (default 2000). visible_count is always exact.",
+					"type": "integer"
+				},
+				"offset": {
+					"description": "Skip this many visible rows before listing (default 0)",
+					"type": "integer"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_spreadsheet_autofilter_get"
+	},
+	{
+		"description": "Set one column's AutoFilter criterion, replacing any previous criterion on that column. Pass exactly one of: values (keep rows whose displayed text is one of these; \"\" keeps blank cells) or contains (keep rows whose displayed text contains this, case-insensitive). Criteria on different columns combine with AND. AutoFilter must be enabled first. Returns the filter state. Undoable with minerva_undo_spreadsheet.",
+		"inputSchema": {
+			"properties": {
+				"column": {
+					"description": "Column number (1-based, A = 1) inside the filter range",
+					"type": "integer"
+				},
+				"contains": {
+					"description": "Non-empty text to match, case-insensitive",
+					"type": "string"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"values": {
+					"description": "Displayed values to keep; \"\" stands for blank",
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"editor_name",
+				"column"
+			],
+			"type": "object"
+		},
+		"name": "minerva_spreadsheet_autofilter_set"
+	},
+	{
+		"description": "Undo the last action in a spreadsheet editor. Returns information about what was undone.",
+		"inputSchema": {
+			"properties": {
+				"count": {
+					"description": "Number of actions to undo (default: 1). Use this to undo multiple steps at once.",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_undo_spreadsheet"
+	},
+	{
+		"description": "Update an existing chart's properties. Use this when data ranges change or to modify chart appearance.",
+		"inputSchema": {
+			"properties": {
+				"chart_id": {
+					"description": "The chart ID to update (from minerva_list_charts or minerva_add_spreadsheet_chart)",
+					"type": "string"
+				},
+				"chart_index": {
+					"description": "Alternative: chart index (0-based) if chart_id not provided",
+					"type": "integer"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				},
+				"first_row_is_header": {
+					"description": "Whether first row contains headers",
+					"type": "boolean"
+				},
+				"series": {
+					"description": "New array of series ranges (replaces existing series)",
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"show_legend": {
+					"description": "Whether to show the legend",
+					"type": "boolean"
+				},
+				"title": {
+					"description": "New chart title",
+					"type": "string"
+				},
+				"type": {
+					"description": "Chart type: 'line' or 'bar'",
+					"enum": [
+						"line",
+						"bar"
+					],
+					"type": "string"
+				},
+				"x_axis_label": {
+					"description": "X-axis label",
+					"type": "string"
+				},
+				"x_is_date": {
+					"description": "Whether X-axis contains date values",
+					"type": "boolean"
+				},
+				"x_range": {
+					"description": "New cell range for X-axis values (e.g., 'A1:A20')",
+					"type": "string"
+				},
+				"y_auto_scale": {
+					"description": "Whether to auto-scale Y axis",
+					"type": "boolean"
+				},
+				"y_axis_label": {
+					"description": "Y-axis label",
+					"type": "string"
+				},
+				"y_max": {
+					"description": "Y-axis maximum (when y_auto_scale is false)",
+					"type": "number"
+				},
+				"y_min": {
+					"description": "Y-axis minimum (when y_auto_scale is false)",
+					"type": "number"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_update_chart"
+	},
+	{
+		"description": "Update cells in a spreadsheet. Two modes: (1) csv_content parameter for full CSV replacement, (2) cells parameter for individual cell updates [{\"cell\":\"A1\",\"value\":\"Hello\"}]. Requires editor_name from minerva_list_editors.",
+		"inputSchema": {
+			"properties": {
+				"cells": {
+					"description": "Array of cell updates: [{\"cell\": \"A1\", \"value\": \"Hello\"}, ...]",
+					"items": {
+						"properties": {
+							"cell": {
+								"description": "Cell reference (e.g., 'A1', 'B2')",
+								"type": "string"
+							},
+							"value": {
+								"description": "Value to set (string, number, or formula starting with '=')",
+								"type": "string"
+							}
+						},
+						"required": [
+							"cell",
+							"value"
+						],
+						"type": "object"
+					},
+					"type": "array"
+				},
+				"csv_content": {
+					"description": "Full CSV content to replace all data",
+					"type": "string"
+				},
+				"editor_name": {
+					"description": "The name/title of the spreadsheet editor tab",
+					"type": "string"
+				}
+			},
+			"required": [
+				"editor_name"
+			],
+			"type": "object"
+		},
+		"name": "minerva_update_spreadsheet_data"
+	}
+]

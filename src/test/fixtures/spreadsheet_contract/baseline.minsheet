@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "row_count": 4,
+  "column_count": 3,
+  "header_row_count": 1,
+  "frozen_rows": 1,
+  "frozen_cols": 1,
+  "columns": [
+    {
+      "width": 140.0,
+      "header_name": "Item",
+      "is_date_column": false
+    },
+    {
+      "width": 100.0,
+      "header_name": "",
+      "is_date_column": false
+    },
+    {
+      "width": 100.0,
+      "header_name": "",
+      "is_date_column": false
+    }
+  ],
+  "rows": [
+    {
+      "height": 30.0,
+      "is_header": true
+    },
+    {
+      "height": 24.0,
+      "is_header": false
+    },
+    {
+      "height": 24.0,
+      "is_header": false
+    },
+    {
+      "height": 24.0,
+      "is_header": false
+    }
+  ],
+  "cells": {
+    "0,0": {
+      "value": "Name",
+      "type": 1,
+      "bold": true
+    },
+    "0,1": {
+      "value": "Amount",
+      "type": 1
+    },
+    "1,0": {
+      "value": "keep",
+      "type": 1,
+      "italic": true,
+      "text_color": "ff0000ff",
+      "bg_color": "0000ffff",
+      "wrap_text": true
+    },
+    "1,1": {
+      "value": 2.0,
+      "type": 2,
+      "number_format": "currency"
+    },
+    "2,0": {
+      "value": "hide",
+      "type": 1
+    },
+    "2,1": {
+      "value": 3.0,
+      "type": 2
+    },
+    "3,1": {
+      "value": 5.0,
+      "type": 4,
+      "formula": "=SUM(B2:B3)"
+    }
+  },
+  "charts": [],
+  "autofilter": {
+    "range": [
+      0,
+      0,
+      3,
+      4
+    ],
+    "columns": [
+      {
+        "type": "values",
+        "values": [
+          "keep"
+        ],
+        "col": 0
+      }
+    ]
+  }
+}

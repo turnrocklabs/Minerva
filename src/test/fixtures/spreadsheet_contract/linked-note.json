@@ -1,0 +1,9 @@
+{
+  "Title": "Sheet note",
+  "UUID": "spreadsheet-contract-note",
+  "ContentType": "text",
+  "Content": "| Name | Amount |\n|---|---|\n|keep|2|",
+  "LinkedSpreadsheet": "Contract sheet",
+  "Enabled": true,
+  "Expanded": true
+}
