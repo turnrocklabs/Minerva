@@ -15,6 +15,8 @@ func _run() -> void:
 		var evidence := OS.get_environment("MINERVA_TEST_LOG_DIR")
 		if evidence.is_empty():
 			evidence = ProjectSettings.globalize_path("user://live-swap-evidence")
+		elif not evidence.is_absolute_path():
+			evidence = ProjectSettings.globalize_path("res://").path_join("..").simplify_path().path_join(evidence)
 		var code := OS.execute(python, PackedStringArray([
 			ProjectSettings.globalize_path("res://test/helpers/plugin_live_swap_driver.py"),
 			"--godot", OS.get_executable_path(), "--project", ProjectSettings.globalize_path("res://"),

@@ -45,6 +45,7 @@ def main() -> int:
     report = {"ok": ok, "exit_code": result.returncode,
               "checks": int(summary.group(1)) if summary else 0,
               "expected_script_errors": len(expected), "observed_script_errors": len(errors),
+              "diagnostics": [line.replace("SCRIPT ERROR:", "Child diagnostic:") for line in errors] if not ok else [],
               "raw_log": str(evidence / "live-swap-child.log")}
     (evidence / "live-swap-driver.json").write_text(json.dumps(report, indent=2) + "\n",
                                                        encoding="utf-8")
