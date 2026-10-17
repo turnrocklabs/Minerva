@@ -580,7 +580,7 @@ func _check_v1_intact(db, when: String) -> void:
 
 
 func _manifest(version: String, entrypoint: String = "./test-binary") -> Dictionary:
-	return {"id": ID, "name": "Transaction Test Plugin", "version": version, "host_api_version": "1",
+	return {"id": ID, "name": "Transaction Test Plugin", "version": version, "host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": entrypoint, "args": []},
 		"tools": [], "ui": {"panels": [], "ipc_messages": []},
 		"permissions": {"host_capabilities": []}, "autostart": false, "auto_reload": false}

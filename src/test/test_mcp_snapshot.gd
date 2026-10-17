@@ -70,7 +70,7 @@ func _init() -> void:
 		"named snapshot routes to declared slot")
 	check(named.get("width") == 12 and named.get("height") == 6 and named.get("view") == "detail",
 		"max edge preserves aspect ratio and authoritative dimensions/view")
-	check(str(named.get("path", "")).begins_with("user://snapshots/")
+	check(str(named.get("path", "")).begins_with(ProjectSettings.globalize_path("user://snapshots/"))
 		and FileAccess.file_exists(named.get("path", "")), "PNG written in snapshot directory")
 	check(named.get("projection") == "detail" and not named.has("image_base64") and not named.has("base64"),
 		"extras merged without overriding path/dimensions or adding unsolicited base64")
@@ -84,6 +84,13 @@ func _init() -> void:
 		"omitted view captures current visible panel")
 	check(Marshalls.base64_to_raw(active.get("image_base64", "")) == FileAccess.get_file_as_bytes(active.path),
 		"requested base64 represents the saved PNG")
+	panel.active_slot = true
+	var slot_active: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "Probe"})
+	check(slot_active.get("success", false) and last_target.viewport == panel.slot
+		and last_target.surface == null and str(slot_active.get("path", "")).is_absolute_path()
+		and FileAccess.file_exists(slot_active.get("path", "")),
+		"active panel slot selects its SubViewport without crop and saves an absolute OS path")
+	panel.active_slot = false
 	for surface in [text, sheet]:
 		var reply: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": surface.tab_title})
 		if not check(reply.get("success", false), "editor operation succeeded: %s" % reply):
@@ -115,6 +122,7 @@ func _init() -> void:
 	check(bad_limit.get("success", true) == false and captures == before_errors, "invalid requests never read back")
 	DirAccess.remove_absolute(named.path)
 	DirAccess.remove_absolute(active.path)
+	DirAccess.remove_absolute(slot_active.path)
 	close_panel_during_capture = true
 	var closed: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": "Probe"})
 	check(closed.get("success", true) == false and closed.get("error") == "Panel closed during capture",

@@ -327,19 +327,6 @@ uint64_t double_bits(double value) {
     return bits;
 }
 
-bool adjacent_binary64(double left, double right) {
-    uint64_t left_bits = double_bits(left);
-    uint64_t right_bits = double_bits(right);
-    auto ordered = [](uint64_t bits) {
-        return (bits & (uint64_t{1} << 63)) ? ~bits : bits | (uint64_t{1} << 63);
-    };
-    uint64_t left_ordered = ordered(left_bits);
-    uint64_t right_ordered = ordered(right_bits);
-    return left_ordered > right_ordered
-        ? left_ordered - right_ordered == 1
-        : right_ordered - left_ordered == 1;
-}
-
 json double_words(double value) {
     uint64_t bits = double_bits(value);
     json words(jsoncons::json_array_arg);
@@ -350,8 +337,8 @@ json double_words(double value) {
     return words;
 }
 
-// Godot's JSON decoder can round a valid decimal to the adjacent binary64
-// value. Build a sparse overlay containing the source decoder's exact IEEE-754
+// Godot's JSON decoder can round a valid decimal by multiple binary64 ULPs.
+// Build a sparse overlay containing the source decoder's exact IEEE-754
 // words for only those leaves. The raw JSON remains authoritative: unsafe or
 // over-precise source numbers and all nonnumeric changes are still rejected.
 bool application_corrections(const json& original, const json& adapted,
@@ -374,8 +361,7 @@ bool application_corrections(const json& original, const json& adapted,
             corrections = json::null();
             return true;
         }
-        if (!original_native.is_double() || !adapted_native.is_double() ||
-                !adjacent_binary64(original_native.as<double>(), adapted_native.as<double>())) {
+        if (!original_native.is_double() || !adapted_native.is_double()) {
             mismatch = {pointer, bounded(numeric_text(original), kDiagnosticText),
                 bounded(numeric_text(adapted), kDiagnosticText), "numeric_value_changed"};
             return false;

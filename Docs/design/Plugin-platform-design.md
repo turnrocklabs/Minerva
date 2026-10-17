@@ -229,7 +229,7 @@ func _on_panel_redo_request() -> bool
   "file_path":       String,          # associated file or "" for untitled
   "associated_object": Variant,       # Editor.associated_object, may be null
   "editor":          Editor,          # wrapper node; used for unsaved-flag APIs
-  "host_api_version": "1"             # matches manifest requirement
+  "host_api_version": "2"             # matches manifest requirement
 }
 ```
 

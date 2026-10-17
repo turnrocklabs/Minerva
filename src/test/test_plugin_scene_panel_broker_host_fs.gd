@@ -109,7 +109,7 @@ func _make_def(plugin_id: String, panel_names: Array, ipc_messages: Array) -> Pl
 		"id": plugin_id,
 		"name": plugin_id,
 		"version": "0.0.1",
-		"host_api_version": "1",
+		"host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "stub.py", "args": [], "working_dir": ""},
 		"ui": {"panels": typed_panels, "ipc_messages": ipc_messages},
 		"tools": [],

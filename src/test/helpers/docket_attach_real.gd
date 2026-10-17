@@ -18,6 +18,7 @@ func _run() -> void:
 	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
 	manager._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	var def = load("res://Scripts/Services/Plugins/PluginDefinition.gd").new()
+	def.host_api_version = "2"
 	def.id = "docket"
 	def.entrypoint = "deliberately-unavailable"
 	manager._db._plugins.docket = def

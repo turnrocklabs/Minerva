@@ -73,27 +73,6 @@ static func resolve(editor_name: String, broker: Variant = null,
 		"plugin_id": owner, "broker_bound": broker_bound}
 
 
-static func resolve_cad_host(editor_name: String) -> AnnotationHost:
-	var host := AnnotationHostRegistry.get_host(editor_name)
-	if host != null and host.has_method("get_mesh_data"):
-		return host
-	var panel_host := AnnotationHostRegistry.get_panel_host(editor_name)
-	if panel_host != null:
-		return panel_host
-	var ctx := context()
-	var resolved := resolve(editor_name, ctx.broker, ctx.editors, true)
-	if resolved.ok and resolved.host != null and resolved.panel != null:
-		return resolved.host
-	var editor: Variant = resolved.get("editor")
-	if is_instance_valid(editor) and is_instance_valid(ctx.broker):
-		var live_editors: Array = ctx.editors.filter(func(candidate: Variant) -> bool: return is_instance_valid(candidate))
-		var paired := DocumentIdentity.owning_plugin_view(editor, ctx.broker, live_editors,
-			DocumentIdentity.buffer_for(editor, ctx.broker))
-		if paired != null and "plugin_id" in paired and str(paired.plugin_id) == "cad":
-			return AnnotationHostRegistry.get_panel_host(str(paired.plugin_panel_key))
-	return null
-
-
 static func views(panel: Variant) -> Array[String]:
 	var names: Array[String] = ["active"]
 	if is_instance_valid(panel) and panel.has_method("get_viewports"):
@@ -114,20 +93,36 @@ static func capture_target(resolved: Dictionary, slot: String = "active") -> Dic
 	if not is_instance_valid(surface) or not surface.is_visible_in_tree():
 		return {"ok": false, "error": "View '%s' is not visible in the tree" % slot, "views": available}
 	var viewport: Viewport = null
-	if slot == "active":
+	var live_panel: Object = panel if is_instance_valid(panel) else null
+	var slots: Dictionary = live_panel.call("get_viewports") if live_panel != null and live_panel.has_method("get_viewports") else {}
+	var panel_slot := slots.has(slot)
+	if slot == "active" and not panel_slot:
 		viewport = surface.get_viewport() if is_instance_valid(surface) else null
 	else:
-		var raw_viewport: Variant = panel.get_viewports().get(slot)
+		var raw_viewport: Variant = slots.get(slot)
 		viewport = raw_viewport as SubViewport if is_instance_valid(raw_viewport) else null
 	if viewport == null or not is_instance_valid(viewport):
 		return {"ok": false, "error": "View '%s' has no live viewport" % slot, "views": available}
-	return {"ok": true, "viewport": viewport, "surface": surface if slot == "active" else null}
+	return {"ok": true, "viewport": viewport, "surface": null if panel_slot else surface}
 
 
 static func capture(target: Dictionary) -> Image:
 	if not target.get("ok", false):
 		return null
+	var selected: Variant = target.get("viewport")
+	if not is_instance_valid(selected): return null
+	var subviewport: SubViewport = selected if selected is SubViewport else null
+	var previous_mode: SubViewport.UpdateMode = SubViewport.UPDATE_ALWAYS
+	var idle := OS.low_processor_usage_mode and not RenderingServer.has_changed()
+	if subviewport != null:
+		previous_mode = subviewport.render_target_update_mode
+		if previous_mode != SubViewport.UPDATE_ALWAYS:
+			subviewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	# Defer the one idle draw until the await is listening for it.
+	if idle: RenderingServer.force_draw.call_deferred()
 	await RenderingServer.frame_post_draw
+	if is_instance_valid(subviewport) and previous_mode not in [SubViewport.UPDATE_ALWAYS, SubViewport.UPDATE_ONCE]:
+		subviewport.render_target_update_mode = previous_mode
 	# Freed Objects can compare equal to null; inspect raw values before typing.
 	var raw_viewport: Variant = target.get("viewport")
 	var raw_surface: Variant = target.get("surface")

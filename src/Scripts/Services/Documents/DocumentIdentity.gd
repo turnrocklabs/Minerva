@@ -63,10 +63,10 @@ static func operation_profile(editor: Object, broker: Object = null,
 	if save_supported:
 		operations.append("minerva_doc_save")
 	var profile := {"supported_operations": operations}
-	if structured_plugin == "cad":
-		profile["write_guidance"] = ("CAD is a structured document. Read its current source, "
-			+ "then use minerva_doc_write with the complete MCAD source. Inspect last_eval in "
-			+ "the write reply before continuing.")
+	if plugin_view != null and "plugin_write_guidance" in plugin_view:
+		var guidance := str(plugin_view.get("plugin_write_guidance"))
+		if not guidance.is_empty():
+			profile["write_guidance"] = guidance
 	return profile
 
 ## Explicit handles never fall back to titles. A document can have several

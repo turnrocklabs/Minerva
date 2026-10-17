@@ -142,8 +142,8 @@ func _run_test(manifest_path: String) -> void:
 	# --- HANDSHAKE ---
 	# tools/list is the canonical MCP handshake check. The cad-plugin Go
 	# backend already advertises a real tool surface (mcad_validate, etc.)
-	# even though the user-facing minerva_cad_* tools still live in core
-	# today. Asserting size > 0 + a known tool name locks in the
+	# while live-panel tools are declared by the plugin manifest.
+	# Asserting size > 0 + a known tool name locks in the
 	# refresh_tools parser fix (docket bug 019e09126b48) so the broker's
 	# eventual dynamic tool discovery starts on solid ground.
 	if conn != null:

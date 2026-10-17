@@ -425,7 +425,7 @@ jobs:
     # plugin change cannot turn a Minerva commit red without a reviewed pin.
     - name: Checkout pinned plugin contract guards
       env:
-        PLUGIN_GUARD_REV: 3001ff17a6460f61b0c8067810f69ffe8a07e15c
+        PLUGIN_GUARD_REV: 0f6c02f83ba24574f110fe28be8a7e80cab31891
       run: |
         plugin_root="$GITHUB_WORKSPACE/../minerva-plugins"
         rm -rf "$plugin_root"
@@ -455,7 +455,7 @@ jobs:
 
     - name: Run pinned plugin contract guards against this host
       env:
-        PLUGIN_GUARD_REV: 3001ff17a6460f61b0c8067810f69ffe8a07e15c
+        PLUGIN_GUARD_REV: 0f6c02f83ba24574f110fe28be8a7e80cab31891
       run: |
         # The runner builds each selected worker from its reviewed manifest,
         # uses an isolated user profile, and records both repository revisions
@@ -490,20 +490,6 @@ jobs:
 
     - name: Run functional suite (hermetic substrate and TurnRock)
       run: scripts/run-functional-tests.sh
-
-    # Quarantine: test_host_capability_terminal_io.gd is known-flaky — an
-    # intermittent native SIGABRT (exit 134), not an assertion failure, seen
-    # on 2 CI runs on diffs that never touched terminal code (both rerun-
-    # green). Not reproduced locally in 40 runs (20 sequential + 20 at 4x
-    # parallelism). Pulled out of HERMETIC_TESTS in run-functional-tests.sh so
-    # its red cannot attribute to an unrelated PR's functional gate, but it
-    # still runs on every push, in its own step, so a real terminal-capability
-    # regression stays visible (continue-on-error keeps this step from
-    # failing the job; it does not hide a failure — see the step's own
-    # status). Bug 019fbd21a8717702931647025aae6be7.
-    - name: "quarantined-flaky: terminal_io (019fbd21a8)"
-      continue-on-error: true
-      run: scripts/run-functional-tests.sh --quarantined
 
   # ── Tarball end-to-end smoke (Layer B for DCR3) ──────────────────────────
   # Drives the released Linux tarball through the production marketplace flow:

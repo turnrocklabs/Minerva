@@ -55,14 +55,13 @@ func _init() -> void:
 	for pending in [
 		{"status": "pending", "job_id": "export-1"},
 		{"success": true, "result": {"status": "running", "ticket": "design-1"}},
-		{"ok": false, "error": {"kind": "running"}},
 	]:
 		tracker = Tracker.new()
 		var clean := true
 		for i in range(6):
-			reply = tracker.check("minerva_cad_cad_export", {}, pending.duplicate(true))
+			reply = tracker.check("export", {}, pending.duplicate(true))
 			clean = clean and not reply.has("warning") and not reply.has("blocked") and not reply.has("retry_hint")
-		reply = tracker.check("minerva_cad_cad_export", {}, {"ok": true})
+		reply = tracker.check("export", {}, {"ok": true})
 		check("polling through completion carries no loop warning", clean and not reply.has("warning"))
 	tracker.check("export", {}, {"status": "pending", "job_id": "a"})
 	reply = tracker.check("export", {}, {"error": "disk full"})
@@ -70,7 +69,7 @@ func _init() -> void:
 	tracker = Tracker.new()
 	for i in range(5):
 		reply = tracker.check("unrelated", {}, {"ok": false, "error": {"kind": "running"}})
-	check("legacy exemption is scoped to CAD export", reply.get("blocked", false))
+	check("structured errors do not count as pending", reply.get("blocked", false))
 	tracker = Tracker.new()
 	for i in range(5):
 		reply = tracker.check("export", {}, {"status": "pending", "job_id": "a", "error": "terminal error"})

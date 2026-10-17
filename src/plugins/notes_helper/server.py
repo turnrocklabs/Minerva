@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "notes_helper"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.1.1"
 
 # Counter for generating unique capability request IDs.
 _cap_id_counter = itertools.count(1)

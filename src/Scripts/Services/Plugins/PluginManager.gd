@@ -81,6 +81,7 @@ signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
 signal plugin_status_changed(id: String)
 signal plugin_cleanup_status(id: String, message: String, is_error: bool)
+signal content_cleanup_finished(id: String)
 signal plugin_file_changed(id: String)
 ## A reconcile_recovered drain finished.
 signal content_drained
@@ -331,14 +332,20 @@ func _process(delta: float) -> void:
 func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-	var check_def = PluginDef.from_manifest(manifest_path, lane)
+	var check_def: PluginDefinition = PluginDef.from_manifest(manifest_path, lane)
+	if check_def != null:
+		var api_error: String = check_def.host_api_error()
+		if not api_error.is_empty():
+			return {"error": api_error}
+		while is_content_busy(check_def.id):
+			await content_cleanup_finished
 	# Docket content an earlier removal or install of this plugin left to
 	# finish goes first: a new install would be taken for it (as MarketplaceClient).
 	if check_def != null and load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(
 			ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)).any(
 			func(entry: Dictionary) -> bool: return entry.id == check_def.id and not entry.journal.has("superseded") \
 				and entry.path not in consent.get("superseded_content", [])):
-		return {"error": "Plugin '%s' has Docket content still to be repaired from an earlier install or removal; install it once that finishes" % check_def.id}
+		return {"error": "Plugin '%s' still has skills or knowledge awaiting cleanup. Make sure Docket is running and its projects are available, then restart Minerva and try installing again." % check_def.id}
 	var def = _db.install(manifest_path, lane)
 	if def == null:
 		# PluginDB.install already push_error'd; check for duplicate separately.
@@ -436,9 +443,12 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 		lane: String = PluginDefinition.LANE_MANIFEST, consent: Dictionary = {}) -> Dictionary:
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-	var def = PluginDef.from_manifest(manifest_path, lane)
+	var def: PluginDefinition = PluginDef.from_manifest(manifest_path, lane)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
+	var api_error: String = def.host_api_error()
+	if not api_error.is_empty():
+		return {"error": api_error}
 	if not _db.has_plugin(def.id):
 		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
 	var previous_def = _db.get_by_id(def.id)
@@ -449,6 +459,7 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 
 	if not _db.update_definition(def):
 		return {"error": "Failed to update plugin definition for '%s'" % def.id}
+	_check_host_api(def)
 
 	_register_manifest_tools(def.id)
 
@@ -628,13 +639,13 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	var cleanup_path: String = Transaction.queue_cleanup(staging_root, id, cleanup,
 		"its Docket content was being removed")
 	if cleanup_path.is_empty():
-		_content_busy.erase(id)
+		_finish_content_cleanup(id)
 		return {"error": "Plugin '%s' was not removed: the record of which skills and knowledge to remove could not be saved in %s" % [
 			id, staging_root]}
 	var removed := _remove_record(id, def, Transaction, staging_root)
 	if removed.has("error"):
 		Transaction.content_done(cleanup_path)
-		_content_busy.erase(id)
+		_finish_content_cleanup(id)
 		return removed
 
 	_report_plugin_cleanup(id, "Cleaning up %s's skills…" % def.name)
@@ -667,10 +678,20 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		Transaction.content_done(cleanup_path)
 	elif not Transaction.requeue_content(cleanup_path, id, cleanup, false, Seeding.unfinished_reason(result)):
 		push_error("[PluginManager] '%s''s leftover Docket content could not be queued for cleanup" % id)
-	_content_busy.erase(id)
+	_finish_content_cleanup(id)
 	var note: String = Seeding.content_note(result)
 	_report_plugin_cleanup(id, "Cleanup finished for %s." % def.name + (" " + note if not note.is_empty() else ""), not note.is_empty())
 	return result
+
+
+## A pending journal alone is not live work: only this manager owns this flag.
+func is_content_busy(id: String) -> bool:
+	return _content_busy.has(id)
+
+
+func _finish_content_cleanup(id: String) -> void:
+	_content_busy.erase(id)
+	content_cleanup_finished.emit(id)
 
 
 ## Cleanup belongs to the manager; its diagnostics survive a closed panel.
@@ -723,13 +744,17 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
+	var db: Object = _db
+	var definition: PluginDefinition = db.call("get_by_id", id)
+	var api_error := _check_host_api(definition)
+	if not api_error.is_empty():
+		return {"error": api_error}
 	# Refused before PluginPendingUpgrade, which would take a refusal for a
 	# failed first start and roll a pending update back.
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
 		return {"error": "Voice Support is disabled in Preferences", "disabled": true}
 	var docket_start := 0
 	if id == "docket":
-		var db: Object = _db
 		var current: PluginDefinition = db.call("get_by_id", id)
 		var runtime := _ensure_runtime(id)
 		if _shutting_down or runtime.get("start_pending", false) \
@@ -760,6 +785,27 @@ func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	if id == "docket" and _ensure_runtime(id).get("start_generation", 0) == docket_start:
 		_ensure_runtime(id)["start_pending"] = false
 	return started
+
+
+## The same gate covers admission and the definition restored by rollback.
+func _check_host_api(definition: PluginDefinition) -> String:
+	if definition == null:
+		return ""
+	var rt := _ensure_runtime(definition.id)
+	var previous_notice: String = rt.get("notice", "")
+	var reason := definition.host_api_error()
+	if reason.is_empty():
+		var previous_error: String = rt.get("host_api_error", "")
+		if not previous_error.is_empty() and previous_notice == previous_error:
+			rt["notice"] = ""
+		rt.erase("host_api_error")
+	else:
+		rt["host_api_error"] = reason
+		rt["notice"] = reason
+		_transition_state(definition.id, S_ERROR)
+	if str(rt.get("notice", "")) != previous_notice:
+		plugin_status_changed.emit(definition.id)
+	return reason
 
 
 func is_attached(id: String) -> bool:
@@ -859,6 +905,12 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	var db: Object = _db
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
+	var def: PluginDefinition = db.call("get_by_id", id)
+	if def == null:
+		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
+	var api_error := _check_host_api(def)
+	if not api_error.is_empty():
+		return {"error": api_error}
 	if id == "docket":
 		var runtime := _ensure_runtime(id)
 		# Rollback stops the connection and cancels its lease, but cannot run
@@ -868,9 +920,6 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		if runtime.get("start_generation", 0) != docket_start or not runtime.get("start_pending", false):
 			return {"error": "Docket start was cancelled"}
 
-	var def: PluginDefinition = db.call("get_by_id", id)
-	if def == null:
-		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
 	if RequiredPlugins.has(id):
 		var runtime_issue := RequiredPlugins.runtime_issue(def)
 		if not runtime_issue.is_empty():

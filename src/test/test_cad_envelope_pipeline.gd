@@ -279,7 +279,7 @@ func _make_rig(panel_name: String) -> Dictionary:
 	for connection: Dictionary in panel.get_signal_connection_list("request"):
 		panel.disconnect("request", connection.callable as Callable)
 	panel._on_panel_loaded({"plugin_id": "cad", "panel_name": panel_name,
-		"broker": broker, "host_api_version": "1"})
+		"broker": broker, "host_api_version": "2"})
 	var dispatched: Array[Dictionary] = []
 	panel.request.connect(func(channel: String, payload: Dictionary,
 			reply_id: String) -> void:

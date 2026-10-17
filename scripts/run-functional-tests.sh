@@ -26,7 +26,7 @@
 # Exit code: 0 if every test that RAN passed (a SKIP counts as a pass); 1 if
 # any test failed. Relies on the SceneTree tests calling quit(1) on failure.
 #
-#   scripts/run-functional-tests.sh --quarantined  # quarantined-flaky tier only
+#   scripts/run-functional-tests.sh --quarantined  # local tier; running Docket policy required
 #   scripts/run-functional-tests.sh --platform-gate  # Windows/macOS release gate
 #
 # The --platform-gate tier is the marketplace install path (archives, locks,
@@ -37,11 +37,8 @@
 # The parked macOS downloader fixture is the sole explicit skip exception;
 # its diagnostics still run and it is counted separately from passed suites.
 #
-# The --quarantined tier holds tests that are known-flaky (intermittent native
-# crash or timing race, unrelated to the diff under test) and have been pulled
-# out of HERMETIC_TESTS so their red cannot attribute to an unrelated PR. They
-# still run in CI, in their own step, so a real regression stays visible —
-# see the "quarantined-flaky" step in .github/workflows/build.yml.
+# The --quarantined tier needs a running Docket policy and is not run in CI.
+# Run it locally with --quarantined where that policy is available.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -93,9 +90,13 @@ HERMETIC_TESTS=(
 	test/test_mcp_catalog_ownership.gd
 	test/test_panel_executed_tools.gd
 	test/test_mcp_plugin_result_boundaries.gd
+	test/test_numeric_correction.gd
+	test/test_install_after_remove.gd
 	test/test_mcp_diagnostics.gd
 	test/test_preferences_verbose_logging.gd
 	test/test_plugin_manager_diagnostics.gd
+	test/test_plugin_host_api.gd
+	test/test_plugin_write_guidance.gd
 	test/test_plugin_remove_latency.gd
 	test/test_bounded_process.gd
 	test/test_mcp_loop_tracker.gd
@@ -103,7 +104,6 @@ HERMETIC_TESTS=(
 	test/test_self_scene_resource_lifecycle.gd
 	test/test_markdownlabel_tables.gd
 	test/test_mcp_schema_coercion.gd
-	test/test_mcp_cad_tools.gd
 	test/test_plugin_inspect_lean.gd
 	test/test_buffer_sync_undo_caret.gd
 	test/test_doc_version_guard.gd
@@ -111,10 +111,8 @@ HERMETIC_TESTS=(
 	test/test_host_capability_terminal.gd
 	test/test_host_capability_editors.gd
 	test/test_plugin_editor_integration.gd
-	# test_host_capability_terminal_io.gd: quarantined, bug 019fbd21a8717702931647025aae6be7
-	# (intermittent CI-only SIGABRT/exit 134, not reproduced in 40 local runs
-	# incl. 4x parallel load; 2 CI occurrences, both rerun-green, neither on a
-	# diff touching terminal code). Runs standalone via --quarantined below.
+	# test_host_capability_terminal_io.gd needs a running Docket policy.
+	# Not run in CI; run locally with --quarantined (bug 019fbd21a8717702931647025aae6be7).
 	test/test_media_artifact_kind.gd
 	test/test_os_open_policy.gd
 	test/test_chat_groups.gd
@@ -147,7 +145,7 @@ HERMETIC_TESTS=(
 	test/test_ui_scale_sync.gd
 )
 QUARANTINED_TESTS=(
-	# bug 019fbd21a8717702931647025aae6be7 — see comment above.
+	# Local only: needs a running Docket policy; not run in CI (019fbd21a8).
 	test/test_host_capability_terminal_io.gd
 )
 REQUIRED_DOCKET_TESTS=(test/test_required_docket.gd)

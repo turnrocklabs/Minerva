@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "test_paired_dsl"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.1.1"
 
 
 def _ok(req_id, payload):

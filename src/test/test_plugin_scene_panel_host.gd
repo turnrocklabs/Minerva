@@ -144,6 +144,8 @@ class StubPluginDef extends RefCounted:
 	## Dictionary {name, kind, entry_scene, scripts, ipc_channels, ...} (typed).
 	var ui_panels: Array = []
 	var state: int = 2  # PluginDefinition.State.RUNNING
+	func host_api_error() -> String:
+		return ""
 
 
 ## Stub PluginDB that returns a pre-configured def.
@@ -661,7 +663,7 @@ func test_broker_registered_before_on_panel_loaded() -> void:
 		"file_path": "",
 		"associated_object": null,
 		"editor": null,
-		"host_api_version": "1",
+		"host_api_version": "2",
 	}
 	if panel_root.has_method("_on_panel_loaded"):
 		panel_root._on_panel_loaded(ctx)
@@ -735,7 +737,7 @@ func test_on_panel_loaded_receives_ctx_keys() -> void:
 		"file_path":        "/tmp/cad/untitled.mcad",
 		"associated_object": null,
 		"editor":           null,
-		"host_api_version": "1",
+		"host_api_version": "2",
 	}
 	if panel_root.has_method("_on_panel_loaded"):
 		panel_root._on_panel_loaded(ctx)
@@ -750,8 +752,8 @@ func test_on_panel_loaded_receives_ctx_keys() -> void:
 		panel_root.on_panel_loaded_ctx.get("broker", null) != null)
 	check("ctx.file_path present",
 		panel_root.on_panel_loaded_ctx.has("file_path"))
-	check("ctx.host_api_version == '1'",
-		panel_root.on_panel_loaded_ctx.get("host_api_version", "") == "1")
+	check("ctx.host_api_version == '2'",
+		panel_root.on_panel_loaded_ctx.get("host_api_version", "") == "2")
 
 	# Free child-first to avoid dangling refs (MinervaIPC child on root).
 	vbox.remove_child(panel_root)

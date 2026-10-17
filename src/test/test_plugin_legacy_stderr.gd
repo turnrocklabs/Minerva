@@ -16,7 +16,7 @@ func _run() -> void:
 	for listener: Dictionary in connection._subprocess.stderr_ready.get_connections():
 		connection._subprocess.stderr_ready.disconnect(listener.callable)
 	var definition_type = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-	var definition = definition_type.from_dict({"id": "stderr_probe", "name": "Stderr probe", "version": "1.0.0", "host_api_version": "1"})
+	var definition = definition_type.from_dict({"id": "stderr_probe", "name": "Stderr probe", "version": "1.0.0", "host_api_version": "2"})
 	definition.state = definition_type.State.RUNNING
 	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
 	manager._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()

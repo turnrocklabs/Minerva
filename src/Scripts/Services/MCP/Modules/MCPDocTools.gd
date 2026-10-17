@@ -36,7 +36,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_doc_read",
-		"Read a document's text. Pass `document_id`, `view_id`, `path` (absolute file path), or an unambiguous `editor_name`. Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. The reply advertises supported_operations and, for CAD, whole-document write_guidance. Returns not_found when neither buffer, file, nor named editor exists.",
+		"Read a document's text. Pass `document_id`, `view_id`, `path` (absolute file path), or an unambiguous `editor_name`. Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. The reply advertises supported_operations. Structured plugin documents advertise write_guidance; follow it. Returns not_found when neither buffer, file, nor named editor exists.",
 		_dual_key_schema({
 			"text": {"type": "string"},
 			"version": {"type": "integer"},
@@ -44,7 +44,7 @@ func register_tools() -> void:
 		}, []), "documents")
 
 	server._register_tool("minerva_doc_write",
-		"Replace a document's full text. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. CAD is structured: read first, pass the complete MCAD source as plain text here, and inspect last_eval in the reply. Other plugin-scene plain text is wrapped as {\"source\": text}; pass a JSON object literal only when the plugin expects a fuller Dictionary. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
+		"Replace a document's full text. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. Structured plugin documents advertise write_guidance; follow it. Plugin-scene plain text is wrapped as {\"source\": text}; pass a JSON object literal only when the plugin expects a fuller Dictionary. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
 		_dual_key_schema({
 			"text": {"type": "string", "description": "Full text content"},
 			"save": {"type": "boolean", "description": "Also flush to disk now (default false = buffered, persist later via minerva_doc_save)."},
@@ -52,7 +52,7 @@ func register_tools() -> void:
 		}, ["text"]), "documents")
 
 	server._register_tool("minerva_doc_edit",
-		"Replace old_string with new_string. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Without replace_all, old_string must match exactly once. Structured documents such as CAD return operation_unsupported, retryable=false, next_tool=minerva_doc_write, and canonical document_identity; read then replace their whole source with minerva_doc_write.",
+		"Replace old_string with new_string. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Without replace_all, old_string must match exactly once. Structured documents return operation_unsupported, retryable=false, next_tool=minerva_doc_write, and canonical document_identity. Structured plugin documents advertise write_guidance; follow it.",
 		_dual_key_schema({
 			"old_string": {"type": "string", "description": "String to find (must be unique unless replace_all)"},
 			"new_string": {"type": "string", "description": "Replacement string"},

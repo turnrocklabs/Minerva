@@ -64,7 +64,7 @@ func _setup() -> bool:
 		"id": "test_marketplace_plugin",
 		"name": "Test Marketplace Plugin",
 		"version": "0.0.1",
-		"host_api_version": "1",
+		"host_api_version": "2",
 		"backend": {
 			"transport": "stdio",
 			"entrypoint": "./test-marketplace-binary",

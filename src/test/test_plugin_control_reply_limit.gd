@@ -26,7 +26,7 @@ func _run() -> void:
 	var db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	var definition = load("res://Scripts/Services/Plugins/PluginDefinition.gd").from_dict({
 		"id": "reply_limit_probe", "name": "reply_limit_probe", "version": "1.0.0",
-		"host_api_version": "1", "backend": {"transport": "stdio",
+		"host_api_version": "2", "backend": {"transport": "stdio",
 			"entrypoint": "bulk_snapshot_probe.py", "args": []},
 		"permissions": {"host_capabilities": [], "network": {"mode": "none"},
 			"filesystem": {"mode": "none", "paths": []}},

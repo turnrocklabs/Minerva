@@ -149,7 +149,10 @@ class JSONSchemaHelperTest(unittest.TestCase):
                          [int(word) for word in words])
         transformed = self.helper.call(
             "prepare_numbers", original_raw='{"value":0.5}', adapted_raw='{"value":0.75}')
-        self.assertEqual("numeric_value_changed", transformed["error"]["details"]["reason"])
+        self.assertTrue(transformed["ok"], transformed)
+        words = transformed["corrections"]["value"]
+        self.assertEqual(list(struct.unpack("<II", struct.pack("<d", 0.5))),
+                         [int(word) for word in words])
         ambiguous_source = self.helper.call(
             "prepare_numbers", original_raw='{"value":0.10000000000000001}',
             adapted_raw='{"value":0.1}')

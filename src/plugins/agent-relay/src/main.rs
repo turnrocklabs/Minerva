@@ -88,7 +88,7 @@ fn with_filter_rules<R>(f: impl FnOnce(&mut FilterRuleSet) -> R) -> R {
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "agent_relay";
-const SERVER_VERSION: &str = "0.2.0";
+const SERVER_VERSION: &str = "0.3.2";
 
 fn configure_state_file_from_args() -> Result<(), String> {
     let mut args = std::env::args().skip(1);

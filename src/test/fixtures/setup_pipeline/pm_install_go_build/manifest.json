@@ -2,7 +2,7 @@
   "id": "setup_pipeline_pm_go_build_test",
   "name": "Setup Pipeline PluginManager go_build Happy-Path Test Fixture",
   "version": "0.1.0",
-  "host_api_version": "1",
+  "host_api_version": "2",
   "backend": {
     "transport": "stdio",
     "entrypoint": "./bin/fake-plugin",

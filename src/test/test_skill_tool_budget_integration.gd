@@ -67,7 +67,8 @@ func _register_fixture_tools(manager, server, fixture: Dictionary) -> void:
 
 func _run() -> void:
 	await process_frame
-	var manager = SingletonObject.get_mcp_manager()
+	# Resolve the autoload at runtime for the --script runner.
+	var manager = root.get_node("SingletonObject").get_mcp_manager()
 	check("MCP manager is available", manager != null)
 	if manager == null:
 		quit(1)
@@ -82,8 +83,9 @@ func _run() -> void:
 	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(FIXTURE))
 	_register_fixture_tools(manager, server, fixture)
 	var skill_module = null
+	var skill_script = load("res://Scripts/Services/MCP/Modules/MCPSkillTools.gd")
 	for module in server._modules:
-		if module is MCPSkillTools:
+		if module.get_script() == skill_script:
 			skill_module = module
 			break
 	check("real skill module is registered", skill_module != null)

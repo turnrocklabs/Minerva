@@ -255,7 +255,7 @@ func test_marketplace_needs_binary_renders_without_rebuild() -> void:
 		"id": id,
 		"name": "Marketplace No Binary",
 		"version": "0.1.0",
-		"host_api_version": "1",
+		"host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "./bin/plugin.bin", "args": []},
 		"ui": {"panels": [], "ipc_messages": []},
 		"permissions": {

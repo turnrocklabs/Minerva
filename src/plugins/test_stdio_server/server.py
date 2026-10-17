@@ -75,7 +75,7 @@ def handle_initialize(params: dict, req_id) -> dict:
             },
             "serverInfo": {
                 "name": "test_stdio_server",
-                "version": "0.1.0",
+                "version": "0.1.1",
             },
         },
     }

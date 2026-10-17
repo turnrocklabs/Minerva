@@ -23,12 +23,12 @@
 set -uo pipefail
 
 MINERVA_DIR="${1:?need extract dir}"
-SCANSORT_TARBALL_URL="${SCANSORT_TARBALL_URL:-https://github.com/imrans-lab/minerva-plugins/releases/download/scansort-v0.0.0-pre/scansort-0.0.1-linux-x86_64.tar.gz}"
+SCANSORT_TARBALL_URL="${SCANSORT_TARBALL_URL:-https://github.com/imrans-lab/minerva-plugins/releases/download/scansort-v0.0.3/scansort-0.0.3-linux-x86_64.tar.gz}"
 # CAD evaluate assertion added per DCR 019e6a4bcb0c W3. Defaults to the final
-# cad-v0.1.1 release; override with CAD_TARBALL_URL for prerelease URLs (e.g.
+# cad-v0.3.18 release; override with CAD_TARBALL_URL for prerelease URLs (e.g.
 # the per-branch prerelease published by minerva-plugins cad.yml on push).
 # Empty string disables the cad-evaluate step.
-CAD_TARBALL_URL="${CAD_TARBALL_URL:-https://github.com/imrans-lab/minerva-plugins/releases/download/cad-v0.1.1/cad-0.1.1-linux-x86_64.tar.gz}"
+CAD_TARBALL_URL="${CAD_TARBALL_URL:-https://github.com/imrans-lab/minerva-plugins/releases/download/cad-v0.3.18/cad-0.3.18-linux-x86_64.tar.gz}"
 CAD_EVALUATE_TIMEOUT_S="${CAD_EVALUATE_TIMEOUT_S:-90}"
 MCP_PORT="${MCP_PORT:-9315}"
 MCP_URL="http://127.0.0.1:${MCP_PORT}/mcp"

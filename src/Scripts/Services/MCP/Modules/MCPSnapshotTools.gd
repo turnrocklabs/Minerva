@@ -75,7 +75,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var save_error := image.save_png(path)
 	if save_error != OK:
 		return _error("Cannot save snapshot (error %d)" % save_error, available)
-	var reply := {"success": true, "path": path, "width": image.get_width(),
+	var reply := {"success": true, "path": ProjectSettings.globalize_path(path), "width": image.get_width(),
 		"height": image.get_height(), "view": view}
 	# Extras are metadata, never a second authority for response or wire fields.
 	for key in extras:
