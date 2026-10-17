@@ -163,47 +163,43 @@ func _run() -> void:
 	manager._pending_changed_paths[IDS[0]] = ["user://plugins/" + IDS[0] + "/nested/Dependency.gd"]
 	await manager._on_reload_debounce_expired(IDS[0])
 	check(editors[0].plugin_scene_root.operation(10) == 15 and manager.get_restart_required_reason(IDS[0]).is_empty(), "watcher debounce uses same swap without restart flag")
-	# Staging doesn't register candidates. A committed update can fail activation
-	# without rolling back the installed files or disturbing open user documents.
-	var staged_dir := _fixture(IDS[0], 99, "user://live_update_staging")
-	var stage: Dictionary = manager.stage_live_plugin_update(IDS[0], staged_dir)
-	check(stage.get("ok", false) and stage.get("staged", false), "marketplace stage retains immutable build")
+	_fixture(IDS[0], 6)
+	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false), "explicit development reload remains live")
+	_assert_wiring(6, 4)
+	# A committed marketplace update never activates scenes in this session.
 	var old_ids: Array = editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id())
 	var store := Store.new(IDS[0])
 	var selector := FileAccess.get_file_as_bytes(store.selector_path())
 	_fixture(IDS[0], 99)
 	var next_definition := PluginDefinition.from_manifest("user://plugins/" + IDS[0] + "/manifest.json")
 	check(manager.get_db().update_definition(next_definition), "installed definition commit remains distinct")
-	var refused: Dictionary = await manager.activate_live_plugin_update(IDS[0])
-	check(not refused.get("ok", true) and str(refused.message).begins_with("Update installed; live reload refused: ")
-		and manager.get_plugin_status(IDS[0]).live_reload.restart_pending, "failed post-install activation is visible restart-pending")
+	var pending: Dictionary = manager.installed_scene_update(IDS[0])
+	check(pending.get("ok", false) and pending.message == "Update installed; restart to load the new panels"
+		and manager.get_plugin_status(IDS[0]).live_reload.restart_pending, "installed update is visible restart-pending without activation")
+	check(not (await manager.reload_scene_plugin(IDS[0])).get("ok", true), "explicit reload cannot bypass marketplace restart boundary")
+	manager._pending_changed_paths[IDS[0]] = ["user://plugins/" + IDS[0] + "/Panel.gd", "user://plugins/" + IDS[0] + "/manifest.json"]
+	await manager._on_reload_debounce_expired(IDS[0])
 	check(editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id()) == old_ids
-		and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "refused installed update keeps exact old roots and selector")
-	check(manager.get_restart_required_reason(IDS[0]).is_empty(), "opt-in failure never poisons restart-required flag")
-	_fixture(IDS[0], 6)
-	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false), "same-process retry succeeds after installed failure")
-	_assert_wiring(6, 4)
+		and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "installed update and mixed watcher keep exact old roots and selector")
+	check(manager.get_restart_required_reason(IDS[0]).is_empty(), "opt-in pending update never poisons legacy restart-required flag")
 	var protected_path := "user://live-reload-protected.txt"
 	_write(protected_path, "unrelated document remains exact")
 	var pending_tmp := store.directory.path_join("pending-install.json.tmp")
 	var metadata_dir := DirAccess.open(store.directory)
 	check(metadata_dir.create_link(ProjectSettings.globalize_path(protected_path), pending_tmp) == OK, "create actual linked pending metadata temp")
-	var linked_stage: Dictionary = manager.stage_live_plugin_update(IDS[0], staged_dir)
-	check(not linked_stage.get("ok", true) and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact", "staging refuses temp symlink without truncating unrelated document")
-	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false)
-		and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact", "successful scene swap also refuses linked pending metadata cleanup")
+	var linked_update: Dictionary = manager.installed_scene_update(IDS[0])
+	check(not linked_update.get("ok", true) and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact", "installed identity refuses temp symlink without truncating unrelated document")
 	check(DirAccess.rename_absolute(pending_tmp, pending_tmp + ".retained-link") == OK, "preserve injected symlink outside metadata filename")
 	# A plugin never opened still snapshots its previous installed generation.
 	var closed_id := "live_integration_closed"
 	_fixture(closed_id, 1)
 	check(manager.get_db().install("user://plugins/" + closed_id + "/manifest.json") != null, "closed plugin installs")
-	var closed_stage := _fixture(closed_id, 98, "user://live_closed_stage")
-	check(manager.stage_live_plugin_update(closed_id, closed_stage).get("ok", false), "closed update snapshots prior generation before commit")
+	check(manager.can_replace_plugin_files(closed_id).get("ok", false), "closed update snapshots prior generation before commit")
 	_fixture(closed_id, 98)
 	var closed_store := Store.new(closed_id)
 	var old_selector := FileAccess.get_file_as_bytes(closed_store.selector_path())
-	var rejected: Dictionary = await manager.activate_live_plugin_update(closed_id)
-	check(not rejected.get("ok", true) and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "loaded-lifecycle self-check refuses closed candidate before promotion")
+	check(manager.installed_scene_update(closed_id).get("ok", false)
+		and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "closed installed update retains old selection until restart")
 	var boot_script: GDScript = load("res://Scripts/Services/Plugins/PluginLiveReload.gd")
 	var boot: Node = boot_script.new()
 	boot.configure(manager, broker, Callable())
@@ -352,7 +348,7 @@ func _marketplace_race() -> void:
 
 
 func _try_install_watch(plugin_id: String, editor: Editor, old_root: int, selector: PackedByteArray) -> void:
-	manager._pending_changed_paths[plugin_id] = ["user://plugins/" + plugin_id + "/Panel.gd"]
+	manager._pending_changed_paths[plugin_id] = ["user://plugins/" + plugin_id + "/Panel.gd", "user://plugins/" + plugin_id + "/manifest.json", "user://plugins/" + plugin_id + "/late_fail.py"]
 	await manager._on_reload_debounce_expired(plugin_id)
 	check(editor.plugin_scene_root.get_instance_id() == old_root
 		and FileAccess.get_file_as_bytes(Store.new(plugin_id).selector_path()) == selector, "watcher during actual backend startup retains exact pre-install generation")

@@ -13,7 +13,6 @@ var _broker: PluginScenePanelBroker
 var _notify: Callable
 var _machines: Dictionary = {}
 var _status: Dictionary = {}
-var _staged: Dictionary = {}
 
 
 func configure(manager: Object, broker: PluginScenePanelBroker, notify: Callable) -> void:
@@ -24,7 +23,7 @@ func configure(manager: Object, broker: PluginScenePanelBroker, notify: Callable
 
 func supports(plugin_id: String) -> bool:
 	var definition: PluginDefinition = _definition(plugin_id)
-	return definition != null and "live_reload" in definition.capabilities
+	return _machines.has(plugin_id) or (definition != null and "live_reload" in definition.capabilities)
 
 
 func _definition(plugin_id: String) -> PluginDefinition:
@@ -168,6 +167,8 @@ func _ensure_current(plugin_id: String, machine: PluginLiveSwap) -> Dictionary:
 	if machine.busy:
 		return {"ok": false, "error": "Live reload is already preparing"}
 	if machine.record.is_empty():
+		if _install_pending(plugin_id) and not FileAccess.file_exists(machine.store.selector_path()):
+			return _result(plugin_id, {"ok": false, "error": "Scene initialization waits for the installed backend to commit"})
 		var recovered := machine.store.recover(_validate.bind(machine))
 		if not recovered.get("ok", false):
 			if FileAccess.file_exists(machine.store.selector_path()) \
@@ -207,12 +208,12 @@ func resolve(plugin_id: String, panel_name: String) -> Dictionary:
 	return _result(plugin_id, {"ok": false, "error": "Panel absent from selected build: " + panel_name})
 
 
-func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = false, preserve_pending: bool = false) -> Dictionary:
+func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = false) -> Dictionary:
 	if not supports(plugin_id):
 		return {"ok": false, "error": "Plugin has not opted into live reload"}
 	var machine := _machine(plugin_id)
-	if _staged.has(plugin_id) or _install_pending(plugin_id):
-		return _result(plugin_id, {"ok": false, "error": "Scene reload waits for the installed backend to commit"}, installed)
+	if reload_blocked(plugin_id):
+		return _reload_refusal(plugin_id)
 	var current_status: Dictionary = _status.get(plugin_id, {})
 	var pending: bool = current_status.get("restart_pending", false)
 	installed = installed or pending
@@ -261,7 +262,7 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 		if not checked.get("ok", false):
 			return _result(plugin_id, checked, installed)
 	var reply := await machine.swap(build, entries, _wire, _retire)
-	if reply.get("ok", false) and not preserve_pending:
+	if reply.get("ok", false):
 		var pending_path := _pending_path(machine)
 		if pending_path.is_empty() or not Atomic.write(pending_path, "{}"):
 			reply["message"] = "Live reload complete; pending-update metadata could not be cleared"
@@ -275,6 +276,8 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 
 
 func revert(plugin_id: String) -> Dictionary:
+	if reload_blocked(plugin_id):
+		return _reload_refusal(plugin_id)
 	if not supports(plugin_id):
 		return _result(plugin_id, {"ok": false, "error": "Plugin has not opted into live reload"})
 	var machine := _machine(plugin_id)
@@ -287,24 +290,9 @@ func revert(plugin_id: String) -> Dictionary:
 	var build := machine.store.read_archive(previous)
 	if not build.get("ok", false):
 		return _result(plugin_id, build)
-	var marketplace := _definition(plugin_id).install_lane == PluginDefinition.LANE_MARKETPLACE
-	if marketplace:
-		var installed := _capture_installed(plugin_id, machine)
-		var pending_digest := str(machine.record.active)
-		if installed.get("ok", false):
-			var archived := machine.store.archive(installed)
-			if not archived.get("ok", false):
-				return _result(plugin_id, archived)
-			pending_digest = str(installed.digest)
-		var pending_path := _pending_path(machine)
-		if pending_path.is_empty() or not Atomic.write(pending_path, JSON.stringify({"digest": pending_digest})):
-			return _result(plugin_id, {"ok": false, "error": "Cannot retain installed update for restart"})
-	var reply := await reload(plugin_id, build, false, marketplace)
+	var reply := await reload(plugin_id, build)
 	if reply.get("ok", false):
-		reply["restart_pending"] = marketplace
 		reply["message"] = "Previous scene version restored"
-		if marketplace:
-			reply.message = "Previous scene restored; backend remains the installed version. Restart to finish the installed update."
 		return _result(plugin_id, reply)
 	return reply
 
@@ -370,60 +358,55 @@ func _retire(panel: Control) -> void:
 
 
 func can_replace(plugin_id: String) -> Dictionary:
-	return {"error": "reload_in_progress", "message": "Wait for live reload to finish"} \
-		if _machine(plugin_id).busy or _staged.has(plugin_id) else {"ok": true}
+	var machine := _machine(plugin_id)
+	if machine.busy:
+		return {"error": "reload_in_progress", "message": "Wait for live reload to finish"}
+	# Retain the previous immutable generation before installed files move.
+	var initialized := _ensure_current(plugin_id, machine)
+	return {"ok": true} if initialized.get("ok", false) else {"error": "generation_unavailable", "message": initialized.get("message", initialized.get("error", "Scene unavailable"))}
 
 
 func _install_pending(plugin_id: String) -> bool:
-	return InstallTransaction.pending_for(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR), plugin_id) != null
+	var staging_root := ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)
+	return InstallTransaction.pending_for(staging_root, plugin_id) != null \
+		or InstallTransaction.has_unfinished(staging_root, plugin_id)
 
 
-func finish_update(plugin_id: String) -> void:
-	_staged.erase(plugin_id)
+func has_generation(plugin_id: String) -> bool:
+	return _machines.has(plugin_id)
 
 
-## Stage before installation changes files. A crash only admits this pending
-## archive at boot when the installed source digest matches it exactly.
-func stage_update(plugin_id: String, candidate_directory: String) -> Dictionary:
-	var source := ProjectSettings.globalize_path(candidate_directory)
-	if source != source.simplify_path() or Store._has_link(source):
-		return {"ok": false, "error": "Update staging path must be canonical and contain no symlinks"}
+func _reload_refusal(plugin_id: String) -> Dictionary:
+	var pending: bool = status(plugin_id).get("restart_pending", false)
+	return _result(plugin_id, {"ok": false, "restart_pending": pending,
+		"message": "Update installed; restart to load the new panels" if pending else "Scene reload waits for the installed backend to commit"})
+
+
+func reload_blocked(plugin_id: String) -> bool:
+	return _install_pending(plugin_id) or status(plugin_id).get("restart_pending", false)
+
+
+## Called after installation commits. Never activate scenes in this session:
+## retain the installed identity for validation after the application restarts.
+func installed_update(plugin_id: String) -> Dictionary:
 	var machine := _machine(plugin_id)
-	if machine.busy or _staged.has(plugin_id):
-		return {"ok": false, "error": "Live reload is already preparing"}
-	var initialized := _ensure_current(plugin_id, machine)
-	if not initialized.get("ok", false):
-		return initialized
-	var build := machine.store.capture(source)
-	if not build.get("ok", false) or _panel_definitions(build).is_empty():
-		return {"ok": false, "error": str(build.get("error", "Invalid staged scene manifest"))}
-	var manifest_bytes: PackedByteArray = build.files["manifest.json"]
-	var manifest: Dictionary = JSON.parse_string(manifest_bytes.get_string_from_utf8())
-	var next_definition := PluginDefinition.from_dict(manifest)
-	if next_definition == null or next_definition.id != plugin_id or "live_reload" not in next_definition.capabilities:
-		return {"ok": false, "error": "Restart to update: live-reload identity or capability changed"}
-	next_definition.data_directory = source
-	if not next_definition.validate_capabilities().is_empty():
-		return {"ok": false, "error": "Restart to update: updated panel state hooks are invalid"}
-	var archive := machine.store.archive(build)
-	if not archive.get("ok", false):
-		return archive
-	var pending_path := _pending_path(machine)
-	if pending_path.is_empty() or not Atomic.write(pending_path, JSON.stringify({"digest": build.digest})):
-		return {"ok": false, "error": "Cannot retain staged update identity"}
-	_staged[plugin_id] = build
-	return {"ok": true, "staged": true}
-
-
-func activate_update(plugin_id: String) -> Dictionary:
-	if not _staged.has(plugin_id):
-		return {"ok": false, "error": "No staged live generation"}
-	var build: Dictionary = _staged[plugin_id]
-	_staged.erase(plugin_id)
-	return await reload(plugin_id, build, true)
+	var build := _capture_installed(plugin_id, machine)
+	var reply := {"ok": true, "restart_pending": true,
+		"message": "Update installed; restart to load the new panels"}
+	if not build.get("ok", false) or not machine.store.archive(build).get("ok", false):
+		reply["ok"] = false
+		reply.message += "; installed scene archive could not be retained"
+	else:
+		var pending_path := _pending_path(machine)
+		if pending_path.is_empty() or not Atomic.write(pending_path, JSON.stringify({"digest": build.digest})):
+			reply["ok"] = false
+			reply.message += "; installed identity could not be retained"
+	return _result(plugin_id, reply)
 
 
 func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
+	if status(plugin_id).get("restart_pending", false):
+		return
 	if _install_pending(plugin_id):
 		_result(plugin_id, {"ok": false, "error": "Installed backend awaits its first successful start"}, true)
 		return

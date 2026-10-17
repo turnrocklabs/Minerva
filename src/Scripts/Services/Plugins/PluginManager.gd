@@ -1981,6 +1981,10 @@ func _on_reload_debounce_expired(id: String) -> void:
 	if def.state not in [S_RUNNING, S_STARTING, S_ERROR]:
 		return
 
+	# Marketplace owns backend startup and installed files until commit/rollback.
+	if supports_scene_live_reload(id) and _scene_reload_service().call("reload_blocked", id):
+		return
+
 	# Classify changed extensions (union across all changed paths).
 	var has_process_ext := false   # py/js/sh/json — always stop+start
 	var gd_paths: Array[String] = []
@@ -2159,7 +2163,8 @@ func get_live_panels(plugin_id: String) -> Array:
 func supports_scene_live_reload(id: String) -> bool:
 	var database: Object = _db
 	var definition: PluginDefinition = database.call("get_by_id", id) if database != null else null
-	return definition != null and "live_reload" in definition.capabilities
+	return (_scene_reload != null and _scene_reload.call("has_generation", id)) \
+		or (definition != null and "live_reload" in definition.capabilities)
 
 
 func _scene_reload_service() -> Node:
@@ -2179,21 +2184,12 @@ func reload_scene_plugin(id: String) -> Dictionary:
 	return await _scene_reload_service().call("reload", id)
 
 
-func stage_live_plugin_update(id: String, directory: String) -> Dictionary:
-	return _scene_reload_service().call("stage_update", id, directory) if supports_scene_live_reload(id) else {"ok": true, "staged": false}
-
-
-func activate_live_plugin_update(id: String) -> Dictionary:
-	return await _scene_reload_service().call("activate_update", id)
+func installed_scene_update(id: String) -> Dictionary:
+	return _scene_reload_service().call("installed_update", id) if supports_scene_live_reload(id) else {"ok": true}
 
 
 func revert_scene_plugin(id: String) -> Dictionary:
 	return await _scene_reload_service().call("revert", id)
-
-
-func finish_live_plugin_update(id: String) -> void:
-	if _scene_reload != null:
-		_scene_reload.call("finish_update", id)
 
 
 func repoint_live_panel(id: String, panel_key: String, root: Control) -> void:

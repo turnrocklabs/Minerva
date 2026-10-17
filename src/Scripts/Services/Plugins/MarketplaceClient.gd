@@ -226,10 +226,6 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		return _err("staging_failed", {"dir": staging_root})
 	op.staging_dir = txn.op_dir
 	var result := await _install(tarball_url, installer, auto_confirm_skills, op, expected, txn)
-	var live_owner: Object = installer
-	if op.get_meta("live_scene_staged", false) and live_owner != null and live_owner.has_method("finish_live_plugin_update"):
-		live_owner.call("finish_live_plugin_update", op.plugin_id)
-		op.remove_meta("live_scene_staged")
 	txn.leave()
 	# An incomplete rollback keeps the operation (and its backup) for a later
 	# recovery pass.
@@ -306,14 +302,6 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# commit or roll back.
 	if op.cancelled:
 		return _err("cancelled", {})
-	var live_stage := {"ok": true, "staged": false}
-	var live_installer: Object = installer
-	if live_installer != null and live_installer.has_method("stage_live_plugin_update"):
-		live_stage = live_installer.call("stage_live_plugin_update", plugin_id, extract_abs)
-		if not live_stage.get("ok", false):
-			return _err("live_reload_staging_refused", live_stage)
-		if live_stage.get("staged", false):
-			op.set_meta("live_scene_staged", true)
 
 	# --- 5. Replace user://plugins/<id>/, keeping the old copy until the new
 	# registration is saved (PluginInstallTransaction) ---
@@ -445,13 +433,14 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 	registered["version"] = str(manifest.get("version", ""))
 	registered["platform_verified"] = identity.platform_verified
-	# Installation has committed. Scene activation is a distinct operation;
-	# its refusal retains old panels and is never reported as an install rollback.
-	if live_stage.get("staged", false) and live_installer.has_method("activate_live_plugin_update"):
-		var activation: Dictionary = await live_installer.call("activate_live_plugin_update", plugin_id)
-		registered["live_reload"] = activation
-		if not activation.get("ok", false):
-			registered["message"] = activation.get("message", "Update installed; live reload refused")
+	# Scene generations remain selected until restart; installation never swaps
+	# open panels or allows the watcher to interrupt backend verification.
+	var scene_owner: Object = installer
+	if txn.had_previous and scene_owner != null and scene_owner.has_method("installed_scene_update"):
+		var scene_status: Dictionary = scene_owner.call("installed_scene_update", plugin_id)
+		if scene_status.get("restart_pending", false):
+			registered["live_reload"] = scene_status
+			registered["message"] = scene_status.message
 	return registered
 
 

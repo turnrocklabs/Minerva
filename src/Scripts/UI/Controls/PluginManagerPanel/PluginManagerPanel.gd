@@ -998,10 +998,11 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting) or is_building
 	var live_reload := pm.supports_scene_live_reload(plugin_id)
-	_reload_button.text = "Retry live reload" if live_reload and live_status.get("restart_pending", false) else "Reload"
-	_reload_button.tooltip_text = "Swap scene code and preserve unsaved state" if live_reload else "Restart the plugin backend to load changed code"
+	_reload_button.text = "Reload"
+	_reload_button.disabled = is_building or (live_reload and live_status.get("restart_pending", false))
+	_reload_button.tooltip_text = "Restart Minerva to load the installed update" if live_status.get("restart_pending", false) else ("Swap scene code and preserve unsaved state" if live_reload else "Restart the plugin backend to load changed code")
 	_revert_button.visible = live_reload
-	_revert_button.disabled = is_building
+	_revert_button.disabled = is_building or live_status.get("restart_pending", false)
 	# A required plugin can be stopped and kept from starting, not removed.
 	_remove_button.visible = not is_required
 
