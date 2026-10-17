@@ -56,18 +56,23 @@ func compile_build(build: Dictionary, slot: String) -> Dictionary:
 	var order: Array[String] = []
 	var visited: Dictionary = {}
 	for name: String in files:
-		if name.ends_with(".gd"):
+		if name.get_extension() in ["gd", "tscn", "tres"]:
 			var ordered := _visit_script(name, files, visited, order)
 			if not ordered.get("ok", false):
 				return ordered
 	# Assign every existing script's source first: a consumer preload must never
 	# read a previous candidate's source while dependencies are being rebuilt.
 	for name: String in order:
-		if scripts.has(name):
+		if name.ends_with(".gd") and scripts.has(name):
 			var previous: GDScript = scripts[name]
 			previous.source_code = files[name].get_string_from_utf8()
 	for name: String in order:
 		var path := store.slot_path(slot).path_join(name)
+		if not name.ends_with(".gd"):
+			# Refresh nested scenes/resources before consumers recompile preloads.
+			if ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REPLACE_DEEP) == null:
+				return _failure("Candidate dependency failed to load: " + name)
+			continue
 		var script: GDScript = scripts.get(name)
 		if script == null:
 			script = ResourceLoader.load(path, "GDScript") as GDScript
@@ -87,8 +92,10 @@ static func _visit_script(name: String, files: Dictionary, visited: Dictionary, 
 		return _failure("Cyclic candidate preload: " + name)
 	visited[name] = 1
 	var bytes: PackedByteArray = files[name]
-	for reference: String in Store.resource_references(bytes.get_string_from_utf8(), true):
-		if not reference.ends_with(".gd") or reference.begins_with("res://"):
+	var references: Array[String] = Store.resource_references(bytes.get_string_from_utf8(), name.ends_with(".gd")) \
+		if name.get_extension() in ["gd", "tscn", "tres"] else []
+	for reference: String in references:
+		if reference.begins_with("res://"):
 			continue # Store has already applied the public host API allowlist.
 		var relative := name.get_base_dir().path_join(reference).simplify_path()
 		if not files.has(relative):
@@ -147,7 +154,7 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary]) -> Di
 		if var_to_bytes(Host.invoke_save(panel, {})) != var_to_bytes(state):
 			staging.free()
 			return _failure("Candidate did not preserve the complete transient state")
-		candidates.append({"entry": entry, "root": panel, "state": copied,
+		candidates.append({"entry": entry, "root": panel, "expected": var_to_bytes(state),
 			"old": old, "visible": old.visible})
 	return {"ok": true, "candidates": candidates, "staging": staging}
 
@@ -171,10 +178,30 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		await get_tree().process_frame
 		await get_tree().process_frame
 		for candidate: Dictionary in prepared.candidates:
+			if not _participant_alive(candidate):
+				prepared.ok = false
+				prepared.error = "A participating panel closed during preparation"
+				break
 			if not Host.invoke_self_check(candidate.root) \
-				or var_to_bytes(Host.invoke_save(candidate.root, {})) != var_to_bytes(candidate.state):
+				or var_to_bytes(Host.invoke_save(candidate.root, {})) != candidate.expected:
 				prepared.ok = false
 				prepared.error = "Candidate deferred initialization changed state or failed self-check"
+				break
+			# Old panels stayed editable during the waits. Capture their CURRENT
+			# state now, then give the candidate a separate decoded copy. Expected
+			# bytes are never supplied to a plugin or aliased to its dictionary.
+			var latest: Variant = Host.invoke_save(candidate.old, {})
+			if not latest is Dictionary:
+				prepared.ok = false
+				prepared.error = "Current panel state could not be captured"
+				break
+			candidate.expected = var_to_bytes(latest)
+			if not Host.invoke_load(candidate.root, bytes_to_var(candidate.expected)) \
+				or not Host.invoke_self_check(candidate.root) \
+				or var_to_bytes(Host.invoke_save(candidate.root, {})) != candidate.expected:
+				prepared.ok = false
+				prepared.error = "Candidate refused the latest panel state"
+				break
 	var errors := logger.snapshot()
 	if not errors.is_empty():
 		prepared.ok = false
@@ -204,22 +231,22 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		wired.append(candidate)
 		candidate.old.visible = false
 		panel.visible = candidate.visible
-		if not wire.call(entry, panel, true) or not Host.invoke_load(panel, candidate.state) \
+		if not wire.call(entry, panel, true) or not Host.invoke_load(panel, bytes_to_var(candidate.expected)) \
 			or not Host.invoke_self_check(panel):
 			success = false
 			break
-		if var_to_bytes(Host.invoke_save(panel, {})) != var_to_bytes(candidate.state):
+		if var_to_bytes(Host.invoke_save(panel, {})) != candidate.expected:
 			success = false
 			break
-	errors = logger.snapshot()
 	OS.remove_logger(logger)
+	errors = logger.snapshot()
 	if not errors.is_empty():
 		success = false
 	var publication := store.publish_selector() if success else _failure("Candidate host wiring refused")
 	if not publication.get("ok", false):
 		for candidate: Dictionary in wired:
 			wire.call(candidate.entry, candidate.old, false)
-			Host.invoke_load(candidate.old, candidate.state)
+			Host.invoke_load(candidate.old, bytes_to_var(candidate.expected))
 			candidate.old.visible = candidate.visible
 		for candidate: Dictionary in prepared.candidates:
 			retire.call(candidate.root)
@@ -235,3 +262,9 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 	prepared.staging.free()
 	busy = false
 	return {"ok": true, "digest": build.digest}
+
+
+static func _participant_alive(candidate: Dictionary) -> bool:
+	return is_instance_valid(candidate.root) and is_instance_valid(candidate.old) \
+		and is_instance_valid(candidate.entry.vbox) and candidate.entry.root == candidate.old \
+		and candidate.old.get_parent() == candidate.entry.vbox

@@ -44,6 +44,8 @@ func make_build(version: int, injected: String = "") -> Dictionary:
 		scene = "not a Godot scene"
 	return store.bundle({"Panel.gd": source.to_utf8_buffer(),
 		"Dependency.gd": ("extends RefCounted\nstatic func operation(value: int) -> int:\n\treturn value * %d\n" % version).to_utf8_buffer(),
+		"Child.tscn": ('[gd_scene format=3]\n[node name="Child" type="Label"]\ntext = "%d"\n' % version).to_utf8_buffer(),
+		"Settings.tres": ('[gd_resource type="Resource" format=3]\n[resource]\nmetadata/version = %d\n' % version).to_utf8_buffer(),
 		"Panel.tscn": scene.to_utf8_buffer()})
 
 
@@ -89,9 +91,10 @@ func _run() -> void:
 		entries.append({"root": panel, "vbox": box, "panel_definition": {"entry_scene": "Panel.tscn", "scripts": ["Dependency.gd", "Panel.gd"]}})
 	for version: int in range(2, 10):
 		check("warm swap %d" % version, (await swapper.swap(make_build(version), entries, wire, retire)).ok)
+		check("nested scene and preloaded resource refreshed %d" % version, entries[0].root.call("nested_version") == version * 2)
 	check("changed marker and operation", entries[0].root.get_node("Marker").text == "9" and entries[0].root.call("operation", 3) == 27)
 	var version := 10
-	for injected: String in ["compile", "scene", "import", "missing-node", "self-check", "rename"]:
+	for injected: String in ["compile", "scene", "import", "missing-node", "self-check", "alias", "rename"]:
 		var ids: Array[int] = []
 		var states: Array[PackedByteArray] = []
 		for entry: Dictionary in entries:
@@ -110,14 +113,50 @@ func _run() -> void:
 		check(injected + " followed by successful same-process reuse", (await swapper.swap(make_build(version), entries, wire, retire)).ok)
 		await get_tree().process_frame
 		await get_tree().process_frame
-		var statm := FileAccess.get_file_as_string("/proc/self/statm").split(" ")
+		var stat_file := FileAccess.open("/proc/self/statm", FileAccess.READ)
+		var statm := stat_file.get_line().split(" ") if stat_file != null else PackedStringArray()
 		metrics.append({"fault": injected, "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
 			"resources": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT), "rss_pages": int(statm[1]) if statm.size() > 1 else -1})
 		version += 1
 	check("newer data and integer precision retained", Host.invoke_save(entries[0].root, {}).large == 9007199254740993)
+	# Edits during the two yielded preparation frames must be recaptured.
+	for publish_fails: bool in [false, true]:
+		var before_edit: Dictionary = Host.invoke_save(entries[0].root, {})
+		before_edit.text = "before-edit"
+		Host.invoke_load(entries[0].root, before_edit)
+		_edit_old.call_deferred()
+		fault = "rename" if publish_fails else ""
+		var edited_result: Dictionary = await swapper.swap(make_build(version), entries, wire, retire)
+		check("publication outcome for concurrent edit", edited_result.ok != publish_fails)
+		check("edit during prepare survives success or rollback", Host.invoke_save(entries[0].root, {}).text == "edited-during-prepare")
+		version += 1
+	# A tab can close while the candidate waits for deferred initialization.
+	entries[1].vbox.call_deferred("free")
+	var closed: Dictionary = await swapper.swap(make_build(version), entries, wire, retire)
+	check("closed participant refuses without stranding busy", not closed.ok and not swapper.busy)
+	entries.remove_at(1)
+	check("swap remains usable after tab closure", (await swapper.swap(make_build(version + 1), entries, wire, retire)).ok)
 	print("SWAP_MEMORY ", JSON.stringify(metrics))
+	var objects: Array[float] = []
+	var resources: Array[float] = []
+	var rss: Array[int] = []
+	for sample: Dictionary in metrics:
+		objects.append(sample.objects)
+		resources.append(sample.resources)
+		rss.append(sample.rss_pages)
+	check("fault-path object count is flat", objects.max() == objects.min())
+	check("fault-path resource count is flat", resources.max() == resources.min())
+	check("RSS was measured", rss.min() > 0)
+	check("fault-path RSS remains bounded after warmup", rss.max() - rss.min() <= 256)
 	for entry: Dictionary in entries:
 		entry.vbox.free()
 	swapper.free()
 	print("Plugin live swap: %d checks, %d failures" % [checks, failures])
 	completed.emit(1 if failures else 0)
+
+
+func _edit_old() -> void:
+	var panel: Control = entries[0].root
+	var state: Dictionary = Host.invoke_save(panel, {})
+	state.text = "edited-during-prepare"
+	Host.invoke_load(panel, state)

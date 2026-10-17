@@ -1,6 +1,8 @@
 extends Control
 
 const Dependency := preload("Dependency.gd")
+const Child := preload("Child.tscn")
+const Settings := preload("Settings.tres")
 const VERSION := VERSION_TOKEN
 const FAULT := "FAULT_TOKEN"
 var document: Dictionary = {}
@@ -11,6 +13,13 @@ func operation(value: int) -> int:
 	return Dependency.operation(value)
 
 
+func nested_version() -> int:
+	var child := Child.instantiate()
+	var value := int(child.text)
+	child.free()
+	return value + int(Settings.get_meta("version"))
+
+
 func _on_panel_save_request() -> Dictionary:
 	return document.duplicate(true)
 
@@ -18,7 +27,15 @@ func _on_panel_save_request() -> Dictionary:
 func _on_panel_load_request(state: Dictionary) -> void:
 	if FAULT == "import":
 		return
+	if FAULT == "alias":
+		document = state
+		_mutate.call_deferred()
+		return
 	document = state.duplicate(true)
+
+
+func _mutate() -> void:
+	document.view.scroll = -1.0
 
 
 func _on_panel_self_check() -> bool:
