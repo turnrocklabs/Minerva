@@ -88,6 +88,9 @@ func _run() -> void:
 	check("raw path literal refused explicitly", not store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload(r"res://plugins/hello_scene/ui/HelloPanel.gd")').ok)
 	check("multiline path literal refused explicitly", not store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload("""res://plugins/hello_scene/ui/HelloPanel.gd""")').ok)
 	check("comment before local preload is accepted", store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload( # comment\n"lib/Other.gd")').ok)
+	check("literal-first computed resource refused", not store.normalize_resource("Panel.gd", 'extends Control\nvar other = load("" + "res://plugins/hello_scene/ui/HelloPanel.gd")').ok)
+	check("computed local resource expression refused", not store.normalize_resource("Panel.gd", 'extends Control\nvar other = load("lib/" + "Other.gd")').ok)
+	check("unclassified reflective non-public resource refused", not store.normalize_resource("Panel.gd", 'extends Control\nvar other = ResourceLoader.call("load", "res://plugins/hello_scene/ui/HelloPanel.gd")').ok)
 	for path: String in Store.HOST_PATHS:
 		check("public host API exists: " + path, FileAccess.file_exists(path))
 		check("public host preload allowed: " + path, store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("%s")' % path).ok)

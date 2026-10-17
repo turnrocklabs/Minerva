@@ -128,6 +128,14 @@ func normalize_resource(name: String, text: String) -> Dictionary:
 			if line.begins_with("[gd_scene") or line.begins_with("[gd_resource") or line.begins_with("[ext_resource"):
 				lines[index] = uid.sub(lines[index], "", true)
 		cleaned = "\n".join(lines)
+	# A deliberately strict outer rule also covers resource paths in reflective
+	# calls or syntax this small lexer does not recognize. Comments count too:
+	# opting in requires spelling only public host paths anywhere in source.
+	var unmatched := cleaned
+	for allowed: String in HOST_PATHS:
+		unmatched = unmatched.replace(allowed, "")
+	if unmatched.contains("res://") or unmatched.contains("user://") or unmatched.contains("uid://"):
+		return _fail("Non-public resource path in opt-in source: " + name)
 	for path: String in resource_references(cleaned, name.get_extension() == "gd"):
 		if path.begins_with("res://"):
 			if path not in HOST_PATHS:
@@ -150,7 +158,10 @@ static func resource_references(text: String, is_script: bool) -> Array[String]:
 	for index: int in range(tokens.size()):
 		var token := tokens[index]
 		if is_script and token in ["preload", "load"] and index + 2 < tokens.size() and tokens[index + 1] == "(":
-			result.append(_resource_literal(tokens[index + 2]))
+			if index + 3 >= tokens.size() or tokens[index + 3] not in [")", ","]:
+				result.append("unsupported://computed-resource-expression")
+			else:
+				result.append(_resource_literal(tokens[index + 2]))
 		elif is_script and token == "extends" and index + 1 < tokens.size():
 			var parent := tokens[index + 1]
 			if parent.begins_with('"') or parent.begins_with("'") or parent.begins_with('r"') or parent.begins_with("r'"):
