@@ -658,7 +658,7 @@ func initialize_plugins() -> void:
 	policy.capability_revoked.connect(chat_target.capability_revoked)
 	plugin_audio_devices = PluginAudioDevices.new(get_voice_config(), policy, _send_plugin_host_event, _next_frame,
 		func() -> String: return AudioServer.output_device, set_output_device, _notify_plugin_refusal,
-		func() -> String: return AudioServer.input_device, set_microphone)
+		func() -> String: return str(get_microphone()), set_microphone)
 	speech_delivery = SpeechDelivery.new(SpeechLog.new(ProjectSettings.globalize_path("user://speech-log")),
 		plugin_audio_devices, get_voice_client(), _new_speech_player, _notify_plugin_refusal, _publish_speech_log)
 	plugin_capability_broker.speech_delivery = speech_delivery

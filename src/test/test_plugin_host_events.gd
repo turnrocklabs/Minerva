@@ -866,6 +866,9 @@ func _test_public_turn_events() -> void:
 
 ## Public STDIO ingress, real pane, and real voice client/Core request builders.
 func _test_public_microphone(conn, server, pane, visible, transport, cfg) -> void:
+	_so.set_microphone("Fixture Mic")
+	var saved_choice: Dictionary = await server.execute_tool_for_http("minerva_list_audio_devices", {})
+	check("E input: OS selection reads the saved choice before recording", saved_choice.selected_input == "os:Fixture Mic")
 	var key: String = "plugin:" + SUBSCRIBER + ":microphone"
 	var result: Dictionary = await conn.call_tool("probe_capability", {"capability": "host.audio", "args": {"op": "register", "device_id": "microphone", "label": "Fixture microphone", "input": true}})
 	check("E input: public registration accepts microphone", result.get("success", false), str(result))
