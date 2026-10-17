@@ -212,8 +212,31 @@ func _run() -> void:
 	boot.configure(manager, broker, Callable())
 	add_child(boot)
 	var recovered: Dictionary = boot.resolve(closed_id, "main")
-	check(recovered.get("ok", false) and boot.status(closed_id).restart_pending
-		and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "fresh service boot rejects loaded-lifecycle fault and retains selected old build")
+	check(recovered.get("ok", false) and not boot.status(closed_id).restart_pending
+		and str(boot.status(closed_id).message).begins_with("Installed update failed validation; using the previous version: ")
+		and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "failed boot retains old build with distinct repairable refusal")
+	var consumed: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(closed_store.directory.path_join("pending-install.json")))
+	check(consumed.is_empty(), "failed boot consumes installed identity instead of retrying forever")
+	var next_boot: Node = boot_script.new()
+	next_boot.configure(manager, broker, Callable())
+	add_child(next_boot)
+	check(next_boot.resolve(closed_id, "main").get("ok", false) and next_boot.status(closed_id).is_empty(), "next boot does not re-refuse the consumed installed build")
+	next_boot.free()
+	var saved_service: Node = manager._scene_reload
+	manager._scene_reload = boot
+	var panel: Control = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
+	panel._pm_override = manager
+	add_child(panel)
+	panel._selected_plugin_id = closed_id
+	panel._populate_detail_panel(closed_id)
+	check(not panel._reload_button.disabled, "boot validation refusal leaves real UI Reload enabled")
+	_fixture(closed_id, 7)
+	var tools_script: Script = load("res://Scripts/Services/Plugins/PluginMCPTools.gd")
+	var tools: RefCounted = tools_script.new(manager)
+	var repaired: Dictionary = await tools.handle_tool_call("minerva_plugin_reload", {"id": closed_id})
+	check(repaired.get("success", false) and not repaired.status.live_reload.restart_pending, "MCP Reload fixes forward after failed boot without another restart")
+	panel.free()
+	manager._scene_reload = saved_service
 	boot.free()
 	manager.get_db().remove(closed_id)
 	await _marketplace_race()

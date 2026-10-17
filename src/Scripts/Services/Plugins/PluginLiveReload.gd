@@ -415,11 +415,11 @@ func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
 	if _restart_pending.has(plugin_id):
 		return
 	if _install_pending(plugin_id):
-		_result(plugin_id, {"ok": false, "error": "Installed backend awaits its first successful start"}, true)
+		_result(plugin_id, {"ok": false, "message": "Installed backend awaits its first successful start; using the previous scene"})
 		return
 	var path := _pending_path(machine)
 	if path.is_empty():
-		_result(plugin_id, {"ok": false, "error": "Pending-update symlink refused"}, true)
+		_boot_refused(plugin_id, machine, "Pending-update symlink refused")
 		return
 	if not FileAccess.file_exists(path):
 		return
@@ -437,14 +437,23 @@ func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
 	var archive := machine.store.read_archive(str(pending.digest))
 	var checked := _validate(archive, machine, "B") if archive.get("ok", false) else archive
 	if not checked.get("ok", false):
-		_result(plugin_id, checked, true)
+		_boot_refused(plugin_id, machine, str(checked.get("error", "Boot validation refused")))
 		return
 	var selector := machine.store.prepare_selector(str(archive.digest), machine.record)
 	if selector.get("ok", false) and machine.store.publish_selector().get("ok", false):
 		machine.record = selector.record
 		machine.active_slot = "B"
 	else:
-		_result(plugin_id, {"ok": false, "error": machine.store.error_message()}, true)
+		_boot_refused(plugin_id, machine, machine.store.error_message())
+
+
+func _boot_refused(plugin_id: String, machine: PluginLiveSwap, reason: String) -> void:
+	# A restart already happened. Retain the selected build and allow repair
+	# through Reload, rather than asking for an endless sequence of restarts.
+	var path := _pending_path(machine)
+	if path.is_empty() or not Atomic.write(path, "{}"):
+		reason += "; pending identity could not be cleared"
+	_result(plugin_id, {"ok": false, "message": "Installed update failed validation; using the previous version: " + reason})
 
 
 ## Hash opt-in source content recursively; nested scripts and same-second
