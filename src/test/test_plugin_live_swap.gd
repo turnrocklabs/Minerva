@@ -20,7 +20,7 @@ func _run() -> void:
 		var code := OS.execute(python, PackedStringArray([
 			ProjectSettings.globalize_path("res://test/helpers/plugin_live_swap_driver.py"),
 			"--godot", OS.get_executable_path(), "--project", ProjectSettings.globalize_path("res://"),
-			"--evidence", evidence]), output, true)
+			"--evidence", evidence, "--seed-user-dir", ProjectSettings.globalize_path("user://")]), output, true)
 		print("PASS: isolated negative-case driver" if code == 0 else "FAIL: isolated negative-case driver")
 		for line: Variant in output:
 			print(str(line))

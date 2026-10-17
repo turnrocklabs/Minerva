@@ -17,7 +17,7 @@ func nested_version() -> int:
 	var child := Child.instantiate()
 	var value := int(child.text)
 	child.free()
-	return value + int(Settings.get_meta("version"))
+	return value + Settings.version()
 
 
 func _on_panel_save_request() -> Dictionary:

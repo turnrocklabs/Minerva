@@ -45,7 +45,8 @@ func make_build(version: int, injected: String = "") -> Dictionary:
 	return store.bundle({"Panel.gd": source.to_utf8_buffer(),
 		"Dependency.gd": ("extends RefCounted\nstatic func operation(value: int) -> int:\n\treturn value * %d\n" % version).to_utf8_buffer(),
 		"Child.tscn": ('[gd_scene format=3]\n[node name="Child" type="Label"]\ntext = "%d"\n' % version).to_utf8_buffer(),
-		"Settings.tres": ('[gd_resource type="Resource" format=3]\n[resource]\nmetadata/version = %d\n' % version).to_utf8_buffer(),
+		"Settings.gd": ("extends Resource\nfunc version() -> int:\n\treturn %d\n" % version).to_utf8_buffer(),
+		"Settings.tres": '[gd_resource type="Resource" load_steps=2 format=3]\n[ext_resource type="Script" path="Settings.gd" id="1"]\n[resource]\nscript = ExtResource("1")\n'.to_utf8_buffer(),
 		"Panel.tscn": scene.to_utf8_buffer()})
 
 
@@ -58,7 +59,7 @@ func wire(entry: Dictionary, panel: Control, _first_load: bool) -> bool:
 		check("keep blocking directory nonempty", Atomic.write(store.selector_path().path_join("occupied"), "fault"))
 		rename_blocked = true
 	if rename_blocked and not _first_load:
-		check("remove injected destination by preserving it elsewhere", DirAccess.rename_absolute(store.selector_path(), store.selector_path() + ".blocked") == OK)
+		check("remove injected destination by preserving it elsewhere", DirAccess.rename_absolute(store.selector_path(), store.selector_path() + ".blocked-" + str(Time.get_ticks_usec())) == OK)
 		check("restore selector after injected environment fault", DirAccess.rename_absolute(store.selector_path() + ".saved", store.selector_path()) == OK)
 		rename_blocked = false
 		fault = ""
@@ -71,6 +72,11 @@ func retire(_panel: Control) -> void:
 
 func _run() -> void:
 	await get_tree().process_frame
+	if "--live-swap-baseline" in OS.get_cmdline_user_args():
+		await get_tree().create_timer(1.0).timeout
+		print("BASELINE_DONE")
+		completed.emit(0)
+		return
 	store = Store.new("fixture", "user://live-swap-contract-" + str(Time.get_ticks_usec()))
 	swapper = Swapper.new()
 	swapper.configure(store)
@@ -94,30 +100,31 @@ func _run() -> void:
 		check("nested scene and preloaded resource refreshed %d" % version, entries[0].root.call("nested_version") == version * 2)
 	check("changed marker and operation", entries[0].root.get_node("Marker").text == "9" and entries[0].root.call("operation", 3) == 27)
 	var version := 10
-	for injected: String in ["compile", "scene", "import", "missing-node", "self-check", "alias", "rename"]:
-		var ids: Array[int] = []
-		var states: Array[PackedByteArray] = []
-		for entry: Dictionary in entries:
-			ids.append(entry.root.get_instance_id())
-			states.append(var_to_bytes(Host.invoke_save(entry.root, {})))
-		var selector := FileAccess.get_file_as_bytes(store.selector_path())
-		fault = injected
-		var result: Dictionary = await swapper.swap(make_build(version, injected), entries, wire, retire)
-		check(injected + " refuses visibly", not result.ok and not str(result.get("error", "")).is_empty())
-		for index: int in entries.size():
-			check(injected + " keeps same old panel " + str(index), entries[index].root.get_instance_id() == ids[index])
-			check(injected + " preserves exact state " + str(index), var_to_bytes(Host.invoke_save(entries[index].root, {})) == states[index])
-		check(injected + " selector bytes preserved", FileAccess.get_file_as_bytes(store.selector_path()) == selector)
-		fault = ""
-		version += 1
-		check(injected + " followed by successful same-process reuse", (await swapper.swap(make_build(version), entries, wire, retire)).ok)
-		await get_tree().process_frame
-		await get_tree().process_frame
-		var stat_file := FileAccess.open("/proc/self/statm", FileAccess.READ)
-		var statm := stat_file.get_line().split(" ") if stat_file != null else PackedStringArray()
-		metrics.append({"fault": injected, "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
-			"resources": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT), "rss_pages": int(statm[1]) if statm.size() > 1 else -1})
-		version += 1
+	_sample("warmed-baseline")
+	for cycle: int in 3:
+		for injected: String in ["compile", "scene", "import", "missing-node", "self-check", "alias", "rename"]:
+			var ids: Array[int] = []
+			var states: Array[PackedByteArray] = []
+			for entry: Dictionary in entries:
+				ids.append(entry.root.get_instance_id())
+				states.append(var_to_bytes(Host.invoke_save(entry.root, {})))
+			var selector := FileAccess.get_file_as_bytes(store.selector_path())
+			fault = injected
+			var result: Dictionary = await swapper.swap(make_build(version, injected), entries, wire, retire)
+			check(injected + " refuses visibly", not result.ok and not str(result.get("error", "")).is_empty())
+			var causes := {"compile": "failed to compile", "scene": "dependency failed to load", "import": "complete transient state", "missing-node": "Marker", "self-check": "self-check refused", "alias": "deferred initialization", "rename": "Cannot publish generation selector"}
+			check(injected + " has its intended refusal cause", str(result.get("error", "")).contains(causes[injected]))
+			for index: int in entries.size():
+				check(injected + " keeps same old panel " + str(index), entries[index].root.get_instance_id() == ids[index])
+				check(injected + " preserves exact state " + str(index), var_to_bytes(Host.invoke_save(entries[index].root, {})) == states[index])
+			check(injected + " selector bytes preserved", FileAccess.get_file_as_bytes(store.selector_path()) == selector)
+			fault = ""
+			version += 1
+			check(injected + " followed by successful same-process reuse", (await swapper.swap(make_build(version), entries, wire, retire)).ok)
+			await get_tree().process_frame
+			await get_tree().process_frame
+			_sample(injected + "-" + str(cycle))
+			version += 1
 	check("newer data and integer precision retained", Host.invoke_save(entries[0].root, {}).large == 9007199254740993)
 	# Edits during the two yielded preparation frames must be recaptured.
 	for publish_fails: bool in [false, true]:
@@ -136,6 +143,8 @@ func _run() -> void:
 	check("closed participant refuses without stranding busy", not closed.ok and not swapper.busy)
 	entries.remove_at(1)
 	check("swap remains usable after tab closure", (await swapper.swap(make_build(version + 1), entries, wire, retire)).ok)
+	var before_close: float = Performance.get_monitor(Performance.OBJECT_COUNT)
+	check("closed-tab cleanup adds no objects", before_close <= float(metrics[-1].objects))
 	print("SWAP_MEMORY ", JSON.stringify(metrics))
 	var objects: Array[float] = []
 	var resources: Array[float] = []
@@ -160,3 +169,10 @@ func _edit_old() -> void:
 	var state: Dictionary = Host.invoke_save(panel, {})
 	state.text = "edited-during-prepare"
 	Host.invoke_load(panel, state)
+
+
+func _sample(label: String) -> void:
+	var stat_file := FileAccess.open("/proc/self/statm", FileAccess.READ)
+	var statm := stat_file.get_line().split(" ") if stat_file != null else PackedStringArray()
+	metrics.append({"fault": label, "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
+		"resources": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT), "rss_pages": int(statm[1]) if statm.size() > 1 else -1})

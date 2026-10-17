@@ -50,8 +50,20 @@ func compile_build(build: Dictionary, slot: String) -> Dictionary:
 	if not written.get("ok", false):
 		return written
 	if not _slots.has(slot):
-		_slots[slot] = {"scripts": {}}
+		_slots[slot] = {"scripts": {}, "order": []}
 	var scripts: Dictionary = _slots[slot].scripts
+	# Retained constants can own scripted Resource instances. Release consumers
+	# before their resource scripts; there are no live panels in this slot.
+	var previous_order: Array = _slots[slot].order.duplicate()
+	previous_order.reverse()
+	for name: String in previous_order:
+		if not scripts.has(name):
+			continue
+		var previous: GDScript = scripts[name]
+		var native_base := previous.get_instance_base_type()
+		previous.source_code = "extends %s\n" % (native_base if not native_base.is_empty() else "RefCounted")
+		if previous.reload(false) != OK:
+			return _failure("Inactive script still has live dependents: " + name)
 	var files: Dictionary = build.files
 	var order: Array[String] = []
 	var visited: Dictionary = {}
@@ -60,6 +72,7 @@ func compile_build(build: Dictionary, slot: String) -> Dictionary:
 			var ordered := _visit_script(name, files, visited, order)
 			if not ordered.get("ok", false):
 				return ordered
+	_slots[slot].order = order.duplicate()
 	# Assign every existing script's source first: a consumer preload must never
 	# read a previous candidate's source while dependencies are being rebuilt.
 	for name: String in order:
@@ -205,7 +218,7 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 	var errors := logger.snapshot()
 	if not errors.is_empty():
 		prepared.ok = false
-		prepared.error = "Candidate preparation reported errors: " + JSON.stringify(errors)
+		prepared.error = str(prepared.get("error", "Candidate initialization reported errors")) + "; " + JSON.stringify(errors)
 	if not prepared.get("ok", false):
 		OS.remove_logger(logger)
 		if prepared.has("staging"):
