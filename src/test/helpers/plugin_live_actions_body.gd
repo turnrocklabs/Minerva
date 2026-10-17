@@ -46,6 +46,13 @@ func _run() -> void:
 	fixture.call("_fixture", ID, 2)
 	var loaded: Dictionary = await tools.handle_tool_call("minerva_plugin_reload", {"id": ID})
 	check(loaded.get("success", false) and editor.plugin_scene_root.VERSION == 2, "MCP reload uses the production scene swap")
+	var store := PluginGenerationStore.new(ID)
+	var selected_before := FileAccess.get_file_as_bytes(store.selector_path())
+	var root_before := editor.plugin_scene_root.get_instance_id()
+	for repeat: int in 2:
+		var unchanged: Dictionary = await tools.handle_tool_call("minerva_plugin_reload", {"id": ID})
+		check(unchanged.get("success", false) and FileAccess.get_file_as_bytes(store.selector_path()) == selected_before
+			and editor.plugin_scene_root.get_instance_id() == root_before, "unchanged Reload preserves distinct LKG, selector and root")
 	var panel: Control = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
 	panel._pm_override = manager
 	add_child(panel)

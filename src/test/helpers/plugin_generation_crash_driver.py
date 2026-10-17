@@ -51,6 +51,10 @@ def main() -> int:
     initial = run(command + ["--crash-mode", "seed"], env, evidence / "seed.log")
     initial_receipt = receipt(initial.stdout)
     data_path = Path(env["XDG_DATA_HOME"]) / "godot/app_userdata/Minerva/production-crash-data.bin"
+    selector_path = Path(str(initial_receipt["selector_path"]))
+    if not selector_path.resolve().is_relative_to(Path(env["XDG_DATA_HOME"]).resolve()):
+        raise ValueError("selector outside disposable profile")
+    seeded_selector = selector_path.read_bytes()
     expected_bytes = bytes.fromhex(nonce)
     initial_bytes_ok = data_path.read_bytes() == expected_bytes
     delay = secrets.SystemRandom().uniform(0.005, 0.08)
@@ -76,6 +80,10 @@ def main() -> int:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait(timeout=10)
+    # Inspect durable publication after the process is dead and BEFORE boot
+    # can recover or rewrite anything. Missing DONE output alone proves nothing.
+    selector_before_boot = selector_path.read_bytes()
+    killed_in_flight = killed_in_flight and selector_before_boot == seeded_selector
     after_kill_bytes_ok = data_path.read_bytes() == expected_bytes
     boot = run(command + ["--crash-mode", "boot"], env, evidence / "boot.log")
     recovered = receipt(boot.stdout)
@@ -98,7 +106,9 @@ def main() -> int:
     ok = ok and observed and killed_in_flight and process.returncode == -signal.SIGKILL
     ok = ok and not unexpected and (release_ok or not args.require_release)
     report = {"ok": ok, "nonce": nonce, "delay_seconds": delay, "candidate_ready_observed": observed,
-              "killed_before_first_publication": killed_in_flight, "signal_returncode": process.returncode,
+              "killed_before_first_publication": killed_in_flight,
+              "seeded_selector_hex": seeded_selector.hex(), "selector_before_boot_hex": selector_before_boot.hex(),
+              "signal_returncode": process.returncode,
               "initial": initial_receipt, "recovered": recovered, "unexpected": unexpected,
               "user_data_sha256": hashlib.sha256(data_path.read_bytes()).hexdigest(),
               "driver_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}

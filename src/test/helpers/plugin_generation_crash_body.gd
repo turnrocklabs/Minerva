@@ -75,7 +75,7 @@ func _run() -> void:
 		and panel.get_node("Marker").text == str(version) \
 		and FileAccess.get_file_as_bytes(DATA).hex_encode() == nonce
 	print("CRASH_RECEIPT:" + JSON.stringify({"ok": valid, "mode": mode, "nonce": nonce,
-		"selected": selected, "version": version, "data_hex": FileAccess.get_file_as_bytes(DATA).hex_encode(),
+		"selected": selected, "selector_path": ProjectSettings.globalize_path(store.selector_path()), "version": version, "data_hex": FileAccess.get_file_as_bytes(DATA).hex_encode(),
 		"release": OS.has_feature("release"), "debug": OS.has_feature("debug"), "editor": OS.has_feature("editor")}))
 	fixture.free()
 	editor.free()

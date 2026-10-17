@@ -225,6 +225,9 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 	var build := supplied if not supplied.is_empty() else _capture_installed(plugin_id, machine)
 	if not build.get("ok", false):
 		return _result(plugin_id, build, installed)
+	# Re-publishing identical bytes would replace the distinct LKG with itself.
+	if str(build.digest) == str(machine.record.active):
+		return _result(plugin_id, {"ok": true, "digest": build.digest, "message": "Scene sources unchanged"})
 	var definitions := _panel_definitions(build)
 	var old_definitions: Array[Dictionary] = []
 	if not machine.record.is_empty():
