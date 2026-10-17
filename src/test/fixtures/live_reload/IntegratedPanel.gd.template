@@ -10,6 +10,7 @@ var pushes: int = 0
 var broker: RefCounted
 var sane: bool = true
 var action_hits: int = 0
+var actions: Array[Control] = []
 
 
 func operation(value: int) -> int:
@@ -25,11 +26,14 @@ func _on_panel_loaded(ctx: Dictionary) -> void:
 
 
 func get_editor_actions() -> Array[Control]:
+	if not actions.is_empty():
+		return actions
 	var button := Button.new()
 	button.name = "GenerationAction"
 	button.text = "Action %d" % VERSION
 	button.pressed.connect(_action)
-	return [button]
+	actions.append(button)
+	return actions
 
 
 func _action() -> void:

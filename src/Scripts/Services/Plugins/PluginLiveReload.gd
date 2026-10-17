@@ -37,13 +37,18 @@ func _capture_installed(plugin_id: String, machine: PluginLiveSwap) -> Dictionar
 	return machine.store.capture(source)
 
 
+func _pending_path(machine: PluginLiveSwap) -> String:
+	var path := machine.store.directory.path_join("pending-install.json")
+	return "" if Store._has_link(path) or Store._has_link(path + ".tmp") else path
+
+
 func status(plugin_id: String) -> Dictionary:
 	var current: Dictionary = _status.get(plugin_id, {})
 	return current.duplicate(true)
 
 
 func _result(plugin_id: String, reply: Dictionary, installed: bool = false) -> Dictionary:
-	var message := "Live reload complete" if reply.get("ok", false) else str(reply.get("error", "Live reload refused"))
+	var message := str(reply.get("message", "Live reload complete" if reply.get("ok", false) else str(reply.get("error", "Live reload refused"))))
 	if installed and not reply.get("ok", false):
 		message = "Update installed; live reload refused: " + message
 		var previous: Dictionary = _status.get(plugin_id, {})
@@ -249,7 +254,10 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 			return _result(plugin_id, checked, installed)
 	var reply := await machine.swap(build, entries, _wire, _retire)
 	if reply.get("ok", false):
-		Atomic.write(machine.store.directory.path_join("pending-install.json"), "{}")
+		var pending_path := _pending_path(machine)
+		if pending_path.is_empty() or not Atomic.write(pending_path, "{}"):
+			reply["message"] = "Live reload complete; pending-update metadata could not be cleared"
+			push_warning("[PluginLiveReload] " + str(reply.message))
 	return _result(plugin_id, reply, installed)
 
 
@@ -271,6 +279,9 @@ func _wire(entry: Dictionary, panel: Control, first_load: bool) -> bool:
 	if buffer != null and not _broker.attach_buffer_to_panel(plugin_id, panel_key, buffer):
 		return false
 	if is_instance_valid(editor):
+		var old: Control = entry.root
+		old.set_meta("_minerva_actions_editor", weakref(editor))
+		panel.set_meta("_minerva_actions_editor", weakref(editor))
 		var changed := Callable(editor, "_on_editor_changed")
 		if panel.has_signal("content_changed") and not panel.is_connected("content_changed", changed):
 			panel.connect("content_changed", changed)
@@ -281,12 +292,20 @@ func _wire(entry: Dictionary, panel: Control, first_load: bool) -> bool:
 	if first_load and panel.has_method("_on_panel_loaded"):
 		panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
 			_definition(plugin_id).data_directory, _broker, editor, panel_key))
+	if is_instance_valid(editor):
+		editor.call("refresh_plugin_surface_actions")
 	return _broker.is_panel_registered(panel_key, plugin_id)
 
 
 func _retire(panel: Control) -> void:
 	if panel.get_meta("_minerva_plugin_panel_load_ok", false):
 		Host.invoke_unload(panel)
+	if not panel.has_meta("_minerva_actions_editor"):
+		return
+	var owner_ref: WeakRef = panel.get_meta("_minerva_actions_editor")
+	var editor: Object = owner_ref.get_ref() if owner_ref != null else null
+	if is_instance_valid(editor):
+		editor.call("discard_plugin_surface_actions", panel)
 
 
 func can_replace(plugin_id: String) -> Dictionary:
@@ -320,7 +339,8 @@ func stage_update(plugin_id: String, candidate_directory: String) -> Dictionary:
 	var archive := machine.store.archive(build)
 	if not archive.get("ok", false):
 		return archive
-	if not Atomic.write(machine.store.directory.path_join("pending-install.json"), JSON.stringify({"digest": build.digest})):
+	var pending_path := _pending_path(machine)
+	if pending_path.is_empty() or not Atomic.write(pending_path, JSON.stringify({"digest": build.digest})):
 		return {"ok": false, "error": "Cannot retain staged update identity"}
 	_staged[plugin_id] = build
 	return {"ok": true, "staged": true}
@@ -335,7 +355,10 @@ func activate_update(plugin_id: String) -> Dictionary:
 
 
 func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
-	var path := machine.store.directory.path_join("pending-install.json")
+	var path := _pending_path(machine)
+	if path.is_empty():
+		_result(plugin_id, {"ok": false, "error": "Pending-update symlink refused"}, true)
+		return
 	if not FileAccess.file_exists(path):
 		return
 	var pending: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))

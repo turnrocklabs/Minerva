@@ -123,6 +123,7 @@ func _run() -> void:
 	broker.panel_registered.connect(_publication_fault)
 	block_publication = true
 	var before_failure: Array = editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id())
+	var old_actions: Array = editors.map(func(editor: Editor) -> int: return editor.get_node("VBoxContainer/ButtonsHBoxContainer/GenerationAction").get_instance_id())
 	var failed_publication: Dictionary = await manager.reload_scene_plugin(IDS[0])
 	var selector_path := Store.new(IDS[0]).selector_path()
 	check(blocked and not failed_publication.get("ok", true), "real selector rename refuses after real host registration")
@@ -130,6 +131,7 @@ func _run() -> void:
 		and DirAccess.rename_absolute(selector_path + ".saved", selector_path) == OK, "restore injected filesystem boundary without deletion")
 	broker.panel_registered.disconnect(_publication_fault)
 	check(editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id()) == before_failure, "rollback preserves real old root identities")
+	check(editors.map(func(editor: Editor) -> int: return editor.get_node("VBoxContainer/ButtonsHBoxContainer/GenerationAction").get_instance_id()) == old_actions, "rollback preserves contributed control identities")
 	_assert_wiring(4)
 	var old_root: Control = editors[0].plugin_scene_root
 	var ipc: Node = old_root.get_node("_MinervaIPC")
@@ -166,6 +168,15 @@ func _run() -> void:
 	_fixture(IDS[0], 6)
 	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false), "same-process retry succeeds after installed failure")
 	_assert_wiring(6, 4)
+	var protected_path := "user://live-reload-protected.txt"
+	_write(protected_path, "unrelated document remains exact")
+	var pending_tmp := store.directory.path_join("pending-install.json.tmp")
+	check(DirAccess.create_link(ProjectSettings.globalize_path(protected_path), pending_tmp) == OK, "create actual linked pending metadata temp")
+	var linked_stage: Dictionary = manager.stage_live_plugin_update(IDS[0], staged_dir)
+	check(not linked_stage.get("ok", true) and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact", "staging refuses temp symlink without truncating unrelated document")
+	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false)
+		and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact", "successful scene swap also refuses linked pending metadata cleanup")
+	check(DirAccess.rename_absolute(pending_tmp, pending_tmp + ".retained-link") == OK, "preserve injected symlink outside metadata filename")
 	# A plugin never opened still snapshots its previous installed generation.
 	var closed_id := "live_integration_closed"
 	_fixture(closed_id, 1)
@@ -174,16 +185,16 @@ func _run() -> void:
 	check(manager.stage_live_plugin_update(closed_id, closed_stage).get("ok", false), "closed update snapshots prior generation before commit")
 	_fixture(closed_id, 98)
 	var closed_store := Store.new(closed_id)
-	var old_record: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(closed_store.selector_path()))
+	var old_selector := FileAccess.get_file_as_bytes(closed_store.selector_path())
 	var rejected: Dictionary = await manager.activate_live_plugin_update(closed_id)
-	check(not rejected.get("ok", true) and FileAccess.get_file_as_string(closed_store.selector_path()) == JSON.stringify(old_record), "loaded-lifecycle self-check refuses closed candidate before promotion")
+	check(not rejected.get("ok", true) and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "loaded-lifecycle self-check refuses closed candidate before promotion")
 	var boot_script: GDScript = load("res://Scripts/Services/Plugins/PluginLiveReload.gd")
 	var boot: Node = boot_script.new()
 	boot.configure(manager, broker, Callable())
 	add_child(boot)
 	var recovered: Dictionary = boot.resolve(closed_id, "main")
 	check(recovered.get("ok", false) and boot.status(closed_id).restart_pending
-		and FileAccess.get_file_as_string(closed_store.selector_path()) == JSON.stringify(old_record), "fresh service boot rejects loaded-lifecycle fault and retains selected old build")
+		and FileAccess.get_file_as_bytes(closed_store.selector_path()) == old_selector, "fresh service boot rejects loaded-lifecycle fault and retains selected old build")
 	boot.free()
 	manager.get_db().remove(closed_id)
 	for index: int in buffers.size():

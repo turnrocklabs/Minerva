@@ -801,14 +801,46 @@ func remount_plugin_surface(new_root: Control) -> void:
 		return
 	for control: Control in _plugin_contributed_actions:
 		if is_instance_valid(control):
-			control.free()
+			control.get_parent().remove_child(control)
+	if is_instance_valid(plugin_scene_root):
+		plugin_scene_root.set_meta("_minerva_editor_actions", _plugin_contributed_actions.duplicate())
 	_plugin_contributed_actions.clear()
 	plugin_scene_root = new_root
-	_apply_plugin_chrome_actions()
 	call_deferred("_try_mount_plugin_annotation_dock")
 	# A re-instantiated panel may declare a different hook set; the ribbon
 	# re-reads supports_undo() on this signal.
 	undo_capability_changed.emit()
+
+
+## Run after the new root's loaded hook. Rollback reuses the detached old
+## controls and callbacks; publication retires them with their old surface.
+func refresh_plugin_surface_actions() -> void:
+	if not is_instance_valid(plugin_scene_root):
+		return
+	if not plugin_scene_root.has_meta("_minerva_editor_actions"):
+		_apply_plugin_chrome_actions()
+		return
+	var actions: Array = plugin_scene_root.get_meta("_minerva_editor_actions")
+	plugin_scene_root.remove_meta("_minerva_editor_actions")
+	var row: HBoxContainer = get_node("VBoxContainer/ButtonsHBoxContainer")
+	var save_all: Node = row.get_node_or_null("SaveOpenEditorTabsButton")
+	var index: int = save_all.get_index() if save_all != null else row.get_child_count()
+	for control: Control in actions:
+		if is_instance_valid(control):
+			row.add_child(control)
+			row.move_child(control, index)
+			_plugin_contributed_actions.append(control)
+			index += 1
+
+
+func discard_plugin_surface_actions(surface: Control) -> void:
+	if not surface.has_meta("_minerva_editor_actions"):
+		return
+	var actions: Array = surface.get_meta("_minerva_editor_actions", [])
+	for control: Control in actions:
+		if is_instance_valid(control):
+			control.free()
+	surface.remove_meta("_minerva_editor_actions")
 
 
 func _try_mount_plugin_annotation_dock() -> void:
