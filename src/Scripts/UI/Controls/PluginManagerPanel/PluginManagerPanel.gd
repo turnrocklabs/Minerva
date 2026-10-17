@@ -1003,6 +1003,7 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_reload_button.tooltip_text = "Restart Minerva to load the installed update" if live_status.get("restart_pending", false) else ("Swap scene code and preserve unsaved state" if live_reload else "Restart the plugin backend to load changed code")
 	_revert_button.visible = live_reload
 	_revert_button.disabled = is_building or live_status.get("restart_pending", false)
+	_revert_button.tooltip_text = "Restart Minerva to load the installed update" if live_status.get("restart_pending", false) else "Restore the previous scene version with current user data"
 	# A required plugin can be stopped and kept from starting, not removed.
 	_remove_button.visible = not is_required
 

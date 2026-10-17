@@ -358,6 +358,12 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		return _err("repair_not_needed", {"id": plugin_id})
 	txn.db_before = previous_def.to_dict() if previous_def != null else null
 	op.enter(PluginInstallOperation.STAGE_REGISTER)
+	# Consent, lock acquisition and reconciliation can yield. Recheck after
+	# them; no await separates this admission from the replacing journal.
+	if installer != null and installer.has_method("can_replace_plugin_files"):
+		var replacement: Dictionary = installer.can_replace_plugin_files(plugin_id)
+		if replacement.has("error"):
+			return _err("restart_required", replacement)
 	_ensure_dir(PLUGINS_DIR)
 	txn.had_previous = DirAccess.dir_exists_absolute(final_abs)
 	if not txn.publish(PluginInstallTransaction.PHASE_REPLACING):

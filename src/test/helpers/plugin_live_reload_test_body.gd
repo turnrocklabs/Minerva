@@ -341,6 +341,23 @@ func _marketplace_race() -> void:
 		and FileAccess.get_file_as_bytes(directory.path_join("Panel.gd")) == original_panel, "actual rollback restores exact installed manifest and panel bytes")
 	check(editor.plugin_scene_root.get_instance_id() == old_root and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "failed install never publishes new scene or replaces old root")
 	check((await manager.reload_scene_plugin(plugin_id)).get("ok", false), "install exclusion releases after real rollback")
+	# A reload admitted while installation yielded must win before replacement.
+	_fixture(plugin_id, 3)
+	var changed_manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
+	changed_manifest.backend.args = ["late_fail.py", marker_path]
+	_write(path, JSON.stringify(changed_manifest))
+	var competing = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
+	competing.stage_changed.connect(func(stage: String) -> void:
+		if stage == "register":
+			# Start the real async reload; the install must observe its busy guard.
+			manager.call("reload_scene_plugin", plugin_id))
+	var before_competing := FileAccess.get_file_as_bytes(path)
+	var refused: Dictionary = await client.install_from_url("http://127.0.0.1:%d/plugin.tar.gz" % port, manager, true, competing)
+	check(not refused.get("ok", true) and refused.get("error", "") == "restart_required"
+		and FileAccess.get_file_as_bytes(path) == before_competing, "install rechecks admitted reload before replacing any files")
+	for frame: int in 4:
+		await get_tree().process_frame
+	check(editor.plugin_scene_root.VERSION == 3, "admitted development reload completes after install refusal")
 	editor.free()
 	manager.get_db().remove(plugin_id)
 	client.free()

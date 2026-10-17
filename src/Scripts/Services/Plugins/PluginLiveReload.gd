@@ -13,6 +13,8 @@ var _broker: PluginScenePanelBroker
 var _notify: Callable
 var _machines: Dictionary = {}
 var _status: Dictionary = {}
+# Session boundary: diagnostics can change; only a new service clears this.
+var _restart_pending: Dictionary = {}
 
 
 func configure(manager: Object, broker: PluginScenePanelBroker, notify: Callable) -> void:
@@ -55,8 +57,10 @@ func _result(plugin_id: String, reply: Dictionary, installed: bool = false) -> D
 		var previous: Dictionary = _status.get(plugin_id, {})
 		if not previous.get("restart_pending", false):
 			push_warning("[PluginLiveReload] Backend/panel version mismatch: " + message)
+	if reply.get("restart_pending", false) or (installed and not reply.get("ok", false)):
+		_restart_pending[plugin_id] = true
 	_status[plugin_id] = {"ok": reply.get("ok", false), "message": message,
-		"restart_pending": reply.get("restart_pending", installed and not reply.get("ok", false))}
+		"restart_pending": _restart_pending.has(plugin_id)}
 	if not reply.get("ok", false):
 		push_warning("[PluginLiveReload] " + message)
 		if _notify.is_valid():
@@ -380,13 +384,13 @@ func has_generation(plugin_id: String) -> bool:
 
 
 func _reload_refusal(plugin_id: String) -> Dictionary:
-	var pending: bool = status(plugin_id).get("restart_pending", false)
+	var pending := _restart_pending.has(plugin_id)
 	return _result(plugin_id, {"ok": false, "restart_pending": pending,
 		"message": "Update installed; restart to load the new panels" if pending else "Scene reload waits for the installed backend to commit"})
 
 
 func reload_blocked(plugin_id: String) -> bool:
-	return _install_pending(plugin_id) or status(plugin_id).get("restart_pending", false)
+	return _install_pending(plugin_id) or _restart_pending.has(plugin_id)
 
 
 ## Called after installation commits. Never activate scenes in this session:
@@ -408,7 +412,7 @@ func installed_update(plugin_id: String) -> Dictionary:
 
 
 func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
-	if status(plugin_id).get("restart_pending", false):
+	if _restart_pending.has(plugin_id):
 		return
 	if _install_pending(plugin_id):
 		_result(plugin_id, {"ok": false, "error": "Installed backend awaits its first successful start"}, true)

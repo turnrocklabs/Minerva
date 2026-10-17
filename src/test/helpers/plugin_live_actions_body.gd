@@ -69,17 +69,28 @@ func _run() -> void:
 	check(reverted.get("success", false) and editor.plugin_scene_root.VERSION == 2, "MCP revert shares the same retained-build swap")
 	# Marketplace installation retains the selected scene until restart.
 	fixture.call("_fixture", ID, 3)
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+	var added_panel: Dictionary = manifest.ui.panels[0].duplicate(true)
+	added_panel.name = "new_panel"
+	manifest.ui.panels.append(added_panel)
+	var manifest_file := FileAccess.open(manifest_path, FileAccess.WRITE)
+	manifest_file.store_string(JSON.stringify(manifest))
+	manifest_file.close()
 	var definition := PluginDefinition.from_manifest(manifest_path, PluginDefinition.LANE_MARKETPLACE)
 	check(manager.get_db().update_definition(definition), "commit installed marketplace definition")
 	var pending: Dictionary = manager.installed_scene_update(ID)
 	check(pending.get("ok", false) and pending.restart_pending and editor.plugin_scene_root.VERSION == 2,
 		"installed update retains selected scene and marks restart-pending")
+	check(not manager.resolve_scene_generation(ID, "new_panel").get("ok", true)
+		and manager.get_plugin_status(ID).live_reload.restart_pending, "new panel absent from retained build cannot clear restart boundary")
 	var refused: Dictionary = await tools.handle_tool_call("minerva_plugin_reload", {"id": ID})
 	check(not refused.get("success", true) and editor.plugin_scene_root.VERSION == 2, "MCP cannot bypass marketplace restart boundary")
 	var refused_revert: Dictionary = await tools.handle_tool_call("minerva_plugin_revert", {"id": ID})
 	check(not refused_revert.get("success", true) and refused.message == refused_revert.message, "MCP reload and revert share restart refusal and status")
 	panel._populate_detail_panel(ID)
-	check(panel._reload_button.disabled and panel._revert_button.disabled, "restart-pending prevents in-session scene activation")
+	check(panel._reload_button.disabled and panel._revert_button.disabled
+		and panel._reload_button.tooltip_text == "Restart Minerva to load the installed update"
+		and panel._revert_button.tooltip_text == panel._reload_button.tooltip_text, "restart-pending prevents in-session scene activation")
 	check(var_to_bytes(editor.plugin_scene_root.document) == expected and FileAccess.get_file_as_string(data_path) == "newer data must survive every revert", "installed update keeps newer user data")
 	editor.free()
 	var boot_script: Script = load("res://Scripts/Services/Plugins/PluginLiveReload.gd")
