@@ -84,6 +84,10 @@ func _run() -> void:
 	check("unlisted host preload refused", not store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("res://Scripts/Services/Plugins/PluginManager.gd")').ok)
 	check("apostrophe cannot hide a forbidden preload", not store.normalize_resource("Panel.gd", "extends Control\nconst LABEL = \"don't\"; const OTHER = preload(\"res://plugins/hello_scene/ui/HelloPanel.gd\")").ok)
 	check("ordinary slash label is not a resource", store.normalize_resource("Panel.gd", 'extends Control\nconst LABEL = "/"').ok)
+	check("comment cannot hide forbidden preload", not store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload( # comment\n"res://plugins/hello_scene/ui/HelloPanel.gd")').ok)
+	check("raw path literal refused explicitly", not store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload(r"res://plugins/hello_scene/ui/HelloPanel.gd")').ok)
+	check("multiline path literal refused explicitly", not store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload("""res://plugins/hello_scene/ui/HelloPanel.gd""")').ok)
+	check("comment before local preload is accepted", store.normalize_resource("Panel.gd", 'extends Control\nconst OTHER = preload( # comment\n"lib/Other.gd")').ok)
 	for path: String in Store.HOST_PATHS:
 		check("public host API exists: " + path, FileAccess.file_exists(path))
 		check("public host preload allowed: " + path, store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("%s")' % path).ok)

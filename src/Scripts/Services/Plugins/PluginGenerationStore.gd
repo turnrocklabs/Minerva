@@ -132,27 +132,43 @@ func normalize_resource(name: String, text: String) -> Dictionary:
 		if path.begins_with("res://"):
 			if path not in HOST_PATHS:
 				return _fail("Host resource is not a public live-reload API: " + path)
-		elif path.begins_with("uid://") or path.is_absolute_path() or path.begins_with("../") or path.contains("/../"):
+		elif path.begins_with("unsupported://") or path.begins_with("uid://") or path.is_absolute_path() or path.begins_with("../") or path.contains("/../"):
 			return _fail("Non-local resource reference refused: " + path)
 	return {"ok": true, "text": cleaned}
 
 
-## Tokenize matching quoted strings, escapes and comments before recognizing
-## preload/load/extends (or text-resource path attributes). Ordinary UI strings
-## such as "/" and apostrophes do not alter the resource-reference scan.
+## Lex strings and comments before looking for resource calls. Unusual path
+## literal forms are refused explicitly instead of partially interpreting them.
 static func resource_references(text: String, is_script: bool) -> Array[String]:
-	var tokens := RegEx.new()
-	tokens.compile('#[^\\n]*|"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'')
-	var prefix := RegEx.new()
-	prefix.compile('(?:\\b(?:preload|load)\\s*\\(\\s*|\\bextends\\s+)$' if is_script else '\\bpath\\s*=\\s*$')
+	var lexer := RegEx.new()
+	lexer.compile("#[^\\n]*|r?\\\"\\\"\\\"(?:\\\\.|\\\"(?!\\\"\\\")|[^\\\"\\\\])*\\\"\\\"\\\"|r?\\'\\'\\'(?:\\\\.|\\'(?!\\'\\')|[^\\'\\\\])*\\'\\'\\'|r?\\\"(?:\\\\.|[^\\\"\\\\])*\\\"|r?\\'(?:\\\\.|[^\\'\\\\])*\\'|[A-Za-z_][A-Za-z_0-9]*|[^\\s]")
+	var tokens: Array[String] = []
+	for token: RegExMatch in lexer.search_all(text):
+		if not token.get_string().begins_with("#"):
+			tokens.append(token.get_string())
 	var result: Array[String] = []
-	for token: RegExMatch in tokens.search_all(text):
-		var literal := token.get_string()
-		if literal.begins_with("#"):
-			continue
-		if prefix.search(text.substr(0, token.get_start())) != null:
-			result.append(literal.substr(1, literal.length() - 2).c_unescape())
+	for index: int in range(tokens.size()):
+		var token := tokens[index]
+		if is_script and token in ["preload", "load"] and index + 2 < tokens.size() and tokens[index + 1] == "(":
+			result.append(_resource_literal(tokens[index + 2]))
+		elif is_script and token == "extends" and index + 1 < tokens.size():
+			var parent := tokens[index + 1]
+			if parent.begins_with('"') or parent.begins_with("'") or parent.begins_with('r"') or parent.begins_with("r'"):
+				result.append(_resource_literal(parent))
+		elif not is_script and token == "path" and index + 2 < tokens.size() and tokens[index + 1] == "=":
+			result.append(_resource_literal(tokens[index + 2]))
 	return result
+
+
+static func _resource_literal(token: String) -> String:
+	# No guessed decoding: raw, multiline, escaped or computed resource paths
+	# need a plain literal relative path before this plugin can opt in.
+	if token.length() < 2 or token.begins_with("r") or token.contains("\\") or token.contains("\n"):
+		return "unsupported://resource-expression"
+	var quote := token.left(1)
+	if quote not in ['"', "'"] or not token.ends_with(quote) or token.begins_with(quote.repeat(3)):
+		return "unsupported://resource-expression"
+	return token.substr(1, token.length() - 2)
 
 
 static func digest_files(files: Dictionary) -> String:
