@@ -1,0 +1,25 @@
+extends Control
+
+const Dependency := preload("Dependency.gd")
+const VERSION := VERSION_TOKEN
+const FAULT := "FAULT_TOKEN"
+var document: Dictionary = {}
+@onready var marker: Node = $Marker
+
+
+func operation(value: int) -> int:
+	return Dependency.operation(value)
+
+
+func _on_panel_save_request() -> Dictionary:
+	return document.duplicate(true)
+
+
+func _on_panel_load_request(state: Dictionary) -> void:
+	if FAULT == "import":
+		return
+	document = state.duplicate(true)
+
+
+func _on_panel_self_check() -> bool:
+	return FAULT != "self-check"

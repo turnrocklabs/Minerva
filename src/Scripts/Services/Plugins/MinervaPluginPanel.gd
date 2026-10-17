@@ -43,6 +43,12 @@ extends Control
 ##                                   Override to handle named messages.
 ##   on_progress(rid, phase, frac) — receive progress events for in-flight
 ##                                   plugin requests routed to this panel.
+##   _on_panel_self_check()        — optional live-reload check, returning true
+##                                   only when ready and restored state is valid.
+##                                   A false result refuses publication. Silent
+##                                   release errors may require this check or a
+##                                   manual revert; the host cannot detect all.
+##                                   Intentionally absent on this base class.
 ##
 ## See: Docs/design/Plugin-platform-design.md §5 for the full lifecycle.
 ## See: src/plugins/hello_scene/ for a working reference plugin.

@@ -405,6 +405,17 @@ static func invoke_load(panel_root: Node, document: Variant) -> bool:
 	return true
 
 
+## Optional live-reload validation after _ready and state restoration. Absence
+## permits reload; implementations must explicitly return true to accept.
+static func invoke_self_check(panel_root: Node) -> bool:
+	if panel_root == null:
+		return false
+	if not panel_root.has_method("_on_panel_self_check"):
+		return true
+	var result: Variant = panel_root.call("_on_panel_self_check")
+	return result is bool and result
+
+
 ## Call `_on_panel_create_note_request(ctx)` on `panel_root` if the method exists.
 ##
 ## Returns the Variant returned by the hook on success (expected to be a
