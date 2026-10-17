@@ -126,6 +126,7 @@ func session_and_note(host: Node) -> void:
 		json_value(await container.serialize()) == plain.Editors)
 	for view: Control in restored:
 		view.free()
+	await package_roundtrip(container_script, container, tabs, plain)
 	var fixture: Dictionary = read_json("session.minproj")
 	# Restore the session content on a mounted editor, as required by chart UI.
 	# The outer EditorContainer static restore is separately tracked: it calls
@@ -174,3 +175,64 @@ func normalized_note(value: Dictionary) -> Dictionary:
 	for key: String in exclusions.volatile_note_fields:
 		normalized.erase(key)
 	return normalized
+
+## R17: public package APIs over the real type-6 editor format. The current
+## native sheet is not a plugin: collect/apply must leave its payload intact.
+## After extraction these same gates must exercise the actual provider hooks.
+func package_roundtrip(container_script: Script, container: Object, tabs: TabContainer, plain: Dictionary) -> void:
+	var workspace := ProjectSettings.globalize_path("user://sheet-package-contract")
+	var unpack_dir := workspace.path_join("unpacked")
+	check("package destination starts clean", not DirAccess.dir_exists_absolute(unpack_dir))
+	DirAccess.make_dir_recursive_absolute(workspace)
+	var source := workspace.path_join("sheet.minsheet")
+	check("stage frozen sheet file", DirAccess.copy_absolute(FIXTURE + "baseline.minsheet", source) == OK)
+	var source_hash := FileAccess.get_sha256(source)
+	var sidecar: Dictionary = read_json("package-sidecar.json")
+	check("stage annotation sidecar", AnnotationSidecar.write_sidecar(source, sidecar) == OK)
+	var project := plain.duplicate(true)
+	project.Editors[0].file = source
+	var project_path := workspace.path_join("session.minproj")
+	var project_file := FileAccess.open(project_path, FileAccess.WRITE)
+	project_file.store_string(JSON.stringify(project))
+	project_file.close()
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(project_path))
+	check("on-disk minproj save preserves complete project envelope", saved == project)
+	var reopened: Array = await container_script.deserialize(saved.Editors)
+	for view: Control in reopened:
+		tabs.add_child(view)
+		tabs.set_tab_title(tabs.get_tab_count() - 1, plain.Editors[0].name)
+	await process_frame
+	check("on-disk minproj reopens identical complete sheet", json_value(await container.serialize()) == project.Editors)
+	for view: Control in reopened:
+		view.free()
+	var package = load("res://Scripts/Models/ProjectPackage.gd").new()
+	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
+	var extras: Array = await package.collect_plugin_exports(project, manager, workspace)
+	check("native sheet collect hook adds no plugin exports or payload changes", extras.is_empty() and project == saved)
+	var archive := workspace.path_join("sheet.minpackage")
+	check("package saves real sheet and sidecar", package.save_package(project,
+		PackedStringArray([source]), PackedStringArray(["sheet.minsheet"]), archive) == OK)
+	check("package opens", package.open_package(archive) == OK)
+	var unpacked_project := unpack_dir.path_join("project.minproj")
+	check("package unpacks into clean user directory", package.unpack(unpack_dir, unpacked_project) == OK)
+	package.close()
+	var unpacked: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(unpacked_project))
+	var expected := project.duplicate(true)
+	expected.Editors[0].file = unpack_dir.path_join("sheet.minsheet")
+	expected.Editors[0].sidecar = "sheet.minsheet.annotations.json"
+	await package.apply_plugin_exports(unpacked, unpack_dir, manager)
+	check("unpacked project paths and all payload fields match oracle", unpacked == expected)
+	check("packaged sheet bytes and original source are unchanged",
+		FileAccess.get_sha256(expected.Editors[0].file) == source_hash and FileAccess.get_sha256(source) == source_hash)
+	check("packaged sidecar preserves its complete model", json_value(AnnotationSidecar.read_sidecar(expected.Editors[0].file)) == sidecar)
+	var views: Array = await container_script.deserialize(unpacked.Editors)
+	for view: Control in views:
+		tabs.add_child(view)
+		tabs.set_tab_title(tabs.get_tab_count() - 1, plain.Editors[0].name)
+	await process_frame
+	var expected_editors: Array = project.Editors.duplicate(true)
+	expected_editors[0].file = expected.Editors[0].file
+	check("unpacked minproj reopens identical complete sheet", json_value(await container.serialize()) == expected_editors)
+	for view: Control in views:
+		view.free()
+	manager.free()

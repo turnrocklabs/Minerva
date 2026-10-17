@@ -56,3 +56,17 @@ from a `git archive` of the host source pin, matching case-insensitive
 `spreadsheet|minsheet|\bsheet\b|\bcharts?\b` or spreadsheet-owned paths. It includes
 lexical false positives, with exact source hashes/line numbers, not deletion
 instructions. Future extraction tests must interpret ownership before deleting.
+
+## R17 project portability baseline
+
+The suite writes and reopens a real `Editors` .minproj envelope through the
+production container serializer/restorer. It then calls `ProjectPackage`
+collect/save/open/unpack/apply into a clean isolated user directory and restores
+the unpacked sheet. Complete project and sheet dictionaries, exact source-sheet
+bytes, and the complete annotation sidecar are checked. Today type-6 native
+sheets do not participate in plugin collect/apply; the real manager is passed
+and the no-op payload is asserted. After extraction B2–B6 must extend this gate
+to the actual spreadsheet provider's export hooks. No plugin stub or invented
+plugin export behavior is used in this PRE-extraction baseline. This is project
+portability coverage; per-format CSV/TSV/XLSX export and MCP/chart image gates
+were not added under R17's clarified scope (owner c4361).
