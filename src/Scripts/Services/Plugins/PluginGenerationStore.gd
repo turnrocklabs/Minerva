@@ -118,19 +118,41 @@ static func safe_relative(path: String) -> bool:
 func normalize_resource(name: String, text: String) -> Dictionary:
 	var uid := RegEx.new()
 	uid.compile(' uid="uid://[^"\\n]+"')
-	var cleaned := uid.sub(text, "", true) if name.get_extension() in ["tscn", "tres"] else text
-	if cleaned.contains("uid://") or cleaned.contains("user://"):
-		return _fail("UID-only or absolute plugin reference refused: " + name)
-	var quoted := RegEx.new()
-	quoted.compile('["\']([^"\'\\n]+)["\']')
-	for match_result: RegExMatch in quoted.search_all(cleaned):
-		var path := match_result.get_string(1)
+	var cleaned := text
+	if name.get_extension() in ["tscn", "tres"]:
+		var lines := text.split("\n")
+		for index: int in range(lines.size()):
+			var line := lines[index].strip_edges()
+			if line.begins_with("[ext_resource") and line.contains("uid=") and not line.contains("path="):
+				return _fail("UID-only resource has no relative path: " + name)
+			if line.begins_with("[gd_scene") or line.begins_with("[gd_resource") or line.begins_with("[ext_resource"):
+				lines[index] = uid.sub(lines[index], "", true)
+		cleaned = "\n".join(lines)
+	for path: String in resource_references(cleaned, name.get_extension() == "gd"):
 		if path.begins_with("res://"):
 			if path not in HOST_PATHS:
 				return _fail("Host resource is not a public live-reload API: " + path)
-		elif path.is_absolute_path() or path.begins_with("../") or path.contains("/../"):
+		elif path.begins_with("uid://") or path.is_absolute_path() or path.begins_with("../") or path.contains("/../"):
 			return _fail("Non-local resource reference refused: " + path)
 	return {"ok": true, "text": cleaned}
+
+
+## Tokenize matching quoted strings, escapes and comments before recognizing
+## preload/load/extends (or text-resource path attributes). Ordinary UI strings
+## such as "/" and apostrophes do not alter the resource-reference scan.
+static func resource_references(text: String, is_script: bool) -> Array[String]:
+	var tokens := RegEx.new()
+	tokens.compile('#[^\\n]*|"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'')
+	var prefix := RegEx.new()
+	prefix.compile('(?:\\b(?:preload|load)\\s*\\(\\s*|\\bextends\\s+)$' if is_script else '\\bpath\\s*=\\s*$')
+	var result: Array[String] = []
+	for token: RegExMatch in tokens.search_all(text):
+		var literal := token.get_string()
+		if literal.begins_with("#"):
+			continue
+		if prefix.search(text.substr(0, token.get_start())) != null:
+			result.append(literal.substr(1, literal.length() - 2).c_unescape())
+	return result
 
 
 static func digest_files(files: Dictionary) -> String:
@@ -204,6 +226,15 @@ func write_slot(slot: String, build: Dictionary) -> Dictionary:
 	var checked := bundle(build.get("files", {}))
 	if not checked.get("ok", false) or checked.digest != build.get("digest", ""):
 		return _fail("Slot source digest or resource validation failed")
+	# A slot is rebuilt exactly, never overlaid on removed dependencies. Moving
+	# an inactive directory preserves every byte until reviewed housekeeping
+	# removes retired directories; this operation itself performs no deletes.
+	if DirAccess.dir_exists_absolute(target):
+		if _has_link(target):
+			return _fail("Generation slot symlink refused")
+		var retired := directory.path_join("retired-" + slot + "-" + str(Time.get_ticks_usec()))
+		if DirAccess.rename_absolute(target, retired) != OK:
+			return _fail("Cannot retire inactive slot before exact reconstruction")
 	for name: String in build.files:
 		var path := target.path_join(name)
 		if _has_link(path):
@@ -232,8 +263,7 @@ func prepare_selector(active: String, previous: Dictionary) -> Dictionary:
 	if not lkg.is_empty() and not valid_digest(lkg):
 		return _fail("Invalid previous generation")
 	var next := {"version": 1, "active": active, "lkg": lkg}
-	var recovery := previous if not previous.is_empty() else next
-	if not Atomic.write(directory.path_join("recovery.json"), JSON.stringify(recovery)):
+	if not previous.is_empty() and not Atomic.write(directory.path_join("recovery.json"), JSON.stringify(previous)):
 		return _fail("Cannot prepare selector recovery record")
 	if not Atomic.prepare(selector_path(), JSON.stringify(next)):
 		return _fail("Cannot prepare generation selector")
@@ -266,7 +296,8 @@ func recover(validate: Callable) -> Dictionary:
 		var validation: Variant = validate.call(build)
 		if not validation is Dictionary or not validation.get("ok", false):
 			continue
-		return {"ok": true, "build": build, "record": record, "recovered": key == "lkg", "digest": digest}
+		var chosen := record if key == "active" else {"version": 1, "active": digest, "lkg": ""}
+		return {"ok": true, "build": build, "record": chosen, "recovered": key == "lkg", "digest": digest}
 	return _fail("Active and last-known-good generations failed boot validation")
 
 

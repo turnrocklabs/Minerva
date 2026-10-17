@@ -45,8 +45,9 @@ func _run() -> void:
 	check("archive read preserves bytes", store.read_archive(v1.digest).files == v1.files)
 	check("initial selector prepared", store.prepare_selector(v1.digest, {}).ok)
 	check("prepare does not publish selector", not FileAccess.file_exists(store.selector_path()))
-	check("initial publish", store.publish_selector().ok)
 	var valid := func(_candidate: Dictionary) -> Dictionary: return {"ok": true}
+	check("unpublished initial candidate has no recovery authority", not store.recover(valid).ok)
+	check("initial publish", store.publish_selector().ok)
 	var recovered := store.recover(valid)
 	check("boot validates active", recovered.ok and recovered.digest == v1.digest)
 	var next := store.prepare_selector(v2.digest, recovered.record)
@@ -58,6 +59,14 @@ func _run() -> void:
 	var reject_v2 := func(candidate: Dictionary) -> Dictionary: return {"ok": candidate.digest != v2.digest}
 	var fallback := store.recover(reject_v2)
 	check("active compile/load validation failure falls back", fallback.ok and fallback.recovered and fallback.digest == v1.digest)
+	var v3 := build(store, 3)
+	check("archive next build after fallback", store.archive(v3).ok)
+	check("fallback record names actual live build", fallback.record.active == v1.digest)
+	check("prepare after fallback", store.prepare_selector(v3.digest, fallback.record).ok)
+	check("publish after fallback", store.publish_selector().ok)
+	var reject_v3 := func(candidate: Dictionary) -> Dictionary: return {"ok": candidate.digest != v3.digest}
+	check("second failure still retains working LKG", store.recover(reject_v3).digest == v1.digest)
+	check("restore v2 selector for corruption case", store.prepare_selector(v2.digest, {"version": 1, "active": v1.digest, "lkg": ""}).ok and store.publish_selector().ok)
 	var reject_all := func(_candidate: Dictionary) -> Dictionary: return {"ok": false}
 	check("both invalid refuse visibly", not store.recover(reject_all).ok and not store.error_message().is_empty())
 	# Real selector absence, using a move rather than deleting files.
@@ -73,6 +82,8 @@ func _run() -> void:
 	check("relative traversal refused", not store.bundle({"../escape.gd": PackedByteArray()}).ok)
 	check("cross-plugin preload refused", not store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("user://plugins/other/X.gd")').ok)
 	check("unlisted host preload refused", not store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("res://Scripts/Services/Plugins/PluginManager.gd")').ok)
+	check("apostrophe cannot hide a forbidden preload", not store.normalize_resource("Panel.gd", "extends Control\nconst LABEL = \"don't\"; const OTHER = preload(\"res://plugins/hello_scene/ui/HelloPanel.gd\")").ok)
+	check("ordinary slash label is not a resource", store.normalize_resource("Panel.gd", 'extends Control\nconst LABEL = "/"').ok)
 	for path: String in Store.HOST_PATHS:
 		check("public host API exists: " + path, FileAccess.file_exists(path))
 		check("public host preload allowed: " + path, store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("%s")' % path).ok)
@@ -80,6 +91,11 @@ func _run() -> void:
 	check("UID-only dependency refused", not store.normalize_resource("Panel.tscn", '[ext_resource type="Script" path="uid://fixture" id="1"]').ok)
 	check("slot write", store.write_slot("A", v1).ok)
 	check("slot asset bytes", FileAccess.get_file_as_bytes(store.slot_path("A").path_join("asset.bin")) == v1.files["asset.bin"])
+	var smaller_files: Dictionary = v2.files.duplicate()
+	smaller_files.erase("asset.bin")
+	var smaller := store.bundle(smaller_files)
+	check("reused slot reconstructed exactly", store.write_slot("A", smaller).ok and not FileAccess.file_exists(store.slot_path("A").path_join("asset.bin")))
+	check("slot remains reusable after reconstruction", store.write_slot("A", v1).ok)
 	check("invalid slot refused", not store.write_slot("../escape", v1).ok)
 	# An actual filesystem error: a directory cannot be replaced by a file.
 	var blocked := store.directory.path_join("blocked")
