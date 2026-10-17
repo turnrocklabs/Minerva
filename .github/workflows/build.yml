@@ -423,9 +423,10 @@ jobs:
     # These guards are owned by minerva-plugins, but deliberately run here
     # against this exact, already-built host. Keep the revision immutable so a
     # plugin change cannot turn a Minerva commit red without a reviewed pin.
+    - name: Load plugin fixture pins
+      run: cat scripts/plugin-pins.env >> "$GITHUB_ENV"
+
     - name: Checkout pinned plugin contract guards
-      env:
-        PLUGIN_GUARD_REV: 0f6c02f83ba24574f110fe28be8a7e80cab31891
       run: |
         plugin_root="$GITHUB_WORKSPACE/../minerva-plugins"
         rm -rf "$plugin_root"
@@ -454,8 +455,6 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Run pinned plugin contract guards against this host
-      env:
-        PLUGIN_GUARD_REV: 0f6c02f83ba24574f110fe28be8a7e80cab31891
       run: |
         # The runner builds each selected worker from its reviewed manifest,
         # uses an isolated user profile, and records both repository revisions

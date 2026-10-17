@@ -132,8 +132,19 @@ def lane_budget(path: Path, seen: frozenset[Path]) -> int:
     return max((cost(job_id) for job_id in jobs), default=0)
 
 
+
+def check_plugin_pins() -> list[str]:
+    if not Path("scripts/plugin-pins.env").is_file():
+        return ["missing authoritative scripts/plugin-pins.env"]
+    pattern = re.compile(r"\b(?:cad|scansort)-v\d+\.\d+\.\d+\b|"
+                         r"\bPLUGIN_GUARD_REV\s*[:=]\s*[\"']?[0-9a-fA-F]{40}\b")
+    paths = [*Path(".github/workflows").glob("*.y*ml"), Path("scripts/tarball-smoke.sh")]
+    return [f"{path}: hard-coded plugin pin must come from scripts/plugin-pins.env"
+            for path in paths if pattern.search(path.read_text(encoding="utf-8"))]
+
+
 def main() -> int:
-    errors: list[str] = []
+    errors = check_plugin_pins()
     checked = 0
     for path in sorted(Path(".github/workflows").glob("*.y*ml")):
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)

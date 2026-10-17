@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePath
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -40,10 +40,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def profile_is_inside_root(profile_text: str, root_text: str, path_class: type[PurePath]) -> bool:
+    """Compare resolved paths; pure path classes also exercise Windows syntax on Linux."""
+    profile, root = path_class(profile_text), path_class(root_text)
+    return profile.is_absolute() and root.is_absolute() and profile != root and profile.is_relative_to(root)
+
+
 def main() -> int:
     mode, profile_text = sys.argv[1:3]
     profile = Path(profile_text)
-    if not profile.is_absolute() or not str(profile).startswith(os.environ["MINERVA_TEST_PROFILE_ROOT"] + "/"):
+    root = Path(os.environ["MINERVA_TEST_PROFILE_ROOT"])
+    if (not profile.is_absolute() or not root.is_absolute()
+            or not profile_is_inside_root(str(profile.resolve()), str(root.resolve()), Path)):
         raise RuntimeError("private test profile required")
     profile.mkdir(parents=True, exist_ok=True)
     if mode == "serve":
