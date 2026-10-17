@@ -7,14 +7,22 @@ extends RefCounted
 
 ## Write `text` to `path` (absolute). False, with `path` untouched, on failure.
 static func write(path: String, text: String) -> bool:
+	return prepare(path, text) and replace(path + ".tmp", path)
+
+
+## Prepare bytes without publishing them. Transactions call replace only after
+## their in-memory swap; ordinary callers should keep using write.
+static func prepare(path: String, text: String) -> bool:
 	var tmp := path + ".tmp"
 	var file := FileAccess.open(tmp, FileAccess.WRITE)
 	if file == null:
 		return false
 	var stored := file.store_string(text)
+	var written := file.get_error() == OK
 	file.flush()
+	var flushed := file.get_error() == OK
 	file.close()
-	return stored and replace(tmp, path)
+	return stored and written and flushed
 
 
 ## Move `from` over `to` in one step, with ProcessFileLock.replace_file.

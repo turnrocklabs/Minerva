@@ -240,6 +240,7 @@ const CAPABILITIES := [
 	"project_state",      # participates in .minproj save/load (panel + server hooks)
 	"host_owned_save",    # panel writes its own document file via Ctrl+S
 	"project_export",     # contributes sidecar files to .minpackage export
+	"live_reload",        # stateful scene generation swaps; explicitly opt-in
 ]
 
 ## Exact host_capability identifiers that are always permitted.
@@ -1405,12 +1406,16 @@ static func _script_declares_method(abs_path: String, method_name: String) -> bo
 ## `method_name`.  Resolves script paths the same way scan_class_names() does.
 func _any_panel_script_declares(method_name: String) -> bool:
 	for panel in ui_panels:
-		if not (panel is Dictionary):
-			continue
-		for rel_path in panel.get("scripts", []):
-			var abs_path: String = data_directory.path_join(str(rel_path)).simplify_path()
-			if _script_declares_method(abs_path, method_name):
-				return true
+		if _panel_script_declares(panel, method_name):
+			return true
+	return false
+
+
+func _panel_script_declares(panel: Dictionary, method_name: String) -> bool:
+	for rel_path: String in panel.get("scripts", []):
+		var abs_path := data_directory.path_join(rel_path).simplify_path()
+		if _script_declares_method(abs_path, method_name):
+			return true
 	return false
 
 
@@ -1499,6 +1504,17 @@ func validate_host_capabilities() -> Array[String]:
 func validate_capabilities() -> Dictionary:
 	for cap in capabilities:
 		match cap:
+			"live_reload":
+				var scene_count := 0
+				for panel in ui_panels:
+					if panel.get("kind", "") != "godot_scene":
+						continue
+					scene_count += 1
+					for hook: String in ["_on_panel_save_request", "_on_panel_load_request"]:
+						if not _panel_script_declares(panel, hook):
+							return {"error": "capability_missing_hook", "detail": {"capability": cap, "panel": panel.get("name", ""), "missing_hook": hook}}
+				if scene_count == 0:
+					return {"error": "capability_no_scene_panel", "detail": {"capability": cap}}
 			"project_state":
 				if project_file_serialize_channel.is_empty() or project_file_deserialize_channel.is_empty():
 					return {

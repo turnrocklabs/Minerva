@@ -138,6 +138,7 @@ HERMETIC_TESTS=(
 	test/test_chat_groups_integration.gd
 	test/test_required_plugins.gd
 	test/test_plugin_manager_hot_reload.gd
+	test/test_plugin_live_swap_store.gd
 	test/test_marketplace_install_from_url.gd
 	test/test_plugin_downloader.gd
 	test/test_marketplace_install_transaction.gd
