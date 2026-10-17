@@ -23,7 +23,7 @@ func _run() -> void:
 	var current := store.prepare_selector(str(builds[1].digest), first.record)
 	check(current.get("ok", false) and store.publish_selector().get("ok", false), "publish current with LKG")
 	var selector := FileAccess.get_file_as_bytes(store.selector_path())
-	var protected_path := "user://plugins/cleanup-user-data.txt"
+	var protected_path := ProjectSettings.globalize_path("user://plugins/cleanup-user-data.txt")
 	check(Atomic.write(protected_path, "newer user data"), "write independent user data")
 	check(Atomic.write(store.directory.path_join("notes.json"), "preserve unknown files"), "write nonarchive metadata")
 	var retired := store.directory.path_join("retired-A-123/nested/.hidden")
