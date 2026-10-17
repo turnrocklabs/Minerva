@@ -50,7 +50,6 @@
       "path": "multimeter/ui/multimeter_panel.html",
       "tool": "minerva_create_spreadsheet_editor",
       "arguments": [
-        "name",
         "file_path"
       ]
     },

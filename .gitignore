@@ -20,6 +20,7 @@ config.local.*
 
 # Minerva Project Save files
 *.minproj
+!src/test/fixtures/**/*.minproj
 
 # binary files
 *.wav

@@ -91,7 +91,7 @@ func run() -> void:
 	# add the desired refusal assertion, rather than silently staying green.
 	check("XFAIL minerva:01a14b668a56: future version currently accepted and downgraded",
 		future_error == OK and int(future.to_dict().version) == 1
-		and not future.to_dict().has("future_payload"))
+		and json_value(future.to_dict()) == expected)
 	check("future import leaves original bytes intact", future_bytes == FileAccess.get_file_as_bytes(FIXTURE + "future.minsheet"))
 	DirAccess.remove_absolute(native_path)
 	ui.restore()
@@ -110,12 +110,28 @@ func session_and_note(host: Node) -> void:
 	pane.Tabs = tabs
 	host.editor_pane = pane
 	var container_script = load("res://Scripts/UI/Controls/vboxEditor.gd")
+	var saved_container = host.editor_container
+	var container = container_script.new()
+	container.editor_pane = pane
+	host.editor_container = container
+	root.add_child(container)
+	var plain: Dictionary = read_json("no-chart-session.minproj")
+	var restored: Array = await container_script.deserialize(plain.Editors)
+	check("production legacy session restore returns one spreadsheet", restored.size() == 1)
+	for view: Control in restored:
+		tabs.add_child(view)
+		tabs.set_tab_title(tabs.get_tab_count() - 1, plain.Editors[0].name)
+	await process_frame
+	check("production legacy session restore preserves complete non-chart model",
+		json_value(await container.serialize()) == plain.Editors)
+	for view: Control in restored:
+		view.free()
 	var fixture: Dictionary = read_json("session.minproj")
 	# Restore the session content on a mounted editor, as required by chart UI.
 	# The outer EditorContainer static restore is separately tracked: it calls
 	# deserialize before mounting (bug minerva:01a14b693555).
 	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
-	var entry: Dictionary = fixture.editors[0]
+	var entry: Dictionary = fixture.Editors[0]
 	check("legacy session uses the production spreadsheet type", int(entry.type) == editor_script.Type.SPREADSHEET)
 	var editor = editor_script.create(int(entry.type), entry.file, entry.name, null, false)
 	var editors: Array = [editor]
@@ -126,7 +142,7 @@ func session_and_note(host: Node) -> void:
 	await process_frame
 	var serializer = container_script.new()
 	serializer.editor_pane = pane
-	check("whole session editor envelope and charts round-trip", json_value(await serializer.serialize()) == fixture.editors)
+	check("whole session editor envelope and charts round-trip", json_value(await serializer.serialize()) == fixture.Editors)
 	if not editors.is_empty():
 		check("chart native-file loss remains explicit (minerva:01a14b6689f0)",
 			editors[0].spreadsheet_editor.serialize().charts.size() == 1
@@ -137,18 +153,24 @@ func session_and_note(host: Node) -> void:
 	root.add_child(note)
 	await process_frame
 	var serialized: Dictionary = note.serialize()
-	var note_matches := true
-	for key: String in note_fixture:
-		note_matches = note_matches and serialized.get(key) == note_fixture[key]
-	check("linked note reopens content, identity and tab-name link", note_matches)
+	check("complete stable linked-note model reopens", normalized_note(serialized) == normalized_note(note_fixture))
 	var reloaded = note_script.deserialize(json_value(serialized), false)
 	root.add_child(reloaded)
 	await process_frame
-	check("linked note survives second save/reopen", reloaded.linked_spreadsheet == "Contract sheet"
-		and reloaded.get_controls_container().content == note_fixture.Content)
+	check("complete stable linked-note model survives second save/reopen",
+		normalized_note(reloaded.serialize()) == normalized_note(note_fixture))
 	note.free()
 	reloaded.free()
 	tabs.free()
 	serializer.free()
+	container.free()
+	host.editor_container = saved_container
 	pane.free()
 	host.editor_pane = saved_pane
+
+func normalized_note(value: Dictionary) -> Dictionary:
+	var normalized: Dictionary = json_value(value)
+	var exclusions: Dictionary = read_json("known-gaps.json")
+	for key: String in exclusions.volatile_note_fields:
+		normalized.erase(key)
+	return normalized

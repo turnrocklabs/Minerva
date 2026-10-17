@@ -14,9 +14,11 @@ rewrites the fixture. No global tool-count assertions changed.
 
 `baseline.minsheet` is its own complete saved-model oracle: formulas, formatting,
 column/row metadata, freeze panes and AutoFilter. The formula result is 5 (2+3).
-`session.minproj` is the production editor-array envelope with a type-6 sheet and
+`session.minproj` uses the production `Editors` project field, with its editor-array envelope with a type-6 sheet and
 one chart. The test mounts a real editor, restores the content and compares the
 production `EditorContainer.serialize()` output, including the whole envelope.
+`no-chart-session.minproj` also executes the real `EditorContainer.deserialize()`
+path and full envelope round-trip; the chart bug does not affect that fixture.
 `linked-note.json` is a pre-entry-log note: its link is a tab-name STRING, not
 embedded sheet data. Known fields and a second save/reopen are checked; generated
 entry ids, revision and content hash are intentionally outside this old fixture.
@@ -32,9 +34,11 @@ The XLSX is copied byte-for-byte from
   coverage is in mounted session content, not a claim that native files save it.
 - The outer `EditorContainer.deserialize()` restores charts before mounting,
   causing a null-tree script error (`minerva:01a14b693555`). This suite does NOT
-  claim full project-loader chart acceptance. That original failing runtime log
-  is retained with the batch receipt; the mounted-content oracle is preparatory
-  coverage until the bug is fixed.
+  claim full project-loader chart acceptance. The original failing runtime log is retained with the batch receipt;
+  per orchestrator disposition, no crash-pinning subprocess machinery is
+  added to B0. The fix and real outer chart restore test belong to B4. The
+  chartless fixture covers the real restore path; chart content is verified
+  on a mounted editor until that bug is fixed.
 - XLSX inline strings are dropped (`minerva:01a14b6935b8`). The complete current
   import oracle contains only numeric group cells. A strict expected-failure
   assertion records the absent known name. It must be replaced when fixed.
