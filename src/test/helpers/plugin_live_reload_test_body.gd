@@ -298,6 +298,8 @@ func _marketplace_race() -> void:
 	var old_root: int = editor.plugin_scene_root.get_instance_id()
 	var store := Store.new(plugin_id)
 	var selector := FileAccess.get_file_as_bytes(store.selector_path())
+	var original_manifest := FileAccess.get_file_as_bytes(path)
+	var original_panel := FileAccess.get_file_as_bytes(directory.path_join("Panel.gd"))
 	var staged := _fixture(plugin_id, 2, "user://race-archive-source")
 	# Keep manifest/backend bytes identical; only scene code changes.
 	_write(staged.path_join("manifest.json"), JSON.stringify(manifest))
@@ -323,12 +325,24 @@ func _marketplace_race() -> void:
 	var operation = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
 	operation.start_after_install = true
 	operation.stage_changed.connect(func(stage: String) -> void:
+		# Mirror the real install queue: stop the old process at registration.
+		if stage == "register":
+			manager.stop_plugin(plugin_id)
 		if stage == "start":
 			_try_install_watch.call_deferred(plugin_id, editor, old_root, selector))
+	if FileAccess.file_exists(marker_path):
+		check(DirAccess.remove_absolute(marker_path) == OK, "remove previous backend start marker")
+	var install_started := Time.get_unix_time_from_system()
 	var installed: Dictionary = await client.install_from_url("http://127.0.0.1:%d/plugin.tar.gz" % port, manager, true, operation)
-	check(FileAccess.file_exists(marker_path) and Time.get_unix_time_from_system() - float(FileAccess.get_file_as_string(marker_path)) >= 2.9,
+	var install_returned := Time.get_unix_time_from_system()
+	var marker_time := float(FileAccess.get_file_as_string(marker_path)) if FileAccess.file_exists(marker_path) else 0.0
+	print("BACKEND_START_RECEIPT: " + JSON.stringify({"start": install_started, "marker": marker_time, "returned": install_returned, "result": installed}))
+	check(install_started <= marker_time and install_returned - marker_time >= 2.9,
 		"real backend start marker and elapsed delay prove actual process ran")
 	check(not installed.get("ok", true) and installed.get("error", "") in ["start_failed", "cancelled"], "actual delayed backend failure rolls installation back")
+	check(MarketplaceClient.rollback_complete(installed.get("rollback", {})), "actual rollback restores files, database and data")
+	check(FileAccess.get_file_as_bytes(path) == original_manifest
+		and FileAccess.get_file_as_bytes(directory.path_join("Panel.gd")) == original_panel, "actual rollback restores exact installed manifest and panel bytes")
 	check(editor.plugin_scene_root.get_instance_id() == old_root and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "failed install never publishes new scene or replaces old root")
 	check((await manager.reload_scene_plugin(plugin_id)).get("ok", false), "install exclusion releases after real rollback")
 	editor.free()
