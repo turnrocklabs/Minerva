@@ -82,7 +82,8 @@ static func instantiate_into(
 	var api_error: String = definition.call("host_api_error")
 	if not api_error.is_empty():
 		return _mount_placeholder(vbox, api_error)
-	if plugin_manager.has_method("get_restart_required_reason"):
+	var live_reload: bool = plugin_manager.has_method("supports_scene_live_reload") and plugin_manager.supports_scene_live_reload(plugin_id)
+	if not live_reload and plugin_manager.has_method("get_restart_required_reason"):
 		var restart_reason: String = plugin_manager.get_restart_required_reason(plugin_id)
 		if not restart_reason.is_empty():
 			return _mount_placeholder(vbox, "[PluginScenePanelHost] %s" % restart_reason)
@@ -99,6 +100,12 @@ static func instantiate_into(
 	# so the tab renders a placeholder rather than crashing.
 	# -----------------------------------------------------------------------
 	var panel_def: Dictionary = _get_panel_def(def, panel_name)
+	if live_reload:
+		var generation: Dictionary = plugin_manager.resolve_scene_generation(plugin_id, panel_name)
+		if not generation.get("ok", false):
+			return _mount_placeholder(vbox, str(generation.get("error", "Scene generation refused")))
+		data_dir = str(generation.directory)
+		panel_def = generation.panel
 	if panel_def.is_empty():
 		return _mount_placeholder(vbox,
 			(("[PluginScenePanelHost] Panel '%s' not found in plugin '%s' typed panel definitions. " +
@@ -147,17 +154,18 @@ static func instantiate_into(
 		if not FileAccess.file_exists(abs_path):
 			return _mount_placeholder(vbox,
 				("[PluginScenePanelHost] Whitelisted script not found: '%s'") % abs_path)
-		if _cached_script_differs_from_disk(abs_path):
+		if not live_reload and _cached_script_differs_from_disk(abs_path):
 			return _mount_placeholder(vbox,
 				(("[PluginScenePanelHost] Plugin code changed while Minerva was running: " +
 					"'%s'. Restart Minerva before opening this panel.") % abs_path))
-		if _script_generation_changed(abs_path):
+		if not live_reload and _script_generation_changed(abs_path):
 			return _mount_placeholder(vbox,
 				"[PluginScenePanelHost] Plugin code changed. Restart Minerva before opening this panel.")
 
 	# Record the complete generation before the first ResourceLoader call.
 	for abs_path in script_abs_paths:
-		_record_script_generation(abs_path)
+		if not live_reload:
+			_record_script_generation(abs_path)
 
 	for abs_path in script_abs_paths:
 		var script_res: Script = _load_valid_script(abs_path)
@@ -243,7 +251,7 @@ static func instantiate_into(
 	# case so scene scripts can safely use child-node refs initialised there.
 	# -----------------------------------------------------------------------
 	if root_ctrl.has_method("_on_panel_loaded"):
-		var ctx := _build_ctx(plugin_id, panel_name, data_dir, broker, editor, reg_key)
+		var ctx := _build_ctx(plugin_id, panel_name, def.data_directory, broker, editor, reg_key)
 		if root_ctrl.is_node_ready():
 			root_ctrl._on_panel_loaded(ctx)
 		else:

@@ -169,6 +169,7 @@ var _live_scene_panels: Dictionary = {}
 ## layouts from different generations. Keep the old panels intact and expose
 ## an explicit restart requirement instead of mutating cached scripts in place.
 var _restart_required: Dictionary = {}
+var _scene_reload: Node = null
 
 ## Runtime registry of plugin-supplied chat-provider entries (chat-passthrough
 ## W1). Held here (not on SingletonObject) so its lifecycle is bound to the
@@ -1655,6 +1656,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"running": def.state == S_RUNNING,
 		"restart_required": not get_restart_required_reason(id).is_empty(),
 		"restart_required_reason": get_restart_required_reason(id),
+		"live_reload": _scene_reload.call("status", id) if _scene_reload != null else {},
 	}
 
 
@@ -1900,7 +1902,8 @@ func _run_file_watch_checks() -> void:
 		if plugin_dir.is_empty():
 			continue
 
-		var current := _scan_plugin_files(plugin_dir)
+		var current: Dictionary = _scene_reload_service().call("scan_files", def.id, PackedStringArray(WATCH_EXTENSIONS)) \
+			if supports_scene_live_reload(def.id) else _scan_plugin_files(plugin_dir)
 		if current.is_empty():
 			continue
 
@@ -1988,8 +1991,13 @@ func _on_reload_debounce_expired(id: String) -> void:
 				has_process_ext = true
 			"gd":
 				gd_paths.append(path)
-			"tscn":
+			"tscn", "tres":
 				tscn_paths.append(path)
+	if supports_scene_live_reload(id) and (not gd_paths.is_empty() or not tscn_paths.is_empty()):
+		if has_process_ext:
+			await restart_plugin(id)
+		await reload_scene_plugin(id)
+		return
 
 	var scene_restart_required := false
 	if not gd_paths.is_empty():
@@ -2007,6 +2015,9 @@ func _on_reload_debounce_expired(id: String) -> void:
 
 ## Return true when a cached or live GDScript generation requires app restart.
 func _hot_reload_gd(id: String, gd_paths: Array[String]) -> bool:
+	if supports_scene_live_reload(id):
+		reload_scene_plugin.call_deferred(id)
+		return true
 	var live_panels: Array = _live_scene_panels.get(id, [])
 	var has_cached_script := false
 	for path in gd_paths:
@@ -2032,6 +2043,9 @@ func get_restart_required_reason(id: String) -> String:
 
 ## Defer a changed live scene to the next application start.
 func _hot_reload_tscn(id: String, tscn_path: String) -> void:
+	if supports_scene_live_reload(id):
+		reload_scene_plugin.call_deferred(id)
+		return
 	var live_panels: Array = _live_scene_panels.get(id, [])
 	if live_panels.is_empty():
 		return
@@ -2041,6 +2055,9 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 
 
 func _mark_restart_required(id: String, subject: String) -> void:
+	if supports_scene_live_reload(id):
+		reload_scene_plugin.call_deferred(id)
+		return
 	var reason := (
 		"Plugin '%s' changed '%s' while its scene code was loaded. " +
 		"Restart Minerva to load the update safely."
@@ -2052,6 +2069,10 @@ func _mark_restart_required(id: String, subject: String) -> void:
 
 func _surface_restart_required(id: String, reason: String) -> void:
 	plugin_restart_required.emit(id, reason)
+	_surface_plugin_message(reason)
+
+
+func _surface_plugin_message(reason: String) -> void:
 	if SingletonObject and SingletonObject.has_method("create_toast_notification"):
 		SingletonObject.call("create_toast_notification", reason, 1, false)
 
@@ -2061,6 +2082,8 @@ func can_replace_plugin_files(id: String) -> Dictionary:
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"ok": true}
+	if supports_scene_live_reload(id):
+		return _scene_reload_service().call("can_replace", id)
 	if not _live_scene_panels.get(id, []).is_empty():
 		var live_reason := "Restart Minerva before updating plugin '%s'; its scene is open." % id
 		_restart_required[id] = live_reason
@@ -2138,6 +2161,42 @@ func unregister_live_panel(plugin_id: String, panel_key: String) -> void:
 ## Return all live panel entries for a plugin (read-only copy).
 func get_live_panels(plugin_id: String) -> Array:
 	return _live_scene_panels.get(plugin_id, []).duplicate()
+
+
+func supports_scene_live_reload(id: String) -> bool:
+	var definition: PluginDefinition = _db.get_by_id(id) if _db != null else null
+	return definition != null and "live_reload" in definition.capabilities
+
+
+func _scene_reload_service() -> Node:
+	if _scene_reload == null:
+		_scene_reload = load("res://Scripts/Services/Plugins/PluginLiveReload.gd").new()
+		_scene_reload.call("configure", self, PluginScenePanelHost._get_broker(), _surface_plugin_message)
+		add_child(_scene_reload)
+	return _scene_reload
+
+
+func resolve_scene_generation(id: String, panel_name: String) -> Dictionary:
+	return _scene_reload_service().call("resolve", id, panel_name)
+
+
+func reload_scene_plugin(id: String) -> Dictionary:
+	return await _scene_reload_service().call("reload", id)
+
+
+func stage_live_plugin_update(id: String, directory: String) -> Dictionary:
+	return _scene_reload_service().call("stage_update", id, directory) if supports_scene_live_reload(id) else {"ok": true, "staged": false}
+
+
+func activate_live_plugin_update(id: String) -> Dictionary:
+	return await _scene_reload_service().call("activate_update", id)
+
+
+func repoint_live_panel(id: String, panel_key: String, root: Control) -> void:
+	for entry: Dictionary in _live_scene_panels.get(id, []):
+		if str(entry.get("panel_key", "")) == panel_key:
+			entry.root = root
+			entry.tscn_path = root.scene_file_path
 
 
 ## Return a Dictionary of { absolute_path: modified_time_int } for all watched

@@ -372,13 +372,8 @@ func register_panel(
 	# key has been re-registered is dropped rather than served to the newcomer.
 	if panel_root.has_signal("request"):
 		var generation: int = _entry_generation(entry)
-		panel_root.request.connect(
-			func(channel: String, payload: Dictionary, reply_id: String) -> void:
-				call_deferred(
-					"handle_scene_request",
-					panel_key, channel, payload, reply_id, generation
-				)
-		)
+		entry.request_handler = _forward_scene_request.bind(panel_key, generation)
+		panel_root.request.connect(entry.request_handler)
 	else:
 		push_warning(
 			("[PluginScenePanelBroker] Panel '%s' (plugin '%s') has no `request` signal; " +
@@ -391,6 +386,10 @@ func register_panel(
 		]
 	)
 	panel_registered.emit(plugin_id, panel_key)
+
+
+func _forward_scene_request(channel: String, payload: Dictionary, reply_id: String, panel_key: String, generation: int) -> void:
+	call_deferred("handle_scene_request", panel_key, channel, payload, reply_id, generation)
 
 
 ## Unregister a single panel.
@@ -1962,6 +1961,10 @@ func _entry_generation(entry: _PanelEntry) -> int:
 ## Detach and free the MinervaIPC helper attached to an entry, if still valid;
 ## what the plugin's private channel gave the panel is revoked with it.
 func _detach_ipc_helper(entry: _PanelEntry) -> void:
+	var root: Object = entry.panel_ref.get_ref() if entry.panel_ref != null else null
+	if is_instance_valid(root) and entry.request_handler.is_valid() and root.is_connected("request", entry.request_handler):
+		root.disconnect("request", entry.request_handler)
+	entry.request_handler = Callable()
 	var authority = _panel_authority_of(entry.plugin_id)
 	if authority != null:
 		authority.panel_closed(entry.panel_key, entry.registration)
@@ -2447,6 +2450,7 @@ func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
 
 ## Holds everything the broker needs to know about one registered panel.
 class _PanelEntry extends RefCounted:
+	var request_handler: Callable = Callable()
 	## WeakRef to the scene root Control node.
 	var panel_ref: WeakRef = null
 	## Owning plugin id.

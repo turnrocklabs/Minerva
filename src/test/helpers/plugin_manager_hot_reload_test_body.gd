@@ -103,16 +103,15 @@ class StubDB extends RefCounted:
 
 ## StubPluginDef: minimal plugin definition (not a real PluginDefinition to avoid
 ## parse-order issues in headless mode; duck-typed).
-class StubPluginDef extends RefCounted:
-	var id: String = ""
-	var state: int = 2   # S_RUNNING
-	var auto_reload: bool = true
-	var data_directory: String = "/tmp/stub_plugin"
-	var name: String = "stub"
-	var version: String = "0.0.1"
+class StubPluginDef extends PluginDefinition:
 
 	func _init(p_id: String) -> void:
 		id = p_id
+		state = State.RUNNING
+		auto_reload = true
+		data_directory = "/tmp/stub_plugin"
+		name = "stub"
+		version = "0.0.1"
 
 
 ## StubBroker: captures unregister_panel calls.

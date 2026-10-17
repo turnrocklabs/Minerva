@@ -302,6 +302,11 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	# commit or roll back.
 	if op.cancelled:
 		return _err("cancelled", {})
+	var live_stage := {"ok": true, "staged": false}
+	if installer != null and installer.has_method("stage_live_plugin_update"):
+		live_stage = installer.stage_live_plugin_update(plugin_id, extract_abs)
+		if not live_stage.get("ok", false):
+			return _err("live_reload_staging_refused", live_stage)
 
 	# --- 5. Replace user://plugins/<id>/, keeping the old copy until the new
 	# registration is saved (PluginInstallTransaction) ---
@@ -433,6 +438,13 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		_rm_dir_recursive(op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 	registered["version"] = str(manifest.get("version", ""))
 	registered["platform_verified"] = identity.platform_verified
+	# Installation has committed. Scene activation is a distinct operation;
+	# its refusal retains old panels and is never reported as an install rollback.
+	if live_stage.get("staged", false) and installer.has_method("activate_live_plugin_update"):
+		var activation: Dictionary = await installer.activate_live_plugin_update(plugin_id)
+		registered["live_reload"] = activation
+		if not activation.get("ok", false):
+			registered["message"] = activation.get("message", "Update installed; live reload refused")
 	return registered
 
 

@@ -1,0 +1,45 @@
+extends Control
+
+signal request(channel: String, payload: Dictionary, reply_id: String)
+signal content_changed
+const Dependency := preload("nested/Dependency.gd")
+const VERSION := VERSION_TOKEN
+var document: Dictionary = {}
+var loaded_count: int = 0
+var pushes: int = 0
+var broker: RefCounted
+
+
+func operation(value: int) -> int:
+	return Dependency.operation(value)
+
+
+func _on_panel_loaded(ctx: Dictionary) -> void:
+	loaded_count += 1
+	broker = ctx.broker
+	broker.connect("panel_registered", _registered)
+
+
+func _registered(_plugin: String, _panel: String) -> void:
+	pass
+
+
+func _on_panel_unload() -> void:
+	if broker != null and broker.is_connected("panel_registered", _registered):
+		broker.disconnect("panel_registered", _registered)
+
+
+func receive(_channel: String, _payload: Dictionary) -> void:
+	pushes += 1
+
+
+func _on_panel_save_request() -> Dictionary:
+	return document.duplicate(true)
+
+
+func _on_panel_load_request(state: Dictionary) -> void:
+	document = state.duplicate(true)
+
+
+func _on_panel_self_check() -> bool:
+	return VERSION != 99
