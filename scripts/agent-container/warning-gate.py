@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """GATE-W: GDScript analyzer warnings may not increase from a base commit to HEAD.
 
-Owns the warning ratchet of the engineering-constraints pilot (Master:01a11a91820a).
+Owns the warning ratchet of the engineering-constraints pilot (minerva:01a147ee08057a52ad61a4ba692c255a).
 Analyzer warnings only come from the editor, so each tree is imported and then
 scanned through a headless editor's language server. There is no committed
 baseline: the base commit is cloned and scanned in the same job.
