@@ -116,6 +116,10 @@ func _run() -> void:
 	# A distinct digest is required: unchanged sources intentionally do no work.
 	var attachment_candidate := "user://plugins/" + IDS[0] + "/Panel.gd"
 	_write(attachment_candidate, FileAccess.get_file_as_string(attachment_candidate) + "\n# attachment-race candidate\n")
+	var attachment_store := Store.new(IDS[0])
+	var attachment_build := attachment_store.capture(ProjectSettings.globalize_path("user://plugins/" + IDS[0]))
+	var attachment_selected: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(attachment_store.selector_path()))
+	check(attachment_build.get("ok", false) and str(attachment_build.digest) != str(attachment_selected.active), "attachment race requires a distinct candidate digest")
 	# Change document attachment in the actual preparation frame window.
 	var changed_buffer: DocumentBuffer = DocumentRegistry.get_instance().create_unbacked_buffer().buffer
 	changed_buffer.apply_edit("unsaved buffer 0")
