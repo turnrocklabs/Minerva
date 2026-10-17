@@ -62,7 +62,10 @@ func compile_build(build: Dictionary, slot: String) -> Dictionary:
 			continue
 		var previous: GDScript = scripts[filename]
 		var native_base := previous.get_instance_base_type()
-		previous.source_code = "extends %s\n" % (native_base if not native_base.is_empty() else "RefCounted")
+		if native_base.is_empty():
+			previous.source_code = "extends RefCounted\n"
+		else:
+			previous.source_code = "extends %s\n" % native_base
 		if previous.reload(false) != OK:
 			return _failure("Inactive script still has live dependents: " + filename)
 	var files: Dictionary = build.files
@@ -300,5 +303,4 @@ static func _participant_alive(candidate: Dictionary) -> bool:
 	if not is_instance_valid(entry.vbox):
 		return false
 	var old: Control = candidate.old
-	var parent: Node = entry.vbox
-	return entry.root == old and old.get_parent() == parent
+	return entry.root == old and old.get_parent() == entry.vbox
