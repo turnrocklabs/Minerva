@@ -46,6 +46,11 @@ static func _failure(message: String) -> Dictionary:
 ## Recompile dependencies before consumers at the inactive slot's fixed paths.
 ## Keep those Script objects across failures as well as successful reuse.
 func compile_build(build: Dictionary, slot: String) -> Dictionary:
+	if not build.get("ok", false):
+		return _failure("Invalid candidate build")
+	for filename: String in build.files:
+		if filename.get_extension() in ["scn", "res"]:
+			return _failure("Live reload requires text scene/resource files: " + filename)
 	var written := store.write_slot(slot, build)
 	if not written.get("ok", false):
 		return written
@@ -130,10 +135,14 @@ static func _visit_script(filename: String, files: Dictionary, visited: Dictiona
 
 ## Entry dictionaries come from the manager's live registry. Their originals
 ## are left untouched until the host wire callback accepts the whole swap.
-func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary]) -> Dictionary:
+func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], validate_prepared: Callable) -> Dictionary:
 	var compiled := compile_build(build, slot)
 	if not compiled.get("ok", false):
 		return compiled
+	if validate_prepared.is_valid():
+		var validated: Dictionary = validate_prepared.call(slot)
+		if not validated.get("ok", false):
+			return validated
 	var candidates: Array[Dictionary] = []
 	var staging := Control.new()
 	staging.visible = false
@@ -182,7 +191,9 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary]) -> Di
 ## wire(entry, root, first_load) -> bool owns broker/buffer/editor wiring.
 ## It must restore an old root without firing its loaded lifecycle again.
 ## retire(root) disconnects the old panel's plugin-owned signals on success.
-func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire: Callable) -> Dictionary:
+## validate_prepared(slot) is synchronous and checks unopened panel definitions
+## under this preparation logger, using the slot that was just compiled.
+func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire: Callable, validate_prepared: Callable = Callable()) -> Dictionary:
 	if busy or store == null or not wire.is_valid() or not retire.is_valid():
 		return _failure("Scene reload is unavailable or already in progress")
 	busy = true
@@ -193,7 +204,7 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 	var target := "B" if active_slot == "A" else "A"
 	var logger := PrepareLogger.new()
 	OS.add_logger(logger)
-	var prepared := _prepare(build, target, entries)
+	var prepared := _prepare(build, target, entries, validate_prepared)
 	var staged_root: Control = prepared.get("staging")
 	if prepared.get("ok", false):
 		await get_tree().process_frame

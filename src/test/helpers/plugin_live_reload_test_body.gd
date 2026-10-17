@@ -104,6 +104,7 @@ func _run() -> void:
 		_assert_wiring(version)
 		check(await conn.refresh_tools() == OK and conn.tools.size() == 2
 			and registry.get_plugin_tools(IDS[0]) == tools_before, "tools/list and installation catalog remain exactly once")
+	await _whole_build_refusals()
 	_fixture(IDS[0], 5)
 	var changed_policy_path := "user://plugins/" + IDS[0] + "/manifest.json"
 	var changed_policy: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(changed_policy_path))
@@ -302,16 +303,68 @@ func _publication_fault(plugin_id: String, _key: String) -> void:
 	block_publication = false
 
 
+func _whole_build_refusals() -> void:
+	var plugin_id := IDS[0]
+	var directory := "user://plugins/" + plugin_id
+	var store := Store.new(plugin_id)
+	var selected := FileAccess.get_file_as_bytes(store.selector_path())
+	var root_ids: Array = editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id())
+	var states: Array = editors.map(func(editor: Editor) -> PackedByteArray: return var_to_bytes(editor.plugin_scene_root.document))
+	for attempt: int in 2:
+		_write(directory.path_join("unused.res"), "opaque resource %d" % attempt)
+		var candidate := store.capture(ProjectSettings.globalize_path(directory))
+		var current: Dictionary = JSON.parse_string(selected.get_string_from_utf8())
+		check(candidate.get("ok", false) and candidate.files.has("unused.res")
+			and str(candidate.digest) != str(current.active), "binary fixture is captured with a distinct digest")
+		var binary_refusal: Dictionary = await manager.reload_scene_plugin(plugin_id)
+		check(not binary_refusal.get("ok", true) and str(binary_refusal.error).contains("unused.res"), "unused binary refuses every production reload")
+		check(FileAccess.get_file_as_bytes(store.selector_path()) == selected, "binary refusals preserve both active and LKG")
+	check(DirAccess.rename_absolute(ProjectSettings.globalize_path(directory.path_join("unused.res")),
+		ProjectSettings.globalize_path(directory.path_join("retained-binary.txt"))) == OK, "preserve binary fixture outside resource extension without deletion")
+	_write(directory.path_join("Extra.gd"), 'extends "Panel.gd"\nfunc _on_panel_self_check() -> bool:\n\treturn false\n')
+	_write(directory.path_join("Extra.tscn"), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="Extra.gd" id="1"]\n[node name="Extra" type="Control"]\nscript = ExtResource("1")\n')
+	var manifest_path := directory.path_join("manifest.json")
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+	var extra: Dictionary = manifest.ui.panels[0].duplicate(true)
+	extra.name = "closed_extra"
+	extra.entry_scene = "Extra.tscn"
+	extra.scripts = ["Extra.gd", "Panel.gd", "nested/Dependency.gd"]
+	manifest.ui.panels.append(extra)
+	_write(manifest_path, JSON.stringify(manifest))
+	check(not manager.get_live_panels(plugin_id).any(func(entry: Dictionary) -> bool: return entry.panel_name == "closed_extra"), "failing second panel has no live entry")
+	var closed_refusal: Dictionary = await manager.reload_scene_plugin(plugin_id)
+	check(not closed_refusal.get("ok", true) and str(closed_refusal.error).contains("closed_extra"), "unopened panel self-check refuses whole production reload by name")
+	check(FileAccess.get_file_as_bytes(store.selector_path()) == selected
+		and editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id()) == root_ids
+		and editors.map(func(editor: Editor) -> PackedByteArray: return var_to_bytes(editor.plugin_scene_root.document)) == states,
+		"whole-build refusals retain active, LKG, exact roots and current state")
+	_write(directory.path_join("Extra.gd"), FileAccess.get_file_as_string(directory.path_join("Extra.gd")).replace("return false", "return true"))
+	var accepted: Dictionary = await manager.reload_scene_plugin(plugin_id)
+	check(accepted.get("ok", false) and FileAccess.get_file_as_bytes(store.selector_path()) != selected, "valid unopened second panel permits publication")
+	_fixture(plugin_id, 4)
+	check((await manager.reload_scene_plugin(plugin_id)).get("ok", false), "same-process reload remains reusable after whole-build checks")
+	_assert_wiring(4)
+
+
 func _marketplace_race() -> void:
 	var plugin_id := "live_install_race"
 	var directory := _fixture(plugin_id, 1)
 	DirAccess.rename_absolute(directory.path_join("nested/Dependency.gd"), directory.path_join("Dependency.gd"))
 	_write(directory.path_join("Panel.gd"), FileAccess.get_file_as_string(directory.path_join("Panel.gd")).replace("nested/Dependency.gd", "Dependency.gd"))
-	_write(directory.path_join("late_fail.py"), "from pathlib import Path\nimport sys, time\nPath(sys.argv[1]).write_text(str(time.time()))\ntime.sleep(3)\nraise SystemExit(1)\n")
+	_write(directory.path_join("late_fail.py"), "from pathlib import Path\nimport sys, time\ndata = Path(sys.argv[2])\nmutated = bytes.fromhex('deadbeef00')\ndata.write_bytes(mutated)\nassert data.read_bytes() == mutated\nPath(sys.argv[1]).write_text(str(time.time()))\ntime.sleep(3)\nraise SystemExit(1)\n")
 	var path := directory.path_join("manifest.json")
 	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
 	var marker_path := ProjectSettings.globalize_path("user://real-backend-started.txt")
-	manifest.backend.args = ["late_fail.py", marker_path]
+	var user_data_path := ProjectSettings.globalize_path("user://plugins/data").path_join(plugin_id).path_join("sentinel.bin")
+	var user_data_before := PackedByteArray([0, 255, 1, 42, 128, 9, 0, 77])
+	check(user_data_path.is_absolute_path() and DirAccess.make_dir_recursive_absolute(user_data_path.get_base_dir()) == OK, "rollback sentinel uses the real absolute plugin data directory")
+	var user_file := FileAccess.open(user_data_path, FileAccess.WRITE)
+	check(user_file != null, "rollback sentinel opens")
+	if user_file != null:
+		user_file.store_buffer(user_data_before)
+		user_file.close()
+	check(FileAccess.get_file_as_bytes(user_data_path) == user_data_before, "rollback sentinel bytes are seeded before backend mutation")
+	manifest.backend.args = ["late_fail.py", marker_path, user_data_path]
 	manifest.ui.panels[0].scripts = ["Panel.gd", "Dependency.gd"]
 	_write(path, JSON.stringify(manifest))
 	var definition: PluginDefinition = manager.get_db().install(path)
@@ -358,6 +411,7 @@ func _marketplace_race() -> void:
 			_try_install_watch.call_deferred(plugin_id, editor, old_root, selector))
 	if FileAccess.file_exists(marker_path):
 		check(DirAccess.remove_absolute(marker_path) == OK, "remove previous backend start marker")
+	var row_before := var_to_bytes(definition.to_dict())
 	var install_started := Time.get_unix_time_from_system()
 	var installed: Dictionary = await client.install_from_url("http://127.0.0.1:%d/plugin.tar.gz" % port, manager, true, operation)
 	var install_returned := Time.get_unix_time_from_system()
@@ -367,6 +421,10 @@ func _marketplace_race() -> void:
 		"real backend start marker and elapsed delay prove actual process ran")
 	check(not installed.get("ok", true) and installed.get("error", "") in ["start_failed", "cancelled"], "actual delayed backend failure rolls installation back")
 	check(MarketplaceClient.rollback_complete(installed.get("rollback", {})), "actual rollback restores files, database and data")
+	var database: Object = manager.get_db()
+	var restored_definition: PluginDefinition = database.call("get_by_id", plugin_id)
+	check(restored_definition != null and var_to_bytes(restored_definition.to_dict()) == row_before, "actual rollback restores the independently captured exact database row")
+	check(FileAccess.get_file_as_bytes(user_data_path) == user_data_before, "actual rollback restores exact plugin userdata mutated before the backend marker")
 	check(FileAccess.get_file_as_bytes(path) == original_manifest
 		and FileAccess.get_file_as_bytes(directory.path_join("Panel.gd")) == original_panel, "actual rollback restores exact installed manifest and panel bytes")
 	check(editor.plugin_scene_root.get_instance_id() == old_root and FileAccess.get_file_as_bytes(store.selector_path()) == selector, "failed install never publishes new scene or replaces old root")
@@ -374,7 +432,7 @@ func _marketplace_race() -> void:
 	# A reload admitted while installation yielded must win before replacement.
 	_fixture(plugin_id, 3)
 	var changed_manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
-	changed_manifest.backend.args = ["late_fail.py", marker_path]
+	changed_manifest.backend.args = ["late_fail.py", marker_path, user_data_path]
 	_write(path, JSON.stringify(changed_manifest))
 	var competing = load("res://Scripts/Services/Plugins/PluginInstallOperation.gd").new()
 	competing.stage_changed.connect(func(stage: String) -> void:

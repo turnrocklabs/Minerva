@@ -92,9 +92,14 @@ func _panel_definitions(build: Dictionary) -> Array[Dictionary]:
 	if parsed == null:
 		return []
 	var result: Array[Dictionary] = []
+	var seen_names: Dictionary = {}
 	for panel: Dictionary in parsed.ui_panels:
 		if panel.get("kind") != "godot_scene":
 			continue
+		var panel_name := str(panel.get("name", ""))
+		if panel_name.is_empty() or seen_names.has(panel_name):
+			return []
+		seen_names[panel_name] = true
 		var scene := str(panel.get("entry_scene", ""))
 		if not Store.safe_relative(scene) or not files.has(scene) or not panel.get("scripts") is Array:
 			return []
@@ -108,59 +113,77 @@ func _panel_definitions(build: Dictionary) -> Array[Dictionary]:
 
 
 func _validate(build: Dictionary, machine: PluginLiveSwap, slot: String = "A") -> Dictionary:
-	var definitions := _panel_definitions(build)
-	if definitions.is_empty():
-		return {"ok": false, "error": "No valid archive-local scene panels"}
-	for filename: String in build.files:
-		if filename.get_extension() in ["scn", "res"]:
-			return {"ok": false, "error": "Live reload requires text scene/resource files"}
 	var logger := Swap.PrepareLogger.new()
 	OS.add_logger(logger)
 	var reply := machine.compile_build(build, slot)
 	if reply.get("ok", false):
-		for definition: Dictionary in definitions:
-			var path := machine.store.slot_path(slot).path_join(str(definition.entry_scene))
-			var packed := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
-			var allowed := PackedStringArray()
-			for script: String in definition.scripts:
-				allowed.append(machine.store.slot_path(slot).path_join(script))
-			if packed == null or not Host._audit_packed_scene(packed, allowed):
-				reply = {"ok": false, "error": "Boot scene failed validation"}
-				break
-			var probe := packed.instantiate()
-			if not probe is Control:
-				if probe != null:
-					probe.free()
-				reply = {"ok": false, "error": "Boot panel root is not a Control"}
-				break
-			var panel: Control = probe
-			panel.visible = false
-			add_child(panel)
-			# Boot probes exercise the loaded lifecycle on a private broker. They
-			# never acquire production keys, buffer bindings or panel authority.
-			var probe_broker := PluginScenePanelBroker.new(null, _broker.plugin_policy, _broker.capability_broker)
-			var plugin_id := machine.store.directory.get_file()
-			var panel_name := str(definition.name)
-			var probe_key := "generation-probe:%d" % panel.get_instance_id()
-			var channels: Array = definition.get("ipc_channels", [])
-			probe_broker.register_panel(panel, plugin_id, probe_key, PackedStringArray(channels), panel_name)
-			if panel.has_method("_on_panel_loaded"):
-				panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
-					_definition(plugin_id).data_directory, probe_broker, null, probe_key))
-			var valid := Host.invoke_self_check(panel)
-			valid = valid and is_instance_valid(panel)
-			if is_instance_valid(panel):
-				Host.invoke_unload(panel)
-			probe_broker.unregister_panel(plugin_id, probe_key)
-			if is_instance_valid(panel):
-				panel.free()
-			if not valid:
-				reply = {"ok": false, "error": "Boot self-check refused"}
-				break
+		reply = _validate_prepared(slot, build, machine, PackedStringArray())
 	OS.remove_logger(logger)
-	if not logger.snapshot().is_empty():
-		return {"ok": false, "error": "Boot validation reported errors"}
+	if reply.get("ok", false) and not logger.snapshot().is_empty():
+		return {"ok": false, "error": "Generation validation reported errors"}
 	return reply
+
+
+func _validate_prepared(slot: String, build: Dictionary, machine: PluginLiveSwap, open_names: PackedStringArray) -> Dictionary:
+	var definitions := _panel_definitions(build)
+	if definitions.is_empty():
+		return {"ok": false, "error": "No valid archive-local scene panels"}
+	for definition: Dictionary in definitions:
+		if str(definition.name) in open_names:
+			continue
+		var reply := _probe_panel(definition, machine, slot)
+		if not reply.get("ok", false):
+			return reply
+	return {"ok": true}
+
+
+func _probe_panel(definition: Dictionary, machine: PluginLiveSwap, slot: String) -> Dictionary:
+	var logger := Swap.PrepareLogger.new()
+	OS.add_logger(logger)
+	var reply := _probe_control(definition, machine, slot)
+	OS.remove_logger(logger)
+	var errors := logger.snapshot()
+	if not errors.is_empty():
+		reply = {"ok": false, "error": str(reply.get("error", "Validation reported errors")) + "; " + JSON.stringify(errors)}
+	if not reply.get("ok", false):
+		reply.error = "Panel '%s': %s" % [definition.name, reply.get("error", "Validation refused")]
+	return reply
+
+
+func _probe_control(definition: Dictionary, machine: PluginLiveSwap, slot: String) -> Dictionary:
+	var path := machine.store.slot_path(slot).path_join(str(definition.entry_scene))
+	var packed := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
+	var allowed := PackedStringArray()
+	for script: String in definition.scripts:
+		allowed.append(machine.store.slot_path(slot).path_join(script))
+	if packed == null or not Host._audit_packed_scene(packed, allowed):
+		return {"ok": false, "error": "Scene failed validation"}
+	var probe := packed.instantiate()
+	if not probe is Control:
+		if probe != null:
+			probe.free()
+		return {"ok": false, "error": "Panel root is not a Control"}
+	var panel: Control = probe
+	panel.visible = false
+	add_child(panel)
+	# Boot and unopened-panel probes use private keys and no real manager,
+	# buffer or editor authority. Their loaded/unload lifecycle must balance.
+	var probe_broker := PluginScenePanelBroker.new(null, _broker.plugin_policy, _broker.capability_broker)
+	var plugin_id := machine.store.directory.get_file()
+	var panel_name := str(definition.name)
+	var probe_key := "generation-probe:%d" % panel.get_instance_id()
+	var channels: Array = definition.get("ipc_channels", [])
+	probe_broker.register_panel(panel, plugin_id, probe_key, PackedStringArray(channels), panel_name)
+	if panel.has_method("_on_panel_loaded"):
+		panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
+			_definition(plugin_id).data_directory, probe_broker, null, probe_key))
+	var valid := is_instance_valid(panel) and Host.invoke_self_check(panel)
+	if is_instance_valid(panel):
+		Host.invoke_unload(panel)
+	probe_broker.unregister_panel(plugin_id, probe_key)
+	if is_instance_valid(panel):
+		panel.free()
+	return {"ok": true} if valid else {"ok": false, "error": "Self-check refused"}
 
 
 func initialize(plugin_id: String) -> Dictionary:
@@ -263,12 +286,11 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 			if old_definition.get("name", "") == entry.panel_name:
 				entry.old_panel_definition = old_definition
 		entries.append(entry)
-	if entries.is_empty():
-		# A closed plugin still validates the entire build before publication.
-		var checked := _validate(build, machine, "B" if machine.active_slot == "A" else "A")
-		if not checked.get("ok", false):
-			return _result(plugin_id, checked, installed)
-	var reply := await machine.swap(build, entries, _wire, _retire)
+	var open_names := PackedStringArray()
+	for entry: Dictionary in entries:
+		open_names.append(str(entry.panel_name))
+	var validator := _validate_prepared.bind(build, machine, open_names)
+	var reply := await machine.swap(build, entries, _wire, _retire, validator)
 	if reply.get("ok", false):
 		var pending_path := _pending_path(machine)
 		if pending_path.is_empty() or not Atomic.write(pending_path, "{}"):
