@@ -1911,6 +1911,8 @@ func _run_file_watch_checks() -> void:
 
 		# On first scan, just store the baseline — don't trigger a reload.
 		if stored.is_empty():
+			if supports_scene_live_reload(def.id):
+				_scene_reload_service().call("initialize", def.id)
 			_file_mtimes[def.id] = current
 			continue
 
@@ -2015,9 +2017,6 @@ func _on_reload_debounce_expired(id: String) -> void:
 
 ## Return true when a cached or live GDScript generation requires app restart.
 func _hot_reload_gd(id: String, gd_paths: Array[String]) -> bool:
-	if supports_scene_live_reload(id):
-		reload_scene_plugin.call_deferred(id)
-		return true
 	var live_panels: Array = _live_scene_panels.get(id, [])
 	var has_cached_script := false
 	for path in gd_paths:
@@ -2043,9 +2042,6 @@ func get_restart_required_reason(id: String) -> String:
 
 ## Defer a changed live scene to the next application start.
 func _hot_reload_tscn(id: String, tscn_path: String) -> void:
-	if supports_scene_live_reload(id):
-		reload_scene_plugin.call_deferred(id)
-		return
 	var live_panels: Array = _live_scene_panels.get(id, [])
 	if live_panels.is_empty():
 		return
@@ -2055,9 +2051,6 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 
 
 func _mark_restart_required(id: String, subject: String) -> void:
-	if supports_scene_live_reload(id):
-		reload_scene_plugin.call_deferred(id)
-		return
 	var reason := (
 		"Plugin '%s' changed '%s' while its scene code was loaded. " +
 		"Restart Minerva to load the update safely."
@@ -2164,13 +2157,15 @@ func get_live_panels(plugin_id: String) -> Array:
 
 
 func supports_scene_live_reload(id: String) -> bool:
-	var definition: PluginDefinition = _db.get_by_id(id) if _db != null else null
+	var database: Object = _db
+	var definition: PluginDefinition = database.call("get_by_id", id) if database != null else null
 	return definition != null and "live_reload" in definition.capabilities
 
 
 func _scene_reload_service() -> Node:
 	if _scene_reload == null:
-		_scene_reload = load("res://Scripts/Services/Plugins/PluginLiveReload.gd").new()
+		var script: GDScript = load("res://Scripts/Services/Plugins/PluginLiveReload.gd")
+		_scene_reload = script.new()
 		_scene_reload.call("configure", self, PluginScenePanelHost._get_broker(), _surface_plugin_message)
 		add_child(_scene_reload)
 	return _scene_reload

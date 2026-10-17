@@ -82,7 +82,8 @@ static func instantiate_into(
 	var api_error: String = definition.call("host_api_error")
 	if not api_error.is_empty():
 		return _mount_placeholder(vbox, api_error)
-	var live_reload: bool = plugin_manager.has_method("supports_scene_live_reload") and plugin_manager.supports_scene_live_reload(plugin_id)
+	var manager_object: Object = plugin_manager
+	var live_reload: bool = manager_object.has_method("supports_scene_live_reload") and manager_object.call("supports_scene_live_reload", plugin_id)
 	if not live_reload and plugin_manager.has_method("get_restart_required_reason"):
 		var restart_reason: String = plugin_manager.get_restart_required_reason(plugin_id)
 		if not restart_reason.is_empty():
@@ -101,7 +102,7 @@ static func instantiate_into(
 	# -----------------------------------------------------------------------
 	var panel_def: Dictionary = _get_panel_def(def, panel_name)
 	if live_reload:
-		var generation: Dictionary = plugin_manager.resolve_scene_generation(plugin_id, panel_name)
+		var generation: Dictionary = manager_object.call("resolve_scene_generation", plugin_id, panel_name)
 		if not generation.get("ok", false):
 			return _mount_placeholder(vbox, str(generation.get("error", "Scene generation refused")))
 		data_dir = str(generation.directory)
@@ -251,7 +252,7 @@ static func instantiate_into(
 	# case so scene scripts can safely use child-node refs initialised there.
 	# -----------------------------------------------------------------------
 	if root_ctrl.has_method("_on_panel_loaded"):
-		var ctx := _build_ctx(plugin_id, panel_name, def.data_directory, broker, editor, reg_key)
+		var ctx := _build_ctx(plugin_id, panel_name, str(def.data_directory), broker, editor, reg_key)
 		if root_ctrl.is_node_ready():
 			root_ctrl._on_panel_loaded(ctx)
 		else:

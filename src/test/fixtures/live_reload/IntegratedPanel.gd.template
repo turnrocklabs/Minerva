@@ -8,6 +8,8 @@ var document: Dictionary = {}
 var loaded_count: int = 0
 var pushes: int = 0
 var broker: RefCounted
+var sane: bool = true
+var action_hits: int = 0
 
 
 func operation(value: int) -> int:
@@ -18,6 +20,20 @@ func _on_panel_loaded(ctx: Dictionary) -> void:
 	loaded_count += 1
 	broker = ctx.broker
 	broker.connect("panel_registered", _registered)
+	if VERSION == 98:
+		sane = false
+
+
+func get_editor_actions() -> Array[Control]:
+	var button := Button.new()
+	button.name = "GenerationAction"
+	button.text = "Action %d" % VERSION
+	button.pressed.connect(_action)
+	return [button]
+
+
+func _action() -> void:
+	action_hits += 1
 
 
 func _registered(_plugin: String, _panel: String) -> void:
@@ -42,4 +58,4 @@ func _on_panel_load_request(state: Dictionary) -> void:
 
 
 func _on_panel_self_check() -> bool:
-	return VERSION != 99
+	return VERSION != 99 and sane

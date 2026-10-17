@@ -11,6 +11,8 @@ var manager: PluginManager
 var broker: PluginScenePanelBroker
 var editors: Array[Editor] = []
 var buffers: Array[DocumentBuffer] = []
+var block_publication: bool = false
+var blocked: bool = false
 
 
 func _ready() -> void:
@@ -30,7 +32,7 @@ func _fixture(plugin_id: String, version: int, directory: String = "") -> String
 	var manifest := {"id": plugin_id, "name": plugin_id, "version": "1.0.%d" % version,
 		"host_api_version": "2", "capabilities": ["live_reload"],
 		"backend": {"transport": "stdio", "entrypoint": "python3"},
-		"ui": {"panels": [{"name": "main", "title": "Main", "kind": "godot_scene",
+		"ui": {"ipc_messages": ["probe_denied"], "panels": [{"name": "main", "title": "Main", "kind": "godot_scene",
 			"entry_scene": "Panel.tscn", "scripts": ["Panel.gd", "nested/Dependency.gd"],
 			"ipc_channels": ["probe_denied"]}]}}
 	_write(directory.path_join("manifest.json"), JSON.stringify(manifest))
@@ -96,6 +98,45 @@ func _run() -> void:
 		_assert_wiring(version)
 		check(await conn.refresh_tools() == OK and conn.tools.size() == 2
 			and registry.get_plugin_tools(IDS[0]) == tools_before, "tools/list and installation catalog remain exactly once")
+	# Change document attachment in the actual preparation frame window.
+	var changed_buffer: DocumentBuffer = DocumentRegistry.get_instance().create_unbacked_buffer().buffer
+	changed_buffer.apply_edit("unsaved buffer 0")
+	var prior_buffer := buffers[0]
+	var before_switch: int = editors[0].plugin_scene_root.get_instance_id()
+	_switch_buffer.call_deferred(changed_buffer)
+	var switched: Dictionary = await manager.reload_scene_plugin(IDS[0])
+	check(not switched.get("ok", true) and editors[0].plugin_scene_root.get_instance_id() == before_switch
+		and broker.get_attached_buffer(IDS[0], editors[0].plugin_panel_key) == changed_buffer,
+		"attachment change during prepare refuses and retains CURRENT document")
+	buffers[0] = changed_buffer
+	DocumentRegistry.get_instance().dispose_buffer(prior_buffer.file_path)
+	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false), "reuse succeeds after attachment refusal")
+	_assert_wiring(4)
+	# Actual publication failure after real broker rewiring, with changed IPC
+	# metadata. Rollback must restore old registration and action callbacks.
+	_fixture(IDS[0], 5)
+	var manifest_path := "user://plugins/" + IDS[0] + "/manifest.json"
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+	manifest.ui.ipc_messages = ["probe_echo"]
+	manifest.ui.panels[0].ipc_channels = ["probe_echo"]
+	_write(manifest_path, JSON.stringify(manifest))
+	broker.panel_registered.connect(_publication_fault)
+	block_publication = true
+	var before_failure: Array = editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id())
+	var failed_publication: Dictionary = await manager.reload_scene_plugin(IDS[0])
+	var selector_path := Store.new(IDS[0]).selector_path()
+	check(blocked and not failed_publication.get("ok", true), "real selector rename refuses after real host registration")
+	check(DirAccess.rename_absolute(selector_path, selector_path + ".blocked") == OK
+		and DirAccess.rename_absolute(selector_path + ".saved", selector_path) == OK, "restore injected filesystem boundary without deletion")
+	broker.panel_registered.disconnect(_publication_fault)
+	check(editors.map(func(editor: Editor) -> int: return editor.plugin_scene_root.get_instance_id()) == before_failure, "rollback preserves real old root identities")
+	_assert_wiring(4)
+	var old_root: Control = editors[0].plugin_scene_root
+	var ipc: Node = old_root.get_node("_MinervaIPC")
+	old_root.request.emit("probe_denied", {}, "after-rollback")
+	var actual_reply: Dictionary = await ipc.await_reply("after-rollback")
+	check(actual_reply.get("success", false), "rollback restores old IPC channel and real backend request")
+	_fixture(IDS[0], 4)
 	# Recursive content hashing admits nested edits even within one mtime tick.
 	var service: Node = manager._scene_reload_service()
 	var before: Dictionary = service.scan_files(IDS[0], PackedStringArray(["gd", "tscn"]))
@@ -125,6 +166,26 @@ func _run() -> void:
 	_fixture(IDS[0], 6)
 	check((await manager.reload_scene_plugin(IDS[0])).get("ok", false), "same-process retry succeeds after installed failure")
 	_assert_wiring(6, 4)
+	# A plugin never opened still snapshots its previous installed generation.
+	var closed_id := "live_integration_closed"
+	_fixture(closed_id, 1)
+	check(manager.get_db().install("user://plugins/" + closed_id + "/manifest.json") != null, "closed plugin installs")
+	var closed_stage := _fixture(closed_id, 98, "user://live_closed_stage")
+	check(manager.stage_live_plugin_update(closed_id, closed_stage).get("ok", false), "closed update snapshots prior generation before commit")
+	_fixture(closed_id, 98)
+	var closed_store := Store.new(closed_id)
+	var old_record: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(closed_store.selector_path()))
+	var rejected: Dictionary = await manager.activate_live_plugin_update(closed_id)
+	check(not rejected.get("ok", true) and FileAccess.get_file_as_string(closed_store.selector_path()) == JSON.stringify(old_record), "loaded-lifecycle self-check refuses closed candidate before promotion")
+	var boot_script: GDScript = load("res://Scripts/Services/Plugins/PluginLiveReload.gd")
+	var boot: Node = boot_script.new()
+	boot.configure(manager, broker, Callable())
+	add_child(boot)
+	var recovered: Dictionary = boot.resolve(closed_id, "main")
+	check(recovered.get("ok", false) and boot.status(closed_id).restart_pending
+		and FileAccess.get_file_as_string(closed_store.selector_path()) == JSON.stringify(old_record), "fresh service boot rejects loaded-lifecycle fault and retains selected old build")
+	boot.free()
+	manager.get_db().remove(closed_id)
 	for index: int in buffers.size():
 		check(buffers[index].text == "unsaved buffer %d" % index and buffers[index].dirty, "newer buffer text remains untouched")
 	conn.disconnect_from_server()
@@ -157,6 +218,11 @@ func _assert_wiring(version_a: int, version_b: int = -1) -> void:
 		check(panel.VERSION == version and panel.operation(10) == 10 + version and panel.get_node("Marker").text == str(version), "new marker and operation in real editor")
 		check(panel.document == {"unsaved": index, "undo": [1, 2], "view": {"scroll": 11}, "large": 9007199254740993}, "complete unsaved state with exact integer preserved")
 		check(panel.loaded_count == 1 and panel.request.get_connections().size() == 1 and panel.content_changed.get_connections().size() == 1, "loaded lifecycle and request/content handlers exactly once")
+		var action: Button = editor.get_node("VBoxContainer/ButtonsHBoxContainer/GenerationAction")
+		var previous_hits: int = panel.action_hits
+		action.pressed.emit()
+		check(action.text == "Action %d" % version and panel.action_hits == previous_hits + 1
+			and action.pressed.get_connections().size() == 1, "editor action targets current root exactly once")
 		check(broker.is_panel_registered(editor.plugin_panel_key, editor.plugin_id)
 			and broker.get_attached_buffer(editor.plugin_id, editor.plugin_panel_key) == buffers[index]
 			and buffers[index].text_changed.get_connections().size() == 1 and buffers[index].saved.get_connections().size() == 1, "broker identity and real buffer handlers exactly once")
@@ -164,6 +230,21 @@ func _assert_wiring(version_a: int, version_b: int = -1) -> void:
 		buffers[index].apply_edit("changed")
 		check(panel.pushes == pushes + 1, "one buffer edit reaches only the current root once")
 		buffers[index].apply_edit("unsaved buffer %d" % index)
+
+
+func _switch_buffer(buffer: DocumentBuffer) -> void:
+	broker.attach_buffer_to_panel(IDS[0], editors[0].plugin_panel_key, buffer)
+
+
+func _publication_fault(plugin_id: String, _key: String) -> void:
+	if not block_publication or blocked or plugin_id != IDS[0]:
+		return
+	var path := Store.new(IDS[0]).selector_path()
+	check(DirAccess.rename_absolute(path, path + ".saved") == OK, "move selector aside at publication boundary")
+	DirAccess.make_dir_recursive_absolute(path)
+	_write(path.path_join("occupied"), "fault")
+	blocked = true
+	block_publication = false
 
 
 func check(condition: bool, label: String) -> void:

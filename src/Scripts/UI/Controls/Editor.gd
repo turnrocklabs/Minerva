@@ -799,7 +799,12 @@ func _annotation_dock_supported() -> bool:
 func remount_plugin_surface(new_root: Control) -> void:
 	if type != Type.PLUGIN_SCENE:
 		return
+	for control: Control in _plugin_contributed_actions:
+		if is_instance_valid(control):
+			control.free()
+	_plugin_contributed_actions.clear()
 	plugin_scene_root = new_root
+	_apply_plugin_chrome_actions()
 	call_deferred("_try_mount_plugin_annotation_dock")
 	# A re-instantiated panel may declare a different hook set; the ribbon
 	# re-reads supports_undo() on this signal.

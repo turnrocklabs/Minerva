@@ -30,15 +30,24 @@ func _definition(plugin_id: String) -> PluginDefinition:
 	return db.call("get_by_id", plugin_id)
 
 
+func _capture_installed(plugin_id: String, machine: PluginLiveSwap) -> Dictionary:
+	var source := ProjectSettings.globalize_path(_definition(plugin_id).data_directory)
+	if source != source.simplify_path() or Store._has_link(source):
+		return {"ok": false, "error": "Plugin source path must be canonical and contain no symlinks"}
+	return machine.store.capture(source)
+
+
 func status(plugin_id: String) -> Dictionary:
-	return _status.get(plugin_id, {}).duplicate(true)
+	var current: Dictionary = _status.get(plugin_id, {})
+	return current.duplicate(true)
 
 
 func _result(plugin_id: String, reply: Dictionary, installed: bool = false) -> Dictionary:
 	var message := "Live reload complete" if reply.get("ok", false) else str(reply.get("error", "Live reload refused"))
 	if installed and not reply.get("ok", false):
 		message = "Update installed; live reload refused: " + message
-		if not _status.get(plugin_id, {}).get("restart_pending", false):
+		var previous: Dictionary = _status.get(plugin_id, {})
+		if not previous.get("restart_pending", false):
 			push_warning("[PluginLiveReload] Backend/panel version mismatch: " + message)
 	_status[plugin_id] = {"ok": reply.get("ok", false), "message": message,
 		"restart_pending": installed and not reply.get("ok", false)}
@@ -68,7 +77,8 @@ func _panel_definitions(build: Dictionary) -> Array[Dictionary]:
 	var manifest: Variant = JSON.parse_string(bytes.get_string_from_utf8())
 	if not manifest is Dictionary:
 		return []
-	var parsed := PluginDefinition.from_dict(manifest)
+	var manifest_dict: Dictionary = manifest
+	var parsed := PluginDefinition.from_dict(manifest_dict)
 	if parsed == null:
 		return []
 	var result: Array[Dictionary] = []
@@ -116,8 +126,22 @@ func _validate(build: Dictionary, machine: PluginLiveSwap, slot: String = "A") -
 			var panel: Control = probe
 			panel.visible = false
 			add_child(panel)
+			# Boot probes exercise the loaded lifecycle on a private broker. They
+			# never acquire production keys, buffer bindings or panel authority.
+			var probe_broker := PluginScenePanelBroker.new(null, _broker.plugin_policy, _broker.capability_broker)
+			var plugin_id := machine.store.directory.get_file()
+			var panel_name := str(definition.name)
+			var probe_key := "generation-probe:%d" % panel.get_instance_id()
+			var channels: Array = definition.get("ipc_channels", [])
+			probe_broker.register_panel(panel, plugin_id, probe_key, PackedStringArray(channels), panel_name)
+			if panel.has_method("_on_panel_loaded"):
+				panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
+					_definition(plugin_id).data_directory, probe_broker, null, probe_key))
 			var valid := Host.invoke_self_check(panel)
 			valid = valid and is_instance_valid(panel)
+			if is_instance_valid(panel):
+				Host.invoke_unload(panel)
+			probe_broker.unregister_panel(plugin_id, probe_key)
 			if is_instance_valid(panel):
 				panel.free()
 			if not valid:
@@ -129,18 +153,20 @@ func _validate(build: Dictionary, machine: PluginLiveSwap, slot: String = "A") -
 	return reply
 
 
-func resolve(plugin_id: String, panel_name: String) -> Dictionary:
-	var machine := _machine(plugin_id)
+func initialize(plugin_id: String) -> Dictionary:
+	return _ensure_current(plugin_id, _machine(plugin_id))
+
+
+func _ensure_current(plugin_id: String, machine: PluginLiveSwap) -> Dictionary:
 	if machine.busy:
-		return {"ok": false, "error": "Live reload is preparing; retry opening this panel"}
+		return {"ok": false, "error": "Live reload is already preparing"}
 	if machine.record.is_empty():
 		var recovered := machine.store.recover(_validate.bind(machine))
 		if not recovered.get("ok", false):
 			if FileAccess.file_exists(machine.store.selector_path()) \
 				or FileAccess.file_exists(machine.store.directory.path_join("recovery.json")):
 				return _result(plugin_id, recovered)
-			var definition := _definition(plugin_id)
-			var initial := machine.store.capture(definition.data_directory)
+			var initial := _capture_installed(plugin_id, machine)
 			if not initial.get("ok", false):
 				return _result(plugin_id, initial)
 			var archived := machine.store.archive(initial)
@@ -157,6 +183,14 @@ func resolve(plugin_id: String, panel_name: String) -> Dictionary:
 			machine.record = recovered.record
 		machine.active_slot = "A"
 		_boot_pending(plugin_id, machine)
+	return {"ok": true}
+
+
+func resolve(plugin_id: String, panel_name: String) -> Dictionary:
+	var machine := _machine(plugin_id)
+	var initialized := _ensure_current(plugin_id, machine)
+	if not initialized.get("ok", false):
+		return initialized
 	var build := machine.store.read_archive(str(machine.record.active))
 	if not build.get("ok", false):
 		return _result(plugin_id, build)
@@ -170,18 +204,31 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 	if not supports(plugin_id):
 		return {"ok": false, "error": "Plugin has not opted into live reload"}
 	var machine := _machine(plugin_id)
-	installed = installed or bool(_status.get(plugin_id, {}).get("restart_pending", false))
-	var build := supplied if not supplied.is_empty() else machine.store.capture(_definition(plugin_id).data_directory)
+	var current_status: Dictionary = _status.get(plugin_id, {})
+	var pending: bool = current_status.get("restart_pending", false)
+	installed = installed or pending
+	if machine.busy:
+		return _result(plugin_id, {"ok": false, "error": "Live reload is already preparing"}, installed)
+	var initialized := _ensure_current(plugin_id, machine)
+	if not initialized.get("ok", false):
+		return _result(plugin_id, initialized, installed)
+	var build := supplied if not supplied.is_empty() else _capture_installed(plugin_id, machine)
 	if not build.get("ok", false):
 		return _result(plugin_id, build, installed)
 	var definitions := _panel_definitions(build)
+	var old_definitions: Array[Dictionary] = []
+	if not machine.record.is_empty():
+		old_definitions = _panel_definitions(machine.store.read_archive(str(machine.record.active)))
 	var entries: Array[Dictionary] = []
 	for original: Dictionary in _manager.call("get_live_panels", plugin_id):
-		if not is_instance_valid(original.root) or not original.root.get_meta("_minerva_plugin_panel_load_ok", false):
+		if not is_instance_valid(original.root):
+			continue
+		var old: Control = original.root
+		if not old.get_meta("_minerva_plugin_panel_load_ok", false):
 			continue
 		var entry: Dictionary = original.duplicate()
 		entry["plugin_id"] = plugin_id
-		entry["vbox"] = original.root.get_parent()
+		entry["vbox"] = old.get_parent()
 		entry["buffer"] = _broker.get_attached_buffer(plugin_id, str(entry.panel_key)) if _broker != null else null
 		var selected: Dictionary = {}
 		for definition: Dictionary in definitions:
@@ -190,6 +237,10 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 		if selected.is_empty():
 			return _result(plugin_id, {"ok": false, "error": "Updated build omits an open panel"}, installed)
 		entry["panel_definition"] = selected
+		entry["old_panel_definition"] = selected
+		for old_definition: Dictionary in old_definitions:
+			if old_definition.get("name", "") == entry.panel_name:
+				entry.old_panel_definition = old_definition
 		entries.append(entry)
 	if entries.is_empty():
 		# A closed plugin still validates the entire build before publication.
@@ -205,23 +256,32 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 func _wire(entry: Dictionary, panel: Control, first_load: bool) -> bool:
 	if _broker == null:
 		return false
-	var definition: Dictionary = entry.panel_definition
-	_broker.register_panel(panel, entry.plugin_id, entry.panel_key,
-		PackedStringArray(definition.get("ipc_channels", [])), entry.panel_name, entry.editor)
-	if entry.buffer != null and not _broker.attach_buffer_to_panel(entry.plugin_id, entry.panel_key, entry.buffer):
-		return false
+	var definition: Dictionary = entry.panel_definition if first_load else entry.old_panel_definition
+	var plugin_id: String = entry.plugin_id
+	var panel_key: String = entry.panel_key
+	var panel_name: String = entry.panel_name
+	var buffer: DocumentBuffer = entry.buffer
+	var channels: Array = definition.get("ipc_channels", [])
 	var editor: Object = entry.editor
+	if first_load and _broker.get_attached_buffer(plugin_id, panel_key) != buffer:
+		# Refuse this snapshot, retaining the CURRENT attachment for rollback.
+		entry.buffer = _broker.get_attached_buffer(plugin_id, panel_key)
+		return false
+	_broker.register_panel(panel, plugin_id, panel_key, PackedStringArray(channels), panel_name, editor)
+	if buffer != null and not _broker.attach_buffer_to_panel(plugin_id, panel_key, buffer):
+		return false
 	if is_instance_valid(editor):
-		if panel.has_signal("content_changed") and not panel.is_connected("content_changed", editor._on_editor_changed):
-			panel.connect("content_changed", editor._on_editor_changed)
+		var changed := Callable(editor, "_on_editor_changed")
+		if panel.has_signal("content_changed") and not panel.is_connected("content_changed", changed):
+			panel.connect("content_changed", changed)
 		editor.call("remount_plugin_surface", panel)
 	_manager.call("repoint_live_panel", entry.plugin_id, entry.panel_key, panel)
 	entry.root = panel
 	panel.set_meta("_minerva_plugin_panel_load_ok", true)
 	if first_load and panel.has_method("_on_panel_loaded"):
-		panel.call("_on_panel_loaded", Host._build_ctx(entry.plugin_id, entry.panel_name,
-			_definition(entry.plugin_id).data_directory, _broker, editor, entry.panel_key))
-	return _broker.is_panel_registered(entry.panel_key, entry.plugin_id)
+		panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
+			_definition(plugin_id).data_directory, _broker, editor, panel_key))
+	return _broker.is_panel_registered(panel_key, plugin_id)
 
 
 func _retire(panel: Control) -> void:
@@ -243,11 +303,15 @@ func stage_update(plugin_id: String, candidate_directory: String) -> Dictionary:
 	var machine := _machine(plugin_id)
 	if machine.busy:
 		return {"ok": false, "error": "Live reload is already preparing"}
+	var initialized := _ensure_current(plugin_id, machine)
+	if not initialized.get("ok", false):
+		return initialized
 	var build := machine.store.capture(source)
 	if not build.get("ok", false) or _panel_definitions(build).is_empty():
 		return {"ok": false, "error": str(build.get("error", "Invalid staged scene manifest"))}
 	var manifest_bytes: PackedByteArray = build.files["manifest.json"]
-	var next_definition := PluginDefinition.from_dict(JSON.parse_string(manifest_bytes.get_string_from_utf8()))
+	var manifest: Dictionary = JSON.parse_string(manifest_bytes.get_string_from_utf8())
+	var next_definition := PluginDefinition.from_dict(manifest)
 	if next_definition == null or next_definition.id != plugin_id or "live_reload" not in next_definition.capabilities:
 		return {"ok": false, "error": "Restart to update: live-reload identity or capability changed"}
 	next_definition.data_directory = source
@@ -275,9 +339,12 @@ func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
 	if not FileAccess.file_exists(path):
 		return
 	var pending: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if not pending is Dictionary or not Store.valid_digest(str(pending.get("digest", ""))):
+	if not pending is Dictionary:
 		return
-	var installed := machine.store.capture(_definition(plugin_id).data_directory)
+	var pending_record: Dictionary = pending
+	if not Store.valid_digest(str(pending_record.get("digest", ""))):
+		return
+	var installed := _capture_installed(plugin_id, machine)
 	if not installed.get("ok", false) or installed.digest != pending.digest:
 		return # The install did not commit, or a later install superseded it.
 	if machine.record.active == pending.digest:
