@@ -108,7 +108,7 @@ func _run() -> void:
 	var blocked := store.directory.path_join("blocked")
 	DirAccess.make_dir_recursive_absolute(blocked)
 	check("actual selector replacement error refuses", not Atomic.write(blocked, "candidate"))
-	await _capability_checks()
+	_capability_checks()
 	print("Generation store: %d checks, %d failures" % [_checks, _failures])
 	quit(1 if _failures else 0)
 

@@ -86,7 +86,7 @@ func bundle(files: Dictionary) -> Dictionary:
 	var normalized: Dictionary = {}
 	var total := 0
 	for key: Variant in files:
-		if not key is String or not safe_relative(key):
+		if not key is String or not safe_relative(str(key)):
 			return _fail("Invalid generation file path: " + str(key))
 		var name: String = key
 		if name.ends_with(".uid") or name.ends_with(".import"):
@@ -229,7 +229,7 @@ func read_archive(digest: String) -> Dictionary:
 	var files: Dictionary = {}
 	var total := 0
 	for key: Variant in value.files:
-		if not key is String or not safe_relative(key) or not value.files[key] is String:
+		if not key is String or not safe_relative(str(key)) or not value.files[key] is String:
 			return _fail("Invalid archive file entry")
 		var hex: String = value.files[key]
 		if hex.length() % 2 != 0 or (not hex.is_empty() and not hex.is_valid_hex_number(false)):
@@ -250,7 +250,8 @@ func write_slot(slot: String, build: Dictionary) -> Dictionary:
 		return _fail("Invalid slot or build")
 	if not _ensure_directory():
 		return _fail("Unsafe generation directory")
-	var checked := bundle(build.get("files", {}))
+	var input_files: Dictionary = build.get("files", {})
+	var checked := bundle(input_files)
 	if not checked.get("ok", false) or checked.digest != build.get("digest", ""):
 		return _fail("Slot source digest or resource validation failed")
 	# A slot is rebuilt exactly, never overlaid on removed dependencies. Moving
@@ -321,7 +322,10 @@ func recover(validate: Callable) -> Dictionary:
 		if not build.get("ok", false):
 			continue
 		var validation: Variant = validate.call(build)
-		if not validation is Dictionary or not validation.get("ok", false):
+		if not validation is Dictionary:
+			continue
+		var checked_validation: Dictionary = validation
+		if not checked_validation.get("ok", false):
 			continue
 		var chosen := record if key == "active" else {"version": 1, "active": digest, "lkg": ""}
 		return {"ok": true, "build": build, "record": chosen, "recovered": key == "lkg", "digest": digest}
