@@ -72,8 +72,11 @@ func retire(_panel: Control) -> void:
 
 func _run() -> void:
 	await get_tree().process_frame
+	# Performance counts include the real application's autoload startup jobs.
+	# Settle those before the warmed baseline; keep the equality oracle strict.
+	await get_tree().create_timer(3.0).timeout
+	await get_tree().process_frame
 	if "--live-swap-baseline" in OS.get_cmdline_user_args():
-		await get_tree().create_timer(1.0).timeout
 		print("BASELINE_DONE")
 		completed.emit(0)
 		return
@@ -100,6 +103,8 @@ func _run() -> void:
 		check("nested scene and preloaded resource refreshed %d" % version, entries[0].root.call("nested_version") == version * 2)
 	check("changed marker and operation", entries[0].root.get_node("Marker").text == "9" and entries[0].root.call("operation", 3) == 27)
 	var version := 10
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_sample("warmed-baseline")
 	for cycle: int in 3:
 		for injected: String in ["compile", "scene", "import", "missing-node", "self-check", "alias", "rename"]:
@@ -136,6 +141,9 @@ func _run() -> void:
 		var edited_result: Dictionary = await swapper.swap(make_build(version), entries, wire, retire)
 		check("publication outcome for concurrent edit", edited_result.ok != publish_fails)
 		check("edit during prepare survives success or rollback", Host.invoke_save(entries[0].root, {}).text == "edited-during-prepare")
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_sample("edit-rename-refusal" if publish_fails else "edit-success")
 		version += 1
 	# A tab can close while the candidate waits for deferred initialization.
 	entries[1].vbox.call_deferred("free")
@@ -143,8 +151,22 @@ func _run() -> void:
 	check("closed participant refuses without stranding busy", not closed.ok and not swapper.busy)
 	entries.remove_at(1)
 	check("swap remains usable after tab closure", (await swapper.swap(make_build(version + 1), entries, wire, retire)).ok)
-	var before_close: float = Performance.get_monitor(Performance.OBJECT_COUNT)
-	check("closed-tab cleanup adds no objects", before_close <= float(metrics[-1].objects))
+	# Restore the same two-tab measurement shape: freeing a tab must not mask
+	# resource or RSS growth in the closure path.
+	var reopened_box := VBoxContainer.new()
+	get_tree().root.add_child(reopened_box)
+	var reopened: Control = entries[0].root.duplicate()
+	reopened_box.add_child(reopened)
+	Host.invoke_load(reopened, Host.invoke_save(entries[0].root, {}))
+	var reopened_entry: Dictionary = entries[0].duplicate()
+	reopened_entry.root = reopened
+	reopened_entry.vbox = reopened_box
+	entries.append(reopened_entry)
+	for next_version: int in [version + 2, version + 3]:
+		check("two-tab reuse after closure", (await swapper.swap(make_build(next_version), entries, wire, retire)).ok)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_sample("closure-reopened-two-tabs")
 	print("SWAP_MEMORY ", JSON.stringify(metrics))
 	var objects: Array[float] = []
 	var resources: Array[float] = []
@@ -175,4 +197,7 @@ func _sample(label: String) -> void:
 	var stat_file := FileAccess.open("/proc/self/statm", FileAccess.READ)
 	var statm := stat_file.get_line().split(" ") if stat_file != null else PackedStringArray()
 	metrics.append({"fault": label, "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
-		"resources": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT), "rss_pages": int(statm[1]) if statm.size() > 1 else -1})
+		"resources": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT),
+		"nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+		"orphans": Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT),
+		"rss_pages": int(statm[1]) if statm.size() > 1 else -1})

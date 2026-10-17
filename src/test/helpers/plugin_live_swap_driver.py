@@ -113,6 +113,10 @@ def main() -> int:
         partial = error.stdout or b""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", errors="replace")
+        stderr = error.stderr or b""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        partial += "\n" + stderr
         (evidence / "timeout-output.log").write_text(partial, encoding="utf-8")
         print(json.dumps({"ok": False, "error": "child timed out; see timeout.txt"}))
         return 1
