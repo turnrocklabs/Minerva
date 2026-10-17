@@ -662,7 +662,7 @@ func _handle_plugin_restart(args: Dictionary) -> Dictionary:
 
 
 func _handle_plugin_reload(args: Dictionary) -> Dictionary:
-	var id = args.get("id", "")
+	var id: String = args.get("id", "")
 	if id.is_empty():
 		return {"error": "id is required"}
 
