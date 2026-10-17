@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""Local-only working-tree checks. Requires Python and PyYAML; no Godot or GATE-W."""
+import argparse
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def main() -> int:
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    root = Path(__file__).resolve().parents[1]
+    checks = [
+        ("push-lanes", [sys.executable, "scripts/ci/check_push_lanes.py"]),
+        ("docket-launcher-paths", [sys.executable, "tests/test_docket_launcher_paths.py"]),
+    ]
+    started = time.monotonic()
+    failures = 0
+    for name, command in checks:
+        before = time.monotonic()
+        try:
+            result = subprocess.run(command, cwd=root, check=False)
+            passed = result.returncode == 0
+        except OSError as error:
+            print(f"{name}: {error}", file=sys.stderr)
+            passed = False
+        failures += not passed
+        print(f"{'PASS' if passed else 'FAIL'} {name} ({time.monotonic() - before:.2f}s)",
+              flush=True)
+    print(f"{'FAIL' if failures else 'PASS'} total ({time.monotonic() - started:.2f}s; "
+          f"{failures} failed checks)")
+    return int(failures > 0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

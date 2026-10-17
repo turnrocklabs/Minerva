@@ -4,6 +4,8 @@
 
 Before writing or reviewing code, read Docket `minerva:01a147ee08057a52ad61a4ba692c255a` (policy) and `minerva:01a147ee229d7787b8b5c4f905763b8d` (language rules).
 
+Before every commit run `scripts/check-fast` (local-only host checks; never a push-lane step).
+
 ## This repo's mechanics
 
 - Never point Godot at the live host `src` tree, including editor/headless/syntax checks; use an isolated copy with `--check-only`. Check for an editor-launched app and ask before launching another application. Container jobs and GATE-W are in the Master policy.
