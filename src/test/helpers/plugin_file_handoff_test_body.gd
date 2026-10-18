@@ -329,7 +329,6 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 
 func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, provider: PluginDefinition,
 		directory: String, text: String) -> void:
-	var readiness := PluginReadiness.new(manager, null)
 	var ready_listeners := manager.plugin_ready.get_connections().size()
 	var release := func() -> void:
 		manager._ensure_runtime(provider.id)["ready"] = true
@@ -357,16 +356,47 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 	get_tree().create_timer(0.02).timeout.connect(release)
 	var created: Dictionary = await host.create_plugin_editor_when_ready(args)
 	check("async create allocates once after ready", created.get("success", false) and pane.Tabs.get_tab_count() == before + 1)
+	if pane.Tabs.get_tab_count() == before + 1:
+		var editor: Editor = pane.Tabs.get_child(before)
+		check("async create invokes one create hook", editor.plugin_scene_root.get("loads") == 1 and editor.plugin_scene_root.get("last_action") == "create")
 	manager._ensure_runtime(provider.id)["ready"] = false
 	before = pane.Tabs.get_tab_count()
-	var expired: Dictionary = await readiness.wait_for_provider(provider.id, 0.02)
-	check("bounded timeout refuses without allocating", str(expired.get("error")).contains("provider_ready_timeout") and pane.Tabs.get_tab_count() == before)
+	var refused_path := directory.path_join("refused-ready.fixturefmt")
+	_write(refused_path, text)
+	var deadline := MCPExecutionContext.create("fixture", "", "", 0.02)
+	var expired: Dictionary = await host.open_file_when_ready(refused_path, "import", deadline)
+	check("bounded document timeout refuses without allocating", not expired.get("ok", false) and pane.Tabs.get_tab_count() == before)
 	var context := MCPExecutionContext.create("fixture")
 	get_tree().create_timer(0.02).timeout.connect(context.cancel)
-	var cancelled: Dictionary = await readiness.wait_for_provider(provider.id, 30.0, context)
+	var cancelled: Dictionary = await host.open_file_when_ready(refused_path, "open", context)
 	check("caller cancellation releases its wait", str(cancelled.get("error")).contains("cancelled") and pane.Tabs.get_tab_count() == before)
+	release.call()
+	await get_tree().process_frame
+	check("later ready never replays refused document mutations", pane.Tabs.get_tab_count() == before and FileAccess.get_file_as_string(refused_path) == text)
+	manager._ensure_runtime(provider.id)["ready"] = false
+	get_tree().create_timer(0.02).timeout.connect(func() -> void:
+		host.plugin_editor_registry.unregister_plugin(provider.id)
+		release.call())
+	var changed: Dictionary = await host.open_file_when_ready(refused_path)
+	check("changed owner refuses before allocation", str(changed).contains("document_owner_changed") and pane.Tabs.get_tab_count() == before)
+	host.plugin_editor_registry.register_plugin(provider)
+	manager._ensure_runtime(provider.id)["ready"] = false
+	var lost_pane := EditorPane.new()
+	host.editor_pane = lost_pane
+	get_tree().create_timer(0.02).timeout.connect(func() -> void:
+		lost_pane.free()
+		release.call())
+	var pane_loss: Dictionary = await host.open_file_when_ready(refused_path)
+	host.editor_pane = pane
+	check("lost pane refuses without allocating", str(pane_loss).contains("editor_pane not available") and pane.Tabs.get_tab_count() == before)
+	manager._ensure_runtime(provider.id)["ready"] = false
+	get_tree().create_timer(0.02).timeout.connect(func() -> void: get_tree().root.remove_child(manager))
+	var manager_loss: Dictionary = await host.open_file_when_ready(refused_path)
+	check("manager loss releases document admission", str(manager_loss).contains("provider_unavailable") and pane.Tabs.get_tab_count() == before)
+	await get_tree().process_frame # tree_exiting resumes the waiter before remove_child returns.
+	get_tree().root.add_child(manager)
 	get_tree().create_timer(0.02).timeout.connect(func() -> void: manager.stop_plugin(provider.id))
-	var stopped: Dictionary = await readiness.wait_for_provider(provider.id)
+	var stopped: Dictionary = await host.open_file_when_ready(refused_path)
 	await get_tree().process_frame
 	check("stop releases a pending wait with no allocation", str(stopped.get("error")).contains("provider_stopped") and pane.Tabs.get_tab_count() == before)
 	check("completed waits disconnect listeners and release timers", manager.plugin_ready.get_connections().size() == ready_listeners

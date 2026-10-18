@@ -58,6 +58,7 @@ func wait_for_provider(provider: String, timeout_seconds: float = 30.0,
 	var unavailable := func() -> void: pending.finish(_failure("provider_unavailable: " + provider))
 	var expired := func() -> void: pending.finish(_failure("provider_ready_timeout: " + provider))
 	manager.plugin_ready.connect(refresh)
+	manager.plugin_status_changed.connect(refresh)
 	manager.plugin_stopped.connect(stopped)
 	manager.plugin_crashed.connect(crashed)
 	manager.tree_exiting.connect(unavailable)
@@ -74,6 +75,7 @@ func wait_for_provider(provider: String, timeout_seconds: float = 30.0,
 		await pending.finished
 	if is_instance_valid(manager):
 		manager.plugin_ready.disconnect(refresh)
+		manager.plugin_status_changed.disconnect(refresh)
 		manager.plugin_stopped.disconnect(stopped)
 		manager.plugin_crashed.disconnect(crashed)
 		manager.tree_exiting.disconnect(unavailable)

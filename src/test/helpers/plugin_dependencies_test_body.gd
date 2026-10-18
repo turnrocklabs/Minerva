@@ -138,7 +138,7 @@ func exercise_readiness() -> void:
 		seen.started = not manager.get_plugin_status(id).ready
 		var profile: String = provider.args[provider.args.find("--profile") + 1]
 		var previous_results := pending_results.size()
-		if profile in ["delayed_tools", "catalog_exit"]:
+		if profile in ["delayed_tools", "catalog_exit", "catalog_error"]:
 			collect_readiness(PluginReadiness.new(manager, registry), id, pending_results)
 		if profile != "delayed_tools":
 			return
@@ -160,6 +160,12 @@ func exercise_readiness() -> void:
 		and manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty())
 	consumer.requires_plugins[0].min_version = "2.0.0"
+	var readiness := PluginReadiness.new(manager, registry)
+	var caller := MCPExecutionContext.create("fixture").for_plugin(consumer.id)
+	var dependent: Dictionary = await readiness.wait_for_tool("minerva_agent_relay_echo", caller)
+	var unrelated: Dictionary = await readiness.wait_for_tool("minerva_agent_relay_echo", MCPExecutionContext.create("fixture").for_plugin("other"))
+	var other_provider: Dictionary = await readiness.wait_for_tool("minerva_uninstalled_other_probe", caller)
+	check("readiness owner applies requirements only to caller and provider", str(dependent).contains(">= 2.0.0") and unrelated.get("ok", false) and other_provider.get("ok", false))
 	check("older installed provider refuses consumer contract", manager.dependency_contract_issue(consumer.id).contains(">= 2.0.0"))
 	consumer.requires_plugins[0].min_version = "1.0.0"
 	provider.tools = [{"name": "minerva_agent_relay_panel", "executor": "panel"}]
@@ -187,14 +193,18 @@ func exercise_readiness() -> void:
 	manager.stop_plugin(provider.id)
 	var profile_index := provider.args.find("--profile")
 	provider.args[profile_index + 1] = "catalog_error"
+	var before_catalog_error := pending_results.size()
 	var unavailable: Dictionary = await manager.start_plugin(provider.id)
 	check("discovery failure leaves process running with a visible reason", unavailable.get("ok", false)
 		and manager.get_plugin_status(provider.id).running and not manager.get_plugin_status(provider.id).ready
 		and str(manager.get_plugin_status(provider.id).notice).contains("provider tools unavailable: tools/list")
 		and str(manager.get_plugin_status(provider.id).notice).contains("Restart the plugin to retry"))
-	var unrelated: Dictionary = await manager.get_connection(provider.id).call_tool("echo", {"value": "still alive"}, 5.0)
+	check("pending admission receives discovery failure without timing out", pending_results.size() == before_catalog_error + 1
+		and str(pending_results.back().get("error")).contains("provider tools unavailable: tools/list")
+		and str(pending_results.back().get("error")).contains("Restart the plugin to retry"))
+	var live_echo: Dictionary = await manager.get_connection(provider.id).call_tool("echo", {"value": "still alive"}, 5.0)
 	check("unready provider constrains only declared dependency actions", not manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
-		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty() and unrelated.get("echo", {}).get("value") == "still alive")
+		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty() and live_echo.get("echo", {}).get("value") == "still alive")
 	manager.stop_plugin(provider.id)
 	provider.args[profile_index + 1] = "catalog_exit"
 	var pending_before_crash := pending_results.size()
