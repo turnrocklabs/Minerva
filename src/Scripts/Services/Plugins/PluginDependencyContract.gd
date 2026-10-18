@@ -3,8 +3,6 @@ extends RefCounted
 ## Plain manifest requirements and graph validation; no runtime lifecycle.
 
 static func parse(raw: Variant, owner: String, enabled: bool, providers: Array[String]) -> Dictionary:
-	if raw == null:
-		return {"ok": true, "requirements": []}
 	if not raw is Array:
 		return {"error": "requires_plugins must be an Array"}
 	var entries: Array = raw

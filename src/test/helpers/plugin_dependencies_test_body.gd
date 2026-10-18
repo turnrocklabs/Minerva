@@ -48,6 +48,9 @@ func _ready() -> void:
 	var prerelease := raw.duplicate(true)
 	prerelease.requires_plugins[0].min_version = "1.0.0-rc.1+build.2"
 	check("valid prerelease and build accepted", PluginDefinition.from_dict(prerelease) != null)
+	var null_requirements := raw.duplicate(true)
+	null_requirements.requires_plugins = null
+	check("explicit JSON null is not an absent requirement array", PluginDefinition.from_dict(JSON.parse_string(JSON.stringify(null_requirements))) == null)
 	var no_cap := raw.duplicate(true)
 	no_cap.erase("capabilities")
 	check("dependencies cannot silently run without the capability", PluginDefinition.from_dict(no_cap) == null)
@@ -78,8 +81,24 @@ func _ready() -> void:
 		check("load-time cycle is visible in the copyable plugin status", str(manager.get_plugin_status("voice").notice).contains("plugin_dependency_cycle"))
 		var refusal: Dictionary = await manager.start_plugin("voice")
 		check("manual start cannot bypass a persisted cycle", refusal.get("error_code") == "plugin_dependency_cycle" and manager.get_connection("voice") == null)
-		var rollback_start: Dictionary = await manager._start_plugin_now("agent_relay")
-		check("pending-upgrade restart callback rechecks the restored graph", rollback_start.get("error_code") == "plugin_dependency_cycle" and manager.get_connection("agent_relay") == null)
+		var current := PluginDefinition.from_dict(manifest("agent_relay"))
+		current.version = "2.0.0"
+		current.args.assign(["-c", "raise SystemExit(1)"])
+		check("pending update's current graph is acyclic", loaded.restore(current) and loaded.dependency_issue(current.id).is_empty())
+		var transaction: Script = load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd")
+		var staging := ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)
+		var pending: RefCounted = transaction.begin(staging)
+		check("real pending transaction starts inside isolated user profile", pending != null and staging.begins_with(OS.get_user_data_dir() + "/"))
+		if pending != null:
+			pending.plugin_id = current.id
+			pending.db_before = relay.to_dict()
+			pending.had_previous = true
+			DirAccess.make_dir_recursive_absolute(str(pending.op_dir).path_join("previous"))
+			check("rollback fixture has a previous directory and durable pending phase", pending.publish(transaction.PHASE_PENDING) and transaction.pending_for(staging, current.id) != null)
+			var rollback_start: Dictionary = await manager.start_plugin(current.id)
+			check("public pending start restores old version but refuses its cyclic graph", str(rollback_start.get("error", "")).contains("plugin_dependency_cycle")
+				and loaded.get_by_id(current.id).version == "1.0.0" and not loaded.dependency_issue(current.id).is_empty() and manager.get_connection(current.id) == null)
+
 		manager.free()
 		for id: String in ids:
 			loaded.remove(id)

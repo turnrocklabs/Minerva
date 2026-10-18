@@ -948,7 +948,7 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 			if not def.capabilities.has(cap):
 				def.capabilities.append(cap)
 
-	var dependency_contract := PluginDependencyContract.parse(data.get("requires_plugins"), def.id,
+	var dependency_contract := PluginDependencyContract.parse(data.get("requires_plugins", []), def.id,
 		"plugin_dependencies" in def.capabilities, RequiredPlugins.ids())
 	if dependency_contract.has("error"):
 		push_error("[PluginDefinition] " + str(dependency_contract.error))
