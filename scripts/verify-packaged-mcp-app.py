@@ -40,7 +40,7 @@ def _required_releases() -> Iterator[str | None]:
         return
     pages_by_repo = json.loads(Path(snapshot).read_text(encoding="utf-8"))
     if not isinstance(pages_by_repo, dict):
-        raise ValueError("required-release snapshot must be keyed by repository")
+        raise TypeError("required-release snapshot must be keyed by repository")
     releases_by_repo: dict[str, list[Any]] = {}
     for repo, pages in pages_by_repo.items():
         if (not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo)

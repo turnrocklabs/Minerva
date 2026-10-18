@@ -36,9 +36,9 @@ class RequiredSnapshotTest(unittest.TestCase):
                         with self.assertRaises(HTTPError) as error:
                             urlopen(f"{base}/{path}", timeout=2)
                         self.assertEqual(error.exception.code, status)
-                for invalid in [[], {"owner-a/catalog-a": [{}]}, {"wrong": [[]]}]:
+                for invalid, error_type in [([], TypeError), ({"owner-a/catalog-a": [{}]}, ValueError), ({"wrong": [[]]}, ValueError)]:
                     snapshot.write_text(json.dumps(invalid))
-                    with self.assertRaises(ValueError), PROBE._required_releases():
+                    with self.assertRaises(error_type), PROBE._required_releases():
                         self.fail("invalid snapshot accepted")
             finally:
                 if before is None:
