@@ -759,7 +759,7 @@ static func _audit_packed_scene(
 ## The returned Control is NOT added to any tree — callers that want to mount it
 ## should call vbox.add_child(placeholder).  _mount_placeholder() does this in
 ## one step.
-static func _build_placeholder(message: String, retry_callback = null) -> Control:
+static func _build_placeholder(message: String, retry_callback = null, selectable: bool = false) -> Control:
 	var root := VBoxContainer.new()
 	root.set_meta("_minerva_plugin_panel_load_ok", false)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -771,15 +771,24 @@ static func _build_placeholder(message: String, retry_callback = null) -> Contro
 	top_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(top_spacer)
 
-	var label := RichTextLabel.new()
-	label.text = message
-	label.selection_enabled = true
-	label.fit_content = true
-	label.scroll_active = false
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
-	root.add_child(label)
+	if selectable:
+		var label := RichTextLabel.new()
+		label.text = message
+		label.selection_enabled = true
+		label.fit_content = true
+		label.scroll_active = false
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+		root.add_child(label)
+	else:
+		var label := Label.new()
+		label.text = message
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+		root.add_child(label)
 
 	if retry_callback != null and retry_callback is Callable:
 		var btn := Button.new()

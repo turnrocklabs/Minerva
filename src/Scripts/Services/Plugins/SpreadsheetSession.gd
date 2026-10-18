@@ -44,7 +44,11 @@ static func restore(editor: Editor, entry: Dictionary, manager: PluginManager) -
 		if PluginScenePanelHost.invoke_restore_from_note(panel, snapshot):
 			live.pending_plugin_entry.clear()
 		else:
-			show_failure(live, manager, "Sheets refused the saved model/version; original entry retained.")
+			var refuse := func() -> void:
+				var current: Editor = owner.get_ref()
+				if current != null and not current.is_queued_for_deletion() and is_instance_valid(panel) and current.plugin_scene_root == panel:
+					show_failure(current, manager, "Sheets refused the saved model/version; original entry retained.")
+			refuse.call_deferred()
 	if panel.is_node_ready():
 		accept.call()
 	else:
@@ -55,7 +59,7 @@ static func show_failure(editor: Editor, manager: PluginManager, reason: String)
 	push_warning(message)
 	retire_surface(editor, manager)
 	var owner: WeakRef = weakref(editor)
-	var placeholder: Control = PluginScenePanelHost._build_placeholder(message, func() -> void: retry(owner, manager))
+	var placeholder: Control = PluginScenePanelHost._build_placeholder(message, func() -> void: retry(owner, manager), true)
 	editor.get_node("VBoxContainer").add_child(placeholder)
 	editor.remount_plugin_surface(placeholder)
 
@@ -81,7 +85,10 @@ static func retry(owner: WeakRef, manager: PluginManager) -> void:
 		editor = null
 		await manager.start_plugin("sheets")
 		editor = owner.get_ref()
-		if editor == null or editor.is_queued_for_deletion() or not editor.is_inside_tree():
+		if editor == null:
+			return
+		if editor.is_queued_for_deletion() or not editor.is_inside_tree():
+			editor.plugin_restore_busy = false
 			return
 	if not is_instance_valid(manager):
 		manager = null

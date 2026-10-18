@@ -1362,6 +1362,8 @@ func _load_webview_file(path: String) -> void:
 ## keys are merged into the document. Otherwise `raw_text` carries the body so
 ## non-JSON plugin formats (.mcad, custom DSLs) can read their own document.
 func _load_plugin_scene_file(path: String) -> void:
+	if not pending_plugin_entry.is_empty():
+		return # A refused session must not be replaced by backing-file replay.
 	if not FileAccess.file_exists(path):
 		SingletonObject.ErrorDisplay("File not found", path)
 		return
