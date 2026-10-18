@@ -277,6 +277,7 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 			check("create hook receives its scoped action", created.plugin_scene_root != null
 				and created.plugin_scene_root.get("loads") == 1 and created.plugin_scene_root.get("last_action") == "create")
 
+	await _exercise_fixed_type_paths(host, pane, directory)
 	await _exercise_readiness(host, manager, pane, single, directory, text)
 	await _exercise_conflicts(host, manager, pane, directory, text)
 	check("DB removal releases the sheet claims", manager.get_db().remove(single.id)
@@ -326,6 +327,59 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		check("undeclared open/create refuse without mutation", not no_open.get("ok", true)
 			and not no_create.get("success", true) and pane.Tabs.get_tab_count() == before
 			and FileAccess.get_file_as_string(import_only_path) == text)
+
+func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String) -> void:
+	# Each real consumer gets a new file, so an existing tab cannot mask bypasses.
+	for surface: String in ["spreadsheet", "text", "package"]:
+		for claimed: bool in [true, false]:
+			var extension := ".fixturefmt" if claimed else ".tsv"
+			var path := directory.path_join("fixed-" + surface + "-" + str(claimed) + extension)
+			var contents := '{"value":"claimed source"}' if claimed else "value\t1\n"
+			_write(path, contents)
+			var registry: PluginEditorRegistry = host.get("plugin_editor_registry")
+			check(surface + " fixture claim is independently established", registry.resolve_file(extension).has("plugin_id") == claimed)
+			var decoy: Editor = null
+			if claimed and surface != "package":
+				var requested_name := ("fixed-sheet-" if surface == "spreadsheet" else "fixed-text-") + str(claimed)
+				decoy = pane.add(Editor.Type.TEXT, null, requested_name)
+				check(surface + " name collision fixture exists", decoy != null)
+			var before := pane.Tabs.get_tab_count()
+			if surface == "spreadsheet":
+				var tools = load("res://Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd").new(null)
+				var result: Dictionary = await tools._create_spreadsheet_editor({"name": "fixed-sheet-" + str(claimed), "file_path": path})
+				check("spreadsheet create reports its real result", result.get("success") == true)
+			elif surface == "text":
+				var tools = load("res://Scripts/Services/MCP/Modules/MCPEditorTools.gd").new(null)
+				var result: Dictionary = tools._create_text_editor({"name": "fixed-text-" + str(claimed), "file_path": path})
+				check("text create reports its real result", result.get("success") == true)
+			else:
+				var package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
+				var package: Control = package_script.new()
+				var tree := Tree.new()
+				var item := tree.create_item()
+				var object = package_script.PackageObject.new(item, path, true)
+				item.select(0)
+				package.set("_dir_tree", tree)
+				package.call("_on_dir_tree_item_activated")
+				tree.free()
+				package.free()
+				check("package fixture uses the actual selected file", object.original_path == path)
+			await get_tree().process_frame
+			var opened: Editor = null
+			for editor: Editor in pane.get_open_editors():
+				if editor.file == path:
+					opened = editor
+			var expected: int = Editor.Type.PLUGIN_SCENE if claimed else (Editor.Type.SPREADSHEET if surface == "spreadsheet" else Editor.Type.TEXT)
+			check(surface + " routes the claim and preserves the unclaimed type", pane.Tabs.get_tab_count() == before + 1
+				and opened != null and opened.type == expected
+				and (not claimed or opened.plugin_id == "file_contract")
+				and FileAccess.get_file_as_string(path) == contents)
+			if opened != null:
+				pane.Tabs.remove_child(opened)
+				opened.free()
+			if decoy != null:
+				pane.Tabs.remove_child(decoy)
+				decoy.free()
 
 func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, provider: PluginDefinition,
 		directory: String, text: String) -> void:

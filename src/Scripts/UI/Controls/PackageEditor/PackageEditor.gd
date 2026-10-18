@@ -293,6 +293,13 @@ func _on_dir_tree_item_activated() -> void:
 
 	var obj: PackageObject = selected_item.get_metadata(0)
 
+	var format_registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
+	if format_registry != null and format_registry.resolve_file("." + obj.original_path.get_extension().to_lower()).has("plugin_id"):
+		var opened: Dictionary = SingletonObject.open_file_at_path(obj.original_path)
+		if not opened.get("ok", false):
+			var errors: Array = opened.get("errors", [])
+			SingletonObject.ErrorDisplay("Couldn't open file", ", ".join(PackedStringArray(errors)))
+		return
 	SingletonObject.editor_pane.add(Editor.Type.TEXT, obj.original_path)
 
 
