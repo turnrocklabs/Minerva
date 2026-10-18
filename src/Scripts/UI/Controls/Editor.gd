@@ -290,7 +290,7 @@ var _applying_buffer_text: bool = false
 
 ## Convenience factory for PLUGIN_SCENE editors that pre-sets plugin_id / panel_name
 ## on the editor instance before Editor.create() reads them in the match arm.
-static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name_ = null, associated_object_ = null) -> Editor:
+static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name_ = null, associated_object_ = null, document_action: String = "open") -> Editor:
 	# Instantiate a bare Editor node, set the plugin fields, then delegate to create().
 	# We must set the fields on the instance BEFORE create() runs the match arm,
 	# so we instantiate here and call create() with a dummy type that we override.
@@ -298,6 +298,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 	# branch, mirroring what create() does for other types.
 	var editor = editor_scene.instantiate()
 	editor.type = Type.PLUGIN_SCENE
+	editor.set_meta("document_action", document_action)
 	editor.plugin_id = p_id
 	editor.panel_name = p_name
 	# The instance id is unique for the editor's whole life and, unlike the tab
@@ -628,6 +629,16 @@ func _ready():
 	for ext in SingletonObject.supported_text_formats:
 		ext = "*." +ext 
 		supported_text_exts.append(ext)
+	for extension: String in PluginEditorRegistry.SPREADSHEET_EXTENSIONS:
+		var filter := "*" + extension
+		if filter not in supported_text_exts:
+			supported_text_exts.append(filter)
+	var file_registry: PluginEditorRegistry = _get_plugin_editor_registry_safe()
+	if file_registry != null:
+		for extension: String in file_registry.list_extensions():
+			var filter := "*" + extension
+			if filter not in supported_text_exts:
+				supported_text_exts.append(filter)
 	$FileDialog.filters = supported_text_exts
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -1352,7 +1363,7 @@ func _load_plugin_scene_file(path: String) -> void:
 			doc.merge(json.data, true)
 		else:
 			doc["raw_text"] = content
-	PluginScenePanelHost.invoke_load(plugin_scene_root, doc)
+	PluginScenePanelHost.invoke_document_handoff(plugin_scene_root, doc, str(get_meta("document_action", "open")))
 
 
 ## Apply manifest-driven chrome visibility for a PLUGIN_SCENE editor tab.
@@ -1457,7 +1468,10 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		Type.KANBAN:
 			$FileDialog.filters = PackedStringArray(["*.minkb ; Minerva Kanban"])
 		Type.SPREADSHEET:
-			$FileDialog.filters = PackedStringArray(["*.minsheet ; Minerva Spreadsheet", "*.csv ; CSV Files"])
+			var filters := PackedStringArray()
+			for extension: String in PluginEditorRegistry.SPREADSHEET_SAVE_EXTENSIONS:
+				filters.append("*" + extension)
+			$FileDialog.filters = filters
 		Type.WEBVIEW:
 			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])
 		Type.PLUGIN_SCENE:

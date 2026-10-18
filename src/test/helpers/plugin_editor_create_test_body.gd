@@ -22,7 +22,7 @@ func _run() -> void:
 	var host := get_tree().root.get_node("SingletonObject")
 	var ui := preload("res://test/helpers/chat_host_render_fixture.gd").new()
 	ui.install(host)
-	var previous: Array = [host.plugin_manager, host.plugin_scene_panel_broker, host.editor_pane]
+	var previous: Array = [host.plugin_manager, host.plugin_scene_panel_broker, host.editor_pane, host.plugin_editor_registry]
 	var manager := PluginManager.new()
 	manager._db = PluginDB.new()
 	var policy := PluginPolicy.new(manager.get_db(), null, false)
@@ -37,6 +37,7 @@ func _run() -> void:
 		host.plugin_manager = previous[0]
 		host.plugin_scene_panel_broker = previous[1]
 		host.editor_pane = previous[2]
+		host.plugin_editor_registry = previous[3]
 		manager.free()
 		ui.restore()
 		completed.emit(1)
@@ -49,6 +50,7 @@ func _run() -> void:
 	pane.Tabs = tabs
 	pane.buffer_control_editor = Control.new()
 	host.editor_pane = pane
+	host._wire_plugin_editor_extensions(manager)
 	var module = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd").new(null)
 	var result: Dictionary = module._create_plugin_editor({"plugin_id": definition.id,
 		"editor_item_id": "new_test_paired_dsl", "tab_title": "Paired characterization"})
@@ -89,6 +91,7 @@ func _run() -> void:
 	host.plugin_manager = previous[0]
 	host.plugin_scene_panel_broker = previous[1]
 	host.editor_pane = previous[2]
+	host.plugin_editor_registry = previous[3]
 	manager.free()
 	ui.restore()
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])

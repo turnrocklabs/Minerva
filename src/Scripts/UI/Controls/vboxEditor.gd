@@ -871,7 +871,7 @@ func _on_open_files(files: PackedStringArray):
 # 	editor_pane.add(new_control, name)
 
 
-func open_file(filename: String):
+func open_file(filename: String) -> void:
 	## Delegate all type-resolution and editor-creation to the singleton helper
 	## open_file_at_path(), which is also called by the minerva_open_file MCP tool.
 	## This keeps the dispatch logic in a single place (design §7.3).
@@ -879,7 +879,9 @@ func open_file(filename: String):
 		# Keep the legacy is_graph/is_picture flags for the GRAPHICS branch.
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-	SingletonObject.open_file_at_path(filename)
+	var opened: Dictionary = SingletonObject.open_file_at_path(filename)
+	if not opened.get("ok", false):
+		SingletonObject.create_toast_notification(", ".join(PackedStringArray(opened.get("errors", []))), ToastNotification.Type.WARNING)
 
 
 func _on_h_button_pressed():

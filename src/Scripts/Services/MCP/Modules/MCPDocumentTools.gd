@@ -23,7 +23,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_read_document",
-		"Extract DATA (text + tables + embedded-image metadata) from an office document Minerva can't import natively. v1 supports .docx (Word). Returns {text, tables, images}; each table has rows + a ready-to-import `csv` (intra-cell newlines collapsed) — pass that csv to minerva_create_spreadsheet_editor(csv_content=...) to land it in a sheet. For .csv/.tsv/.xlsx use minerva_create_spreadsheet_editor directly. Reads data only; does NOT render the document's layout.",
+		"Extract DATA (text + tables + embedded-image metadata) from an office document Minerva can't import natively. v1 supports .docx (Word). Returns {text, tables, images}; each table has rows + a ready-to-import `csv` (intra-cell newlines collapsed) — pass that csv to minerva_create_spreadsheet_editor(csv_content=...) to land it in a sheet. For file-backed spreadsheet formats use minerva_open_file with action=import. Reads data only; does NOT render the document's layout.",
 		{"type": "object", "properties": {
 			"path": {"type": "string", "description": "Absolute path to the document (.docx)."},
 			"include_text": {"type": "boolean", "description": "Include the full paragraph text (default true). Set false when you only want tables."},
@@ -43,11 +43,12 @@ func _read_document(args: Dictionary) -> Dictionary:
 		return _err("path is required")
 
 	var ext := path.get_extension().to_lower()
+	if PluginEditorRegistry.is_spreadsheet_extension("." + ext):
+		return _err("'%s' imports through its editor — use minerva_open_file(path=\"%s\", action=\"import\")." % [ext, path])
 	match ext:
 		"docx":
 			return _read_docx(path, args)
-		"csv", "tsv", "xlsx", "minsheet":
-			return _err("'%s' imports natively — use minerva_create_spreadsheet_editor(file_path=\"%s\")." % [ext, path])
+
 		"doc":
 			return _err("Legacy binary .doc is not supported (no cross-platform parser). Re-save as .docx.")
 		_:

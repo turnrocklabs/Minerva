@@ -25,7 +25,7 @@ var google_supported_audio_formats: = {
 
 # this are the formats that we support in this app
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "bmp", "svg", "webp"] # "gif", "tiff"
-var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
+var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 
@@ -629,10 +629,9 @@ func initialize_plugins() -> void:
 	plugin_manager.plugin_stopped.connect(_unregister_plugin_editor_items)
 	plugin_manager.plugin_crashed.connect(_unregister_plugin_editor_items)
 
-	# Register/unregister file extensions and editor kinds in PluginEditorRegistry (design §7.2)
-	plugin_manager.plugin_started.connect(_register_plugin_editor_extensions)
-	plugin_manager.plugin_stopped.connect(_unregister_plugin_editor_extensions)
-	plugin_manager.plugin_crashed.connect(_unregister_plugin_editor_extensions)
+	# File claims belong to installed definitions, including stopped/crashed providers.
+	var format_manager: PluginManager = plugin_manager
+	_wire_plugin_editor_extensions(format_manager)
 
 	# Pre-populate built-in tool names before initial registration (prevents shadowing)
 	if mcp_manager and mcp_manager.tool_registry:
@@ -929,7 +928,7 @@ func _find_webview_editor(node: Node):
 func _register_plugin_editor_items(id: String) -> void:
 	if creatable_item_registry == null or plugin_manager == null:
 		return
-	var def = plugin_manager.get_db().get_by_id(id)
+	var def: PluginDefinition = plugin_manager.get_db().get_by_id(id)
 	if def == null:
 		return
 	# Idempotency: if this plugin already registered items (e.g. plugin_started
@@ -948,11 +947,26 @@ func _register_plugin_editor_items(id: String) -> void:
 		if seen_item_ids.has(item_id):
 			continue
 		seen_item_ids[item_id] = true
+		var native_item := false
+		for panel: Dictionary in def.ui_panels:
+			if panel.get("name") == panel_name and panel.get("kind") == "godot_scene":
+				native_item = true
+		var claim := plugin_editor_registry.resolve_editor_kind(item_id)
+		if native_item and claim.get("plugin_id") != id:
+			create_toast_notification("Editor item '%s' is not owned by plugin '%s'" % [item_id, id], ToastNotification.Type.WARNING)
+			continue
 		var plugin_id_copy := id
 		var panel_name_copy := panel_name
 		var item_name_copy := item_name
+		var item_id_copy := item_id
+		var scene_item: bool = native_item
 		var callback := func() -> void:
-			_open_plugin_panel_for_editor_item(plugin_id_copy, panel_name_copy, item_name_copy)
+			if scene_item:
+				var created := create_plugin_editor({"plugin_id": plugin_id_copy, "editor_item_id": item_id_copy, "tab_title": item_name_copy})
+				if not created.get("success", false):
+					_notify_plugin_refusal(str(created.get("error", "Editor creation refused")))
+			else:
+				_open_plugin_panel_for_editor_item(plugin_id_copy, panel_name_copy, item_name_copy)
 		var item = CreatableItemRegistry.CreatableItem.create(
 			item_id, item_name, callback, null, 100, "plugin", id
 		)
@@ -969,25 +983,27 @@ func _unregister_plugin_editor_items(id: String) -> void:
 	creatable_item_registry.unregister_by_source(id)
 
 
-## Register a plugin's file extensions and editor kinds into PluginEditorRegistry.
-## Called when a plugin transitions to RUNNING (design §7.2).
-func _register_plugin_editor_extensions(id: String) -> void:
-	if plugin_editor_registry == null or plugin_manager == null:
-		return
-	var def = plugin_manager.get_db().get_by_id(id)
-	if def == null:
-		return
-	var warnings: Array[String] = plugin_editor_registry.register_plugin(def)
-	for w in warnings:
-		push_warning(w)
+## Installed definitions retain their claims until removal, not process exit.
+func _wire_plugin_editor_extensions(manager: PluginManager) -> void:
+	var db := manager.get_db()
+	# The Node owner can be freed; binding the RefCounted DB to its own signal
+	# would instead retain it through a reference cycle.
+	var refresh := _sync_plugin_editor_extensions.bind(manager)
+	if not db.plugins_changed.is_connected(refresh):
+		db.plugins_changed.connect(refresh)
+	_sync_plugin_editor_extensions(manager)
 
 
-## Unregister a plugin's file extensions and editor kinds from PluginEditorRegistry.
-## Called when a plugin is stopped or crashes (design §7.2).
-func _unregister_plugin_editor_extensions(id: String) -> void:
-	if plugin_editor_registry == null:
+func _sync_plugin_editor_extensions(manager: PluginManager) -> void:
+	if not is_instance_valid(manager):
 		return
-	plugin_editor_registry.unregister_plugin(id)
+	var db := manager.get_db()
+	var updated := PluginEditorRegistry.new(RequiredPlugins.ids())
+	for definition: PluginDefinition in db.get_all():
+		var warnings := updated.register_plugin(definition)
+		for warning: String in warnings:
+			create_toast_notification(warning, ToastNotification.Type.WARNING)
+	plugin_editor_registry = updated
 
 
 ## Open a plugin panel for an editor_item's declared panel name.
@@ -1814,9 +1830,9 @@ var video_recorder_overlay_scene = preload("res://Scenes/VideoRecorder.tscn")
 ## return contract). The render panel is opened as a sibling tab; layout
 ## refinement (side_by_side splitting) is deferred to a follow-up — for the
 ## substrate task it's enough that both editors exist and share the buffer.
-func _open_paired_dsl(abs_path: String, p_id: String, p_name: String) -> Editor:
+func _open_paired_dsl(abs_path: String, p_id: String, p_name: String, action: String = "open") -> Editor:
 	var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, abs_path)
-	var render_editor: Editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path)
+	var render_editor: Editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path, "", action)
 
 	# Attach the buffer to the render panel so text_changed flows through the
 	# broker to the plugin scene's receive() method.
@@ -1855,12 +1871,16 @@ func _open_paired_dsl(abs_path: String, p_id: String, p_name: String) -> Editor:
 ##   on success.
 ##   {ok: false, errors: Array[String]}
 ##   on failure.
-func open_file_at_path(path: String) -> Dictionary:
-	return _editor_handoff().open_file_at_path(path)
+func open_file_at_path(path: String, action: String = "open") -> Dictionary:
+	return _editor_handoff().handoff(action, {"path": path})
 
 
 func create_plugin_editor(arguments: Dictionary) -> Dictionary:
-	return _editor_handoff().create_plugin_editor(arguments)
+	var result := _editor_handoff().handoff("create", arguments)
+	if not result.get("ok", false):
+		return MCPToolUtils.error(", ".join(PackedStringArray(result.get("errors", []))))
+	result.erase("ok")
+	return MCPToolUtils.success(result)
 
 
 func _editor_handoff() -> PluginEditorHandoff:

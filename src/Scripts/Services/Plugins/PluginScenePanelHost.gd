@@ -417,6 +417,24 @@ static func invoke_load(panel_root: Node, document: Variant) -> bool:
 	return true
 
 
+## Scope the verb to the hook without adding host fields to opaque user data.
+static func invoke_document_handoff(panel_root: Node, document: Dictionary, action: String) -> bool:
+	if not is_instance_valid(panel_root) or action not in ["open", "import", "create"]:
+		return false
+	var key := MinervaPluginPanel.DOCUMENT_ACTION_META
+	var had_action := panel_root.has_meta(key)
+	var previous: Variant = panel_root.get_meta(key) if had_action else null
+	panel_root.set_meta(key, action)
+	var loaded := invoke_load(panel_root, document)
+	if not is_instance_valid(panel_root):
+		return false
+	if had_action:
+		panel_root.set_meta(key, previous)
+	else:
+		panel_root.remove_meta(key)
+	return loaded
+
+
 ## Optional live-reload validation after _ready and state restoration. Absence
 ## permits reload; implementations must explicitly return true to accept.
 static func invoke_self_check(panel_root: Node) -> bool:
@@ -794,6 +812,11 @@ static func _build_ctx(
 		if associated_object is String:
 			file_path = associated_object as String
 
+	var action := ""
+	if editor is Object:
+		var editor_object: Object = editor
+		action = str(editor_object.get_meta("document_action", ""))
+
 	return {
 		"plugin_id":        plugin_id,
 		"panel_name":       panel_name,
@@ -802,6 +825,7 @@ static func _build_ctx(
 		"panel_key":        panel_key if not panel_key.is_empty() else panel_name,
 		"data_directory":   data_dir,
 		"broker":           broker,
+		"document_action": action,
 		"file_path":        file_path,
 		"associated_object": associated_object,
 		"editor":           editor,

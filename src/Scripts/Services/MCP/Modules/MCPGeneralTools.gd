@@ -36,7 +36,7 @@ func register_tools() -> void:
 
 	server._register_tool(
 		"minerva_open_file",
-		"Open a file at an absolute path in the appropriate Minerva editor tab. "
+		"Open or import a file at an absolute path through its owning Minerva editor. "
 		+ "Resolves the editor type automatically from the file extension using the "
 		+ "same dispatch logic as File → Open in the UI. Idempotent: if the file is "
 		+ "already open, returns the existing tab's name without creating a duplicate. "
@@ -47,6 +47,7 @@ func register_tools() -> void:
 		{
 			"type": "object",
 			"properties": {
+				"action": {"type": "string", "enum": ["open", "import"], "description": "Open or import through the owning editor (default open)."},
 				"path": {
 					"type": "string",
 					"description": "Absolute filesystem path to the file to open (e.g. /home/user/work/foo.txt). "
@@ -122,7 +123,11 @@ func _open_file(args: Dictionary) -> Dictionary:
 	if path.is_empty():
 		return MCPToolUtils.error("path is required")
 
-	var result: Dictionary = SingletonObject.open_file_at_path(path)
+	var action: Variant = args.get("action", "open")
+	if not action is String or action not in ["open", "import"]:
+		return MCPToolUtils.error("action must be open or import")
+	var action_name: String = action
+	var result: Dictionary = SingletonObject.open_file_at_path(path, action_name)
 
 	# open_file_at_path already returns {ok, editor_kind, editor_name, ...} or
 	# {ok: false, errors: [...]}.  Surface the result directly; callers read ok.

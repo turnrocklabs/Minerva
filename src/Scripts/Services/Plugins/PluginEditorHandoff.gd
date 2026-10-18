@@ -23,7 +23,29 @@ func _init(editor_pane: EditorPane, plugin_manager: PluginManager, editor_regist
 	type_name = editor_type_name
 
 
-func open_file_at_path(path: String) -> Dictionary:
+func handoff(action: String, arguments: Dictionary) -> Dictionary:
+	if action == "create":
+		return create_plugin_editor(arguments)
+	if action not in ["open", "import"]:
+		return _failure("Unsupported document action: " + action)
+	var path: Variant = arguments.get("path", "")
+	if not path is String:
+		return _failure("path must be a String")
+	var requested_path: String = path
+	return open_file_at_path(requested_path, action)
+
+
+func _failure(message: String) -> Dictionary:
+	return {"ok": false, "errors": [message]}
+
+
+func _created(data: Dictionary) -> Dictionary:
+	var result := {"ok": true}
+	result.merge(data)
+	return result
+
+
+func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 	# --- Path validation ---
 	var abs_path: String = path
 	if not abs_path.is_absolute_path():
@@ -39,6 +61,17 @@ func open_file_at_path(path: String) -> Dictionary:
 
 	if pane == null:
 		return {"ok": false, "errors": ["editor_pane not available"]}
+
+	var ext: String = "." + abs_path.get_extension().to_lower()
+	var panel_info := registry.resolve_file(ext) if registry != null else {}
+	if panel_info.has("plugin_id"):
+		var owner := str(panel_info.plugin_id)
+		if manager == null or not manager.get_plugin_status(owner).get("running", false):
+			return _failure("plugin_not_running: " + owner)
+		if action not in panel_info.get("file_actions", ["open", "create"]):
+			return _failure("Plugin '%s' does not support '%s' for '%s'" % [owner, action, ext])
+	elif action == "import" and panel_info.get("builtin") != "spreadsheet":
+		return _failure("no_import_handler_for_extension: " + ext)
 
 	# --- Idempotency: check if already open ---
 	# TODO(paired_dsl close-one): for render_mode=paired_dsl, two editors share
@@ -65,7 +98,6 @@ func open_file_at_path(path: String) -> Dictionary:
 
 	# --- Extension resolution ---
 	var lower: String = abs_path.to_lower()
-	var ext: String = "." + abs_path.get_extension().to_lower()
 
 	var result_editor: Editor = null
 	var editor_kind: String = ""
@@ -81,33 +113,24 @@ func open_file_at_path(path: String) -> Dictionary:
 	elif lower.ends_with(".minkb"):
 		result_editor = pane.add(Editor.Type.KANBAN, abs_path)
 		editor_kind = "KANBAN"
-	elif lower.ends_with(".minsheet"):
+	elif panel_info.get("builtin") == "spreadsheet":
 		result_editor = pane.add(Editor.Type.SPREADSHEET, abs_path)
 		editor_kind = "SPREADSHEET"
 	else:
-		# Check plugin registry before falling back to TEXT (design §7.3).
-		var reg: PluginEditorRegistry = registry
-		var panel_info: Dictionary = {}
-		if reg != null:
-			panel_info = reg.resolve_extension(ext)
-		if not panel_info.is_empty():
+
+		if panel_info.has("plugin_id"):
 			p_id = panel_info.get("plugin_id", "")
 			p_name = panel_info.get("panel_name", "")
-			# Validate plugin is running before opening.
-			if manager != null:
-				var status: Dictionary = manager.get_plugin_status(p_id)
-				if not status.get("running", false):
-					return {"ok": false, "errors": ["plugin_not_running: %s" % p_id]}
 			# DCR 019dfa66 §T5: render_mode "paired_dsl" routes to a paired
 			# text-editor + render-panel layout, both sharing the same
 			# DocumentBuffer. The text editor is the canonical edit surface;
 			# the render panel subscribes via the broker.
 			var render_mode: String = panel_info.get("render_mode", "single")
 			if render_mode == "paired_dsl":
-				result_editor = open_paired.call(abs_path, p_id, p_name)
+				result_editor = open_paired.call(abs_path, p_id, p_name, action)
 				editor_kind = "PLUGIN_SCENE_PAIRED_DSL"
 			else:
-				result_editor = pane.add_plugin_scene_editor(p_id, p_name, abs_path)
+				result_editor = pane.add_plugin_scene_editor(p_id, p_name, abs_path, "", action)
 				editor_kind = "PLUGIN_SCENE"
 		else:
 			result_editor = pane.add(Editor.Type.TEXT, abs_path)
@@ -138,14 +161,14 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 	var editor_item_id: String = str(args.get("editor_item_id", "")).strip_edges()
 	var tab_title: String = str(args.get("tab_title", "")).strip_edges()
 	if plugin_id.is_empty() or editor_item_id.is_empty():
-		return MCPToolUtils.error("plugin_id and editor_item_id are required")
+		return _failure("plugin_id and editor_item_id are required")
 
 	var pm: PluginManager = manager
 	if pm == null:
-		return MCPToolUtils.error("plugin_manager_not_available")
+		return _failure("plugin_manager_not_available")
 	var def: PluginDefinition = pm.get_db().get_by_id(plugin_id)
 	if def == null:
-		return MCPToolUtils.error("plugin_not_found: %s" % plugin_id)
+		return _failure("plugin_not_found: %s" % plugin_id)
 
 	# Look up the editor_items entry by its declared id.
 	var editor_item: Dictionary = {}
@@ -154,11 +177,11 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 			editor_item = ei
 			break
 	if editor_item.is_empty():
-		return MCPToolUtils.error("editor_item_not_found: %s" % editor_item_id)
+		return _failure("editor_item_not_found: %s" % editor_item_id)
 
 	var panel_name: String = str(editor_item.get("panel", ""))
 	if panel_name.is_empty():
-		return MCPToolUtils.error("editor_item_missing_panel: %s" % editor_item_id)
+		return _failure("editor_item_missing_panel: %s" % editor_item_id)
 
 	# Default tab_title to the editor_items entry's name field if the caller
 	# didn't supply one.
@@ -176,13 +199,21 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 
 	var editor_pane: EditorPane = pane
 	if editor_pane == null:
-		return MCPToolUtils.error("editor_pane_not_available")
+		return _failure("editor_pane_not_available")
 
 	# Anonymous create currently only supports godot_scene panels — html panels
 	# expect an HTML payload at construction time. Filing this gap as a
 	# follow-up since no current plugin uses html-anonymous.
 	if panel_kind != "godot_scene":
-		return MCPToolUtils.error("html_panel_anonymous_create_unsupported: kind=%s" % panel_kind)
+		return _failure("html_panel_anonymous_create_unsupported: kind=%s" % panel_kind)
+
+	var claim := registry.resolve_editor_kind(editor_item_id) if registry != null else {}
+	if claim.get("plugin_id") != plugin_id:
+		return _failure("editor_item_not_owned: " + editor_item_id)
+	if not manager.get_plugin_status(plugin_id).get("running", false):
+		return _failure("plugin_not_running: " + plugin_id)
+	if "create" not in claim.get("file_actions", ["open", "create"]):
+		return _failure("Plugin '%s' does not support 'create'" % plugin_id)
 
 	# paired_dsl panels (e.g. cad) expect a sibling TEXT editor sharing a
 	# DocumentBuffer with the render panel. The file-open path
@@ -193,7 +224,7 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		var document_registry: DocumentRegistry = documents.call()
 		var unbacked_r := document_registry.create_unbacked_buffer()
 		if not unbacked_r.ok:
-			return MCPToolUtils.error("unbacked_buffer_creation_failed: %s" % unbacked_r.get("error", "?"))
+			return _failure("unbacked_buffer_creation_failed: %s" % unbacked_r.get("error", "?"))
 		var unbacked_buf: DocumentBuffer = unbacked_r.buffer
 		var unbacked_path: String = unbacked_buf.file_path
 
@@ -207,22 +238,22 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		var text_tab: String = "%s (source)" % tab_title
 		var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, null, text_tab)
 		if text_editor == null:
-			return MCPToolUtils.error("text_editor_creation_failed")
+			return _failure("text_editor_creation_failed")
 		text_editor.bind_to_buffer_path(unbacked_path)
 
 		# Render editor: anonymous plugin scene, broker attaches the unbacked
 		# buffer so text_changed signals from the TEXT editor flow to the panel
 		# via the substrate-reserved attach_buffer / text_changed channels.
-		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
+		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create")
 		if render_editor == null:
-			return MCPToolUtils.error("render_editor_creation_failed")
+			return _failure("render_editor_creation_failed")
 		var broker: PluginScenePanelBroker = scene_broker
 		if broker != null:
 			broker.attach_buffer_to_panel(plugin_id, render_editor.plugin_panel_key, unbacked_buf)
 		else:
 			push_warning("[minerva_create_plugin_editor] plugin_scene_panel_broker missing; text_changed will not flow to render panel")
 
-		return MCPToolUtils.success({
+		return _created({
 			"editor_name": str(render_editor.tab_title),
 			"text_editor_name": str(text_editor.tab_title),
 			"plugin_id": plugin_id,
@@ -233,11 +264,11 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		})
 
 	# Non-paired_dsl (single-render) anonymous panel: same as before.
-	var editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
+	var editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create")
 	if editor == null:
-		return MCPToolUtils.error("editor_creation_failed")
+		return _failure("editor_creation_failed")
 
-	return MCPToolUtils.success({
+	return _created({
 		"editor_name": str(editor.tab_title),
 		"plugin_id": plugin_id,
 		"panel_name": panel_name,

@@ -289,7 +289,7 @@ func adopt_editor(editor_node: Editor) -> void:
 		buffer_control_editor.hide()
 
 
-func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null, name_: String = "") -> Editor:
+func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null, name_: String = "", document_action: String = "open") -> Editor:
 	# Check if a plugin-scene editor for the same plugin/panel/file is already open.
 	# Match by (type, plugin_id, panel_name, file) — not by file alone — so that
 	# a sibling text editor on the same path (paired_dsl) doesn't shortcut us
@@ -313,7 +313,7 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null,
 		if not fname.is_empty():
 			title = editor_name_to_use(fname)
 
-	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title)
+	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title, null, document_action)
 	adopt_editor(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count() - 1
 	if title:

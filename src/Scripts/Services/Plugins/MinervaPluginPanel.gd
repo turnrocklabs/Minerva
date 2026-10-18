@@ -13,7 +13,9 @@ extends Control
 ##                                   the broker is wired.  ctx contains:
 ##                                   plugin_id, panel_name, data_directory,
 ##                                   broker, file_path, associated_object,
-##                                   editor, host_api_version.
+##                                   editor, host_api_version, document_action.
+##                                   document_action is create/open/import for
+##                                   a document handoff (otherwise empty).
 ##   _on_panel_unload()            — fires once before the scene is freed.
 ##                                   Disconnect signals here.  Do NOT initiate
 ##                                   IPC inside this hook — the broker rejects
@@ -54,6 +56,9 @@ extends Control
 ## See: src/plugins/hello_scene/ for a working reference plugin.
 
 
+const DOCUMENT_ACTION_META: StringName = &"minerva_document_action"
+
+
 # ---------------------------------------------------------------------------
 # Scene-contract signals (design §4.2)
 # ---------------------------------------------------------------------------
@@ -74,6 +79,12 @@ signal request(channel: String, payload: Dictionary, reply_id: String)
 ## the unsaved-changes indicator on the tab.
 @warning_ignore("unused_signal")
 signal content_changed()
+
+
+## The verb is scoped to a file open/import load hook; state restoration
+## returns an empty String. Creation uses ctx.document_action in _on_panel_loaded.
+func get_document_action() -> String:
+	return str(get_meta(DOCUMENT_ACTION_META, ""))
 
 
 # ---------------------------------------------------------------------------
