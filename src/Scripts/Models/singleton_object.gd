@@ -1856,114 +1856,16 @@ func _open_paired_dsl(abs_path: String, p_id: String, p_name: String) -> Editor:
 ##   {ok: false, errors: Array[String]}
 ##   on failure.
 func open_file_at_path(path: String) -> Dictionary:
-	# --- Path validation ---
-	var abs_path: String = path
-	if not abs_path.is_absolute_path():
-		# Resolve via ProjectSettings as best-effort; warn in response.
-		var globalized: String = ProjectSettings.globalize_path(abs_path)
-		abs_path = globalized
-		push_warning("[open_file_at_path] path was relative; resolved to: %s" % abs_path)
+	return _editor_handoff().open_file_at_path(path)
 
-	if not FileAccess.file_exists(abs_path):
-		if DirAccess.dir_exists_absolute(abs_path):
-			return {"ok": false, "errors": ["not_a_file: %s" % abs_path]}
-		return {"ok": false, "errors": ["file_not_found: %s" % abs_path]}
 
-	if editor_pane == null:
-		return {"ok": false, "errors": ["editor_pane not available"]}
+func create_plugin_editor(arguments: Dictionary) -> Dictionary:
+	return _editor_handoff().create_plugin_editor(arguments)
 
-	# --- Idempotency: check if already open ---
-	# TODO(paired_dsl close-one): for render_mode=paired_dsl, two editors share
-	# editor.file. If the user closed only the render panel, this loop returns
-	# the surviving text editor and _open_paired_dsl never runs to recreate the
-	# render panel. Substrate-level limitation; revisit when paired_dsl ships.
-	for editor: Editor in editor_pane.get_open_editors():
-		if editor.file == abs_path:
-			var kind_name: String = _editor_type_to_string(editor.type)
-			# Explicit Variant locals so null branches type-check (incompatible ternary).
-			var existing_plugin_id: Variant = null
-			if not editor.plugin_id.is_empty():
-				existing_plugin_id = editor.plugin_id
-			var existing_panel_name: Variant = null
-			if not editor.panel_name.is_empty():
-				existing_panel_name = editor.panel_name
-			return {
-				"ok": true,
-				"editor_kind": kind_name,
-				"editor_name": editor.tab_title,
-				"plugin_id": existing_plugin_id,
-				"panel_name": existing_panel_name,
-			}
 
-	# --- Extension resolution ---
-	var lower: String = abs_path.to_lower()
-	var ext: String = "." + abs_path.get_extension().to_lower()
-
-	var result_editor: Editor = null
-	var editor_kind: String = ""
-	var p_id: String = ""
-	var p_name: String = ""
-
-	if lower.ends_with(".jpeg") or lower.ends_with(".jpg") or lower.ends_with(".png"):
-		result_editor = editor_pane.add(Editor.Type.GRAPHICS, abs_path)
-		editor_kind = "GRAPHICS"
-	# .minpcb routing removed at cutover 2026-07-07. Until the plugin's legacy
-	# .minpcb importer lands (fast-follow), .minpcb falls through to the plugin
-	# registry → TEXT fallback (its JSON is readable). The pcb plugin owns .pcbskel.
-	elif lower.ends_with(".minkb"):
-		result_editor = editor_pane.add(Editor.Type.KANBAN, abs_path)
-		editor_kind = "KANBAN"
-	elif lower.ends_with(".minsheet"):
-		result_editor = editor_pane.add(Editor.Type.SPREADSHEET, abs_path)
-		editor_kind = "SPREADSHEET"
-	else:
-		# Check plugin registry before falling back to TEXT (design §7.3).
-		var reg = null
-		if "plugin_editor_registry" in self:
-			reg = get("plugin_editor_registry")
-		var panel_info: Dictionary = {}
-		if reg != null:
-			panel_info = reg.resolve_extension(ext)
-		if not panel_info.is_empty():
-			p_id = panel_info.get("plugin_id", "")
-			p_name = panel_info.get("panel_name", "")
-			# Validate plugin is running before opening.
-			if plugin_manager != null:
-				var status: Dictionary = plugin_manager.get_plugin_status(p_id)
-				if not status.get("running", false):
-					return {"ok": false, "errors": ["plugin_not_running: %s" % p_id]}
-			# DCR 019dfa66 §T5: render_mode "paired_dsl" routes to a paired
-			# text-editor + render-panel layout, both sharing the same
-			# DocumentBuffer. The text editor is the canonical edit surface;
-			# the render panel subscribes via the broker.
-			var render_mode: String = panel_info.get("render_mode", "single")
-			if render_mode == "paired_dsl":
-				result_editor = _open_paired_dsl(abs_path, p_id, p_name)
-				editor_kind = "PLUGIN_SCENE_PAIRED_DSL"
-			else:
-				result_editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path)
-				editor_kind = "PLUGIN_SCENE"
-		else:
-			result_editor = editor_pane.add(Editor.Type.TEXT, abs_path)
-			editor_kind = "TEXT"
-
-	if result_editor == null:
-		return {"ok": false, "errors": ["no_handler_for_extension: %s" % ext]}
-
-	# Explicit Variant locals so null branches type-check (incompatible ternary).
-	var plugin_id_out: Variant = null
-	if not p_id.is_empty():
-		plugin_id_out = p_id
-	var panel_name_out: Variant = null
-	if not p_name.is_empty():
-		panel_name_out = p_name
-	return {
-		"ok": true,
-		"editor_kind": editor_kind,
-		"editor_name": result_editor.tab_title,
-		"plugin_id": plugin_id_out,
-		"panel_name": panel_name_out,
-	}
+func _editor_handoff() -> PluginEditorHandoff:
+	return PluginEditorHandoff.new(editor_pane, plugin_manager, plugin_editor_registry,
+		plugin_scene_panel_broker, DocumentRegistry.get_instance(), _open_paired_dsl, _editor_type_to_string)
 
 
 ## Map Editor.Type enum to a human-readable string for open_file_at_path responses.
