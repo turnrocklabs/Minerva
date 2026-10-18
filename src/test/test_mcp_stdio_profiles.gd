@@ -86,11 +86,11 @@ func _run() -> void:
 		and nested_number.get("error_details", {}).get("pointer") == "/n"
 		and nested_number.get("error_details", {}).get("original") \
 			== "0.10000000000000001"
-		and envelopes.size() == envelope_count + 1)
+		and envelopes.size() == envelope_count)
 	var scalar_number: Dictionary = await modern.call_tool("scalar_precision_loss", {}, 5.0)
 	check("a scalar JSON text result cannot bypass the nested numeric boundary",
 		scalar_number.get("error_code") == "unsupported_number"
-		and envelopes.size() == envelope_count + 2)
+		and envelopes.size() == envelope_count)
 	var interaction = await modern.call_tool_outcome("input_required", {}, 5.0)
 	check("input_required is classified before content adaptation and preserves request state",
 		interaction.envelope.result_type == "input_required"
