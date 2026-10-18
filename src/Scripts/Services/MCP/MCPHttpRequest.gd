@@ -16,7 +16,7 @@ var deadline = Deadline.new()
 var submitted := false
 var status := 0
 var response_headers := PackedStringArray()
-var _context = null
+var _context: MCPExecutionContext = null
 var _subscription_mode := false
 
 func cancel(reason: String = "cancelled") -> void:
@@ -29,6 +29,8 @@ func _finish(value: Dictionary) -> void:
 	result = value
 	deadline.cancel()
 	client.close()
+	if _context != null and value.has("error") and not value.has("rpc_error"):
+		_context.fail(value, "connection_error")
 
 
 func _finish_retryable(value: Dictionary) -> void:
@@ -37,7 +39,7 @@ func _finish_retryable(value: Dictionary) -> void:
 	_finish(value)
 
 func execute(url: String, headers: PackedStringArray, request: Dictionary,
-		body: PackedByteArray, timeout: float, context = null,
+		body: PackedByteArray, timeout: float, context: MCPExecutionContext = null,
 		subscription_mode: bool = false) -> Dictionary:
 	_context = context
 	_subscription_mode = subscription_mode

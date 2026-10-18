@@ -84,7 +84,7 @@ func request_capability(capability: String, payload: Dictionary,
 	var broker: Object = _bulk_broker.get_ref()
 	broker.call_deferred("handle_scene_request", _bulk_panel_key,
 		"capability:" + capability, payload, reply_id, get_instance_id(), false, context)
-	return await await_reply(reply_id, timeout_ms)
+	return await await_reply(reply_id, timeout_ms, context)
 
 
 ## Action `action` (one of PluginPanelAuthority.ACTIONS) with `params` on
@@ -182,7 +182,7 @@ func _panel_closed_error() -> Dictionary:
 ##
 ## This is a coroutine — callers must use `await`:
 ##   var result := await $_MinervaIPC.await_reply("my-id-123")
-func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
+func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS, context: MCPExecutionContext = null) -> Dictionary:
 	if reply_id.is_empty():
 		push_warning("[MinervaIPC] await_reply: reply_id must not be empty")
 		return {
@@ -196,6 +196,7 @@ func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict
 
 	# Create a per-reply observer. Held in _pending to keep it alive.
 	var observer := _ReplyObserver.new()
+	observer.context = context
 	_pending[reply_id] = observer
 
 	# Schedule a timeout that fires the observer with a timeout sentinel if
@@ -267,10 +268,13 @@ class _ReplyObserver extends RefCounted:
 
 	## True once _fire() has been called; prevents double-fire.
 	var _fired: bool = false
+	var context: MCPExecutionContext = null
 
 	## Fire the signal with a result. Idempotent after the first call.
 	func _fire(result: Dictionary) -> void:
 		if _fired:
 			return
 		_fired = true
+		if context != null and result.get("success", not result.has("error")) == false and not result.has("rpc_error"):
+			result = context.fail(result)
 		resolved.emit(result)

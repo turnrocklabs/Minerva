@@ -419,7 +419,12 @@ func handle_tool_call_outcome(tool_name: String, args: Dictionary,
 
 func _capture_outcome(tool_name: String, args: Dictionary, context: ExecutionContext,
 		holder: Dictionary, write_binding: Dictionary = {}) -> Dictionary:
-	holder["outcome"] = await _handle_tool_outcome_with_context(tool_name, args, context, write_binding)
+	var outcome: ToolCallOutcome = await _handle_tool_outcome_with_context(tool_name, args, context, write_binding)
+	var result: Dictionary = outcome.application
+	if result.get("success", not result.has("error")) == false and not result.has("rpc_error") \
+			and (outcome.envelope == null or not outcome.wire_authoritative):
+		outcome.application = context.fail(result)
+	holder["outcome"] = outcome
 	return {"ok": true}
 
 

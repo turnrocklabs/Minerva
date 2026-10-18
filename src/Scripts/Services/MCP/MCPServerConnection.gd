@@ -193,15 +193,16 @@ func request_method(method: String, params: Dictionary, timeout_sec: float = 120
 		return _conn_error("%s is not a private method" % method)
 	var request := _stdio_method_request(method, params)
 	var generation := _process_generation
-	var response := await _stdio_request(request, timeout_sec, method, null, generation)
+	var context := ExecutionContext.create("connection")
+	var response := await _stdio_request(request, timeout_sec, method, context, generation)
 	var wire = _take_completed_wire(request.id)
 	if wire != null:
 		var numeric: Dictionary = await WireAdapter.validate_for_application(wire)
 		if generation == _process_generation:
 			response = _stdio_finalize(wire.parsed) if numeric.get("ok", false) \
-				else _conn_error(_wire_validation_message(numeric))
+				else context.fail(_conn_error(_wire_validation_message(numeric)))
 	if generation != _process_generation:
-		return _conn_error("MCP process changed during %s" % method)
+		return context.fail(_conn_error("MCP process changed during %s" % method), "connection_error")
 	return response
 
 
@@ -788,7 +789,24 @@ func _call_tool_http(tool_name: String, arguments: Dictionary, context: Executio
 
 
 func _call_tool_http_outcome(tool_name: String, arguments: Dictionary,
-		context: ExecutionContext = null):
+		context: ExecutionContext = null) -> ToolCallOutcome:
+	if context == null:
+		context = ExecutionContext.create("connection")
+	var outcome: ToolCallOutcome = await _call_tool_http_outcome_op(tool_name, arguments, context)
+	return _finalize_local_outcome(outcome, context)
+
+
+## Native rejections retire admitted children; validated peer replies retain authority.
+func _finalize_local_outcome(outcome: ToolCallOutcome, context: ExecutionContext) -> ToolCallOutcome:
+	var result: Dictionary = outcome.application
+	var failed: bool = result.get("success", not result.has("error")) == false
+	if failed and not result.has("rpc_error") and (outcome.envelope == null or not outcome.wire_authoritative):
+		outcome.application = context.fail(result)
+	return outcome
+
+
+func _call_tool_http_outcome_op(tool_name: String, arguments: Dictionary,
+		context: ExecutionContext = null) -> ToolCallOutcome:
 	if _http_transport == null:
 		return ToolCallOutcome.failure("HTTP transport is not connected")
 	var method := tool_name
@@ -821,7 +839,9 @@ func _call_tool_http_outcome(tool_name: String, arguments: Dictionary,
 		return list_outcome
 	var envelope = ToolResultEnvelope.from_mcp(raw_result,
 		owner.profile.era == Profile.Era.MODERN_2026_07_28, response.get("wire"))
-	var outcome = await ToolResultAdapter.adapt(envelope)
+	var outcome: ToolCallOutcome = await ToolResultAdapter.adapt(envelope)
+	if not outcome.wire_authoritative and outcome.application.get("success", true) == false:
+		return _finalize_local_outcome(outcome, context)
 	if owner != _http_transport or owner.generation != owner_generation \
 			or (context != null and context.is_stopped()):
 		return ToolCallOutcome.failure("HTTP request cancelled during result delivery")
@@ -917,7 +937,7 @@ func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: Exe
 					var result: Dictionary
 					if raw_result is Dictionary:
 						var envelope = ToolResultEnvelope.from_mcp(raw_result, false, response_wire)
-						var outcome = await ToolResultAdapter.adapt(envelope)
+						var outcome: ToolCallOutcome = await ToolResultAdapter.adapt(envelope)
 						interrupted = _websocket_delivery_interruption(owner, context,
 							"WebSocket request cancelled during result adaptation")
 						if not interrupted.is_empty():
@@ -1310,7 +1330,7 @@ func _resolve_pending(request_id: Variant, result: Dictionary, wire_value = null
 	# Local transport failure retires admitted children before waking the caller.
 	# A peer RPC error retains its original wire/error contract.
 	if wire_value == null and result.has("error") and pending.context != null:
-		pending.context.lifetime.stop(str(result.get("error_code", "cancelled")))
+		pending.context.fail(result, "connection_error")
 	if wire_value != null and pending.capture_wire:
 		_completed_wire_results[request_key] = wire_value
 	pending.done = true
@@ -1486,7 +1506,15 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 
 
 func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
-		timeout_sec: float = 120.0, context: ExecutionContext = null):
+		timeout_sec: float = 120.0, context: ExecutionContext = null) -> ToolCallOutcome:
+	if context == null:
+		context = ExecutionContext.create("connection")
+	var outcome: ToolCallOutcome = await _call_tool_stdio_outcome_op(tool_name, arguments, timeout_sec, context)
+	return _finalize_local_outcome(outcome, context)
+
+
+func _call_tool_stdio_outcome_op(tool_name: String, arguments: Dictionary,
+		timeout_sec: float = 120.0, context: ExecutionContext = null) -> ToolCallOutcome:
 	if not _subprocess or not _subprocess.is_running():
 		return ToolCallOutcome.failure("STDIO transport not connected")
 	if protocol_profile.era == Profile.Era.MODERN_2026_07_28 \
@@ -1552,7 +1580,9 @@ func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
 		return ToolCallOutcome.failure("MCP tool result must be an object")
 	var envelope = ToolResultEnvelope.from_mcp(raw_result,
 		protocol_profile.era == Profile.Era.MODERN_2026_07_28, source_wire)
-	var outcome = await ToolResultAdapter.adapt(envelope)
+	var outcome: ToolCallOutcome = await ToolResultAdapter.adapt(envelope)
+	if not outcome.wire_authoritative and outcome.application.get("success", true) == false:
+		return _finalize_local_outcome(outcome, context)
 	if call_generation != _process_generation or (context != null and context.is_stopped()):
 		return ToolCallOutcome.failure("MCP request cancelled during result delivery")
 	tool_result_envelope_received.emit(tool_name, envelope)
