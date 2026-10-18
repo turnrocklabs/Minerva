@@ -710,15 +710,8 @@ func register_tools() -> void:
 	, "spreadsheet")
 
 
-func handle_with_context(tool_name: String, arguments: Dictionary, context: MCPExecutionContext) -> Dictionary:
-	if tool_name == "minerva_create_spreadsheet_editor":
-		return await _create_spreadsheet_editor(arguments, context)
-	return await handle(tool_name, arguments)
-
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
-		"minerva_create_spreadsheet_editor":
-			return await _create_spreadsheet_editor(arguments)
 		"minerva_get_spreadsheet_data":
 			return _get_spreadsheet_data(arguments)
 		"minerva_update_spreadsheet_data":
@@ -953,17 +946,6 @@ func _call_nudge_set_hint(component: String, key: String, value: Variant) -> Dic
 
 
 #region Tool Implementations
-
-func _create_spreadsheet_editor(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
-	var opened: Dictionary = await MCPToolUtils.open_claimed_file(str(args.get("file_path", "")),
-		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context,
-		str(args.get("csv_content", "")), str(args.get("name", "")))
-	if not opened.is_empty():
-		return opened
-	var tools: PluginToolRegistry = SingletonObject.plugin_tool_registry
-	if tools == null:
-		return MCPToolUtils.error("Sheets is unavailable. Start/install Sheets in Plugins, then retry.")
-	return await tools.handle_tool_call("minerva_sheets_create_editor", args, context)
 
 
 func _get_spreadsheet_data(args: Dictionary) -> Dictionary:

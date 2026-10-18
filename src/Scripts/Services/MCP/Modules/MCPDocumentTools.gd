@@ -6,7 +6,7 @@ extends MCPToolModule
 ##
 ## This is a READER, not an editor: it has no UI side-effects. To land an
 ## extracted table in a spreadsheet, pass a table's `csv` field to
-## minerva_create_spreadsheet_editor (csv_content=...).
+## minerva_sheets_create_editor (csv_content=...).
 
 const OOXMLReaderScript := preload("res://Scripts/Services/Documents/OOXMLReader.gd")
 
@@ -23,7 +23,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_read_document",
-		"Extract DATA (text + tables + embedded-image metadata) from an office document Minerva can't import natively. v1 supports .docx (Word). Returns {text, tables, images}; each table has rows + a ready-to-import `csv` (intra-cell newlines collapsed) — pass that csv to minerva_create_spreadsheet_editor(csv_content=...) to land it in a sheet. For file-backed spreadsheet formats use minerva_open_file with action=import. Reads data only; does NOT render the document's layout.",
+		"Extract DATA (text + tables + embedded-image metadata) from an office document Minerva can't import natively. v1 supports .docx (Word). Returns {text, tables, images}; each table has rows + a ready-to-import `csv` (intra-cell newlines collapsed) — pass that csv to minerva_sheets_create_editor(csv_content=...) to land it in a sheet. For file-backed spreadsheet formats use minerva_open_file with action=import. Reads data only; does NOT render the document's layout.",
 		{"type": "object", "properties": {
 			"path": {"type": "string", "description": "Absolute path to the document (.docx)."},
 			"include_text": {"type": "boolean", "description": "Include the full paragraph text (default true). Set false when you only want tables."},

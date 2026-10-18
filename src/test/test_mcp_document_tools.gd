@@ -12,7 +12,6 @@ extends SceneTree
 ##   - include_text=false / max_text_chars truncation
 ##   - INTEGRATION (if present): the real 61-student camp roster .docx
 
-const MCPDocumentToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPDocumentTools.gd")
 
 var _pass := 0
 var _fail := 0
@@ -21,6 +20,8 @@ const REAL_DOCX := "/home/imran/Downloads/2026 Explorer Family Camp - student in
 
 
 func _init() -> void:
+	await process_frame
+	var MCPDocumentToolsScript = load("res://Scripts/Services/MCP/Modules/MCPDocumentTools.gd")
 	print("=== MCPDocumentTools / OOXMLReader Tests ===\n")
 	DirAccess.make_dir_recursive_absolute(_dir)
 	var tools = MCPDocumentToolsScript.new(null)
@@ -68,7 +69,7 @@ func test_errors(tools) -> void:
 		tools.handle("minerva_read_document", {"path": _p("x.rtf")}).success == false)
 
 	var csv_r: Dictionary = tools.handle("minerva_read_document", {"path": _p("x.csv")})
-	check("csv ext → error pointing to native import", csv_r.success == false and "minerva_create_spreadsheet_editor" in str(csv_r.get("error", "")))
+	check("csv ext → error pointing to native import", csv_r.success == false and "minerva_open_file" in str(csv_r.get("error", "")))
 
 	# Not a ZIP: a plain-text file with a .docx extension.
 	var bogus := _p("bogus.docx")

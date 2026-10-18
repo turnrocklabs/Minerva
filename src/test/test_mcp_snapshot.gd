@@ -47,7 +47,9 @@ func _init() -> void:
 	text.type = editor_script.Type.TEXT
 	text.tab_title = "Text"
 	var sheet := Surface.new()
-	sheet.type = editor_script.Type.SPREADSHEET
+	sheet.type = editor_script.Type.PLUGIN_SCENE
+	sheet.plugin_scene_root = Control.new()
+	sheet.add_child(sheet.plugin_scene_root)
 	sheet.tab_title = "Sheet"
 	root.add_child(text)
 	root.add_child(sheet)
@@ -95,8 +97,8 @@ func _init() -> void:
 		var reply: Dictionary = await tools.handle("minerva_snapshot", {"editor_name": surface.tab_title})
 		if not check(reply.get("success", false), "editor operation succeeded: %s" % reply):
 			return
-		check(last_target.surface == surface
-			and last_target.viewport == root, "text/spreadsheet exact tab uses visible surface")
+		check(last_target.surface == (sheet.plugin_scene_root if surface == sheet else text)
+			and last_target.viewport == root, "text/native-sheet exact tab uses its visible owned surface")
 		DirAccess.remove_absolute(reply.path)
 	check(services.resolve("Text", broker, [text, sheet], true).panel == panel,
 		"panel tools retain broker preference for the same source-tab alias")

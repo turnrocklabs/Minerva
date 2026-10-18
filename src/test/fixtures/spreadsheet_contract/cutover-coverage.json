@@ -1,0 +1,189 @@
+{
+  "authority": "c4993 every-assertion distribution receipt, c5023 owner supersedes tool-name compatibility",
+  "baseline_host": "89b195047c07c3c8872820f29a24e23050126d23",
+  "baseline_host_suite": "src/test/test_spreadsheet_contract.gd",
+  "baseline_assertions": 43,
+  "retained_host_assertions": 21,
+  "removed_duplicate_domain_assertions": 22,
+  "removed_assertion_replacements": [
+    {
+      "removed_host_assertion": "registered spreadsheet catalog exports successfully",
+      "replacement": {
+        "file": "sheets/tests/helpers/routing_contract.gd",
+        "assertion": "complete canonical catalog exposes30 Sheets tools without host aliases; gen-tools --check compares complete frozen-source descriptors"
+      }
+    },
+    {
+      "removed_host_assertion": "current names/descriptions/input schemas match frozen catalog",
+      "replacement": {
+        "file": "sheets/scripts/gen-tools.py",
+        "assertion": "--check verifies30 manifest descriptors generated from byte-pinned frozen B0 catalog; no host alias emission"
+      }
+    },
+    {
+      "removed_host_assertion": "native fixture imports",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "minsheet uses the installed plugin loader"
+      }
+    },
+    {
+      "removed_host_assertion": "complete native model is unchanged",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "minsheet complete plugin model matches the frozen B0 oracle"
+      }
+    },
+    {
+      "removed_host_assertion": "formula evaluates to independent oracle 2+3",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "native frozen formula evaluates independent2plus3"
+      }
+    },
+    {
+      "removed_host_assertion": "filter preserves hidden cells",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "native frozen filter retains hidden cell content"
+      }
+    },
+    {
+      "removed_host_assertion": "native model exports",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "native frozen model exports through plugin format owner"
+      }
+    },
+    {
+      "removed_host_assertion": "native model reopens with every saved field",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "native frozen export reimports with its complete model"
+      }
+    },
+    {
+      "removed_host_assertion": "csv imports",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "csv uses the installed plugin loader"
+      }
+    },
+    {
+      "removed_host_assertion": "csv complete import model matches oracle",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "csv complete plugin model matches the frozen B0 oracle"
+      }
+    },
+    {
+      "removed_host_assertion": "csv imported model survives native serialization",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "csv complete frozen model survives JSON/native serialization"
+      }
+    },
+    {
+      "removed_host_assertion": "tsv imports",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "tsv uses the installed plugin loader"
+      }
+    },
+    {
+      "removed_host_assertion": "tsv complete import model matches oracle",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "tsv complete plugin model matches the frozen B0 oracle"
+      }
+    },
+    {
+      "removed_host_assertion": "tsv imported model survives native serialization",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "tsv complete frozen model survives JSON/native serialization"
+      }
+    },
+    {
+      "removed_host_assertion": "xlsx imports",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "xlsx uses the installed plugin loader"
+      }
+    },
+    {
+      "removed_host_assertion": "xlsx complete import model matches oracle",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "xlsx complete plugin model matches the frozen B0 oracle"
+      }
+    },
+    {
+      "removed_host_assertion": "xlsx imported model survives native serialization",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "xlsx complete frozen model survives JSON/native serialization"
+      }
+    },
+    {
+      "removed_host_assertion": "XFAIL minerva:01a14b6935b8: inline strings currently lost",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "xlsx complete plugin model matches the frozen B0 oracle (includes exact historical empty inline-string cells; no gap hidden)"
+      }
+    },
+    {
+      "removed_host_assertion": "malformed.minsheet refuses without clearing model or rewriting input",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "malformed.minsheet visibly refuses without clearing model or changing input"
+      }
+    },
+    {
+      "removed_host_assertion": "not-an-object.minsheet refuses without clearing model or rewriting input",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "not-an-object.minsheet visibly refuses without clearing model or changing input"
+      }
+    },
+    {
+      "removed_host_assertion": "XFAIL minerva:01a14b668a56: future version currently accepted and downgraded",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "XFAIL future native version keeps the frozen accepted-and-downgraded behavior (complete model AND source bytes asserted)"
+      }
+    },
+    {
+      "removed_host_assertion": "future import leaves original bytes intact",
+      "replacement": {
+        "file": "sheets/tests/helpers/staging_body.gd",
+        "assertion": "XFAIL future native version keeps the frozen accepted-and-downgraded behavior (complete model AND source bytes asserted)"
+      }
+    }
+  ],
+  "retargeted_host_assertions": [
+    {
+      "before": "legacy session uses the production spreadsheet type",
+      "after": "legacy session keeps numeric tombstone identity"
+    },
+    {
+      "before": "whole session editor envelope and charts round-trip",
+      "after": "whole opaque editor envelope and charts round-trip",
+      "installed_provider": "sheets/tests/helpers/session_contract.gd: duplicate title preserves full sheet/index/pass and one deserialize mounts each chart exactly once"
+    },
+    {
+      "before": "chart native-file loss remains explicit (minerva:01a14b6689f0)",
+      "after": "opaque chart snapshot retains its complete original entry",
+      "installed_provider": "sheets/tests/helpers/session_contract.gd complete model/chart roundtrips; native host save uses complete panel payload per save_contract.gd"
+    }
+  ],
+  "other_coverage_retained": {
+    "host_file_initializer": "312 assertions retain real public MCPToolUtils.open_claimed_file, text and generic readiness; removed legacy shim integration now real Go/production canonical routing in sheets/tests/helpers/foreign_creation_contract.gd",
+    "native_creation": "creation_contract.gd and foreign_creation_contract.gd actualGo/publichostcanonical creation/source/identity/D9; retiredtoolnames intentionallyunsupported perowner c5023",
+    "copied_domain_suites": "84+34+39=157 assertions continue in plugin strict EXPECTED_SUITES; remove old host registrations only at reviewed S7 deletion",
+    "self_scene_lifecycle": "Legacy builtin spreadsheet_scene probe removed (27 to26); sheets/tests/helpers/session_contract.gd: legacy migration restores two distinct panels pass%d, one deserialize mounts each chart exactly once sheet%d pass%d, duplicate title preserves full sheet%d pass%d, repeated for three complete save/reopen mounts. Host26 other self-scene probes retained."
+  },
+  "frozen_oracle_sha256": "b191a49c8f146bd39fe23bfc77efd0c143786d4c8e135287fd41b77a8fe5879d",
+  "qualification": "Candidate real counts and pinned revisions are recorded by the work item; no fixture recapture or expected model regeneration.",
+  "measured_draft": "j20261018t172334-0076a5 plugin624/0; j20261018t172415-1e0fed ninehost suites allpass; exact candidate full/runtime required after freeze."
+}

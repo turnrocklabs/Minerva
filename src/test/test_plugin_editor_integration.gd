@@ -343,7 +343,6 @@ func test_plugin_scene_type_distinct_from_others() -> void:
 		editor_contract.Type.PACKAGE,
 		editor_contract.Type.LOGS,
 		editor_contract.Type.KANBAN,
-		editor_contract.Type.SPREADSHEET,
 		editor_contract.Type.VIDEO_EDITOR,
 		editor_contract.Type.ACTIVITY_LOG,
 		editor_contract.Type.WEBVIEW,
