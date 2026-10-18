@@ -112,6 +112,10 @@ func _ready() -> void:
 	print("=== Results: %d passed, %d failed ===" % [checks - failures, failures])
 	completed.emit(1 if failures else 0)
 
+func collect_readiness(readiness: PluginReadiness, provider: String, results: Array[Dictionary]) -> void:
+	results.append(await readiness.wait_for_provider(provider))
+
+
 func exercise_readiness() -> void:
 	var manager := PluginManager.new()
 	get_tree().root.add_child(manager)
@@ -128,14 +132,20 @@ func exercise_readiness() -> void:
 	var host := get_tree().root.get_node("SingletonObject")
 	var old_registry: Variant = host.plugin_tool_registry
 	host.plugin_tool_registry = registry
+	var pending_results: Array[Dictionary] = []
 	var seen := {"started": false, "ready": false}
 	manager.plugin_started.connect(func(id: String) -> void:
 		seen.started = not manager.get_plugin_status(id).ready
-		if provider.args[provider.args.find("--profile") + 1] != "delayed_tools":
+		var profile: String = provider.args[provider.args.find("--profile") + 1]
+		var previous_results := pending_results.size()
+		if profile in ["delayed_tools", "catalog_exit"]:
+			collect_readiness(PluginReadiness.new(manager, registry), id, pending_results)
+		if profile != "delayed_tools":
 			return
 		get_tree().create_timer(0.1).timeout.connect(func() -> void:
 			if not is_instance_valid(manager) or manager.get_connection(id) == null:
 				return
+			check("real provider admission stays pending before catalog release", pending_results.size() == previous_results)
 			check("delayed catalog is running but not ready", manager.get_plugin_status(id).running and not manager.get_plugin_status(id).ready)
 			check("fixture releases catalog through public host event", manager.get_connection(id).send_host_event("test_release_tools", {}) == OK)))
 	manager.plugin_ready.connect(func(id: String) -> void: seen.ready = manager.get_plugin_status(id).ready)
@@ -145,6 +155,7 @@ func exercise_readiness() -> void:
 		host.plugin_tool_registry = old_registry
 		manager.free()
 		return
+	check("real delayed discovery completes one event-driven admission", pending_results.size() == 1 and pending_results[0].get("ok", false))
 	check("missing action visible without constraining other actions", manager.dependency_contract_issue(consumer.id).contains("tool minerva_agent_relay_absent")
 		and manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty())
@@ -186,10 +197,13 @@ func exercise_readiness() -> void:
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty() and unrelated.get("echo", {}).get("value") == "still alive")
 	manager.stop_plugin(provider.id)
 	provider.args[profile_index + 1] = "catalog_exit"
+	var pending_before_crash := pending_results.size()
 	var interrupted: Dictionary = await manager.start_plugin(provider.id)
 	await get_tree().process_frame
 	check("exit DURING discovery preserves crash state before another start", interrupted.has("error")
 		and manager.get_plugin_status(provider.id).state == PluginDefinition.State.ERROR and not manager.get_plugin_status(provider.id).ready)
+	check("actual crash releases the pending readiness admission", pending_results.size() == pending_before_crash + 1
+		and str(pending_results.back().get("error")).contains("provider_crashed"))
 	manager.stop_plugin(provider.id)
 	provider.args[profile_index + 1] = "empty_tools"
 	for tool_name: String in RequiredPlugins.PLUGINS.agent_relay.host_tools:

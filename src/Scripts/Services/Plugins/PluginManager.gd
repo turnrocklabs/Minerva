@@ -1668,12 +1668,14 @@ func set_editor_registration(id: String, error: String) -> void:
 
 
 ## Only the caller's declared actions are constrained; other features stay usable.
-func dependency_contract_issue(consumer: String, tool: String = "") -> String:
+func dependency_contract_issue(consumer: String, tool: String = "", required_provider: String = "") -> String:
 	var database: Object = _db
 	var definition: PluginDefinition = database.call("get_by_id", consumer)
 	if definition == null:
 		return ""
 	for requirement: Dictionary in definition.requires_plugins:
+		if not required_provider.is_empty() and requirement.id != required_provider:
+			continue
 		var actions: Array = requirement.actions
 		if not tool.is_empty() and tool not in actions:
 			continue

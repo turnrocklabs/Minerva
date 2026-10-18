@@ -1883,11 +1883,29 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 
 
 func create_plugin_editor(arguments: Dictionary) -> Dictionary:
-	var result := _editor_handoff().handoff("create", arguments)
+	return _plugin_editor_result(_editor_handoff().handoff("create", arguments))
+
+
+func _plugin_editor_result(result: Dictionary) -> Dictionary:
 	if not result.get("ok", false):
 		return MCPToolUtils.error(", ".join(PackedStringArray(result.get("errors", []))))
 	result.erase("ok")
 	return MCPToolUtils.success(result)
+
+
+func _plugin_readiness() -> PluginReadiness:
+	var manager: PluginManager = plugin_manager
+	var registry: PluginToolRegistry = plugin_tool_registry
+	return PluginReadiness.new(manager, registry)
+
+
+func open_file_when_ready(path: String, action: String = "open", context: MCPExecutionContext = null) -> Dictionary:
+	return await _plugin_readiness().handoff_when_ready(_editor_handoff(), action, {"path": path}, context)
+
+
+func create_plugin_editor_when_ready(arguments: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
+	var result := await _plugin_readiness().handoff_when_ready(_editor_handoff(), "create", arguments, context)
+	return _plugin_editor_result(result)
 
 
 func _editor_handoff() -> PluginEditorHandoff:

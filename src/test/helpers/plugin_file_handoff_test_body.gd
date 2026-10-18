@@ -39,6 +39,7 @@ func _install(manager: PluginManager, id: String, extension: String, paired: boo
 	check("real provider manifest installs: " + id, definition != null)
 	if definition != null:
 		manager.get_db().update_state(id, PluginDefinition.State.RUNNING)
+		manager._ensure_runtime(id)["ready"] = true # Panel-only fixture; real discovery lives in dependency tests.
 	return definition
 
 func _run() -> void:
@@ -276,6 +277,7 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 			check("create hook receives its scoped action", created.plugin_scene_root != null
 				and created.plugin_scene_root.get("loads") == 1 and created.plugin_scene_root.get("last_action") == "create")
 
+	await _exercise_readiness(host, manager, pane, single, directory, text)
 	await _exercise_conflicts(host, manager, pane, directory, text)
 	check("DB removal releases the sheet claims", manager.get_db().remove(single.id)
 		and host.plugin_editor_registry.resolve_extension(".csv").is_empty())
@@ -324,6 +326,54 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		check("undeclared open/create refuse without mutation", not no_open.get("ok", true)
 			and not no_create.get("success", true) and pane.Tabs.get_tab_count() == before
 			and FileAccess.get_file_as_string(import_only_path) == text)
+
+func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, provider: PluginDefinition,
+		directory: String, text: String) -> void:
+	var readiness := PluginReadiness.new(manager, null)
+	var ready_listeners := manager.plugin_ready.get_connections().size()
+	var release := func() -> void:
+		manager._ensure_runtime(provider.id)["ready"] = true
+		manager.plugin_ready.emit(provider.id)
+	for action: String in ["open", "import"]:
+		var path := directory.path_join("ready-" + action + ".fixturefmt")
+		_write(path, text)
+		var before_open := pane.Tabs.get_tab_count()
+		manager._ensure_runtime(provider.id)["ready"] = false
+		var immediate: Variant = host.open_file_at_path(path, action)
+		check("sync " + action + " returns a Dictionary refusal without allocating", immediate is Dictionary
+			and str(immediate).contains("provider_not_ready") and pane.Tabs.get_tab_count() == before_open)
+		get_tree().create_timer(0.02).timeout.connect(release)
+		var result: Dictionary = await host.open_file_when_ready(path, action)
+		check("async " + action + " waits and allocates exactly once", result.get("ok", false) and pane.Tabs.get_tab_count() == before_open + 1)
+		if pane.Tabs.get_tab_count() == before_open + 1:
+			var editor: Editor = pane.Tabs.get_child(before_open)
+			check("async handoff sends one action without writing source bytes", editor.plugin_scene_root.get("loads") == 1
+				and editor.plugin_scene_root.get("last_action") == action and FileAccess.get_file_as_string(path) == text)
+	var args := {"plugin_id": provider.id, "editor_item_id": provider.id + "_new"}
+	manager._ensure_runtime(provider.id)["ready"] = false
+	var before := pane.Tabs.get_tab_count()
+	var sync_create: Variant = host.create_plugin_editor(args)
+	check("sync create refuses immediately without a coroutine", sync_create is Dictionary and str(sync_create).contains("provider_not_ready") and pane.Tabs.get_tab_count() == before)
+	get_tree().create_timer(0.02).timeout.connect(release)
+	var created: Dictionary = await host.create_plugin_editor_when_ready(args)
+	check("async create allocates once after ready", created.get("success", false) and pane.Tabs.get_tab_count() == before + 1)
+	manager._ensure_runtime(provider.id)["ready"] = false
+	before = pane.Tabs.get_tab_count()
+	var expired: Dictionary = await readiness.wait_for_provider(provider.id, 0.02)
+	check("bounded timeout refuses without allocating", str(expired.get("error")).contains("provider_ready_timeout") and pane.Tabs.get_tab_count() == before)
+	var context := MCPExecutionContext.create("fixture")
+	get_tree().create_timer(0.02).timeout.connect(context.cancel)
+	var cancelled: Dictionary = await readiness.wait_for_provider(provider.id, 30.0, context)
+	check("caller cancellation releases its wait", str(cancelled.get("error")).contains("cancelled") and pane.Tabs.get_tab_count() == before)
+	get_tree().create_timer(0.02).timeout.connect(func() -> void: manager.stop_plugin(provider.id))
+	var stopped: Dictionary = await readiness.wait_for_provider(provider.id)
+	await get_tree().process_frame
+	check("stop releases a pending wait with no allocation", str(stopped.get("error")).contains("provider_stopped") and pane.Tabs.get_tab_count() == before)
+	check("completed waits disconnect listeners and release timers", manager.plugin_ready.get_connections().size() == ready_listeners
+		and context.lifetime.cancelled.get_connections().is_empty() and not manager.get_children().any(func(child: Node) -> bool: return child is Timer))
+	manager.get_db().update_state(provider.id, PluginDefinition.State.RUNNING)
+	manager._ensure_runtime(provider.id)["ready"] = true
+
 
 func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, directory: String, text: String) -> void:
 	var other := _install(manager, "z_conflict_contract", ".oldfmt", false)

@@ -43,6 +43,7 @@ func _run() -> void:
 		completed.emit(1)
 		return
 	definition.state = PluginDefinition.State.RUNNING
+	manager._ensure_runtime(definition.id)["ready"] = true # This fixture isolates native editor creation.
 	# These UI/module scripts depend on autoloads, so resolve their classes at runtime.
 	var pane = load("res://Scripts/UI/Views/EditorPane.gd").new()
 	var tabs := TabContainer.new()
