@@ -464,6 +464,13 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 		check(kind + " refusal preserved canonical paired text buffer", source != null and source.code_edit.text == original)
 		check(kind + " returns the canonical text editor name for a pair", source != null
 			and opened.get("editor_name") == source.tab_title)
+		args.erase("name")
+		var unnamed: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		check(kind + " absent requested name produces no ignored-name note", unnamed.get("success") == true
+			and not unnamed.has("note") and unnamed.get("editor_name") == source.tab_title)
+		check(kind + " reopening keeps the selected renderer of the same pair", pane.Tabs.get_current_tab_control() == render
+			and pane.Tabs.get_tab_count() == before + 2)
+		args["name"] = "Ignored again " + kind
 		pane.Tabs.move_child(render, 0)
 		check(kind + " renderer-first fixture models tab rearrangement", pane.Tabs.get_tab_idx_from_control(render)
 			< pane.Tabs.get_tab_idx_from_control(source))

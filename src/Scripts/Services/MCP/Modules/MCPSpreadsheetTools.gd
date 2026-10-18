@@ -956,6 +956,7 @@ func _call_nudge_set_hint(component: String, key: String, value: Variant) -> Dic
 
 func _create_spreadsheet_editor(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
 	var name_: String = args.get("name", "Spreadsheet")
+	var requested_name: String = args.get("name", "")
 	var csv_content: String = args.get("csv_content", "")
 	var file_path: String = args.get("file_path", "")
 
@@ -964,7 +965,7 @@ func _create_spreadsheet_editor(args: Dictionary, context: MCPExecutionContext =
 		return MCPToolUtils.error("Editor pane not available")
 
 	var opened: Dictionary = await MCPToolUtils.open_claimed_file(file_path,
-		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context, csv_content, name_)
+		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context, csv_content, requested_name)
 	if not opened.is_empty():
 		return opened
 

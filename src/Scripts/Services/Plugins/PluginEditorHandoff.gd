@@ -98,7 +98,13 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 			var existing_panel_name: Variant = null
 			if not editor.panel_name.is_empty():
 				existing_panel_name = editor.panel_name
-			pane.focus_editor(editor)
+			var selected: Control = pane.Tabs.get_current_tab_control()
+			var same_document := false
+			if selected is Editor:
+				var selected_editor: Editor = selected
+				same_document = selected_editor.file == abs_path and _matches_file_owner(selected_editor, panel_info, abs_path)
+			if not same_document:
+				pane.focus_editor(editor)
 			return {
 				"ok": true,
 				"editor_kind": kind_name,
