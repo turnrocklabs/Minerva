@@ -115,10 +115,11 @@ func session_and_note(host: Node) -> void:
 	container.editor_pane = pane
 	host.editor_container = container
 	root.add_child(container)
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
 	var plain: Dictionary = read_json("no-chart-session.minproj")
 	var restored: Array = await container_script.deserialize(plain.Editors)
 	check("production legacy session restore returns one opaque Sheets tab", restored.size() == 1
-		and restored[0].type == Editor.Type.PLUGIN_SCENE and restored[0].pending_plugin_entry == plain.Editors[0])
+		and restored[0].type == editor_script.Type.PLUGIN_SCENE and restored[0].pending_plugin_entry == plain.Editors[0])
 	for view: Control in restored:
 		tabs.add_child(view)
 		tabs.set_tab_title(tabs.get_tab_count() - 1, plain.Editors[0].name)
@@ -132,7 +133,6 @@ func session_and_note(host: Node) -> void:
 	# Restore the session content on a mounted editor, as required by chart UI.
 	# The outer EditorContainer static restore is separately tracked: it calls
 	# deserialize before mounting (bug minerva:01a14b693555).
-	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
 	var entry: Dictionary = fixture.Editors[0]
 	check("legacy session uses the production spreadsheet type", int(entry.type) == editor_script.Type.SPREADSHEET)
 	var editor = editor_script.create(int(entry.type), entry.file, entry.name, null, false)
@@ -235,6 +235,7 @@ func package_roundtrip(container_script: Script, container: Object, tabs: TabCon
 	await process_frame
 	var expected_editors: Array = project.Editors.duplicate(true)
 	expected_editors[0].file = expected.Editors[0].file
+	expected_editors[0].sidecar = expected.Editors[0].sidecar
 	check("unpacked minproj reopens identical complete sheet", json_value(await container.serialize()) == expected_editors)
 	for view: Control in views:
 		view.free()
