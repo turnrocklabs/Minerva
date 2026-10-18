@@ -194,7 +194,7 @@ static func entry_from_releases(releases: Array, plugin_id: String) -> Dictionar
 ## The newest release of each required plugin, as registry entries keyed by
 ## id (entry_from_releases), from each host-declared repository. A failed
 ## listing leaves other repositories and already-found entries available.
-static func fetch_entries(manager: Node) -> Dictionary:
+static func fetch_entries(manager) -> Dictionary:
 	# Only the host's catalog supplies repositories; dependencies cannot add one.
 	var groups := {}
 	for id: String in ids():
@@ -202,12 +202,14 @@ static func fetch_entries(manager: Node) -> Dictionary:
 		var group: Array = groups.get(repo, [])
 		group.append(id)
 		groups[repo] = group
-	return await _fetch_grouped_entries(manager, groups)
-
-
-static func _fetch_grouped_entries(manager: Node, groups: Dictionary) -> Dictionary:
-	var client: Node = MarketplaceClient.new()
+	var client := MarketplaceClient.new()
 	manager.add_child(client)
+	var entries := await _fetch_grouped_entries(client, groups)
+	client.queue_free()
+	return entries
+
+
+static func _fetch_grouped_entries(client: MarketplaceClient, groups: Dictionary) -> Dictionary:
 	var entries := {}
 	for repo: String in groups:
 		var plugin_ids: Array = groups[repo]
@@ -230,7 +232,6 @@ static func _fetch_grouped_entries(manager: Node, groups: Dictionary) -> Diction
 			if fetched.json.size() < RELEASES_PER_PAGE or found.size() == plugin_ids.size():
 				break
 		entries.merge(found)
-	client.queue_free()
 	return entries
 
 
@@ -273,8 +274,7 @@ static func ensure(manager) -> Dictionary:
 	var stops := {}
 	for id in missing:
 		stops[id] = manager.person_stops(id)
-	# The repair API keeps its dynamic PluginManager contract; HTTP owns only a Node parent.
-	var entries := await fetch_entries(manager as Node)
+	var entries := await fetch_entries(manager)
 	if manager.is_shutting_down():
 		return {}
 	# The fetch took time: judge each plugin as it is now. One made whole

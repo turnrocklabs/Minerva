@@ -28,7 +28,7 @@ func _run() -> void:
 	for scenario: String in ["rate", "disconnect", "nonlist", "partial", "caps", "early", "short"]:
 		RequiredPlugins.releases_url = base + "/" + scenario
 		var wanted_a := ["alpha", "missing"] if scenario == "partial" else ["late"] if scenario == "caps" else ["alpha"]
-		var entries: Dictionary = await RequiredPlugins._fetch_grouped_entries(manager, {A: wanted_a, B: ["beta"]})
+		var entries: Dictionary = await RequiredPlugins._fetch_grouped_entries(client, {A: wanted_a, B: ["beta"]})
 		check("%s retains independent second repository" % scenario,
 			entries.get("beta", {}).get("version", "") == "2.3.0"
 			and entries.get("beta", {}).get("downloads", {}).get("linux-x86_64", "") == "https://example.invalid/%s/beta-2.3.0.tar.gz" % B)
