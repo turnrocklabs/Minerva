@@ -184,6 +184,5 @@
     "self_scene_lifecycle": "Legacy builtin spreadsheet_scene probe removed (27 to26); sheets/tests/helpers/session_contract.gd: legacy migration restores two distinct panels pass%d, one deserialize mounts each chart exactly once sheet%d pass%d, duplicate title preserves full sheet%d pass%d, repeated for three complete save/reopen mounts. Host26 other self-scene probes retained."
   },
   "frozen_oracle_sha256": "b191a49c8f146bd39fe23bfc77efd0c143786d4c8e135287fd41b77a8fe5879d",
-  "qualification": "Candidate real counts and pinned revisions are recorded by the work item; no fixture recapture or expected model regeneration.",
-  "measured_draft": "j20261018t172334-0076a5 plugin624/0; j20261018t172415-1e0fed ninehost suites allpass; exact candidate full/runtime required after freeze."
+  "qualification": "Canonical-only owner replan: actual plugin staging j20261018t180347-2e209a PASS621/0, only the two baseline SVG preload diagnostics; LSP760\u2192760 zero NEW. Seven retargeted host suites passed j20261018t175058-464f17 before the unrelated plugin-profile precondition failure. Exact frozen full/runtime qualification is mandatory; historical oracle bytes are unchanged."
 }
