@@ -1077,15 +1077,38 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 				"detail": {"name": panel_name},
 			}
 		var file_exts: Array[String] = []
-		for ext_raw in (file_exts_raw as Array):
-			var ext: String = str(ext_raw).to_lower()
+		for ext_raw: Variant in (file_exts_raw as Array):
+			if not ext_raw is String:
+				return {"error": "panel_file_extension_invalid", "detail": {"name": panel_name}}
+			var ext: String = ext_raw.to_lower()
 			if not ext.begins_with("."):
 				return {
 					"error": "panel_file_extension_missing_dot",
 					"detail": {"name": panel_name, "extension": ext},
 				}
+			if ext.length() < 2 or ext != ext.strip_edges() or ext.contains("/") or ext.contains("\\") or ext.contains(":"):
+				return {"error": "panel_file_extension_invalid", "detail": {"name": panel_name, "extension": ext}}
 			file_exts.append(ext)
 		result["file_extensions"] = file_exts
+
+	# Native file handoff defaults preserve existing open/create behavior.
+	# Import must be explicitly declared; malformed or unknown verbs refuse.
+	if kind == "godot_scene":
+		var actions_raw: Variant = panel.get("file_actions", ["open", "create"])
+		if not actions_raw is Array:
+			return {"error": "panel_file_actions_invalid", "detail": {"name": panel_name}}
+		var action_values: Array = actions_raw
+		if action_values.is_empty():
+			return {"error": "panel_file_actions_invalid", "detail": {"name": panel_name}}
+		var actions: Array[String] = []
+		for action: Variant in action_values:
+			if not action is String:
+				return {"error": "panel_file_action_invalid", "detail": {"name": panel_name}}
+			var action_name: String = action
+			if action_name not in ["open", "import", "create"] or action_name in actions:
+				return {"error": "panel_file_action_invalid", "detail": {"name": panel_name, "action": action_name}}
+			actions.append(action_name)
+		result["file_actions"] = actions
 
 	# --- ipc_channels (optional) — must intersect ui.ipc_messages allowlist ---
 	var channels_raw: Variant = panel.get("ipc_channels", null)

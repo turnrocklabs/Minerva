@@ -35,6 +35,8 @@ func _init() -> void:
 	test_register_plugin_core_extension_skipped_on_collision()
 	test_register_plugin_two_plugins_same_ext_first_wins()
 	test_register_plugin_two_plugins_same_ext_second_skipped()
+	test_format_ownership()
+	test_file_action_manifest()
 
 	print("\n-- PluginEditorRegistry: unregister_plugin --")
 	test_unregister_cleans_extensions()
@@ -405,3 +407,59 @@ func test_resolve_extension_exposes_layout_hint() -> void:
 	var info := reg.resolve_extension(".tdsl")
 	check_eq("side_by_side layout_hint preserved through registry",
 		info.get("layout_hint", ""), "side_by_side")
+
+
+func test_format_ownership() -> void:
+	var required: Array[String] = ["required_one", "required_two"]
+	var registry := PluginEditorRegistry_.new(required)
+	for extension: String in [".minsheet", ".csv", ".tsv", ".xlsx"]:
+		check("unclaimed format keeps builtin spreadsheet: " + extension, registry.resolve_file(extension).get("builtin") == "spreadsheet")
+	var optional := StubDef.make("optional", "main", [".minsheet", ".csv", ".tsv", ".xlsx"], "optional_new", "Optional")
+	check("optional provider can claim spreadsheet formats", registry.register_plugin(optional).is_empty()
+		and registry.resolve_file("minsheet").get("plugin_id") == optional.id)
+	var first := StubDef.make("required_one", "main", [".minsheet"], "required_new", "Required")
+	var replacement: Array[String] = registry.register_plugin(first)
+	check("required provider replaces optional with named notice", registry.resolve_file(".minsheet").get("plugin_id") == first.id
+		and replacement.size() == 1 and replacement[0].contains(first.id) and replacement[0].contains(optional.id))
+	registry.unregister_plugin(optional.id)
+	check("removing displaced optional claim cannot remove required owner", registry.resolve_file(".minsheet").get("plugin_id") == first.id)
+	var before := registry.list_extensions()
+	var equal := StubDef.make("required_two", "second", [".fresh", ".minsheet"], "second_new", "Second")
+	var equal_refusal: Array[String] = registry.register_plugin(equal)
+	check("equal rank conflict names both and makes no partial mutation", equal_refusal.size() == 1
+		and equal_refusal[0].contains(first.id) and equal_refusal[0].contains(equal.id)
+		and registry.list_extensions() == before and registry.resolve_extension(".fresh").is_empty()
+		and registry.resolve_editor_kind("second_new").is_empty())
+	var lower := StubDef.make("late_optional", "late", [".new", ".minsheet"])
+	check("later optional cannot displace a required owner", not registry.register_plugin(lower).is_empty()
+		and registry.resolve_extension(".new").is_empty() and registry.resolve_extension(".minsheet").plugin_id == first.id)
+	registry.unregister_plugin(first.id)
+	check("removed final provider restores builtin fallback", registry.resolve_file(".minsheet").get("builtin") == "spreadsheet")
+	var peers := PluginEditorRegistry_.new()
+	peers.register_plugin(StubDef.make("peer_one", "main", [".fixturefmt"]))
+	var peer_refusal: Array[String] = peers.register_plugin(StubDef.make("peer_two", "main", [".fresh", ".fixturefmt"]))
+	check("optional equal rank also refuses without mutation", peer_refusal.size() == 1
+		and peers.resolve_extension(".fixturefmt").plugin_id == "peer_one" and peers.resolve_extension(".fresh").is_empty())
+
+
+func test_file_action_manifest() -> void:
+	var manifest := {"id": "format_contract", "name": "Format contract", "version": "1.0.0", "host_api_version": "2",
+		"backend": {"transport": "stdio", "entrypoint": "python3"},
+		"ui": {"panels": [{"name": "main", "kind": "godot_scene", "entry_scene": "Panel.tscn",
+			"scripts": ["Panel.gd"], "file_extensions": [".fixturefmt"]}]}}
+	var defaults: PluginDefinition = PluginDefinition.from_dict(manifest)
+	check("old manifests preserve open/create defaults", defaults != null and defaults.ui_panels[0].file_actions == ["open", "create"])
+	manifest.ui.panels[0]["file_actions"] = ["open", "import", "create"]
+	var declared: PluginDefinition = PluginDefinition.from_dict(manifest)
+	check("explicit import survives manifest serialization", declared != null
+		and declared.to_dict().ui.panels[0].file_actions == ["open", "import", "create"])
+	for invalid: Variant in [[], ["open", "open"], ["erase"], [1], "import"]:
+		var rejected: Dictionary = manifest.duplicate(true)
+		rejected.ui.panels[0].file_actions = invalid
+		var original := var_to_bytes(rejected)
+		check("invalid action refuses without mutating input: " + str(invalid), PluginDefinition.from_dict(rejected) == null
+			and var_to_bytes(rejected) == original)
+	for invalid_extension: Variant in [1, ".", ".foo/bar", ".foo\\bar", ".foo:bar"]:
+		var rejected: Dictionary = manifest.duplicate(true)
+		rejected.ui.panels[0].file_extensions = [invalid_extension]
+		check("malformed extension refuses: " + str(invalid_extension), PluginDefinition.from_dict(rejected) == null)

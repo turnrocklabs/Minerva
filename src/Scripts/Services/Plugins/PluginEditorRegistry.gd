@@ -16,8 +16,9 @@ extends RefCounted
 ##   - Core extensions (.md, .py, .gd, .minkb, etc.) always win;
 ##     a plugin that declares a core extension gets a warning and the
 ##     extension is silently skipped (panel still usable via "New →").
-##   - Two plugins with the same non-core extension: first-installed wins;
-##     second plugin's declaration is skipped with a warning.
+##   - Required providers take precedence over optional providers. Equal-rank
+##     conflicts refuse the later registration, naming both providers.
+## Claims belong to installed definitions, including stopped providers.
 ##
 ## NOTE: PluginEditorRegistry is NOT registered as a Godot autoload.
 ## SingletonObject constructs it as a plain property:
@@ -33,12 +34,35 @@ const CORE_EXTENSIONS: PackedStringArray = [
 	# Graphics
 	".png", ".jpg", ".jpeg",
 	# Typed editors
-	".minkb", ".minsheet",
+	".minkb",
 	# Text / code (from supported_text_formats)
-	".txt", ".rs", ".toml", ".md", ".json", ".xml", ".csv", ".log",
+	".txt", ".rs", ".toml", ".md", ".json", ".xml", ".log",
 	".py", ".cs", ".minproj", ".gd", ".tscn", ".godot", ".go", ".java",
 	".html",
 ]
+
+
+const SPREADSHEET_EXTENSIONS: PackedStringArray = [".minsheet", ".csv", ".tsv", ".xlsx"]
+const SPREADSHEET_SAVE_EXTENSIONS: PackedStringArray = [".minsheet", ".csv"]
+var _required_ids: Array[String] = []
+
+
+func _init(required_ids: Array[String] = []) -> void:
+	_required_ids = required_ids.duplicate()
+
+
+static func is_spreadsheet_extension(extension: String) -> bool:
+	return extension.to_lower() in SPREADSHEET_EXTENSIONS
+
+
+func resolve_file(extension: String) -> Dictionary:
+	var key := extension.strip_edges().to_lower()
+	if not key.begins_with("."):
+		key = "." + key
+	var claimed := resolve_extension(key)
+	if not claimed.is_empty():
+		return claimed
+	return {"builtin": "spreadsheet"} if is_spreadsheet_extension(key) else {}
 
 
 ## extension (lowercased, leading '.') -> { plugin_id: String, panel_name: String }
@@ -51,11 +75,11 @@ var _ext_to_panel: Dictionary = {}
 var _kind_to_panel: Dictionary = {}
 
 ## plugin_id -> Array[String] of extensions registered by this plugin.
-## Used to cleanly unregister on stop.
+## Removed only when its installed definition is removed or replaced.
 var _plugin_extensions: Dictionary = {}
 
 ## plugin_id -> Array[String] of editor_item ids registered by this plugin.
-## Used to cleanly unregister on stop.
+## Removed only when its installed definition is removed or replaced.
 var _plugin_kinds: Dictionary = {}
 
 
@@ -67,8 +91,8 @@ var _plugin_kinds: Dictionary = {}
 ## `def` must have .id, .ui_panels (Array[Dictionary]), and .editor_items (Array[Dictionary]).
 ##
 ## Returns an Array[String] of warning messages (empty means clean registration).
-## Warnings are issued for extension collisions; they do NOT prevent the plugin
-## from being usable via "New →".
+## A conflicting provider claim refuses the complete registration atomically.
+## Core reservations remain warnings and skip only that extension.
 func register_plugin(def) -> Array[String]:
 	var warnings: Array[String] = []
 	if def == null:
@@ -80,12 +104,10 @@ func register_plugin(def) -> Array[String]:
 		warnings.append("PluginEditorRegistry.register_plugin: def.id is empty")
 		return warnings
 
-	# Guard double-registration.
-	if _plugin_extensions.has(plugin_id):
-		unregister_plugin(plugin_id)
-
 	var registered_exts: Array[String] = []
 	var registered_kinds: Array[String] = []
+	var staged_extensions: Dictionary = {}
+	var staged_kinds: Dictionary = {}
 
 	# --- 1. File extensions from godot_scene panels ---
 	var ui_panels: Array = def.ui_panels if "ui_panels" in def else []
@@ -117,23 +139,22 @@ func register_plugin(def) -> Array[String]:
 				warnings.append(w)
 				continue
 
-			# Cross-plugin collision check.
-			if _ext_to_panel.has(ext):
-				var existing_plugin: String = _ext_to_panel[ext].get("plugin_id", "?")
-				var w: String = (
-					("PluginEditorRegistry: plugin '%s' declares extension '%s' " +
-					"already claimed by plugin '%s' — extension skipped") %
-					[plugin_id, ext, existing_plugin]
-				)
-				push_warning(w)
-				warnings.append(w)
-				continue
+			if staged_extensions.has(ext) and staged_extensions[ext].panel_name != panel_name:
+				return ["PluginEditorRegistry: plugin '%s' declares '%s' for two panels" % [plugin_id, ext]]
+			var previous: Dictionary = _ext_to_panel.get(ext, {})
+			var conflict := _conflict(ext, plugin_id, previous)
+			if not conflict.is_empty():
+				push_warning(conflict)
+				return [conflict]
 
-			_ext_to_panel[ext] = {
+			if not previous.is_empty() and previous.get("plugin_id") != plugin_id:
+				warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for '%s'" % [plugin_id, previous.plugin_id, ext])
+			staged_extensions[ext] = {
 				"plugin_id":   plugin_id,
 				"panel_name":  panel_name,
 				"render_mode": panel_dict.get("render_mode", "single"),
 				"layout_hint": panel_dict.get("layout_hint", "tabs"),
+				"file_actions": panel_dict.get("file_actions", ["open", "create"]),
 			}
 			registered_exts.append(ext)
 
@@ -161,32 +182,57 @@ func register_plugin(def) -> Array[String]:
 			# html-kind panels are registered via the existing CreatableItemRegistry path.
 			continue
 
-		_kind_to_panel[item_id] = {
+		var kind_conflict := _conflict(item_id, plugin_id, _kind_to_panel.get(item_id, {}))
+		if not kind_conflict.is_empty():
+			push_warning(kind_conflict)
+			return [kind_conflict]
+		var actions: Array = ["open", "create"]
+		for panel_value: Variant in ui_panels:
+			if not panel_value is Dictionary:
+				continue
+			var panel: Dictionary = panel_value
+			if panel.get("name") == panel_name:
+				actions = panel.get("file_actions", actions)
+		staged_kinds[item_id] = {
 			"plugin_id":        plugin_id,
 			"panel_name":       panel_name,
 			"default_filename": default_filename,
 			"item_name":        item_name,
+			"file_actions":     actions,
 		}
 		registered_kinds.append(item_id)
 
+	unregister_plugin(plugin_id)
+	_ext_to_panel.merge(staged_extensions, true)
+	_kind_to_panel.merge(staged_kinds, true)
 	_plugin_extensions[plugin_id] = registered_exts
 	_plugin_kinds[plugin_id] = registered_kinds
 
 	return warnings
 
 
+func _conflict(claim: String, plugin_id: String, existing: Dictionary) -> String:
+	var owner := str(existing.get("plugin_id", ""))
+	if owner.is_empty() or owner == plugin_id:
+		return ""
+	if plugin_id in _required_ids and owner not in _required_ids:
+		return ""
+	return "PluginEditorRegistry: '%s' claimed by '%s'; plugin '%s' registration refused" % [claim, owner, plugin_id]
+
 ## Remove all extensions and editor kinds contributed by `plugin_id`.
 func unregister_plugin(plugin_id: String) -> void:
 	# Remove extensions.
 	var exts: Array = _plugin_extensions.get(plugin_id, [])
 	for ext in exts:
-		_ext_to_panel.erase(ext)
+		if _ext_to_panel.get(ext, {}).get("plugin_id") == plugin_id:
+			_ext_to_panel.erase(ext)
 	_plugin_extensions.erase(plugin_id)
 
 	# Remove editor kinds.
 	var kinds: Array = _plugin_kinds.get(plugin_id, [])
 	for kind_id in kinds:
-		_kind_to_panel.erase(kind_id)
+		if _kind_to_panel.get(kind_id, {}).get("plugin_id") == plugin_id:
+			_kind_to_panel.erase(kind_id)
 	_plugin_kinds.erase(plugin_id)
 
 
