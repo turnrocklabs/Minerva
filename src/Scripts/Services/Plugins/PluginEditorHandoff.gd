@@ -144,7 +144,7 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 				result_editor = open_paired.call(abs_path, p_id, p_name, action)
 				editor_kind = "PLUGIN_SCENE_PAIRED_DSL"
 			else:
-				result_editor = pane.add_plugin_scene_editor(p_id, p_name, abs_path, "", action)
+				result_editor = pane.add_plugin_scene_editor(p_id, p_name, abs_path, "", action, true)
 				editor_kind = "PLUGIN_SCENE"
 		else:
 			result_editor = pane.add(Editor.Type.TEXT, abs_path)
@@ -281,8 +281,9 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		# Render editor: anonymous plugin scene, broker attaches the unbacked
 		# buffer so text_changed signals from the TEXT editor flow to the panel
 		# via the substrate-reserved attach_buffer / text_changed channels.
-		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create")
+		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create", true)
 		if render_editor == null:
+			text_editor.free()
 			return _failure("render_editor_creation_failed")
 		var broker: PluginScenePanelBroker = scene_broker
 		if broker != null:
@@ -301,7 +302,7 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		})
 
 	# Non-paired_dsl (single-render) anonymous panel: same as before.
-	var editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create")
+	var editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create", true)
 	if editor == null:
 		return _failure("editor_creation_failed")
 

@@ -987,6 +987,7 @@ func _register_plugin_editor_items(id: String) -> void:
 			# The registry owns the collision notice; do not repeat it here.
 			continue
 		if id == "sheets" and item_id == "new_minsheet":
+			_ensure_spreadsheet_recovery_item()
 			continue # The host recovery entry remains available when Sheets stops.
 		var plugin_id_copy := id
 		var panel_name_copy := panel_name
@@ -1662,6 +1663,15 @@ func _ready():
 
 
 ## Register built-in editor types in the creatable items registry
+func _ensure_spreadsheet_recovery_item() -> void:
+	if creatable_item_registry == null or creatable_item_registry.get_item("new_minsheet") != null:
+		return
+	creatable_item_registry.register_item(CreatableItemRegistry.CreatableItem.create(
+		"new_minsheet", "New Spreadsheet",
+		func(): request_spreadsheet_gui("create", {"plugin_id": "sheets", "editor_item_id": "new_minsheet"}),
+		null, 30))
+
+
 func _init_creatable_items() -> void:
 	if editor_container == null:
 		return
@@ -1687,14 +1697,7 @@ func _init_creatable_items() -> void:
 		)
 	)
 
-	# Spreadsheet (sort_order: 30)
-	creatable_item_registry.register_item(
-		CreatableItemRegistry.CreatableItem.create(
-			"new_minsheet", "New Spreadsheet",
-			func(): request_spreadsheet_gui("create", {"plugin_id": "sheets", "editor_item_id": "new_minsheet"}),
-			null, 30
-		)
-	)
+	_ensure_spreadsheet_recovery_item()
 
 	# PCB "New" item removed at cutover 2026-07-07 — the pcb plugin contributes its
 	# own "New PCB" (untitled.pcbskel) via its manifest editor_items.

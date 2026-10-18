@@ -256,6 +256,13 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	check("unknown action refuses before mutation", not invalid.get("ok", true) and pane.Tabs.get_tab_count() == before_refusal)
 	var invalid_mcp: Dictionary = await tools.handle("minerva_open_file", {"path": import_path, "action": 1})
 	check("malformed MCP action refuses without mutation", not invalid_mcp.get("success", true) and pane.Tabs.get_tab_count() == before_refusal)
+	var pair_scene: String = paired.ui_panels[0].entry_scene
+	paired.ui_panels[0].entry_scene = "MissingPairScene.tscn"
+	var before_broken_pair := pane.Tabs.get_tab_count()
+	var broken_pair: Dictionary = host.create_plugin_editor({"plugin_id": paired.id, "editor_item_id": paired.id + "_new", "tab_title": "Broken pair"})
+	check("strict paired create failure leaves neither source nor render tab", broken_pair.get("success") == false
+		and pane.Tabs.get_tab_count() == before_broken_pair)
+	paired.ui_panels[0].entry_scene = pair_scene
 	var paired_path := directory.path_join("source.pairedfmt")
 	_write(paired_path, text)
 	var paired_result: Dictionary = host.open_file_at_path(paired_path, "import")

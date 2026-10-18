@@ -75,6 +75,29 @@ func run(test: Node, host: Node, manager: PluginManager, pane: EditorPane, direc
 	test.check("repeated native open reuses existing editor", pane.Tabs.get_tab_count() == before + 3)
 	test.check("retries preserve both source files", FileAccess.get_file_as_string(first_path) == "first source"
 		and FileAccess.get_file_as_string(second_path) == "second source")
+	var panel: Dictionary = definition.ui_panels[0]
+	var original_scene: String = panel.entry_scene
+	panel.entry_scene = "MissingScene.tscn"
+	var stable_count := pane.Tabs.get_tab_count()
+	await item.create_callback.call()
+	var broken := dialogs(tree.root)
+	test.check("ready backend with missing scene New refuses before tab adoption", broken.size() == 1
+		and pane.Tabs.get_tab_count() == stable_count and manager.get_plugin_status("sheets").get("ready", false))
+	await broken[0]._on_retry()
+	test.check("missing-scene Retry stays recoverable without a tab", is_instance_valid(broken[0]) and broken[0].visible
+		and not broken[0].busy and pane.Tabs.get_tab_count() == stable_count)
+	broken[0]._on_close()
+	var broken_path := directory.path_join("broken-scene.tsv")
+	test._write(broken_path, "must not change")
+	await host.call("request_spreadsheet_gui", "open", {"path": broken_path})
+	broken = dialogs(tree.root)
+	test.check("missing-scene open refuses before tab adoption and source mutation", broken.size() == 1
+		and pane.Tabs.get_tab_count() == stable_count and FileAccess.get_file_as_string(broken_path) == "must not change")
+	panel.entry_scene = original_scene
+	await broken[0]._on_retry()
+	test.check("repairing scene and Retry opens exactly its retained file", pane.Tabs.get_tab_count() == stable_count + 1
+		and pane.Tabs.get_child(stable_count).file == broken_path)
+	pane.Tabs.get_child(stable_count).free()
 	manager.stop_plugin("sheets")
 	host.call("_unregister_plugin_editor_items", "sheets")
 	test.check("stopping Sheets retains host recovery menu entry", menu.get_item("new_minsheet") == item)
