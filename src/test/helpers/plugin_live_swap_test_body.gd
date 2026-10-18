@@ -73,7 +73,7 @@ func retire(_panel: Control) -> void:
 func _run() -> void:
 	await get_tree().process_frame
 	# Performance counts include the real application's autoload startup jobs.
-	# Settle those before the warmed baseline; keep the equality oracle strict.
+	# Settle those before warmup; resource/node/orphan equality stays strict.
 	await get_tree().create_timer(3.0).timeout
 	await get_tree().process_frame
 	if "--live-swap-baseline" in OS.get_cmdline_user_args():
@@ -106,6 +106,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_sample("warmed-baseline")
+	var fault_start_usec := Time.get_ticks_usec()
 	for cycle: int in 3:
 		for injected: String in ["compile", "scene", "import", "missing-node", "self-check", "alias", "rename"]:
 			var ids: Array[int] = []
@@ -167,15 +168,49 @@ func _run() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_sample("closure-reopened-two-tabs")
-	print("SWAP_MEMORY ", JSON.stringify(metrics))
+	var fault_duration_usec := Time.get_ticks_usec() - fault_start_usec
+	var idle_metrics: Array[Dictionary] = []
+	var idle_start_usec := Time.get_ticks_usec()
+	for sample_index: int in metrics.size():
+		var offset := roundi(float(fault_duration_usec) * sample_index / maxi(metrics.size() - 1, 1))
+		while Time.get_ticks_usec() < idle_start_usec + offset:
+			await get_tree().process_frame
+		idle_metrics.append(_snapshot("idle-" + str(sample_index)))
+	var idle_duration_usec := Time.get_ticks_usec() - idle_start_usec
 	var objects: Array[float] = []
 	var resources: Array[float] = []
+	var nodes: Array[float] = []
+	var orphans: Array[float] = []
 	var rss: Array[int] = []
+	var cycle_objects: Array[float] = []
 	for sample: Dictionary in metrics:
 		objects.append(sample.objects)
 		resources.append(sample.resources)
+		nodes.append(sample.nodes)
+		orphans.append(sample.orphans)
 		rss.append(sample.rss_pages)
-	check("fault-path object count is flat", objects.max() == objects.min())
+		if str(sample.fault).begins_with("rename-"):
+			cycle_objects.append(sample.objects)
+	var idle_objects: Array[float] = []
+	for idle_sample: Dictionary in idle_metrics:
+		idle_objects.append(idle_sample.objects)
+	check("idle control covers the fault duration and all three cycles", fault_duration_usec > 0
+		and idle_duration_usec >= fault_duration_usec and idle_metrics.size() == metrics.size() and cycle_objects.size() == 3)
+	var idle_allowance := maxf(0.0, float(idle_objects.max()) - idle_objects[0])
+	var monotonic_growth: bool = cycle_objects.size() > 1 and cycle_objects[-1] > cycle_objects[0]
+	for cycle_index: int in range(1, cycle_objects.size()):
+		if cycle_objects[cycle_index] < cycle_objects[cycle_index - 1]:
+			monotonic_growth = false
+	print("SWAP_MEMORY ", JSON.stringify(metrics))
+	print("SWAP_IDLE_CONTROL ", JSON.stringify({"fault_duration_usec": fault_duration_usec,
+		"idle_duration_usec": idle_duration_usec, "samples": idle_metrics,
+		"baseline_objects": objects[0], "peak_objects": objects.max(),
+		"idle_positive_allowance": idle_allowance, "cycle_objects": cycle_objects,
+		"monotonic_growth": monotonic_growth}))
+	check("global object count does not grow beyond measured idle jitter", float(objects.max()) <= objects[0] + idle_allowance)
+	check("fault-cycle object count does not grow monotonically", not monotonic_growth)
+	check("fault-path node count is flat", nodes.max() == nodes.min())
+	check("fault-path orphan count is flat", orphans.max() == orphans.min())
 	check("fault-path resource count is flat", resources.max() == resources.min())
 	check("RSS was measured", rss.min() > 0)
 	check("fault-path RSS remains bounded after warmup", rss.max() - rss.min() <= 256)
@@ -194,10 +229,14 @@ func _edit_old() -> void:
 
 
 func _sample(label: String) -> void:
+	metrics.append(_snapshot(label))
+
+
+func _snapshot(label: String) -> Dictionary:
 	var stat_file := FileAccess.open("/proc/self/statm", FileAccess.READ)
 	var statm := stat_file.get_line().split(" ") if stat_file != null else PackedStringArray()
-	metrics.append({"fault": label, "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
+	return {"fault": label, "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
 		"resources": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT),
 		"nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 		"orphans": Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT),
-		"rss_pages": int(statm[1]) if statm.size() > 1 else -1})
+		"rss_pages": int(statm[1]) if statm.size() > 1 else -1}

@@ -94,12 +94,12 @@ func _panel_definitions(build: Dictionary) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var seen_names: Dictionary = {}
 	for panel: Dictionary in parsed.ui_panels:
-		if panel.get("kind") != "godot_scene":
-			continue
 		var panel_name := str(panel.get("name", ""))
 		if panel_name.is_empty() or seen_names.has(panel_name):
 			return []
 		seen_names[panel_name] = true
+		if panel.get("kind") != "godot_scene":
+			continue
 		var scene := str(panel.get("entry_scene", ""))
 		if not Store.safe_relative(scene) or not files.has(scene) or not panel.get("scripts") is Array:
 			return []

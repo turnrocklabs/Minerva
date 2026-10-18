@@ -168,6 +168,12 @@ func _run() -> void:
 	_write("user://plugins/" + IDS[0] + "/nested/Dependency.gd", "extends RefCounted\nstatic func operation(value: int) -> int:\n\treturn value + 5\n")
 	var after: Dictionary = service.scan_files(IDS[0], PackedStringArray(["gd", "tscn"]))
 	check(before != after and after.size() == 3, "recursive watcher hash sees same-second nested change")
+	var changed_hashes: Array[String] = []
+	for scanned_path: String in after:
+		if before.get(scanned_path) != after[scanned_path]:
+			changed_hashes.append(scanned_path)
+	var expected_changed := ProjectSettings.globalize_path("user://plugins/" + IDS[0] + "/nested/Dependency.gd")
+	check(before.size() == after.size() and changed_hashes == [expected_changed], "recursive watcher hash changes only the same-second nested source")
 	manager._pending_changed_paths[IDS[0]] = ["user://plugins/" + IDS[0] + "/nested/Dependency.gd"]
 	await manager._on_reload_debounce_expired(IDS[0])
 	check(editors[0].plugin_scene_root.operation(10) == 15 and manager.get_restart_required_reason(IDS[0]).is_empty(), "watcher debounce uses same swap without restart flag")
@@ -321,10 +327,20 @@ func _whole_build_refusals() -> void:
 		check(FileAccess.get_file_as_bytes(store.selector_path()) == selected, "binary refusals preserve both active and LKG")
 	check(DirAccess.rename_absolute(ProjectSettings.globalize_path(directory.path_join("unused.res")),
 		ProjectSettings.globalize_path(directory.path_join("retained-binary.txt"))) == OK, "preserve binary fixture outside resource extension without deletion")
-	_write(directory.path_join("Extra.gd"), 'extends "Panel.gd"\nfunc _on_panel_self_check() -> bool:\n\treturn false\n')
-	_write(directory.path_join("Extra.tscn"), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="Extra.gd" id="1"]\n[node name="Extra" type="Control"]\nscript = ExtResource("1")\n')
 	var manifest_path := directory.path_join("manifest.json")
 	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+	var duplicate_manifest: Dictionary = manifest.duplicate(true)
+	duplicate_manifest.ui.panels.append({"name": "main", "kind": "html", "entry": "duplicate.html"})
+	_write(directory.path_join("duplicate.html"), "<p>Duplicate name fixture</p>")
+	_write(manifest_path, JSON.stringify(duplicate_manifest))
+	check(duplicate_manifest.ui.panels.size() == 2
+		and duplicate_manifest.ui.panels[0].name == duplicate_manifest.ui.panels[1].name
+		and duplicate_manifest.ui.panels[0].kind != duplicate_manifest.ui.panels[1].kind, "mixed-kind duplicate fixture has conflicting names")
+	var duplicate_refusal: Dictionary = await manager.reload_scene_plugin(plugin_id)
+	check(not duplicate_refusal.get("ok", true) and FileAccess.get_file_as_bytes(store.selector_path()) == selected, "mixed HTML/scene name duplication refuses without moving active or LKG")
+	_write(manifest_path, JSON.stringify(manifest))
+	_write(directory.path_join("Extra.gd"), 'extends "Panel.gd"\nfunc _on_panel_self_check() -> bool:\n\treturn false\n')
+	_write(directory.path_join("Extra.tscn"), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="Extra.gd" id="1"]\n[node name="Extra" type="Control"]\nscript = ExtResource("1")\n')
 	var extra: Dictionary = manifest.ui.panels[0].duplicate(true)
 	extra.name = "closed_extra"
 	extra.entry_scene = "Extra.tscn"
@@ -341,6 +357,9 @@ func _whole_build_refusals() -> void:
 	_write(directory.path_join("Extra.gd"), FileAccess.get_file_as_string(directory.path_join("Extra.gd")).replace("return false", "return true"))
 	var accepted: Dictionary = await manager.reload_scene_plugin(plugin_id)
 	check(accepted.get("ok", false) and FileAccess.get_file_as_bytes(store.selector_path()) != selected, "valid unopened second panel permits publication")
+	for extra_filename: String in ["Extra.gd", "Extra.tscn"]:
+		check(DirAccess.rename_absolute(ProjectSettings.globalize_path(directory.path_join(extra_filename)),
+			ProjectSettings.globalize_path(directory.path_join(extra_filename + ".retained.txt"))) == OK, "restore watcher fixture extensions by preserving extra source without deletion")
 	_fixture(plugin_id, 4)
 	check((await manager.reload_scene_plugin(plugin_id)).get("ok", false), "same-process reload remains reusable after whole-build checks")
 	_assert_wiring(4)
