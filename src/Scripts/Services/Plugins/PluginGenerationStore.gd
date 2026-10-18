@@ -6,6 +6,7 @@ extends RefCounted
 const Atomic := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
 const MAX_BYTES := 32 * 1024 * 1024
 const HOST_PATHS: Array[String] = [
+	"res://Scripts/Services/Plugins/AtomicFile.gd",
 	"res://Scripts/Services/Documents/DocumentBuffer.gd",
 	"res://Scripts/Services/Plugins/MinervaPluginPanel.gd",
 	"res://Scripts/Services/Annotations/AnnotationV2Schema.gd",

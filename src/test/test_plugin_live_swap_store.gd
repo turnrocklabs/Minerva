@@ -81,6 +81,7 @@ func _run() -> void:
 	check("unsafe plugin id refused", Store.new("../other", _test_root).directory.is_empty())
 	check("relative traversal refused", not store.bundle({"../escape.gd": PackedByteArray()}).ok)
 	check("cross-plugin preload refused", not store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("user://plugins/other/X.gd")').ok)
+	check("atomic file owner is a public SDK resource", store.normalize_resource("Panel.gd", 'extends Control\nconst Atomic = preload("res://Scripts/Services/Plugins/AtomicFile.gd")').ok)
 	check("unlisted host preload refused", not store.normalize_resource("Panel.gd", 'extends Control\nconst X = preload("res://Scripts/Services/Plugins/PluginManager.gd")').ok)
 	check("apostrophe cannot hide a forbidden preload", not store.normalize_resource("Panel.gd", "extends Control\nconst LABEL = \"don't\"; const OTHER = preload(\"res://plugins/hello_scene/ui/HelloPanel.gd\")").ok)
 	check("ordinary slash label is not a resource", store.normalize_resource("Panel.gd", 'extends Control\nconst LABEL = "/"').ok)
