@@ -9,6 +9,9 @@ const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefi
 const _MCPAnnotationReplyToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAnnotationReplyTools.gd")
 const _MCPSessionToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPSessionTools.gd")
 const _MCPAgentSessionToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAgentSessionTools.gd")
+## Host-owned legacy names; populated when canonical providers replace core tools.
+const LEGACY_TOOL_ALIASES: Dictionary[String, String] = {}
+var _tool_aliases: Dictionary[String, String] = {}
 
 ## Non-owning parent link; MCPManager owns this server.
 var _mcp_manager_ref: WeakRef = null
@@ -57,7 +60,8 @@ const TOOL_MEMORY_HYDRATION_TOOLS := {
 }
 
 
-func _init(manager = null) -> void:
+func _init(manager = null, aliases: Dictionary[String, String] = LEGACY_TOOL_ALIASES) -> void:
+	_tool_aliases.assign(aliases)
 	mcp_manager = manager
 	# Load persisted tool set filter from config
 	var config := MCPConfig.new()
@@ -267,7 +271,7 @@ func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: Stri
 		return {"error": "Minerva server not connected", "success": false}
 	if context == null:
 		context = ExecutionContext.create("internal", caller_chat_id)
-	var result: Dictionary = await context.run(_execute_tool_impl.bind(tool_name, arguments, context))
+	var result: Dictionary = await _execute_tool_impl(tool_name, arguments, context)
 	if context.is_stopped():
 		return result
 	_maybe_capture_chat_knowledge(tool_name, result, context.caller_chat_id)
@@ -286,9 +290,8 @@ func execute_tool_for_http_outcome(tool_name: String, arguments: Dictionary, age
 	if context == null:
 		context = ExecutionContext.create("http", "", agent_id)
 	var holder := {}
-	var result: Dictionary = await context.run(
-		_execute_tool_impl.bind(tool_name, arguments, context, holder, false))
-	var outcome = holder.get("outcome")
+	var result: Dictionary = await _execute_tool_impl(tool_name, arguments, context, holder, false)
+	var outcome: MCPToolCallOutcome = holder.get("outcome")
 	if outcome == null:
 		outcome = load("res://Scripts/Services/MCP/MCPToolCallOutcome.gd").new()
 	if context.is_stopped():
@@ -303,6 +306,7 @@ func execute_tool_for_http_outcome(tool_name: String, arguments: Dictionary, age
 			outcome.wire_authoritative = false
 		result = wrapped
 	outcome.application = result
+	outcome.alias_of = str(holder.get("alias_of", ""))
 	return outcome
 
 
@@ -314,12 +318,33 @@ func call_tool(tool_name: String, arguments: Dictionary, context: ExecutionConte
 		write_binding: Dictionary = {}) -> Dictionary:
 	if context == null:
 		context = ExecutionContext.create("module")
-	return await context.run(_execute_tool_impl.bind(tool_name, arguments, context, {}, true, write_binding))
+	return await _execute_tool_impl(tool_name, arguments, context, {}, true, write_binding)
+
+
+## Shared pure lookup for transport metadata and execution; aliases never chain.
+func canonical_tool_name(tool_name: String) -> String:
+	return _tool_aliases.get(tool_name, tool_name)
 
 
 ## Internal tool execution — routes to modules, plugins, or tool search
 func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: ExecutionContext = null,
 		outcome_holder: Dictionary = {}, coerce_arguments := true, write_binding: Dictionary = {}) -> Dictionary:
+	# Resolve once, before policy, coercion and dispatch; aliases never chain.
+	if context == null:
+		context = ExecutionContext.create("module")
+	var canonical := canonical_tool_name(tool_name)
+	if canonical != tool_name:
+		print("[MinervaMCPServer] Alias %s -> %s" % [tool_name, canonical])
+	var result := await context.run(_execute_canonical_tool.bind(canonical, arguments, context, outcome_holder, coerce_arguments, write_binding))
+	if canonical != tool_name:
+		result = result.duplicate()
+		result["alias_of"] = canonical
+		outcome_holder["alias_of"] = canonical
+	return result
+
+
+func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: ExecutionContext,
+		outcome_holder: Dictionary, coerce_arguments: bool, write_binding: Dictionary) -> Dictionary:
 	if context == null:
 		context = ExecutionContext.create("module")
 	if context.is_stopped():

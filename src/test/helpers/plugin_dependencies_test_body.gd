@@ -121,6 +121,82 @@ func collect_dispatch(server: MinervaMCPServer, context: MCPExecutionContext, co
 func collect_typed_dispatch(server: MinervaMCPServer, completion: MCPExecutionContext.Completion) -> void:
 	completion.finish(await server.call_tool("minerva_agent_relay_typed_input", {"count": "3"}))
 
+func exercise_aliases(server: MinervaMCPServer, manager: PluginManager, registry: PluginToolRegistry) -> void:
+	const LEGACY := "minerva_fixture_legacy_echo"
+	const CANONICAL := "minerva_agent_relay_echo"
+	var internal: Dictionary = await server.call_tool(LEGACY, {"value": "legacy"})
+	check("internal alias dispatches canonical backend and labels target", internal.get("alias_of") == CANONICAL and internal.get("echo", {}).get("value") == "legacy")
+	await exercise_alias_http_boundary(server, manager)
+	var cancelled := MCPExecutionContext.create("fixture")
+	cancelled.cancel()
+	var stopped: Dictionary = await server.call_tool(LEGACY, {}, cancelled)
+	check("cancelled alias retains its label without dispatch", stopped.get("error_code") == "cancelled" and stopped.get("alias_of") == CANONICAL)
+	var outcome: MCPToolCallOutcome = await server.execute_tool_for_http_outcome(LEGACY, {"value": "wire"})
+	var http := MinervaMCPHttpServer.new()
+	for modern: bool in [false, true]:
+		var wire := http._public_result_from_outcome(outcome, modern)
+		check("alias label survives authoritative HTTP envelope", wire.get("alias_of") == CANONICAL and wire.get("futureField", {}).get("kept") == true
+			and wire.get("structuredContent", {}).get("fixture") == "preserved" and outcome.wire_authoritative)
+	var native_aliases: Dictionary[String, String] = {LEGACY: "minerva_open_file"}
+	var native := MinervaMCPServer.new(null, native_aliases)
+	native._modules.append(MCPGeneralTools.new(native))
+	var native_outcome: MCPToolCallOutcome = await native.execute_tool_for_http_outcome(LEGACY, {"path": "/missing-alias-fixture.unknown"})
+	var native_wire := http._public_result_from_outcome(native_outcome, false)
+	check("native HTTP serialization keeps host alias metadata", native_outcome.envelope == null and native_wire.get("alias_of") == "minerva_open_file"
+		and JSON.parse_string(native_wire.content[0].text).get("alias_of") == "minerva_open_file" and native_wire.get("isError", false))
+	var policy = load("res://test/helpers/hosted_policy_fixture.gd").new()
+	var policy_items: Array[Dictionary] = [{"id": "canonical-alias-denial", "title": "Canonical alias denial", "status": "active",
+		"description": "---policy-rule---\n" + JSON.stringify({"tool_pattern": CANONICAL, "effect": "block", "priority": 10}) + "\n---end-rule---"}]
+	policy.set_policy_items(policy_items)
+	server.policy_engine = policy
+	var connection := manager.get_connection("agent_relay")
+	var before: Dictionary = await connection.call_tool("catalog_count", {}, 5.0)
+	var denied: Dictionary = await server.call_tool(LEGACY, {"value": "blocked"})
+	var public_denied: MCPToolCallOutcome = await server.execute_tool_for_http_outcome(LEGACY, {"value": "blocked HTTP"})
+	var denied_wire := http._public_result_from_outcome(public_denied, false)
+	var after: Dictionary = await connection.call_tool("catalog_count", {}, 5.0)
+	check("real policy evaluates canonical alias before backend dispatch", policy.rule_count() == 1 and denied.get("allowed") == false
+		and denied.get("alias_of") == CANONICAL and after.get("echo_calls") == before.get("echo_calls"))
+	check("HTTP alias denial labels canonical policy result", public_denied.application.get("allowed") == false and denied_wire.get("isError", false) and denied_wire.get("alias_of") == CANONICAL)
+	server.policy_engine = null
+	http.free()
+	registry.set_builtin_tool_names(["minerva_plugin_list"])
+	var refused := registry.register_plugin_tools("plugin", [{"name": "minerva_plugin_list", "input_schema": {"type": "object"}}])
+	check("plugin cannot claim a builtin as an unauthorized alias", str(refused.get("error")).contains("built-in")
+		and not registry.is_plugin_tool("minerva_plugin_list") and registry.is_plugin_tool(CANONICAL))
+
+func exercise_alias_http_boundary(server: MinervaMCPServer, manager: PluginManager) -> void:
+	var http := MinervaMCPHttpServer.new()
+	get_tree().root.add_child(http)
+	var catalog = load("res://test/helpers/mcp_public_server_fixture.gd").new()
+	catalog.minerva_server = server
+	catalog._add_tool("minerva_agent_relay_echo", {"type": "object", "properties": {}})
+	http._mcp_manager = catalog
+	var enabled_sets: Array = server._enabled_tool_sets.duplicate()
+	server._enabled_tool_sets = []
+	check("real alias HTTP server starts on an isolated port", http.start_server(0) == OK)
+	var client := MCPServerConnection.new("alias-loopback", "http://127.0.0.1:%d" % http.get_port())
+	var connected: Error = await client.connect_to_server()
+	check("real alias HTTP client discovers the canonical definition: " + client.last_failure_reason, connected == OK)
+	if connected == OK:
+		var result: MCPToolCallOutcome = await client.call_tool_outcome("minerva_fixture_legacy_echo", {"value": "loopback"})
+		check("real HTTP preflight accepts alias and preserves labelled wire", result.application.get("echo", {}).get("value") == "loopback"
+			and result.envelope != null and result.envelope.to_mcp_format().get("alias_of") == "minerva_agent_relay_echo")
+		var connection := manager.get_connection("agent_relay")
+		var before: Dictionary = await connection.call_tool("catalog_count", {}, 5.0)
+		var unknown: Dictionary = await client.call_tool("minerva_fixture_unknown", {})
+		var missing: Dictionary = await client.call_tool("minerva_fixture_missing_target", {})
+		server._enabled_tool_sets = ["not-the-canonical-set"]
+		var filtered: Dictionary = await client.call_tool("minerva_fixture_legacy_echo", {})
+		var after: Dictionary = await connection.call_tool("catalog_count", {}, 5.0)
+		check("HTTP unknown and absent canonical targets refuse before dispatch", str(unknown).contains("Unknown tool") and str(missing).contains("Unknown tool")
+			and before.get("echo_calls") == after.get("echo_calls"))
+		check("HTTP tool-set filtering uses the canonical definition", str(filtered).contains("not enabled"))
+	client.disconnect_from_server()
+	server._enabled_tool_sets = enabled_sets
+	http.stop_server()
+	http.free()
+
 
 func exercise_readiness() -> void:
 	var manager := PluginManager.new()
@@ -140,7 +216,8 @@ func exercise_readiness() -> void:
 	var old_manager: Variant = host.plugin_manager
 	host.plugin_tool_registry = registry
 	host.plugin_manager = manager
-	var server := MinervaMCPServer.new()
+	var aliases: Dictionary[String, String] = {"minerva_fixture_legacy_echo": "minerva_agent_relay_echo", "minerva_fixture_missing_target": "minerva_agent_relay_absent_target"}
+	var server := MinervaMCPServer.new(null, aliases)
 	server.plugin_admission = host._admit_plugin_tool
 	var dispatch := MCPExecutionContext.Completion.new()
 	var typed_dispatch := MCPExecutionContext.Completion.new()
@@ -188,6 +265,7 @@ func exercise_readiness() -> void:
 	check("HTTP arguments still validate without coercion", strict.get("success") == false)
 	var counted: Dictionary = await manager.get_connection(provider.id).call_tool("catalog_count", {}, 5.0)
 	check("independent backend counter proves delayed call dispatched once", counted.get("echo_calls") == 1)
+	await exercise_aliases(server, manager, registry)
 	check("missing action visible without constraining other actions", manager.dependency_contract_issue(consumer.id).contains("tool minerva_agent_relay_absent")
 		and manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty())

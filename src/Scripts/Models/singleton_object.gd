@@ -792,9 +792,6 @@ func _wire_plugin_tools_to_mcp() -> void:
 	var admission_server: MinervaMCPServer = minerva_server
 	admission_server.plugin_admission = _admit_plugin_tool
 
-	# Tell the tool registry which names are built-in (prevents shadowing)
-	plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
-
 	# When a plugin's tools are registered, add them to MCP tool_registry + search index
 	plugin_tool_registry.tools_registered.connect(
 		func(p_plugin_id: String, _tool_names: Array) -> void:

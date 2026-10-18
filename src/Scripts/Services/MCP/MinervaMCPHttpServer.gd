@@ -599,7 +599,11 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 	if not arguments is Dictionary:
 		_send_jsonrpc_error(conn, request_id, -32602, "Tool arguments must be an object")
 		return
-	var dispatched_definition = _mcp_manager.tool_registry.get(tool_name) \
+	var canonical_name := tool_name
+	if _mcp_manager != null and _mcp_manager.minerva_server != null:
+		var canonical_server: MinervaMCPServer = _mcp_manager.minerva_server
+		canonical_name = canonical_server.canonical_tool_name(tool_name)
+	var dispatched_definition = _mcp_manager.tool_registry.get(canonical_name) \
 		if _mcp_manager != null else null
 	if dispatched_definition == null:
 		_send_jsonrpc_error(conn, request_id, -32602, "Unknown tool: %s" % tool_name)
@@ -623,7 +627,7 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 				"validation": input_validation.get("error", {}).get("code", "invalid")})
 		return
 	if not _is_running or not _connections.has(conn) or not conn.is_peer_connected() \
-			or _mcp_manager.tool_registry.get(tool_name) != dispatched_definition:
+			or _mcp_manager.tool_registry.get(canonical_name) != dispatched_definition:
 		lease.release()
 		return
 
@@ -632,8 +636,8 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 		var enabled_sets: Array = _mcp_manager.minerva_server._enabled_tool_sets
 		if not enabled_sets.is_empty():
 			# Check if this tool's set is enabled
-			if _mcp_manager.tool_registry.has(tool_name):
-				var tool_def = _mcp_manager.tool_registry[tool_name]
+			if _mcp_manager.tool_registry.has(canonical_name):
+				var tool_def = _mcp_manager.tool_registry[canonical_name]
 				if tool_def.tool_set != "meta" and tool_def.tool_set not in enabled_sets:
 					lease.release()
 					_send_jsonrpc_error(conn, request_id, -32602,
@@ -660,7 +664,7 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 		if _active_request_contexts.get(conn) == context:
 			_active_request_contexts.erase(conn)
 		return
-	var tool_outcome = await _mcp_manager.minerva_server.execute_tool_for_http_outcome(
+	var tool_outcome: MCPToolCallOutcome = await _mcp_manager.minerva_server.execute_tool_for_http_outcome(
 		tool_name, arguments, agent_id, context)
 	lease.release()
 	if _active_request_contexts.get(conn) == context:
@@ -672,7 +676,14 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 		_public_result_from_outcome(tool_outcome, modern))
 
 
-func _public_result_from_outcome(outcome, modern: bool) -> Dictionary:
+func _public_result_from_outcome(outcome: MCPToolCallOutcome, modern: bool) -> Dictionary:
+	var result := _serialize_tool_outcome(outcome, modern)
+	if outcome != null and not outcome.alias_of.is_empty():
+		result["alias_of"] = outcome.alias_of
+	return result
+
+
+func _serialize_tool_outcome(outcome: MCPToolCallOutcome, modern: bool) -> Dictionary:
 	if outcome != null and outcome.envelope != null \
 			and outcome.envelope.result_type != "complete":
 		# Multi-round interaction belongs to the upstream plugin session. Public

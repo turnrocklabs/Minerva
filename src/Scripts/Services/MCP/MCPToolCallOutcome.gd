@@ -4,6 +4,8 @@ extends RefCounted
 
 var envelope = null
 var application: Dictionary = {}
+## Host-owned canonical target when the request used a legacy tool name.
+var alias_of: String = ""
 var conformance_errors: Array[String] = []
 ## True only when MCPToolResultAdapter added the application-level `success`
 ## field. Consumers can distinguish that compatibility field from a backend's

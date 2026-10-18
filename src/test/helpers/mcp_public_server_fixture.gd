@@ -7,15 +7,17 @@ var tool_registry: Dictionary = {}
 var minerva_server
 
 
-class FixtureServer extends RefCounted:
+class FixtureServer extends MinervaMCPServer:
 	signal changed
-	var _enabled_tool_sets: Array = []
 	var calls := 0
 	var holds_started := 0
 	var release_holds := false
 
+	func _init() -> void:
+		_enabled_tool_sets = []
+
 	func execute_tool_for_http(tool_name: String, arguments: Dictionary,
-			_agent_id: String = "", context = null) -> Dictionary:
+			_agent_id: String = "", context: MCPExecutionContext = null) -> Dictionary:
 		calls += 1
 		if tool_name == "minerva_hold":
 			holds_started += 1
@@ -30,7 +32,7 @@ class FixtureServer extends RefCounted:
 		return {"success": true, "echo": arguments.duplicate(true)}
 
 	func execute_tool_for_http_outcome(tool_name: String, arguments: Dictionary,
-			agent_id: String = "", context = null):
+			agent_id: String = "", context: MCPExecutionContext = null):
 		var Outcome = load("res://Scripts/Services/MCP/MCPToolCallOutcome.gd")
 		var outcome = Outcome.new()
 		outcome.application = await execute_tool_for_http(
