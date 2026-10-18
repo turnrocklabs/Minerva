@@ -567,6 +567,8 @@ func validate() -> Array[String]:
 			errors.append(
 				"Tool '%s' must start with '%s'" % [tool_name, expected_prefix]
 			)
+		if tool_entry.has("tool_set") and not tool_entry.tool_set is String:
+			errors.append("tool_set_invalid:%s (tool_set must be a string)" % tool_name)
 		# Optional executor field (panel-executed tools, DCR 019f6c3d0e3d).
 		# "panel" tools dispatch host-side to the plugin's live scene panel;
 		# "backend" (the default when absent) forwards to the plugin subprocess.

@@ -180,6 +180,10 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 				]
 			}
 
+		var membership: Variant = tool_entry.get("tool_set", "")
+		if not membership is String:
+			return {"error": "tool_set_invalid:%s (tool_set must be a string)" % tool_name}
+
 		# Executor: "panel" tools dispatch host-side to the plugin's live scene
 		# panel; "backend" (default when absent) forwards to the subprocess.
 		# PluginDefinition.validate() already rejects other values — this is
@@ -239,6 +243,7 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 			"input_schema": input_schema,
 			"llm_input_schema": input_schema.duplicate(true),
 			"source": "plugin:%s" % plugin_id,
+			"tool_set": membership,
 			"executor": executor,
 			"mcp_definition": mcp_definition,
 		}
@@ -1141,6 +1146,14 @@ func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dict
 		# (bug 019f6d2dc767: this used to clobber them).
 		return _reregister_preserving_panel(plugin_id, [])
 
+	# Membership belongs to the current manifest, never to peer wire metadata.
+	var declared_sets := {}
+	if plugin_manager != null:
+		var definition: PluginDefinition = plugin_manager.get_db().get_by_id(plugin_id)
+		if definition != null:
+			for declared: Dictionary in definition.tools:
+				declared_sets[str(declared.get("name", ""))] = declared.get("tool_set", "")
+
 	# Transform each backend tool into a conformant entry dict.
 	var entries: Array[Dictionary] = []
 	for tool_def in raw_tools:
@@ -1163,6 +1176,7 @@ func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dict
 
 		var entry := {
 			"name": namespaced_name,
+			"tool_set": declared_sets.get(namespaced_name, ""),
 			"description": str(tool_def.description) if tool_def.description != null else "",
 			"input_schema": tool_def.input_schema if tool_def.input_schema != null else {"type": "object", "properties": {}},
 			"source": "plugin:%s" % plugin_id,
