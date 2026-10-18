@@ -345,15 +345,8 @@ func mount_plugin_scene(manager: PluginManager) -> void:
 			if def != null:
 				for pd in def.ui_panels:
 					if pd is Dictionary and pd.get("name", "") == panel_name:
-						self.plugin_save_mode = pd.get("save_mode", "host_owned")
-						var panel_def: Dictionary = pd
-						self.plugin_write_guidance = panel_def.get("write_guidance", "")
-						var cs_raw: Variant = pd.get("chrome_suppress", [])
-						var cs_list: Array[String] = []
-						if cs_raw is Array:
-							for cs_item in (cs_raw as Array):
-								cs_list.append(str(cs_item))
-						self.plugin_chrome_suppress = cs_list
+						var panel_definition: Dictionary = pd
+						apply_scene_panel_definition(panel_definition)
 						break
 		var root: Control = PluginScenePanelHost.instantiate_into(
 			vbox_container, plugin_id, panel_name, self, plugin_panel_key
@@ -1571,6 +1564,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 
 
 func _show_plugin_save_error(message: String) -> void:
+	push_error(message)
 	var dialog: AcceptDialog = $SaveFailure
 	var label: RichTextLabel = $SaveFailure/Message
 	label.text = message
