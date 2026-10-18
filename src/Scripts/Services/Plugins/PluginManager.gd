@@ -921,6 +921,10 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	var def: PluginDefinition = db.call("get_by_id", id)
 	if def == null:
 		return {"error": RequiredPlugins.missing_message(id) if RequiredPlugins.has(id) else "Plugin '%s' not found" % id}
+	if not def.requires_plugins.is_empty():
+		var dependency_error: String = db.call("dependency_issue", id)
+		if not dependency_error.is_empty():
+			return {"error_code": "plugin_dependency_cycle", "error": dependency_error}
 	var api_error := _check_host_api(def)
 	if not api_error.is_empty():
 		return {"error": api_error}
@@ -1644,7 +1648,8 @@ func set_editor_registration(id: String, error: String) -> void:
 ## Return a status snapshot for one plugin.
 ## Keys: id, state, state_name, uptime_sec, crash_count, running
 func get_plugin_status(id: String) -> Dictionary:
-	var def = _db.get_by_id(id)
+	var database: Object = _db
+	var def: PluginDefinition = database.call("get_by_id", id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -1653,6 +1658,7 @@ func get_plugin_status(id: String) -> Dictionary:
 	var start_time: float = rt.get("start_time", 0.0)
 	var uptime := (now - start_time) if start_time > 0.0 else 0.0
 	var registration: Dictionary = rt.get("registration", {})
+	var dependency_error: String = database.call("dependency_issue", id) if not def.requires_plugins.is_empty() else ""
 
 	return {
 		"id": id,
@@ -1662,7 +1668,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"attach_refused": rt.get("attach_refused", false),
 		"registered_version": registration.get("version", ""),
 		"attached_version": registration.get("version", "") if is_attached(id) else "",
-		"notice": rt.get("notice", ""),
+		"notice": dependency_error if not dependency_error.is_empty() else rt.get("notice", ""),
 		"degraded": rt.get("degraded", false),
 		"capability_reason": rt.get("capability_reason", ""),
 		"attach_choices": rt.get("attach_choices", []),

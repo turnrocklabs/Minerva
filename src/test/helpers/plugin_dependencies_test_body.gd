@@ -72,9 +72,14 @@ func _ready() -> void:
 		check("load marks cyclic records ERROR with both named providers", loaded.has_plugin("voice") and loaded.has_plugin("agent_relay") and loaded.get_by_id("voice").state == PluginDefinition.State.ERROR
 			and loaded.get_by_id("agent_relay").state == PluginDefinition.State.ERROR and loaded.dependency_issue("voice").contains("agent_relay"))
 		var manager := PluginManager.new()
-		manager._db = loaded
+		get_tree().root.add_child(manager)
+		loaded = manager.get_db()
+		check("initialized manager recovers the persisted records", manager.is_node_ready() and loaded.has_plugin("voice"))
+		check("load-time cycle is visible in the copyable plugin status", str(manager.get_plugin_status("voice").notice).contains("plugin_dependency_cycle"))
 		var refusal: Dictionary = await manager.start_plugin("voice")
 		check("manual start cannot bypass a persisted cycle", refusal.get("error_code") == "plugin_dependency_cycle" and manager.get_connection("voice") == null)
+		var rollback_start: Dictionary = await manager._start_plugin_now("agent_relay")
+		check("pending-upgrade restart callback rechecks the restored graph", rollback_start.get("error_code") == "plugin_dependency_cycle" and manager.get_connection("agent_relay") == null)
 		manager.free()
 		for id: String in ids:
 			loaded.remove(id)
