@@ -180,7 +180,7 @@ func _probe_control(definition: Dictionary, machine: PluginLiveSwap, slot: Strin
 	var channels: Array = definition.get("ipc_channels", [])
 	probe_broker.register_panel(panel, plugin_id, probe_key, PackedStringArray(channels), panel_name)
 	if panel.has_method("_on_panel_loaded"):
-		panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
+		Host.invoke_loaded(panel, Host._build_ctx(plugin_id, panel_name,
 			_definition(plugin_id).data_directory, probe_broker, null, probe_key))
 	var valid := is_instance_valid(panel) and Host.invoke_self_check(panel)
 	if is_instance_valid(panel):
@@ -381,8 +381,8 @@ func _wire(entry: Dictionary, panel: Control, first_load: bool) -> bool:
 	_manager.call("repoint_live_panel", entry.plugin_id, entry.panel_key, panel)
 	entry.root = panel
 	panel.set_meta("_minerva_plugin_panel_load_ok", true)
-	if first_load and panel.has_method("_on_panel_loaded"):
-		panel.call("_on_panel_loaded", Host._build_ctx(plugin_id, panel_name,
+	if first_load:
+		Host.invoke_loaded(panel, Host._build_ctx(plugin_id, panel_name,
 			_definition(plugin_id).data_directory, _broker, editor, panel_key))
 	if is_instance_valid(editor):
 		editor.call("refresh_plugin_surface_actions")

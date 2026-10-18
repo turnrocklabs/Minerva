@@ -254,17 +254,26 @@ static func instantiate_into(
 	# so plugin scene _ready() may not have run yet. Wait for ready in that
 	# case so scene scripts can safely use child-node refs initialised there.
 	# -----------------------------------------------------------------------
-	if root_ctrl.has_method("_on_panel_loaded"):
-		var ctx := _build_ctx(plugin_id, panel_name, str(def.data_directory), broker, editor, reg_key)
-		if root_ctrl.is_node_ready():
-			root_ctrl._on_panel_loaded(ctx)
-		else:
-			root_ctrl.ready.connect(func() -> void:
-				if is_instance_valid(root_ctrl):
-					root_ctrl._on_panel_loaded(ctx)
-			, CONNECT_ONE_SHOT)
+	var ctx := _build_ctx(plugin_id, panel_name, str(def.data_directory), broker, editor, reg_key)
+	if root_ctrl.is_node_ready():
+		invoke_loaded(root_ctrl, ctx)
+	else:
+		root_ctrl.ready.connect(func() -> void:
+			if is_instance_valid(root_ctrl):
+				invoke_loaded(root_ctrl, ctx)
+		, CONNECT_ONE_SHOT)
 
 	return root_ctrl
+
+
+## Initial document context is consumed once, including panels without a hook.
+static func invoke_loaded(panel_root: Node, context: Dictionary) -> void:
+	if panel_root.has_method("_on_panel_loaded"):
+		panel_root.call("_on_panel_loaded", context)
+	var editor_value: Variant = context.get("editor")
+	if editor_value is Object and is_instance_valid(editor_value):
+		var editor_object: Object = editor_value
+		editor_object.set_meta("document_action", "")
 
 
 ## Reject an on-disk generation that differs from Godot's process-wide

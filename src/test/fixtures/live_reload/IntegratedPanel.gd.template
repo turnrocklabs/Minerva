@@ -4,6 +4,9 @@ signal request(channel: String, payload: Dictionary, reply_id: String)
 signal content_changed
 const Dependency := preload("nested/Dependency.gd")
 const VERSION := VERSION_TOKEN
+const PanelAPI := preload("res://Scripts/Services/Plugins/MinervaPluginPanel.gd")
+var loaded_action: String = ""
+var handoff_action: String = ""
 var document: Dictionary = {}
 var loaded_count: int = 0
 var pushes: int = 0
@@ -19,6 +22,7 @@ func operation(value: int) -> int:
 
 func _on_panel_loaded(ctx: Dictionary) -> void:
 	loaded_count += 1
+	loaded_action = str(ctx.get("document_action", ""))
 	broker = ctx.broker
 	broker.connect("panel_registered", _registered)
 	if VERSION == 98:
@@ -58,6 +62,7 @@ func _on_panel_save_request() -> Dictionary:
 
 
 func _on_panel_load_request(state: Dictionary) -> void:
+	handoff_action = str(get_meta(PanelAPI.DOCUMENT_ACTION_META, ""))
 	document = state.duplicate(true)
 
 

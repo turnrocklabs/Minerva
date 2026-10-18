@@ -73,8 +73,18 @@ func _run() -> void:
 		definition.state = PluginDefinition.State.RUNNING
 	for index: int in 3:
 		var plugin_id := IDS[0] if index < 2 else IDS[1]
-		var editor := Editor.create_plugin_scene(plugin_id, "main")
+		var verb: String = ["create", "open", "import"][index]
+		var initial_path: Variant = null
+		if verb != "create":
+			var path := ProjectSettings.globalize_path("user://initial-handoff-%d.json" % index)
+			initial_path = path
+			_write(path, JSON.stringify({"initial": index}))
+		var editor := Editor.create_plugin_scene(plugin_id, "main", initial_path, null, null, verb)
 		add_child(editor)
+		check(editor.plugin_scene_root.loaded_action == verb and editor.get_meta("document_action", "") == "",
+			"initial lifecycle receives %s once and consumes editor context" % verb)
+		if verb != "create":
+			check(editor.plugin_scene_root.handoff_action == verb, "initial %s file hook retains its pending verb" % verb)
 		editors.append(editor)
 		var opened := DocumentRegistry.get_instance().create_unbacked_buffer()
 		var buffer: DocumentBuffer = opened.buffer
@@ -104,6 +114,7 @@ func _run() -> void:
 		_assert_wiring(version)
 		check(await conn.refresh_tools() == OK and conn.tools.size() == 2
 			and registry.get_plugin_tools(IDS[0]) == tools_before, "tools/list and installation catalog remain exactly once")
+	await _action_save_reopen()
 	await _whole_build_refusals()
 	_fixture(IDS[0], 5)
 	var changed_policy_path := "user://plugins/" + IDS[0] + "/manifest.json"
@@ -323,6 +334,7 @@ func _assert_wiring(version_a: int, version_b: int = -1) -> void:
 		var version := version_a if index < 2 else version_b
 		check(panel.VERSION == version and panel.operation(10) == 10 + version and panel.get_node("Marker").text == str(version), "new marker and operation in real editor")
 		check(panel.document == {"unsaved": index, "undo": [1, 2], "view": {"scroll": 11}, "large": 9007199254740993}, "complete unsaved state with exact integer preserved")
+		check(panel.loaded_action == "" and panel.handoff_action == "", "live swap does not replay create/open/import")
 		check(panel.loaded_count == 1 and panel.request.get_connections().size() == 1 and panel.content_changed.get_connections().size() == 1, "loaded lifecycle and request/content handlers exactly once")
 		var action: Button = editor.get_node("VBoxContainer/ButtonsHBoxContainer/GenerationAction")
 		var previous_hits: int = panel.action_hits
@@ -530,3 +542,34 @@ func check(condition: bool, label: String) -> void:
 	else:
 		failed += 1
 		printerr("FAIL: " + label)
+
+
+func _action_save_reopen() -> void:
+	var no_hook := Control.new()
+	var wrapper := Node.new()
+	wrapper.set_meta("document_action", "create")
+	Host.invoke_loaded(no_hook, {"editor": wrapper, "document_action": "create"})
+	check(wrapper.get_meta("document_action") == "", "absent loaded hook still consumes the initial action")
+	no_hook.free()
+	wrapper.free()
+	var editor := Editor.create_plugin_scene(IDS[0], "main", null, null, null, "create")
+	add_child(editor)
+	var snapshot := {"saved": "opaque", "action": "user-owned"}
+	editor.plugin_scene_root.document = snapshot.duplicate(true)
+	var path := ProjectSettings.globalize_path("user://action-save-reopen.json")
+	var saved := Host.save_file(editor, path, broker)
+	check(saved.get("ok", false), "real host save writes the action fixture")
+	Host.invoke_unload(editor.plugin_scene_root)
+	broker.unregister_panel(editor.plugin_id, editor.plugin_panel_key)
+	manager.unregister_live_panel(editor.plugin_id, editor.plugin_panel_key)
+	editor.free()
+	var reopened := Editor.create_plugin_scene(IDS[0], "main", path)
+	add_child(reopened)
+	check(reopened.plugin_scene_root.loaded_action == "" and reopened.plugin_scene_root.handoff_action == ""
+		and reopened.plugin_scene_root.document.get("saved") == snapshot.saved
+		and reopened.plugin_scene_root.document.get("action") == snapshot.action
+		and JSON.parse_string(FileAccess.get_file_as_string(path)) == snapshot, "save/reopen restores state with empty lifecycle and file action")
+	Host.invoke_unload(reopened.plugin_scene_root)
+	broker.unregister_panel(reopened.plugin_id, reopened.plugin_panel_key)
+	manager.unregister_live_panel(reopened.plugin_id, reopened.plugin_panel_key)
+	reopened.free()

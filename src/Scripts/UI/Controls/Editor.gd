@@ -85,6 +85,8 @@ var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid ci
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
 var worker_status_panel  # WorkerStatusPanel - type annotation removed to avoid circular dependency
+var _pending_file_handoff_action: String = ""
+
 var plugin_scene_root: Control  ## Mounted scene root for PLUGIN_SCENE editors.
 
 ## Set by caller before Editor.create(Type.PLUGIN_SCENE) to identify the panel.
@@ -299,6 +301,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = n
 	var editor = editor_scene.instantiate()
 	editor.type = Type.PLUGIN_SCENE
 	editor.set_meta("document_action", document_action)
+	editor._pending_file_handoff_action = document_action if file_ != null else ""
 	editor.plugin_id = p_id
 	editor.panel_name = p_name
 	# The instance id is unique for the editor's whole life and, unlike the tab
@@ -1363,11 +1366,12 @@ func _load_plugin_scene_file(path: String) -> void:
 			doc.merge(json.data, true)
 		else:
 			doc["raw_text"] = content
-	var action := str(get_meta("document_action", ""))
+	var action := _pending_file_handoff_action
 	if action.is_empty():
 		PluginScenePanelHost.invoke_load(plugin_scene_root, doc)
 	else:
 		PluginScenePanelHost.invoke_document_handoff(plugin_scene_root, doc, action)
+	_pending_file_handoff_action = ""
 
 
 ## Apply manifest-driven chrome visibility for a PLUGIN_SCENE editor tab.
