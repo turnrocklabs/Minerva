@@ -89,6 +89,7 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 			var existing_panel_name: Variant = null
 			if not editor.panel_name.is_empty():
 				existing_panel_name = editor.panel_name
+			pane.focus_editor(editor)
 			return {
 				"ok": true,
 				"editor_kind": kind_name,

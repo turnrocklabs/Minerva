@@ -278,6 +278,7 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 				and created.plugin_scene_root.get("loads") == 1 and created.plugin_scene_root.get("last_action") == "create")
 
 	await _exercise_fixed_type_paths(host, pane, directory)
+	await _exercise_claimed_create_arguments(host, pane, directory)
 	await _exercise_fixed_type_waits(host, manager, pane, single, directory)
 	await _exercise_readiness(host, manager, pane, single, directory, text)
 	await _exercise_conflicts(host, manager, pane, directory, text)
@@ -430,6 +431,67 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			editor.free()
 	pair_tree.free()
 	pair_package.free()
+
+func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory: String) -> void:
+	for kind: String in ["spreadsheet", "text"]:
+		var module_name := "MCPSpreadsheetTools" if kind == "spreadsheet" else "MCPEditorTools"
+		var tool_name := "minerva_create_spreadsheet_editor" if kind == "spreadsheet" else "minerva_create_text_editor"
+		var content_key := "csv_content" if kind == "spreadsheet" else "content"
+		var module = load("res://Scripts/Services/MCP/Modules/" + module_name + ".gd").new(null)
+		var path := directory.path_join("create-arguments-" + kind + ".pairedfmt")
+		var original := "original paired source"
+		_write(path, original)
+		var registry: PluginEditorRegistry = host.get("plugin_editor_registry")
+		check(kind + " argument fixture has paired plugin ownership", registry.resolve_file(".pairedfmt").get("plugin_id") == "paired_contract")
+		var before := pane.Tabs.get_tab_count()
+		var args := {"name": "Ignored " + kind, "file_path": path}
+		args[content_key] = "replacement source"
+		var refused: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		check(kind + " refuses owner-bypassing initialization before allocation", refused.get("success") == false
+			and str(refused.get("error", "")).contains(".pairedfmt is owned by plugin paired_contract; use minerva_open_file or the plugin's tools")
+			and pane.Tabs.get_tab_count() == before and FileAccess.get_file_as_string(path) == original)
+		args.erase(content_key)
+		var opened: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		var render: Editor = pane.Tabs.get_current_tab_control()
+		check(kind + " returns actual name and keeps new pair renderer selected", opened.get("success") == true
+			and opened.get("note") == "name ignored for plugin-owned file" and opened.get("editor_name") != args.name
+			and render != null and render.type == Editor.Type.PLUGIN_SCENE and render.file == path
+			and pane.Tabs.get_tab_count() == before + 2)
+		var source: Editor = null
+		for editor: Editor in pane.get_open_editors():
+			if editor.file == path and editor.type == Editor.Type.TEXT:
+				source = editor
+		check(kind + " refusal preserved canonical paired text buffer", source != null and source.code_edit.text == original)
+		check(kind + " returns the canonical text editor name for a pair", source != null
+			and opened.get("editor_name") == source.tab_title)
+		var decoy := Control.new()
+		pane.Tabs.add_child(decoy)
+		pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(decoy)
+		var reused: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		check(kind + " reuses and focuses the canonical file", reused.get("success") == true
+			and reused.get("editor_name") == source.tab_title and pane.Tabs.get_current_tab_control() == source
+			and pane.Tabs.get_tab_count() == before + 3 and FileAccess.get_file_as_string(path) == original)
+		pane.Tabs.remove_child(decoy)
+		decoy.free()
+		for editor: Editor in pane.get_open_editors():
+			if editor.file == path:
+				pane.Tabs.remove_child(editor)
+				editor.free()
+		var unclaimed_path := directory.path_join("unclaimed-content-" + kind + ".tsv")
+		_write(unclaimed_path, "file\tvalue\n")
+		check(kind + " legacy fixture is unclaimed", not registry.resolve_file(".tsv").has("plugin_id"))
+		args = {"name": "Legacy " + kind, "file_path": unclaimed_path}
+		args[content_key] = "supplied\tcontent\n"
+		var legacy: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		var legacy_editor: Editor = pane.Tabs.get_current_tab_control()
+		check(kind + " unclaimed create keeps requested name and type", legacy.get("success") == true
+			and legacy.get("editor_name") == args.name and legacy_editor.tab_title == args.name
+			and legacy_editor.type == (Editor.Type.SPREADSHEET if kind == "spreadsheet" else Editor.Type.TEXT))
+		check(kind + " unclaimed initialization preserves legacy content behavior", (legacy_editor.code_edit.text == args[content_key]
+			if kind == "text" else legacy_editor.spreadsheet_editor.spreadsheet_data.get_cell_value(0, 0) == "file")
+			and FileAccess.get_file_as_string(unclaimed_path) == "file\tvalue\n")
+		pane.Tabs.remove_child(legacy_editor)
+		legacy_editor.free()
 
 func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: EditorPane,
 		provider: PluginDefinition, directory: String) -> void:

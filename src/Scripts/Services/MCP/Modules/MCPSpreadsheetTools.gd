@@ -964,7 +964,7 @@ func _create_spreadsheet_editor(args: Dictionary, context: MCPExecutionContext =
 		return MCPToolUtils.error("Editor pane not available")
 
 	var opened: Dictionary = await MCPToolUtils.open_claimed_file(file_path,
-		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context)
+		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context, csv_content, name_)
 	if not opened.is_empty():
 		return opened
 

@@ -23,15 +23,23 @@ static func error(msg: String) -> Dictionary:
 ## An empty result means the caller retains its legacy unclaimed-file path.
 ## Interactive consumers pass the host's readiness-aware opener and context.
 static func open_claimed_file(path: String, registry: PluginEditorRegistry,
-		opener: Callable, context: MCPExecutionContext = null) -> Dictionary:
-	if path.is_empty() or registry == null \
-			or not registry.resolve_file("." + path.get_extension().to_lower()).has("plugin_id"):
+		opener: Callable, context: MCPExecutionContext = null,
+		initial_content: String = "", requested_name: String = "") -> Dictionary:
+	if path.is_empty() or registry == null:
 		return {}
+	var extension := "." + path.get_extension().to_lower()
+	var claim: Dictionary = registry.resolve_file(extension)
+	if not claim.has("plugin_id"):
+		return {}
+	if not initial_content.is_empty():
+		return error("%s is owned by plugin %s; use minerva_open_file or the plugin's tools" % [extension, claim.plugin_id])
 	var opened: Dictionary = await opener.call(path, "open", context)
 	if not opened.get("ok", false):
 		var errors: Array = opened.get("errors", [])
 		return error(", ".join(PackedStringArray(errors)))
 	opened.erase("ok")
+	if not requested_name.is_empty():
+		opened["note"] = "name ignored for plugin-owned file"
 	return success(opened)
 
 
