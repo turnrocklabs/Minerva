@@ -545,7 +545,13 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		context: ExecutionContext = null) -> Dictionary:
 	if context == null:
 		context = ExecutionContext.create("internal", caller_chat_id)
-	return await context.run(_execute_tool_with_context.bind(tool_name, arguments, context))
+	# Resolve before catalog lookup; retain the label even when the caller stops.
+	var canonical: String = minerva_server.canonical_tool_name(tool_name) if minerva_server != null else tool_name
+	var result: Dictionary = await context.run(_execute_tool_with_context.bind(canonical, arguments, context))
+	if canonical != tool_name:
+		result = result.duplicate()
+		result["alias_of"] = canonical
+	return result
 
 
 func _execute_tool_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
