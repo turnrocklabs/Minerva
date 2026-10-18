@@ -1,0 +1,95 @@
+extends Node
+signal completed(code: int)
+## Characterize the existing paired MCP create and UI panel-open paths before
+## extracting their orchestration. All records and buffers use the test profile.
+var failed: int = 0
+var passed: int = 0
+
+func check(label: String, condition: bool) -> void:
+	if condition:
+		passed += 1
+		print("PASS: " + label)
+	else:
+		failed += 1
+		printerr("FAIL: " + label)
+
+func _ready() -> void:
+	_run.call_deferred()
+
+func _run() -> void:
+	await get_tree().process_frame
+	await get_tree().create_timer(3.0).timeout
+	var host := get_tree().root.get_node("SingletonObject")
+	var ui := preload("res://test/helpers/chat_host_render_fixture.gd").new()
+	ui.install(host)
+	var previous: Array = [host.plugin_manager, host.plugin_scene_panel_broker, host.editor_pane]
+	var manager := PluginManager.new()
+	manager._db = PluginDB.new()
+	var policy := PluginPolicy.new(manager.get_db(), null, false)
+	var broker := PluginScenePanelBroker.new(manager, policy, CapabilityBroker.new(policy))
+	host.plugin_manager = manager
+	host.plugin_scene_panel_broker = broker
+	get_tree().root.add_child(manager)
+	manager.set_process(false)
+	var definition: PluginDefinition = manager.get_db().install("res://plugins/test_paired_dsl/manifest.json")
+	check("real paired fixture installs", definition != null)
+	if definition == null:
+		host.plugin_manager = previous[0]
+		host.plugin_scene_panel_broker = previous[1]
+		host.editor_pane = previous[2]
+		manager.free()
+		ui.restore()
+		completed.emit(1)
+		return
+	definition.state = PluginDefinition.State.RUNNING
+	# These UI/module scripts depend on autoloads, so resolve their classes at runtime.
+	var pane = load("res://Scripts/UI/Views/EditorPane.gd").new()
+	var tabs := TabContainer.new()
+	get_tree().root.add_child(tabs)
+	pane.Tabs = tabs
+	pane.buffer_control_editor = Control.new()
+	host.editor_pane = pane
+	var module = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd").new(null)
+	var result: Dictionary = module._create_plugin_editor({"plugin_id": definition.id,
+		"editor_item_id": "new_test_paired_dsl", "tab_title": "Paired characterization"})
+	await get_tree().process_frame
+	check("MCP paired create returns success and exactly two tabs", result.get("success", false) and tabs.get_tab_count() == 2)
+	if tabs.get_tab_count() == 2:
+		var text: Editor = tabs.get_child(0)
+		var render: Editor = tabs.get_child(1)
+		var buffer: DocumentBuffer = text.get_document_buffer()
+		check("paired tabs have different names and the same unbacked buffer",
+			text.tab_title != render.tab_title and buffer != null
+			and buffer == broker.get_attached_buffer(definition.id, render.plugin_panel_key)
+			and DocumentRegistry.is_unbacked_path(buffer.file_path))
+		check("MCP response identifies the actual tabs and buffer", not text.tab_title.is_empty()
+			and not render.tab_title.is_empty() and result.get("editor_name") == render.tab_title
+			and result.get("text_editor_name") == text.tab_title
+			and buffer != null and result.get("buffer_path") == buffer.file_path)
+		if buffer != null and render.plugin_scene_root != null:
+			buffer.apply_edit("characterized shared document")
+			await get_tree().process_frame
+			var label := render.plugin_scene_root.get_node_or_null("Vbox/EchoLabel") as Label
+			check("real render panel receives the shared document", label != null and label.text == "characterized shared document")
+		else:
+			check("paired delivery requires an attached buffer and real root", false)
+
+	var before_ui := tabs.get_tab_count()
+	host._open_plugin_panel_for_editor_item(definition.id, "test_paired_dsl_panel", "UI characterization")
+	await get_tree().process_frame
+	check("existing UI panel open adds exactly one native panel", tabs.get_tab_count() == before_ui + 1)
+	if tabs.get_tab_count() == before_ui + 1:
+		var ui_editor: Editor = tabs.get_child(tabs.get_child_count() - 1)
+		check("UI panel is the declared scene", ui_editor.plugin_id == definition.id
+			and ui_editor.panel_name == "test_paired_dsl_panel" and ui_editor.plugin_scene_root != null)
+
+	tabs.free()
+	pane.buffer_control_editor.free()
+	pane.free()
+	host.plugin_manager = previous[0]
+	host.plugin_scene_panel_broker = previous[1]
+	host.editor_pane = previous[2]
+	manager.free()
+	ui.restore()
+	print("=== Results: %d passed, %d failed ===" % [passed, failed])
+	completed.emit(1 if failed else 0)
