@@ -1272,7 +1272,7 @@ func _discover_backend_tools(plugin_id: String, conn) -> String:
 
 func _provider_tools_pending(id: String, reason: String) -> Dictionary:
 	var rt := _ensure_runtime(id)
-	var notice := "provider tools unavailable: " + reason
+	var notice := "provider tools unavailable: " + reason + ". Restart the plugin to retry."
 	rt["ready"] = false
 	rt["tools_notice"] = notice
 	push_warning("[PluginManager] %s: %s" % [id, notice])

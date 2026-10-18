@@ -99,11 +99,14 @@ static func missing_message(plugin_id: String, issue: String = "") -> String:
 ## Why the started `def` cannot serve Minerva, or "": its tools/list, from
 ## `conn` (an MCPServerConnection, whose list holds MCPToolDefinitions), lacks
 ## a tool Minerva calls on it.
-static func host_tools_missing(def: PluginDefinition, conn, panel_tools: Array = []) -> String:
-	var tools: Array = await conn.list_tools()
-	if tools.is_empty():
+static func host_tools_missing(def: PluginDefinition, conn: Object, panel_tools: Array = []) -> String:
+	# An empty successful catalog can be completed entirely by panel tools.
+	var refreshed: Variant = await conn.call("refresh_tools")
+	if not refreshed is int or refreshed != OK:
+		var failure_reason: String = conn.get("last_failure_reason")
 		return "%s %s could not list its tools (%s); it was stopped." % [
-			display_name(def.id), def.version, conn.last_failure_reason if not conn.last_failure_reason.is_empty() else "tools/list failed"]
+			display_name(def.id), def.version, failure_reason if not failure_reason.is_empty() else "tools/list failed"]
+	var tools: Array = conn.get("tools")
 	var listed: Array[String] = []
 	var registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
 	for tool in tools:

@@ -179,7 +179,8 @@ func exercise_readiness() -> void:
 	var unavailable: Dictionary = await manager.start_plugin(provider.id)
 	check("discovery failure leaves process running with a visible reason", unavailable.get("ok", false)
 		and manager.get_plugin_status(provider.id).running and not manager.get_plugin_status(provider.id).ready
-		and str(manager.get_plugin_status(provider.id).notice).contains("provider tools unavailable: tools/list"))
+		and str(manager.get_plugin_status(provider.id).notice).contains("provider tools unavailable: tools/list")
+		and str(manager.get_plugin_status(provider.id).notice).contains("Restart the plugin to retry"))
 	var unrelated: Dictionary = await manager.get_connection(provider.id).call_tool("echo", {"value": "still alive"}, 5.0)
 	check("unready provider constrains only declared dependency actions", not manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty() and unrelated.get("echo", {}).get("value") == "still alive")
@@ -189,6 +190,15 @@ func exercise_readiness() -> void:
 	await get_tree().process_frame
 	check("exit DURING discovery preserves crash state before another start", interrupted.has("error")
 		and manager.get_plugin_status(provider.id).state == PluginDefinition.State.ERROR and not manager.get_plugin_status(provider.id).ready)
+	manager.stop_plugin(provider.id)
+	provider.args[profile_index + 1] = "empty_tools"
+	for tool_name: String in RequiredPlugins.PLUGINS.agent_relay.host_tools:
+		provider.tools.append({"name": tool_name, "executor": "panel", "input_schema": {"type": "object"}})
+	var empty_catalog: Dictionary = await manager.start_plugin(provider.id)
+	check("successful empty backend plus all required panel entries starts ready on FIRST attempt", empty_catalog.get("ok", false)
+		and manager.get_connection(provider.id) != null and manager.get_connection(provider.id).tools.is_empty()
+		and registry.get_panel_tool_entries(provider.id).size() == RequiredPlugins.PLUGINS.agent_relay.host_tools.size()
+		and manager.get_plugin_status(provider.id).running and manager.get_plugin_status(provider.id).ready)
 	manager.stop_plugin(provider.id)
 	check("stop clears readiness", not manager.get_plugin_status(provider.id).ready)
 	host.plugin_tool_registry = old_registry

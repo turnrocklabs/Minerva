@@ -386,6 +386,8 @@ async def dispatch(msg):
         # Modern list results carry the core result discriminator; initialized
         # legacy peers retain their historical result shape.
         listed = {"tools": TOOLS}
+        if MODE == "empty_tools":
+            listed["tools"] = []
         if MODE == "delayed_tools":
             listed["tools"] = TOOLS + [{"name": name, "description": "Required fixture tool",
                                          "inputSchema": {"type": "object"}}
