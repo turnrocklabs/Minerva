@@ -262,7 +262,7 @@ static func missing_ids(manager, every_file: bool = true) -> Array[String]:
 ## it since (_start_if_wanted).
 ## Returns the jobs queued or already pending, keyed by plugin id; nothing new
 ## is queued when the release listing cannot be read.
-static func ensure(manager: Node) -> Dictionary:
+static func ensure(manager) -> Dictionary:
 	if manager.install_queue == null:
 		return {}
 	var missing := missing_ids(manager)
@@ -273,7 +273,8 @@ static func ensure(manager: Node) -> Dictionary:
 	var stops := {}
 	for id in missing:
 		stops[id] = manager.person_stops(id)
-	var entries := await fetch_entries(manager)
+	# The repair API keeps its dynamic PluginManager contract; HTTP owns only a Node parent.
+	var entries := await fetch_entries(manager as Node)
 	if manager.is_shutting_down():
 		return {}
 	# The fetch took time: judge each plugin as it is now. One made whole
