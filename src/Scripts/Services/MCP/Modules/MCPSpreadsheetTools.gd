@@ -955,68 +955,15 @@ func _call_nudge_set_hint(component: String, key: String, value: Variant) -> Dic
 #region Tool Implementations
 
 func _create_spreadsheet_editor(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
-	var name_: String = args.get("name", "Spreadsheet")
-	var requested_name: String = args.get("name", "")
-	var csv_content: String = args.get("csv_content", "")
-	var file_path: String = args.get("file_path", "")
-
-	var editor_pane = SingletonObject.editor_pane
-	if not editor_pane:
-		return MCPToolUtils.error("Editor pane not available")
-
-	var opened: Dictionary = await MCPToolUtils.open_claimed_file(file_path,
-		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context, csv_content, requested_name)
+	var opened: Dictionary = await MCPToolUtils.open_claimed_file(str(args.get("file_path", "")),
+		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context,
+		str(args.get("csv_content", "")), str(args.get("name", "")))
 	if not opened.is_empty():
 		return opened
-
-
-	# Before creating, check if resource with same name exists
-	# If it does, return it with already_existed: true
-	if not name_.is_empty():
-		var existing_editor = MCPToolUtils.find_editor_by_name(name_)
-		if existing_editor:
-			return {"success": true, "already_existed": true, "editor_name": existing_editor.tab_title}
-
-	# Check if file exists when file_path is provided
-	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
-		return MCPToolUtils.error("File not found: %s" % file_path)
-
-
-	# Create the spreadsheet editor
-	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
-	var file_arg: Variant = null
-	if not file_path.is_empty():
-		file_arg = file_path
-	var editor = editor_pane.add(EditorGDScript.Type.SPREADSHEET, file_arg, name_, null)
-
-	# Wait for the spreadsheet editor to be ready
-	if not editor.spreadsheet_editor:
-		await Engine.get_main_loop().process_frame
-
-	# Set CSV content if provided (and no file was loaded)
-	if not csv_content.is_empty() and file_path.is_empty() and editor.spreadsheet_editor:
-		editor.spreadsheet_editor.set_content(csv_content)
-
-	var result := {
-		"success": true,
-		"editor_name": editor.tab_title,
-		"message": "Spreadsheet editor created. Use this editor_name for subsequent operations."
-	}
-
-	# W9: an import that yields no data is a SILENT failure — surface it. The bug:
-	# an empty/missing-content import returned plain success on a blank sheet, so
-	# the agent proceeded as if data were loaded and only discovered the gap turns
-	# later (burning its tool-call budget). When a file/CSV import was attempted,
-	# report rows_imported and warn (does NOT block success) if it came up empty.
-	var attempted_import: bool = (not csv_content.is_empty()) or (not file_path.is_empty())
-	if attempted_import and editor.spreadsheet_editor and editor.spreadsheet_editor.spreadsheet_data:
-		var used: Rect2i = editor.spreadsheet_editor.spreadsheet_data.get_used_range()
-		var used_rows: int = max(0, used.size.y)
-		result["rows_imported"] = used_rows
-		if used_rows == 0:
-			result["warning"] = "Import produced 0 rows — the file/CSV had no usable data. Verify the source before continuing; do NOT proceed as if data were loaded."
-
-	return result
+	var tools: PluginToolRegistry = SingletonObject.plugin_tool_registry
+	if tools == null:
+		return MCPToolUtils.error("Sheets is unavailable. Start/install Sheets in Plugins, then retry.")
+	return await tools.handle_tool_call("minerva_sheets_create_editor", args, context)
 
 
 func _get_spreadsheet_data(args: Dictionary) -> Dictionary:

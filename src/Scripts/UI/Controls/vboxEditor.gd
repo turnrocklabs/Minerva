@@ -894,6 +894,9 @@ func open_file(filename: String) -> void:
 		# Keep the legacy is_graph/is_picture flags for the GRAPHICS branch.
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
+	if PluginEditorRegistry.is_spreadsheet_extension("." + filename.get_extension()):
+		await SingletonObject.request_spreadsheet_gui("open", {"path": filename})
+		return
 	var opened: Dictionary = await SingletonObject.open_file_when_ready(filename)
 	if not opened.get("ok", false):
 		SingletonObject.create_toast_notification(", ".join(PackedStringArray(opened.get("errors", []))), ToastNotification.Type.WARNING)

@@ -293,6 +293,9 @@ func _on_dir_tree_item_activated() -> void:
 
 	var obj: PackageObject = selected_item.get_metadata(0)
 
+	if PluginEditorRegistry.is_spreadsheet_extension("." + obj.original_path.get_extension()):
+		await SingletonObject.request_spreadsheet_gui("open", {"path": obj.original_path})
+		return
 	var format_registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
 	if format_registry != null and format_registry.resolve_file("." + obj.original_path.get_extension().to_lower()).has("plugin_id"):
 		var opened: Dictionary = SingletonObject.open_file_at_path(obj.original_path)

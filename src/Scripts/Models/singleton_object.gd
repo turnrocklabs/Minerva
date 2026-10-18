@@ -740,6 +740,30 @@ func _notify_plugin_refusal(message: String) -> void:
 	create_toast_notification(message, ToastNotification.Type.ERROR)
 
 
+## GUI spreadsheet requests use the same admission as MCP, retaining a failed
+## request in a recovery dialog rather than creating a fallback document.
+func request_spreadsheet_gui(action: String, arguments: Dictionary) -> void:
+	var request_arguments := arguments.duplicate(true)
+	var operation := func(context: MCPExecutionContext) -> Dictionary:
+		if action == "create":
+			var created: Dictionary = await create_plugin_editor_when_ready(request_arguments, context)
+			return {"ok": created.get("success", false), "errors": [str(created.get("error", "Spreadsheet creation refused"))]}
+		return await open_file_when_ready(str(request_arguments.get("path", "")), action, context)
+	var provider_resolver := func() -> String:
+		if action == "create" or plugin_editor_registry == null:
+			return "sheets"
+		var path := str(request_arguments.get("path", ""))
+		return str(plugin_editor_registry.resolve_file("." + path.get_extension()).get("plugin_id", "sheets"))
+	var result: Dictionary = await operation.call(MCPExecutionContext.create("spreadsheet_gui"))
+	if not result.get("ok", false):
+		var recovery: SpreadsheetRecoveryDialog = preload("res://Scenes/SpreadsheetRecovery.tscn").instantiate()
+		get_tree().root.add_child(recovery)
+		var errors: Array = result.get("errors", [])
+		var manager: PluginManager = plugin_manager
+		recovery.configure(", ".join(PackedStringArray(errors)), operation, provider_resolver, manager, editor_pane)
+		recovery.popup_centered(Vector2i(600, 240))
+
+
 func _on_plugin_started_for_host_events(p_id: String) -> void:
 	var manager: PluginManager = plugin_manager
 	var db: PluginDB = manager.get_db()
@@ -962,6 +986,8 @@ func _register_plugin_editor_items(id: String) -> void:
 		if native_item and claim.get("plugin_id") != id:
 			# The registry owns the collision notice; do not repeat it here.
 			continue
+		if id == "sheets" and item_id == "new_minsheet":
+			continue # The host recovery entry remains available when Sheets stops.
 		var plugin_id_copy := id
 		var panel_name_copy := panel_name
 		var item_name_copy := item_name
@@ -1664,8 +1690,8 @@ func _init_creatable_items() -> void:
 	# Spreadsheet (sort_order: 30)
 	creatable_item_registry.register_item(
 		CreatableItemRegistry.CreatableItem.create(
-			"spreadsheet", "Spreadsheet",
-			func(): ep.add(Editor.Type.SPREADSHEET),
+			"new_minsheet", "New Spreadsheet",
+			func(): request_spreadsheet_gui("create", {"plugin_id": "sheets", "editor_item_id": "new_minsheet"}),
 			null, 30
 		)
 	)

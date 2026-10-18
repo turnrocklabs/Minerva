@@ -72,7 +72,7 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 			return _failure("provider_not_ready: " + owner + ". " + str(manager.get_plugin_status(owner).get("notice", "")))
 		if action not in panel_info.get("file_actions", ["open", "create"]):
 			return _failure("Plugin '%s' does not support '%s' for '%s'" % [owner, action, ext])
-	elif action == "import" and panel_info.get("builtin") != "spreadsheet":
+	elif action == "import":
 		return _failure("no_import_handler_for_extension: " + ext)
 
 	# Reuse a tab only while its actual editor (or shared pair) owns this path.
@@ -130,9 +130,6 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 	elif lower.ends_with(".minkb"):
 		result_editor = pane.add(Editor.Type.KANBAN, abs_path)
 		editor_kind = "KANBAN"
-	elif panel_info.get("builtin") == "spreadsheet":
-		result_editor = pane.add(Editor.Type.SPREADSHEET, abs_path)
-		editor_kind = "SPREADSHEET"
 	else:
 
 		if panel_info.has("plugin_id"):
