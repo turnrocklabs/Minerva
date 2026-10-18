@@ -117,7 +117,8 @@ func session_and_note(host: Node) -> void:
 	root.add_child(container)
 	var plain: Dictionary = read_json("no-chart-session.minproj")
 	var restored: Array = await container_script.deserialize(plain.Editors)
-	check("production legacy session restore returns one spreadsheet", restored.size() == 1)
+	check("production legacy session restore returns one opaque Sheets tab", restored.size() == 1
+		and restored[0].type == Editor.Type.PLUGIN_SCENE and restored[0].pending_plugin_entry == plain.Editors[0])
 	for view: Control in restored:
 		tabs.add_child(view)
 		tabs.set_tab_title(tabs.get_tab_count() - 1, plain.Editors[0].name)

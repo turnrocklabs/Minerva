@@ -133,6 +133,12 @@ var plugin_chrome_suppress: Array[String] = []
 @onready var text_is_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsIncoplete
 @onready var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
 
+const LEGACY_SPREADSHEET_TYPE: int = 6
+
+# A session that has not been accepted by its provider remains opaque.
+var pending_plugin_entry: Dictionary = {}
+var plugin_restore_busy: bool = false
+
 enum Type {
 	TEXT = 0,
 	GRAPHICS = 1,
@@ -298,7 +304,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = n
 	# so we instantiate here and call create() with a dummy type that we override.
 	# Actually the cleanest path: instantiate directly and run only the PLUGIN_SCENE
 	# branch, mirroring what create() does for other types.
-	var editor = editor_scene.instantiate()
+	var editor: Editor = editor_scene.instantiate()
 	editor.type = Type.PLUGIN_SCENE
 	editor.set_meta("document_action", document_action)
 	editor._pending_file_handoff_action = document_action if file_ != null else ""
@@ -314,55 +320,62 @@ static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = n
 	if file_:
 		editor.file = file_
 
-	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
+	var manager: PluginManager = _get_plugin_manager_safe()
+	editor.mount_plugin_scene(manager)
 
-	if p_id.is_empty() or p_name.is_empty():
+	return editor
+
+
+## Mount a provider surface on this same editor/key, including after Retry.
+func mount_plugin_scene(manager: PluginManager) -> void:
+	var vbox_container: VBoxContainer = get_node("VBoxContainer")
+
+	if plugin_id.is_empty() or panel_name.is_empty():
 		push_error(
 			"[Editor] create_plugin_scene(): plugin_id and panel_name must be non-empty"
 		)
 	else:
 		vbox_container.clip_contents = true
-		var pm = _get_plugin_manager_safe()
+		var pm: PluginManager = manager
 		if pm != null:
 			var db = pm.get_db()
-			var def = db.get_by_id(p_id) if db != null else null
+			var def = db.get_by_id(plugin_id) if db != null else null
 			if def != null:
 				for pd in def.ui_panels:
-					if pd is Dictionary and pd.get("name", "") == p_name:
-						editor.plugin_save_mode = pd.get("save_mode", "host_owned")
+					if pd is Dictionary and pd.get("name", "") == panel_name:
+						self.plugin_save_mode = pd.get("save_mode", "host_owned")
 						var panel_def: Dictionary = pd
-						editor.plugin_write_guidance = panel_def.get("write_guidance", "")
+						self.plugin_write_guidance = panel_def.get("write_guidance", "")
 						var cs_raw: Variant = pd.get("chrome_suppress", [])
 						var cs_list: Array[String] = []
 						if cs_raw is Array:
 							for cs_item in (cs_raw as Array):
 								cs_list.append(str(cs_item))
-						editor.plugin_chrome_suppress = cs_list
+						self.plugin_chrome_suppress = cs_list
 						break
 		var root: Control = PluginScenePanelHost.instantiate_into(
-			vbox_container, p_id, p_name, editor, editor.plugin_panel_key
+			vbox_container, plugin_id, panel_name, self, plugin_panel_key
 		)
-		editor.plugin_scene_root = root
+		self.plugin_scene_root = root
 		if root != null and root.has_signal("content_changed"):
-			root.content_changed.connect(editor._on_editor_changed)
+			root.content_changed.connect(self._on_editor_changed)
 		if pm != null:
 			var tscn_path: String = ""
 			var db2 = pm.get_db()
-			var def2 = db2.get_by_id(p_id) if db2 != null else null
+			var def2 = db2.get_by_id(plugin_id) if db2 != null else null
 			if def2 != null:
 				for pd2 in def2.ui_panels:
-					if pd2 is Dictionary and pd2.get("name", "") == p_name:
+					if pd2 is Dictionary and pd2.get("name", "") == panel_name:
 						var data_dir: String = def2.data_directory
 						var entry_rel: String = pd2.get("entry_scene", "")
 						if not entry_rel.is_empty() and not data_dir.is_empty():
 							tscn_path = data_dir.path_join(entry_rel).simplify_path()
 						break
 			pm.register_live_panel(
-				p_id, p_name, tscn_path, vbox_container, root, editor,
-				editor.plugin_panel_key
+				plugin_id, panel_name, tscn_path, vbox_container, root, self,
+				self.plugin_panel_key
 			)
 
-	return editor
 
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null, initial_setup: = true) -> Editor:
@@ -1698,7 +1711,16 @@ func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
 
 
+func _show_pending_sheet_restore() -> void:
+	var manager: PluginManager = _get_plugin_manager_safe()
+	preload("res://Scripts/Services/Plugins/SpreadsheetSession.gd").show_failure(self, manager,
+		"Sheets plugin is unavailable or refused this snapshot; your original data is preserved. File Save was refused.")
+
+
 func save_file_to_disc(path: String) -> bool:
+	if not pending_plugin_entry.is_empty():
+		_show_pending_sheet_restore()
+		return false
 	match type:
 		Type.TEXT:
 			if _document_buffer == null:

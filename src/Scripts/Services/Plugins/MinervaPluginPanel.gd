@@ -61,6 +61,7 @@ extends Control
 ## plugin. Optional _on_panel_create_note_request(ctx) returns a plugin_data
 ## payload; _on_panel_restore_from_note(payload) restores it on Edit. Otherwise
 ## the host captures a screenshot. Notes are snapshots, without live sync.
+## Sheets session restore also uses this hook for host-converted legacy entries.
 
 
 const DOCUMENT_ACTION_META: StringName = &"minerva_document_action"

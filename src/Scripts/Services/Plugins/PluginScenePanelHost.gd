@@ -771,9 +771,11 @@ static func _build_placeholder(message: String, retry_callback = null) -> Contro
 	top_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(top_spacer)
 
-	var label := Label.new()
+	var label := RichTextLabel.new()
 	label.text = message
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.selection_enabled = true
+	label.fit_content = true
+	label.scroll_active = false
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
