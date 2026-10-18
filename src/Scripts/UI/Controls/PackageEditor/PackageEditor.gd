@@ -303,8 +303,10 @@ func _on_dir_tree_item_activated() -> void:
 			var pane: EditorPane = SingletonObject.editor_pane
 			var selected: Control = pane.Tabs.get_current_tab_control()
 			# Keep the handoff's selection for a newly opened paired document.
-			if selected is Editor and selected.file == obj.original_path:
-				return
+			if selected is Editor:
+				var selected_editor: Editor = selected
+				if selected_editor.file == obj.original_path:
+					return
 			for editor: Editor in pane.get_open_editors():
 				if editor.file == obj.original_path:
 					pane.focus_editor(editor)

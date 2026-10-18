@@ -408,28 +408,28 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			if decoy != null:
 				pane.Tabs.remove_child(decoy)
 				decoy.free()
-	var paired_path := directory.path_join("package-new-pair.pairedfmt")
-	_write(paired_path, "paired package source")
-	var package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
-	var package: Control = package_script.new()
-	var tree := Tree.new()
-	tree.columns = 2
-	var item := tree.create_item()
-	var object = package_script.PackageObject.new(item, paired_path, true)
-	item.select(0)
-	package.set("_dir_tree", tree)
+	var paired_path := directory.path_join("pair_package-new-pair.pairedfmt")
+	_write(paired_path, "paired pair_package source")
+	var pair_package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
+	var pair_package: Control = pair_package_script.new()
+	var pair_tree := Tree.new()
+	pair_tree.columns = 2
+	var pair_item := pair_tree.create_item()
+	var pair_object = pair_package_script.PackageObject.new(pair_item, paired_path, true)
+	pair_item.select(0)
+	pair_package.set("_dir_tree", pair_tree)
 	var before_pair := pane.Tabs.get_tab_count()
-	package.call("_on_dir_tree_item_activated")
-	var selected: Control = pane.Tabs.get_current_tab_control()
-	check("package new pair retains the handoff render selection", selected is Editor
-		and selected.type == Editor.Type.PLUGIN_SCENE and selected.file == paired_path
-		and pane.Tabs.get_tab_count() == before_pair + 2 and object.original_path == paired_path)
+	pair_package.call("_on_dir_tree_item_activated")
+	var pair_selected: Control = pane.Tabs.get_current_tab_control()
+	check("pair_package new pair retains the handoff render selection", pair_selected is Editor
+		and pair_selected.type == Editor.Type.PLUGIN_SCENE and pair_selected.file == paired_path
+		and pane.Tabs.get_tab_count() == before_pair + 2 and pair_object.original_path == paired_path)
 	for editor: Editor in pane.get_open_editors():
 		if editor.file == paired_path:
 			pane.Tabs.remove_child(editor)
 			editor.free()
-	tree.free()
-	package.free()
+	pair_tree.free()
+	pair_package.free()
 
 func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: EditorPane,
 		provider: PluginDefinition, directory: String) -> void:
