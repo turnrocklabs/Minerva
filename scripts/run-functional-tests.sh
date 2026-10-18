@@ -112,6 +112,7 @@ HERMETIC_TESTS=(
 	test/test_host_capability_terminal.gd
 	test/test_host_capability_editors.gd
 	test/test_plugin_editor_integration.gd
+	test/test_plugin_editor_create.gd
 	# test_host_capability_terminal_io.gd needs a running Docket policy.
 	# Not run in CI; run locally with --quarantined (bug 019fbd21a8717702931647025aae6be7).
 	test/test_media_artifact_kind.gd
