@@ -17,7 +17,7 @@ static func open(reference_key: String, markdown: String, pane: EditorPane, mana
 			continue
 		if editor.get_meta(REFERENCE, "") == reference_key:
 			exact.append(editor)
-		elif editor.tab_title == reference_key:
+		elif editor.tab_title == reference_key and not editor.has_meta(REFERENCE):
 			titled.append(editor)
 	var matches: Array[Editor] = exact if not exact.is_empty() else titled
 	if matches.size() > 1:
@@ -31,6 +31,8 @@ static func open(reference_key: String, markdown: String, pane: EditorPane, mana
 	var editor: Editor = matches[0] if not matches.is_empty() else null
 	if editor != null:
 		pane.focus_editor(editor)
+		if editor.plugin_restore_busy:
+			return
 		if not editor.pending_plugin_entry.is_empty() and not _is_seed(editor.pending_plugin_entry, reference_key):
 			return # A note cannot replace an unresolved original sheet session.
 		if editor.plugin_scene_root != null and editor.plugin_scene_root.get_meta("_minerva_plugin_panel_load_ok", false):
