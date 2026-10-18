@@ -249,7 +249,11 @@ func _run() -> void:
 	check(repaired_selector.active == repaired_build.digest and repaired_selector.lkg == JSON.parse_string(old_selector.get_string_from_utf8()).active,
 		"MCP fix-forward independently publishes the installed digest and retains the previous selection")
 	var closed_pending_tmp := closed_store.directory.path_join("pending-install.json.tmp")
-	check(DirAccess.create_link(protected_path, closed_pending_tmp) == OK, "boot metadata fixture creates an actual symlink")
+	var closed_metadata_dir := DirAccess.open(closed_store.directory)
+	check(closed_metadata_dir.create_link(ProjectSettings.globalize_path(protected_path), closed_pending_tmp) == OK
+		and closed_metadata_dir.is_link(closed_pending_tmp)
+		and FileAccess.get_file_as_string(closed_pending_tmp) == "unrelated document remains exact",
+		"boot metadata fixture links to the protected file")
 	var metadata_boot: Node = boot_script.new()
 	metadata_boot.configure(manager, broker, Callable())
 	add_child(metadata_boot)
@@ -261,6 +265,27 @@ func _run() -> void:
 	check(DirAccess.rename_absolute(closed_pending_tmp, closed_pending_tmp + ".retained-link") == OK,
 		"preserve boot metadata fault outside its active filename")
 	metadata_boot.free()
+	var before_selector_failure := FileAccess.get_file_as_bytes(closed_store.selector_path())
+	_fixture(closed_id, 8)
+	var pending_selector_update: Dictionary = manager.installed_scene_update(closed_id)
+	var pending_selector_build := closed_store.capture(ProjectSettings.globalize_path("user://plugins/" + closed_id))
+	check(pending_selector_update.get("ok", false) and pending_selector_build.get("ok", false)
+		and pending_selector_build.digest != repaired_selector.active,
+		"selector-failure fixture has a distinct valid pending generation")
+	var selector_tmp := closed_store.selector_path() + ".tmp"
+	check(DirAccess.make_dir_recursive_absolute(selector_tmp) == OK, "block selector preparation with a real directory")
+	var selector_boot: Node = boot_script.new()
+	selector_boot.configure(manager, broker, Callable())
+	add_child(selector_boot)
+	check(selector_boot.resolve(closed_id, "main").get("ok", false)
+		and str(selector_boot.status(closed_id).message).contains("failed selector publication")
+		and str(selector_boot.status(closed_id).message).contains("Cannot prepare generation selector")
+		and not str(selector_boot.status(closed_id).message).contains("failed validation")
+		and FileAccess.get_file_as_bytes(closed_store.selector_path()) == before_selector_failure,
+		"boot selector failure names its actual cause and keeps the previous selection")
+	check(DirAccess.rename_absolute(selector_tmp, selector_tmp + ".retained-blocker") == OK,
+		"preserve selector fault outside its active filename")
+	selector_boot.free()
 	manager_panel.free()
 	manager._scene_reload = saved_service
 	boot.free()
