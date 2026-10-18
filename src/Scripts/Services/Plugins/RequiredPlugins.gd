@@ -194,7 +194,7 @@ static func entry_from_releases(releases: Array, plugin_id: String) -> Dictionar
 ## The newest release of each required plugin, as registry entries keyed by
 ## id (entry_from_releases), from each host-declared repository. A failed
 ## listing leaves other repositories and already-found entries available.
-static func fetch_entries(manager) -> Dictionary:
+static func fetch_entries(manager: Node) -> Dictionary:
 	# Only the host's catalog supplies repositories; dependencies cannot add one.
 	var groups := {}
 	for id: String in ids():
@@ -205,7 +205,7 @@ static func fetch_entries(manager) -> Dictionary:
 	return await _fetch_grouped_entries(manager, groups)
 
 
-static func _fetch_grouped_entries(manager, groups: Dictionary) -> Dictionary:
+static func _fetch_grouped_entries(manager: Node, groups: Dictionary) -> Dictionary:
 	var client: Node = MarketplaceClient.new()
 	manager.add_child(client)
 	var entries := {}
