@@ -114,7 +114,7 @@ func _run() -> void:
 		_assert_wiring(version)
 		check(await conn.refresh_tools() == OK and conn.tools.size() == 2
 			and registry.get_plugin_tools(IDS[0]) == tools_before, "tools/list and installation catalog remain exactly once")
-	await _action_save_reopen()
+	_action_save_reopen()
 	await _whole_build_refusals()
 	_fixture(IDS[0], 5)
 	var changed_policy_path := "user://plugins/" + IDS[0] + "/manifest.json"
