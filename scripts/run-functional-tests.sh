@@ -111,6 +111,7 @@ HERMETIC_TESTS=(
 	test/test_document_identity.gd
 	test/test_host_capability_terminal.gd
 	test/test_host_capability_editors.gd
+	test/test_plugin_dependencies.gd
 	test/test_plugin_editor_integration.gd
 	test/test_plugin_editor_create.gd
 	test/test_plugin_file_handoff.gd

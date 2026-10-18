@@ -71,6 +71,9 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 		push_warning("[PluginDB] Plugin '%s' is already installed — use update_definition() to replace it" % def.id)
 		return null
 
+	if _refuse_dependency_cycle(def):
+		return null
+
 	# --- class_name validation (design §6.2) ---
 	# Scan all panel scripts for class_name declarations.
 	def.scan_class_names()
@@ -190,8 +193,11 @@ func update_state(plugin_id: String, new_state: PluginDefinition.State) -> bool:
 ## Replace the stored definition for an already-installed plugin.
 ## Use this to apply manifest changes after an upgrade.
 func update_definition(def: PluginDefinition) -> bool:
+	_last_install_error = {}
 	if not _plugins.has(def.id):
 		push_warning("[PluginDB] Cannot update unknown plugin '%s' — install it first" % def.id)
+		return false
+	if _refuse_dependency_cycle(def):
 		return false
 	# Preserve runtime state across updates
 	var previous: PluginDefinition = _plugins[def.id]
@@ -325,6 +331,11 @@ func load_db() -> Error:
 		_register_class_names(def)
 		_plugins[def.id] = def
 
+	for def: PluginDefinition in _plugins.values():
+		var issue := dependency_issue(def.id)
+		if not issue.is_empty():
+			def.state = PluginDefinition.State.ERROR
+			push_error(issue)
 	return OK
 
 
@@ -427,3 +438,26 @@ func _build_class_name_map(exclude_plugin_id: String = "") -> Dictionary:
 ## Read-only access to the class_name registry (used by tests and PluginManager).
 func get_class_name_registry() -> Dictionary:
 	return _class_name_registry.duplicate()
+
+
+func dependency_issue(id: String, candidate: PluginDefinition = null) -> String:
+	var graph: Dictionary = {}
+	var definitions: Array[PluginDefinition] = get_all()
+	if candidate != null:
+		definitions.append(candidate)
+	for def: PluginDefinition in definitions:
+		var edges: Array[String] = []
+		for requirement: Dictionary in def.requires_plugins:
+			var provider_id: String = requirement.id
+			edges.append(provider_id)
+		graph[def.id] = edges
+	return PluginDependencyContract.cycle_issue(graph, id)
+
+
+func _refuse_dependency_cycle(candidate: PluginDefinition) -> bool:
+	var issue := dependency_issue(candidate.id, candidate)
+	if issue.is_empty():
+		return false
+	_last_install_error = {"error_code": "plugin_dependency_cycle", "error": issue}
+	push_error(issue)
+	return true

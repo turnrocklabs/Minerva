@@ -349,6 +349,10 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 		return {"error": "Plugin '%s' still has skills or knowledge awaiting cleanup. Make sure Docket is running and its projects are available, then restart Minerva and try installing again." % check_def.id}
 	var def = _db.install(manifest_path, lane)
 	if def == null:
+		var database: Object = _db
+		var dependency_error: Dictionary = database.call("get_last_install_error")
+		if dependency_error.get("error_code") == "plugin_dependency_cycle":
+			return dependency_error
 		# PluginDB.install already push_error'd; check for duplicate separately.
 		if check_def != null and _db.has_plugin(check_def.id):
 			return {"error": "Plugin '%s' is already installed" % check_def.id}
@@ -459,6 +463,10 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false,
 	def.install_lane = lane
 
 	if not _db.update_definition(def):
+		var database: Object = _db
+		var dependency_error: Dictionary = database.call("get_last_install_error")
+		if dependency_error.get("error_code") == "plugin_dependency_cycle":
+			return dependency_error
 		return {"error": "Failed to update plugin definition for '%s'" % def.id}
 	_check_host_api(def)
 
@@ -747,6 +755,10 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
 	var db: Object = _db
 	var definition: PluginDefinition = db.call("get_by_id", id)
+	if definition != null and not definition.requires_plugins.is_empty():
+		var dependency_error: String = db.call("dependency_issue", id)
+		if not dependency_error.is_empty():
+			return {"error_code": "plugin_dependency_cycle", "error": dependency_error}
 	var api_error := _check_host_api(definition)
 	if not api_error.is_empty():
 		return {"error": api_error}

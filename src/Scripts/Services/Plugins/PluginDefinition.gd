@@ -200,6 +200,7 @@ var auto_reload: bool = false
 ## Editor items this plugin contributes to the "New -> Item" creation flow.
 ## Each entry: {id: String, name: String, panel: String}
 var editor_items: Array[Dictionary] = []
+var requires_plugins: Array[Dictionary] = []
 
 ## Event declarations from manifest. Each entry: {name: String, payload_schema: Dictionary}
 ## These are top-level manifest fields — a headless plugin can emit events without a webview.
@@ -237,6 +238,7 @@ var capabilities: Array[String] = []
 ## Allowed capability identifiers.  See validate_capabilities() for the
 ## per-capability requirement contract.
 const CAPABILITIES := [
+	"plugin_dependencies", # versioned contracts on required providers
 	"project_state",      # participates in .minproj save/load (panel + server hooks)
 	"host_owned_save",    # panel writes its own document file via Ctrl+S
 	"project_export",     # contributes sidecar files to .minpackage export
@@ -476,6 +478,8 @@ func to_dict() -> Dictionary:
 	if not knowledge.is_empty():
 		result["knowledge"] = knowledge.duplicate(true)
 		result["knowledge_project"] = knowledge_project
+	if not requires_plugins.is_empty():
+		result["requires_plugins"] = requires_plugins.duplicate(true)
 	if not editor_items.is_empty():
 		result["editor_items"] = editor_items.duplicate(true)
 	if not events.is_empty():
@@ -943,6 +947,14 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 				return null
 			if not def.capabilities.has(cap):
 				def.capabilities.append(cap)
+
+	var dependency_contract := PluginDependencyContract.parse(data.get("requires_plugins"), def.id,
+		"plugin_dependencies" in def.capabilities, RequiredPlugins.ids())
+	if dependency_contract.has("error"):
+		push_error("[PluginDefinition] " + str(dependency_contract.error))
+		return null
+	var requirements: Array = dependency_contract.requirements
+	def.requires_plugins.assign(requirements)
 
 	# project_file hook channels (design §8.1)
 	# Both channels MUST appear in ui.ipc_messages.
@@ -1528,6 +1540,8 @@ func validate_host_capabilities() -> Array[String]:
 func validate_capabilities() -> Dictionary:
 	for cap in capabilities:
 		match cap:
+			"plugin_dependencies":
+				pass # The manifest parser validates this data-only contract.
 			"live_reload":
 				var scene_count := 0
 				for panel in ui_panels:
