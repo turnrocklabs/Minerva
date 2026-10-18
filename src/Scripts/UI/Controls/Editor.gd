@@ -1366,6 +1366,8 @@ func _load_plugin_scene_file(path: String) -> void:
 			doc.merge(json.data, true)
 		else:
 			doc["raw_text"] = content
+	# Opaque file contents cannot redirect the host-selected document path.
+	doc["file_path"] = path
 	var action := _pending_file_handoff_action
 	if action.is_empty():
 		PluginScenePanelHost.invoke_load(plugin_scene_root, doc)

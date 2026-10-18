@@ -2,7 +2,7 @@ extends Node
 signal completed(code: int)
 var failures: int = 0
 var checks: int = 0
-const PANEL := 'extends "res://Scripts/Services/Plugins/MinervaPluginPanel.gd"\nvar loads: int = 0\nvar last_action: String = ""\nvar document: Dictionary = {}\nvar buffer_text: String = ""\nfunc _on_panel_loaded(context: Dictionary) -> void:\n\tif context.get("document_action") == "create":\n\t\tloads += 1\n\t\tlast_action = "create"\nfunc _on_panel_load_request(value: Variant) -> void:\n\tloads += 1\n\tlast_action = get_document_action()\n\tif value is Dictionary:\n\t\tdocument = value.duplicate(true)\nfunc _on_panel_save_request() -> Dictionary:\n\treturn document.duplicate(true)\nfunc receive(channel: String, payload: Dictionary) -> void:\n\tif channel in ["attach_buffer", "text_changed"]:\n\t\tbuffer_text = str(payload.get("text", ""))\n'
+const PANEL := 'extends "res://Scripts/Services/Plugins/MinervaPluginPanel.gd"\nvar loads: int = 0\nvar last_action: String = ""\nvar document: Dictionary = {}\nvar buffer_text: String = ""\nvar file_reads: Array[String] = []\nvar loaded_text: String = ""\nfunc _on_panel_loaded(context: Dictionary) -> void:\n\tif context.get("document_action") == "create":\n\t\tloads += 1\n\t\tlast_action = "create"\nfunc _on_panel_load_request(value: Variant) -> void:\n\tloads += 1\n\tlast_action = get_document_action()\n\tif value is Dictionary:\n\t\tdocument = value.duplicate(true)\n\t\tif get_document_action() in ["open", "import"] and value.has("file_path"):\n\t\t\tfile_reads.append(str(value.file_path))\n\t\t\tloaded_text = FileAccess.get_file_as_string(str(value.file_path))\nfunc _on_panel_save_request() -> Dictionary:\n\treturn document.duplicate(true)\nfunc receive(channel: String, payload: Dictionary) -> void:\n\tif channel in ["attach_buffer", "text_changed"]:\n\t\tbuffer_text = str(payload.get("text", ""))\n'
 
 func _ready() -> void:
 	_run.call_deferred()
@@ -116,6 +116,24 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 				check(action + " retry returns the same tab without another load", again.get("ok", false)
 					and again.editor_name == result.editor_name and pane.Tabs.get_tab_count() == before + 1 and panel.get("loads") == 1)
 		check(action + " does not rewrite the input file", FileAccess.get_file_as_string(path) == text)
+	# A plugin that actually reads its delivered path must never follow a
+	# conflicting opaque JSON key to a different existing file.
+	var other_path := directory.path_join("other-real.csv")
+	_write(other_path, "unselected,data\nnever,read")
+	for action: String in ["open", "import"]:
+		var chosen_path := directory.path_join("redirect-" + action + ".fixturefmt")
+		var body := JSON.stringify({"file_path": other_path, "value": "selected body"})
+		_write(chosen_path, body)
+		var redirected: Dictionary = host.open_file_at_path(chosen_path, action)
+		await get_tree().process_frame
+		var chosen: Editor = pane.Tabs.get_current_tab_control()
+		var reader: Control = chosen.plugin_scene_root
+		check(action + " preserves authoritative selected path over body key", redirected.get("ok", false)
+			and reader.get("document").get("file_path") == chosen_path)
+		check(action + " loader reads only the selected file", reader.get("file_reads") == [chosen_path]
+			and reader.get("loaded_text") == body)
+		check(action + " leaves both files unchanged", FileAccess.get_file_as_string(chosen_path) == body
+			and FileAccess.get_file_as_string(other_path) == "unselected,data\nnever,read")
 	for extension: String in ["minsheet", "csv"]:
 		var claimed_path := directory.path_join("claimed." + extension)
 		_write(claimed_path, text)
