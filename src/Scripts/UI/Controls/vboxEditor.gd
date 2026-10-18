@@ -168,6 +168,8 @@ func serialize() -> Array:
 				editor,
 				editor_pane.Tabs.get_tab_title(tab_idx)
 			)
+			if editor.plugin_id == "sheets" and editor.pending_plugin_entry.is_empty() and editor.has_meta("legacy_spreadsheet_reference"):
+				plugin_entry["legacy_spreadsheet_reference"] = editor.get_meta("legacy_spreadsheet_reference")
 			editors_serialized.append(plugin_entry)
 			tab_idx += 1
 			continue
@@ -225,6 +227,11 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 		if SpreadsheetSession.is_sheet(editor_ser):
 			var original_entry: Dictionary = original_entries[entry_index]
 			editor_inst.pending_plugin_entry = original_entry.duplicate(true)
+			var reference: Variant = editor_ser.get("legacy_spreadsheet_reference")
+			if reference is String:
+				var legacy_reference: String = reference
+				if not legacy_reference.is_empty():
+					editor_inst.set_meta("legacy_spreadsheet_reference", legacy_reference)
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		await SingletonObject.editor_container.get_tree().process_frame

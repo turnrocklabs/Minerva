@@ -659,23 +659,10 @@ func _open_linked_spreadsheet(editor_pane: EditorPane) -> void:
 	# Show the editor if it's hidden
 	SingletonObject.main_ui.set_editor_pane_visible(true)
 
-	# Look for existing spreadsheet editor with matching name
-	for editor in editor_pane.get_open_editors():
-		if editor.tab_title == linked_spreadsheet and editor.type == Editor.Type.SPREADSHEET:
-			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
-			editor_pane.Tabs.current_tab = curr_idx
-			return
-
-	# Create new spreadsheet editor with the note's markdown content
-	var editor = editor_pane.add(Editor.Type.SPREADSHEET, null, linked_spreadsheet, self)
-
-	# Parse the note's markdown content into the spreadsheet
-	if editor.spreadsheet_editor:
-		var controls = get_controls_container() as NoteTextControls
-		if controls and not controls.content.is_empty():
-			editor.spreadsheet_editor.spreadsheet_data.from_markdown(controls.content)
-			editor.spreadsheet_editor.sync_charts_from_data()
-			editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	var controls: NoteTextControls = get_controls_container()
+	var manager: PluginManager = SingletonObject.get("plugin_manager")
+	preload("res://Scripts/Services/Plugins/LegacySpreadsheetNote.gd").open(linked_spreadsheet,
+		controls.content if controls != null else "", editor_pane, manager)
 
 
 ## Open a plugin scene editor and restore the panel state from
