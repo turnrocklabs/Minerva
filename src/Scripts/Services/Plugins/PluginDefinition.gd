@@ -1080,7 +1080,8 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 		for ext_raw: Variant in (file_exts_raw as Array):
 			if not ext_raw is String:
 				return {"error": "panel_file_extension_invalid", "detail": {"name": panel_name}}
-			var ext: String = ext_raw.to_lower()
+			var extension_text: String = ext_raw
+			var ext := extension_text.to_lower()
 			if not ext.begins_with("."):
 				return {
 					"error": "panel_file_extension_missing_dot",
