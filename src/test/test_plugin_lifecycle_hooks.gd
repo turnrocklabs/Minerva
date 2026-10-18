@@ -388,7 +388,7 @@ func test_save_mode_applies_to_html_panels() -> void:
 func test_native_save_extensions() -> void:
 	var panel := {"name": "native", "kind": "godot_scene", "entry_scene": "ui/Panel.tscn",
 		"scripts": ["ui/Panel.gd"], "file_extensions": [".cad", ".pcb"]}
-	var definition = PluginDefinition_._from_dict_internal(_minimal_manifest_with_panel(panel))
+	var definition := PluginDefinition_._from_dict_internal(_minimal_manifest_with_panel(panel))
 	check("absent native formats preserve parsed dictionary contract", definition != null
 		and not definition.ui_panels[0].has("native_save_extensions"))
 	check_eq("absent native formats default to own claims", PluginScenePanelHost_.native_save_extensions(definition.ui_panels[0]), [".cad", ".pcb"])
