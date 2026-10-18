@@ -378,8 +378,10 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 					target.tab_title = decoy.tab_title
 					check("package title collision is established before revisiting", target != decoy
 						and target.file == path and target.tab_title == decoy.tab_title)
-				var other: Editor = pane.add(Editor.Type.TEXT, null, "Package revisit decoy")
-				pane.focus_editor(other)
+				# Native review tabs are plain Controls rather than Editors.
+				var other := Control.new()
+				pane.Tabs.add_child(other)
+				pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(other)
 				var repeat_count := pane.Tabs.get_tab_count()
 				package.call("_on_dir_tree_item_activated")
 				var selected: Editor = pane.Tabs.get_current_tab_control()
@@ -406,6 +408,28 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			if decoy != null:
 				pane.Tabs.remove_child(decoy)
 				decoy.free()
+	var paired_path := directory.path_join("package-new-pair.pairedfmt")
+	_write(paired_path, "paired package source")
+	var package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
+	var package: Control = package_script.new()
+	var tree := Tree.new()
+	tree.columns = 2
+	var item := tree.create_item()
+	var object = package_script.PackageObject.new(item, paired_path, true)
+	item.select(0)
+	package.set("_dir_tree", tree)
+	var before_pair := pane.Tabs.get_tab_count()
+	package.call("_on_dir_tree_item_activated")
+	var selected: Control = pane.Tabs.get_current_tab_control()
+	check("package new pair retains the handoff render selection", selected is Editor
+		and selected.type == Editor.Type.PLUGIN_SCENE and selected.file == paired_path
+		and pane.Tabs.get_tab_count() == before_pair + 2 and object.original_path == paired_path)
+	for editor: Editor in pane.get_open_editors():
+		if editor.file == paired_path:
+			pane.Tabs.remove_child(editor)
+			editor.free()
+	tree.free()
+	package.free()
 
 func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: EditorPane,
 		provider: PluginDefinition, directory: String) -> void:
