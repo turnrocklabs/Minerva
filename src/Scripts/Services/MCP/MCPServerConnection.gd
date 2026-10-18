@@ -196,6 +196,8 @@ func request_method(method: String, params: Dictionary, timeout_sec: float = 120
 	var context := ExecutionContext.create("connection")
 	var response := await _stdio_request(request, timeout_sec, method, context, generation)
 	var wire = _take_completed_wire(request.id)
+	if context.is_stopped():
+		return context.stopped_result()
 	if wire != null:
 		var numeric: Dictionary = await WireAdapter.validate_for_application(wire)
 		if generation == _process_generation:

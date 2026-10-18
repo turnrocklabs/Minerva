@@ -142,7 +142,7 @@ func close_registration() -> void:
 	_registration_closed = true
 	_bulk_broker = null
 	for observer: _ReplyObserver in _pending.values():
-		observer._fire(_panel_closed_error())
+		observer.fail(_panel_closed_error())
 
 
 func _close_if_still_detached(departed_epoch: int) -> void:
@@ -204,7 +204,7 @@ func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS, context
 	var timer := get_tree().create_timer(timeout_ms / 1000.0)
 	var on_timeout := func() -> void:
 		if _pending.get(reply_id) == observer:
-			observer._fire({
+			observer.fail({
 				"success": false,
 				"error_code": "timeout",
 				"error_message": "No reply received within %d ms" % timeout_ms,
@@ -275,6 +275,11 @@ class _ReplyObserver extends RefCounted:
 		if _fired:
 			return
 		_fired = true
-		if context != null and result.get("success", not result.has("error")) == false and not result.has("rpc_error"):
-			result = context.fail(result)
 		resolved.emit(result)
+
+	## Only a terminal observer settlement retires the call. Replies are application results.
+	func fail(result: Dictionary) -> void:
+		if _fired:
+			return
+		_fired = true
+		resolved.emit(context.fail(result) if context != null else result)

@@ -257,10 +257,7 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary, context: 
 	if context == null:
 		context = ExecutionContext.create("plugin")
 	context = context.for_plugin(plugin_id)
-	var result: Dictionary = await context.run(_dispatch_with_context.bind(plugin_id, capability, args, context))
-	if result.get("success", not result.has("error")) == false and not result.has("rpc_error"):
-		return context.fail(result)
-	return result
+	return await context.run(_dispatch_with_context.bind(plugin_id, capability, args, context))
 
 
 func _dispatch_with_context(plugin_id: String, capability: String, args: Dictionary, context: ExecutionContext) -> Dictionary:
