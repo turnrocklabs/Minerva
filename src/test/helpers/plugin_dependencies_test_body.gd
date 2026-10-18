@@ -200,6 +200,17 @@ func exercise_readiness() -> void:
 		and registry.get_panel_tool_entries(provider.id).size() == RequiredPlugins.PLUGINS.agent_relay.host_tools.size()
 		and manager.get_plugin_status(provider.id).running and manager.get_plugin_status(provider.id).ready)
 	manager.stop_plugin(provider.id)
+	provider.tools.clear()
+	provider.args[profile_index + 1] = "single_catalog"
+	var single_catalog: Dictionary = await manager.start_plugin(provider.id)
+	var single_connection := manager.get_connection(provider.id)
+	check("first successful catalog starts ready without a second query", single_catalog.get("ok", false)
+		and single_connection != null and manager.get_plugin_status(provider.id).running and manager.get_plugin_status(provider.id).ready)
+	if single_connection != null:
+		var count: Dictionary = await single_connection.call_tool("catalog_count", {}, 5.0)
+		check("independent backend count proves exactly one startup discovery", count.get("catalog_requests") == 1)
+		check("anti-case is armed: a subsequent catalog request fails", await single_connection.refresh_tools() != OK)
+	manager.stop_plugin(provider.id)
 	check("stop clears readiness", not manager.get_plugin_status(provider.id).ready)
 	host.plugin_tool_registry = old_registry
 	db.remove(consumer.id)

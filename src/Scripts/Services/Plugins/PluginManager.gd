@@ -1137,7 +1137,7 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	if RequiredPlugins.has(id):
 		# Untyped: a check that stops on a script error yields null, which must
 		# refuse the start rather than pass as "no issue".
-		var checked = await RequiredPlugins.host_tools_missing(def, conn, tool_registry.get_panel_tool_entries(def.id) if tool_registry != null else [])
+		var checked = await RequiredPlugins.host_tools_missing(def, conn, tool_registry.get_panel_tool_entries(def.id) if tool_registry != null else [], false)
 		if not _owns_runtime_connection(id, conn):
 			return {"error": "Plugin '%s' start was cancelled" % id}
 		var contract_issue: String = checked if checked is String \

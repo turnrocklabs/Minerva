@@ -49,6 +49,7 @@ import sys
 _write_lock = asyncio.Lock()
 _exit_release = asyncio.Event()
 MODE = "legacy"
+CATALOG_REQUESTS = 0
 _catalog_release = asyncio.Event()
 CANCELLED_IDS = []
 INITIALIZE_PARAMS = {}
@@ -176,7 +177,9 @@ async def handle_tools_call(req_id, name, args):
     Runs as its own asyncio task, so suspending here (await asyncio.sleep)
     never stalls the reader or any sibling request.
     """
-    if name in ("exit", "stdout_eof_exit"):
+    if name == "catalog_count":
+        await send(_text_result(req_id, {"catalog_requests": CATALOG_REQUESTS}))
+    elif name in ("exit", "stdout_eof_exit"):
         await send(_text_result(req_id, {"exiting": True}))
         if args.get("wait_for_release", False):
             await _exit_release.wait()
@@ -376,6 +379,11 @@ async def dispatch(msg):
             "serverInfo": {"name": "stdio_timing_probe", "version": "0.1.0"}
         }})
     elif method == "tools/list":
+        global CATALOG_REQUESTS
+        CATALOG_REQUESTS += 1
+        if MODE == "single_catalog" and CATALOG_REQUESTS > 1:
+            await send({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": "second catalog refused"}})
+            return
         if MODE == "catalog_exit":
             os._exit(1)
         if MODE == "catalog_error":
@@ -388,7 +396,7 @@ async def dispatch(msg):
         listed = {"tools": TOOLS}
         if MODE == "empty_tools":
             listed["tools"] = []
-        if MODE == "delayed_tools":
+        if MODE in ("delayed_tools", "single_catalog"):
             listed["tools"] = TOOLS + [{"name": name, "description": "Required fixture tool",
                                          "inputSchema": {"type": "object"}}
                                         for name in ("watch_start", "watch_status", "send")]
