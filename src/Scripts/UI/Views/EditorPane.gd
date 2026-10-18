@@ -370,14 +370,12 @@ func is_named_being_used(proposed_name: String) -> bool:
 
 
 func editor_name_to_use(proposed_name: String) -> String:
-	var collisions = 0
-	for i in range(Tabs.get_tab_count()):
-		if Tabs.get_tab_title(i).split(" (")[0] == proposed_name:
-			collisions+=1
-	if collisions == 0:
-		return proposed_name
-	else:
-		return proposed_name + " (" + str(collisions) + ")"
+	var candidate: String = proposed_name
+	var suffix: int = 1
+	while is_named_being_used(candidate):
+		candidate = "%s (%d)" % [proposed_name, suffix]
+		suffix += 1
+	return candidate
 
 
 func unsaved_editors() -> Array[Editor]:

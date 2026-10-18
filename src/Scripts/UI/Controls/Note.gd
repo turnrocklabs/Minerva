@@ -714,7 +714,7 @@ func _open_linked_plugin_panel(editor_pane: EditorPane) -> void:
 			editor_pane.Tabs.current_tab = idx
 			return
 
-	var editor = editor_pane.add_plugin_scene_editor(note_plugin_id, note_panel_name, null, title)
+	var editor = editor_pane.add_plugin_scene_editor(note_plugin_id, note_panel_name, null, editor_pane.editor_name_to_use(title))
 	if editor == null:
 		SingletonObject.create_toast_notification(
 			"Could not open plugin '%s' panel '%s'" % [note_plugin_id, note_panel_name],

@@ -32,14 +32,22 @@ static func create_from_editor(plugin_id: String, args: Dictionary, service_cont
 	if not is_instance_valid(tabs) or editor.get_parent() != tabs:
 		return PluginErrors.backend_error(plugin_id, "Editor tabs are unavailable")
 	# The existing note hook captures the selected panel's actual viewport.
+	var previous: Control = tabs.get_current_tab_control()
 	tabs.current_tab = tabs.get_tab_idx_from_control(editor)
+	# TabContainer applies child visibility on its next layout pass.
+	if previous != editor:
+		await tabs.get_tree().process_frame
 	var thread: String = str(args.get("thread", "Notes")).strip_edges()
 	if thread.is_empty():
 		thread = "Notes"
 	var title: String = str(args.get("title", ""))
-	var note: Note = await editor._create_plugin_scene_note()
+	var note: Note = null
+	if is_instance_valid(editor) and is_instance_valid(tabs) and editor.get_parent() == tabs and not context.is_stopped():
+		note = await editor._create_plugin_scene_note()
 	# Snapshot capture can suspend. Re-resolve ownership before publishing a note.
 	var latest: Dictionary = service_context.call() if service_context.is_valid() else {}
+	if is_instance_valid(tabs) and is_instance_valid(previous) and latest.get("tabs") == tabs and previous != editor and previous.get_parent() == tabs:
+		tabs.current_tab = tabs.get_tab_idx_from_control(previous)
 	var latest_editors: Array = latest.get("editors", [])
 	var current: Dictionary = PanelServices.resolve(locator, latest.get("broker"), latest_editors, true)
 	if context.is_stopped() or not is_instance_valid(editor) or not is_instance_valid(notes) \
