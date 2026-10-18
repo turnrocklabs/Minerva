@@ -204,7 +204,7 @@ static func find_editor_by_name(name_: String) -> Variant:
 
 
 ## Find an editor of a specific type by name. Returns the Editor node or null.
-## Pass Editor.Type.SPREADSHEET, Editor.Type.GRAPHICS, etc.
+## Pass Editor.Type.GRAPHICS, Editor.Type.VIDEO_EDITOR, etc.
 static func find_typed_editor(name_: String, editor_type: int) -> Variant:
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
@@ -226,7 +226,7 @@ static func find_typed_editor(name_: String, editor_type: int) -> Variant:
 	return null
 
 
-## Find a typed editor and return its inner panel (e.g. .spreadsheet_editor).
+## Find a typed editor and return its inner panel (e.g. .video_editor_panel).
 ## property_name is the Editor property that holds the domain-specific panel.
 ## Returns the inner panel or null.
 static func find_editor_panel(name_: String, editor_type: int, property_name: String) -> Variant:
@@ -234,11 +234,6 @@ static func find_editor_panel(name_: String, editor_type: int, property_name: St
 	if editor and editor.get(property_name):
 		return editor.get(property_name)
 	return null
-
-
-## Convenience: find spreadsheet editor panel by name.
-static func find_spreadsheet(name_: String) -> Variant:
-	return find_typed_editor(name_, _get_editor_type("SPREADSHEET"))
 
 
 ## Convenience: find video editor panel by name.

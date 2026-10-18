@@ -36,10 +36,6 @@ static var editor_scene: PackedScene:
 static var graphics_editor_scene: PackedScene:
 	get: return load("res://Scenes/GraphicsEditorV2.tscn")
 
-static var spreadsheet_editor_scene: PackedScene:
-	get: return load("res://Scenes/SpreadsheetEditor.tscn")
-
-
 signal content_changed()
 signal activity_changed()
 ## The editor was given a document (attachment_revision counts them).
@@ -80,7 +76,6 @@ var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
 var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circular dependency
 var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
-var spreadsheet_editor  # SpreadsheetEditor
 var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
@@ -148,7 +143,6 @@ enum Type {
 	PACKAGE = 3,
 	LOGS = 4,
 	KANBAN = 5,
-	SPREADSHEET = 6,
 	VIDEO_EDITOR = 8,
 	ACTIVITY_LOG = 9,
 	WEBVIEW = 10,
@@ -465,17 +459,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			vbox_container.add_child(kanban_widget)
 			editor.kanban_board = kanban_widget
 
-		Editor.Type.SPREADSHEET:
-			var new_spreadsheet_editor = spreadsheet_editor_scene.instantiate()
-			new_spreadsheet_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-
-			if initial_setup:
-				new_spreadsheet_editor.ready.connect(new_spreadsheet_editor.setup)
-				new_spreadsheet_editor.content_changed.connect(editor._on_spreadsheet_editor_changed)
-
-			vbox_container.add_child(new_spreadsheet_editor)
-			editor.spreadsheet_editor = new_spreadsheet_editor
-
 		Editor.Type.VIDEO_EDITOR:
 			vbox_container.clip_contents = true
 			var video_editor_scene = load("res://Scenes/VideoEditorPanel.tscn")
@@ -630,11 +613,10 @@ func _ready():
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
 			Type.KANBAN: _load_kanban_file(file)
-			Type.SPREADSHEET: _load_spreadsheet_file(file)
 			Type.WEBVIEW: _load_webview_file(file)
 			Type.PLUGIN_SCENE: _load_plugin_scene_file(file)
 
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -1335,18 +1317,6 @@ func _load_kanban_file(filename: String) -> void:
 		kanban_board.set_task_store(task_store)
 
 
-func _load_spreadsheet_file(filename: String) -> void:
-	if not spreadsheet_editor:
-		return
-	# Delegate to the canonical importer (SpreadsheetFileHandler dispatches by
-	# extension: csv / tsv / xlsx / minsheet), via the SAME entry point the
-	# editor's File→Import uses. Previously this method hand-rolled a JSON-only
-	# load and silently produced an empty sheet for a .csv. (bug 019e8a30efec)
-	var err: int = spreadsheet_editor.load_file(filename)
-	if err != OK:
-		SingletonObject.ErrorDisplay("Couldn't open spreadsheet", "%s (error %d)" % [filename.get_file(), err])
-
-
 func _load_webview_file(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		SingletonObject.ErrorDisplay("File not found", path)
@@ -1502,12 +1472,6 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 			$FileDialog.filters = PackedStringArray(["*.png"])
 		Type.KANBAN:
 			$FileDialog.filters = PackedStringArray(["*.minkb ; Minerva Kanban"])
-		Type.SPREADSHEET:
-			var filters := PackedStringArray()
-			for extension: String in PluginEditorRegistry.SPREADSHEET_SAVE_EXTENSIONS:
-				var label := "Minerva Spreadsheet" if extension == ".minsheet" else "CSV Files"
-				filters.append("*" + extension + " ; " + label)
-			$FileDialog.filters = filters
 		Type.WEBVIEW:
 			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])
 		Type.PLUGIN_SCENE:
@@ -1644,14 +1608,6 @@ func get_saved_state() -> int:
 					state |= ASSOCIATED_OBJECT_SAVED
 		Type.LOGS:
 			if logs_viewer and logs_viewer.is_saved():
-				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
-
-		Type.SPREADSHEET:
-			# For now, spreadsheets are considered saved (no file association yet)
-			if not spreadsheet_editor:
-				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
-			else:
-				# TODO: Add proper save tracking for spreadsheet
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.KANBAN:
@@ -1818,18 +1774,6 @@ func save_file_to_disc(path: String) -> bool:
 					return false
 				save_file.store_string(json_string)
 
-		Type.SPREADSHEET:
-			if spreadsheet_editor:
-				var dict = spreadsheet_editor.serialize()
-				var json_string = JSON.stringify(dict, "\t")
-				var save_file = FileAccess.open(path, FileAccess.WRITE)
-				if save_file == null:
-					var error := error_string(FileAccess.get_open_error())
-					push_warning(error)
-					SingletonObject.ErrorDisplay("Couldn't save spreadsheet file", error)
-					return false
-				save_file.store_string(json_string)
-
 		Type.WEBVIEW:
 			if webview_editor:
 				var save_file = FileAccess.open(path, FileAccess.WRITE)
@@ -1909,9 +1853,6 @@ func _on_create_note_button_pressed() -> void:
 			new_note = Note.create_text_note(tab_title, code_edit.text)
 		Type.GRAPHICS:
 			new_note = Note.create_image_note(tab_title, await graphics_editor.compose_final_image())
-		Type.SPREADSHEET:
-			var markdown_content: String = spreadsheet_editor.spreadsheet_data.to_markdown()
-			new_note = Note.create_spreadsheet_note(tab_title, tab_title, markdown_content)
 		Type.WEBVIEW:
 			if webview_editor:
 				var html = webview_editor.get_html()
@@ -2246,9 +2187,6 @@ func undo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.undo_command()
-		Type.SPREADSHEET:
-			if spreadsheet_editor:
-				spreadsheet_editor._perform_undo()
 		Type.PLUGIN_SCENE:
 			# The hosted panel owns its history; a reverted step is a content change.
 			if PluginScenePanelHost.invoke_undo(plugin_scene_root):
@@ -2263,9 +2201,6 @@ func redo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.redo_command()
-		Type.SPREADSHEET:
-			if spreadsheet_editor:
-				spreadsheet_editor._perform_redo()
 		Type.PLUGIN_SCENE:
 			if PluginScenePanelHost.invoke_redo(plugin_scene_root):
 				_plugin_scene_modified = true
@@ -2301,7 +2236,7 @@ func _on_mic_button_pressed() -> void:
 
 ## Returns whether or not this editor instance can be turned into a [class Note] objects
 func _supports_note():
-	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PLUGIN_SCENE]
+	return type in [Type.TEXT, Type.GRAPHICS, Type.PLUGIN_SCENE]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
@@ -2329,11 +2264,6 @@ func _create_note() -> Note:
 				push_error("[Editor] compose_final_image() returned null!")
 			note = Note.create_image_note("Editor Note", image)
 			print("[Editor] Image note created: %s" % note)
-		Type.SPREADSHEET:
-			print("[Editor] Creating SPREADSHEET note...")
-			var csv_content = spreadsheet_editor.get_content()
-			note = Note.create_text_note("Spreadsheet Note", csv_content)
-			print("[Editor] Spreadsheet note created: %s" % note)
 		Type.PLUGIN_SCENE:
 			note = await _create_plugin_scene_note()
 
@@ -2506,10 +2436,6 @@ func _update_note(note: Note) -> void:
 		var controls_container = note.get_controls_container() as NoteImageControls
 		controls_container.image = await graphics_editor.compose_final_image()
 
-	elif type == Type.SPREADSHEET:
-		var controls_container = note.get_controls_container() as NoteTextControls
-		controls_container.content = spreadsheet_editor.spreadsheet_data.to_markdown()
-
 	elif type == Type.WEBVIEW:
 		if webview_editor:
 			var html = webview_editor.get_html()
@@ -2647,10 +2573,6 @@ func _on_code_syntax_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_graphics_editor_changed() -> void:
-	content_changed.emit()
-
-
-func _on_spreadsheet_editor_changed() -> void:
 	content_changed.emit()
 
 

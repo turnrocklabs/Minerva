@@ -122,9 +122,6 @@ HERMETIC_TESTS=(
 	test/test_chat_groups.gd
 	test/test_chat_outgoing_queue.gd
 	test/test_note_entry_log.gd
-	test/test_spreadsheet_autofilter.gd
-	test/test_spreadsheet_autofilter_undo.gd
-	test/test_mcp_spreadsheet_filter_tools.gd
 	test/test_terminal_notify.gd
 	test/test_trigger_harness_delivery.gd
 	test/test_docket_wakeups.gd

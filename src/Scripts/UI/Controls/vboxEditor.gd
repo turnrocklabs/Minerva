@@ -45,11 +45,6 @@ func serialize() -> Array:
 		match editor.type:
 			Editor.Type.TEXT:
 				content = editor.code_edit.text
-			editor.Type.SPREADSHEET:
-				if editor.spreadsheet_editor:
-					content = editor.spreadsheet_editor.serialize()
-				else:
-					content = {}
 			Editor.Type.KANBAN:
 				# Serialize kanban board
 				if editor.kanban_board and editor.kanban_board.task_store:
@@ -246,12 +241,6 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				var AutocoderTaskStoreClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTaskStore.gd")
 				var task_store = AutocoderTaskStoreClass.deserialize(content)
 				editor_inst.kanban_board.set_task_store(task_store)
-
-		elif editor_inst.type == Editor.Type.SPREADSHEET:
-			if editor_inst.spreadsheet_editor:
-				var content = editor_ser.get("content")
-				if content and content is Dictionary:
-					editor_inst.spreadsheet_editor.deserialize(content)
 
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditorV2 = editor_inst.graphics_editor
