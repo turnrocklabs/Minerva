@@ -53,7 +53,7 @@ func _run() -> void:
 	host.editor_pane = pane
 	host._wire_plugin_editor_extensions(manager)
 	var module = load("res://Scripts/Services/MCP/Modules/MCPGeneralTools.gd").new(null)
-	var result: Dictionary = module._create_plugin_editor({"plugin_id": definition.id,
+	var result: Dictionary = await module._create_plugin_editor({"plugin_id": definition.id,
 		"editor_item_id": "new_test_paired_dsl", "tab_title": "Paired characterization"})
 	await get_tree().process_frame
 	check("MCP paired create returns success and exactly two tabs", result.get("success", false) and tabs.get_tab_count() == 2)

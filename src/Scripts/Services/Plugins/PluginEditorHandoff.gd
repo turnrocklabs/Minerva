@@ -69,7 +69,7 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 		if manager == null or not manager.get_plugin_status(owner).get("running", false):
 			return _failure("plugin_not_running: " + owner)
 		if not manager.get_plugin_status(owner).get("ready", false):
-			return _failure("provider_not_ready: " + owner)
+			return _failure("provider_not_ready: " + owner + ". " + str(manager.get_plugin_status(owner).get("notice", "")))
 		if action not in panel_info.get("file_actions", ["open", "create"]):
 			return _failure("Plugin '%s' does not support '%s' for '%s'" % [owner, action, ext])
 	elif action == "import" and panel_info.get("builtin") != "spreadsheet":
@@ -235,7 +235,7 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 	if not manager.get_plugin_status(plugin_id).get("running", false):
 		return _failure("plugin_not_running: " + plugin_id)
 	if not manager.get_plugin_status(plugin_id).get("ready", false):
-		return _failure("provider_not_ready: " + plugin_id)
+		return _failure("provider_not_ready: " + plugin_id + ". " + str(manager.get_plugin_status(plugin_id).get("notice", "")))
 	if "create" not in claim.get("file_actions", ["open", "create"]):
 		return _failure("Plugin '%s' does not support 'create'" % plugin_id)
 

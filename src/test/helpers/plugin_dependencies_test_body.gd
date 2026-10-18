@@ -115,6 +115,9 @@ func _ready() -> void:
 func collect_readiness(readiness: PluginReadiness, provider: String, results: Array[Dictionary]) -> void:
 	results.append(await readiness.wait_for_provider(provider))
 
+func collect_dispatch(server: MinervaMCPServer, context: MCPExecutionContext, completion: MCPExecutionContext.Completion) -> void:
+	completion.finish(await server.call_tool("minerva_agent_relay_echo", {"value": "one dispatch"}, context))
+
 
 func exercise_readiness() -> void:
 	var manager := PluginManager.new()
@@ -131,9 +134,15 @@ func exercise_readiness() -> void:
 	manager.configure_dependency_tools(registry)
 	var host := get_tree().root.get_node("SingletonObject")
 	var old_registry: Variant = host.plugin_tool_registry
+	var old_manager: Variant = host.plugin_manager
 	host.plugin_tool_registry = registry
+	host.plugin_manager = manager
+	var server := MinervaMCPServer.new()
+	server.plugin_admission = host._admit_plugin_tool
+	var dispatch := MCPExecutionContext.Completion.new()
+	var dispatch_caller := MCPExecutionContext.create("fixture").for_plugin(consumer.id)
 	var pending_results: Array[Dictionary] = []
-	var seen := {"started": false, "ready": false}
+	var seen := {"started": false, "ready": false, "dispatch_started": false}
 	manager.plugin_started.connect(func(id: String) -> void:
 		seen.started = not manager.get_plugin_status(id).ready
 		var profile: String = provider.args[provider.args.find("--profile") + 1]
@@ -142,10 +151,16 @@ func exercise_readiness() -> void:
 			collect_readiness(PluginReadiness.new(manager, registry), id, pending_results)
 		if profile != "delayed_tools":
 			return
+		var first_dispatch: bool = not seen.dispatch_started
+		if first_dispatch:
+			seen.dispatch_started = true
+			collect_dispatch(server, dispatch_caller, dispatch)
 		get_tree().create_timer(0.1).timeout.connect(func() -> void:
 			if not is_instance_valid(manager) or manager.get_connection(id) == null:
 				return
 			check("real provider admission stays pending before catalog release", pending_results.size() == previous_results)
+			if first_dispatch:
+				check("generic MCP dispatch stays pending before catalog release", not dispatch.done and not dispatch_caller.lifetime.dispatched)
 			check("delayed catalog is running but not ready", manager.get_plugin_status(id).running and not manager.get_plugin_status(id).ready)
 			check("fixture releases catalog through public host event", manager.get_connection(id).send_host_event("test_release_tools", {}) == OK)))
 	manager.plugin_ready.connect(func(id: String) -> void: seen.ready = manager.get_plugin_status(id).ready)
@@ -153,13 +168,22 @@ func exercise_readiness() -> void:
 	check("actual start sets ready before the ready event: " + str(result), result.get("ok", false) and seen.started and seen.ready)
 	if not result.get("ok", false):
 		host.plugin_tool_registry = old_registry
+		host.plugin_manager = old_manager
 		manager.free()
 		return
 	check("real delayed discovery completes one event-driven admission", pending_results.size() == 1 and pending_results[0].get("ok", false))
+	if not dispatch.done:
+		await dispatch.finished
+	check("generic MCP dispatch keeps caller identity and reaches backend", dispatch.result.get("echo", {}).get("value") == "one dispatch")
+	var counted: Dictionary = await manager.get_connection(provider.id).call_tool("catalog_count", {}, 5.0)
+	check("independent backend counter proves delayed call dispatched once", counted.get("echo_calls") == 1)
 	check("missing action visible without constraining other actions", manager.dependency_contract_issue(consumer.id).contains("tool minerva_agent_relay_absent")
 		and manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty())
 	consumer.requires_plugins[0].min_version = "2.0.0"
+	var refused: Dictionary = await server.call_tool("minerva_agent_relay_echo", {}, MCPExecutionContext.create("fixture").for_plugin(consumer.id))
+	var unconstrained: Dictionary = await server.call_tool("minerva_agent_relay_echo", {"free": true}, MCPExecutionContext.create("fixture").for_plugin("unrelated"))
+	check("generic dispatch refuses only the dependent caller", str(refused).contains(">= 2.0.0") and unconstrained.get("echo", {}).get("free") == true)
 	var readiness := PluginReadiness.new(manager, registry)
 	var caller := MCPExecutionContext.create("fixture").for_plugin(consumer.id)
 	var dependent: Dictionary = await readiness.wait_for_tool("minerva_agent_relay_echo", caller)
@@ -237,6 +261,7 @@ func exercise_readiness() -> void:
 	manager.stop_plugin(provider.id)
 	check("stop clears readiness", not manager.get_plugin_status(provider.id).ready)
 	host.plugin_tool_registry = old_registry
+	host.plugin_manager = old_manager
 	db.remove(consumer.id)
 	db.remove(provider.id)
 	if previous != null:

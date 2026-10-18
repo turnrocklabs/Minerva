@@ -434,7 +434,7 @@ func _open_dropped_files(files: PackedStringArray) -> void:
 		var claim := registry.resolve_file("." + extension)
 		var result: Dictionary = {"ok": true}
 		if not claim.is_empty():
-			result = SingletonObject.open_file_at_path(file)
+			result = await SingletonObject.open_file_when_ready(file)
 		elif extension in SingletonObject.supported_image_formats:
 			pane.add(Editor.Type.GRAPHICS, file, file.get_file())
 		elif extension in SingletonObject.supported_text_formats:

@@ -20,6 +20,7 @@ var mcp_manager:
 
 ## Whether the minerva server is connected (enabled)
 var server_enabled: bool = false
+var plugin_admission: Callable = Callable()
 
 ## Server name for tool registration
 const SERVER_NAME: String = "minerva"
@@ -415,6 +416,13 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 					dispatch_result = await module.handle(tool_name, arguments)
 				dispatched = true
 				break
+
+	if not dispatched and plugin_admission.is_valid():
+		var admitted: Dictionary = await plugin_admission.call(tool_name, context)
+		if context.is_stopped():
+			return context.stopped_result()
+		if not admitted.get("ok", false):
+			return admitted
 
 	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
 	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.

@@ -789,6 +789,9 @@ func _wire_plugin_tools_to_mcp() -> void:
 		push_warning("[Plugins] MinervaMCPServer not available for plugin tool wiring")
 		return
 
+	var admission_server: MinervaMCPServer = minerva_server
+	admission_server.plugin_admission = _admit_plugin_tool
+
 	# Tell the tool registry which names are built-in (prevents shadowing)
 	plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
 
@@ -965,7 +968,7 @@ func _register_plugin_editor_items(id: String) -> void:
 		var scene_item: bool = native_item
 		var callback := func() -> void:
 			if scene_item:
-				var created := create_plugin_editor({"plugin_id": plugin_id_copy, "editor_item_id": item_id_copy, "tab_title": item_name_copy})
+				var created := await create_plugin_editor_when_ready({"plugin_id": plugin_id_copy, "editor_item_id": item_id_copy, "tab_title": item_name_copy})
 				if not created.get("success", false):
 					_notify_plugin_refusal(str(created.get("error", "Editor creation refused")))
 			else:
@@ -1891,6 +1894,17 @@ func _plugin_editor_result(result: Dictionary) -> Dictionary:
 		return MCPToolUtils.error(", ".join(PackedStringArray(result.get("errors", []))))
 	result.erase("ok")
 	return MCPToolUtils.success(result)
+
+
+func _admit_plugin_tool(tool: String, context: MCPExecutionContext) -> Dictionary:
+	var manager: PluginManager = plugin_manager
+	var registry: PluginToolRegistry = plugin_tool_registry
+	var services: MCPManager = mcp_manager
+	if manager == null:
+		return {"ok": true}
+	if registry != null and registry.get_tool_owner(tool).is_empty() and services != null and services.tool_registry.has(tool):
+		return {"ok": true} # Existing native tool, not a pending provider prefix.
+	return await PluginReadiness.new(manager, registry).wait_for_tool(tool, context)
 
 
 func _plugin_readiness() -> PluginReadiness:

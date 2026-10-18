@@ -90,14 +90,7 @@ func register_tools() -> void:
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
-	match tool_name:
-		"minerva_open_file":
-			return _open_file(arguments)
-		"minerva_create_plugin_editor":
-			return _create_plugin_editor(arguments)
-		"minerva_open_docket":
-			return await _open_docket(arguments)
-	return MCPToolUtils.error("Unknown general tool: %s" % tool_name)
+	return await handle_with_context(tool_name, arguments, MCPExecutionContext.create("module"))
 
 
 # ── Tool implementation ───────────────────────────────────────────────────────
@@ -105,7 +98,11 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 # The Docket plugin's window, on `dct_path` when given; its refusal is the
 # tool's error.
 func handle_with_context(tool_name: String, args: Dictionary, context: MCPExecutionContext) -> Dictionary:
-	return await _open_docket(args, context) if tool_name == "minerva_open_docket" else await handle(tool_name, args)
+	match tool_name:
+		"minerva_open_file": return await _open_file(args, context)
+		"minerva_create_plugin_editor": return await _create_plugin_editor(args, context)
+		"minerva_open_docket": return await _open_docket(args, context)
+	return MCPToolUtils.error("Unknown general tool: %s" % tool_name)
 
 func _open_docket(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
 	var opened := await SingletonObject.open_docket_panel(str(args.get("dct_path", "")).strip_edges(), context)
@@ -114,7 +111,7 @@ func _open_docket(args: Dictionary, context: MCPExecutionContext = null) -> Dict
 	return {"success": true, "message": "Docket window opened.", "pid": opened.get("pid", 0)}
 
 
-func _open_file(args: Dictionary) -> Dictionary:
+func _open_file(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
 	var err: Variant = MCPToolUtils.check_required(args, ["path"])
 	if err != null:
 		return err
@@ -127,7 +124,7 @@ func _open_file(args: Dictionary) -> Dictionary:
 	if not action is String or action not in ["open", "import"]:
 		return MCPToolUtils.error("action must be open or import")
 	var action_name: String = action
-	var result: Dictionary = SingletonObject.open_file_at_path(path, action_name)
+	var result: Dictionary = await SingletonObject.open_file_when_ready(path, action_name, context)
 
 	# open_file_at_path already returns {ok, editor_kind, editor_name, ...} or
 	# {ok: false, errors: [...]}.  Surface the result directly; callers read ok.
@@ -143,5 +140,5 @@ func _open_file(args: Dictionary) -> Dictionary:
 				"error": ", ".join(errors)}
 
 
-func _create_plugin_editor(args: Dictionary) -> Dictionary:
-	return SingletonObject.create_plugin_editor(args)
+func _create_plugin_editor(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
+	return await SingletonObject.create_plugin_editor_when_ready(args, context)

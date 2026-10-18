@@ -330,6 +330,7 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, provider: PluginDefinition,
 		directory: String, text: String) -> void:
 	var ready_listeners := manager.plugin_ready.get_connections().size()
+	var status_listeners := manager.plugin_status_changed.get_connections().size()
 	var release := func() -> void:
 		manager._ensure_runtime(provider.id)["ready"] = true
 		manager.plugin_ready.emit(provider.id)
@@ -342,8 +343,8 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 		check("sync " + action + " returns a Dictionary refusal without allocating", immediate is Dictionary
 			and str(immediate).contains("provider_not_ready") and pane.Tabs.get_tab_count() == before_open)
 		get_tree().create_timer(0.02).timeout.connect(release)
-		var result: Dictionary = await host.open_file_when_ready(path, action)
-		check("async " + action + " waits and allocates exactly once", result.get("ok", false) and pane.Tabs.get_tab_count() == before_open + 1)
+		var result: Dictionary = await MCPGeneralTools.new(null).handle_with_context("minerva_open_file", {"path": path, "action": action}, MCPExecutionContext.create("fixture"))
+		check("async " + action + " waits and allocates exactly once", result.get("success", false) and pane.Tabs.get_tab_count() == before_open + 1)
 		if pane.Tabs.get_tab_count() == before_open + 1:
 			var editor: Editor = pane.Tabs.get_child(before_open)
 			check("async handoff sends one action without writing source bytes", editor.plugin_scene_root.get("loads") == 1
@@ -354,7 +355,7 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 	var sync_create: Variant = host.create_plugin_editor(args)
 	check("sync create refuses immediately without a coroutine", sync_create is Dictionary and str(sync_create).contains("provider_not_ready") and pane.Tabs.get_tab_count() == before)
 	get_tree().create_timer(0.02).timeout.connect(release)
-	var created: Dictionary = await host.create_plugin_editor_when_ready(args)
+	var created: Dictionary = await MCPGeneralTools.new(null).handle_with_context("minerva_create_plugin_editor", args, MCPExecutionContext.create("fixture"))
 	check("async create allocates once after ready", created.get("success", false) and pane.Tabs.get_tab_count() == before + 1)
 	if pane.Tabs.get_tab_count() == before + 1:
 		var editor: Editor = pane.Tabs.get_child(before)
@@ -365,7 +366,7 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 	_write(refused_path, text)
 	var deadline := MCPExecutionContext.create("fixture", "", "", 0.02)
 	var expired: Dictionary = await host.open_file_when_ready(refused_path, "import", deadline)
-	check("bounded document timeout refuses without allocating", not expired.get("ok", false) and pane.Tabs.get_tab_count() == before)
+	check("bounded document timeout refuses without allocating", (str(expired).contains("provider_ready_timeout") or str(expired).contains("deadline_exceeded")) and pane.Tabs.get_tab_count() == before)
 	var context := MCPExecutionContext.create("fixture")
 	get_tree().create_timer(0.02).timeout.connect(context.cancel)
 	var cancelled: Dictionary = await host.open_file_when_ready(refused_path, "open", context)
@@ -395,11 +396,45 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 	check("manager loss releases document admission", str(manager_loss).contains("provider_unavailable") and pane.Tabs.get_tab_count() == before)
 	await get_tree().process_frame # tree_exiting resumes the waiter before remove_child returns.
 	get_tree().root.add_child(manager)
+	manager._ensure_runtime(provider.id)["tools_notice"] = "provider tools unavailable: tools/list failed. Restart the plugin to retry."
+	check("sync refusal carries the restart cause", str(host.open_file_at_path(refused_path)).contains("Restart the plugin to retry"))
+	manager._ensure_runtime(provider.id).erase("tools_notice")
+	var item: CreatableItemRegistry.CreatableItem = host.creatable_item_registry.get_item(provider.id + "_new")
+	check("delayed GUI fixture has a native callback", item != null and item.create_callback.is_valid())
+	if item != null:
+		get_tree().create_timer(0.02).timeout.connect(func() -> void:
+			check("GUI callback has not allocated before ready", pane.Tabs.get_tab_count() == before)
+			release.call())
+		await item.create_callback.call()
+		check("GUI callback waits and creates one editor", pane.Tabs.get_tab_count() == before + 1)
+	for surface: String in ["menu", "drop"]:
+		var adapter: Control = VBoxContainer.new() if surface == "menu" else Control.new()
+		get_tree().root.add_child(adapter)
+		adapter.set_script(load("res://Scripts/UI/Controls/vboxEditor.gd" if surface == "menu" else "res://Scripts/UI/Views/MainScene.gd"))
+		var path := directory.path_join(surface + "-ready.fixturefmt")
+		_write(path, text)
+		var surface_before := pane.Tabs.get_tab_count()
+		manager._ensure_runtime(provider.id)["ready"] = false
+		get_tree().create_timer(0.02).timeout.connect(func() -> void:
+			check(surface + " stays pending before ready", pane.Tabs.get_tab_count() == surface_before)
+			release.call())
+		if surface == "menu":
+			await adapter.call("open_file", path)
+		else:
+			await adapter.call("_open_dropped_files", PackedStringArray([path]))
+		check(surface + " allocates once after ready", pane.Tabs.get_tab_count() == surface_before + 1 and FileAccess.get_file_as_string(path) == text)
+		adapter.free()
+	before = pane.Tabs.get_tab_count()
+	manager._ensure_runtime(provider.id)["ready"] = false
+	get_tree().create_timer(0.02).timeout.connect(release)
+	check("project restore waiter requires ready, not merely RUNNING", await EditorContainer._wait_for_plugin_ready(provider.id, 500))
+	manager._ensure_runtime(provider.id)["ready"] = false
 	get_tree().create_timer(0.02).timeout.connect(func() -> void: manager.stop_plugin(provider.id))
 	var stopped: Dictionary = await host.open_file_when_ready(refused_path)
 	await get_tree().process_frame
 	check("stop releases a pending wait with no allocation", str(stopped.get("error")).contains("provider_stopped") and pane.Tabs.get_tab_count() == before)
 	check("completed waits disconnect listeners and release timers", manager.plugin_ready.get_connections().size() == ready_listeners
+		and manager.plugin_status_changed.get_connections().size() == status_listeners
 		and context.lifetime.cancelled.get_connections().is_empty() and not manager.get_children().any(func(child: Node) -> bool: return child is Timer))
 	manager.get_db().update_state(provider.id, PluginDefinition.State.RUNNING)
 	manager._ensure_runtime(provider.id)["ready"] = true

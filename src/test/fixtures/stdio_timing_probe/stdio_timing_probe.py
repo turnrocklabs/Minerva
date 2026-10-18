@@ -50,6 +50,7 @@ _write_lock = asyncio.Lock()
 _exit_release = asyncio.Event()
 MODE = "legacy"
 CATALOG_REQUESTS = 0
+ECHO_CALLS = 0
 _catalog_release = asyncio.Event()
 CANCELLED_IDS = []
 INITIALIZE_PARAMS = {}
@@ -177,8 +178,9 @@ async def handle_tools_call(req_id, name, args):
     Runs as its own asyncio task, so suspending here (await asyncio.sleep)
     never stalls the reader or any sibling request.
     """
+    global ECHO_CALLS
     if name == "catalog_count":
-        await send(_text_result(req_id, {"catalog_requests": CATALOG_REQUESTS}))
+        await send(_text_result(req_id, {"catalog_requests": CATALOG_REQUESTS, "echo_calls": ECHO_CALLS}))
     elif name in ("exit", "stdout_eof_exit"):
         await send(_text_result(req_id, {"exiting": True}))
         if args.get("wait_for_release", False):
@@ -194,6 +196,7 @@ async def handle_tools_call(req_id, name, args):
         os._exit(0)
     elif name == "echo":
         # Reply immediately with the arguments echoed back.
+        ECHO_CALLS += 1
         await send(_text_result(req_id, {"success": True, "echo": args}))
 
     elif name == "sleep":

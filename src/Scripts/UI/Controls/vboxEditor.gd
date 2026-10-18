@@ -712,7 +712,7 @@ static func _ensure_plugins_running_for_entries(entries: Array) -> void:
 		if not pid.is_empty():
 			plugins_needed[pid] = true
 
-	for pid in plugins_needed:
+	for pid: String in plugins_needed:
 		var def: PluginDefinition = db.get_by_id(pid)
 		if def == null:
 			push_warning(
@@ -720,9 +720,10 @@ static func _ensure_plugins_running_for_entries(entries: Array) -> void:
 				"is not installed; tab will show install placeholder.") % pid
 			)
 			continue
-		if def.state == PluginDefinition.State.RUNNING:
+		var manager: PluginManager = pm
+		if manager.get_plugin_status(pid).get("ready", false):
 			continue
-		if def.state == PluginDefinition.State.STARTING:
+		if def.state in [PluginDefinition.State.STARTING, PluginDefinition.State.RUNNING]:
 			await _wait_for_plugin_ready(pid, 5000)
 			continue
 		var result: Dictionary = await pm.start_plugin(pid)
@@ -735,27 +736,16 @@ static func _ensure_plugins_running_for_entries(entries: Array) -> void:
 		await _wait_for_plugin_ready(pid, 5000)
 
 
-## Poll the plugin's state until it is RUNNING (return true) or transitions
-## to ERROR / CRASH_LOOP (return false), with `timeout_ms` overall budget.
-## Returns false on timeout.
+## Await lifecycle events with the existing restore budget; no state polling.
 static func _wait_for_plugin_ready(plugin_id: String, timeout_ms: int) -> bool:
-	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
-	if pm == null:
+	var manager: PluginManager = SingletonObject.get("plugin_manager")
+	if manager == null:
 		return false
-	var db = pm.get_db()
-	if db == null:
-		return false
-	var start_ms: int = Time.get_ticks_msec()
-	while Time.get_ticks_msec() - start_ms < timeout_ms:
-		var def: PluginDefinition = db.get_by_id(plugin_id)
-		if def == null:
-			return false
-		if def.state == PluginDefinition.State.RUNNING:
-			return true
-		if def.state == PluginDefinition.State.ERROR or def.state == PluginDefinition.State.CRASH_LOOP:
-			return false
-		await SingletonObject.editor_container.get_tree().create_timer(0.1).timeout
-	return false
+	var readiness := PluginReadiness.new(manager, manager.tool_registry)
+	var result := await readiness.wait_for_provider(plugin_id, float(timeout_ms) / 1000.0)
+	if not result.get("ok", false):
+		push_warning(str(result.get("error", "Provider is not ready")))
+	return result.get("ok", false) == true
 
 
 ## Restore the panel's __panel_state via the host_owned _on_panel_load_request
@@ -859,7 +849,7 @@ func _is_graphics_file(filename: String) -> bool:
 
 func _on_open_files(files: PackedStringArray):
 	for filename in files:
-		open_file(filename)
+		await open_file(filename)
 	SingletonObject.save_state(false)
 
 
@@ -879,7 +869,7 @@ func open_file(filename: String) -> void:
 		# Keep the legacy is_graph/is_picture flags for the GRAPHICS branch.
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-	var opened: Dictionary = SingletonObject.open_file_at_path(filename)
+	var opened: Dictionary = await SingletonObject.open_file_when_ready(filename)
 	if not opened.get("ok", false):
 		SingletonObject.create_toast_notification(", ".join(PackedStringArray(opened.get("errors", []))), ToastNotification.Type.WARNING)
 
