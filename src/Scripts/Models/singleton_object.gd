@@ -1865,7 +1865,7 @@ func create_plugin_editor(arguments: Dictionary) -> Dictionary:
 
 func _editor_handoff() -> PluginEditorHandoff:
 	return PluginEditorHandoff.new(editor_pane, plugin_manager, plugin_editor_registry,
-		plugin_scene_panel_broker, DocumentRegistry.get_instance(), _open_paired_dsl, _editor_type_to_string)
+		plugin_scene_panel_broker, DocumentRegistry.get_instance, _open_paired_dsl, _editor_type_to_string)
 
 
 ## Map Editor.Type enum to a human-readable string for open_file_at_path responses.

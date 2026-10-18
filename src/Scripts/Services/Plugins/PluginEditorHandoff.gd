@@ -6,13 +6,13 @@ var pane: EditorPane
 var manager: PluginManager
 var registry: PluginEditorRegistry
 var scene_broker: PluginScenePanelBroker
-var documents: DocumentRegistry
+var documents: Callable
 var open_paired: Callable
 var type_name: Callable
 
 
 func _init(editor_pane: EditorPane, plugin_manager: PluginManager, editor_registry: PluginEditorRegistry,
-		broker: PluginScenePanelBroker, document_registry: DocumentRegistry,
+		broker: PluginScenePanelBroker, document_registry: Callable,
 		paired_open: Callable, editor_type_name: Callable) -> void:
 	pane = editor_pane
 	manager = plugin_manager
@@ -38,7 +38,7 @@ func open_file_at_path(path: String) -> Dictionary:
 		return {"ok": false, "errors": ["file_not_found: %s" % abs_path]}
 
 	if pane == null:
-		return {"ok": false, "errors": ["pane not available"]}
+		return {"ok": false, "errors": ["editor_pane not available"]}
 
 	# --- Idempotency: check if already open ---
 	# TODO(paired_dsl close-one): for render_mode=paired_dsl, two editors share
@@ -86,9 +86,7 @@ func open_file_at_path(path: String) -> Dictionary:
 		editor_kind = "SPREADSHEET"
 	else:
 		# Check plugin registry before falling back to TEXT (design §7.3).
-		var reg: PluginEditorRegistry = null
-		if "registry" in self:
-			reg = get("registry")
+		var reg: PluginEditorRegistry = registry
 		var panel_info: Dictionary = {}
 		if reg != null:
 			panel_info = reg.resolve_extension(ext)
@@ -192,7 +190,8 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 	# the anonymous-create path mirrors that shape using an unbacked buffer
 	# (DocumentRegistry mints a synthetic identity that survives Save-As).
 	if render_mode == "paired_dsl":
-		var unbacked_r := documents.create_unbacked_buffer()
+		var document_registry: DocumentRegistry = documents.call()
+		var unbacked_r := document_registry.create_unbacked_buffer()
 		if not unbacked_r.ok:
 			return MCPToolUtils.error("unbacked_buffer_creation_failed: %s" % unbacked_r.get("error", "?"))
 		var unbacked_buf: DocumentBuffer = unbacked_r.buffer
