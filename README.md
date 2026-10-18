@@ -177,3 +177,5 @@ branch pushes never execute those functional or publishing jobs. The lint also
 checks local composite actions and warns when declared branch dependency
 budgets exceed ten minutes. These timing warnings do not block release; FCIB,
 functional-lane separation and secret scans remain enforced.
+
+Required-plugin release coordinates are owned by `RequiredPlugins.PLUGINS`; an entry may name a `repo`, and entries without one use the host repository. Release fixtures use a loopback API base with `/repos/<owner>/<repo>/releases` paths.

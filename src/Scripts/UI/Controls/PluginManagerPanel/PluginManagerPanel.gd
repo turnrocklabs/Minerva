@@ -1731,7 +1731,7 @@ func _on_remove_confirmed() -> void:
 		if _docket_primary_choice == "Open master in docket.app":
 			SingletonObject.open_docket_panel_for_user()
 		else:
-			OS.shell_open(RequiredPlugins.release_page())
+			OS.shell_open(RequiredPlugins.release_page("docket"))
 		return
 	if _pending_remove_id.is_empty() or not _pm():
 		return

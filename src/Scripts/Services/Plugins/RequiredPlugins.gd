@@ -12,7 +12,7 @@ extends RefCounted
 ##     to get it.
 ## A developer's manifest-lane copy is never judged broken or replaced.
 ##
-## Releases are the Minerva repository's per-plugin GitHub releases: tag
+## Releases are the host-declared repositories' per-plugin GitHub releases: tag
 ## "<id>-v<version>", one asset per target named "<id>-<version>-<target>.tar.gz"
 ## in the marketplace archive format.
 ##
@@ -48,12 +48,10 @@ const PLUGINS := {
 const DOCKET_CAPABILITIES: Array[String] = [
 	"minerva_docket_schema_declare", "minerva_docket_project_bootstrap", "minerva_docket_vault_control",
 ]
-## The GitHub Releases API listing the pickup reads, newest first, a page at a
-## time (tests point it at a local fixture).
+## API base for per-repository release listings (tests use a loopback base).
 static var releases_url := _initial_releases_url(OS.get_environment("MINERVA_REQUIRED_RELEASES_URL"))
-## App builds share the listing, so a rarely released plugin can sit many pages
-## back; the pickup stops at a short page, once every required plugin has a
-## release, or after this many pages.
+## Each repository stops at a short page, once all its required ids have a
+## release, or after this many pages. One failed repository cannot hide another.
 const MAX_RELEASE_PAGES := 10
 const RELEASES_PER_PAGE := 100
 
@@ -65,11 +63,20 @@ static func _initial_releases_url(override: String) -> String:
 		if loopback.search(override.to_lower()) != null:
 			return override
 		push_warning("[RequiredPlugins] Ignoring non-loopback MINERVA_REQUIRED_RELEASES_URL")
-	return "https://api.github.com/repos/%s/releases" % REPO
+	return "https://api.github.com"
 
 
-static func release_page() -> String:
-	return "https://github.com/%s/releases" % REPO
+static func repository(plugin_id: String) -> String:
+	var entry: Dictionary = PLUGINS.get(plugin_id, {})
+	return str(entry.get("repo", REPO))
+
+
+static func release_page(plugin_id: String) -> String:
+	return "https://github.com/%s/releases" % repository(plugin_id)
+
+
+static func _release_url(repo: String) -> String:
+	return "%s/repos/%s/releases" % [releases_url.trim_suffix("/"), repo]
 
 
 static func has(plugin_id: String) -> bool:
@@ -185,29 +192,44 @@ static func entry_from_releases(releases: Array, plugin_id: String) -> Dictionar
 
 
 ## The newest release of each required plugin, as registry entries keyed by
-## id (entry_from_releases), from the release listing; {} when its first page
-## cannot be read.
+## id (entry_from_releases), from each host-declared repository. A failed
+## listing leaves other repositories and already-found entries available.
 static func fetch_entries(manager) -> Dictionary:
+	# Only the host's catalog supplies repositories; dependencies cannot add one.
+	var groups := {}
+	for id: String in ids():
+		var repo: String = repository(id)
+		var group: Array = groups.get(repo, [])
+		group.append(id)
+		groups[repo] = group
+	return await _fetch_grouped_entries(manager, groups)
+
+
+static func _fetch_grouped_entries(manager, groups: Dictionary) -> Dictionary:
 	var client: Node = MarketplaceClient.new()
 	manager.add_child(client)
-	var releases: Array = []
 	var entries := {}
-	for page in range(1, MAX_RELEASE_PAGES + 1):
-		var url := "%s?per_page=%d&page=%d" % [releases_url, RELEASES_PER_PAGE, page]
-		var fetched: Dictionary = await client.fetch_json(url,
-			PackedStringArray(["Accept: application/vnd.github+json", "User-Agent: Minerva"]))
-		if not fetched.get("ok", false) or not fetched.json is Array:
-			push_warning("[RequiredPlugins] Release listing unreadable at %s: %s" % [url,
-				MarketplaceClient.format_install_error(fetched) if not fetched.get("ok", false) else "not a list"])
-			break
-		releases.append_array(fetched.json)
-		entries = {}
-		for id in ids():
-			var entry := entry_from_releases(releases, id)
-			if not entry.is_empty():
-				entries[id] = entry
-		if fetched.json.size() < RELEASES_PER_PAGE or entries.size() == PLUGINS.size():
-			break
+	for repo: String in groups:
+		var plugin_ids: Array = groups[repo]
+		var releases: Array = []
+		var found := {}
+		for page in range(1, MAX_RELEASE_PAGES + 1):
+			var url := "%s?per_page=%d&page=%d" % [_release_url(repo), RELEASES_PER_PAGE, page]
+			var fetched: Dictionary = await client.fetch_json(url,
+				PackedStringArray(["Accept: application/vnd.github+json", "User-Agent: Minerva"]))
+			if not fetched.get("ok", false) or not fetched.json is Array:
+				push_warning("[RequiredPlugins] Release listing unreadable at %s: %s" % [url,
+					MarketplaceClient.format_install_error(fetched) if not fetched.get("ok", false) else "not a list"])
+				break
+			releases.append_array(fetched.json)
+			found = {}
+			for id: String in plugin_ids:
+				var entry := entry_from_releases(releases, id)
+				if not entry.is_empty():
+					found[id] = entry
+			if fetched.json.size() < RELEASES_PER_PAGE or found.size() == plugin_ids.size():
+				break
+		entries.merge(found)
 	client.queue_free()
 	return entries
 
@@ -270,7 +292,7 @@ static func ensure(manager) -> Dictionary:
 			continue
 		var entry: Dictionary = entries.get(id, {})
 		if entry.is_empty() or MarketplaceClient.download_target(entry.downloads).is_empty():
-			push_warning("[RequiredPlugins] No release of '%s' for %s at %s" % [id, MarketplaceClient.resolve_platform_target(), releases_url])
+			push_warning("[RequiredPlugins] No release of '%s' for %s at %s" % [id, MarketplaceClient.resolve_platform_target(), _release_url(repository(id))])
 			continue
 		var fresh: bool = not manager.get_db().has_plugin(id)
 		var job = manager.install_queue.request(entry, true, false, true)

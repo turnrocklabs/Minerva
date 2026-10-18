@@ -542,7 +542,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
+          python3 scripts/prefetch-required-releases.py --repo turnrocklabs/Minerva --repo imrans-lab/minerva-plugins --output "$RUNNER_TEMP/required-releases.json"
       - name: Run tarball smoke
         env:
           MINERVA_REQUIRED_RELEASES_JSON: ${{ runner.temp }}/required-releases.json
@@ -1168,7 +1168,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
+          python3 scripts/prefetch-required-releases.py --repo turnrocklabs/Minerva --repo imrans-lab/minerva-plugins --output "$RUNNER_TEMP/required-releases.json"
       - name: Smoke-launch macOS build
         working-directory: src/build/macos
         env:
@@ -1533,7 +1533,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
+          python3 scripts/prefetch-required-releases.py --repo turnrocklabs/Minerva --repo imrans-lab/minerva-plugins --output "$RUNNER_TEMP/required-releases.json"
       - name: Smoke-launch Linux build (extension load only)
         if: github.event_name == 'workflow_dispatch' && (github.event_name == 'push' || github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all')
         working-directory: src/build/linux

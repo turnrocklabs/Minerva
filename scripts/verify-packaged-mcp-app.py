@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import parse_qs, urlsplit
+from typing import Any
 
 # Match the established tarball smoke allowance for a cold application start.
 # Once startup returns to the scene tree, helper requests retain their
@@ -31,29 +32,41 @@ BRIDGE_TIMEOUT_SECONDS = 360
 
 
 @contextmanager
-def _required_releases():
-    """Serve CI's release snapshot; normal local probes keep their existing URL."""
+def _required_releases() -> Iterator[str | None]:
+    """Serve CI's per-repository snapshot through the same paged API paths."""
     snapshot = os.environ.get("MINERVA_REQUIRED_RELEASES_JSON")
     if not snapshot:
         yield None
         return
-    pages = json.loads(Path(snapshot).read_text(encoding="utf-8"))
-    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
-        raise ValueError("required-release snapshot must be an array of pages")
-    releases = [release for page in pages for release in page]
+    pages_by_repo = json.loads(Path(snapshot).read_text(encoding="utf-8"))
+    if not isinstance(pages_by_repo, dict):
+        raise ValueError("required-release snapshot must be keyed by repository")
+    releases_by_repo: dict[str, list[Any]] = {}
+    for repo, pages in pages_by_repo.items():
+        if (not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo)
+                or not isinstance(pages, list)
+                or any(not isinstance(page, list) for page in pages)):
+            raise ValueError("required-release repository must contain an array of pages")
+        releases_by_repo[repo] = [release for page in pages for release in page]
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
+        def do_GET(self) -> None:
             url = urlsplit(self.path)
             try:
                 query = parse_qs(url.query, strict_parsing=True, keep_blank_values=True)
                 page = int(query.get("page", ["1"])[0])
                 count = int(query.get("per_page", ["100"])[0])
-                if url.path != "/required-releases.json" or page < 1 or not 1 <= count <= 100:
+                if (not url.path.startswith("/repos/") or not url.path.endswith("/releases")
+                        or page < 1 or not 1 <= count <= 100):
                     raise ValueError("invalid release page")
+                repo = url.path.removeprefix("/repos/").removesuffix("/releases")
             except ValueError:
                 self.send_error(400)
                 return
+            if repo not in releases_by_repo:
+                self.send_error(404)
+                return
+            releases = releases_by_repo[repo]
             body = json.dumps(releases[(page - 1) * count:page * count]).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -61,14 +74,14 @@ def _required_releases():
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, *_args):
+        def log_message(self, _format: str, *_args: object) -> None:
             pass
 
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{server.server_port}/required-releases.json"
+            yield f"http://127.0.0.1:{server.server_port}"
         finally:
             server.shutdown()
             thread.join()

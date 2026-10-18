@@ -146,7 +146,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp 'repos/turnrocklabs/Minerva/releases?per_page=100' > "$RUNNER_TEMP/required-releases.json"
+          python3 scripts/prefetch-required-releases.py --repo turnrocklabs/Minerva --repo imrans-lab/minerva-plugins --output "$RUNNER_TEMP/required-releases.json"
       - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash
