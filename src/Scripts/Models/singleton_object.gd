@@ -984,8 +984,11 @@ func _unregister_plugin_editor_items(id: String) -> void:
 
 
 ## Installed definitions retain their claims until removal, not process exit.
+var _plugin_editor_notices: Array[String] = []
+
+
 func _wire_plugin_editor_extensions(manager: PluginManager) -> void:
-	var db := manager.get_db()
+	var db: PluginDB = manager.get_db()
 	# The Node owner can be freed; binding the RefCounted DB to its own signal
 	# would instead retain it through a reference cycle.
 	var refresh := _sync_plugin_editor_extensions.bind(manager)
@@ -997,13 +1000,29 @@ func _wire_plugin_editor_extensions(manager: PluginManager) -> void:
 func _sync_plugin_editor_extensions(manager: PluginManager) -> void:
 	if not is_instance_valid(manager):
 		return
-	var db := manager.get_db()
-	var updated := PluginEditorRegistry.new(RequiredPlugins.ids())
-	for definition: PluginDefinition in db.get_all():
-		var warnings := updated.register_plugin(definition)
+	var db: PluginDB = manager.get_db()
+	# Keep accepted claims on a refused update. Removing a definition alone
+	# removes its claims; stop/crash state changes never do.
+	var registry := plugin_editor_registry
+	for id: String in registry.registered_plugin_ids():
+		if db.get_by_id(id) == null:
+			registry.unregister_plugin(id)
+	var definitions: Array[PluginDefinition] = db.get_all()
+	# PluginDB persists this insertion order in its records array.
+	var notices: Array[String] = []
+	for definition: PluginDefinition in definitions:
+		var warnings := registry.register_plugin(definition)
+		var refusal := ""
 		for warning: String in warnings:
-			create_toast_notification(warning, ToastNotification.Type.WARNING)
-	plugin_editor_registry = updated
+			notices.append(warning)
+			if warning.contains("registration refused") or warning.contains("for two panels"):
+				refusal = warning
+		manager.set_editor_registration(definition.id, refusal)
+	for notice: String in notices:
+		if notice not in _plugin_editor_notices:
+			push_warning(notice)
+			create_toast_notification(notice, ToastNotification.Type.WARNING, false)
+	_plugin_editor_notices = notices
 
 
 ## Open a plugin panel for an editor_item's declared panel name.
@@ -1136,7 +1155,7 @@ var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
 ## NOTE: Wiring into plugin start/stop is done in initialize_plugins() below.
 ## This property is intentionally NOT a Godot autoload; it is accessed via
 ## SingletonObject.plugin_editor_registry.
-var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
+var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new(RequiredPlugins.ids())
 #endregion Plugin Editor Registry
 
 #region Docket

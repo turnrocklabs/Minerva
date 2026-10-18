@@ -9,7 +9,7 @@ extends RefCounted
 ## Design §7.2.
 ##
 ## Ownership: constructed by SingletonObject as `plugin_editor_registry`.
-## Wired into plugin start/stop via SingletonObject.initialize_plugins() —
+## Wired into installed DB changes via SingletonObject.initialize_plugins() —
 ## see NOTE at bottom of this file.
 ##
 ## Extension collision rules (design §7.3):
@@ -23,8 +23,7 @@ extends RefCounted
 ## NOTE: PluginEditorRegistry is NOT registered as a Godot autoload.
 ## SingletonObject constructs it as a plain property:
 ##   var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
-## Call register_plugin() / unregister_plugin() from the plugin_started /
-## plugin_stopped / plugin_crashed signal handlers in SingletonObject.initialize_plugins().
+## Registrations are reconciled in place so refused updates preserve prior claims.
 
 
 ## Core file extensions that plugin registrations must never override.
@@ -135,7 +134,6 @@ func register_plugin(def) -> Array[String]:
 					"which is a core extension — extension skipped (use 'New →' instead)") %
 					[plugin_id, ext]
 				)
-				push_warning(w)
 				warnings.append(w)
 				continue
 
@@ -144,7 +142,6 @@ func register_plugin(def) -> Array[String]:
 			var previous: Dictionary = _ext_to_panel.get(ext, {})
 			var conflict := _conflict(ext, plugin_id, previous)
 			if not conflict.is_empty():
-				push_warning(conflict)
 				return [conflict]
 
 			if not previous.is_empty() and previous.get("plugin_id") != plugin_id:
@@ -185,7 +182,6 @@ func register_plugin(def) -> Array[String]:
 		var previous_kind: Dictionary = _kind_to_panel.get(item_id, {})
 		var kind_conflict := _conflict(item_id, plugin_id, previous_kind)
 		if not kind_conflict.is_empty():
-			push_warning(kind_conflict)
 			return [kind_conflict]
 		if not previous_kind.is_empty() and previous_kind.get("plugin_id") != plugin_id:
 			warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for editor kind '%s'" % [plugin_id, previous_kind.plugin_id, item_id])
@@ -277,3 +273,10 @@ func list_editor_kinds() -> Array[Dictionary]:
 		entry["id"] = kind_id
 		result.append(entry)
 	return result
+
+
+func registered_plugin_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for id: String in _plugin_extensions:
+		ids.append(id)
+	return ids

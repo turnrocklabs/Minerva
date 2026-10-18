@@ -26,7 +26,7 @@ func _write(path: String, text: String) -> void:
 func _install(manager: PluginManager, id: String, extension: String, paired: bool, actions: Array[String] = ["open", "import", "create"]) -> PluginDefinition:
 	var directory := "user://plugins/" + id
 	var panel := {"name": "main", "kind": "godot_scene", "entry_scene": "Panel.tscn", "scripts": ["Panel.gd"],
-		"file_extensions": [extension], "file_actions": actions}
+		"file_extensions": [extension, ".minsheet", ".csv"] if id == "file_contract" else [extension], "file_actions": actions}
 	if paired:
 		panel["render_mode"] = "paired_dsl"
 	var manifest := {"id": id, "name": id, "version": "1.0.0", "host_api_version": "2",
@@ -35,7 +35,7 @@ func _install(manager: PluginManager, id: String, extension: String, paired: boo
 	_write(directory.path_join("manifest.json"), JSON.stringify(manifest))
 	_write(directory.path_join("Panel.gd"), PANEL)
 	_write(directory.path_join("Panel.tscn"), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="Panel.gd" id="1"]\n[node name="Panel" type="Control"]\nscript = ExtResource("1")\n')
-	var definition := manager.get_db().install(directory.path_join("manifest.json"))
+	var definition: PluginDefinition = manager.get_db().install(directory.path_join("manifest.json"))
 	check("real provider manifest installs: " + id, definition != null)
 	if definition != null:
 		manager.get_db().update_state(id, PluginDefinition.State.RUNNING)
@@ -62,6 +62,7 @@ func _run() -> void:
 	pane.buffer_control_editor = Control.new()
 	host.editor_pane = pane
 	host.creatable_item_registry = CreatableItemRegistry.new()
+	host.plugin_editor_registry = PluginEditorRegistry.new(["required_contract"])
 	host._wire_plugin_editor_extensions(manager)
 	var single := _install(manager, "file_contract", ".fixturefmt", false)
 	var paired := _install(manager, "paired_contract", ".pairedfmt", true)
@@ -114,6 +115,20 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 				check(action + " retry returns the same tab without another load", again.get("ok", false)
 					and again.editor_name == result.editor_name and pane.Tabs.get_tab_count() == before + 1 and panel.get("loads") == 1)
 		check(action + " does not rewrite the input file", FileAccess.get_file_as_string(path) == text)
+	for extension: String in ["minsheet", "csv"]:
+		var claimed_path := directory.path_join("claimed." + extension)
+		_write(claimed_path, text)
+		var claimed: Dictionary = host.open_file_at_path(claimed_path)
+		check("runtime plugin overrides builtin " + extension, claimed.get("ok", false)
+			and claimed.get("plugin_id") == single.id and claimed.get("editor_kind") == "PLUGIN_SCENE")
+	var saved_editor: Editor = pane.Tabs.get_child(0)
+	check("real bound editor saves successfully", await saved_editor.save_file_to_disc(open_path))
+	text = FileAccess.get_file_as_string(open_path)
+	pane.Tabs.remove_child(saved_editor)
+	saved_editor.free()
+	var reopened: Dictionary = host.open_file_at_path(open_path)
+	check("saved document reopens through its owner", reopened.get("ok", false) and reopened.get("plugin_id") == single.id
+		and JSON.parse_string(FileAccess.get_file_as_string(open_path)).get("value") == "opaque payload")
 	var before_refusal := pane.Tabs.get_tab_count()
 	for state: int in [PluginDefinition.State.STOPPED, PluginDefinition.State.ERROR]:
 		manager.get_db().update_state(single.id, state)
@@ -121,6 +136,11 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 			manager.plugin_stopped.emit(single.id)
 		else:
 			manager.plugin_crashed.emit(single.id)
+		var first_path := directory.path_join("never-opened-%s.fixturefmt" % state)
+		_write(first_path, text)
+		var first: Dictionary = host.open_file_at_path(first_path)
+		check("stopped/crashed first open refuses with no new editor", not first.get("ok", true)
+			and str(first.errors).contains("plugin_not_running") and pane.Tabs.get_tab_count() == before_refusal)
 		var refused: Dictionary = host.open_file_at_path(open_path, "import")
 		check("stopped/crashed provider keeps claim and refuses without mutation", not refused.get("ok", true)
 			and str(refused.errors).contains("plugin_not_running") and host.plugin_editor_registry.resolve_extension(".fixturefmt").get("plugin_id") == single.id
@@ -149,6 +169,21 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		check("paired import shares actual buffer and delivers import once", render.plugin_scene_root != null
 			and source.get_document_buffer() == broker.get_attached_buffer(paired.id, render.plugin_panel_key)
 			and render.plugin_scene_root.get("loads") == 1 and render.plugin_scene_root.get("last_action") == "import")
+	var pair_count := pane.Tabs.get_tab_count()
+	var pair_retry: Dictionary = host.open_file_at_path(paired_path, "import")
+	check("paired retry preserves the existing pair", pair_retry.get("ok", false)
+		and pane.Tabs.get_tab_count() == pair_count and pair_retry.get("editor_name") == paired_result.get("editor_name"))
+	if pane.Tabs.get_tab_count() == before_refusal + 2:
+		var source: Editor = pane.Tabs.get_child(before_refusal)
+		var render: Editor = pane.Tabs.get_child(before_refusal + 1)
+		check("paired file saves through its real source editor", await source.save_file_to_disc(paired_path))
+		pane.Tabs.remove_child(render)
+		render.free()
+		pane.Tabs.remove_child(source)
+		source.free()
+		var again: Dictionary = host.open_file_at_path(paired_path)
+		check("saved pair reopens through the integrated route", again.get("ok", false)
+			and again.get("plugin_id") == paired.id and pane.Tabs.get_tab_count() == before_refusal + 2)
 	host._register_plugin_editor_items(single.id)
 	var item: CreatableItemRegistry.CreatableItem = host.creatable_item_registry.get_item(single.id + "_new")
 	var before_create := pane.Tabs.get_tab_count()
@@ -162,8 +197,15 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 			check("create hook receives its scoped action", created.plugin_scene_root != null
 				and created.plugin_scene_root.get("loads") == 1 and created.plugin_scene_root.get("last_action") == "create")
 
+	await _exercise_conflicts(host, manager, pane, directory, text)
+	check("DB removal releases the sheet claims", manager.get_db().remove(single.id)
+		and host.plugin_editor_registry.resolve_extension(".csv").is_empty())
 	var csv_path := directory.path_join("unclaimed.csv")
 	_write(csv_path, "name,value\nalpha,1\n")
+	# The actual empty-pane drop adapter also uses the generic route.
+	var drop_adapter = load("res://Scripts/UI/Views/MainScene.gd").new()
+	drop_adapter._open_dropped_files(PackedStringArray([csv_path]))
+	drop_adapter.free()
 	var native: Dictionary = host.open_file_at_path(csv_path, "import")
 	check("unclaimed CSV imports through builtin spreadsheet", native.get("ok", false) and native.get("editor_kind") == "SPREADSHEET")
 	var unknown_path := directory.path_join("unclaimed.unknownfmt")
@@ -180,3 +222,64 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		check("undeclared import refuses visibly without mutation", not restricted.get("ok", true)
 			and str(restricted.errors).contains("does not support") and pane.Tabs.get_tab_count() == before_restricted
 			and FileAccess.get_file_as_string(restricted_path) == text)
+
+	var import_only := _install(manager, "import_only_contract", ".importonly", false, ["import"])
+	var import_only_path := directory.path_join("restricted.importonly")
+	_write(import_only_path, text)
+	if import_only != null:
+		var before := pane.Tabs.get_tab_count()
+		var no_open: Dictionary = host.open_file_at_path(import_only_path)
+		var no_create: Dictionary = host.create_plugin_editor({"plugin_id": import_only.id, "editor_item_id": import_only.id + "_new"})
+		check("undeclared open/create refuse without mutation", not no_open.get("ok", true)
+			and not no_create.get("success", true) and pane.Tabs.get_tab_count() == before
+			and FileAccess.get_file_as_string(import_only_path) == text)
+
+func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, directory: String, text: String) -> void:
+	var other := _install(manager, "z_conflict_contract", ".oldfmt", false)
+	if other == null:
+		return
+	var connection := MCPServerConnection.new(other.id)
+	connection.configure_stdio("python3", PackedStringArray([ProjectSettings.globalize_path("res://test/fixtures/stdio_timing_probe/stdio_timing_probe.py"), "--profile", "legacy"]))
+	check("conflict fixture has a real backend", await connection.connect_to_server() == OK)
+	manager._ensure_runtime(other.id)["connection"] = connection
+	var backend_tools: Array = await connection.list_tools()
+	check("real backend advertises tools before conflict", not backend_tools.is_empty())
+	var capture = load("res://test/helpers/log_capture.gd").new()
+	OS.add_logger(capture)
+	other.ui_panels[0]["file_extensions"] = [".oldfmt", ".fixturefmt"]
+	check("conflicting definition update reaches the DB", manager.get_db().update_definition(other))
+	var registry: PluginEditorRegistry = host.plugin_editor_registry
+	var status: Dictionary = manager.get_plugin_status(other.id)
+	check("refused update preserves its old accepted claim", registry.resolve_extension(".oldfmt").get("plugin_id") == other.id
+		and registry.resolve_extension(".fixturefmt").get("plugin_id") == "file_contract"
+		and not status.editor_registration.ok and str(status.editor_registration.error).contains("file_contract"))
+	check("editor refusal is logged with its copyable status message", str(status.editor_registration.error) in capture.combined())
+	var logged: int = capture.size()
+	var notices: Array = host._plugin_editor_notices.duplicate()
+	manager.get_db().plugins_changed.emit()
+	check("unrelated reconciliation retains the same notice set", host._plugin_editor_notices == notices
+		and not capture.since(logged).contains(str(status.editor_registration.error)))
+	OS.remove_logger(capture)
+	var backend: MCPServerConnection = manager.get_connection(other.id)
+	var reply: Dictionary = await backend.call_tool("echo", {"value": "still running"}, 5.0)
+	check("editor refusal leaves backend tools running", manager.get_plugin_status(other.id).running
+		and reply.get("success", false) and reply.get("echo", {}).get("value") == "still running")
+	connection.disconnect_from_server()
+	manager._ensure_runtime(other.id).erase("connection")
+	var changed_path := directory.path_join("already-open.unknownfmt")
+	_write(changed_path, text)
+	var old: Dictionary = host.open_file_at_path(changed_path)
+	check("ownership-change fixture starts as text", old.get("editor_kind") == "TEXT")
+	var new_owner := _install(manager, "new_owner_contract", ".unknownfmt", false)
+	if new_owner != null:
+		var before := pane.Tabs.get_tab_count()
+		var changed: Dictionary = host.open_file_at_path(changed_path)
+		check("new owner cannot reuse a text editor", not changed.get("ok", true)
+			and str(changed.errors).contains("document_owner_changed") and pane.Tabs.get_tab_count() == before)
+	var required := _install(manager, "required_contract", ".fixturefmt", false)
+	if required != null:
+		check("required provider wins through installed DB binding", registry.resolve_extension(".fixturefmt").get("plugin_id") == required.id)
+		var before := pane.Tabs.get_tab_count()
+		var changed: Dictionary = host.open_file_at_path(directory.path_join("open.fixturefmt"))
+		check("required owner cannot reuse optional owner's tab", not changed.get("ok", true)
+			and str(changed.errors).contains("document_owner_changed") and pane.Tabs.get_tab_count() == before)

@@ -1620,6 +1620,15 @@ func _save_setup_state() -> void:
 # Public API — query
 # ---------------------------------------------------------------------------
 
+## Editor refusals do not stop the backend or unregister its tools.
+func set_editor_registration(id: String, error: String) -> void:
+	var rt := _ensure_runtime(id)
+	var status := {"ok": error.is_empty(), "error": error}
+	if rt.get("editor_registration", {}) != status:
+		rt["editor_registration"] = status
+		plugin_status_changed.emit(id)
+
+
 ## Return a status snapshot for one plugin.
 ## Keys: id, state, state_name, uptime_sec, crash_count, running
 func get_plugin_status(id: String) -> Dictionary:
@@ -1646,6 +1655,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"capability_reason": rt.get("capability_reason", ""),
 		"attach_choices": rt.get("attach_choices", []),
 		"content_pending": _pending_content_status(id),
+		"editor_registration": rt.get("editor_registration", {"ok": true, "error": ""}),
 		"state": def.state,
 		"state_name": [
 			"INSTALLED", "STARTING", "RUNNING", "STOPPED", "ERROR", "CRASH_LOOP",

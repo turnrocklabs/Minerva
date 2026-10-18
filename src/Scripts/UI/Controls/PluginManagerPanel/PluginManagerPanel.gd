@@ -85,6 +85,7 @@ var _detail_version_label: Label = null
 var _detail_id_label: Label = null
 var _detail_status_label: Label = null
 var _detail_uptime_label: Label = null
+var _detail_editor_error: TextEdit = null
 
 var _start_button: Button = null
 var _stop_button: Button = null
@@ -328,6 +329,11 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_detail_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_row.add_child(_detail_status_label)
+	_detail_editor_error = TextEdit.new()
+	_detail_editor_error.editable = false
+	_detail_editor_error.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_detail_editor_error.custom_minimum_size.y = 70
+	parent.add_child(_detail_editor_error)
 
 	var uptime_row := HBoxContainer.new()
 	parent.add_child(uptime_row)
@@ -975,6 +981,10 @@ func _populate_detail_panel(plugin_id: String) -> void:
 		_detail_status_label.text += " — " + str(status.notice)
 	_detail_status_label.tooltip_text = _detail_status_label.text
 	_detail_status_label.add_theme_color_override("font_color", _state_color(state))
+
+	var editor_registration: Dictionary = status.get("editor_registration", {})
+	_detail_editor_error.text = str(editor_registration.get("error", ""))
+	_detail_editor_error.visible = not _detail_editor_error.text.is_empty()
 
 	var uptime: float = status.get("uptime_sec", 0.0)
 	_detail_uptime_label.text = _format_uptime(uptime) if state == PluginDefinition.State.RUNNING else "-"

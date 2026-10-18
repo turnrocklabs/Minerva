@@ -412,12 +412,10 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 	if editor_pane:
 		if !editor_pane.get_global_rect().has_point(get_global_mouse_position()):
 			return
+	if editor_pane == null:
+		return
 	if editor_pane.Tabs.get_tab_count() < 1:
-		for file in files:
-			if SingletonObject.supported_image_formats.has(file.get_extension()):
-				editor_pane.add(Editor.Type.GRAPHICS, file, file.get_file())
-			elif SingletonObject.supported_text_formats.has(file.get_extension()):
-				editor_pane.add(Editor.Type.TEXT, file, file.get_file())
+		_open_dropped_files(files)
 		return
 	else:
 		var editor: = editor_pane.Tabs.get_current_tab_control() as Editor
@@ -425,6 +423,15 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 			for file in files:
 				var image: = Image.load_from_file(file)
 				editor.graphics_editor.create_new_image_layer(file.get_file(), image)
+
+
+func _open_dropped_files(files: PackedStringArray) -> void:
+	for file: String in files:
+		var result: Dictionary = SingletonObject.open_file_at_path(file)
+		if not result.get("ok", false):
+			var message := str(result.get("errors", ["Could not open dropped file"]))
+			push_warning(message)
+			SingletonObject.create_toast_notification(message, ToastNotification.Type.WARNING)
 
 
 ## Show popup menu with all creatable editor items from registry

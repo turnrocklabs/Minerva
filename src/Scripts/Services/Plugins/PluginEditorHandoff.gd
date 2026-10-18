@@ -80,6 +80,10 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 	# render panel. Substrate-level limitation; revisit when paired_dsl ships.
 	for editor: Editor in pane.get_open_editors():
 		if editor.file == abs_path:
+			var expected_owner := str(panel_info.get("plugin_id", ""))
+			var expected_panel := str(panel_info.get("panel_name", ""))
+			if editor.plugin_id != expected_owner or editor.panel_name != expected_panel:
+				return _failure("document_owner_changed: close the existing tab before reopening '%s' with '%s'" % [abs_path, expected_owner])
 			var kind_name: String = type_name.call(editor.type)
 			# Explicit Variant locals so null branches type-check (incompatible ternary).
 			var existing_plugin_id: Variant = null

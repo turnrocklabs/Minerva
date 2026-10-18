@@ -106,6 +106,14 @@ func check_layout(panel, manager) -> void:
 		and panel._detail_name_label.mouse_filter != Control.MOUSE_FILTER_IGNORE
 		and panel._detail_id_label.get_tooltip() == definition.id
 		and panel._detail_id_label.mouse_filter != Control.MOUSE_FILTER_IGNORE)
+	var editor_error := "PluginEditorRegistry: '.fixturefmt' claimed by 'first'; plugin 'layout_fixture' registration refused"
+	manager.set_editor_registration(definition.id, editor_error)
+	panel._populate_detail_panel(definition.id)
+	var editor_detail: TextEdit = panel._detail_editor_error
+	editor_detail.select_all()
+	check("editor registration refusal is selectable in Plugin Manager detail",
+		not editor_detail.editable and editor_detail.visible and editor_detail.get_selected_text() == editor_error
+		and manager.get_plugin_status(definition.id).editor_registration.error == editor_error)
 	panel._required_button.show()
 	panel._update_button.show()
 	panel._panel_button.show()
