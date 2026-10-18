@@ -1284,6 +1284,7 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 		var label: String = tool_name if tool_name != "" else ("id " + str(request_id))
 		pending.deadline_error = _conn_error("MCP request (%s) to '%s' timed out after %s"
 				% [label, server_name, Diagnostics.timeout_text(timeout_sec)])
+		pending.deadline_error["error_code"] = "deadline_exceeded"
 		pending.deadline_timeout_sec = timeout_sec
 		_arm_pending_deadline(pending)
 
@@ -1306,6 +1307,10 @@ func _resolve_pending(request_id: Variant, result: Dictionary, wire_value = null
 	if generation >= 0 and pending.generation != generation:
 		return
 	_pending.erase(request_key)
+	# Local transport failure retires admitted children before waking the caller.
+	# A peer RPC error retains its original wire/error contract.
+	if wire_value == null and result.has("error") and pending.context != null:
+		pending.context.lifetime.stop(str(result.get("error_code", "cancelled")))
 	if wire_value != null and pending.capture_wire:
 		_completed_wire_results[request_key] = wire_value
 	pending.done = true
