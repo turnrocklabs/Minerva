@@ -180,7 +180,8 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 				]
 			}
 
-		var membership: Variant = tool_entry.get("tool_set", "")
+		var declared_tool: Dictionary = tool_entry
+		var membership: Variant = declared_tool.get("tool_set", "")
 		if not membership is String:
 			return {"error": "tool_set_invalid:%s (tool_set must be a string)" % tool_name}
 
@@ -1151,7 +1152,8 @@ func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dict
 	# Membership belongs to the current manifest, never to peer wire metadata.
 	var declared_sets := {}
 	if plugin_manager != null:
-		var definition: PluginDefinition = plugin_manager.get_db().get_by_id(plugin_id)
+		var database: PluginDB = plugin_manager.get_db()
+		var definition: PluginDefinition = database.get_by_id(plugin_id)
 		if definition != null:
 			for declared: Dictionary in definition.tools:
 				declared_sets[str(declared.get("name", ""))] = declared.get("tool_set", "")
