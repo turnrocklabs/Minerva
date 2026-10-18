@@ -763,6 +763,8 @@ func _connect_signals() -> void:
 		pm.plugin_cleanup_status.connect(_on_plugin_cleanup_status)
 	if not pm.plugin_started.is_connected(_on_plugin_event):
 		pm.plugin_started.connect(_on_plugin_event)
+	if not pm.plugin_ready.is_connected(_on_plugin_event):
+		pm.plugin_ready.connect(_on_plugin_event)
 	if not pm.plugin_stopped.is_connected(_on_plugin_event):
 		pm.plugin_stopped.connect(_on_plugin_event)
 	if not pm.plugin_crashed.is_connected(_on_plugin_event):
@@ -974,6 +976,8 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var state: int = status.get("state", PluginDefinition.State.INSTALLED)
 	var state_name: String = status.get("state_name", "UNKNOWN")
 	_detail_status_label.text = state_name
+	if status.get("running", false) and not status.get("ready", false):
+		_detail_status_label.text += " — waiting for provider tools"
 	var live_status: Dictionary = status.get("live_reload", {})
 	if not str(live_status.get("message", "")).is_empty():
 		_detail_status_label.text += " — " + str(live_status.message)

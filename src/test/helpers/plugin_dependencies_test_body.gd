@@ -19,6 +19,9 @@ func manifest(id: String, provider: String = "") -> Dictionary:
 	return value
 
 func _ready() -> void:
+	get_tree().create_timer(45.0).timeout.connect(func() -> void:
+		printerr("FAIL: dependency fixture timed out")
+		completed.emit(1))
 	var raw := manifest("consumer", "agent_relay")
 	var before := raw.duplicate(true)
 	var parsed := PluginDefinition.from_dict(JSON.parse_string(JSON.stringify(raw)))
@@ -105,5 +108,69 @@ func _ready() -> void:
 		for previous: PluginDefinition in original:
 			if previous != null:
 				check("fixture restores the previous installed definition", loaded.restore(previous))
+	await exercise_readiness()
 	print("=== Results: %d passed, %d failed ===" % [checks - failures, failures])
 	completed.emit(1 if failures else 0)
+
+func exercise_readiness() -> void:
+	var manager := PluginManager.new()
+	get_tree().root.add_child(manager)
+	var db: PluginDB = manager.get_db()
+	var previous := db.get_by_id("agent_relay")
+	var raw := manifest("agent_relay")
+	raw.backend.args = [ProjectSettings.globalize_path("res://test/fixtures/stdio_timing_probe/stdio_timing_probe.py"), "--profile", "delayed_tools"]
+	var provider := PluginDefinition.from_dict(raw)
+	var consumer := PluginDefinition.from_dict(manifest("readiness_consumer", "agent_relay"))
+	consumer.requires_plugins[0].actions = ["minerva_agent_relay_echo", "minerva_agent_relay_absent"]
+	check("readiness fixture owns fresh consumer and persists provider", not db.has_plugin(consumer.id) and db.restore(provider) and db.restore(consumer))
+	var registry := PluginToolRegistry.new(manager, null, null)
+	manager.configure_dependency_tools(registry)
+	var host := get_tree().root.get_node("SingletonObject")
+	var old_registry: Variant = host.plugin_tool_registry
+	host.plugin_tool_registry = registry
+	var seen := {"started": false, "ready": false}
+	manager.plugin_started.connect(func(id: String) -> void:
+		seen.started = not manager.get_plugin_status(id).ready
+		get_tree().create_timer(0.1).timeout.connect(func() -> void:
+			check("delayed catalog is running but not ready", manager.get_plugin_status(id).running and not manager.get_plugin_status(id).ready)
+			check("fixture releases catalog through public host event", manager.get_connection(id).send_host_event("test_release_tools", {}) == OK)))
+	manager.plugin_ready.connect(func(id: String) -> void: seen.ready = manager.get_plugin_status(id).ready)
+	var result: Dictionary = await manager.start_plugin(provider.id)
+	check("actual start sets ready before the ready event: " + str(result), result.get("ok", false) and seen.started and seen.ready)
+	if not result.get("ok", false):
+		host.plugin_tool_registry = old_registry
+		manager.free()
+		return
+	check("missing action visible without constraining other actions", manager.dependency_contract_issue(consumer.id).contains("tool minerva_agent_relay_absent")
+		and manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
+		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty())
+	consumer.requires_plugins[0].min_version = "2.0.0"
+	check("older installed provider refuses consumer contract", manager.dependency_contract_issue(consumer.id).contains(">= 2.0.0"))
+	consumer.requires_plugins[0].min_version = "1.0.0"
+	provider.tools = [{"name": "minerva_agent_relay_panel", "executor": "panel"}]
+	check("required missing panel tool refuses contract", str(await RequiredPlugins.host_tools_missing(provider, manager.get_connection(provider.id), [])).contains("minerva_agent_relay_panel"))
+	check("combined panel and backend catalog passes", str(await RequiredPlugins.host_tools_missing(provider, manager.get_connection(provider.id), provider.tools)).is_empty())
+	var ordered := PluginDependencyContract.startup_order([consumer, provider])
+	check("dependency order overrides consumer-first insertion", ordered.order == [provider.id, consumer.id] and ordered.cycles.is_empty())
+	provider.requires_plugins = [{"id": consumer.id}]
+	check("cycles remain visibly unresolved in autostart plan", PluginDependencyContract.startup_order([consumer, provider]).cycles.size() == 2)
+	provider.requires_plugins.clear()
+	var crashed := {"seen": false}
+	manager.plugin_crashed.connect(func(_id: String) -> void: crashed.seen = true)
+	await manager.get_connection(provider.id).call_tool("exit", {}, 5.0)
+	if not crashed.seen:
+		await manager.plugin_crashed
+	await get_tree().process_frame
+	check("natural exit clears readiness", not manager.get_plugin_status(provider.id).ready)
+	var missing_panel: Dictionary = await manager.start_plugin(provider.id)
+	check("actual start refuses missing required panel tool", str(missing_panel.get("error", "")).contains("minerva_agent_relay_panel"))
+	provider.tools.clear()
+	check("provider restarts after crash and contract repair", (await manager.start_plugin(provider.id)).get("ok", false))
+	manager.stop_plugin(provider.id)
+	check("stop clears readiness", not manager.get_plugin_status(provider.id).ready)
+	host.plugin_tool_registry = old_registry
+	db.remove(consumer.id)
+	db.remove(provider.id)
+	if previous != null:
+		db.restore(previous)
+	manager.free()

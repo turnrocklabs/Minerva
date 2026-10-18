@@ -51,6 +51,18 @@ func _init(required_ids: Array[String] = []) -> void:
 	_required_ids = required_ids.duplicate()
 
 
+## Required claims reconcile first; each rank preserves persisted install order.
+func reconciliation_order(definitions: Array[PluginDefinition]) -> Array[PluginDefinition]:
+	var required: Array[PluginDefinition] = []
+	var optional: Array[PluginDefinition] = []
+	for definition: PluginDefinition in definitions:
+		if definition.id in _required_ids:
+			required.append(definition)
+		else:
+			optional.append(definition)
+	return required + optional
+
+
 static func is_spreadsheet_extension(extension: String) -> bool:
 	return extension.to_lower() in SPREADSHEET_EXTENSIONS
 
@@ -149,7 +161,7 @@ func register_plugin(def) -> Array[String]:
 				return _refused(plugin_id, conflict)
 
 			if not previous.is_empty() and previous.get("plugin_id") != plugin_id:
-				warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for '%s'" % [plugin_id, previous.plugin_id, ext])
+				warnings.append("PluginEditorRegistry: optional '%s' skips '%s', owned by required '%s'" % [previous.plugin_id, ext, plugin_id])
 			staged_extensions[ext] = {
 				"plugin_id":   plugin_id,
 				"panel_name":  panel_name,
@@ -191,7 +203,7 @@ func register_plugin(def) -> Array[String]:
 		if not kind_conflict.is_empty():
 			return _refused(plugin_id, kind_conflict)
 		if not previous_kind.is_empty() and previous_kind.get("plugin_id") != plugin_id:
-			warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for editor kind '%s'" % [plugin_id, previous_kind.plugin_id, item_id])
+			warnings.append("PluginEditorRegistry: optional '%s' skips editor kind '%s', owned by required '%s'" % [previous_kind.plugin_id, item_id, plugin_id])
 		var actions: Array[String] = ["open", "create"]
 		for panel_value: Variant in ui_panels:
 			if not panel_value is Dictionary:

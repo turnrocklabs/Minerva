@@ -62,7 +62,7 @@ func _run() -> void:
 	pane.buffer_control_editor = Control.new()
 	host.editor_pane = pane
 	host.creatable_item_registry = CreatableItemRegistry.new()
-	host.plugin_editor_registry = PluginEditorRegistry.new(["required_contract", "required_first_contract"])
+	host.plugin_editor_registry = PluginEditorRegistry.new(["required_contract", "required_first_contract", "late_required_contract"])
 	host._wire_plugin_editor_extensions(manager)
 	var single := _install(manager, "file_contract", ".fixturefmt", false)
 	var paired := _install(manager, "paired_contract", ".pairedfmt", true)
@@ -399,6 +399,20 @@ func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, d
 			and registry.resolve_extension(".requiredfirst").get("plugin_id") == required_first.id
 			and registry.resolve_extension(".retainedoptional").get("plugin_id") == optional_second.id
 			and manager.get_plugin_status(optional_second.id).editor_registration.ok)
+
+	check("three-provider extension starts unclaimed", registry.resolve_extension(".tri").is_empty())
+	var optional_a := _install(manager, "tri_optional_a", ".tri", false)
+	var optional_b := _install(manager, "tri_optional_b", ".triold", false)
+	if optional_a != null and optional_b != null:
+		optional_b.ui_panels[0]["file_extensions"] = [".tri", ".triretained"]
+		check("second optional collides before required install", manager.get_db().update_definition(optional_b)
+			and not manager.get_plugin_status(optional_b.id).editor_registration.ok
+			and registry.resolve_extension(".triretained").is_empty())
+		var required_last := _install(manager, "late_required_contract", ".tri", false)
+		check("required-last releases optional's other claims in the FIRST reconciliation", required_last != null
+			and registry.resolve_extension(".tri").get("plugin_id") == "late_required_contract"
+			and registry.resolve_extension(".triretained").get("plugin_id") == optional_b.id
+			and registry.resolve_editor_kind(optional_b.id + "_new").get("plugin_id") == optional_b.id)
 
 
 func _clear_tabs(tabs: TabContainer) -> void:

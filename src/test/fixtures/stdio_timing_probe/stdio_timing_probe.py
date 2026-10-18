@@ -49,6 +49,7 @@ import sys
 _write_lock = asyncio.Lock()
 _exit_release = asyncio.Event()
 MODE = "legacy"
+_catalog_release = asyncio.Event()
 CANCELLED_IDS = []
 INITIALIZE_PARAMS = {}
 
@@ -375,9 +376,15 @@ async def dispatch(msg):
             "serverInfo": {"name": "stdio_timing_probe", "version": "0.1.0"}
         }})
     elif method == "tools/list":
+        if MODE == "delayed_tools":
+            await _catalog_release.wait()
         # Modern list results carry the core result discriminator; initialized
         # legacy peers retain their historical result shape.
         listed = {"tools": TOOLS}
+        if MODE == "delayed_tools":
+            listed["tools"] = TOOLS + [{"name": name, "description": "Required fixture tool",
+                                         "inputSchema": {"type": "object"}}
+                                        for name in ("watch_start", "watch_status", "send")]
         if MODE in ("modern", "paginated", "repeat_cursor", "second_page_error",
                     "duplicate_tools"):
             listed.update({"resultType": "complete", "ttlMs": 0,
@@ -411,6 +418,8 @@ async def dispatch(msg):
                 return
         await handle_tools_call(req_id, params.get("name", ""),
                                 params.get("arguments", {}))
+    elif method == "minerva/host_event" and msg.get("params", {}).get("event") == "test_release_tools":
+        _catalog_release.set()
     elif method == "test/release_exit":
         _exit_release.set()
     elif method == "notifications/cancelled":
@@ -459,6 +468,7 @@ def main():
     global MODE
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", default="legacy")
+    parser.add_argument("--state-file", default="")
     MODE = parser.parse_args().profile
     asyncio.run(reader_loop())
 

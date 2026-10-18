@@ -577,6 +577,9 @@ func initialize_plugins() -> void:
 	# Tool registry (references manager, policy, audit log, broker)
 	plugin_tool_registry = ToolRegClass.new(plugin_manager, plugin_policy, plugin_audit_log)
 	plugin_tool_registry.capability_broker = plugin_capability_broker
+	var dependency_manager: PluginManager = plugin_manager
+	var dependency_tools: PluginToolRegistry = plugin_tool_registry
+	dependency_manager.configure_dependency_tools(dependency_tools)
 
 	# Event/state broker (references DB and audit log)
 	plugin_event_broker = EventBrokerClass.new(plugin_manager.get_db(), plugin_audit_log)
@@ -953,7 +956,7 @@ func _register_plugin_editor_items(id: String) -> void:
 				native_item = true
 		var claim := plugin_editor_registry.resolve_editor_kind(item_id)
 		if native_item and claim.get("plugin_id") != id:
-			create_toast_notification("Editor item '%s' is not owned by plugin '%s'" % [item_id, id], ToastNotification.Type.WARNING)
+			# The registry owns the collision notice; do not repeat it here.
 			continue
 		var plugin_id_copy := id
 		var panel_name_copy := panel_name
@@ -1010,10 +1013,11 @@ func _sync_plugin_editor_extensions(manager: PluginManager) -> void:
 	var definitions: Array[PluginDefinition] = db.get_all()
 	# PluginDB persists this insertion order in its records array.
 	var notices: Array[String] = []
-	for definition: PluginDefinition in definitions:
+	for definition: PluginDefinition in registry.reconciliation_order(definitions):
 		var warnings := registry.register_plugin(definition)
 		for warning: String in warnings:
-			notices.append(warning)
+			if warning not in notices:
+				notices.append(warning)
 		manager.set_editor_registration(definition.id, registry.registration_error(definition.id))
 	for notice: String in notices:
 		if notice not in _plugin_editor_notices:

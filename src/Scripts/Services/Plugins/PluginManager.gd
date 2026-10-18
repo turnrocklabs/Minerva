@@ -118,6 +118,7 @@ signal plugin_build_step_finished(id: String, step_index: int, step_count: int, 
 # ---------------------------------------------------------------------------
 
 var _db = null  # PluginDB — initialized in _ready to avoid parse-order issues
+var tool_registry: PluginToolRegistry = null
 
 ## id -> runtime Dictionary (see comment above)
 var _runtime: Dictionary = {}
@@ -890,7 +891,7 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 	if err != OK:
 		_cleanup_connection("docket")
 		return _refuse_attachment("Could not connect to the registered Docket endpoint: %s" % conn.last_failure_reason, record)
-	var issue: Variant = await RequiredPlugins.host_tools_missing(def, conn)
+	var issue: Variant = await RequiredPlugins.host_tools_missing(def, conn, tool_registry.get_panel_tool_entries(def.id) if tool_registry != null else [])
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
 	if not issue is String or not issue.is_empty():
@@ -907,9 +908,12 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 	rt["start_time"] = Time.get_unix_time_from_system()
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
-	await _discover_backend_tools("docket", conn)
+	if not await _discover_backend_tools("docket", conn):
+		stop_plugin("docket")
+		return {"error": "provider_tools_unavailable: docket"}
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
+	rt["ready"] = true
 	plugin_ready.emit("docket")
 	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
 
@@ -1124,13 +1128,15 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# any manifest-declared tools (registered by on_plugin_started) land first;
 	# backend discovery then supersedes them via the registry's purge-and-emit
 	# path.
-	await _discover_backend_tools(id, conn)
+	if not await _discover_backend_tools(id, conn):
+		stop_plugin(id)
+		return {"error": "provider_tools_unavailable: " + id}
 	if not _owns_runtime_connection(id, conn):
 		return {"error": "Plugin '%s' start was cancelled" % id}
 	if RequiredPlugins.has(id):
 		# Untyped: a check that stops on a script error yields null, which must
 		# refuse the start rather than pass as "no issue".
-		var checked = await RequiredPlugins.host_tools_missing(def, conn)
+		var checked = await RequiredPlugins.host_tools_missing(def, conn, tool_registry.get_panel_tool_entries(def.id) if tool_registry != null else [])
 		if not _owns_runtime_connection(id, conn):
 			return {"error": "Plugin '%s' start was cancelled" % id}
 		var contract_issue: String = checked if checked is String \
@@ -1141,6 +1147,7 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 			_transition_state(id, S_ERROR)
 			return {"error": contract_issue}
 
+	rt["ready"] = true
 	plugin_ready.emit(id)
 	return {"ok": true}
 
@@ -1229,25 +1236,27 @@ func _owns_runtime_connection(id: String, connection) -> bool:
 ## start_plugin() returns. Reviewer (cycle round 1) flagged the original
 ## fire-and-forget shape as a race; this is the resolution.
 ## conn is MCPServerConnection (untyped to avoid parse-order dependency).
-func _discover_backend_tools(plugin_id: String, conn) -> void:
+func _discover_backend_tools(plugin_id: String, conn) -> bool:
 	# Resolve tool registry via SingletonObject (avoids circular dep at parse time).
 	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
 	if so == null:
 		push_warning("[PluginManager] SingletonObject not in scene tree; skipping backend tool discovery for '%s'" % plugin_id)
-		return
+		return false
 	var registry = so.get("plugin_tool_registry") if "plugin_tool_registry" in so else null
 	if registry == null:
 		push_warning("[PluginManager] plugin_tool_registry not available; skipping backend tool discovery for '%s'" % plugin_id)
-		return
+		return false
 	var result: Dictionary = await registry.register_backend_tools(plugin_id, conn)
 	if result.get("error"):
 		push_warning("[PluginManager] Backend tool discovery for '%s' failed: %s" % [
 			plugin_id, result.get("error")
 		])
+		return false
 	elif result.get("skipped"):
 		SingletonObject.verbose_log("[PluginManager] Backend tool discovery skipped for '%s': %s" % [
 			plugin_id, result.get("skipped")
 		])
+		return false
 	else:
 		SingletonObject.verbose_log("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
 			plugin_id, result.get("registered", []).size()
@@ -1257,6 +1266,7 @@ func _discover_backend_tools(plugin_id: String, conn) -> void:
 			conn.catalog_committed.connect(publish_callback)
 		conn.start_tool_catalog_watch()
 
+	return true
 
 func _on_plugin_catalog_committed(plugin_id: String, conn) -> void:
 	if get_connection(plugin_id) != conn:
@@ -1645,6 +1655,54 @@ func set_editor_registration(id: String, error: String) -> void:
 		plugin_status_changed.emit(id)
 
 
+## Only the caller's declared actions are constrained; other features stay usable.
+func dependency_contract_issue(consumer: String, tool: String = "") -> String:
+	var database: Object = _db
+	var definition: PluginDefinition = database.call("get_by_id", consumer)
+	if definition == null:
+		return ""
+	for requirement: Dictionary in definition.requires_plugins:
+		var actions: Array = requirement.actions
+		if not tool.is_empty() and tool not in actions:
+			continue
+		var provider_id: String = requirement.id
+		var provider: PluginDefinition = database.call("get_by_id", provider_id)
+		if provider == null:
+			return "requires " + provider_id + " (not installed)"
+		if AutoUpdater.compare_versions(provider.version, str(requirement.min_version)) < 0:
+			return "requires %s >= %s (installed %s)" % [provider_id, requirement.min_version, provider.version]
+		if not _ensure_runtime(provider_id).get("ready", false):
+			return "requires " + provider_id + " (waiting for provider tools)"
+		for tool_name: String in actions:
+			if not tool.is_empty() and tool_name != tool:
+				continue
+			if tool_registry == null or tool_registry.find_tool(tool_name).is_empty():
+				return "requires %s tool %s" % [provider_id, tool_name]
+	return ""
+
+
+func configure_dependency_tools(registry: PluginToolRegistry) -> void:
+	tool_registry = registry
+	registry.tools_registered.connect(_dependency_catalog_changed)
+	registry.tools_unregistered.connect(_dependency_catalog_changed)
+	plugin_ready.connect(_dependency_catalog_changed.bind([]))
+	plugin_stopped.connect(_dependency_catalog_changed.bind([]))
+	plugin_crashed.connect(_dependency_catalog_changed.bind([]))
+
+
+func _dependency_catalog_changed(_provider: String, _tools: Array) -> void:
+	var database: Object = _db
+	var definitions: Array = database.call("get_all")
+	for definition: PluginDefinition in definitions:
+		var issue := dependency_contract_issue(definition.id)
+		var rt := _ensure_runtime(definition.id)
+		if rt.get("dependency_notice", "") != issue:
+			rt["dependency_notice"] = issue
+			if not issue.is_empty():
+				push_warning("[PluginManager] %s: %s" % [definition.id, issue])
+			plugin_status_changed.emit(definition.id)
+
+
 ## Return a status snapshot for one plugin.
 ## Keys: id, state, state_name, uptime_sec, crash_count, running
 func get_plugin_status(id: String) -> Dictionary:
@@ -1659,6 +1717,8 @@ func get_plugin_status(id: String) -> Dictionary:
 	var uptime := (now - start_time) if start_time > 0.0 else 0.0
 	var registration: Dictionary = rt.get("registration", {})
 	var dependency_error: String = database.call("dependency_issue", id) if not def.requires_plugins.is_empty() else ""
+	if dependency_error.is_empty():
+		dependency_error = dependency_contract_issue(id)
 
 	return {
 		"id": id,
@@ -1682,6 +1742,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"uptime_sec": uptime,
 		"crash_count": rt.get("crash_count", 0),
 		"running": def.state == S_RUNNING,
+		"ready": rt.get("ready", false),
 		"restart_required": not get_restart_required_reason(id).is_empty(),
 		"restart_required_reason": get_restart_required_reason(id),
 		"live_reload": _scene_reload.call("status", id) if _scene_reload != null else {},
@@ -1830,17 +1891,24 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 ## Start all plugins whose autostart flag is true.
 ## Called by Minerva on boot.
 func start_autostart_plugins() -> void:
-	var to_start = _db.get_autostart_plugins()
+	var database: Object = _db
+	var definitions: Array = database.call("get_autostart_plugins")
+	var planned := PluginDependencyContract.startup_order(definitions)
+	for refused: String in planned.cycles:
+		push_error("[PluginManager] Autostart refused: " + str(database.call("dependency_issue", refused)))
+	var to_start: Array[String] = []
+	var order: Array = planned.order
+	to_start.assign(order)
 	SingletonObject.verbose_log("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
-	for def in to_start:
+	for id: String in to_start:
 		if _shutting_down:
 			SingletonObject.verbose_log("[PluginManager] Autostart aborted — shutting down")
 			return
-		var result := await start_plugin(def.id)
+		var result := await start_plugin(id)
 		if result.get("disabled", false):
-			SingletonObject.verbose_log("[PluginManager] Autostart skipped for '%s': %s" % [def.id, result.error])
+			SingletonObject.verbose_log("[PluginManager] Autostart skipped for '%s': %s" % [id, result.error])
 		elif result.get("error"):
-			push_error("[PluginManager] Autostart failed for '%s': %s" % [def.id, result.get("error")])
+			push_error("[PluginManager] Autostart failed for '%s': %s" % [id, result.get("error")])
 
 
 ## Stop all running plugins.  Called by Minerva on exit.
@@ -2327,6 +2395,7 @@ func _transition_state(id: String, new_state: int) -> void:
 ## Disconnect and free a connection, leaving the runtime entry intact.
 func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 	var rt: Dictionary = _runtime.get(id, {})
+	rt["ready"] = false
 	if id == "docket" and cancel_launcher:
 		var previous_generation: int = rt.get("start_generation", 0)
 		rt["start_generation"] = previous_generation + 1

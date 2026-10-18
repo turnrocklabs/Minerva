@@ -59,3 +59,30 @@ static func cycle_issue(graph: Dictionary, id: String, path: Array[String] = [])
 		if not issue.is_empty():
 			return issue
 	return ""
+
+
+## Stable Kahn order; unresolved nodes are cycles or depend on one.
+static func startup_order(definitions: Array) -> Dictionary:
+	var pending: Dictionary = {}
+	for def: PluginDefinition in definitions:
+		var edges: Array[String] = []
+		for requirement: Dictionary in def.requires_plugins:
+			edges.append(requirement.id)
+		pending[def.id] = edges
+	var order: Array[String] = []
+	while not pending.is_empty():
+		var ids: Array = pending.keys()
+		ids.sort()
+		var selected := ""
+		for id: String in ids:
+			var blocked := false
+			for provider: String in pending[id]:
+				blocked = blocked or pending.has(provider)
+			if not blocked:
+				selected = id
+				break
+		if selected.is_empty():
+			break
+		order.append(selected)
+		pending.erase(selected)
+	return {"order": order, "cycles": pending.keys()}
