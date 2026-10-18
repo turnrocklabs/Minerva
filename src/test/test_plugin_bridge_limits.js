@@ -10,12 +10,14 @@ const source = fs.readFileSync(path.join(__dirname, '../Scripts/UI/Controls/WebV
 
 (async () => {
   let sends = 0, api;
+  let refusal = null;
   const deliver = raw => {
     sends++;
     const message = JSON.parse(raw);
     assert.equal(message.capability, 'fixture-capability');
-    queueMicrotask(() => api._ipcReply({id: message.id, success: true,
-      result: {ok: true, type: message.type}}));
+    queueMicrotask(() => api._ipcReply(refusal
+      ? {id: message.id, success: false, ...refusal}
+      : {id: message.id, success: true, result: {ok: true, type: message.type}}));
   };
   const window = {sendIpcMessage: deliver};
   const context = {window, TextEncoder, console, crypto: webcrypto,
@@ -27,6 +29,16 @@ const source = fs.readFileSync(path.join(__dirname, '../Scripts/UI/Controls/WebV
   await assert.rejects(api.call('minerva_probe', {text: '🙂'.repeat(17000)}), /payload_too_large/);
   await assert.rejects(api.pluginIPC('probe', {text: '🙂'.repeat(17000)}), /payload_too_large/);
   assert.equal(sends, 2, 'oversize requests never send native IPC');
+  assert.equal(api.getSpreadsheet, undefined);
+  assert.equal(api.updateSpreadsheet, undefined);
+  for (const code of ['tool_not_found', 'capability_not_granted', 'provider_stopped', 'payload_too_large']) {
+    refusal = {error_code: code, error_message: 'native ' + code};
+    await assert.rejects(api.call('minerva_sheets_get_data', {}), error =>
+      error.code === code && error.message === refusal.error_message);
+  }
+  refusal = {error: 'Legacy failure message'};
+  await assert.rejects(api.call('minerva_probe', {}), error =>
+    error.message === refusal.error && error.code === undefined);
   let failures = 0;
   api.onIPCError(() => failures++);
   api._dispatchIPCError({error_code: 'payload_too_large'});
