@@ -121,6 +121,44 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		var claimed: Dictionary = host.open_file_at_path(claimed_path)
 		check("runtime plugin overrides builtin " + extension, claimed.get("ok", false)
 			and claimed.get("plugin_id") == single.id and claimed.get("editor_kind") == "PLUGIN_SCENE")
+	var drop_adapter := Control.new()
+	get_tree().root.add_child(drop_adapter)
+	# Attach the production handler after the bare Control is ready; the
+	# unrelated full MainScene UI is not part of this file-drop contract.
+	drop_adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
+	pane.position = Vector2(-1000, -1000)
+	pane.size = Vector2(2000, 2000)
+	var dropped_claim := directory.path_join("dropped.csv")
+	_write(dropped_claim, text)
+	var before_drop := pane.Tabs.get_tab_count()
+	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	check("dropped claimed CSV routes to its provider", pane.Tabs.get_tab_count() == before_drop + 1
+		and pane.Tabs.get_child(before_drop).plugin_id == single.id)
+	var existing_tabs := pane.Tabs
+	var empty_tabs := TabContainer.new()
+	get_tree().root.add_child(empty_tabs)
+	pane.Tabs = empty_tabs
+	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	check("empty-pane real CSV drop creates its owner", empty_tabs.get_tab_count() == 1
+		and empty_tabs.get_child(0).plugin_id == single.id)
+	if empty_tabs.get_tab_count() == 1:
+		empty_tabs.get_child(0).free()
+	var image_path := directory.path_join("dropped.webp")
+	var image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
+	check("real webp fixture is saved", image.save_webp(image_path) == OK)
+	before_drop = pane.Tabs.get_tab_count()
+	drop_adapter.call("_on_files_dropped", PackedStringArray([image_path]))
+	check("dropped webp retains graphics editor", pane.Tabs.get_tab_count() == before_drop + 1
+		and pane.Tabs.get_child(before_drop).type == Editor.Type.GRAPHICS)
+	var binary_path := directory.path_join("dropped.zip")
+	_write(binary_path, "PK-binary-fixture")
+	before_drop = pane.Tabs.get_tab_count()
+	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
+	check("unsupported binary drop refuses without an editor", pane.Tabs.get_tab_count() == before_drop
+		and FileAccess.get_file_as_string(binary_path) == "PK-binary-fixture")
+	empty_tabs.free()
+	pane.Tabs = existing_tabs
+	drop_adapter.free()
 	var saved_editor: Editor = pane.Tabs.get_child(0)
 	check("real bound editor saves successfully", await saved_editor.save_file_to_disc(open_path))
 	text = FileAccess.get_file_as_string(open_path)
@@ -203,12 +241,15 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	var csv_path := directory.path_join("unclaimed.csv")
 	_write(csv_path, "name,value\nalpha,1\n")
 	# The actual empty-pane drop adapter also uses the generic route.
-	var drop_adapter = load("res://Scripts/UI/Views/MainScene.gd").new()
-	drop_adapter._open_dropped_files(PackedStringArray([csv_path]))
-	drop_adapter.free()
-	var native: Dictionary = host.open_file_at_path(csv_path, "import")
-	check("unclaimed CSV imports through builtin spreadsheet", native.get("ok", false) and native.get("editor_kind") == "SPREADSHEET")
-	var unknown_path := directory.path_join("unclaimed.unknownfmt")
+	var builtin_drop_adapter := Control.new()
+	get_tree().root.add_child(builtin_drop_adapter)
+	builtin_drop_adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
+	var before_builtin := pane.Tabs.get_tab_count()
+	builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
+	builtin_drop_adapter.free()
+	check("real unclaimed CSV drop uses builtin spreadsheet", pane.Tabs.get_tab_count() == before_builtin + 1
+		and pane.Tabs.get_child(before_builtin).type == Editor.Type.SPREADSHEET)
+	var unknown_path := directory.path_join("unclaimed.ordinaryfmt")
 	_write(unknown_path, "plain unclaimed data")
 	var fallback: Dictionary = host.open_file_at_path(unknown_path)
 	check("unclaimed ordinary extension retains text fallback", fallback.get("ok", false) and fallback.get("editor_kind") == "TEXT")
@@ -247,6 +288,10 @@ func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, d
 	var capture = load("res://test/helpers/log_capture.gd").new()
 	OS.add_logger(capture)
 	other.ui_panels[0]["file_extensions"] = [".oldfmt", ".fixturefmt"]
+	var rejected_panel: Dictionary = other.ui_panels[0].duplicate(true)
+	rejected_panel["name"] = "rejected"
+	other.ui_panels.append(rejected_panel)
+	other.editor_items[0]["panel"] = "rejected"
 	check("conflicting definition update reaches the DB", manager.get_db().update_definition(other))
 	var registry: PluginEditorRegistry = host.plugin_editor_registry
 	var status: Dictionary = manager.get_plugin_status(other.id)
@@ -254,6 +299,10 @@ func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, d
 		and registry.resolve_extension(".fixturefmt").get("plugin_id") == "file_contract"
 		and not status.editor_registration.ok and str(status.editor_registration.error).contains("file_contract"))
 	check("editor refusal is logged with its copyable status message", str(status.editor_registration.error) in capture.combined())
+	var before_create := pane.Tabs.get_tab_count()
+	var rejected_create: Dictionary = host.create_plugin_editor({"plugin_id": other.id, "editor_item_id": other.id + "_new"})
+	check("refused update cannot redirect an accepted editor kind", not rejected_create.get("success", true)
+		and pane.Tabs.get_tab_count() == before_create)
 	var logged: int = capture.size()
 	var notices: Array = host._plugin_editor_notices.duplicate()
 	manager.get_db().plugins_changed.emit()

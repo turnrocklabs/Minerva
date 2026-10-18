@@ -44,6 +44,7 @@ const CORE_EXTENSIONS: PackedStringArray = [
 const SPREADSHEET_EXTENSIONS: PackedStringArray = [".minsheet", ".csv", ".tsv", ".xlsx"]
 const SPREADSHEET_SAVE_EXTENSIONS: PackedStringArray = [".minsheet", ".csv"]
 var _required_ids: Array[String] = []
+var _registration_errors: Dictionary[String, String] = {}
 
 
 func _init(required_ids: Array[String] = []) -> void:
@@ -138,11 +139,11 @@ func register_plugin(def) -> Array[String]:
 				continue
 
 			if staged_extensions.has(ext) and staged_extensions[ext].panel_name != panel_name:
-				return ["PluginEditorRegistry: plugin '%s' declares '%s' for two panels" % [plugin_id, ext]]
+				return _refused(plugin_id, "PluginEditorRegistry: plugin '%s' declares '%s' for two panels" % [plugin_id, ext])
 			var previous: Dictionary = _ext_to_panel.get(ext, {})
 			var conflict := _conflict(ext, plugin_id, previous)
 			if not conflict.is_empty():
-				return [conflict]
+				return _refused(plugin_id, conflict)
 
 			if not previous.is_empty() and previous.get("plugin_id") != plugin_id:
 				warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for '%s'" % [plugin_id, previous.plugin_id, ext])
@@ -182,7 +183,7 @@ func register_plugin(def) -> Array[String]:
 		var previous_kind: Dictionary = _kind_to_panel.get(item_id, {})
 		var kind_conflict := _conflict(item_id, plugin_id, previous_kind)
 		if not kind_conflict.is_empty():
-			return [kind_conflict]
+			return _refused(plugin_id, kind_conflict)
 		if not previous_kind.is_empty() and previous_kind.get("plugin_id") != plugin_id:
 			warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for editor kind '%s'" % [plugin_id, previous_kind.plugin_id, item_id])
 		var actions: Array[String] = ["open", "create"]
@@ -221,6 +222,7 @@ func _conflict(claim: String, plugin_id: String, existing: Dictionary) -> String
 
 ## Remove all extensions and editor kinds contributed by `plugin_id`.
 func unregister_plugin(plugin_id: String) -> void:
+	_registration_errors.erase(plugin_id)
 	# Remove extensions.
 	var exts: Array = _plugin_extensions.get(plugin_id, [])
 	for ext in exts:
@@ -279,4 +281,16 @@ func registered_plugin_ids() -> Array[String]:
 	var ids: Array[String] = []
 	for id: String in _plugin_extensions:
 		ids.append(id)
+	for id: String in _registration_errors:
+		if id not in ids:
+			ids.append(id)
 	return ids
+
+
+func registration_error(plugin_id: String) -> String:
+	return _registration_errors.get(plugin_id, "")
+
+
+func _refused(plugin_id: String, message: String) -> Array[String]:
+	_registration_errors[plugin_id] = message
+	return [message]

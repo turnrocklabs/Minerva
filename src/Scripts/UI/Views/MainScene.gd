@@ -408,30 +408,42 @@ func _update_project_label(new_text: String = "", saved_state: bool = true) -> v
 
 
 func _on_files_dropped(files: PackedStringArray) -> void:
-	var editor_pane = SingletonObject.editor_pane
-	if editor_pane:
-		if !editor_pane.get_global_rect().has_point(get_global_mouse_position()):
-			return
-	if editor_pane == null:
+	var pane: EditorPane = SingletonObject.editor_pane
+	if pane == null or not pane.get_global_rect().has_point(get_global_mouse_position()):
 		return
-	if editor_pane.Tabs.get_tab_count() < 1:
-		_open_dropped_files(files)
-		return
-	else:
-		var editor: = editor_pane.Tabs.get_current_tab_control() as Editor
-		if editor.type == Editor.Type.GRAPHICS:
-			for file in files:
-				var image: = Image.load_from_file(file)
+	var registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
+	for file: String in files:
+		var extension := file.get_extension().to_lower()
+		if not registry.resolve_file("." + extension).is_empty() or pane.Tabs.get_tab_count() < 1:
+			_open_dropped_files(PackedStringArray([file]))
+		else:
+			var editor: Editor = pane.Tabs.get_current_tab_control()
+			if editor.type == Editor.Type.GRAPHICS and extension in SingletonObject.supported_image_formats:
+				var image := Image.load_from_file(file)
 				editor.graphics_editor.create_new_image_layer(file.get_file(), image)
+			elif extension not in SingletonObject.supported_image_formats and extension not in SingletonObject.supported_text_formats:
+				_open_dropped_files(PackedStringArray([file]))
 
 
 func _open_dropped_files(files: PackedStringArray) -> void:
+	var pane: EditorPane = SingletonObject.editor_pane
+	var registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
 	for file: String in files:
-		var result: Dictionary = SingletonObject.open_file_at_path(file)
+		var extension := file.get_extension().to_lower()
+		var claim := registry.resolve_file("." + extension)
+		var result: Dictionary = {"ok": true}
+		if not claim.is_empty():
+			result = SingletonObject.open_file_at_path(file)
+		elif extension in SingletonObject.supported_image_formats:
+			pane.add(Editor.Type.GRAPHICS, file, file.get_file())
+		elif extension in SingletonObject.supported_text_formats:
+			pane.add(Editor.Type.TEXT, file, file.get_file())
+		else:
+			result = {"ok": false, "errors": ["Unsupported file type: ." + extension]}
 		if not result.get("ok", false):
 			var message := str(result.get("errors", ["Could not open dropped file"]))
 			push_warning(message)
-			SingletonObject.create_toast_notification(message, ToastNotification.Type.WARNING)
+			SingletonObject.create_toast_notification(message, ToastNotification.Type.WARNING, false)
 
 
 ## Show popup menu with all creatable editor items from registry

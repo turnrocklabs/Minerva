@@ -73,16 +73,11 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 	elif action == "import" and panel_info.get("builtin") != "spreadsheet":
 		return _failure("no_import_handler_for_extension: " + ext)
 
-	# --- Idempotency: check if already open ---
-	# TODO(paired_dsl close-one): for render_mode=paired_dsl, two editors share
-	# editor.file. If the user closed only the render panel, this loop returns
-	# the surviving text editor and _open_paired_dsl never runs to recreate the
-	# render panel. Substrate-level limitation; revisit when paired_dsl ships.
+	# Reuse a tab only while its actual editor (or shared pair) owns this path.
 	for editor: Editor in pane.get_open_editors():
 		if editor.file == abs_path:
 			var expected_owner := str(panel_info.get("plugin_id", ""))
-			var expected_panel := str(panel_info.get("panel_name", ""))
-			if editor.plugin_id != expected_owner or editor.panel_name != expected_panel:
+			if not _matches_file_owner(editor, panel_info, abs_path):
 				return _failure("document_owner_changed: close the existing tab before reopening '%s' with '%s'" % [abs_path, expected_owner])
 			var kind_name: String = type_name.call(editor.type)
 			# Explicit Variant locals so null branches type-check (incompatible ternary).
@@ -160,6 +155,23 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 
 
 
+func _matches_file_owner(editor: Editor, claim: Dictionary, path: String) -> bool:
+	var owner := str(claim.get("plugin_id", ""))
+	var panel := str(claim.get("panel_name", ""))
+	if editor.plugin_id == owner and editor.panel_name == panel:
+		return true
+	if claim.get("render_mode") != "paired_dsl" or editor.type != Editor.Type.TEXT or scene_broker == null:
+		return false
+	var buffer := editor.get_document_buffer()
+	if buffer == null:
+		return false
+	for sibling: Editor in pane.get_open_editors():
+		if sibling.file == path and sibling.plugin_id == owner and sibling.panel_name == panel \
+				and scene_broker.get_attached_buffer(owner, sibling.plugin_panel_key) == buffer:
+			return true
+	return false
+
+
 func create_plugin_editor(args: Dictionary) -> Dictionary:
 	var plugin_id: String = str(args.get("plugin_id", "")).strip_edges()
 	var editor_item_id: String = str(args.get("editor_item_id", "")).strip_edges()
@@ -173,6 +185,10 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 	var def: PluginDefinition = pm.get_db().get_by_id(plugin_id)
 	if def == null:
 		return _failure("plugin_not_found: %s" % plugin_id)
+
+	var registration_error := registry.registration_error(plugin_id) if registry != null else ""
+	if not registration_error.is_empty():
+		return _failure(registration_error)
 
 	# Look up the editor_items entry by its declared id.
 	var editor_item: Dictionary = {}

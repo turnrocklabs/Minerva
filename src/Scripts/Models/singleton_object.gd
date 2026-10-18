@@ -1012,12 +1012,9 @@ func _sync_plugin_editor_extensions(manager: PluginManager) -> void:
 	var notices: Array[String] = []
 	for definition: PluginDefinition in definitions:
 		var warnings := registry.register_plugin(definition)
-		var refusal := ""
 		for warning: String in warnings:
 			notices.append(warning)
-			if warning.contains("registration refused") or warning.contains("for two panels"):
-				refusal = warning
-		manager.set_editor_registration(definition.id, refusal)
+		manager.set_editor_registration(definition.id, registry.registration_error(definition.id))
 	for notice: String in notices:
 		if notice not in _plugin_editor_notices:
 			push_warning(notice)
