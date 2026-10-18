@@ -262,7 +262,7 @@ static func missing_ids(manager, every_file: bool = true) -> Array[String]:
 ## it since (_start_if_wanted).
 ## Returns the jobs queued or already pending, keyed by plugin id; nothing new
 ## is queued when the release listing cannot be read.
-static func ensure(manager) -> Dictionary:
+static func ensure(manager: Node) -> Dictionary:
 	if manager.install_queue == null:
 		return {}
 	var missing := missing_ids(manager)
