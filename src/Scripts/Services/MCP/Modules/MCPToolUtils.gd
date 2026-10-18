@@ -20,6 +20,20 @@ static func error(msg: String) -> Dictionary:
 
 #endregion
 
+## An empty result means the caller retains its legacy unclaimed-file path.
+## Interactive consumers pass the host's readiness-aware opener and context.
+static func open_claimed_file(path: String, registry: PluginEditorRegistry,
+		opener: Callable, context: MCPExecutionContext = null) -> Dictionary:
+	if path.is_empty() or registry == null \
+			or not registry.resolve_file("." + path.get_extension().to_lower()).has("plugin_id"):
+		return {}
+	var opened: Dictionary = await opener.call(path, "open", context)
+	if not opened.get("ok", false):
+		var errors: Array = opened.get("errors", [])
+		return error(", ".join(PackedStringArray(errors)))
+	opened.erase("ok")
+	return success(opened)
+
 
 #region Argument Validation
 

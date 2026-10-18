@@ -278,6 +278,7 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 				and created.plugin_scene_root.get("loads") == 1 and created.plugin_scene_root.get("last_action") == "create")
 
 	await _exercise_fixed_type_paths(host, pane, directory)
+	await _exercise_fixed_type_waits(host, manager, pane, single, directory)
 	await _exercise_readiness(host, manager, pane, single, directory, text)
 	await _exercise_conflicts(host, manager, pane, directory, text)
 	check("DB removal releases the sheet claims", manager.get_db().remove(single.id)
@@ -346,21 +347,33 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			var before := pane.Tabs.get_tab_count()
 			if surface == "spreadsheet":
 				var tools = load("res://Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd").new(null)
-				var result: Dictionary = await tools._create_spreadsheet_editor({"name": "fixed-sheet-" + str(claimed), "file_path": path})
+				var result: Dictionary = await tools.handle_with_context("minerva_create_spreadsheet_editor",
+					{"name": "fixed-sheet-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
 				check("spreadsheet create reports its real result", result.get("success") == true)
 			elif surface == "text":
 				var tools = load("res://Scripts/Services/MCP/Modules/MCPEditorTools.gd").new(null)
-				var result: Dictionary = tools._create_text_editor({"name": "fixed-text-" + str(claimed), "file_path": path})
+				var result: Dictionary = await tools.handle_with_context("minerva_create_text_editor",
+					{"name": "fixed-text-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
 				check("text create reports its real result", result.get("success") == true)
 			else:
 				var package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
 				var package: Control = package_script.new()
 				var tree := Tree.new()
+				tree.columns = 2
 				var item := tree.create_item()
 				var object = package_script.PackageObject.new(item, path, true)
 				item.select(0)
 				package.set("_dir_tree", tree)
 				package.call("_on_dir_tree_item_activated")
+				var other: Editor = pane.add(Editor.Type.TEXT, null, "Package revisit decoy")
+				pane.focus_editor(other)
+				var repeat_count := pane.Tabs.get_tab_count()
+				package.call("_on_dir_tree_item_activated")
+				var selected: Editor = pane.Tabs.get_current_tab_control()
+				check("package repeated activation selects the existing tab", selected != null
+					and selected.file == path and pane.Tabs.get_tab_count() == repeat_count)
+				pane.Tabs.remove_child(other)
+				other.free()
 				tree.free()
 				package.free()
 				check("package fixture uses the actual selected file", object.original_path == path)
@@ -380,6 +393,50 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			if decoy != null:
 				pane.Tabs.remove_child(decoy)
 				decoy.free()
+
+func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: EditorPane,
+		provider: PluginDefinition, directory: String) -> void:
+	for kind: String in ["spreadsheet", "text"]:
+		var script_name := "MCPSpreadsheetTools" if kind == "spreadsheet" else "MCPEditorTools"
+		var tool := "minerva_create_spreadsheet_editor" if kind == "spreadsheet" else "minerva_create_text_editor"
+		var module = load("res://Scripts/Services/MCP/Modules/" + script_name + ".gd").new(null)
+		var path := directory.path_join("fixed-wait-" + kind + ".fixturefmt")
+		_write(path, '{"value":"waited source"}')
+		var args := {"name": "fixed-wait-" + kind, "file_path": path}
+		var before := pane.Tabs.get_tab_count()
+		var release := func() -> void:
+			manager._ensure_runtime(provider.id)["ready"] = true
+			manager.plugin_ready.emit(provider.id)
+		manager._ensure_runtime(provider.id)["ready"] = false
+		get_tree().create_timer(0.02).timeout.connect(func() -> void:
+			check(kind + " MCP open waits without allocating", pane.Tabs.get_tab_count() == before)
+			release.call())
+		var opened: Dictionary = await module.handle_with_context(tool, args, MCPExecutionContext.create("fixture"))
+		check(kind + " MCP open continues exactly once after ready", opened.get("success") == true
+			and pane.Tabs.get_tab_count() == before + 1)
+		if pane.Tabs.get_tab_count() == before + 1:
+			var editor: Editor = pane.Tabs.get_child(before)
+			pane.Tabs.remove_child(editor)
+			editor.free()
+		manager._ensure_runtime(provider.id)["ready"] = false
+		var context := MCPExecutionContext.create("fixture")
+		get_tree().create_timer(0.02).timeout.connect(context.cancel)
+		var cancelled: Dictionary = await module.handle_with_context(tool, args, context)
+		check(kind + " MCP caller cancellation refuses with no tab", cancelled.get("success") == false
+			and str(cancelled.get("error", "")).contains("cancelled") and pane.Tabs.get_tab_count() == before)
+		release.call()
+		await get_tree().process_frame
+		check(kind + " cancelled open never replays after ready", pane.Tabs.get_tab_count() == before)
+		manager._ensure_runtime(provider.id)["ready"] = false
+		var lost_pane := EditorPane.new()
+		host.set("editor_pane", lost_pane)
+		get_tree().create_timer(0.02).timeout.connect(func() -> void:
+			lost_pane.free()
+			release.call())
+		var lost: Dictionary = await module.handle_with_context(tool, args, MCPExecutionContext.create("fixture"))
+		host.set("editor_pane", pane)
+		check(kind + " MCP destination loss refuses after wait", lost.get("success") == false
+			and str(lost.get("error", "")).contains("editor_pane not available") and pane.Tabs.get_tab_count() == before)
 
 func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, provider: PluginDefinition,
 		directory: String, text: String) -> void:

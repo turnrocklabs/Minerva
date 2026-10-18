@@ -710,6 +710,11 @@ func register_tools() -> void:
 	, "spreadsheet")
 
 
+func handle_with_context(tool_name: String, arguments: Dictionary, context: MCPExecutionContext) -> Dictionary:
+	if tool_name == "minerva_create_spreadsheet_editor":
+		return await _create_spreadsheet_editor(arguments, context)
+	return await handle(tool_name, arguments)
+
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_create_spreadsheet_editor":
@@ -949,7 +954,7 @@ func _call_nudge_set_hint(component: String, key: String, value: Variant) -> Dic
 
 #region Tool Implementations
 
-func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
+func _create_spreadsheet_editor(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
 	var name_: String = args.get("name", "Spreadsheet")
 	var csv_content: String = args.get("csv_content", "")
 	var file_path: String = args.get("file_path", "")
@@ -958,15 +963,10 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 	if not editor_pane:
 		return MCPToolUtils.error("Editor pane not available")
 
-	var format_registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
-	if not file_path.is_empty() and format_registry != null \
-			and format_registry.resolve_file("." + file_path.get_extension().to_lower()).has("plugin_id"):
-		var opened: Dictionary = SingletonObject.open_file_at_path(file_path)
-		if not opened.get("ok", false):
-			var errors: Array = opened.get("errors", [])
-			return MCPToolUtils.error(", ".join(PackedStringArray(errors)))
-		opened.erase("ok")
-		return MCPToolUtils.success(opened)
+	var opened: Dictionary = await MCPToolUtils.open_claimed_file(file_path,
+		SingletonObject.plugin_editor_registry, SingletonObject.open_file_when_ready, context)
+	if not opened.is_empty():
+		return opened
 
 
 	# Before creating, check if resource with same name exists
