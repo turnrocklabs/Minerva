@@ -338,15 +338,26 @@ static func save_file(editor: Object, path: String, broker: Object) -> Dictionar
 	var payload: Variant = invoke_save(editor.plugin_scene_root, {})
 	if not payload is Dictionary:
 		return {"ok": false, "error": "Plugin panel must return a Dictionary save payload."}
+	var atomic := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
+	var written: bool
 	if payload.get("_bytes") is PackedByteArray:
-		var output := FileAccess.open(path, FileAccess.WRITE)
-		if output == null:
-			return {"ok": false, "error": error_string(FileAccess.get_open_error())}
-		output.store_buffer(payload._bytes)
-		output.flush()
-		var error := output.get_error()
-		return {"ok": error == OK, "error": error_string(error)}
-	return DiskAccess.write(path, JSON.stringify(payload, "\t"))
+		var bytes: PackedByteArray = payload._bytes
+		written = atomic.write_bytes(path, bytes)
+	else:
+		written = atomic.write(path, JSON.stringify(payload, "\t"))
+	return {"ok": written, "error": "" if written else "Couldn't atomically save file to " + path}
+
+
+## The absent field preserves the panel's existing format claims.
+static func native_save_extensions(definition: Dictionary) -> Array[String]:
+	var extensions: Array[String] = []
+	var configured: Array = definition.get("native_save_extensions", definition.get("file_extensions", []))
+	extensions.assign(configured)
+	return extensions
+
+
+static func accepts_save_path(path: String, extensions: Array[String]) -> bool:
+	return extensions.is_empty() or ("." + path.get_extension().to_lower()) in extensions
 
 
 ## Call `_on_panel_save_request()` on `panel_root` if the method exists.

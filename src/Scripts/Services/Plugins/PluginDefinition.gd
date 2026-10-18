@@ -1105,6 +1105,26 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 			file_exts.append(ext)
 		result["file_extensions"] = file_exts
 
+	# A panel can read more formats than it can save without losing information.
+	# Omission keeps the existing save-in-place contract for its own extensions.
+	if panel.has("native_save_extensions"):
+		var native_raw: Variant = panel["native_save_extensions"]
+		if kind != "godot_scene" or not native_raw is Array:
+			return {"error": "panel_native_save_extensions_invalid", "detail": {"name": panel_name}}
+		var native_values: Array = native_raw
+		if native_values.is_empty():
+			return {"error": "panel_native_save_extensions_invalid", "detail": {"name": panel_name}}
+		var native_extensions: Array[String] = []
+		for value: Variant in native_values:
+			if not value is String:
+				return {"error": "panel_native_save_extensions_invalid", "detail": {"name": panel_name}}
+			var declared_extension: String = value
+			var extension := declared_extension.to_lower()
+			if extension not in result.get("file_extensions", []) or extension in native_extensions:
+				return {"error": "panel_native_save_extensions_invalid", "detail": {"name": panel_name}}
+			native_extensions.append(extension)
+		result["native_save_extensions"] = native_extensions
+
 	# Native file handoff defaults preserve existing open/create behavior.
 	# Import must be explicitly declared; malformed or unknown verbs refuse.
 	if kind == "godot_scene":

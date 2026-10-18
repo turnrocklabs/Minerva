@@ -103,6 +103,8 @@ var plugin_panel_key: String = ""
 ## Set during create() from the panel definition; defaults to "host_owned".
 var plugin_save_mode: String = "host_owned"
 var plugin_write_guidance: String = ""
+var plugin_native_save_extensions: Array[String] = []
+var _plugin_save_prompt_busy: bool = false
 ## Chrome actions the plugin manifest asks Minerva to hide on this PLUGIN_SCENE tab.
 ## Each entry is one of "save_all" | "save" | "create_note" | "inject_toggle".
 ## Populated from manifest panel.chrome.suppress in create_plugin_scene().
@@ -873,12 +875,14 @@ func discard_plugin_surface_actions(surface: Control) -> void:
 func accepts_scene_panel_definition(definition: Dictionary) -> bool:
 	return plugin_save_mode == str(definition.get("save_mode", "host_owned")) \
 		and plugin_write_guidance == str(definition.get("write_guidance", "")) \
+		and plugin_native_save_extensions == PluginScenePanelHost.native_save_extensions(definition) \
 		and plugin_chrome_suppress == definition.get("chrome_suppress", [])
 
 
 func apply_scene_panel_definition(definition: Dictionary) -> void:
 	plugin_save_mode = str(definition.get("save_mode", "host_owned"))
 	plugin_write_guidance = str(definition.get("write_guidance", ""))
+	plugin_native_save_extensions = PluginScenePanelHost.native_save_extensions(definition)
 	var suppressed: Array = definition.get("chrome_suppress", [])
 	plugin_chrome_suppress.assign(suppressed)
 	if is_node_ready():
@@ -1483,6 +1487,13 @@ func override_save(save_function: Callable) -> void:
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straight away
 func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:	
+	if type == Type.PLUGIN_SCENE:
+		if _plugin_save_prompt_busy:
+			return false
+		_plugin_save_prompt_busy = true
+		_file_saved = false
+		if not file.is_empty() and not PluginScenePanelHost.accepts_save_path(file, plugin_native_save_extensions):
+			new_entry = true
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 	if open_in_this_path != "":
 		$FileDialog.current_path = open_in_this_path
@@ -1501,33 +1512,32 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		Type.WEBVIEW:
 			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])
 		Type.PLUGIN_SCENE:
-			# Set filter to the plugin's registered extension(s), falling back to all files.
-			var reg = _get_plugin_editor_registry_safe()
-			if reg != null:
-				var exts: Array[String] = reg.list_extensions()
-				var filters: PackedStringArray = PackedStringArray()
-				for ext in exts:
-					filters.append(("*%s ; Plugin file") % ext)
-				if not filters.is_empty():
-					$FileDialog.filters = filters
+			var filters := PackedStringArray()
+			for extension: String in plugin_native_save_extensions:
+				filters.append("*" + extension + " ; Plugin file")
+			$FileDialog.filters = filters
+			if not plugin_native_save_extensions.is_empty():
+				var name_base: String = file.get_file().get_basename() if not file.is_empty() else tab_title.get_basename()
+				var native_dialog: FileDialog = $FileDialog
+				native_dialog.current_file = name_base + plugin_native_save_extensions[0]
 
-	if not prompt_save: return true
+	if not prompt_save: return _finish_save_prompt(true)
 	if not show_save_file_dialog:
 		$CloseDialog.popup_centered(Vector2i(300, 100))
 
 		var should_save = await save_dialog
 		
 		if should_save == DialogResult.CANCEL:
-			return false
+			return _finish_save_prompt(false)
 		elif should_save == DialogResult.CLOSE:
-			return true
+			return _finish_save_prompt(true)
 	
 	if not file:
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
 		if type == Type.TEXT:
 			line_edit.text = tab_title# + "." + SingletonObject.supported_text_formats[0]
-		else:
+		elif type != Type.PLUGIN_SCENE or plugin_native_save_extensions.is_empty():
 			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
@@ -1545,14 +1555,31 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		else:
 			_on_file_dialog_file_selected(file)
 	
+	# FileDialog hides before emitting file_selected; let its synchronous host-owned
+	# save finish before reading the result. Keep overlapping prompts refused.
+	if type == Type.PLUGIN_SCENE:
+		await get_tree().process_frame
+
 	# _file_saved is set when user select a save file in `_on_file_dialog_file_selected`
 	# if we saved the file close the editor, and revert the _file_saved
 	if _file_saved:
 		_file_saved = false
-		return true
+		return _finish_save_prompt(true)
 	# if user canceled the file select dialog, just return to the editor
 	else:
-		return false
+		return _finish_save_prompt(false)
+
+
+func _show_plugin_save_error(message: String) -> void:
+	var dialog: AcceptDialog = $SaveFailure
+	var label: RichTextLabel = $SaveFailure/Message
+	label.text = message
+	dialog.popup_centered(Vector2i(560, 160))
+
+
+func _finish_save_prompt(saved: bool) -> bool:
+	_plugin_save_prompt_busy = false
+	return saved
 
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
@@ -1818,6 +1845,9 @@ func save_file_to_disc(path: String) -> bool:
 					_update_note(associated_object)
 
 		Type.PLUGIN_SCENE:
+			if not PluginScenePanelHost.accepts_save_path(path, plugin_native_save_extensions):
+				_show_plugin_save_error("Choose a native format with Save As; the source file is unchanged.")
+				return false
 			if plugin_save_mode == "none":
 				return false
 			if plugin_save_mode == "plugin_owned":
@@ -1831,7 +1861,7 @@ func save_file_to_disc(path: String) -> bool:
 				return false
 			var save_r := PluginScenePanelHost.save_file(self, path, SingletonObject.plugin_scene_panel_broker)
 			if not save_r.ok:
-				SingletonObject.ErrorDisplay("Couldn't save plugin file", save_r.error)
+				_show_plugin_save_error(str(save_r.error))
 				return false
 			_plugin_scene_modified = false
 

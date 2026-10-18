@@ -286,6 +286,18 @@ exclusive = false
 ok_button_text = "Save"
 dialog_text = "Do you want to save the file?"
 
+[node name="SaveFailure" type="AcceptDialog" parent="."]
+title = "Couldn't save plugin file"
+size = Vector2i(560, 160)
+
+[node name="Message" type="RichTextLabel" parent="SaveFailure"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 548.0
+offset_bottom = 120.0
+fit_content = true
+selection_enabled = true
+
 [node name="FileDialog" type="FileDialog" parent="."]
 size = Vector2i(700, 500)
 exclusive = false
