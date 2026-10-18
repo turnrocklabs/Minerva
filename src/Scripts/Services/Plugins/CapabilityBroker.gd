@@ -56,6 +56,9 @@ var policy: PluginPolicy = null
 ## denials are logged in addition to what PluginPolicy already records.
 var audit_log: PluginAuditLog = null
 
+## Returns current editor, panel broker and notes services; no retained UI lifetime.
+var editor_note_context: Callable
+
 ## Scope grants persistence layer — shared instance, loaded once in _init().
 ## Holds runtime filesystem scope grants that persist across restarts.
 var _scope_grants = null  # PluginScopeGrants (typed via _PluginScopeGrants const)
@@ -362,6 +365,9 @@ func _dispatch_with_context(plugin_id: String, capability: String, args: Diction
 			named_result = await _handle_host_editors_export(plugin_id, args)
 		"host.editors.open":
 			named_result = _handle_host_editors_open(plugin_id, args)
+		"host.notes.create_from_editor":
+			named_result = await PluginEditorNotes.create_from_editor(plugin_id, args,
+				editor_note_context, context)
 		"host.providers.chat":
 			named_result = await _handle_host_providers_chat(plugin_id, args)
 		"host.core.session":

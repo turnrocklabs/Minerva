@@ -11,7 +11,7 @@ extends Control
 ## Hook contracts:
 ##   _on_panel_loaded(ctx)         — fires once after the scene is mounted and
 ##                                   the broker is wired.  ctx contains:
-##                                   plugin_id, panel_name, data_directory,
+##                                   plugin_id, panel_name, panel_key, data_directory,
 ##                                   broker, file_path, associated_object,
 ##                                   editor, host_api_version, document_action.
 ##                                   document_action is create/open/import for
@@ -54,6 +54,13 @@ extends Control
 ##
 ## See: Docs/design/Plugin-platform-design.md §5 for the full lifecycle.
 ## See: src/plugins/hello_scene/ for a working reference plugin.
+##
+## Snapshot notes: emit request("capability:host.notes.create_from_editor",
+## {editor_name: ctx.panel_key, thread: "Notes", title: "Snapshot"}, reply_id).
+## Requires that exact host-capability grant. The target must belong to this
+## plugin. Optional _on_panel_create_note_request(ctx) returns a plugin_data
+## payload; _on_panel_restore_from_note(payload) restores it on Edit. Otherwise
+## the host captures a screenshot. Notes are snapshots, without live sync.
 
 
 const DOCUMENT_ACTION_META: StringName = &"minerva_document_action"

@@ -567,6 +567,10 @@ func initialize_plugins() -> void:
 
 	# Capability broker (references policy and audit log)
 	plugin_capability_broker = BrokerClass.new(plugin_policy, plugin_audit_log)
+	plugin_capability_broker.editor_note_context = func() -> Dictionary:
+		return {"broker": plugin_scene_panel_broker, "notes": notes_container,
+			"tabs": editor_pane.Tabs if is_instance_valid(editor_pane) else null,
+			"editors": editor_pane.get_open_editors() if is_instance_valid(editor_pane) else []}
 
 	# Chat-provider registry (chat-passthrough W1) is owned by PluginManager
 	# (lifecycle-bound). Wire it into the broker so host.chat_providers.* handlers

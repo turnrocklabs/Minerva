@@ -273,6 +273,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.editors.list",
 	"host.editors.export",
 	"host.editors.open",
+	"host.notes.create_from_editor",
 	"host.providers.chat",
 	"host.core.session",
 	"host.project.open",
