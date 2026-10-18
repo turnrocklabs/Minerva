@@ -349,9 +349,8 @@ func get_open_editors() -> Array[Editor]:
 	return editors
 
 
-## Bring an already-open editor's tab to the front. (open_file_at_path's
-## idempotency branch returns the existing editor without focusing it, so review
-## surfaces that hand off to the native annotation dock need this.)
+## Bring an already-open editor's tab to the front. The file handoff owner and
+## review surfaces use this to focus an existing document without another tab.
 func focus_editor(editor: Editor) -> bool:
 	if editor == null:
 		return false

@@ -76,7 +76,16 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 		return _failure("no_import_handler_for_extension: " + ext)
 
 	# Reuse a tab only while its actual editor (or shared pair) owns this path.
-	for editor: Editor in pane.get_open_editors():
+	var existing_editors: Array[Editor] = pane.get_open_editors()
+	if panel_info.get("render_mode") == "paired_dsl":
+		# Tab rearrangement/restoration must not change a pair's canonical source.
+		# Only reorder this local lookup array, preserving the visible tab order.
+		for candidate: Editor in existing_editors:
+			if candidate.file == abs_path and candidate.type == Editor.Type.TEXT:
+				existing_editors.erase(candidate)
+				existing_editors.push_front(candidate)
+				break
+	for editor: Editor in existing_editors:
 		if editor.file == abs_path:
 			var expected_owner := str(panel_info.get("plugin_id", ""))
 			if not _matches_file_owner(editor, panel_info, abs_path):

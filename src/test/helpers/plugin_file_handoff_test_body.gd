@@ -464,6 +464,9 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 		check(kind + " refusal preserved canonical paired text buffer", source != null and source.code_edit.text == original)
 		check(kind + " returns the canonical text editor name for a pair", source != null
 			and opened.get("editor_name") == source.tab_title)
+		pane.Tabs.move_child(render, 0)
+		check(kind + " renderer-first fixture models tab rearrangement", pane.Tabs.get_tab_idx_from_control(render)
+			< pane.Tabs.get_tab_idx_from_control(source))
 		var decoy := Control.new()
 		pane.Tabs.add_child(decoy)
 		pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(decoy)
