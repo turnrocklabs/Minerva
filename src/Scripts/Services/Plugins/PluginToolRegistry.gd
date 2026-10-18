@@ -754,7 +754,7 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 			"Plugin tool arguments do not match its native MCP schema",
 			str(input_check.get("error", {}).get("code", "invalid_arguments")))
 	var application: Dictionary = await _dispatch_prepared_panel_tool(plugin_id,
-		tool_name, prepared.args, prepared.panel, prepared.editor_name)
+		tool_name, prepared.args, prepared.panel, prepared.editor_name, context)
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not _panel_call_is_current(
@@ -788,7 +788,7 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 
 
 func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: Dictionary,
-		panel: Object, editor_name: String) -> Dictionary:
+		panel: Object, editor_name: String, context: ExecutionContext) -> Dictionary:
 	# --- Policy/audit: same boundary events as backend dispatch ---
 	if audit_log != null:
 		audit_log.log_event(plugin_id, "policy_allow", {
@@ -803,7 +803,7 @@ func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: D
 		})
 
 	# --- Execute (duck-typed, async-capable) ---
-	if not panel.has_method("handle_tool"):
+	if not panel.has_method("handle_tool_with_context") and not panel.has_method("handle_tool"):
 		if audit_log != null:
 			audit_log.log_event(plugin_id, "tool_call_result", {
 				"tool": tool_name,
@@ -813,7 +813,11 @@ func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: D
 			})
 		return PluginErrors.panel_no_handler(plugin_id, editor_name)
 
-	var result: Variant = await panel.handle_tool(tool_name, args)
+	var result: Variant
+	if panel.has_method("handle_tool_with_context"):
+		result = await panel.call("handle_tool_with_context", tool_name, args, context)
+	else:
+		result = await panel.handle_tool(tool_name, args)
 
 	if not (result is Dictionary) or (result as Dictionary).is_empty():
 		if audit_log != null:

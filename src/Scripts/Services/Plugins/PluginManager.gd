@@ -1063,8 +1063,8 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# Minerva tools mid-execution via minerva/capability on stdout.
 	var broker = _get_capability_broker()
 	if broker != null:
-		conn.capability_request_handler = func(p_id: String, capability: String, args: Dictionary) -> Dictionary:
-			return await broker.dispatch(p_id, capability, args)
+		conn.capability_request_handler = func(p_id: String, capability: String, args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
+			return await broker.dispatch(p_id, capability, args, context)
 	else:
 		push_warning("[PluginManager] No CapabilityBroker available — plugin '%s' cannot use bidirectional capabilities" % id)
 

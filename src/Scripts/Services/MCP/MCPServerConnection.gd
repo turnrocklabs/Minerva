@@ -99,6 +99,8 @@ var _pending: Dictionary = {}  # typed request key -> _PendingRequest
 var _completed_wire_results: Dictionary = {}
 var protocol_profile = Profile.new()
 var _process_generation := 0
+## Legacy cancellation is opt-in per process, through explicit parent provenance.
+var _legacy_parent_generation: int = -1
 
 var stdio_startup_budget_sec := 12.0
 var stdio_discovery_budget_sec := 1.0
@@ -308,7 +310,7 @@ func cancel_active_requests() -> void:
 				pending.context.cancel()
 			elif _pending.has(Protocol.request_id_key(pending.request_id)):
 				if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
-					_write_modern_cancel(pending.request_id, pending.generation)
+					_write_cancel_notification(pending.request_id, pending.generation)
 				_resolve_pending(pending.request_id,
 					_conn_error("MCP request was cancelled"), null, pending.generation)
 
@@ -683,7 +685,7 @@ func _stop_tool_catalog_watch(send_cancel: bool) -> void:
 	_catalog_watch_retry_token += 1
 	if send_cancel and transport == TransportType.STDIO \
 			and (_catalog_watch.waiting_ack or _catalog_watch.active):
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 	if _http_transport != null:
 		_http_transport.stop_tools_watch()
 	_suppress_watch_stop_callback = true
@@ -725,7 +727,7 @@ func _on_catalog_watch_protocol_stopped(owner: int, retry: bool) -> void:
 	if transport == TransportType.HTTP and _http_transport != null:
 		_http_transport.stop_tools_watch("HTTP catalog watch declined")
 	elif transport == TransportType.STDIO:
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 
 
 func _on_catalog_watch_closed(transient: bool, owner: int) -> void:
@@ -767,7 +769,7 @@ func _watch_catalog_ack_deadline(token: int, owner: int) -> void:
 			or not _catalog_watch.ack_expired():
 		return
 	if transport == TransportType.STDIO:
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 	elif _http_transport != null:
 		_http_transport.stop_tools_watch("HTTP catalog watch acknowledgment timed out")
 	_on_catalog_watch_closed(true, owner)
@@ -1212,7 +1214,7 @@ func _write_stdio_notification(message: Dictionary, generation: int) -> bool:
 	return false
 
 
-func _write_modern_cancel(request_id: Variant, generation: int) -> void:
+func _write_cancel_notification(request_id: Variant, generation: int) -> void:
 	_write_stdio_notification({"jsonrpc": Protocol.JSON_RPC_VERSION,
 		"method": "notifications/cancelled", "params": {"requestId": request_id}}, generation)
 
@@ -1238,7 +1240,9 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	if not _subprocess or not _subprocess.is_running():
 		return _conn_error("MCP server '%s' is not running" % server_name)
 
-	if context != null and context.is_stopped():
+	if context == null:
+		context = ExecutionContext.create("connection")
+	if context.is_stopped():
 		return context.stopped_result()
 	var request_id: Variant = request.get("id")
 	var request_key := Protocol.request_id_key(request_id)
@@ -1259,8 +1263,8 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	pending.context = context
 	_pending[request_key] = pending
 	var on_cancel := func() -> void:
-		if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
-			_write_modern_cancel(request_id, owned_generation)
+		if protocol_profile.era == Profile.Era.MODERN_2026_07_28 or (protocol_profile.era == Profile.Era.INITIALIZED_LEGACY and _legacy_parent_generation == owned_generation):
+			_write_cancel_notification(request_id, owned_generation)
 		_resolve_pending(request_id, context.stopped_result(), null, owned_generation)
 	if context != null:
 		context.lifetime.cancelled.connect(on_cancel)
@@ -1420,10 +1424,27 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	SingletonObject.verbose_log("[MCP STDIO] Capability request plugin=%s name=%s id_type=%d" % [
 		plugin_id, capability, typeof(cap_id)])
 
+	var parent_context: ExecutionContext = null
+	var parent_error: Dictionary = {}
+	if params.has("parent_request_id"):
+		_legacy_parent_generation = _process_generation
+		var parent_key: String = Protocol.request_id_key(params.parent_request_id)
+		var parent: _PendingRequest = _pending.get(parent_key)
+		if parent == null or parent.context == null or parent.generation != _process_generation:
+			parent_error = {"success": false, "error_code": "parent_request_unknown",
+				"error_message": "Parent request is unknown or no longer outstanding."}
+		else:
+			parent_context = parent.context
+			if parent_context.is_stopped():
+				parent_error = parent_context.stopped_result()
 	var result_payload: Dictionary
-	if capability_request_handler.is_valid():
-		var broker_result: Dictionary = await capability_request_handler.call(plugin_id, capability, args)
-		result_payload = broker_result
+	if not parent_error.is_empty():
+		result_payload = parent_error
+	elif capability_request_handler.is_valid():
+		if parent_context != null:
+			result_payload = await capability_request_handler.call(plugin_id, capability, args, parent_context)
+		else:
+			result_payload = await capability_request_handler.call(plugin_id, capability, args)
 	else:
 		push_warning("[MCP STDIO] No capability_request_handler set — denying '%s' for plugin '%s'" % [capability, plugin_id])
 		result_payload = {
@@ -1701,7 +1722,7 @@ func _queue_stdio_catalog_watch_frame(raw_line: String, message: Dictionary,
 		return
 	if _stdio_watch_queue.size() >= MAX_STDIO_WATCH_QUEUE:
 		_stdio_watch_queue.clear()
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 		_on_catalog_watch_closed(true, protocol_profile.generation)
 		return
 	_stdio_watch_queue.append({"raw": raw_line, "message": message,

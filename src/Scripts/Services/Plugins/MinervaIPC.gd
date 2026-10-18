@@ -70,6 +70,23 @@ func request_bulk(channel: String, payload: Dictionary,
 	return await await_reply(reply_id, timeout_ms)
 
 
+## Host-provided per-call lifetime, without changing this panel's ownership or grants.
+func request_capability(capability: String, payload: Dictionary,
+		context: MCPExecutionContext, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
+	if not is_inside_tree() or _bulk_broker == null or _bulk_broker.get_ref() == null:
+		return _panel_closed_error()
+	if context == null:
+		return PluginErrors.schema_validation_failed("", "A host call context is required")
+	if context.is_stopped():
+		return context.stopped_result()
+	_bulk_sequence += 1
+	var reply_id := "capability:%d:%d" % [get_instance_id(), _bulk_sequence]
+	var broker: Object = _bulk_broker.get_ref()
+	broker.call_deferred("handle_scene_request", _bulk_panel_key,
+		"capability:" + capability, payload, reply_id, get_instance_id(), false, context)
+	return await await_reply(reply_id, timeout_ms)
+
+
 ## Action `action` (one of PluginPanelAuthority.ACTIONS) with `params` on
 ## the plugin's private panel channel, as this panel: the {success, result}
 ## or {success: false, error_code, error_message} reply.
