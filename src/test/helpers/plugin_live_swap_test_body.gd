@@ -14,6 +14,8 @@ var entries: Array[Dictionary] = []
 var fault: String = ""
 var rename_blocked: bool = false
 var metrics: Array[Dictionary] = []
+var probe_service: Node
+var probe_calls: int = 0
 
 
 signal completed(exit_code: int)
@@ -98,8 +100,13 @@ func _run() -> void:
 		var state := {"text": "unsaved-" + str(index), "undo": ["before", "after"], "large": 9007199254740993, "view": {"scroll": 42.5}}
 		Host.invoke_load(panel, state)
 		entries.append({"root": panel, "vbox": box, "panel_definition": {"entry_scene": "Panel.tscn", "scripts": ["Dependency.gd", "Panel.gd"]}})
+	var policy := PluginPolicy.new(PluginDB.new(), null, false)
+	var probe_broker := PluginScenePanelBroker.new(null, policy, CapabilityBroker.new(policy))
+	probe_service = load("res://Scripts/Services/Plugins/PluginLiveReload.gd").new()
+	probe_service.configure(null, probe_broker, Callable())
+	add_child(probe_service)
 	for version: int in range(2, 10):
-		check("warm swap %d" % version, (await swapper.swap(make_build(version), entries, wire, retire)).ok)
+		check("warm swap %d" % version, (await _swap_with_probe(version)).ok)
 		check("nested scene and preloaded resource refreshed %d" % version, entries[0].root.call("nested_version") == version * 2)
 	check("changed marker and operation", entries[0].root.get_node("Marker").text == "9" and entries[0].root.call("operation", 3) == 27)
 	var version := 10
@@ -131,6 +138,14 @@ func _run() -> void:
 			await get_tree().process_frame
 			_sample(injected + "-" + str(cycle))
 			version += 1
+	var warmed_probe_calls := probe_calls
+	for probe_cycle: int in 3:
+		check("prepared-validator probe cycle succeeds", (await _swap_with_probe(version)).get("ok", false))
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_sample("probe-" + str(probe_cycle))
+		version += 1
+	check("three real prepared-validator probes ran after warmup", probe_calls == warmed_probe_calls + 3)
 	check("newer data and integer precision retained", Host.invoke_save(entries[0].root, {}).large == 9007199254740993)
 	# Edits during the two yielded preparation frames must be recaptured.
 	for publish_fails: bool in [false, true]:
@@ -216,9 +231,27 @@ func _run() -> void:
 	check("fault-path RSS remains bounded after warmup", rss.max() - rss.min() <= 256)
 	for entry: Dictionary in entries:
 		entry.vbox.free()
+	probe_service.free()
 	swapper.free()
 	print("Plugin live swap: %d checks, %d failures" % [checks, failures])
 	completed.emit(1 if failures else 0)
+
+
+func _swap_with_probe(version: int) -> Dictionary:
+	var build := make_build(version)
+	var files: Dictionary = build.files.duplicate()
+	var manifest := {"id": "fixture", "name": "Fixture", "version": "1.0.0", "host_api_version": "2",
+		"backend": {"transport": "stdio", "entrypoint": "python3"},
+		"ui": {"panels": [{"name": "closed_probe", "kind": "godot_scene", "entry_scene": "Panel.tscn",
+			"scripts": ["Panel.gd", "Dependency.gd", "Settings.gd"]}]}}
+	files["manifest.json"] = JSON.stringify(manifest).to_utf8_buffer()
+	build = store.bundle(files)
+	return await swapper.swap(build, entries, wire, retire, _validate_probe.bind(build))
+
+
+func _validate_probe(slot: String, build: Dictionary) -> Dictionary:
+	probe_calls += 1
+	return probe_service._validate_prepared(slot, build, swapper, PackedStringArray())
 
 
 func _edit_old() -> void:

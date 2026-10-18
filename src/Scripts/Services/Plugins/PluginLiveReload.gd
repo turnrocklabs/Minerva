@@ -79,37 +79,39 @@ func _machine(plugin_id: String) -> PluginLiveSwap:
 	return _machines[plugin_id]
 
 
-func _panel_definitions(build: Dictionary) -> Array[Dictionary]:
+func _panel_definitions(build: Dictionary) -> Dictionary:
 	var files: Dictionary = build.get("files", {})
 	if not files.has("manifest.json"):
-		return []
+		return {"ok": false, "error": "No valid archive-local scene panels"}
 	var bytes: PackedByteArray = files["manifest.json"]
 	var manifest: Variant = JSON.parse_string(bytes.get_string_from_utf8())
 	if not manifest is Dictionary:
-		return []
+		return {"ok": false, "error": "No valid archive-local scene panels"}
 	var manifest_dict: Dictionary = manifest
 	var parsed := PluginDefinition.from_dict(manifest_dict)
 	if parsed == null:
-		return []
+		return {"ok": false, "error": "No valid archive-local scene panels"}
 	var result: Array[Dictionary] = []
 	var seen_names: Dictionary = {}
 	for panel: Dictionary in parsed.ui_panels:
 		var panel_name := str(panel.get("name", ""))
-		if panel_name.is_empty() or seen_names.has(panel_name):
-			return []
+		if panel_name.is_empty():
+			return {"ok": false, "error": "Panel name is empty"}
+		if seen_names.has(panel_name):
+			return {"ok": false, "error": "Duplicate panel name: " + panel_name}
 		seen_names[panel_name] = true
 		if panel.get("kind") != "godot_scene":
 			continue
 		var scene := str(panel.get("entry_scene", ""))
 		if not Store.safe_relative(scene) or not files.has(scene) or not panel.get("scripts") is Array:
-			return []
+			return {"ok": false, "error": "No valid archive-local scene panels"}
 		for script: Variant in panel.scripts:
 			if not script is String:
-				return []
+				return {"ok": false, "error": "No valid archive-local scene panels"}
 			if not Store.safe_relative(str(script)) or not files.has(script):
-				return []
+				return {"ok": false, "error": "No valid archive-local scene panels"}
 		result.append(panel)
-	return result
+	return {"ok": true, "panels": result}
 
 
 func _validate(build: Dictionary, machine: PluginLiveSwap, slot: String = "A") -> Dictionary:
@@ -125,7 +127,10 @@ func _validate(build: Dictionary, machine: PluginLiveSwap, slot: String = "A") -
 
 
 func _validate_prepared(slot: String, build: Dictionary, machine: PluginLiveSwap, open_names: PackedStringArray) -> Dictionary:
-	var definitions := _panel_definitions(build)
+	var parsed := _panel_definitions(build)
+	if not parsed.get("ok", false):
+		return parsed
+	var definitions: Array[Dictionary] = parsed.panels
 	if definitions.is_empty():
 		return {"ok": false, "error": "No valid archive-local scene panels"}
 	for definition: Dictionary in definitions:
@@ -229,7 +234,10 @@ func resolve(plugin_id: String, panel_name: String) -> Dictionary:
 	var build := machine.store.read_archive(str(machine.record.active))
 	if not build.get("ok", false):
 		return _result(plugin_id, build)
-	for definition: Dictionary in _panel_definitions(build):
+	var parsed := _panel_definitions(build)
+	if not parsed.get("ok", false):
+		return _result(plugin_id, parsed)
+	for definition: Dictionary in parsed.panels:
 		if definition.get("name", "") == panel_name:
 			return {"ok": true, "directory": machine.store.slot_path(machine.active_slot), "panel": definition}
 	return _result(plugin_id, {"ok": false, "error": "Panel absent from selected build: " + panel_name})
@@ -255,10 +263,16 @@ func reload(plugin_id: String, supplied: Dictionary = {}, installed: bool = fals
 	# Re-publishing identical bytes would replace the distinct LKG with itself.
 	if str(build.digest) == str(machine.record.active):
 		return _result(plugin_id, {"ok": true, "digest": build.digest, "message": "Scene sources unchanged"})
-	var definitions := _panel_definitions(build)
+	var parsed := _panel_definitions(build)
+	if not parsed.get("ok", false):
+		return _result(plugin_id, parsed, installed)
+	var definitions: Array[Dictionary] = parsed.panels
 	var old_definitions: Array[Dictionary] = []
 	if not machine.record.is_empty():
-		old_definitions = _panel_definitions(machine.store.read_archive(str(machine.record.active)))
+		var old_parsed := _panel_definitions(machine.store.read_archive(str(machine.record.active)))
+		if not old_parsed.get("ok", false):
+			return _result(plugin_id, old_parsed, installed)
+		old_definitions = old_parsed.panels
 	var entries: Array[Dictionary] = []
 	for original: Dictionary in _manager.call("get_live_panels", plugin_id):
 		if not is_instance_valid(original.root):
@@ -441,7 +455,7 @@ func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
 		return
 	var path := _pending_path(machine)
 	if path.is_empty():
-		_boot_refused(plugin_id, machine, "Pending-update symlink refused")
+		_boot_refused(plugin_id, machine, "Pending-update symlink refused", "metadata access")
 		return
 	if not FileAccess.file_exists(path):
 		return
@@ -466,16 +480,16 @@ func _boot_pending(plugin_id: String, machine: PluginLiveSwap) -> void:
 		machine.record = selector.record
 		machine.active_slot = "B"
 	else:
-		_boot_refused(plugin_id, machine, machine.store.error_message())
+		_boot_refused(plugin_id, machine, machine.store.error_message(), "selector publication")
 
 
-func _boot_refused(plugin_id: String, machine: PluginLiveSwap, reason: String) -> void:
+func _boot_refused(plugin_id: String, machine: PluginLiveSwap, reason: String, stage: String = "validation") -> void:
 	# A restart already happened. Retain the selected build and allow repair
 	# through Reload, rather than asking for an endless sequence of restarts.
 	var path := _pending_path(machine)
 	if path.is_empty() or not Atomic.write(path, "{}"):
 		reason += "; pending identity could not be cleared"
-	_result(plugin_id, {"ok": false, "message": "Installed update failed validation; using the previous version: " + reason})
+	_result(plugin_id, {"ok": false, "message": "Installed update failed " + stage + "; using the previous version: " + reason})
 
 
 ## Hash opt-in source content recursively; nested scripts and same-second

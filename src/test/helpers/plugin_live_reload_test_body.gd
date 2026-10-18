@@ -242,6 +242,25 @@ func _run() -> void:
 	var tools: RefCounted = tools_script.new(manager)
 	var repaired: Dictionary = await tools.handle_tool_call("minerva_plugin_reload", {"id": closed_id})
 	check(repaired.get("success", false) and not repaired.status.live_reload.restart_pending, "MCP Reload fixes forward after failed boot without another restart")
+	var repaired_build := closed_store.capture(ProjectSettings.globalize_path("user://plugins/" + closed_id))
+	var repaired_selector: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(closed_store.selector_path()))
+	check(repaired_build.get("ok", false) and repaired_build.digest != JSON.parse_string(old_selector.get_string_from_utf8()).active,
+		"fix-forward fixture has a distinct installed generation")
+	check(repaired_selector.active == repaired_build.digest and repaired_selector.lkg == JSON.parse_string(old_selector.get_string_from_utf8()).active,
+		"MCP fix-forward independently publishes the installed digest and retains the previous selection")
+	var closed_pending_tmp := closed_store.directory.path_join("pending-install.json.tmp")
+	check(DirAccess.create_link(protected_path, closed_pending_tmp) == OK, "boot metadata fixture creates an actual symlink")
+	var metadata_boot: Node = boot_script.new()
+	metadata_boot.configure(manager, broker, Callable())
+	add_child(metadata_boot)
+	check(metadata_boot.resolve(closed_id, "main").get("ok", false)
+		and str(metadata_boot.status(closed_id).message).contains("failed metadata access")
+		and not str(metadata_boot.status(closed_id).message).contains("failed validation")
+		and FileAccess.get_file_as_string(protected_path) == "unrelated document remains exact",
+		"boot symlink refusal names metadata cause and preserves unrelated bytes")
+	check(DirAccess.rename_absolute(closed_pending_tmp, closed_pending_tmp + ".retained-link") == OK,
+		"preserve boot metadata fault outside its active filename")
+	metadata_boot.free()
 	manager_panel.free()
 	manager._scene_reload = saved_service
 	boot.free()
@@ -337,7 +356,8 @@ func _whole_build_refusals() -> void:
 		and duplicate_manifest.ui.panels[0].name == duplicate_manifest.ui.panels[1].name
 		and duplicate_manifest.ui.panels[0].kind != duplicate_manifest.ui.panels[1].kind, "mixed-kind duplicate fixture has conflicting names")
 	var duplicate_refusal: Dictionary = await manager.reload_scene_plugin(plugin_id)
-	check(not duplicate_refusal.get("ok", true) and FileAccess.get_file_as_bytes(store.selector_path()) == selected, "mixed HTML/scene name duplication refuses without moving active or LKG")
+	check(not duplicate_refusal.get("ok", true) and str(duplicate_refusal.get("error", "")).contains("Duplicate panel name: main")
+		and FileAccess.get_file_as_bytes(store.selector_path()) == selected, "mixed HTML/scene name duplication refuses without moving active or LKG")
 	_write(manifest_path, JSON.stringify(manifest))
 	_write(directory.path_join("Extra.gd"), 'extends "Panel.gd"\nfunc _on_panel_self_check() -> bool:\n\treturn false\n')
 	_write(directory.path_join("Extra.tscn"), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="Extra.gd" id="1"]\n[node name="Extra" type="Control"]\nscript = ExtResource("1")\n')
