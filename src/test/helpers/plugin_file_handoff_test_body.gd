@@ -304,24 +304,25 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		and host.plugin_editor_registry.resolve_extension(".csv").is_empty())
 	var csv_path := directory.path_join("unclaimed.csv")
 	_write(csv_path, "name,value\nalpha,1\n")
-	# Assert both occupied and empty builtin drop routes independently.
+	# Missing Sheets must never construct a builtin or text fallback.
 	var builtin_drop_adapter := Control.new()
 	get_tree().root.add_child(builtin_drop_adapter)
 	builtin_drop_adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
 	var before_builtin := pane.Tabs.get_tab_count()
 	await builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
-	check("real occupied unclaimed CSV drop uses builtin spreadsheet", pane.Tabs.get_tab_count() == before_builtin + 1
-		and pane.Tabs.get_child(before_builtin).type == Editor.Type.SPREADSHEET)
+	check("real occupied unclaimed CSV drop refuses without a fallback editor", pane.Tabs.get_tab_count() == before_builtin
+		and _close_recoveries() == 1)
 	var occupied_tabs := pane.Tabs
 	var builtin_empty := TabContainer.new()
 	get_tree().root.add_child(builtin_empty)
 	pane.Tabs = builtin_empty
 	await builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
-	check("real empty unclaimed CSV drop uses builtin spreadsheet", builtin_empty.get_tab_count() == 1
-		and builtin_empty.get_child(0).type == Editor.Type.SPREADSHEET)
+	check("real empty unclaimed CSV drop refuses without a fallback editor", builtin_empty.get_tab_count() == 0
+		and _close_recoveries() == 1)
 	builtin_empty.free()
 	pane.Tabs = occupied_tabs
 	builtin_drop_adapter.free()
+	await load("res://test/helpers/spreadsheet_recovery_contract.gd").new().run(self, host, manager, pane, directory)
 	var unknown_path := directory.path_join("unclaimed.ordinaryfmt")
 	_write(unknown_path, "plain unclaimed data")
 	var fallback: Dictionary = host.open_file_at_path(unknown_path)
@@ -357,7 +358,7 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			var contents := '{"value":"claimed source"}' if claimed else "value\t1\n"
 			_write(path, contents)
 			var registry: PluginEditorRegistry = host.get("plugin_editor_registry")
-			check(surface + " fixture claim is independently established", registry.resolve_file(extension).has("plugin_id") == claimed)
+			check(surface + " fixture claim is independently established", registry.resolve_file(extension).get("plugin_id") == ("file_contract" if claimed else "sheets"))
 			var decoy: Editor = null
 			if claimed and surface != "package":
 				var requested_name := ("fixed-sheet-" if surface == "spreadsheet" else "fixed-text-") + str(claimed)
@@ -376,12 +377,12 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 				var tools = load("res://Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd").new(null)
 				var result: Dictionary = await tools.handle_with_context("minerva_create_spreadsheet_editor",
 					{"name": "fixed-sheet-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
-				check("spreadsheet create reports its real result", result.get("success") == true)
+				check("spreadsheet create reports native claim or missing-provider refusal", result.get("success") == claimed)
 			elif surface == "text":
 				var tools = load("res://Scripts/Services/MCP/Modules/MCPEditorTools.gd").new(null)
 				var result: Dictionary = await tools.handle_with_context("minerva_create_text_editor",
 					{"name": "fixed-text-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
-				check("text create reports its real result", result.get("success") == true)
+				check("text create reports native claim or missing-provider refusal", result.get("success") == claimed)
 			else:
 				var package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
 				var package: Control = package_script.new()
@@ -391,23 +392,23 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 				var object = package_script.PackageObject.new(item, path, true)
 				item.select(0)
 				package.set("_dir_tree", tree)
-				package.call("_on_dir_tree_item_activated")
+				await package.call("_on_dir_tree_item_activated")
 				if claimed:
 					var target: Editor = pane.Tabs.get_current_tab_control()
 					target.tab_title = decoy.tab_title
 					check("package title collision is established before revisiting", target != decoy
 						and target.file == path and target.tab_title == decoy.tab_title)
-				# Native review tabs are plain Controls rather than Editors.
-				var other := Control.new()
-				pane.Tabs.add_child(other)
-				pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(other)
-				var repeat_count := pane.Tabs.get_tab_count()
-				package.call("_on_dir_tree_item_activated")
-				var selected: Editor = pane.Tabs.get_current_tab_control()
-				check("package repeated activation selects the existing tab", selected != null
-					and selected.file == path and pane.Tabs.get_tab_count() == repeat_count)
-				pane.Tabs.remove_child(other)
-				other.free()
+					# Native review tabs are plain Controls rather than Editors.
+					var other := Control.new()
+					pane.Tabs.add_child(other)
+					pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(other)
+					var repeat_count := pane.Tabs.get_tab_count()
+					await package.call("_on_dir_tree_item_activated")
+					var selected: Editor = pane.Tabs.get_current_tab_control()
+					check("package repeated activation selects the existing tab", selected != null
+						and selected.file == path and pane.Tabs.get_tab_count() == repeat_count)
+					pane.Tabs.remove_child(other)
+					other.free()
 				tree.free()
 				package.free()
 				check("package fixture uses the actual selected file", object.original_path == path)
@@ -416,11 +417,11 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			for editor: Editor in pane.get_open_editors():
 				if editor.file == path:
 					opened = editor
-			var expected: int = Editor.Type.PLUGIN_SCENE if claimed else (Editor.Type.SPREADSHEET if surface == "spreadsheet" else Editor.Type.TEXT)
-			check(surface + " routes the claim and preserves the unclaimed type", pane.Tabs.get_tab_count() == before + 1
-				and opened != null and opened.type == expected
-				and (not claimed or opened.plugin_id == "file_contract")
-				and FileAccess.get_file_as_string(path) == contents)
+			check(surface + " routes claimed native file or refuses missing Sheets", FileAccess.get_file_as_string(path) == contents
+				and ((pane.Tabs.get_tab_count() == before + 1 and opened != null and opened.type == Editor.Type.PLUGIN_SCENE and opened.plugin_id == "file_contract")
+				if claimed else (pane.Tabs.get_tab_count() == before and opened == null)))
+			if not claimed and surface == "package":
+				check("package refusal is retryable and copyable", _close_recoveries() == 1)
 			if opened != null:
 				pane.Tabs.remove_child(opened)
 				opened.free()
@@ -438,7 +439,7 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 	pair_item.select(0)
 	pair_package.set("_dir_tree", pair_tree)
 	var before_pair := pane.Tabs.get_tab_count()
-	pair_package.call("_on_dir_tree_item_activated")
+	await pair_package.call("_on_dir_tree_item_activated")
 	var pair_selected: Control = pane.Tabs.get_current_tab_control()
 	check("pair_package new pair retains the handoff render selection", pair_selected is Editor
 		and pair_selected.type == Editor.Type.PLUGIN_SCENE and pair_selected.file == paired_path
@@ -507,19 +508,14 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 				editor.free()
 		var unclaimed_path := directory.path_join("unclaimed-content-" + kind + ".tsv")
 		_write(unclaimed_path, "file\tvalue\n")
-		check(kind + " legacy fixture is unclaimed", not registry.resolve_file(".tsv").has("plugin_id"))
+		check(kind + " legacy spreadsheet extension is reserved to Sheets", registry.resolve_file(".tsv").get("plugin_id") == "sheets")
 		args = {"name": "Legacy " + kind, "file_path": unclaimed_path}
 		args[content_key] = "supplied\tcontent\n"
+		var before_missing := pane.Tabs.get_tab_count()
 		var legacy: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
-		var legacy_editor: Editor = pane.Tabs.get_current_tab_control()
-		check(kind + " unclaimed create keeps requested name and type", legacy.get("success") == true
-			and legacy.get("editor_name") == args.name and legacy_editor.tab_title == args.name
-			and legacy_editor.type == (Editor.Type.SPREADSHEET if kind == "spreadsheet" else Editor.Type.TEXT))
-		check(kind + " unclaimed initialization preserves legacy content behavior", (legacy_editor.code_edit.text == args[content_key]
-			if kind == "text" else legacy_editor.spreadsheet_editor.spreadsheet_data.get_cell_value(0, 0) == "file")
-			and FileAccess.get_file_as_string(unclaimed_path) == "file\tvalue\n")
-		pane.Tabs.remove_child(legacy_editor)
-		legacy_editor.free()
+		check(kind + " missing Sheets refuses without fallback or source mutation", legacy.get("success") == false
+			and pane.Tabs.get_tab_count() == before_missing and FileAccess.get_file_as_string(unclaimed_path) == "file\tvalue\n")
+
 
 func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: EditorPane,
 		provider: PluginDefinition, directory: String) -> void:
@@ -826,3 +822,14 @@ func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, d
 func _clear_tabs(tabs: TabContainer) -> void:
 	for child: Node in tabs.get_children():
 		child.free()
+
+
+func _close_recoveries() -> int:
+	var count: int = 0
+	for child: Node in get_tree().root.get_children():
+		if child is SpreadsheetRecoveryDialog and not child.is_queued_for_deletion():
+			var dialog: SpreadsheetRecoveryDialog = child
+			check("provider refusal is visible and copyable", dialog.visible and dialog.message.selection_enabled and not dialog.message.text.is_empty())
+			count += 1
+			dialog.call("_on_close")
+	return count

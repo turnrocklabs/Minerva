@@ -415,7 +415,7 @@ func test_format_ownership() -> void:
 	var required: Array[String] = ["required_one", "required_two"]
 	var registry := PluginEditorRegistry_.new(required)
 	for extension: String in [".minsheet", ".csv", ".tsv", ".xlsx"]:
-		check("unclaimed format keeps builtin spreadsheet: " + extension, registry.resolve_file(extension).get("builtin") == "spreadsheet")
+		check("unclaimed format reserves native Sheets: " + extension, registry.resolve_file(extension).get("plugin_id") == "sheets")
 	var optional := StubDef.make("optional", "main", [".minsheet", ".csv", ".tsv", ".xlsx"], "optional_new", "Optional")
 	check("optional provider can claim spreadsheet formats", registry.register_plugin(optional).is_empty()
 		and registry.resolve_file("minsheet").get("plugin_id") == optional.id)
@@ -437,7 +437,7 @@ func test_format_ownership() -> void:
 		and registry.resolve_extension(".new").get("plugin_id") == lower.id and registry.resolve_extension(".minsheet").plugin_id == first.id
 		and registry.registration_error(lower.id).is_empty())
 	registry.unregister_plugin(first.id)
-	check("removed final provider restores builtin fallback", registry.resolve_file(".minsheet").get("builtin") == "spreadsheet")
+	check("removed final provider restores native Sheets reservation", registry.resolve_file(".minsheet").get("plugin_id") == "sheets")
 	var peers := PluginEditorRegistry_.new()
 	peers.register_plugin(StubDef.make("peer_one", "main", [".fixturefmt"]))
 	var peer_refusal: Array[String] = peers.register_plugin(StubDef.make("peer_two", "main", [".fresh", ".fixturefmt"]))
