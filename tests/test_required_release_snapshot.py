@@ -2,10 +2,10 @@
 import importlib.util
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import urlopen
 

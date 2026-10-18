@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Fetch CI's explicit required-plugin repositories into one keyed snapshot."""
 import argparse
-from collections.abc import Sequence
 import json
-from pathlib import Path
 import re
 import subprocess
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 

@@ -2,8 +2,8 @@
 import argparse
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlsplit
-from typing import Any
 
 
 def release(plugin: str, version: str, repo: str) -> dict[str, Any]:
@@ -37,7 +37,7 @@ def page_for(scenario: str, repo: str, page: int) -> tuple[int, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    requests: list[dict[str, Any]] = []
+    requests: ClassVar[list[dict[str, Any]]] = []
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
@@ -55,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.reply(status, body)
 
-    def reply(self, status: int, value: Any) -> None:
+    def reply(self, status: int, value: object) -> None:
         body = json.dumps(value).encode()
         self.send_response(status)
         self.send_header("Content-Length", str(len(body)))
