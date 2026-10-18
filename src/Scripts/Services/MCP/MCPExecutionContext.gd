@@ -109,6 +109,9 @@ func fail(failure: Dictionary, default_code: String = "local_error") -> Dictiona
 	return stopped_result()
 
 
+func has_local_failure() -> bool:
+	return not lifetime._stopped_failure.is_empty()
+
 func is_stopped() -> bool:
 	if lifetime.deadline_ms > 0 and Time.get_ticks_msec() >= lifetime.deadline_ms:
 		lifetime.stop("deadline_exceeded")

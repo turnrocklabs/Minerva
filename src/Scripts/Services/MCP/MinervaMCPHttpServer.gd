@@ -655,7 +655,7 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 		lease.release()
 		_send_jsonrpc_error(conn, request_id, -32603, debug_msg)
 		return
-	var context = ExecutionContext.create("http", "", agent_id)
+	var context: ExecutionContext = ExecutionContext.create("http", "", agent_id)
 	_active_request_contexts[conn] = context
 	_monitor_request_connection(conn, context)
 	tool_executed.emit(tool_name, session_id)
@@ -669,7 +669,12 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 	lease.release()
 	if _active_request_contexts.get(conn) == context:
 		_active_request_contexts.erase(conn)
-	if context.is_stopped():
+	if context.is_stopped() and not context.has_local_failure():
+		return
+	# A retired native call still has a failure to publish on its live stream.
+	var request_connection: MinervaMCPHttpConnection = conn
+	if not _is_running or not _connections.has(conn) \
+			or not request_connection.is_peer_connected() or request_connection.absolute_deadline_expired():
 		return
 
 	_send_jsonrpc_result(conn, request_id,
