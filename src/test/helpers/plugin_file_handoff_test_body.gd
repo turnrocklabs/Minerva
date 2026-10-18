@@ -132,14 +132,14 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	var dropped_claim := directory.path_join("dropped.csv")
 	_write(dropped_claim, text)
 	var before_drop := pane.Tabs.get_tab_count()
-	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
 	check("dropped claimed CSV routes to its provider", pane.Tabs.get_tab_count() == before_drop + 1
 		and pane.Tabs.get_child(before_drop).plugin_id == single.id)
 	var existing_tabs := pane.Tabs
 	var empty_tabs := TabContainer.new()
 	get_tree().root.add_child(empty_tabs)
 	pane.Tabs = empty_tabs
-	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
 	check("empty-pane real CSV drop creates its owner", empty_tabs.get_tab_count() == 1
 		and empty_tabs.get_child(0).plugin_id == single.id)
 	if empty_tabs.get_tab_count() == 1:
@@ -148,33 +148,33 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	var image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
 	check("real webp fixture is saved", image.save_webp(image_path) == OK)
 	before_drop = pane.Tabs.get_tab_count()
-	drop_adapter.call("_on_files_dropped", PackedStringArray([image_path]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([image_path]))
 	check("dropped webp retains graphics editor", pane.Tabs.get_tab_count() == before_drop + 1
 		and pane.Tabs.get_child(before_drop).type == Editor.Type.GRAPHICS)
 	var binary_path := directory.path_join("dropped.zip")
 	_write(binary_path, "PK-binary-fixture")
 	before_drop = pane.Tabs.get_tab_count()
-	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
 	check("unsupported binary drop refuses without an editor", pane.Tabs.get_tab_count() == before_drop
 		and FileAccess.get_file_as_string(binary_path) == "PK-binary-fixture")
 	if empty_tabs.get_tab_count() == 1:
 		var graphics: Editor = empty_tabs.get_child(0)
 		var layer_count := graphics.graphics_editor.layers.size()
-		drop_adapter.call("_on_files_dropped", PackedStringArray([image_path]))
+		await drop_adapter.call("_on_files_dropped", PackedStringArray([image_path]))
 		check("occupied graphics drop adds an image layer", empty_tabs.get_tab_count() == 1
 			and graphics.graphics_editor.layers.size() == layer_count + 1)
 		var next_claim := directory.path_join("mixed-drop.csv")
 		_write(next_claim, text)
 		layer_count = graphics.graphics_editor.layers.size()
-		drop_adapter.call("_on_files_dropped", PackedStringArray([next_claim, image_path]))
+		await drop_adapter.call("_on_files_dropped", PackedStringArray([next_claim, image_path]))
 		check("mixed claimed/image drop retains its initial graphics target", empty_tabs.get_tab_count() == 2
 			and graphics.graphics_editor.layers.size() == layer_count + 1)
 	_clear_tabs(empty_tabs)
-	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
 	check("empty-pane binary drop refuses", empty_tabs.get_tab_count() == 0)
 	var second_image := directory.path_join("second.webp")
 	check("second real webp fixture is saved", image.save_webp(second_image) == OK)
-	drop_adapter.call("_on_files_dropped", PackedStringArray([image_path, second_image]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([image_path, second_image]))
 	check("multi-image empty drop opens two graphics editors", empty_tabs.get_tab_count() == 2
 		and empty_tabs.get_child(0).type == Editor.Type.GRAPHICS and empty_tabs.get_child(1).type == Editor.Type.GRAPHICS)
 	_clear_tabs(empty_tabs)
@@ -182,20 +182,20 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	var second_text := directory.path_join("second.txt")
 	_write(first_text, "first")
 	_write(second_text, "second")
-	drop_adapter.call("_on_files_dropped", PackedStringArray([first_text, second_text]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([first_text, second_text]))
 	check("multi-text empty drop opens two text editors", empty_tabs.get_tab_count() == 2
 		and empty_tabs.get_child(0).type == Editor.Type.TEXT and empty_tabs.get_child(1).type == Editor.Type.TEXT)
 	var occupied_count := empty_tabs.get_tab_count()
-	drop_adapter.call("_on_files_dropped", PackedStringArray([image_path, first_text]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([image_path, first_text]))
 	check("ordinary image/text drops into text retain legacy ignore behavior", empty_tabs.get_tab_count() == occupied_count)
-	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
 	check("binary drop into text refuses", empty_tabs.get_tab_count() == occupied_count)
 	pane.position = Vector2(10000, 10000)
-	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
 	check("drop outside the pane does nothing", empty_tabs.get_tab_count() == occupied_count)
 	pane.position = Vector2(-1000, -1000)
 	host.editor_pane = null
-	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	await drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
 	host.editor_pane = pane
 	check("drop without a pane does nothing", empty_tabs.get_tab_count() == occupied_count)
 	empty_tabs.free()
@@ -227,7 +227,7 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 			and pane.Tabs.get_tab_count() == before_refusal and FileAccess.get_file_as_string(open_path) == text)
 		# This is the real File > Open adapter; its warning is retained in the log.
 		var opener = load("res://Scripts/UI/Controls/vboxEditor.gd").new()
-		opener.open_file(open_path)
+		await opener.open_file(open_path)
 		opener.free()
 		check("GUI refusal leaves tabs and source unchanged", pane.Tabs.get_tab_count() == before_refusal
 			and FileAccess.get_file_as_string(open_path) == text)
@@ -288,14 +288,14 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	get_tree().root.add_child(builtin_drop_adapter)
 	builtin_drop_adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
 	var before_builtin := pane.Tabs.get_tab_count()
-	builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
+	await builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
 	check("real occupied unclaimed CSV drop uses builtin spreadsheet", pane.Tabs.get_tab_count() == before_builtin + 1
 		and pane.Tabs.get_child(before_builtin).type == Editor.Type.SPREADSHEET)
 	var occupied_tabs := pane.Tabs
 	var builtin_empty := TabContainer.new()
 	get_tree().root.add_child(builtin_empty)
 	pane.Tabs = builtin_empty
-	builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
+	await builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
 	check("real empty unclaimed CSV drop uses builtin spreadsheet", builtin_empty.get_tab_count() == 1
 		and builtin_empty.get_child(0).type == Editor.Type.SPREADSHEET)
 	builtin_empty.free()
@@ -349,7 +349,7 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 			var editor: Editor = pane.Tabs.get_child(before_open)
 			check("async handoff sends one action without writing source bytes", editor.plugin_scene_root.get("loads") == 1
 				and editor.plugin_scene_root.get("last_action") == action and FileAccess.get_file_as_string(path) == text)
-	var args := {"plugin_id": provider.id, "editor_item_id": provider.id + "_new"}
+	var args := {"plugin_id": " " + provider.id + " ", "editor_item_id": provider.id + "_new"}
 	manager._ensure_runtime(provider.id)["ready"] = false
 	var before := pane.Tabs.get_tab_count()
 	var sync_create: Variant = host.create_plugin_editor(args)
@@ -407,6 +407,9 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 			release.call())
 		await item.create_callback.call()
 		check("GUI callback waits and creates one editor", pane.Tabs.get_tab_count() == before + 1)
+		if pane.Tabs.get_tab_count() == before + 1:
+			var editor: Editor = pane.Tabs.get_child(before)
+			check("GUI create sends exactly one create hook", editor.plugin_scene_root.get("loads") == 1 and editor.plugin_scene_root.get("last_action") == "create")
 	for surface: String in ["menu", "drop"]:
 		var adapter: Control = VBoxContainer.new() if surface == "menu" else Control.new()
 		get_tree().root.add_child(adapter)
@@ -419,10 +422,15 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 			check(surface + " stays pending before ready", pane.Tabs.get_tab_count() == surface_before)
 			release.call())
 		if surface == "menu":
-			await adapter.call("open_file", path)
+			await adapter.call("_on_open_files", PackedStringArray([path]))
 		else:
-			await adapter.call("_open_dropped_files", PackedStringArray([path]))
+			pane.position = Vector2(-1000, -1000)
+			pane.size = Vector2(2000, 2000)
+			await adapter.call("_on_files_dropped", PackedStringArray([path]))
 		check(surface + " allocates once after ready", pane.Tabs.get_tab_count() == surface_before + 1 and FileAccess.get_file_as_string(path) == text)
+		if pane.Tabs.get_tab_count() == surface_before + 1:
+			var editor: Editor = pane.Tabs.get_child(surface_before)
+			check(surface + " sends exactly one open hook", editor.plugin_scene_root.get("loads") == 1 and editor.plugin_scene_root.get("last_action") == "open")
 		adapter.free()
 	before = pane.Tabs.get_tab_count()
 	manager._ensure_runtime(provider.id)["ready"] = false

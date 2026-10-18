@@ -417,13 +417,13 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 	for file: String in files:
 		var extension := file.get_extension().to_lower()
 		if not registry.resolve_file("." + extension).is_empty() or target == null:
-			_open_dropped_files(PackedStringArray([file]))
+			await _open_dropped_files(PackedStringArray([file]))
 		else:
 			if target.type == Editor.Type.GRAPHICS and extension in SingletonObject.supported_image_formats:
 				var image := Image.load_from_file(file)
 				target.graphics_editor.create_new_image_layer(file.get_file(), image)
 			elif extension not in SingletonObject.supported_image_formats and extension not in SingletonObject.supported_text_formats:
-				_open_dropped_files(PackedStringArray([file]))
+				await _open_dropped_files(PackedStringArray([file]))
 
 
 func _open_dropped_files(files: PackedStringArray) -> void:

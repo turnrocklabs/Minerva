@@ -118,6 +118,9 @@ func collect_readiness(readiness: PluginReadiness, provider: String, results: Ar
 func collect_dispatch(server: MinervaMCPServer, context: MCPExecutionContext, completion: MCPExecutionContext.Completion) -> void:
 	completion.finish(await server.call_tool("minerva_agent_relay_echo", {"value": "one dispatch"}, context))
 
+func collect_typed_dispatch(server: MinervaMCPServer, completion: MCPExecutionContext.Completion) -> void:
+	completion.finish(await server.call_tool("minerva_agent_relay_typed_input", {"count": "3"}))
+
 
 func exercise_readiness() -> void:
 	var manager := PluginManager.new()
@@ -140,6 +143,7 @@ func exercise_readiness() -> void:
 	var server := MinervaMCPServer.new()
 	server.plugin_admission = host._admit_plugin_tool
 	var dispatch := MCPExecutionContext.Completion.new()
+	var typed_dispatch := MCPExecutionContext.Completion.new()
 	var dispatch_caller := MCPExecutionContext.create("fixture").for_plugin(consumer.id)
 	var pending_results: Array[Dictionary] = []
 	var seen := {"started": false, "ready": false, "dispatch_started": false}
@@ -155,12 +159,14 @@ func exercise_readiness() -> void:
 		if first_dispatch:
 			seen.dispatch_started = true
 			collect_dispatch(server, dispatch_caller, dispatch)
+			collect_typed_dispatch(server, typed_dispatch)
 		get_tree().create_timer(0.1).timeout.connect(func() -> void:
 			if not is_instance_valid(manager) or manager.get_connection(id) == null:
 				return
 			check("real provider admission stays pending before catalog release", pending_results.size() == previous_results)
 			if first_dispatch:
 				check("generic MCP dispatch stays pending before catalog release", not dispatch.done and not dispatch_caller.lifetime.dispatched)
+				check("typed call has no schema and stays pending", not typed_dispatch.done and registry.find_tool("minerva_agent_relay_typed_input").is_empty())
 			check("delayed catalog is running but not ready", manager.get_plugin_status(id).running and not manager.get_plugin_status(id).ready)
 			check("fixture releases catalog through public host event", manager.get_connection(id).send_host_event("test_release_tools", {}) == OK)))
 	manager.plugin_ready.connect(func(id: String) -> void: seen.ready = manager.get_plugin_status(id).ready)
@@ -175,6 +181,11 @@ func exercise_readiness() -> void:
 	if not dispatch.done:
 		await dispatch.finished
 	check("generic MCP dispatch keeps caller identity and reaches backend", dispatch.result.get("echo", {}).get("value") == "one dispatch")
+	if not typed_dispatch.done:
+		await typed_dispatch.finished
+	check("delayed native schema coerces internal arguments", typed_dispatch.result.get("success", false))
+	var strict: Dictionary = await server.execute_tool_for_http("minerva_agent_relay_typed_input", {"count": "3"})
+	check("HTTP arguments still validate without coercion", strict.get("success") == false)
 	var counted: Dictionary = await manager.get_connection(provider.id).call_tool("catalog_count", {}, 5.0)
 	check("independent backend counter proves delayed call dispatched once", counted.get("echo_calls") == 1)
 	check("missing action visible without constraining other actions", manager.dependency_contract_issue(consumer.id).contains("tool minerva_agent_relay_absent")

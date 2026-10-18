@@ -105,7 +105,7 @@ func wait_for_tool(tool: String, context: MCPExecutionContext) -> Dictionary:
 
 func _document_owner(handoff: PluginEditorHandoff, action: String, args: Dictionary) -> String:
 	if action == "create":
-		return str(args.get("plugin_id", ""))
+		return str(args.get("plugin_id", "")).strip_edges()
 	var path: Variant = args.get("path")
 	if path is String and handoff.registry != null:
 		var file_path: String = path

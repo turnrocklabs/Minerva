@@ -427,6 +427,13 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
 	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.
 	if not dispatched and SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
+		# A pending provider may only publish its schema during admission.
+		# HTTP calls keep strict native arguments; internal calls retain coercion.
+		if coerce_arguments:
+			var plugin_registry: PluginToolRegistry = SingletonObject.plugin_tool_registry
+			var entry: Dictionary = plugin_registry.find_tool(tool_name)
+			var input_schema: Dictionary = entry.get("input_schema", {})
+			arguments = MCPToolUtils.coerce_args_to_schema(arguments, input_schema)
 		var plugin_outcome
 		if write_binding.is_empty():
 			plugin_outcome = await SingletonObject.plugin_tool_registry.handle_tool_call_outcome(
