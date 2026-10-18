@@ -36,6 +36,7 @@ func _init() -> void:
 	test_register_plugin_two_plugins_same_ext_first_wins()
 	test_register_plugin_two_plugins_same_ext_second_skipped()
 	test_format_ownership()
+	test_kind_replacement()
 	test_file_action_manifest()
 
 	print("\n-- PluginEditorRegistry: unregister_plugin --")
@@ -463,3 +464,32 @@ func test_file_action_manifest() -> void:
 		var rejected: Dictionary = manifest.duplicate(true)
 		rejected.ui.panels[0].file_extensions = [invalid_extension]
 		check("malformed extension refuses: " + str(invalid_extension), PluginDefinition.from_dict(rejected) == null)
+
+
+func test_kind_replacement() -> void:
+	var required_ids: Array[String] = ["required", "other_required"]
+	var registry := PluginEditorRegistry_.new(required_ids)
+	var optional := StubDef.make("optional", "main", [".optional"], "shared_kind", "Optional")
+	var required := StubDef.make("required", "main", [".required"], "shared_kind", "Required")
+	registry.register_plugin(optional)
+	var notice: Array[String] = registry.register_plugin(required)
+	check("kind-only required replacement names both providers", notice.size() == 1
+		and notice[0].contains(optional.id) and notice[0].contains(required.id)
+		and registry.resolve_editor_kind("shared_kind").plugin_id == required.id)
+	registry.unregister_plugin(optional.id)
+	check("displaced optional cannot remove required editor kind", registry.resolve_editor_kind("shared_kind").plugin_id == required.id)
+	var holder := StubDef.make("other_required", "main", [".held"], "held_kind", "Held")
+	registry.register_plugin(holder)
+	var previous_extensions := registry.list_extensions()
+	var previous_kinds := registry.list_editor_kinds()
+	var failed_update := StubDef.make("required", "replacement", [".staged"], "held_kind", "Conflict")
+	var refusal: Array[String] = registry.register_plugin(failed_update)
+	check("kind conflict after extension staging preserves prior registration", refusal.size() == 1
+		and refusal[0].contains(required.id) and refusal[0].contains(holder.id)
+		and registry.list_extensions() == previous_extensions and registry.list_editor_kinds() == previous_kinds
+		and registry.resolve_extension(".staged").is_empty())
+	var moved := StubDef.make("required", "moved", [".moved"], "moved_kind", "Moved")
+	check("successful re-registration removes obsolete extension and kind", registry.register_plugin(moved).is_empty()
+		and registry.resolve_extension(".required").is_empty() and registry.resolve_editor_kind("shared_kind").is_empty()
+		and registry.resolve_extension(".moved").plugin_id == moved.id
+		and registry.resolve_editor_kind("moved_kind").plugin_id == moved.id)

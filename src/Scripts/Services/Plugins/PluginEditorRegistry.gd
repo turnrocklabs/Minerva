@@ -182,17 +182,21 @@ func register_plugin(def) -> Array[String]:
 			# html-kind panels are registered via the existing CreatableItemRegistry path.
 			continue
 
-		var kind_conflict := _conflict(item_id, plugin_id, _kind_to_panel.get(item_id, {}))
+		var previous_kind: Dictionary = _kind_to_panel.get(item_id, {})
+		var kind_conflict := _conflict(item_id, plugin_id, previous_kind)
 		if not kind_conflict.is_empty():
 			push_warning(kind_conflict)
 			return [kind_conflict]
-		var actions: Array = ["open", "create"]
+		if not previous_kind.is_empty() and previous_kind.get("plugin_id") != plugin_id:
+			warnings.append("PluginEditorRegistry: required plugin '%s' replaces optional '%s' for editor kind '%s'" % [plugin_id, previous_kind.plugin_id, item_id])
+		var actions: Array[String] = ["open", "create"]
 		for panel_value: Variant in ui_panels:
 			if not panel_value is Dictionary:
 				continue
 			var panel: Dictionary = panel_value
 			if panel.get("name") == panel_name:
-				actions = panel.get("file_actions", actions)
+				var action_values: Array = panel.get("file_actions", actions)
+				actions.assign(action_values)
 		staged_kinds[item_id] = {
 			"plugin_id":        plugin_id,
 			"panel_name":       panel_name,
@@ -224,14 +228,16 @@ func unregister_plugin(plugin_id: String) -> void:
 	# Remove extensions.
 	var exts: Array = _plugin_extensions.get(plugin_id, [])
 	for ext in exts:
-		if _ext_to_panel.get(ext, {}).get("plugin_id") == plugin_id:
+		var owner: Dictionary = _ext_to_panel.get(ext, {})
+		if owner.get("plugin_id") == plugin_id:
 			_ext_to_panel.erase(ext)
 	_plugin_extensions.erase(plugin_id)
 
 	# Remove editor kinds.
 	var kinds: Array = _plugin_kinds.get(plugin_id, [])
 	for kind_id in kinds:
-		if _kind_to_panel.get(kind_id, {}).get("plugin_id") == plugin_id:
+		var owner: Dictionary = _kind_to_panel.get(kind_id, {})
+		if owner.get("plugin_id") == plugin_id:
 			_kind_to_panel.erase(kind_id)
 	_plugin_kinds.erase(plugin_id)
 
