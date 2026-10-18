@@ -72,7 +72,6 @@ static func startup_order(definitions: Array) -> Dictionary:
 	var order: Array[String] = []
 	while not pending.is_empty():
 		var ids: Array = pending.keys()
-		ids.sort()
 		var selected := ""
 		for id: String in ids:
 			var blocked := false

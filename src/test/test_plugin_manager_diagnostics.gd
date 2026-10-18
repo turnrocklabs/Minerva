@@ -112,8 +112,16 @@ func check_layout(panel, manager) -> void:
 	var editor_detail: TextEdit = panel._detail_editor_error
 	editor_detail.select_all()
 	check("editor registration refusal is selectable in Plugin Manager detail",
-		not editor_detail.editable and editor_detail.visible and editor_detail.get_selected_text() == editor_error
+		not editor_detail.editable and editor_detail.visible and editor_error in editor_detail.get_selected_text()
 		and manager.get_plugin_status(definition.id).editor_registration.error == editor_error)
+	definition.requires_plugins = [{"id": "voice", "min_version": "99.0.0", "actions": ["minerva_voice_status"]}]
+	panel._populate_detail_panel(definition.id)
+	editor_detail.select_all()
+	check("dependency notice is complete and selectable beside registration refusal",
+		not editor_detail.editable and editor_detail.visible and "requires voice" in editor_detail.get_selected_text()
+		and editor_error in editor_detail.get_selected_text())
+	definition.requires_plugins.clear()
+	panel._populate_detail_panel(definition.id)
 	panel._required_button.show()
 	panel._update_button.show()
 	panel._panel_button.show()
@@ -151,8 +159,7 @@ func check_layout(panel, manager) -> void:
 					and inside_horizontally(detail_scroll, panel._auto_update_check)
 					and inside_horizontally(detail_scroll, panel._panel_button))
 				check("long detail notice stays intact and wraps " + context,
-					panel._detail_status_label.text.ends_with(notice)
-					and panel._detail_status_label.get_line_count() > 1)
+					notice in editor_detail.text and editor_detail.wrap_mode != TextEdit.LINE_WRAPPING_NONE)
 				check("details keep a usable viewport " + context, detail_scroll.size.y >= font_size * 3)
 				check("plugin list keeps a complete visible row " + context,
 					panel._plugin_list.get_item_rect(0).end.y <= panel._plugin_list.size.y + 1)

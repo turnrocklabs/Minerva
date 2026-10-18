@@ -981,13 +981,18 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var live_status: Dictionary = status.get("live_reload", {})
 	if not str(live_status.get("message", "")).is_empty():
 		_detail_status_label.text += " — " + str(live_status.message)
-	if not str(status.get("notice", "")).is_empty():
-		_detail_status_label.text += " — " + str(status.notice)
 	_detail_status_label.tooltip_text = _detail_status_label.text
 	_detail_status_label.add_theme_color_override("font_color", _state_color(state))
 
 	var editor_registration: Dictionary = status.get("editor_registration", {})
-	_detail_editor_error.text = str(editor_registration.get("error", ""))
+	var details := PackedStringArray()
+	var notice: String = status.get("notice", "")
+	if not notice.is_empty():
+		details.append(notice)
+	var editor_error: String = editor_registration.get("error", "")
+	if not editor_error.is_empty() and editor_error != notice:
+		details.append(editor_error)
+	_detail_editor_error.text = "\n".join(details)
 	_detail_editor_error.visible = not _detail_editor_error.text.is_empty()
 
 	var uptime: float = status.get("uptime_sec", 0.0)

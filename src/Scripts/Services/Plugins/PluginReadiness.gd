@@ -90,6 +90,9 @@ func wait_for_tool(tool: String, context: MCPExecutionContext) -> Dictionary:
 		return _failure(str(context.stopped_result().error))
 	if not is_instance_valid(manager):
 		return _failure("plugin_manager_not_available")
+	if tools != null and tools.find_tool(tool).get("executor", "backend") == "panel":
+		var issue := manager.dependency_contract_issue(context.plugin_id, tool, tools.get_tool_owner(tool), false)
+		return {"ok": true} if issue.is_empty() else _failure(issue)
 	var provider := tools.get_tool_owner(tool) if tools != null else ""
 	if provider.is_empty():
 		var database: PluginDB = manager.get_db()

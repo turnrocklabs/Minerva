@@ -286,6 +286,9 @@ func exercise_readiness() -> void:
 	check("combined panel and backend catalog passes", str(await RequiredPlugins.host_tools_missing(provider, manager.get_connection(provider.id), provider.tools)).is_empty())
 	var ordered := PluginDependencyContract.startup_order([consumer, provider])
 	check("dependency order overrides consumer-first insertion", ordered.order == [provider.id, consumer.id] and ordered.cycles.is_empty())
+	var independent := PluginDefinition.new()
+	independent.id = "voice"
+	check("no dependencies preserves persisted install order", PluginDependencyContract.startup_order([independent, provider]).order == [independent.id, provider.id])
 	provider.requires_plugins = [{"id": consumer.id}]
 	check("cycles remain visibly unresolved in autostart plan", PluginDependencyContract.startup_order([consumer, provider]).cycles.size() == 2)
 	provider.requires_plugins.clear()
@@ -306,6 +309,9 @@ func exercise_readiness() -> void:
 	manager.stop_plugin(provider.id)
 	var profile_index := provider.args.find("--profile")
 	provider.args[profile_index + 1] = "catalog_error"
+	provider.capabilities.append("plugin_dependencies")
+	provider.requires_plugins = [{"id": "voice", "min_version": "99.0.0", "actions": ["minerva_voice_status"]}]
+	check("discovery fixture starts with its own dependency notice", str(manager.get_plugin_status(provider.id).notice).begins_with("requires voice"))
 	var before_catalog_error := pending_results.size()
 	var unavailable: Dictionary = await manager.start_plugin(provider.id)
 	check("discovery failure leaves process running with a visible reason", unavailable.get("ok", false)
@@ -320,6 +326,8 @@ func exercise_readiness() -> void:
 		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty() and live_echo.get("echo", {}).get("value") == "still alive")
 	manager.stop_plugin(provider.id)
 	provider.args[profile_index + 1] = "catalog_exit"
+	provider.requires_plugins.clear()
+	provider.capabilities.erase("plugin_dependencies")
 	var pending_before_crash := pending_results.size()
 	var interrupted: Dictionary = await manager.start_plugin(provider.id)
 	await get_tree().process_frame
@@ -349,6 +357,8 @@ func exercise_readiness() -> void:
 		check("anti-case is armed: a subsequent catalog request fails", await single_connection.refresh_tools() != OK)
 	manager.stop_plugin(provider.id)
 	check("stop clears readiness", not manager.get_plugin_status(provider.id).ready)
+	var stopped_backend: Dictionary = await server.call_tool("minerva_agent_relay_echo", {})
+	check("generic backend admission still refuses a stopped provider", str(stopped_backend).contains("provider_stopped: agent_relay"))
 	host.plugin_tool_registry = old_registry
 	host.plugin_manager = old_manager
 	db.remove(consumer.id)

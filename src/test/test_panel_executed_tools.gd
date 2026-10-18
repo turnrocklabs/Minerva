@@ -152,8 +152,10 @@ class StubAuditLog extends PluginAuditLog:
 ## func handle_tool(tool_name, args) -> Dictionary).
 class EchoPanel extends Control:
 	signal request(channel: String, payload: Dictionary, reply_id: String)
+	var calls: int = 0
 
 	func handle_tool(tool_name: String, args: Dictionary) -> Dictionary:
+		calls += 1
 		return {
 			"echoed_tool": tool_name,
 			"echoed_args": args,
@@ -652,6 +654,50 @@ func test_stop_preserves_panel_tools() -> void:
 			"minerva_pxa_panel_echo", {"editor_name": "PanelA"})
 	check("panel tool still EXECUTES after stop",
 			result.get("echoed_tool", "") == "minerva_pxa_panel_echo", str(result))
+	await test_generic_panel_admission()
+
+
+func test_generic_panel_admission() -> void:
+	var host := root.get_node("SingletonObject")
+	var previous: Variant = host.plugin_tool_registry
+	host.plugin_tool_registry = _registry
+	var server = load("res://Scripts/Services/MCP/MinervaMCPServer.gd").new()
+	var readiness = load("res://Scripts/Services/Plugins/PluginReadiness.gd").new(_manager, _registry)
+	_manager.configure_dependency_tools(_registry)
+	server.plugin_admission = readiness.wait_for_tool
+	_def_a.state = PluginDefinition.State.STOPPED
+	var result: Dictionary = await server.call_tool("minerva_pxa_panel_echo", {"editor_name": "PanelA"})
+	check("generic admission preserves a STOPPED backend's live panel", result.get("echoed_tool") == "minerva_pxa_panel_echo")
+	var voice := PluginDefinition.from_dict(_make_def_dict("voice", [_tool("minerva_voice_panel_echo", "panel")]))
+	voice.state = PluginDefinition.State.STOPPED
+	_manager._db.definitions[voice.id] = voice
+	_registry.register_plugin_tools(voice.id, voice.tools)
+	var panel := EchoPanel.new()
+	root.add_child(panel)
+	_panels.append(panel)
+	_broker.register_panel(panel, voice.id, "RequiredPanel", PackedStringArray())
+	var raw := _make_def_dict("panel_consumer", [])
+	raw.capabilities = ["plugin_dependencies"]
+	raw.requires_plugins = [{"id": voice.id, "min_version": voice.version, "actions": ["minerva_voice_panel_echo"]}]
+	var consumer := PluginDefinition.from_dict(raw)
+	check("panel requirement fixture is valid and registered", consumer != null and _registry.get_tool_owner("minerva_voice_panel_echo") == voice.id)
+	_manager._db.definitions[consumer.id] = consumer
+	var context := MCPExecutionContext.create("fixture").for_plugin(consumer.id)
+	var allowed: Dictionary = await server.call_tool("minerva_voice_panel_echo", {"editor_name": "RequiredPanel"}, context)
+	check("declared panel action does not wait for its backend", allowed.get("echoed_tool") == "minerva_voice_panel_echo")
+	consumer.requires_plugins[0].min_version = "99.0.0"
+	var calls := panel.calls
+	var denied: Dictionary = await server.call_tool("minerva_voice_panel_echo", {"editor_name": "RequiredPanel"}, context)
+	check("declared panel action still enforces version without dispatch", str(denied).contains(">= 99.0.0") and panel.calls == calls)
+	var helper := PluginDefinition.from_dict(_make_def_dict("voice_helper", [_tool("minerva_voice_helper_status", "panel")]))
+	_manager._db.definitions[helper.id] = helper
+	_registry.register_plugin_tools(helper.id, helper.tools)
+	raw.requires_plugins = [{"id": voice.id, "min_version": voice.version, "actions": ["minerva_voice_helper_status"]}]
+	consumer = PluginDefinition.from_dict(raw)
+	_manager._db.definitions[consumer.id] = consumer
+	var collision: Dictionary = await server.call_tool("minerva_voice_helper_status", {"editor_name": "RequiredPanel"}, context)
+	check("a foreign prefix tool cannot satisfy the declared provider", str(collision).contains("registered owner voice_helper") and panel.calls == calls)
+	host.plugin_tool_registry = previous
 
 
 ## H3 — on_plugin_started must re-register manifest tools whenever any are

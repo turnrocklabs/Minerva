@@ -1668,16 +1668,18 @@ func set_editor_registration(id: String, error: String) -> void:
 
 
 ## Only the caller's declared actions are constrained; other features stay usable.
-func dependency_contract_issue(consumer: String, tool: String = "", required_provider: String = "") -> String:
+func dependency_contract_issue(consumer: String, tool: String = "", required_provider: String = "", require_ready: bool = true) -> String:
 	var database: Object = _db
 	var definition: PluginDefinition = database.call("get_by_id", consumer)
 	if definition == null:
 		return ""
 	for requirement: Dictionary in definition.requires_plugins:
-		if not required_provider.is_empty() and requirement.id != required_provider:
-			continue
 		var actions: Array = requirement.actions
 		if not tool.is_empty() and tool not in actions:
+			continue
+		if not required_provider.is_empty() and requirement.id != required_provider:
+			if not tool.is_empty():
+				return "requires %s tool %s (registered owner %s)" % [requirement.id, tool, required_provider]
 			continue
 		var provider_id: String = requirement.id
 		var provider: PluginDefinition = database.call("get_by_id", provider_id)
@@ -1688,12 +1690,12 @@ func dependency_contract_issue(consumer: String, tool: String = "", required_pro
 		var active_version: String = str(registration.get("version", "")) if runtime.get("attached", false) else provider.version
 		if AutoUpdater.compare_versions(active_version, str(requirement.min_version)) < 0:
 			return "requires %s >= %s (active %s)" % [provider_id, requirement.min_version, active_version]
-		if not _ensure_runtime(provider_id).get("ready", false):
+		if require_ready and not _ensure_runtime(provider_id).get("ready", false):
 			return "requires " + provider_id + " (waiting for provider tools)"
 		for tool_name: String in actions:
 			if not tool.is_empty() and tool_name != tool:
 				continue
-			if tool_registry == null or tool_registry.find_tool(tool_name).is_empty():
+			if tool_registry == null or tool_registry.get_tool_owner(tool_name) != provider_id:
 				return "requires %s tool %s" % [provider_id, tool_name]
 	return ""
 
@@ -1736,6 +1738,7 @@ func get_plugin_status(id: String) -> Dictionary:
 	var dependency_error: String = database.call("dependency_issue", id) if not def.requires_plugins.is_empty() else ""
 	if dependency_error.is_empty():
 		dependency_error = dependency_contract_issue(id)
+	var tools_notice: String = rt.get("tools_notice", "")
 
 	return {
 		"id": id,
@@ -1745,7 +1748,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"attach_refused": rt.get("attach_refused", false),
 		"registered_version": registration.get("version", ""),
 		"attached_version": registration.get("version", "") if is_attached(id) else "",
-		"notice": dependency_error if not dependency_error.is_empty() else rt.get("tools_notice", rt.get("notice", "")),
+		"notice": tools_notice if not tools_notice.is_empty() else dependency_error if not dependency_error.is_empty() else rt.get("notice", ""),
 		"degraded": rt.get("degraded", false),
 		"capability_reason": rt.get("capability_reason", ""),
 		"attach_choices": rt.get("attach_choices", []),
