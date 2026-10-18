@@ -412,15 +412,16 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 	if pane == null or not pane.get_global_rect().has_point(get_global_mouse_position()):
 		return
 	var registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
+	# Every file in one drop has the same destination, even as tabs are added.
+	var target: Editor = pane.Tabs.get_current_tab_control() if pane.Tabs.get_tab_count() > 0 else null
 	for file: String in files:
 		var extension := file.get_extension().to_lower()
-		if not registry.resolve_file("." + extension).is_empty() or pane.Tabs.get_tab_count() < 1:
+		if not registry.resolve_file("." + extension).is_empty() or target == null:
 			_open_dropped_files(PackedStringArray([file]))
 		else:
-			var editor: Editor = pane.Tabs.get_current_tab_control()
-			if editor.type == Editor.Type.GRAPHICS and extension in SingletonObject.supported_image_formats:
+			if target.type == Editor.Type.GRAPHICS and extension in SingletonObject.supported_image_formats:
 				var image := Image.load_from_file(file)
-				editor.graphics_editor.create_new_image_layer(file.get_file(), image)
+				target.graphics_editor.create_new_image_layer(file.get_file(), image)
 			elif extension not in SingletonObject.supported_image_formats and extension not in SingletonObject.supported_text_formats:
 				_open_dropped_files(PackedStringArray([file]))
 

@@ -290,7 +290,7 @@ var _applying_buffer_text: bool = false
 
 ## Convenience factory for PLUGIN_SCENE editors that pre-sets plugin_id / panel_name
 ## on the editor instance before Editor.create() reads them in the match arm.
-static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = null, name_ = null, associated_object_ = null, document_action: String = "open") -> Editor:
+static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = null, name_ = null, associated_object_ = null, document_action: String = "") -> Editor:
 	# Instantiate a bare Editor node, set the plugin fields, then delegate to create().
 	# We must set the fields on the instance BEFORE create() runs the match arm,
 	# so we instantiate here and call create() with a dummy type that we override.
@@ -1363,7 +1363,11 @@ func _load_plugin_scene_file(path: String) -> void:
 			doc.merge(json.data, true)
 		else:
 			doc["raw_text"] = content
-	PluginScenePanelHost.invoke_document_handoff(plugin_scene_root, doc, str(get_meta("document_action", "open")))
+	var action := str(get_meta("document_action", ""))
+	if action.is_empty():
+		PluginScenePanelHost.invoke_load(plugin_scene_root, doc)
+	else:
+		PluginScenePanelHost.invoke_document_handoff(plugin_scene_root, doc, action)
 
 
 ## Apply manifest-driven chrome visibility for a PLUGIN_SCENE editor tab.
@@ -1470,7 +1474,8 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		Type.SPREADSHEET:
 			var filters := PackedStringArray()
 			for extension: String in PluginEditorRegistry.SPREADSHEET_SAVE_EXTENSIONS:
-				filters.append("*" + extension)
+				var label := "Minerva Spreadsheet" if extension == ".minsheet" else "CSV Files"
+				filters.append("*" + extension + " ; " + label)
 			$FileDialog.filters = filters
 		Type.WEBVIEW:
 			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])

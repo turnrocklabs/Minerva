@@ -1023,25 +1023,12 @@ func _sync_plugin_editor_extensions(manager: PluginManager) -> void:
 
 
 ## Open a plugin panel for an editor_item's declared panel name.
-## Routes to add_plugin_scene_editor() for godot_scene panels, and to the
-## existing HTML webview path for html-kind panels.
+## HTML editor items use this adapter; native items use create_plugin_editor().
 func _open_plugin_panel_for_editor_item(plugin_id: String, panel_name: String, tab_title: String) -> void:
 	if plugin_manager == null or editor_pane == null:
 		return
 	var def = plugin_manager.get_db().get_by_id(plugin_id)
 	if def == null:
-		return
-
-	# Determine panel kind from ui_panels.
-	var panel_kind: String = "html"
-	for pd in def.ui_panels:
-		if pd is Dictionary and pd.get("name", "") == panel_name:
-			panel_kind = pd.get("kind", "html")
-			break
-
-	if panel_kind == "godot_scene":
-		# Route to native Godot-scene editor tab (design §3, §7.4).
-		editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
 		return
 
 	# Fallback: html-kind panel (existing webview path).
@@ -1877,8 +1864,8 @@ func _open_paired_dsl(abs_path: String, p_id: String, p_name: String, action: St
 ##
 ## Resolution order (mirrors vboxEditor.open_file, design §7.3):
 ##   1. Graphics extensions (.png, .jpg, .jpeg)
-##   2. Typed-editor extensions (.minpcb, .minkb, .minsheet)
-##   3. PluginEditorRegistry (plugin-contributed extensions)
+##   2. Typed core editor (.minkb)
+##   3. Installed plugin claim, or builtin spreadsheet fallback when unclaimed
 ##   4. TEXT fallback
 ##
 ## Returns:

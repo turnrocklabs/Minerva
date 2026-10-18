@@ -62,7 +62,7 @@ func _run() -> void:
 	pane.buffer_control_editor = Control.new()
 	host.editor_pane = pane
 	host.creatable_item_registry = CreatableItemRegistry.new()
-	host.plugin_editor_registry = PluginEditorRegistry.new(["required_contract"])
+	host.plugin_editor_registry = PluginEditorRegistry.new(["required_contract", "required_first_contract"])
 	host._wire_plugin_editor_extensions(manager)
 	var single := _install(manager, "file_contract", ".fixturefmt", false)
 	var paired := _install(manager, "paired_contract", ".pairedfmt", true)
@@ -156,6 +156,47 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
 	check("unsupported binary drop refuses without an editor", pane.Tabs.get_tab_count() == before_drop
 		and FileAccess.get_file_as_string(binary_path) == "PK-binary-fixture")
+	if empty_tabs.get_tab_count() == 1:
+		var graphics: Editor = empty_tabs.get_child(0)
+		var layer_count := graphics.graphics_editor.layers.size()
+		drop_adapter.call("_on_files_dropped", PackedStringArray([image_path]))
+		check("occupied graphics drop adds an image layer", empty_tabs.get_tab_count() == 1
+			and graphics.graphics_editor.layers.size() == layer_count + 1)
+		var next_claim := directory.path_join("mixed-drop.csv")
+		_write(next_claim, text)
+		layer_count = graphics.graphics_editor.layers.size()
+		drop_adapter.call("_on_files_dropped", PackedStringArray([next_claim, image_path]))
+		check("mixed claimed/image drop retains its initial graphics target", empty_tabs.get_tab_count() == 2
+			and graphics.graphics_editor.layers.size() == layer_count + 1)
+	_clear_tabs(empty_tabs)
+	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
+	check("empty-pane binary drop refuses", empty_tabs.get_tab_count() == 0)
+	var second_image := directory.path_join("second.webp")
+	check("second real webp fixture is saved", image.save_webp(second_image) == OK)
+	drop_adapter.call("_on_files_dropped", PackedStringArray([image_path, second_image]))
+	check("multi-image empty drop opens two graphics editors", empty_tabs.get_tab_count() == 2
+		and empty_tabs.get_child(0).type == Editor.Type.GRAPHICS and empty_tabs.get_child(1).type == Editor.Type.GRAPHICS)
+	_clear_tabs(empty_tabs)
+	var first_text := directory.path_join("first.txt")
+	var second_text := directory.path_join("second.txt")
+	_write(first_text, "first")
+	_write(second_text, "second")
+	drop_adapter.call("_on_files_dropped", PackedStringArray([first_text, second_text]))
+	check("multi-text empty drop opens two text editors", empty_tabs.get_tab_count() == 2
+		and empty_tabs.get_child(0).type == Editor.Type.TEXT and empty_tabs.get_child(1).type == Editor.Type.TEXT)
+	var occupied_count := empty_tabs.get_tab_count()
+	drop_adapter.call("_on_files_dropped", PackedStringArray([image_path, first_text]))
+	check("ordinary image/text drops into text retain legacy ignore behavior", empty_tabs.get_tab_count() == occupied_count)
+	drop_adapter.call("_on_files_dropped", PackedStringArray([binary_path]))
+	check("binary drop into text refuses", empty_tabs.get_tab_count() == occupied_count)
+	pane.position = Vector2(10000, 10000)
+	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	check("drop outside the pane does nothing", empty_tabs.get_tab_count() == occupied_count)
+	pane.position = Vector2(-1000, -1000)
+	host.editor_pane = null
+	drop_adapter.call("_on_files_dropped", PackedStringArray([dropped_claim]))
+	host.editor_pane = pane
+	check("drop without a pane does nothing", empty_tabs.get_tab_count() == occupied_count)
 	empty_tabs.free()
 	pane.Tabs = existing_tabs
 	drop_adapter.free()
@@ -240,15 +281,24 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		and host.plugin_editor_registry.resolve_extension(".csv").is_empty())
 	var csv_path := directory.path_join("unclaimed.csv")
 	_write(csv_path, "name,value\nalpha,1\n")
-	# The actual empty-pane drop adapter also uses the generic route.
+	# Assert both occupied and empty builtin drop routes independently.
 	var builtin_drop_adapter := Control.new()
 	get_tree().root.add_child(builtin_drop_adapter)
 	builtin_drop_adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
 	var before_builtin := pane.Tabs.get_tab_count()
 	builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
-	builtin_drop_adapter.free()
-	check("real unclaimed CSV drop uses builtin spreadsheet", pane.Tabs.get_tab_count() == before_builtin + 1
+	check("real occupied unclaimed CSV drop uses builtin spreadsheet", pane.Tabs.get_tab_count() == before_builtin + 1
 		and pane.Tabs.get_child(before_builtin).type == Editor.Type.SPREADSHEET)
+	var occupied_tabs := pane.Tabs
+	var builtin_empty := TabContainer.new()
+	get_tree().root.add_child(builtin_empty)
+	pane.Tabs = builtin_empty
+	builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
+	check("real empty unclaimed CSV drop uses builtin spreadsheet", builtin_empty.get_tab_count() == 1
+		and builtin_empty.get_child(0).type == Editor.Type.SPREADSHEET)
+	builtin_empty.free()
+	pane.Tabs = occupied_tabs
+	builtin_drop_adapter.free()
 	var unknown_path := directory.path_join("unclaimed.ordinaryfmt")
 	_write(unknown_path, "plain unclaimed data")
 	var fallback: Dictionary = host.open_file_at_path(unknown_path)
@@ -328,7 +378,29 @@ func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, d
 	var required := _install(manager, "required_contract", ".fixturefmt", false)
 	if required != null:
 		check("required provider wins through installed DB binding", registry.resolve_extension(".fixturefmt").get("plugin_id") == required.id)
+		manager.get_db().plugins_changed.emit()
+		var retained_create: Dictionary = host.create_plugin_editor({"plugin_id": "file_contract", "editor_item_id": "file_contract_new"})
+		check("optional-first keeps unrelated creates after a second reconciliation", retained_create.get("success", false)
+			and manager.get_plugin_status("file_contract").editor_registration.ok)
+
 		var before := pane.Tabs.get_tab_count()
 		var changed: Dictionary = host.open_file_at_path(directory.path_join("open.fixturefmt"))
 		check("required owner cannot reuse optional owner's tab", not changed.get("ok", true)
 			and str(changed.errors).contains("document_owner_changed") and pane.Tabs.get_tab_count() == before)
+
+	var required_first := _install(manager, "required_first_contract", ".requiredfirst", false)
+	var optional_second := _install(manager, "optional_second_contract", ".requiredfirst", false)
+	if required_first != null and optional_second != null:
+		optional_second.ui_panels[0]["file_extensions"] = [".requiredfirst", ".retainedoptional"]
+		check("required-first optional update reaches real DB", manager.get_db().update_definition(optional_second))
+		manager.get_db().plugins_changed.emit()
+		var retained_create: Dictionary = host.create_plugin_editor({"plugin_id": optional_second.id, "editor_item_id": optional_second.id + "_new"})
+		check("required-first optional keeps other claims and creates after reconciliation", retained_create.get("success", false)
+			and registry.resolve_extension(".requiredfirst").get("plugin_id") == required_first.id
+			and registry.resolve_extension(".retainedoptional").get("plugin_id") == optional_second.id
+			and manager.get_plugin_status(optional_second.id).editor_registration.ok)
+
+
+func _clear_tabs(tabs: TabContainer) -> void:
+	for child: Node in tabs.get_children():
+		child.free()

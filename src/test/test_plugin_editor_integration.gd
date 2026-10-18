@@ -37,6 +37,7 @@ func _init() -> void:
 	test_register_plugin_two_plugins_same_ext_second_skipped()
 	test_format_ownership()
 	test_kind_replacement()
+	test_required_order_independence()
 	test_file_action_manifest()
 
 	print("\n-- PluginEditorRegistry: unregister_plugin --")
@@ -433,7 +434,8 @@ func test_format_ownership() -> void:
 		and registry.resolve_editor_kind("second_new").is_empty())
 	var lower := StubDef.make("late_optional", "late", [".new", ".minsheet"])
 	check("later optional cannot displace a required owner", not registry.register_plugin(lower).is_empty()
-		and registry.resolve_extension(".new").is_empty() and registry.resolve_extension(".minsheet").plugin_id == first.id)
+		and registry.resolve_extension(".new").get("plugin_id") == lower.id and registry.resolve_extension(".minsheet").plugin_id == first.id
+		and registry.registration_error(lower.id).is_empty())
 	registry.unregister_plugin(first.id)
 	check("removed final provider restores builtin fallback", registry.resolve_file(".minsheet").get("builtin") == "spreadsheet")
 	var peers := PluginEditorRegistry_.new()
@@ -493,3 +495,21 @@ func test_kind_replacement() -> void:
 		and registry.resolve_extension(".required").is_empty() and registry.resolve_editor_kind("shared_kind").is_empty()
 		and registry.resolve_extension(".moved").plugin_id == moved.id
 		and registry.resolve_editor_kind("moved_kind").plugin_id == moved.id)
+
+
+func test_required_order_independence() -> void:
+	for required_first: bool in [false, true]:
+		var registry := PluginEditorRegistry_.new(["rank_required"])
+		var optional := StubDef.make("rank_optional", "main", [".shared", ".retained"], "shared_kind", "Optional")
+		optional.editor_items.append({"id": "retained_kind", "panel": "main", "name": "Retained"})
+		var required := StubDef.make("rank_required", "main", [".shared"], "shared_kind", "Required")
+		var definitions: Array = [required, optional] if required_first else [optional, required]
+		for pass_index: int in range(2):
+			for definition: StubDef in definitions:
+				registry.register_plugin(definition)
+			check("required/optional order preserves other claims: %s pass%s" % [required_first, pass_index],
+				registry.resolve_extension(".shared").get("plugin_id") == required.id
+				and registry.resolve_editor_kind("shared_kind").get("plugin_id") == required.id
+				and registry.resolve_extension(".retained").get("plugin_id") == optional.id
+				and registry.resolve_editor_kind("retained_kind").get("plugin_id") == optional.id
+				and registry.registration_error(optional.id).is_empty())

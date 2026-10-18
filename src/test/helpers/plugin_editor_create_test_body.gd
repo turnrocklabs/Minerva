@@ -22,7 +22,7 @@ func _run() -> void:
 	var host := get_tree().root.get_node("SingletonObject")
 	var ui := preload("res://test/helpers/chat_host_render_fixture.gd").new()
 	ui.install(host)
-	var previous: Array = [host.plugin_manager, host.plugin_scene_panel_broker, host.editor_pane, host.plugin_editor_registry]
+	var previous: Array = [host.plugin_manager, host.plugin_scene_panel_broker, host.editor_pane, host.plugin_editor_registry, host.creatable_item_registry]
 	var manager := PluginManager.new()
 	manager._db = PluginDB.new()
 	var policy := PluginPolicy.new(manager.get_db(), null, false)
@@ -76,11 +76,16 @@ func _run() -> void:
 		else:
 			check("paired delivery requires an attached buffer and real root", false)
 
+	host.creatable_item_registry = CreatableItemRegistry.new()
 	var before_ui := tabs.get_tab_count()
-	host._open_plugin_panel_for_editor_item(definition.id, "test_paired_dsl_panel", "UI characterization")
+	host._register_plugin_editor_items(definition.id)
+	var item: CreatableItemRegistry.CreatableItem = host.creatable_item_registry.get_item("new_test_paired_dsl")
+	check("native paired GUI item has a real callback", item != null and item.create_callback.is_valid())
+	if item != null:
+		item.create_callback.call()
 	await get_tree().process_frame
-	check("existing UI panel open adds exactly one native panel", tabs.get_tab_count() == before_ui + 1)
-	if tabs.get_tab_count() == before_ui + 1:
+	check("native GUI create uses the handoff and adds one pair", tabs.get_tab_count() == before_ui + 2)
+	if tabs.get_tab_count() == before_ui + 2:
 		var ui_editor: Editor = tabs.get_child(tabs.get_child_count() - 1)
 		check("UI panel is the declared scene", ui_editor.plugin_id == definition.id
 			and ui_editor.panel_name == "test_paired_dsl_panel" and ui_editor.plugin_scene_root != null)
@@ -92,6 +97,7 @@ func _run() -> void:
 	host.plugin_scene_panel_broker = previous[1]
 	host.editor_pane = previous[2]
 	host.plugin_editor_registry = previous[3]
+	host.creatable_item_registry = previous[4]
 	manager.free()
 	ui.restore()
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])

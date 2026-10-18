@@ -141,6 +141,9 @@ func register_plugin(def) -> Array[String]:
 			if staged_extensions.has(ext) and staged_extensions[ext].panel_name != panel_name:
 				return _refused(plugin_id, "PluginEditorRegistry: plugin '%s' declares '%s' for two panels" % [plugin_id, ext])
 			var previous: Dictionary = _ext_to_panel.get(ext, {})
+			if _skip_required_claim(plugin_id, previous):
+				warnings.append("PluginEditorRegistry: optional '%s' skips '%s', owned by required '%s'" % [plugin_id, ext, previous.plugin_id])
+				continue
 			var conflict := _conflict(ext, plugin_id, previous)
 			if not conflict.is_empty():
 				return _refused(plugin_id, conflict)
@@ -181,6 +184,9 @@ func register_plugin(def) -> Array[String]:
 			continue
 
 		var previous_kind: Dictionary = _kind_to_panel.get(item_id, {})
+		if _skip_required_claim(plugin_id, previous_kind):
+			warnings.append("PluginEditorRegistry: optional '%s' skips editor kind '%s', owned by required '%s'" % [plugin_id, item_id, previous_kind.plugin_id])
+			continue
 		var kind_conflict := _conflict(item_id, plugin_id, previous_kind)
 		if not kind_conflict.is_empty():
 			return _refused(plugin_id, kind_conflict)
@@ -210,6 +216,10 @@ func register_plugin(def) -> Array[String]:
 	_plugin_kinds[plugin_id] = registered_kinds
 
 	return warnings
+
+
+func _skip_required_claim(plugin_id: String, existing: Dictionary) -> bool:
+	return plugin_id not in _required_ids and existing.get("plugin_id", "") in _required_ids
 
 
 func _conflict(claim: String, plugin_id: String, existing: Dictionary) -> String:
