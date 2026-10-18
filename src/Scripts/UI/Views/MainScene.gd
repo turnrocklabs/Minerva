@@ -413,8 +413,16 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 		return
 	var registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
 	# Every file in one drop has the same destination, even as tabs are added.
-	var target: Editor = pane.Tabs.get_current_tab_control() if pane.Tabs.get_tab_count() > 0 else null
+	var destination: TabContainer = pane.Tabs
+	var target: Editor = destination.get_current_tab_control() if destination.get_tab_count() > 0 else null
+	var had_target := target != null
 	for file: String in files:
+		# Readiness can suspend the previous file while the user closes/replaces its destination.
+		if (not is_instance_valid(pane) or SingletonObject.editor_pane != pane
+				or not is_instance_valid(destination) or pane.Tabs != destination or not destination.is_inside_tree()
+				or (had_target and (not is_instance_valid(target) or not target.is_inside_tree() or target.get_parent() != destination))):
+			SingletonObject.create_toast_notification("Drop target closed; remaining files skipped", ToastNotification.Type.WARNING, false)
+			return
 		var extension := file.get_extension().to_lower()
 		if not registry.resolve_file("." + extension).is_empty() or target == null:
 			await _open_dropped_files(PackedStringArray([file]))

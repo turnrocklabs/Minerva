@@ -432,6 +432,7 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 			var editor: Editor = pane.Tabs.get_child(surface_before)
 			check(surface + " sends exactly one open hook", editor.plugin_scene_root.get("loads") == 1 and editor.plugin_scene_root.get("last_action") == "open")
 		adapter.free()
+	await _exercise_drop_destination_loss(host, manager, pane, provider, directory, text, release)
 	before = pane.Tabs.get_tab_count()
 	manager._ensure_runtime(provider.id)["ready"] = false
 	get_tree().create_timer(0.02).timeout.connect(release)
@@ -446,6 +447,52 @@ func _exercise_readiness(host: Node, manager: PluginManager, pane: EditorPane, p
 		and context.lifetime.cancelled.get_connections().is_empty() and not manager.get_children().any(func(child: Node) -> bool: return child is Timer))
 	manager.get_db().update_state(provider.id, PluginDefinition.State.RUNNING)
 	manager._ensure_runtime(provider.id)["ready"] = true
+
+
+func _exercise_drop_destination_loss(host: Node, manager: PluginManager, pane: EditorPane,
+		provider: PluginDefinition, directory: String, text: String, release: Callable) -> void:
+	var adapter := Control.new()
+	get_tree().root.add_child(adapter)
+	adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
+	var image_path := directory.path_join("dropped.webp")
+	check("mixed-drop loss fixture has a real image", FileAccess.file_exists(image_path))
+	for loss: String in ["detached", "freed", "replaced"]:
+		var target: Editor = pane.add(Editor.Type.GRAPHICS, image_path, "Destination " + loss)
+		await get_tree().process_frame
+		var tabs: TabContainer = pane.Tabs
+		tabs.current_tab = tabs.get_tab_count() - 1
+		var layers: int = target.graphics_editor.layers.size()
+		check("mixed-drop destination is selected and has content", tabs.get_current_tab_control() == target and layers > 0)
+		var path := directory.path_join("destination-" + loss + ".fixturefmt")
+		_write(path, text)
+		var before := tabs.get_tab_count()
+		var replacement := EditorPane.new()
+		replacement.Tabs = tabs
+		var after_loss := {"layers": layers}
+		manager._ensure_runtime(provider.id)["ready"] = false
+		get_tree().create_timer(0.02).timeout.connect(func() -> void:
+			check("mixed drop stays pending before destination loss", tabs.get_tab_count() == before)
+			if loss == "replaced":
+				host.editor_pane = replacement
+			else:
+				tabs.remove_child(target)
+				if loss == "freed":
+					target.free()
+			if is_instance_valid(target):
+				after_loss.layers = target.graphics_editor.layers.size()
+			release.call())
+		await adapter.call("_on_files_dropped", PackedStringArray([path, image_path]))
+		host.editor_pane = pane
+		replacement.free()
+		var expected := before + 1 if loss == "replaced" else before
+		check("destination " + loss + " stops remaining drop without another tab", tabs.get_tab_count() == expected and FileAccess.get_file_as_string(path) == text)
+		if is_instance_valid(target):
+			check("destination " + loss + " receives no late image mutation", target.graphics_editor.layers.size() == after_loss.layers)
+			if loss == "detached":
+				target.free()
+		else:
+			check("freed destination remains gone", loss == "freed")
+	adapter.free()
 
 
 func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, directory: String, text: String) -> void:
