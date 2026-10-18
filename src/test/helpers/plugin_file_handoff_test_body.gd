@@ -344,6 +344,14 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 				var requested_name := ("fixed-sheet-" if surface == "spreadsheet" else "fixed-text-") + str(claimed)
 				decoy = pane.add(Editor.Type.TEXT, null, requested_name)
 				check(surface + " name collision fixture exists", decoy != null)
+			elif claimed:
+				var decoy_path := directory.path_join("package-title-decoy.fixturefmt")
+				_write(decoy_path, contents)
+				var decoy_result: Dictionary = host.open_file_at_path(decoy_path)
+				decoy = pane.Tabs.get_current_tab_control()
+				check("package duplicate-title fixture owns a different claimed file", decoy_result.get("ok") == true
+					and decoy != null and decoy.file == decoy_path and decoy.type == Editor.Type.PLUGIN_SCENE)
+				decoy.tab_title = "Duplicate package title"
 			var before := pane.Tabs.get_tab_count()
 			if surface == "spreadsheet":
 				var tools = load("res://Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd").new(null)
@@ -365,6 +373,11 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 				item.select(0)
 				package.set("_dir_tree", tree)
 				package.call("_on_dir_tree_item_activated")
+				if claimed:
+					var target: Editor = pane.Tabs.get_current_tab_control()
+					target.tab_title = decoy.tab_title
+					check("package title collision is established before revisiting", target != decoy
+						and target.file == path and target.tab_title == decoy.tab_title)
 				var other: Editor = pane.add(Editor.Type.TEXT, null, "Package revisit decoy")
 				pane.focus_editor(other)
 				var repeat_count := pane.Tabs.get_tab_count()

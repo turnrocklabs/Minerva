@@ -301,8 +301,12 @@ func _on_dir_tree_item_activated() -> void:
 			SingletonObject.ErrorDisplay("Couldn't open file", ", ".join(PackedStringArray(errors)))
 		else:
 			var pane: EditorPane = SingletonObject.editor_pane
+			var selected: Editor = pane.Tabs.get_current_tab_control()
+			# Keep the handoff's selection for a newly opened paired document.
+			if selected != null and selected.file == obj.original_path:
+				return
 			for editor: Editor in pane.get_open_editors():
-				if editor.tab_title == opened.get("editor_name", ""):
+				if editor.file == obj.original_path:
 					pane.focus_editor(editor)
 					break
 		return
