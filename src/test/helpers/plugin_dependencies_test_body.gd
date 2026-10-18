@@ -131,7 +131,11 @@ func exercise_readiness() -> void:
 	var seen := {"started": false, "ready": false}
 	manager.plugin_started.connect(func(id: String) -> void:
 		seen.started = not manager.get_plugin_status(id).ready
+		if provider.args[provider.args.find("--profile") + 1] != "delayed_tools":
+			return
 		get_tree().create_timer(0.1).timeout.connect(func() -> void:
+			if not is_instance_valid(manager) or manager.get_connection(id) == null:
+				return
 			check("delayed catalog is running but not ready", manager.get_plugin_status(id).running and not manager.get_plugin_status(id).ready)
 			check("fixture releases catalog through public host event", manager.get_connection(id).send_host_event("test_release_tools", {}) == OK)))
 	manager.plugin_ready.connect(func(id: String) -> void: seen.ready = manager.get_plugin_status(id).ready)
@@ -164,8 +168,27 @@ func exercise_readiness() -> void:
 	check("natural exit clears readiness", not manager.get_plugin_status(provider.id).ready)
 	var missing_panel: Dictionary = await manager.start_plugin(provider.id)
 	check("actual start refuses missing required panel tool", str(missing_panel.get("error", "")).contains("minerva_agent_relay_panel"))
+	manager.plugin_started.connect(registry.on_plugin_started)
+	check("required panel tool registers before any panel opens", (await manager.start_plugin(provider.id)).get("ok", false)
+		and manager.get_plugin_status(provider.id).ready and registry.get_panel_tool_entries(provider.id).size() == 1
+		and (host.editor_pane == null or host.editor_pane.get_open_editors().is_empty()))
 	provider.tools.clear()
-	check("provider restarts after crash and contract repair", (await manager.start_plugin(provider.id)).get("ok", false))
+	manager.stop_plugin(provider.id)
+	var profile_index := provider.args.find("--profile")
+	provider.args[profile_index + 1] = "catalog_error"
+	var unavailable: Dictionary = await manager.start_plugin(provider.id)
+	check("discovery failure leaves process running with a visible reason", unavailable.get("ok", false)
+		and manager.get_plugin_status(provider.id).running and not manager.get_plugin_status(provider.id).ready
+		and str(manager.get_plugin_status(provider.id).notice).contains("provider tools unavailable: tools/list"))
+	var unrelated: Dictionary = await manager.get_connection(provider.id).call_tool("echo", {"value": "still alive"}, 5.0)
+	check("unready provider constrains only declared dependency actions", not manager.dependency_contract_issue(consumer.id, "minerva_agent_relay_echo").is_empty()
+		and manager.dependency_contract_issue(consumer.id, "unrelated").is_empty() and unrelated.get("echo", {}).get("value") == "still alive")
+	manager.stop_plugin(provider.id)
+	provider.args[profile_index + 1] = "catalog_exit"
+	var interrupted: Dictionary = await manager.start_plugin(provider.id)
+	await get_tree().process_frame
+	check("exit DURING discovery preserves crash state before another start", interrupted.has("error")
+		and manager.get_plugin_status(provider.id).state == PluginDefinition.State.ERROR and not manager.get_plugin_status(provider.id).ready)
 	manager.stop_plugin(provider.id)
 	check("stop clears readiness", not manager.get_plugin_status(provider.id).ready)
 	host.plugin_tool_registry = old_registry

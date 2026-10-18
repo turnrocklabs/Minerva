@@ -63,6 +63,27 @@ func _run() -> void:
 	check("attached runtime has public catalog and no panel secret", ready == ["docket"]
 		and manager.discovered.size() == load("res://Scripts/Services/Plugins/RequiredPlugins.gd").PLUGINS.docket.host_tools.size()
 		and manager.get_panel_authority("docket") == null)
+	var consumer = load("res://Scripts/Services/Plugins/PluginDefinition.gd").from_dict({"id":"attach_consumer", "name":"consumer", "version":"1.0.0", "host_api_version":"2",
+		"capabilities":["plugin_dependencies"], "requires_plugins":[{"id":"docket", "min_version":"2.0.0", "actions":["minerva_docket_query"]}]})
+	check("attached-version consumer fixture persists", consumer != null and manager.get_db().restore(consumer))
+	var dependency_tools = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd").new(manager)
+	manager.configure_dependency_tools(dependency_tools)
+	check("attached-version catalog fixture registers canonical query", dependency_tools.register_plugin_tools("docket", [{"name":"minerva_docket_query", "input_schema":{"type":"object"}}]).get("ok", false))
+	for versions: Array in [["2.0.0", "1.0.0", false], ["1.0.0", "2.0.0", true]]:
+		manager.stop_plugin("docket")
+		def.version = versions[0]
+		record.version = versions[1]
+		_write(discovery.profile_directory, record)
+		var attached: Dictionary = await manager.start_plugin("docket")
+		var issue: String = str(manager.get_plugin_status(consumer.id).get("notice", ""))
+		check("dependency compares active attached version " + str(versions[1]), attached.get("attached", false)
+			and manager.get_plugin_status("docket").ready and issue.is_empty() == versions[2])
+	manager.get_db().remove(consumer.id)
+	manager.stop_plugin("docket")
+	def.version = "installed"
+	record.version = "attached"
+	_write(discovery.profile_directory, record)
+	await manager.start_plugin("docket")
 	var active_conn = manager.get_connection("docket")
 	record.protocol_version = "2024-11-05"
 	_write(discovery.profile_directory, record)

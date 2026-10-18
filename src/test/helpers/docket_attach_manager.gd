@@ -81,6 +81,7 @@ func _create_connection(id: String, url: String, transport: int) -> MCPServerCon
 	conn.manager = self
 	return conn
 
-func _discover_backend_tools(_id: String, conn: MCPServerConnection) -> void:
+func _discover_backend_tools(_id: String, conn: MCPServerConnection) -> String:
 	for tool in await conn.list_tools():
 		discovered.append(tool.name)
+	return ""

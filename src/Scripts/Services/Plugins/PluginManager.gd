@@ -908,11 +908,12 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 	rt["start_time"] = Time.get_unix_time_from_system()
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
-	if not await _discover_backend_tools("docket", conn):
-		stop_plugin("docket")
-		return {"error": "provider_tools_unavailable: docket"}
+	var discovery_issue := await _discover_backend_tools("docket", conn)
 	if not _owns_runtime_connection("docket", conn):
 		return {"error": "Docket attach was cancelled"}
+	if not discovery_issue.is_empty():
+		return _provider_tools_pending("docket", discovery_issue)
+	rt.erase("tools_notice")
 	rt["ready"] = true
 	plugin_ready.emit("docket")
 	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
@@ -1128,11 +1129,11 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# any manifest-declared tools (registered by on_plugin_started) land first;
 	# backend discovery then supersedes them via the registry's purge-and-emit
 	# path.
-	if not await _discover_backend_tools(id, conn):
-		stop_plugin(id)
-		return {"error": "provider_tools_unavailable: " + id}
+	var discovery_issue := await _discover_backend_tools(id, conn)
 	if not _owns_runtime_connection(id, conn):
 		return {"error": "Plugin '%s' start was cancelled" % id}
+	if not discovery_issue.is_empty():
+		return _provider_tools_pending(id, discovery_issue)
 	if RequiredPlugins.has(id):
 		# Untyped: a check that stops on a script error yields null, which must
 		# refuse the start rather than pass as "no issue".
@@ -1147,6 +1148,7 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 			_transition_state(id, S_ERROR)
 			return {"error": contract_issue}
 
+	rt.erase("tools_notice")
 	rt["ready"] = true
 	plugin_ready.emit(id)
 	return {"ok": true}
@@ -1236,27 +1238,27 @@ func _owns_runtime_connection(id: String, connection) -> bool:
 ## start_plugin() returns. Reviewer (cycle round 1) flagged the original
 ## fire-and-forget shape as a race; this is the resolution.
 ## conn is MCPServerConnection (untyped to avoid parse-order dependency).
-func _discover_backend_tools(plugin_id: String, conn) -> bool:
+func _discover_backend_tools(plugin_id: String, conn) -> String:
 	# Resolve tool registry via SingletonObject (avoids circular dep at parse time).
 	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
 	if so == null:
 		push_warning("[PluginManager] SingletonObject not in scene tree; skipping backend tool discovery for '%s'" % plugin_id)
-		return false
+		return "plugin host unavailable"
 	var registry = so.get("plugin_tool_registry") if "plugin_tool_registry" in so else null
 	if registry == null:
 		push_warning("[PluginManager] plugin_tool_registry not available; skipping backend tool discovery for '%s'" % plugin_id)
-		return false
+		return "plugin tool registry unavailable"
 	var result: Dictionary = await registry.register_backend_tools(plugin_id, conn)
 	if result.get("error"):
 		push_warning("[PluginManager] Backend tool discovery for '%s' failed: %s" % [
 			plugin_id, result.get("error")
 		])
-		return false
+		return str(result.get("error", "tools/list failed"))
 	elif result.get("skipped"):
 		SingletonObject.verbose_log("[PluginManager] Backend tool discovery skipped for '%s': %s" % [
 			plugin_id, result.get("skipped")
 		])
-		return false
+		return str(result.get("skipped", "catalog unavailable"))
 	else:
 		SingletonObject.verbose_log("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
 			plugin_id, result.get("registered", []).size()
@@ -1266,7 +1268,17 @@ func _discover_backend_tools(plugin_id: String, conn) -> bool:
 			conn.catalog_committed.connect(publish_callback)
 		conn.start_tool_catalog_watch()
 
-	return true
+	return ""
+
+func _provider_tools_pending(id: String, reason: String) -> Dictionary:
+	var rt := _ensure_runtime(id)
+	var notice := "provider tools unavailable: " + reason
+	rt["ready"] = false
+	rt["tools_notice"] = notice
+	push_warning("[PluginManager] %s: %s" % [id, notice])
+	plugin_status_changed.emit(id)
+	return {"ok": true, "ready": false, "warning": notice}
+
 
 func _on_plugin_catalog_committed(plugin_id: String, conn) -> void:
 	if get_connection(plugin_id) != conn:
@@ -1669,8 +1681,11 @@ func dependency_contract_issue(consumer: String, tool: String = "") -> String:
 		var provider: PluginDefinition = database.call("get_by_id", provider_id)
 		if provider == null:
 			return "requires " + provider_id + " (not installed)"
-		if AutoUpdater.compare_versions(provider.version, str(requirement.min_version)) < 0:
-			return "requires %s >= %s (installed %s)" % [provider_id, requirement.min_version, provider.version]
+		var runtime := _ensure_runtime(provider_id)
+		var registration: Dictionary = runtime.get("registration", {})
+		var active_version: String = str(registration.get("version", "")) if runtime.get("attached", false) else provider.version
+		if AutoUpdater.compare_versions(active_version, str(requirement.min_version)) < 0:
+			return "requires %s >= %s (active %s)" % [provider_id, requirement.min_version, active_version]
 		if not _ensure_runtime(provider_id).get("ready", false):
 			return "requires " + provider_id + " (waiting for provider tools)"
 		for tool_name: String in actions:
@@ -1728,7 +1743,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"attach_refused": rt.get("attach_refused", false),
 		"registered_version": registration.get("version", ""),
 		"attached_version": registration.get("version", "") if is_attached(id) else "",
-		"notice": dependency_error if not dependency_error.is_empty() else rt.get("notice", ""),
+		"notice": dependency_error if not dependency_error.is_empty() else rt.get("tools_notice", rt.get("notice", "")),
 		"degraded": rt.get("degraded", false),
 		"capability_reason": rt.get("capability_reason", ""),
 		"attach_choices": rt.get("attach_choices", []),
@@ -2396,6 +2411,7 @@ func _transition_state(id: String, new_state: int) -> void:
 func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 	var rt: Dictionary = _runtime.get(id, {})
 	rt["ready"] = false
+	rt.erase("tools_notice")
 	if id == "docket" and cancel_launcher:
 		var previous_generation: int = rt.get("start_generation", 0)
 		rt["start_generation"] = previous_generation + 1

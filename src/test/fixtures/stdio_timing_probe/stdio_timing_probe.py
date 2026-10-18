@@ -376,6 +376,11 @@ async def dispatch(msg):
             "serverInfo": {"name": "stdio_timing_probe", "version": "0.1.0"}
         }})
     elif method == "tools/list":
+        if MODE == "catalog_exit":
+            os._exit(1)
+        if MODE == "catalog_error":
+            await send({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": "fixture catalog unavailable"}})
+            return
         if MODE == "delayed_tools":
             await _catalog_release.wait()
         # Modern list results carry the core result discriminator; initialized
