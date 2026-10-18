@@ -45,6 +45,7 @@ var _fail := 0
 var _completed := false
 ## The host's plugin tool registry, put back for the live-plugin cases.
 var _real_tool_registry = null
+var _real_plugin_admission: Callable
 ## The StubRegistry the stub cases' provider calls go through.
 var _registry = null
 
@@ -110,45 +111,6 @@ class StubConnection extends RefCounted:
 		return scripted_result
 
 
-## The plugin tool registry as a governed generate call reaches it, after
-## MinervaMCPServer's policy admission: every tool maps to itself, and a call
-## goes on to the StubConnection once its context allows. A call can be held
-## before it is sent (`hold`, or `hold_resumes` for resume calls only), as one
-## still being admitted or checked is; `sent_budgets` records the transport
-## time left at each send.
-class StubRegistry extends RefCounted:
-	var conn = null
-	var tree: SceneTree = null
-	var hold := false
-	var hold_resumes := false
-	var holding := 0
-	var sent_budgets: Array = []
-
-	func tool_for(_plugin_id: String, backend_name: String) -> String:
-		return backend_name
-
-	func is_plugin_tool(_tool_name: String) -> bool:
-		return true
-
-	# A plugin started while this stands in learns no tools here.
-	func register_backend_tools(_plugin_id: String, _conn) -> Dictionary:
-		return {"ok": true, "registered": []}
-
-	func handle_tool_call_outcome(tool_name: String, args: Dictionary, context):
-		holding += 1
-		while (hold or (hold_resumes and args.get("resume") == true)) and not context.is_stopped():
-			await tree.process_frame
-		holding -= 1
-		var outcome = load("res://Scripts/Services/MCP/MCPToolCallOutcome.gd").new()
-		if context.is_stopped():
-			outcome.application = context.stopped_result()
-			return outcome
-		context.begin_dispatch()
-		sent_budgets.append(context.remaining_seconds(0.0))
-		outcome.application = await conn.call_tool(tool_name, args, context.remaining_seconds(0.0))
-		return outcome
-
-
 ## Stub PluginManager exposing get_connection(id).
 class StubManager extends RefCounted:
 	var conn = null
@@ -174,10 +136,13 @@ func _make_provider(entry: Dictionary, conn, manager) -> Object:
 
 ## Routes governed plugin tool calls to a new StubRegistry sending to `conn`.
 func _use_stub_registry(conn):
-	var registry := StubRegistry.new()
+	var registry = load("res://test/helpers/chat_provider_tool_registry.gd").new()
 	registry.conn = conn
 	registry.tree = self
 	root.get_node("SingletonObject").plugin_tool_registry = registry
+	# These unit cases exercise policy, dispatch budgets and cancellation with
+	# a stub connection; installed-provider readiness is covered by the live case.
+	root.get_node("SingletonObject").get_mcp_manager().minerva_server.plugin_admission = Callable()
 	return registry
 
 
@@ -212,6 +177,7 @@ func _run() -> void:
 	while so.get("plugin_tool_registry") == null and Time.get_ticks_msec() < deadline:
 		await create_timer(0.1).timeout
 	_real_tool_registry = so.plugin_tool_registry
+	_real_plugin_admission = so.get_mcp_manager().minerva_server.plugin_admission
 	check("the host's plugin tool registry and tool server are up",
 		_real_tool_registry != null and so.get_mcp_manager().minerva_server != null)
 	so.get_mcp_manager().minerva_server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
@@ -230,9 +196,11 @@ func _run() -> void:
 	await _test_saved_selection_key_restore(so)
 	_test_service_history_roundtrip(so)
 	so.plugin_tool_registry = _real_tool_registry
+	so.get_mcp_manager().minerva_server.plugin_admission = _real_plugin_admission
 	await _test_integration_capability_path(so)
 	await _test_mcp_plugin_lifecycle(so)
 	so.plugin_tool_registry = _real_tool_registry
+	so.get_mcp_manager().minerva_server.plugin_admission = _real_plugin_admission
 	_completed = true
 
 
@@ -942,7 +910,10 @@ func _test_integration_capability_path(so) -> void:
 	# out.
 	var tool_registry = so.plugin_tool_registry
 	var host_manager = tool_registry.plugin_manager
+	var host_admission_manager = so.plugin_manager
 	tool_registry.plugin_manager = pm
+	so.plugin_manager = pm
+	pm.configure_dependency_tools(tool_registry)
 
 	var db = pm._db
 	var def = db.get_by_id(PLUGIN_ID)
@@ -953,7 +924,11 @@ func _test_integration_capability_path(so) -> void:
 	check("fixture definition loaded", def != null)
 	if def == null:
 		tool_registry.plugin_manager = host_manager
+		so.plugin_manager = host_admission_manager
 		return
+	check("live fixture shares its installed owner across dispatch and admission",
+		so.plugin_manager == tool_registry.plugin_manager and pm.get_db().has_plugin(PLUGIN_ID)
+		and so.get_mcp_manager().minerva_server.plugin_admission == _real_plugin_admission)
 
 	# Wire the real registry on the broker so the capability handler reaches it.
 	var registry = pm.get_chat_provider_registry()
@@ -978,6 +953,7 @@ func _test_integration_capability_path(so) -> void:
 	check("connection exists", conn != null)
 	if conn == null:
 		tool_registry.plugin_manager = host_manager
+		so.plugin_manager = host_admission_manager
 		return
 
 	# Drive register_self → plugin calls host.chat_providers.register.
@@ -1023,6 +999,7 @@ func _test_integration_capability_path(so) -> void:
 	check("generate after stop → BotResponse.error (no crash)", not bot2.error.is_empty(), bot2.error)
 	prov2.queue_free()
 	tool_registry.plugin_manager = host_manager
+	so.plugin_manager = host_admission_manager
 
 
 # Through the real registry and the live fixture, with the host's backend
