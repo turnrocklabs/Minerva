@@ -87,6 +87,9 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 				break
 	for editor: Editor in existing_editors:
 		if editor.file == abs_path:
+			if editor.type == Editor.Type.PLUGIN_SCENE and (editor.plugin_scene_root == null
+					or not editor.plugin_scene_root.get_meta("_minerva_plugin_panel_load_ok", false)):
+				return _failure("provider_scene_unavailable: use Retry in the existing tab before reopening '%s'" % abs_path)
 			var expected_owner := str(panel_info.get("plugin_id", ""))
 			if not _matches_file_owner(editor, panel_info, abs_path):
 				return _failure("document_owner_changed: close the existing tab before reopening '%s' with '%s'" % [abs_path, expected_owner])

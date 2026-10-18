@@ -316,6 +316,7 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file: Varian
 	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title, null, document_action)
 	if require_live_mount and (editor_node.plugin_scene_root == null
 			or not editor_node.plugin_scene_root.get_meta("_minerva_plugin_panel_load_ok", false)):
+		editor_node.release_plugin_scene()
 		editor_node.free()
 		return null
 	adopt_editor(editor_node)

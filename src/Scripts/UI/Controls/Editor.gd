@@ -769,6 +769,17 @@ func _exit_tree() -> void:
 	# Buffer-canonical: detach from DocumentRegistry. If we were the last
 	# panel attached, the registry disposes the buffer.
 	_detach_document_buffer()
+	release_plugin_scene()
+	# Free any controls contributed by the panel via get_editor_actions().
+	for ctrl in _plugin_contributed_actions:
+		if is_instance_valid(ctrl):
+			ctrl.queue_free()
+	_plugin_contributed_actions.clear()
+
+
+
+## Release native-panel ownership even when a rejected editor never entered the tree.
+func release_plugin_scene() -> void:
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
@@ -776,11 +787,6 @@ func _exit_tree() -> void:
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
 			pm.unregister_live_panel(plugin_id, plugin_panel_key)
-	# Free any controls contributed by the panel via get_editor_actions().
-	for ctrl in _plugin_contributed_actions:
-		if is_instance_valid(ctrl):
-			ctrl.queue_free()
-	_plugin_contributed_actions.clear()
 
 
 func _sync_annotation_dock_layout() -> void:

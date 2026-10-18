@@ -75,6 +75,13 @@ func run(test: Node, host: Node, manager: PluginManager, pane: EditorPane, direc
 	test.check("repeated native open reuses existing editor", pane.Tabs.get_tab_count() == before + 3)
 	test.check("retries preserve both source files", FileAccess.get_file_as_string(first_path) == "first source"
 		and FileAccess.get_file_as_string(second_path) == "second source")
+	var unloaded: PluginDefinition = test._install(manager, "missing_script_contract", ".missing_script", false)
+	unloaded.ui_panels[0].scripts = ["NeverLoaded.gd"]
+	for attempt: int in 3:
+		var refused: Dictionary = host.call("create_plugin_editor", {"plugin_id": unloaded.id, "editor_item_id": unloaded.id + "_new"})
+		test.check("missing declared script refuses without phantom ownership attempt%d" % attempt, refused.get("success") == false
+			and pane.Tabs.get_tab_count() == before + 3 and manager.get_live_panels(unloaded.id).is_empty())
+	test.check("repeated pre-load refusal permits plugin file repair", manager.can_replace_plugin_files(unloaded.id).get("ok", false))
 	var panel: Dictionary = definition.ui_panels[0]
 	var original_scene: String = panel.entry_scene
 	panel.entry_scene = "MissingScene.tscn"
@@ -93,6 +100,36 @@ func run(test: Node, host: Node, manager: PluginManager, pane: EditorPane, direc
 	broken = dialogs(tree.root)
 	test.check("missing-scene open refuses before tab adoption and source mutation", broken.size() == 1
 		and pane.Tabs.get_tab_count() == stable_count and FileAccess.get_file_as_string(broken_path) == "must not change")
+	broken[0]._on_close()
+	var original_entry := {"type": 6, "file": broken_path, "name": "Restored opaque",
+		"content": JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/spreadsheet_contract/baseline.minsheet"))}
+	var restore_script = load("res://Scripts/UI/Controls/vboxEditor.gd")
+	var restore_container = restore_script.new()
+	restore_container.editor_pane = pane
+	host.set("editor_container", restore_container)
+	tree.root.add_child(restore_container)
+	var restored: Array = await restore_script.deserialize([original_entry])
+	host.set("editor_container", previous)
+	restore_container.free()
+	var opaque: Editor = restored[0]
+	pane.adopt_editor(opaque)
+	await tree.process_frame
+	var opaque_count := pane.Tabs.get_tab_count()
+	await host.call("request_spreadsheet_gui", "open", {"path": broken_path})
+	broken = dialogs(tree.root)
+	test.check("existing restored placeholder refuses Open without losing its opaque entry", broken.size() == 1
+		and pane.Tabs.get_tab_count() == opaque_count and opaque.pending_plugin_entry == original_entry)
+	await broken[0]._on_retry()
+	test.check("existing opaque Retry remains refused and preserves source and state", broken[0].visible
+		and pane.Tabs.get_tab_count() == opaque_count and opaque.pending_plugin_entry == original_entry
+		and FileAccess.get_file_as_string(broken_path) == "must not change")
+	await item.create_callback.call()
+	test.check("New beside restored opaque remains recoverable without mutation", dialogs(tree.root).size() == 2
+		and pane.Tabs.get_tab_count() == opaque_count and opaque.pending_plugin_entry == original_entry)
+	for dialog: SpreadsheetRecoveryDialog in dialogs(tree.root):
+		if dialog != broken[0]:
+			dialog._on_close()
+	opaque.free()
 	panel.entry_scene = original_scene
 	await broken[0]._on_retry()
 	test.check("repairing scene and Retry opens exactly its retained file", pane.Tabs.get_tab_count() == stable_count + 1
