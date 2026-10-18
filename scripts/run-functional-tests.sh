@@ -82,6 +82,7 @@ HERMETIC_TESTS=(
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
 	test/test_mcp_stdio_profiles.gd
+	test/test_mcp_parent_context.gd
 	test/test_plugin_natural_exit.gd
 	test/test_service_account_prompt.gd
 	test/test_mcp_http_transport.gd
