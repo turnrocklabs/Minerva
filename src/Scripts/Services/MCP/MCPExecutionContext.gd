@@ -141,7 +141,12 @@ func run(operation: Callable) -> Dictionary:
 	if is_stopped():
 		return stopped_result()
 	var completion := Completion.new()
-	var on_cancel := func() -> void: completion.finish(stopped_result())
+	var on_cancel := func() -> void:
+		if has_local_failure():
+			# Let the failing owner publish its outcome before waking the caller.
+			completion.finish.call_deferred(stopped_result())
+		else:
+			completion.finish(stopped_result())
 	lifetime.cancelled.connect(on_cancel)
 	var timer: SceneTreeTimer = null
 	var on_deadline := func() -> void: lifetime.stop("deadline_exceeded")
