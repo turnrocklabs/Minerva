@@ -93,6 +93,8 @@ func call_tool_outcome_with_context(tool_name: String, arguments: Dictionary, _c
 ## whose calls the host allows.
 const RUNNING_PLUGIN_MANAGER_SRC := """
 extends "res://Scripts/Services/Plugins/PluginManager.gd"
+func _init() -> void:
+	_db = PluginDB.new()
 var connection = null
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": true}

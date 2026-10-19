@@ -201,6 +201,8 @@ func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
 ## PluginManager's own, with DocketHost's guard.
 const RUNNING_MANAGER_SRC := """
 extends "res://Scripts/Services/Plugins/PluginManager.gd"
+func _init() -> void:
+	_db = PluginDB.new()
 var connection = null
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": true}
