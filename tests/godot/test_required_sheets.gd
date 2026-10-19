@@ -80,7 +80,7 @@ func _run() -> void:
 		await finish()
 		return
 	await until(func() -> bool: return jobs.sheets.state == jobs.sheets.State.DONE)
-	phase("job-done", "done=%s" % (jobs.sheets.state == jobs.sheets.State.DONE))
+	phase("job-done", JSON.stringify(jobs.sheets.status()))
 	await until(func() -> bool:
 		var candidate = manager.get_db().get_by_id("sheets")
 		return candidate != null and candidate.state == PluginDefinition.State.RUNNING)
