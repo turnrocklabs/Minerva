@@ -79,6 +79,8 @@ func _run() -> void:
 	pane.Tabs = tabs
 	pane.buffer_control_editor = Control.new()
 	host.editor_pane = pane
+	# A readable empty policy owner isolates provider pickup from an unrelated Docket release.
+	host.mcp_manager.minerva_server.policy_engine = load("res://test/helpers/hosted_policy_fixture.gd").new()
 	var csv := fixture.path_join("required-source.csv")
 	var csv_bytes := "Name,Value\nZoë,5\n李,7".to_utf8_buffer()
 	var file := FileAccess.open(csv, FileAccess.WRITE)
@@ -86,11 +88,13 @@ func _run() -> void:
 	file.close()
 	var opened: Dictionary = await host.plugin_tool_registry.handle_tool_call("minerva_sheets_create_editor", {"name": "Required CSV provider", "file_path": csv})
 	var data: Dictionary = await host.plugin_tool_registry.handle_tool_call("minerva_sheets_get_data", {"editor_name": opened.get("editor_name", ""), "format": "json"})
+	print("REQUIRED_SHEETS_CSV ", JSON.stringify([opened, data]))
 	check("installed release opens real CSV through canonical host path", opened.get("success") == true
 		and data.get("data") == [["Name", "Value"], ["Zoë", 5.0], ["李", 7.0]] and FileAccess.get_file_as_bytes(csv) == csv_bytes)
 	var native_path := fixture.path_join("required-native.minsheet")
 	check("stage immutable native fixture", DirAccess.copy_absolute(ProjectSettings.globalize_path("res://test/fixtures/spreadsheet_contract/baseline.minsheet"), native_path) == OK)
 	var native_open: Dictionary = await host.plugin_tool_registry.handle_tool_call("minerva_sheets_create_editor", {"name": "Required native provider", "file_path": native_path})
+	print("REQUIRED_SHEETS_NATIVE ", JSON.stringify(native_open))
 	check("installed release opens native format as a second live editor", native_open.get("success") == true
 		and native_open.get("editor_name") != opened.get("editor_name") and tabs.get_tab_count() == 2)
 	check("required Sheets cannot be removed", (await manager.remove_plugin("sheets")).has("error"))
