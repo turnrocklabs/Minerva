@@ -42,6 +42,7 @@ const PLUGINS := {
 		"minerva_docket_flush", "minerva_docket_gui_open",
 		"minerva_docket_secret_get", "minerva_docket_secret_set", "minerva_docket_secret_delete",
 		"minerva_docket_subscribe", "minerva_docket_changes_since", "minerva_docket_ack"]},
+	"sheets": {"name": "Sheets", "host_tools": [], "repo": "imrans-lab/minerva-plugins"},
 }
 ## Optional to establish the HTTP connection, required for Minerva's schema,
 ## bootstrap and vault features. Older apps stay connected with a reason.
