@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Run the external required-provider case against a packaged app and real releases."""
+import argparse
+import importlib.util
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from types import ModuleType
+
+
+def helpers(root: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location("packaged_helpers", root / "scripts/verify-packaged-mcp-app.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Packaged helper module is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("app", type=Path)
+    parser.add_argument("--logs", type=Path, required=True)
+    parser.add_argument("--source-project", type=Path)
+    parser.add_argument("--local-archive", type=Path)
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[1]
+    probe = helpers(root)
+    args.logs.mkdir(parents=True, exist_ok=True)
+    app = args.app.resolve()
+    with probe._private_profile() as profile, probe._required_releases() as base:
+        env = os.environ.copy()
+        probe._seed_profile(profile.root, env)
+        # Keep startup offline until the case observes the fresh profile, then
+        # let its public ensure fetch the captured repository listings.
+        env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
+        fixture = profile.root / "release-fixture"
+        fixture.mkdir()
+        env["MINERVA_REQUIRED_SHEETS_FIXTURE"] = str(fixture)
+        if args.local_archive is None:
+            if base is None:
+                raise ValueError("Published probe requires MINERVA_REQUIRED_RELEASES_JSON")
+            env["MINERVA_REQUIRED_SHEETS_PUBLISHED"] = "1"
+            env["MINERVA_REQUIRED_SHEETS_BASE"] = base
+            marker = "PACKAGED_REQUIRED_SHEETS_OK"
+        else:
+            if args.source_project is None:
+                raise ValueError("Local archive mode requires --source-project")
+            shutil.copy2(args.local_archive, fixture / args.local_archive.name)
+            env["MINERVA_REQUIRED_SHEETS_PUBLISHED"] = "0"
+            marker = "SOURCE_REQUIRED_SHEETS_OK"
+        # Test code and immutable fixtures stay outside the product package.
+        script = profile.root / "required-sheets.gd"
+        source = (root / "src/test/test_required_sheets.gd").read_text(encoding="utf-8")
+        source = source.replace("res://test/", (root / "src/test").as_posix() + "/")
+        script.write_text(source, encoding="utf-8")
+        command = [str(app), "--rendering-method", "gl_compatibility", "--script", str(script)]
+        if args.source_project is not None:
+            command += ["--path", str(args.source_project.resolve())]
+        log = args.logs / "required-sheets.log"
+        with log.open("w", encoding="utf-8") as output:
+            process = subprocess.Popen(command, env=env, stdout=output, stderr=subprocess.STDOUT,
+                                       text=True, start_new_session=os.name != "nt")
+            try:
+                status = process.wait(timeout=180)
+            finally:
+                probe._terminate_tree(process)
+        text = log.read_text(encoding="utf-8", errors="replace")
+        print(text)
+        if status != 0 or "SCRIPT ERROR:" in text or marker not in text:
+            raise RuntimeError(f"Required Sheets probe failed; see {log}")
+    if profile.cleanup_error:
+        raise RuntimeError(profile.cleanup_error)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

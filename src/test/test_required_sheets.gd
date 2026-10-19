@@ -39,22 +39,30 @@ func _run() -> void:
 		quit(1)
 		return
 	check("fresh profile has no Sheets provider", not manager.get_db().has_plugin("sheets"))
-	var port: int = helpers.random_high_port()
-	var target := MarketplaceClient.resolve_platform_target()
-	var asset := "sheets-0.1.0-%s.tar.gz" % target
-	offer(fixture, RequiredPlugins.REPO, [{"tag_name": "voice-v9.8.7", "assets": [{
-		"name": "voice-9.8.7-unrelated-target.tar.gz", "browser_download_url": "https://example.invalid/voice"}]}])
-	offer(fixture, "imrans-lab/minerva-plugins", [{"tag_name": "sheets-v0.1.0", "assets": [{
-		"name": asset, "browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]}])
-	if not await helpers.start_http_server(fixture, port):
-		check("HTTP fixture started", false)
-		quit(1)
-		return
-	RequiredPlugins.releases_url = "http://127.0.0.1:%d" % port
+	var published := OS.get_environment("MINERVA_REQUIRED_SHEETS_PUBLISHED") == "1"
+	if published:
+		RequiredPlugins.releases_url = OS.get_environment("MINERVA_REQUIRED_SHEETS_BASE")
+		check("published probe uses an exported app", not OS.has_feature("editor"))
+	else:
+		var port: int = helpers.random_high_port()
+		var target := MarketplaceClient.resolve_platform_target()
+		var asset := "sheets-0.1.0-%s.tar.gz" % target
+		offer(fixture, RequiredPlugins.REPO, [{"tag_name": "voice-v9.8.7", "assets": [{
+			"name": "voice-9.8.7-unrelated-target.tar.gz", "browser_download_url": "https://example.invalid/voice"}]}])
+		offer(fixture, "imrans-lab/minerva-plugins", [{"tag_name": "sheets-v0.1.0", "assets": [{
+			"name": asset, "browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]}])
+		if not await helpers.start_http_server(fixture, port):
+			check("HTTP fixture started", false)
+			quit(1)
+			return
+		RequiredPlugins.releases_url = "http://127.0.0.1:%d" % port
 	var entries: Dictionary = await RequiredPlugins.fetch_entries(manager)
-	check("public catalog fetches both declared repositories", entries.get("voice", {}).get("version") == "9.8.7"
+	check("public catalog fetches both declared repositories", not entries.get("voice", {}).is_empty()
 		and entries.get("sheets", {}).get("version") == "0.1.0")
 	check("Sheets release link belongs to its own repository", RequiredPlugins.release_page("sheets") == "https://github.com/imrans-lab/minerva-plugins/releases")
+	if published and OS.get_name() == "macOS":
+		check("published macOS arm64 selects the universal release asset", Engine.get_architecture_name() == "arm64"
+			and MarketplaceClient.download_target(entries.get("sheets", {}).get("downloads", {})) == "macos-universal")
 	var jobs: Dictionary = await RequiredPlugins.ensure(manager)
 	check("required pickup queues real Sheets archive", jobs.has("sheets"))
 	if not jobs.has("sheets"):
@@ -105,5 +113,7 @@ func finish() -> void:
 		await manager.stop_plugin("sheets", true)
 	if helpers != null:
 		helpers.teardown()
+	if failed == 0:
+		print("PACKAGED_REQUIRED_SHEETS_OK" if OS.get_environment("MINERVA_REQUIRED_SHEETS_PUBLISHED") == "1" else "SOURCE_REQUIRED_SHEETS_OK")
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])
 	quit(1 if failed else 0)
