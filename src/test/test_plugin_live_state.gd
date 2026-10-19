@@ -54,7 +54,7 @@ func _run() -> void:
 	live.reply = "not a boolean"
 	check("optional live restore requires explicit boolean success", not host.invoke_restore_live_state(live, {"document": {"value": 3}, "history": [5]}))
 	live.free()
-	for partial: Node in [CaptureOnly.new(), RestoreOnly.new()]:
+	for partial: LegacyPanel in [CaptureOnly.new(), RestoreOnly.new()]:
 		check("a partial live-state hook pair refuses capture and restore", host.invoke_capture_live_state(partial) == null
 			and not host.invoke_restore_live_state(partial, {"value": 99}) and partial.document == {"value": 1})
 		partial.free()
