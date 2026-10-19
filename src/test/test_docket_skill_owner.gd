@@ -209,7 +209,7 @@ func _init() -> void:
 		push_error("Docket fixture manifest could not be saved")
 var connection = null
 func get_plugin_status(_id: String) -> Dictionary:
-	return {"running": true}
+	return {"running": true, "ready": true, "state": PluginDefinition.State.RUNNING}
 func get_connection(_id: String) -> MCPServerConnection:
 	return connection
 """
@@ -231,6 +231,7 @@ var _made: Array[Node] = []
 var _store = null
 var _host = null
 var _saved_write_definitions: Dictionary = {}
+var _readiness: RefCounted
 ## The longest any wait here may take, in frames: a wait that runs out fails.
 const MAX_FRAMES := 300
 
@@ -307,6 +308,7 @@ func _run() -> void:
 			return
 	var saved_host = _so.docket_host
 	var saved_registry = _so.plugin_tool_registry
+	var saved_admission: Callable = _server().plugin_admission
 	var index = _server().tool_search_index
 	index.register_tool(CREATE_DEP, "a tool created skills depend on",
 		{"name": CREATE_DEP, "description": "a tool created skills depend on", "input_schema": {"type": "object"}}, "")
@@ -318,6 +320,7 @@ func _run() -> void:
 	_server().tool_budget_manager.reset()
 	_so.docket_host = saved_host
 	_so.plugin_tool_registry = saved_registry
+	_server().plugin_admission = saved_admission
 	for name in _saved_write_definitions:
 		if _saved_write_definitions[name] == null:
 			_server().mcp_manager.tool_registry.erase(name)
@@ -386,6 +389,8 @@ func _set_up() -> bool:
 	var registry = load(REGISTRY_PATH).new(running)
 	var published: Dictionary = registry.publish_backend_tools("docket", wire)
 	_so.plugin_tool_registry = registry
+	_readiness = load("res://Scripts/Services/Plugins/PluginReadiness.gd").new(running, registry)
+	_server().plugin_admission = Callable(_readiness, "wait_for_tool")
 	# Match the host's tools_registered wiring: coercion uses the published schema.
 	for entry in registry.get_plugin_tools("docket"):
 		var name: String = entry.name
