@@ -112,11 +112,11 @@ This registers the plugin in Minerva's database. The plugin directory stays wher
 minerva_plugin_start(id: "my_plugin")    # Launch process, MCP handshake
 minerva_plugin_stop(id: "my_plugin")     # Graceful shutdown
 minerva_plugin_restart(id: "my_plugin")  # Stop + start (process misbehaving)
-minerva_plugin_reload(id: "my_plugin")   # Stop + start (code changed)
+minerva_plugin_reload(id: "my_plugin")   # Opt-in scene generation swap; otherwise process restart
 ```
 
 - **autostart**: Set via Plugin Manager UI or DB — starts the plugin on Minerva launch
-- **auto_reload**: Watches plugin files for changes and auto-restarts (hot reload for development)
+- **auto_reload**: Watches files and restarts the backend for process or manifest changes. Cached `.gd`/`.tscn`/`.tres` changes require an application restart unless the plugin opts into `live_reload`, which uses a scene generation swap.
 - **Crash detection**: 3+ crashes in 60 seconds → CRASH_LOOP state (won't auto-restart)
 
 ## Discovery
@@ -591,6 +591,10 @@ owners. The plugins repository checks guide/ledger links locally; final
 qualification supplies both repository paths explicitly to
 `scripts/check_plugin_docs.py --host-root … --plugins-root …`.
 No generated contract snapshot or sibling-checkout assumption is used.
+The census covers literal manifest reads in the top-level parser, panel and tool
+entries, and `PluginDependencyContract.parse`; it excludes nested `settings[]`,
+`editor_items[]`, `skills[]` and `setup` recipe fields. IPC coverage is the
+`request_*` methods plus `get_bulk_payload_limit`, not every SDK member.
 
 | Symbol | Contract | Author reference |
 |---|---|---|
@@ -675,6 +679,9 @@ No generated contract snapshot or sibling-checkout assumption is used.
 | `project_file.deserialize_channel` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `project_file.serialize_channel` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `requires_plugins` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `requires_plugins[].actions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `requires_plugins[].id` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `requires_plugins[].min_version` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
 | `settings` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `settings_title` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `setup` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
@@ -730,8 +737,8 @@ No generated contract snapshot or sibling-checkout assumption is used.
 | `MinervaIPC.request_bulk` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
 | `MinervaIPC.request_capability` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
 | `MinervaIPC.request_private` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
-| `RequiredPlugins.release_page` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
-| `RequiredPlugins.repository` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `RequiredPlugins.release_page` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `RequiredPlugins.repository` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
 | `handle_tool` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
 | `handle_tool_with_context` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
 | `repo` | required_plugin_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |

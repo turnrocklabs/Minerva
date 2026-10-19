@@ -28,7 +28,8 @@ def array_strings(source: str, name: str) -> set[str]:
     return set(re.findall(r'"([^"\n]+)"', re.sub(r"#.*", "", match[1])))
 
 
-def declared_contracts(definition: str, panel_host: str, generations: str) -> dict[str, set[str]]:
+def declared_contracts(definition: str, panel_host: str, generations: str,
+                       dependencies: str) -> dict[str, set[str]]:
     """Read literal declarations from their existing owners, never from fixtures."""
     parser = function_body(definition, "_from_dict_internal")
     fields: set[str] = set()
@@ -48,6 +49,8 @@ def declared_contracts(definition: str, panel_host: str, generations: str) -> di
         r'data\.get\("state",\s*\{\}\)\.get\("([^"\n]+)"', parser))
     fields.update("tools[]." + key for key in re.findall(
         r'\btool_entry\.(?:get|has)\("([^"\n]+)"', function_body(definition, "validate")))
+    fields.update("requires_plugins[]." + key for key in re.findall(
+        r'\bentry\.(?:get|has)\("([^"\n]+)"', function_body(dependencies, "parse")))
     return {
         "host_capability": array_strings(definition, "ALLOWED_HOST_CAPABILITIES"),
         "capability_namespace": array_strings(definition, "ALLOWED_HOST_CAPABILITY_NAMESPACES"),
@@ -102,18 +105,20 @@ def main() -> int:
     args = parser.parse_args()
     services = args.host_root / "src/Scripts/Services/Plugins"
     try:
-        declared = declared_contracts(*((services / name).read_text() for name in
-            ("PluginDefinition.gd", "PluginScenePanelHost.gd", "PluginGenerationStore.gd")))
-        declared.update(contextual_contracts(*((services / name).read_text() for name in
+        declared = declared_contracts(*((services / name).read_text(encoding="utf-8") for name in
+            ("PluginDefinition.gd", "PluginScenePanelHost.gd", "PluginGenerationStore.gd",
+             "PluginDependencyContract.gd")))
+        declared.update(contextual_contracts(*((services / name).read_text(encoding="utf-8") for name in
             ("MinervaIPC.gd", "RequiredPlugins.gd", "PluginToolRegistry.gd"))))
-        guide = (args.host_root / "src/plugins/plugin_system_guide.md").read_text()
+        guide = (args.host_root / "src/plugins/plugin_system_guide.md").read_text(encoding="utf-8")
         errors = compare(declared, guide, "host guide")
         if args.plugins_root:
-            ledger = (args.plugins_root / "docs/PLUGIN_API_COVERAGE.md").read_text()
+            ledger = (args.plugins_root / "docs/PLUGIN_API_COVERAGE.md").read_text(encoding="utf-8")
             errors.extend(compare(declared, ledger, "plugins ledger"))
             links = subprocess.run([sys.executable,
                 str(args.plugins_root / "scripts/check_plugin_docs.py"),
-                "--plugins-root", str(args.plugins_root)], check=False)
+                "--plugins-root", str(args.plugins_root), "--host-guide",
+                str(args.host_root / "src/plugins/plugin_system_guide.md")], check=False)
             if links.returncode:
                 errors.append("plugins guide/ledger link and retired-claim checks failed")
     except (OSError, ValueError) as error:
