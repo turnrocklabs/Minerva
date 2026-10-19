@@ -70,8 +70,8 @@ func _run() -> void:
 		return
 	await until(func() -> bool: return jobs.sheets.state == jobs.sheets.State.DONE)
 	await until(func() -> bool:
-		var definition = manager.get_db().get_by_id("sheets")
-		return definition != null and definition.state == PluginDefinition.State.RUNNING)
+		var candidate = manager.get_db().get_by_id("sheets")
+		return candidate != null and candidate.state == PluginDefinition.State.RUNNING)
 	var definition = manager.get_db().get_by_id("sheets")
 	check("installed required provider starts with first-install choices", definition != null and definition.version == "0.1.0"
 		and definition.install_lane == PluginDefinition.LANE_MARKETPLACE and definition.autostart and definition.auto_update)
