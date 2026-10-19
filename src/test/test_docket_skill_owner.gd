@@ -203,6 +203,10 @@ const RUNNING_MANAGER_SRC := """
 extends "res://Scripts/Services/Plugins/PluginManager.gd"
 func _init() -> void:
 	_db = PluginDB.new()
+	var definition := PluginDefinition.from_dict({"id": "docket", "name": "Docket fixture", "version": "1.0.0", "host_api_version": "2",
+		"backend": {"transport": "stdio", "entrypoint": "fixture"}})
+	if definition == null or not _db.restore(definition):
+		push_error("Docket fixture manifest could not be saved")
 var connection = null
 func get_plugin_status(_id: String) -> Dictionary:
 	return {"running": true}
