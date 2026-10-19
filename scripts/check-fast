@@ -11,6 +11,8 @@ def main() -> int:
     argparse.ArgumentParser(description=__doc__).parse_args()
     root = Path(__file__).resolve().parents[1]
     checks = [
+        ("plugin-docs", [sys.executable, "scripts/check_plugin_docs.py"]),
+        ("plugin-docs-tests", [sys.executable, "tests/test_plugin_docs.py"]),
         ("spreadsheet-extraction", [sys.executable, "scripts/check-spreadsheet-extraction.py"]),
         ("push-lanes", [sys.executable, "scripts/ci/check_push_lanes.py"]),
         ("docket-launcher-paths", [sys.executable, "tests/test_docket_launcher_paths.py"]),
