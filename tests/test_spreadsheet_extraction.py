@@ -19,7 +19,8 @@ class ExtractionGateTests(unittest.TestCase):
         # The enclosing container owns cleanup; tests never delete a supplied tree.
         root = Path(tempfile.mkdtemp(prefix="extraction-gate-"))
         ledger = "tests/fixtures/spreadsheet-extraction-inventory.tsv"
-        rows = list(csv.DictReader((ROOT / ledger).open(encoding="utf-8"), delimiter="\t"))
+        with (ROOT / ledger).open(encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream, delimiter="\t"))
         for name in [ledger] + [row["path"] for row in rows if row["disposition"] == "keep-frozen"]:
             target = root / name
             target.parent.mkdir(parents=True, exist_ok=True)
