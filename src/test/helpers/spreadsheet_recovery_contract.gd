@@ -9,6 +9,9 @@ func dialogs(root: Window) -> Array[SpreadsheetRecoveryDialog]:
 
 func run(test: Node, host: Node, manager: PluginManager, pane: EditorPane, directory: String) -> void:
 	var tree := test.get_tree()
+	var previous_definition: PluginDefinition = manager.get_db().get_by_id("sheets")
+	if previous_definition != null:
+		test.check("recovery fixture temporarily removes the prior Sheets record", manager.get_db().remove("sheets"))
 	var previous_tools: Variant = host.get("plugin_tool_registry")
 	var tools := PluginToolRegistry.new(manager, null, null)
 	manager.configure_dependency_tools(tools)
@@ -49,7 +52,7 @@ func run(test: Node, host: Node, manager: PluginManager, pane: EditorPane, direc
 	await host.call("request_spreadsheet_gui", "open", {"path": second_path})
 	pending = dialogs(tree.root)
 	test.check("independent requests retain three separate recovery dialogs", pending.size() == 3)
-	var plugin_directory := "user://plugins/sheets"
+	var plugin_directory := directory.path_join("sheets-provider")
 	var manifest := {"id": "sheets", "name": "Sheets", "version": "1.0.0", "host_api_version": "2",
 		"backend": {"transport": "stdio", "entrypoint": "python3", "args": [ProjectSettings.globalize_path("res://test/fixtures/bulk_snapshot_probe.py")]},
 		"ui": {"panels": [{"name": "sheets_panel", "kind": "godot_scene", "entry_scene": "Panel.tscn", "scripts": ["Panel.gd"],
@@ -152,4 +155,7 @@ func run(test: Node, host: Node, manager: PluginManager, pane: EditorPane, direc
 	test.check("closing pending recovery prevents later ready from creating an editor", pane.Tabs.get_tab_count() == before + 3
 		and dialogs(tree.root).is_empty())
 	manager.get_db().update_state("sheets", PluginDefinition.State.STOPPED)
+	test.check("recovery fixture removes its Sheets record", manager.get_db().remove("sheets"))
+	if previous_definition != null:
+		test.check("recovery fixture restores the prior Sheets record", manager.get_db().restore(previous_definition))
 	host.set("plugin_tool_registry", previous_tools)
