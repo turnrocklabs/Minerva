@@ -55,6 +55,11 @@ class ExtractionGateTests(unittest.TestCase):
         (root / "src/Data/master.dct").write_text(json.dumps({"type": "skill", "steps": tools[0]["name"]}) + "\n")
         self.assertTrue(any("legacy skill tool" in value for value in GATE.violations(root)))
 
+    def test_missing_ledger_row(self) -> None:
+        root = self.fixture()
+        (root / "tests/fixtures/spreadsheet-extraction-inventory.tsv").write_text("disposition\tpath\tgit_blob\tbase\n")
+        self.assertTrue(any("disposition inventory changed" in value for value in GATE.violations(root)))
+
     def test_frozen_oracle(self) -> None:
         root = self.fixture()
         (root / "src/test/fixtures/spreadsheet_contract/sample.csv").write_text("changed\n")

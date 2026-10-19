@@ -33,7 +33,7 @@ def blob(data: bytes) -> str:
 def violations(root: Path) -> list[str]:
     findings: list[str] = []
     inventory = root / "tests/fixtures/spreadsheet-extraction-inventory.tsv"
-    if hashlib.sha256(inventory.read_bytes()).hexdigest() != "3b29ce3dc855d2ba7e36003716ec2104c61da959c274bc9507d17bdd714f2a8a":
+    if hashlib.sha256(inventory.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != "b8d38a1373b663b91c9d343c94b5dfc85941a8ec95fe31659ab238d2fab9f988":
         return ["B4 disposition inventory changed: reconcile its authority before changing the gate"]
     with inventory.open(newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
