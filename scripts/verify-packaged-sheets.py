@@ -12,6 +12,11 @@ import tarfile
 from pathlib import Path
 from types import ModuleType
 
+# Two sequential 60s state waits plus a 10s bootstrap leave 170s for the
+# catalog, first published installation, CSV/native opens and cleanup. Keep
+# the inner assertions/deadlines intact; phase markers identify any stall.
+PROBE_TIMEOUT_SECONDS = 300
+
 
 def helpers(root: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location("packaged_helpers", root / "scripts/verify-packaged-mcp-app.py")
@@ -77,7 +82,7 @@ def main() -> int:
             process = subprocess.Popen(command, env=env, stdout=output, stderr=subprocess.STDOUT,
                                        text=True, start_new_session=os.name != "nt")
             try:
-                status = process.wait(timeout=110)
+                status = process.wait(timeout=PROBE_TIMEOUT_SECONDS)
             finally:
                 probe._terminate_tree(process)
                 output.flush()

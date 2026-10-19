@@ -5,6 +5,7 @@ var failed := 0
 var helpers
 var manager
 var host
+var started_ms := 0
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -15,6 +16,9 @@ func check(label: String, ok: bool) -> void:
 	else:
 		failed += 1
 		printerr("FAIL: ", label)
+
+func phase(label: String, detail: String = "") -> void:
+	print("REQUIRED_SHEETS_PHASE=%s elapsed_ms=%d %s" % [label, Time.get_ticks_msec() - started_ms, detail])
 
 func until(ready: Callable) -> void:
 	var deadline := Time.get_ticks_msec() + 60000
@@ -30,8 +34,11 @@ func offer(root_dir: String, repo: String, entries: Array) -> void:
 	file.close()
 
 func _run() -> void:
+	started_ms = Time.get_ticks_msec()
+	phase("bootstrap-start")
 	helpers = load("res://test/marketplace_test_helpers.gd").new(self)
 	manager = await helpers.bootstrap_plugin_manager(true)
+	phase("bootstrapped", "manager=%s" % (manager != null))
 	host = root.get_node("SingletonObject")
 	var fixture := OS.get_environment("MINERVA_REQUIRED_SHEETS_FIXTURE")
 	check("isolated fixture and real manager exist", manager != null and not fixture.is_empty())
@@ -58,6 +65,7 @@ func _run() -> void:
 		RequiredPlugins.releases_url = "http://127.0.0.1:%d" % port
 	var entries: Dictionary = await RequiredPlugins.fetch_entries(manager)
 	var selected_version: String = entries.get("sheets", {}).get("version", "")
+	phase("entries-fetched", "version=%s" % selected_version)
 	var updater = load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
 	check("public catalog fetches both declared repositories", not entries.get("voice", {}).is_empty()
 		and not selected_version.is_empty() and updater.compare_versions(selected_version, "0.1.0") >= 0)
@@ -66,15 +74,18 @@ func _run() -> void:
 		check("published macOS arm64 selects the universal release asset", Engine.get_architecture_name() == "arm64"
 			and MarketplaceClient.download_target(entries.get("sheets", {}).get("downloads", {})) == "macos-universal")
 	var jobs: Dictionary = await RequiredPlugins.ensure(manager)
+	phase("ensure-queued", "sheets=%s" % jobs.has("sheets"))
 	check("required pickup queues real Sheets archive", jobs.has("sheets"))
 	if not jobs.has("sheets"):
 		await finish()
 		return
 	await until(func() -> bool: return jobs.sheets.state == jobs.sheets.State.DONE)
+	phase("job-done", "done=%s" % (jobs.sheets.state == jobs.sheets.State.DONE))
 	await until(func() -> bool:
 		var candidate = manager.get_db().get_by_id("sheets")
 		return candidate != null and candidate.state == PluginDefinition.State.RUNNING)
 	var definition = manager.get_db().get_by_id("sheets")
+	phase("provider-running", "running=%s" % (definition != null and definition.state == PluginDefinition.State.RUNNING))
 	check("installed required provider starts with first-install choices", definition != null and definition.version == selected_version
 		and definition.install_lane == PluginDefinition.LANE_MARKETPLACE and definition.autostart and definition.auto_update)
 	if definition == null or definition.state != PluginDefinition.State.RUNNING:
@@ -97,6 +108,7 @@ func _run() -> void:
 	file.store_buffer(csv_bytes)
 	file.close()
 	var opened: Dictionary = await host.plugin_tool_registry.handle_tool_call("minerva_sheets_create_editor", {"name": "Required CSV provider", "file_path": csv})
+	phase("csv-opened", "success=%s" % opened.get("success", false))
 	var data: Dictionary = await host.plugin_tool_registry.handle_tool_call("minerva_sheets_get_data", {"editor_name": opened.get("editor_name", ""), "format": "json"})
 	print("REQUIRED_SHEETS_CSV ", JSON.stringify([opened, data]))
 	check("installed release opens real CSV through canonical host path", opened.get("success") == true
@@ -104,6 +116,7 @@ func _run() -> void:
 	var native_path := fixture.path_join("required-native.minsheet")
 	check("stage immutable native fixture", DirAccess.copy_absolute(ProjectSettings.globalize_path("res://test/fixtures/spreadsheet_contract/baseline.minsheet"), native_path) == OK)
 	var native_open: Dictionary = await host.plugin_tool_registry.handle_tool_call("minerva_sheets_create_editor", {"name": "Required native provider", "file_path": native_path})
+	phase("native-opened", "success=%s" % native_open.get("success", false))
 	print("REQUIRED_SHEETS_NATIVE ", JSON.stringify(native_open))
 	check("installed release opens native format as a second live editor", native_open.get("success") == true
 		and native_open.get("editor_name") != opened.get("editor_name") and tabs.get_tab_count() == 2)
@@ -111,6 +124,7 @@ func _run() -> void:
 	await finish()
 
 func finish() -> void:
+	phase("finish-start", "passed=%d failed=%d" % [passed, failed])
 	if manager != null and manager.get_db().has_plugin("sheets"):
 		await manager.stop_plugin("sheets", true)
 	if helpers != null:
@@ -118,4 +132,5 @@ func finish() -> void:
 	if failed == 0:
 		print("PACKAGED_REQUIRED_SHEETS_OK" if OS.get_environment("MINERVA_REQUIRED_SHEETS_PUBLISHED") == "1" else "SOURCE_REQUIRED_SHEETS_OK")
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])
+	phase("finish", "passed=%d failed=%d" % [passed, failed])
 	quit(1 if failed else 0)
