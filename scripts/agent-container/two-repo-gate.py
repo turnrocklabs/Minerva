@@ -125,6 +125,10 @@ def run_gate(args):
         return rc, output
 
     try:
+        rc, _ = command("spreadsheet-extraction", [sys.executable, "scripts/check-spreadsheet-extraction.py",
+                                                  "--plugins", str(plugins)], 120)
+        if rc:
+            raise ValueError("spreadsheet extraction boundary failed; see spreadsheet-extraction.log")
         scripts = changed_scripts(host, args.host_base) + changed_scripts(plugins, args.plugins_base)
         selected, plugin_scripts = plugin_checks(host, plugins, args.host_base, args.plugins_base, args.plugin)
         receipt["plugins_under_test"] = selected
