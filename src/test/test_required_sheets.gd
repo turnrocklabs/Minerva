@@ -73,7 +73,7 @@ func _run() -> void:
 	# The standalone runner has no main editor scene; host-owned pane/brokers stay real.
 	var ui := preload("res://test/helpers/chat_host_render_fixture.gd").new()
 	ui.install(host)
-	var pane := EditorPane.new()
+	var pane = load("res://Scripts/UI/Views/EditorPane.gd").new()
 	var tabs := TabContainer.new()
 	root.add_child(tabs)
 	pane.Tabs = tabs
