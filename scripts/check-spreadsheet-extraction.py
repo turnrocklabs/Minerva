@@ -7,11 +7,9 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
-DOMAIN = re.compile(r"\b(?:SpreadsheetEditor|SpreadsheetData|SpreadsheetCell|SpreadsheetHistory|"
-                    r"SpreadsheetChart|FormulaEngine|ExcelHandler|SpreadsheetFileHandler|"
-                    r"find_spreadsheet|LinkedSpreadsheet)\b|\.spreadsheet_editor\b|\bType\.SPREADSHEET\b")
 # These are opaque saved-data fields, never spreadsheet behavior. Remove only
 # after an owner-approved end to pre-plugin session/note support.
 LEGACY_LINES = {
@@ -21,6 +19,7 @@ LEGACY_LINES = {
     },
 }
 # Presentation consumes the same public icon UID after its B4 relocation.
+RUNTIME_EXCLUSIONS = ("src/test", "src/.godot")
 SHARED_ASSETS = {"src/assets/icons/spreadsheet_icon_white_no_bg_24.png",
                  "src/assets/icons/spreadsheet_icon_white_no_bg_24.png.import"}
 
@@ -29,27 +28,45 @@ def blob(data: bytes) -> str:
     return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
 
+def string_values(value: object) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for child in value.values():
+            yield from string_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from string_values(child)
+
+
 def violations(root: Path) -> list[str]:
     findings: list[str] = []
     inventory = root / "tests/fixtures/spreadsheet-extraction-inventory.tsv"
-    if hashlib.sha256(inventory.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != "b8d38a1373b663b91c9d343c94b5dfc85941a8ec95fe31659ab238d2fab9f988":
+    if hashlib.sha256(inventory.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != "84aa3cc7bd9d7d00ca138878c75c75a44d587a769b0c93c1413eb644c8bf15b6":
         return ["B4 disposition inventory changed: reconcile its authority before changing the gate"]
     with inventory.open(newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
+    retired = [re.escape(row["retired_class"]) for row in rows if row["retired_class"]]
+    domain = re.compile(r"\b(?:" + "|".join(retired + ["find_spreadsheet", "LinkedSpreadsheet"])
+                        + r")\b|\.spreadsheet_editor\b|\bType\.SPREADSHEET\b")
     for row in rows:
         path = root / row["path"]
-        if row["disposition"] == "delete-after-replacement" and path.exists():
+        if row["disposition"] == "delete-after-replacement" and (path.exists() or path.is_symlink()):
             findings.append(f"{row['path']}: retired implementation returned")
         if row["disposition"] == "keep-frozen" and (not path.is_file() or blob(path.read_bytes()) != row["git_blob"]):
             findings.append(f"{row['path']}: frozen B0 oracle changed or missing")
-    for directory in ("src/Scripts", "src/Scenes"):
-        for path in sorted((root / directory).rglob("*")):
-            if path.suffix not in (".gd", ".tscn", ".tres"):
-                continue
-            name = path.relative_to(root).as_posix()
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                if DOMAIN.search(line) and line.strip() not in LEGACY_LINES.get(name, set()):
-                    findings.append(f"{name}:{number}: retired spreadsheet implementation reference")
+    for path in sorted((root / "src").rglob("*")):
+        if any(path.is_relative_to(root / excluded) for excluded in RUNTIME_EXCLUSIONS):
+            continue
+        if path.suffix not in (".gd", ".tscn", ".tres"):
+            continue
+        name = path.relative_to(root).as_posix()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            # Keep literal resource paths but discard comments, including inline ones.
+            code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|#[^\n]*',
+                          lambda match: "" if match[0].startswith("#") else match[0], line)
+            if domain.search(code) and code.strip() not in LEGACY_LINES.get(name, set()):
+                findings.append(f"{name}:{number}: retired spreadsheet implementation reference")
     for path in sorted((root / "src/assets").rglob("*")):
         name = path.relative_to(root).as_posix()
         if path.is_file() and "spreadsheet" in name.lower() and name not in SHARED_ASSETS:
@@ -60,7 +77,7 @@ def violations(root: Path) -> list[str]:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             item = json.loads(line)
             if item.get("type") == "skill":
-                names = set(re.findall(r"\bminerva_\w+\b", json.dumps(item)))
+                names = {name for value in string_values(item) for name in re.findall(r"\bminerva_\w+\b", value)}
                 for name in sorted(names & legacy_tools):
                     findings.append(f"{path.relative_to(root)}:{number}: legacy skill tool {name}")
     return findings
@@ -78,7 +95,7 @@ def main() -> int:
     if findings:
         return 1
     if args.plugins is not None:
-        result = subprocess.run([sys.executable, str(args.plugins.resolve() / "sheets/scripts/check-private-imports.py"),
+        result = subprocess.run([sys.executable, "-B", str(args.plugins.resolve() / "sheets/scripts/check-private-imports.py"),
                                  str(root), "--self-test"], check=False)
         if result.returncode:
             return result.returncode

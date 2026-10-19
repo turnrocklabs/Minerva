@@ -1,7 +1,8 @@
 # Spreadsheet extraction boundary
 
 `spreadsheet-extraction-inventory.tsv` is the frozen B4 disposition snapshot at
-Minerva fa2424ea. The gate refuses all 123 retired files and preserves all 19 B0
+Minerva fa2424ea, enriched with the 20 retired class names extracted mechanically
+from the exact recorded Git blobs. The gate refuses all 123 retired files and preserves all 19 B0
 oracle blobs. Changing this authority requires reconciling the extraction plan;
 adding another exception is a reviewed design change.
 
