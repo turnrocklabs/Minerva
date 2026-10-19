@@ -2,10 +2,13 @@
 """Run the external required-provider case against a packaged app and real releases."""
 import argparse
 import importlib.util
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from types import ModuleType
 
@@ -50,11 +53,20 @@ def main() -> int:
             if args.source_project is None:
                 raise ValueError("Local archive mode requires --source-project")
             shutil.copy2(args.local_archive, fixture / args.local_archive.name)
+            with tarfile.open(args.local_archive) as archive:
+                manifest_file = archive.extractfile("manifest.json")
+                if manifest_file is None:
+                    raise ValueError("Local Sheets archive has no manifest")
+                version = json.load(manifest_file)["version"]
+            if not isinstance(version, str) or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None:
+                raise ValueError("Local Sheets archive has an invalid version")
+            env["MINERVA_REQUIRED_SHEETS_ASSET"] = args.local_archive.name
+            env["MINERVA_REQUIRED_SHEETS_VERSION"] = version
             env["MINERVA_REQUIRED_SHEETS_PUBLISHED"] = "0"
             marker = "SOURCE_REQUIRED_SHEETS_OK"
         # Test code and immutable fixtures stay outside the product package.
         script = profile.root / "required-sheets.gd"
-        source = (root / "src/test/test_required_sheets.gd").read_text(encoding="utf-8")
+        source = (root / "tests/godot/test_required_sheets.gd").read_text(encoding="utf-8")
         source = source.replace("res://test/", (root / "src/test").as_posix() + "/")
         script.write_text(source, encoding="utf-8")
         command = [str(app), "--rendering-method", "gl_compatibility", "--script", str(script)]
@@ -65,11 +77,12 @@ def main() -> int:
             process = subprocess.Popen(command, env=env, stdout=output, stderr=subprocess.STDOUT,
                                        text=True, start_new_session=os.name != "nt")
             try:
-                status = process.wait(timeout=180)
+                status = process.wait(timeout=110)
             finally:
                 probe._terminate_tree(process)
+                output.flush()
+                print(log.read_text(encoding="utf-8", errors="replace"))
         text = log.read_text(encoding="utf-8", errors="replace")
-        print(text)
         if status != 0 or "SCRIPT ERROR:" in text or marker not in text:
             raise RuntimeError(f"Required Sheets probe failed; see {log}")
     if profile.cleanup_error:

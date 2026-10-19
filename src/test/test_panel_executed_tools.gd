@@ -44,6 +44,9 @@ var _manager = null         # PluginManager (real, off-tree, no subprocess)
 var _broker = null          # PluginScenePanelBroker
 var _audit: StubAuditLog = null
 var _panels: Array = []     # every Control we must free at the end
+var _fixture_db: PluginDB
+var _saved_plugins: Dictionary = {}
+const FIXTURE_IDS := ["pxa", "pxb", "pxc", "voice", "panel_consumer", "voice_helper"]
 
 
 func _init() -> void:
@@ -55,6 +58,7 @@ func _init() -> void:
 	var ok := _build_fixture_stack()
 	if not ok:
 		printerr("FATAL: fixture stack failed to build — aborting")
+		_teardown()
 		quit(1)
 		return
 
@@ -264,6 +268,10 @@ func _build_fixture_stack() -> bool:
 		return false
 	_manager = pm_script.new()
 	var db := PluginDB.new()
+	_fixture_db = db
+	for plugin_id: String in FIXTURE_IDS:
+		var previous := db.get_by_id(plugin_id)
+		_saved_plugins[plugin_id] = previous
 	for definition: PluginDefinition in [_def_a, _def_b, _def_c]:
 		if not db.restore(definition):
 			return false
@@ -307,6 +315,14 @@ func _build_fixture_stack() -> bool:
 
 func _teardown() -> void:
 	AnnotationHostRegistry._reset_for_test()
+	if _fixture_db != null:
+		for plugin_id: String in _saved_plugins:
+			if _fixture_db.has_plugin(plugin_id):
+				check("remove fixture record " + plugin_id, _fixture_db.remove(plugin_id))
+			if _saved_plugins[plugin_id] != null:
+				check("restore original record " + plugin_id,
+					_fixture_db.restore(_saved_plugins[plugin_id]))
+		_saved_plugins.clear()
 	for p in _panels:
 		if is_instance_valid(p):
 			p.free()

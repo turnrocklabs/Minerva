@@ -45,11 +45,11 @@ func _run() -> void:
 		check("published probe uses an exported app", not OS.has_feature("editor"))
 	else:
 		var port: int = helpers.random_high_port()
-		var target := MarketplaceClient.resolve_platform_target()
-		var asset := "sheets-0.1.0-%s.tar.gz" % target
+		var asset := OS.get_environment("MINERVA_REQUIRED_SHEETS_ASSET")
+		var version := OS.get_environment("MINERVA_REQUIRED_SHEETS_VERSION")
 		offer(fixture, RequiredPlugins.REPO, [{"tag_name": "voice-v9.8.7", "assets": [{
 			"name": "voice-9.8.7-unrelated-target.tar.gz", "browser_download_url": "https://example.invalid/voice"}]}])
-		offer(fixture, "imrans-lab/minerva-plugins", [{"tag_name": "sheets-v0.1.0", "assets": [{
+		offer(fixture, "imrans-lab/minerva-plugins", [{"tag_name": "sheets-v" + version, "assets": [{
 			"name": asset, "browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]}])
 		if not await helpers.start_http_server(fixture, port):
 			check("HTTP fixture started", false)
@@ -57,8 +57,10 @@ func _run() -> void:
 			return
 		RequiredPlugins.releases_url = "http://127.0.0.1:%d" % port
 	var entries: Dictionary = await RequiredPlugins.fetch_entries(manager)
+	var selected_version: String = entries.get("sheets", {}).get("version", "")
+	var updater = load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
 	check("public catalog fetches both declared repositories", not entries.get("voice", {}).is_empty()
-		and entries.get("sheets", {}).get("version") == "0.1.0")
+		and not selected_version.is_empty() and updater.compare_versions(selected_version, "0.1.0") >= 0)
 	check("Sheets release link belongs to its own repository", RequiredPlugins.release_page("sheets") == "https://github.com/imrans-lab/minerva-plugins/releases")
 	if published and OS.get_name() == "macOS":
 		check("published macOS arm64 selects the universal release asset", Engine.get_architecture_name() == "arm64"
@@ -73,7 +75,7 @@ func _run() -> void:
 		var candidate = manager.get_db().get_by_id("sheets")
 		return candidate != null and candidate.state == PluginDefinition.State.RUNNING)
 	var definition = manager.get_db().get_by_id("sheets")
-	check("installed required provider starts with first-install choices", definition != null and definition.version == "0.1.0"
+	check("installed required provider starts with first-install choices", definition != null and definition.version == selected_version
 		and definition.install_lane == PluginDefinition.LANE_MARKETPLACE and definition.autostart and definition.auto_update)
 	if definition == null or definition.state != PluginDefinition.State.RUNNING:
 		await finish()
