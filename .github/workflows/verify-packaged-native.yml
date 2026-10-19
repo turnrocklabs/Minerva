@@ -180,6 +180,7 @@ jobs:
               python3 scripts/verify-packaged-sheets.py \
                 extracted/Minerva.app/Contents/MacOS/Minerva \
                 --logs "$RUNNER_TEMP/required-sheets-macos-arm64"
+              echo "Required Sheets release proof: success (required for release)" >> "$GITHUB_STEP_SUMMARY"
               ;;
           esac
       - name: Download debug build when requested
