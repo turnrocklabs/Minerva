@@ -83,6 +83,26 @@ def main() -> int:
                                        text=True, start_new_session=os.name != "nt")
             try:
                 status = process.wait(timeout=PROBE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                if sys.platform == "darwin":
+                    # Capture the live stack before cleanup kills the timed-out app.
+                    output.write(f"REQUIRED_SHEETS_TIMEOUT_SAMPLE pid={process.pid}\n")
+                    output.flush()
+                    sample_path = args.logs / "required-sheets.sample.txt"
+                    try:
+                        sample = subprocess.run(
+                            ["/usr/bin/sample", str(process.pid), "5", "-file", str(sample_path)],
+                            stdout=output, stderr=subprocess.STDOUT,
+                            text=True, timeout=10, check=False)
+                        output.write(f"REQUIRED_SHEETS_TIMEOUT_SAMPLE exit={sample.returncode}\n")
+                    except (OSError, subprocess.TimeoutExpired) as error:
+                        output.write(f"REQUIRED_SHEETS_TIMEOUT_SAMPLE unavailable: {error}\n")
+                    if sample_path.is_file():
+                        output.write(sample_path.read_text(encoding="utf-8", errors="replace"))
+                    else:
+                        output.write("REQUIRED_SHEETS_TIMEOUT_SAMPLE report missing\n")
+                    output.flush()
+                raise
             finally:
                 probe._terminate_tree(process)
                 output.flush()

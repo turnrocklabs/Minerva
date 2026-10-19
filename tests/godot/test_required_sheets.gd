@@ -18,7 +18,8 @@ func check(label: String, ok: bool) -> void:
 		printerr("FAIL: ", label)
 
 func phase(label: String, detail: String = "") -> void:
-	print("REQUIRED_SHEETS_PHASE=%s elapsed_ms=%d %s" % [label, Time.get_ticks_msec() - started_ms, detail])
+	# Release exports buffer stdout; stderr survives a timed-out process being killed.
+	printerr("REQUIRED_SHEETS_PHASE=%s elapsed_ms=%d %s" % [label, Time.get_ticks_msec() - started_ms, detail])
 
 func until(ready: Callable) -> void:
 	var deadline := Time.get_ticks_msec() + 60000
