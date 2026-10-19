@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 DOMAIN = re.compile(r"\b(?:SpreadsheetEditor|SpreadsheetData|SpreadsheetCell|SpreadsheetHistory|"
                     r"SpreadsheetChart|FormulaEngine|ExcelHandler|SpreadsheetFileHandler|"
                     r"find_spreadsheet|LinkedSpreadsheet)\b|\.spreadsheet_editor\b|\bType\.SPREADSHEET\b")
@@ -41,9 +40,8 @@ def violations(root: Path) -> list[str]:
         path = root / row["path"]
         if row["disposition"] == "delete-after-replacement" and path.exists():
             findings.append(f"{row['path']}: retired implementation returned")
-        if row["disposition"] == "keep-frozen":
-            if not path.is_file() or blob(path.read_bytes()) != row["git_blob"]:
-                findings.append(f"{row['path']}: frozen B0 oracle changed or missing")
+        if row["disposition"] == "keep-frozen" and (not path.is_file() or blob(path.read_bytes()) != row["git_blob"]):
+            findings.append(f"{row['path']}: frozen B0 oracle changed or missing")
     for directory in ("src/Scripts", "src/Scenes"):
         for path in sorted((root / directory).rglob("*")):
             if path.suffix not in (".gd", ".tscn", ".tres"):
