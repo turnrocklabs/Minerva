@@ -64,13 +64,12 @@ class ExtractionGateTests(unittest.TestCase):
         path.symlink_to("absent-target")
         self.assertTrue(any("retired implementation returned" in value for value in GATE.violations(root)))
 
-    def test_allowed_comments_and_fixtures(self) -> None:
+    def test_named_saved_data_fields_and_fixtures(self) -> None:
         root = self.fixture()
-        path = root / "src/resources/neutral.gd"
+        path = root / "src/Scripts/UI/Controls/Note.gd"
         path.parent.mkdir(parents=True)
-        path.write_text("extends RefCounted\n# SpreadsheetEditor was retired\nvar marker = 1 # MCPSpreadsheetTools\n")
-        fixture = root / "src/test/fixture.gd"
-        fixture.write_text("var legacy: SpreadsheetEditor\n")
+        path.write_text('note_data["LinkedSpreadsheet"] = linked_spreadsheet\n')
+        (root / "src/test/fixture.gd").write_text("var legacy: SpreadsheetEditor\n")
         self.assertEqual(GATE.violations(root), [])
 
     def test_unledgered_asset(self) -> None:
@@ -78,13 +77,42 @@ class ExtractionGateTests(unittest.TestCase):
         path = root / "src/assets/icons/spreadsheet/unledgered.svg"
         path.parent.mkdir(parents=True)
         path.write_text("<svg/>\n")
-        self.assertTrue(any("unledgered spreadsheet asset" in value for value in GATE.violations(root)))
+        self.assertTrue(any("unledgered spreadsheet artifact" in value for value in GATE.violations(root)))
 
     def test_shipped_skill_legacy_tool(self) -> None:
+        for prefix in ["Instructions:\n", "\t"]:
+            with self.subTest(prefix=repr(prefix)):
+                root = self.fixture()
+                tools = json.loads((root / "src/test/fixtures/spreadsheet_contract/tools.json").read_text())
+                tool = tools[0]["name"]
+                (root / "src/Data/master.dct").write_text(json.dumps({"type": "skill", "tool_deps": [prefix + tool]}) + "\n")
+                self.assertTrue(any("legacy skill tool " + tool in value for value in GATE.violations(root)))
+
+    def test_triple_quoted_string_before_reference(self) -> None:
         root = self.fixture()
-        tools = json.loads((root / "src/test/fixtures/spreadsheet_contract/tools.json").read_text())
-        (root / "src/Data/master.dct").write_text(json.dumps({"type": "skill", "steps": "Instructions:\n" + tools[0]["name"], "tool_deps": ["\t" + tools[-1]["name"]]}) + "\n")
-        self.assertTrue(any("legacy skill tool" in value for value in GATE.violations(root)))
+        path = root / "src/resources/neutral.gd"
+        path.parent.mkdir(parents=True)
+        for value in ['var probe = ["""a"#b""", SpreadsheetEditor]\n',
+                      'var text = """first\n"#inside\nlast"""\nvar bad: SpreadsheetEditor\n']:
+            with self.subTest(value=value):
+                path.write_text(value)
+                self.assertTrue(any("implementation reference" in item for item in GATE.violations(root)))
+
+    def test_asset_outside_asset_directory(self) -> None:
+        root = self.fixture()
+        path = root / "src/resources/spreadsheet_new.svg"
+        path.parent.mkdir(parents=True)
+        path.write_text("<svg/>\n")
+        self.assertTrue(any("unledgered spreadsheet artifact" in value for value in GATE.violations(root)))
+
+    def test_runtime_comments_are_rejected(self) -> None:
+        for suffix, comment in [(".gd", "#"), (".tscn", ";"), (".tres", ";")]:
+            with self.subTest(suffix=suffix):
+                root = self.fixture()
+                path = root / ("src/resources/neutral" + suffix)
+                path.parent.mkdir(parents=True)
+                path.write_text(comment + " SpreadsheetEditor was retired\n")
+                self.assertTrue(any("implementation reference" in value for value in GATE.violations(root)))
 
     def test_missing_ledger_row(self) -> None:
         root = self.fixture()

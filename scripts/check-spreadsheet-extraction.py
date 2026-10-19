@@ -18,9 +18,13 @@ LEGACY_LINES = {
         'note.linked_spreadsheet = note_data.get("LinkedSpreadsheet", "")',
     },
 }
-# Presentation consumes the same public icon UID after its B4 relocation.
 RUNTIME_EXCLUSIONS = ("src/test", "src/.godot")
-SHARED_ASSETS = {"src/assets/icons/spreadsheet_icon_white_no_bg_24.png",
+# Opaque compatibility/recovery resources; Presentation retains the relocated icon UID.
+ALLOWED_ARTIFACTS = {"src/Scripts/Services/Plugins/SpreadsheetSession.gd",
+                    "src/Scripts/Services/Plugins/LegacySpreadsheetNote.gd",
+                    "src/Scripts/UI/Controls/SpreadsheetRecovery.gd",
+                    "src/Scenes/SpreadsheetRecovery.tscn",
+                    "src/assets/icons/spreadsheet_icon_white_no_bg_24.png",
                  "src/assets/icons/spreadsheet_icon_white_no_bg_24.png.import"}
 
 
@@ -58,19 +62,14 @@ def violations(root: Path) -> list[str]:
     for path in sorted((root / "src").rglob("*")):
         if any(path.is_relative_to(root / excluded) for excluded in RUNTIME_EXCLUSIONS):
             continue
+        name = path.relative_to(root).as_posix()
+        if path.is_file() and "spreadsheet" in name.lower() and name.removesuffix(".uid") not in ALLOWED_ARTIFACTS:
+            findings.append(f"{name}: unledgered spreadsheet artifact")
         if path.suffix not in (".gd", ".tscn", ".tres"):
             continue
-        name = path.relative_to(root).as_posix()
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            # Keep literal resource paths but discard comments, including inline ones.
-            code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|#[^\n]*',
-                          lambda match: "" if match[0].startswith("#") else match[0], line)
+        for number, code in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if domain.search(code) and code.strip() not in LEGACY_LINES.get(name, set()):
                 findings.append(f"{name}:{number}: retired spreadsheet implementation reference")
-    for path in sorted((root / "src/assets").rglob("*")):
-        name = path.relative_to(root).as_posix()
-        if path.is_file() and "spreadsheet" in name.lower() and name not in SHARED_ASSETS:
-            findings.append(f"{name}: unledgered spreadsheet asset")
     fixture = root / "src/test/fixtures/spreadsheet_contract/tools.json"
     legacy_tools = {tool["name"] for tool in json.loads(fixture.read_text(encoding="utf-8"))}
     for path in sorted((root / "src/Data").glob("*.dct")):
