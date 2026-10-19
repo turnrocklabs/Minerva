@@ -136,3 +136,5 @@ Minerva is built on the shoulders of these open-source projects:
 - **EIRTeam.FFmpeg** by Alex Roman / EIRTeam (MIT) — Godot FFmpeg integration
 - **FFmpeg** by the FFmpeg developers (LGPL 2.1) — audio/video codecs
 - **godot-cpp** by Godot Engine contributors (MIT) — C++ GDExtension bindings
+
+Opt-in scene reload supports paired transient state hooks; file and project saves retain the existing save/load contract.

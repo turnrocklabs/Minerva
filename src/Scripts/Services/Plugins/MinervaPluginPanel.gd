@@ -128,6 +128,12 @@ func _on_panel_load_request(_document: Dictionary) -> void:
 	pass
 
 
+## Live reload may optionally implement BOTH _on_panel_capture_live_state()
+## -> Dictionary and _on_panel_restore_live_state(state: Dictionary) -> bool.
+## These carry transient UI/history state only. File/project saves still use
+## the save/load hooks above; panels without the pair keep that reload path.
+
+
 ## Receive an asynchronous push from the plugin server.
 ## Default: warn-and-drop.  Override and switch on `channel` to handle each
 ## message type your plugin pushes.

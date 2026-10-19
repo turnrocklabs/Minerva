@@ -141,6 +141,7 @@ HERMETIC_TESTS=(
 	test/test_plugin_manager_hot_reload.gd
 	test/test_plugin_live_swap_store.gd
 	test/test_plugin_live_swap.gd
+	test/test_plugin_live_state.gd
 	test/test_plugin_live_reload.gd
 	test/test_plugin_generation_cleanup.gd
 	test/test_plugin_live_actions.gd

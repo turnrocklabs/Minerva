@@ -437,6 +437,33 @@ static func invoke_load(panel_root: Node, document: Variant) -> bool:
 	return true
 
 
+## Optional paired hooks for in-memory reload state, never file/project saves.
+## A partial pair refuses reload; a panel with neither hook keeps save/load.
+static func invoke_capture_live_state(panel_root: Node) -> Variant:
+	if panel_root == null:
+		return null
+	var captures: bool = panel_root.has_method("_on_panel_capture_live_state")
+	var restores: bool = panel_root.has_method("_on_panel_restore_live_state")
+	if captures != restores:
+		return null
+	return panel_root.call("_on_panel_capture_live_state") if captures else invoke_save(panel_root, {})
+
+
+static func invoke_restore_live_state(panel_root: Node, state: Variant) -> bool:
+	if panel_root == null:
+		return false
+	var captures: bool = panel_root.has_method("_on_panel_capture_live_state")
+	var restores: bool = panel_root.has_method("_on_panel_restore_live_state")
+	if captures != restores:
+		return false
+	if not restores:
+		return invoke_load(panel_root, state)
+	if not state is Dictionary:
+		return false
+	var result: Variant = panel_root.call("_on_panel_restore_live_state", state)
+	return result is bool and result
+
+
 ## Scope the verb to the hook without adding host fields to opaque user data.
 static func invoke_document_handoff(panel_root: Node, document: Dictionary, action: String) -> bool:
 	if not is_instance_valid(panel_root) or action not in ["open", "import", "create"]:
