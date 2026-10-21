@@ -242,8 +242,20 @@ func _run() -> void:
 	next_boot.free()
 	var saved_service: Node = manager._scene_reload
 	manager._scene_reload = boot
+	# The real panel checks marketplace updates on open. Keep that request
+	# local and finish it before freeing the panel and its manager.
+	var update_helpers = load("res://test/marketplace_test_helpers.gd").new(get_tree())
+	var update_serve := ProjectSettings.globalize_path("user://live-update-http")
+	_write(update_serve.path_join("registry.json"), JSON.stringify({"plugins": [
+		{"id": IDS[0], "version": "1.0.100"}]}))
+	var update_listener := TCPServer.new()
+	check(update_listener.listen(0, "127.0.0.1") == OK, "reserve manager update fixture port")
+	var update_port := update_listener.get_local_port()
+	update_listener.stop()
+	check(await update_helpers.start_http_server(update_serve, update_port), "manager update registry starts locally")
 	var manager_panel: Control = load("res://Scenes/PluginManagerPanel.tscn").instantiate()
 	manager_panel._pm_override = manager
+	manager_panel.update_registry_url = "http://127.0.0.1:%d/registry.json" % update_port
 	add_child(manager_panel)
 	manager_panel._selected_plugin_id = closed_id
 	manager_panel._populate_detail_panel(closed_id)
@@ -297,7 +309,14 @@ func _run() -> void:
 	check(DirAccess.rename_absolute(selector_tmp, selector_tmp + ".retained-blocker") == OK,
 		"preserve selector fault outside its active filename")
 	selector_boot.free()
+	var update_deadline := Time.get_ticks_msec() + 5000
+	while manager_panel._update_checking and Time.get_ticks_msec() < update_deadline:
+		await get_tree().process_frame
+	check(not manager_panel._update_checking
+		and manager_panel._update_entries.get(IDS[0], {}).get("version", "") == "1.0.100",
+		"real manager panel finishes the fixture update listing before teardown")
 	manager_panel.free()
+	update_helpers.teardown()
 	manager._scene_reload = saved_service
 	boot.free()
 	manager.get_db().remove(closed_id)
