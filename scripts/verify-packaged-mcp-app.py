@@ -32,7 +32,7 @@ BRIDGE_TIMEOUT_SECONDS = 360
 
 
 @contextmanager
-def _required_releases() -> Iterator[str | None]:
+def _required_releases(served_repositories: list[str] | None = None) -> Iterator[str | None]:
     """Serve CI's per-repository snapshot through the same paged API paths."""
     snapshot = os.environ.get("MINERVA_REQUIRED_RELEASES_JSON")
     if not snapshot:
@@ -66,6 +66,8 @@ def _required_releases() -> Iterator[str | None]:
             if repo not in releases_by_repo:
                 self.send_error(404)
                 return
+            if served_repositories is not None:
+                served_repositories.append(repo)
             releases = releases_by_repo[repo]
             body = json.dumps(releases[(page - 1) * count:page * count]).encode("utf-8")
             self.send_response(200)
