@@ -71,6 +71,14 @@ func _run() -> void:
 			return
 		definition.auto_reload = true
 		definition.state = PluginDefinition.State.RUNNING
+	var source_alias := ProjectSettings.globalize_path("user://linked-plugin-source")
+	var user_directory := DirAccess.open("user://")
+	check(user_directory.create_link(ProjectSettings.globalize_path("user://plugins/" + IDS[0]), source_alias) == OK,
+		"create real plugin-controlled source link beneath the profile")
+	var alias_store := Store.new("linked_refusal", source_alias)
+	var alias_build := alias_store.bundle({"marker.txt": "must not publish".to_utf8_buffer()})
+	check(not alias_store.archive(alias_build).ok and not DirAccess.dir_exists_absolute(alias_store.directory),
+		"textual profile prefix cannot authorize a plugin-controlled link")
 	for index: int in 3:
 		var plugin_id := IDS[0] if index < 2 else IDS[1]
 		var verb: String = ["create", "open", "import"][index]
