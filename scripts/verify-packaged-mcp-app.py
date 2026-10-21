@@ -32,7 +32,8 @@ BRIDGE_TIMEOUT_SECONDS = 360
 
 
 @contextmanager
-def _required_releases(served_repositories: list[str] | None = None) -> Iterator[str | None]:
+def _required_releases(served_repositories: list[str] | None = None,
+                       served_assets: list[str] | None = None) -> Iterator[str | None]:
     """Serve CI's per-repository snapshot through the same paged API paths."""
     snapshot = os.environ.get("MINERVA_REQUIRED_RELEASES_JSON")
     if not snapshot:
@@ -49,9 +50,31 @@ def _required_releases(served_repositories: list[str] | None = None) -> Iterator
             raise ValueError("required-release repository must contain an array of pages")
         releases_by_repo[repo] = [release for page in pages for release in page]
 
+    # Only the Sheets probe opts into download observation. Redirect to the
+    # original published URL, leaving the real archive and checksum untouched.
+    asset_urls: dict[str, str] = {}
+    if served_assets is not None:
+        for releases in releases_by_repo.values():
+            for release in releases:
+                for asset in release.get("assets", []):
+                    url = asset.get("browser_download_url", "")
+                    if url:
+                        path = f"/assets/{len(asset_urls)}"
+                        asset_urls[path] = url
+                        asset["browser_download_url"] = path
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             url = urlsplit(self.path)
+            if url.path in asset_urls:
+                original = asset_urls[url.path]
+                if served_assets is not None:
+                    served_assets.append(original)
+                self.send_response(302)
+                self.send_header("Location", original)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             try:
                 query = parse_qs(url.query, strict_parsing=True, keep_blank_values=True)
                 page = int(query.get("page", ["1"])[0])
@@ -80,6 +103,13 @@ def _required_releases(served_repositories: list[str] | None = None) -> Iterator
             pass
 
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        if served_assets is not None:
+            for releases in releases_by_repo.values():
+                for release in releases:
+                    for asset in release.get("assets", []):
+                        path = asset.get("browser_download_url", "")
+                        if path in asset_urls:
+                            asset["browser_download_url"] = f"http://127.0.0.1:{server.server_port}{path}"
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:

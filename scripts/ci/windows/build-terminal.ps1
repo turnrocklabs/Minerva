@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot '../../..'))
 cd src
-scons --debug=explain platform=windows target=template_release
+scons platform=windows target=template_release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-scons --debug=explain platform=windows target=template_debug
+scons platform=windows target=template_debug
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

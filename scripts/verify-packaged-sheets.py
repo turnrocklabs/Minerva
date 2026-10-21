@@ -17,15 +17,61 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, TypedDict
 from urllib.error import URLError
 
 PROBE_TIMEOUT_SECONDS = 300
-SHEETS_VERSION = "0.1.2"
 REPOSITORIES = {"turnrocklabs/Minerva", "imrans-lab/minerva-plugins"}
 CSV_BYTES = "Name,Value\nZoë,5\n李,7".encode()
 CSV_DATA = [["Name", "Value"], ["Zoë", 5], ["李", 7]]
 MCP_PORT = 9315
+SHEETS_TOOLS = {"minerva_sheets_create_editor", "minerva_sheets_get_data"}
+
+
+class SheetsRelease(TypedDict):
+    version: str
+    downloads: dict[str, str]
+
+
+def expected_sheets(snapshot: Path) -> SheetsRelease:
+    """Independent expectation from the stable releases in CI's served catalog."""
+    catalog = json.loads(snapshot.read_text(encoding="utf-8"))
+    releases = [release for page in catalog.get("imrans-lab/minerva-plugins", []) for release in page
+                if release.get("tag_name", "").startswith("sheets-v")
+                and not release.get("draft") and not release.get("prerelease")]
+    if not releases:
+        raise ValueError("Required-release catalog has no stable Sheets release")
+
+    def version_key(release: dict[str, Any]) -> tuple[int, int, int]:
+        version = release["tag_name"].removeprefix("sheets-v")
+        match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\+[^\s]+)?", version)
+        if match is None:
+            raise ValueError(f"Unsupported stable Sheets release version: {version}")
+        return int(match[1]), int(match[2]), int(match[3])
+
+    newest = max(releases, key=version_key)
+    version = newest["tag_name"].removeprefix("sheets-v")
+    prefix = f"sheets-{version}-"
+    return {"version": version, "downloads": {
+        asset["name"].removeprefix(prefix).removesuffix(".tar.gz"): asset["browser_download_url"]
+        for asset in newest.get("assets", [])
+        if asset.get("name", "").startswith(prefix) and asset["name"].endswith(".tar.gz")}}
+
+
+def expected_asset(release: SheetsRelease, system: str, machine: str) -> str:
+    arm = machine.lower() in {"arm64", "aarch64"}
+    if system == "darwin":
+        targets = ["macos-arm64" if arm else "macos-amd64", "macos-universal"]
+    elif system == "win32":
+        targets = ["windows-x86_64"]
+    elif system.startswith("linux"):
+        targets = ["linux-arm64" if arm else "linux-x86_64"]
+    else:
+        raise ValueError(f"Unsupported probe platform: {system}/{machine}")
+    for target in targets:
+        if target in release["downloads"]:
+            return release["downloads"][target]
+    raise ValueError(f"Sheets {release['version']} has no asset for {targets}")
 
 
 def helpers(root: Path) -> ModuleType:
@@ -132,23 +178,56 @@ def hello(process: subprocess.Popen[str], deadline: float) -> MCPClient:
     return client
 
 
+def policy_ready(client: MCPClient) -> bool:
+    reply = client.call("minerva_policy_reload", {}, allow_error=True)
+    if reply.get("success") is True:
+        return True
+    if reply.get("error_code") == "docket_not_ready" and reply.get("retryable") is True:
+        return False
+    raise RuntimeError(f"Docket policy readiness failed: {reply}")
+
+
+def provider_running(reply: dict[str, Any]) -> bool:
+    status = reply.get("status", {})
+    if status.get("state_name") in {"BUILD_FAILED", "NEEDS_BINARY", "CRASH_LOOP", "ERROR"}:
+        raise RuntimeError(f"Required Sheets cannot start: {reply}")
+    if reply.get("error"):
+        # Absence is expected while required-plugin pickup installs Sheets.
+        if reply.get("error") == "Plugin 'sheets' not found":
+            return False
+        raise RuntimeError(f"Required Sheets inspection failed: {reply}")
+    if status.get("running") is True:
+        return True
+    if status.get("state_name") in {"INSTALLED", "STARTING", "BUILDING"}:
+        return False
+    raise RuntimeError(f"Required Sheets is not pending or running: {reply}")
+
+
+def wait_for_exit(process: subprocess.Popen[str], timeout: float = 10) -> None:
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
 def verify_provider(client: MCPClient, user: Path, fixture: Path,
-                    inspected: dict[str, Any], served: list[str]) -> None:
+                    inspected: dict[str, Any], served: list[str],
+                    release: SheetsRelease, downloaded: list[str]) -> None:
     require(REPOSITORIES <= set(served), "public catalog fetches both declared repositories")
-    require(inspected.get("version") == SHEETS_VERSION
-            and inspected.get("status", {}).get("running") is True, "required Sheets 0.1.2 is running")
+    require(inspected.get("version") == release["version"]
+            and inspected.get("status", {}).get("running") is True,
+            f"required Sheets {release['version']} from the served catalog is running")
     records = json.loads((user / "plugins/plugins.json").read_text(encoding="utf-8"))["plugins"]
     definition = next(record for record in records if record.get("id") == "sheets")
-    require(definition.get("version") == SHEETS_VERSION and definition.get("install_lane") == "marketplace"
+    require(definition.get("version") == release["version"] and definition.get("install_lane") == "marketplace"
             and definition.get("autostart") is True and definition.get("auto_update") is True,
             "installed required provider has first-install choices")
-    manifest = json.loads((user / "plugins/sheets/manifest.json").read_text(encoding="utf-8"))
-    if sys.platform == "darwin":
-        require(platform.machine() == "arm64" and "macos-universal" in manifest.get("release_targets", []),
-                "macOS arm64 installed the universal release")
+    asset = expected_asset(release, sys.platform, platform.machine())
+    sheets_downloads = set(downloaded) & set(release["downloads"].values())
+    require(sheets_downloads == {asset}, f"installed Sheets requested the platform's expected asset: {asset}")
     tools = {tool["name"] for tool in inspected.get("tools", [])}
-    require(len(tools) == 30 and {"minerva_sheets_create_editor", "minerva_sheets_get_data"} <= tools,
-            "installed Sheets 0.1.2 exposes its 30 tools")
+    require(SHEETS_TOOLS <= tools, f"installed Sheets exposes the tools this probe calls: {sorted(SHEETS_TOOLS)}")
     csv = fixture / "required-source.csv"
     opened = client.call("minerva_sheets_create_editor", {"name": "Required CSV provider", "file_path": str(csv)})
     data = client.call("minerva_sheets_get_data", {"editor_name": opened.get("editor_name", ""), "format": "json"})
@@ -183,11 +262,15 @@ def main() -> int:
         raise ValueError("App must be an executable file")
     if not args.hello_only and not os.environ.get("MINERVA_REQUIRED_RELEASES_JSON"):
         raise ValueError("Published probe requires MINERVA_REQUIRED_RELEASES_JSON")
-    require_free_port(MCP_PORT)
     probe = helpers(root)
     args.logs.mkdir(parents=True, exist_ok=True)
     served: list[str] = []
-    with probe._private_profile() as profile, probe._required_releases(served) as base:
+    downloaded: list[str] = []
+    with probe._private_profile() as profile, probe._required_releases(served, downloaded) as base:
+        # Validate the snapshot first: malformed input must fail independently
+        # of another Minerva instance owning the public port on this machine.
+        release = expected_sheets(Path(os.environ["MINERVA_REQUIRED_RELEASES_JSON"])) if not args.hello_only else None
+        require_free_port(MCP_PORT)
         env = os.environ.copy()
         probe._seed_profile(profile.root, env)
         env["MINERVA_REQUIRED_RELEASES_URL"] = base or "http://127.0.0.1:9"
@@ -211,20 +294,27 @@ def main() -> int:
             try:
                 client = hello(process, deadline)
                 if not args.hello_only:
-                    wait_for(lambda: client.call("minerva_policy_reload", {}, allow_error=True).get("success") is True,
+                    wait_for(lambda: policy_ready(client),
                              process, "Docket policy readiness", min(deadline, time.monotonic() + 90))
                     inspected: dict[str, Any] = {}
 
                     def running() -> bool:
                         nonlocal inspected
                         inspected = client.call("minerva_plugin_inspect", {"id": "sheets", "include": ["tools"]}, allow_error=True)
-                        return inspected.get("status", {}).get("running") is True
+                        return provider_running(inspected)
 
                     wait_for(running, process, "required Sheets pickup and start", min(deadline, time.monotonic() + 60))
-                    verify_provider(client, user, fixture, inspected, served)
+                    assert release is not None
+                    verify_provider(client, user, fixture, inspected, served, release, downloaded)
             finally:
-                probe._terminate_tree(process)
-                process.wait(timeout=10)
+                failed = sys.exc_info()[0] is not None
+                try:
+                    probe._terminate_tree(process)
+                    wait_for_exit(process)
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    if not failed:
+                        raise
+                    print(f"App cleanup also failed: {error}", file=sys.stderr)
                 output.flush()
                 print(log.read_text(encoding="utf-8", errors="replace"), flush=True)
         fatal = re.search(r"SCRIPT ERROR:|Can't open dynamic library|Error loading extension", log.read_text(encoding="utf-8", errors="replace"))
