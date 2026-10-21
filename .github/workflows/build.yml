@@ -244,35 +244,42 @@ jobs:
     steps: *windows-native-steps
 
   build-linux:
-    timeout-minutes: 3
-    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
+    # Cache-creation run 26488257269 took 11m36s in Build Extension;
+    # its 15m16s total included 2m09s of retired godot_wry steps.
+    timeout-minutes: 16
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
     runs-on: ubuntu-latest
-    steps:
+    steps: &linux-native-steps
     - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
 
-    - name: Cache SCons build
+    - name: Setup Python and SCons
+      id: native-python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+    - run: pip install scons==4.11.1
+
+    - name: Identify native runner image
+      id: native-image
+      run: |
+        : "${ImageVersion:?Runner ImageVersion is unavailable}"
+        echo "version=$ImageVersion" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Linux native build
       uses: actions/cache@v4
       with:
         path: |
           src/.sconsign.dblite
           src/**/*.os
           src/**/*.obj
-        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
-        restore-keys: |
-          ${{ runner.os }}-scons-
-
-    - name: Cache godot-cpp
-      uses: actions/cache@v4
-      with:
-        path: |
           src/godot-cpp/bin/**
           src/godot-cpp/gen/**
-        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        key: Linux-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json') }}
         restore-keys: |
-          ${{ runner.os }}-godot-cpp-
+          Linux-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
 
     - name: Setup Zig
       run: |
@@ -295,14 +302,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: src/gdextension/terminal/ghostty-shim/.zig-cache
-        key: zig-linux-x86_64-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
-        restore-keys: zig-linux-x86_64-
-
-    - name: Setup Python and SCons
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-    - run: pip install scons
+        key: zig-linux-x86_64-0.15.2-${{ steps.native-image.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-linux-x86_64-0.15.2-${{ steps.native-image.outputs.version }}-
 
     - name: Install Linux Dependencies
       run: |
@@ -334,6 +335,12 @@ jobs:
           src/bin/libterminal*
           src/bin/libminerva-vt.so
 
+  build-linux-push:
+    timeout-minutes: 3
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps: *linux-native-steps
+
   # ── Functional regression test suite (RCA 019e46b5) ──────────────────────
   # CI ran zero tests before this job. Runs the hermetic substrate tier
   # (F1-F6) — fixture-plugin tests on the real MCPServerConnection. The
@@ -341,8 +348,8 @@ jobs:
   # left for a manual/nightly run: scripts/run-functional-tests.sh --all.
   functional-tests:
     timeout-minutes: 60
-    needs: [build-linux, build-mcp-schema-helpers, build-godot-cef]
-    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')))
+    needs: [build-linux, build-linux-push, build-mcp-schema-helpers, build-godot-cef]
+    if: github.event_name == 'workflow_dispatch' && always() && needs.build-linux.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && needs.build-godot-cef.result == 'success' && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -572,39 +579,46 @@ jobs:
           if-no-files-found: warn
 
   build-macos:
-    timeout-minutes: 3
-    if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    # Cache-creation run 26488257269 took 15m42s in Build Extension;
+    # its 20m09s total included 2m48s of retired godot_wry steps.
+    timeout-minutes: 20
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all')
     # Pinned to macos-15: macos-latest moved to macos-26 (Xcode 26 SDK), which
     # Zig 0.15.2 cannot link against — the ghostty-vt shim fails with undefined
     # libSystem symbols (_getcwd, _waitpid, _sigaction, ...). Revisit when Zig
     # is upgraded to a version that supports the macOS 26 SDK.
     runs-on: macos-15
-    steps:
+    steps: &macos-native-steps
     - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
 
-    - name: Cache SCons build
+    - name: Setup Python and SCons
+      id: native-python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+    - run: pip install scons==4.11.1
+
+    - name: Identify native runner image
+      id: native-image
+      run: |
+        : "${ImageVersion:?Runner ImageVersion is unavailable}"
+        echo "version=$ImageVersion" >> "$GITHUB_OUTPUT"
+
+    - name: Cache macOS native build
       uses: actions/cache@v4
       with:
         path: |
           src/.sconsign.dblite
           src/**/*.os
           src/**/*.obj
-        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
-        restore-keys: |
-          ${{ runner.os }}-scons-
-
-    - name: Cache godot-cpp
-      uses: actions/cache@v4
-      with:
-        path: |
           src/godot-cpp/bin/**
           src/godot-cpp/gen/**
-        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        key: macOS-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json') }}
         restore-keys: |
-          ${{ runner.os }}-godot-cpp-
+          macOS-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
 
     - name: Setup Zig
       run: |
@@ -625,14 +639,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: src/gdextension/terminal/ghostty-shim/.zig-cache
-        key: zig-macos-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
-        restore-keys: zig-macos-
-
-    - name: Setup Python and SCons
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-    - run: pip install scons
+        key: zig-macos-0.15.2-${{ steps.native-image.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-macos-0.15.2-${{ steps.native-image.outputs.version }}-
 
     - name: Build ghostty-vt shim (universal)
       working-directory: src/gdextension/terminal/ghostty-shim
@@ -676,6 +684,12 @@ jobs:
           src/bin/libterminal*
           src/bin/libminerva-vt.dylib
 
+  build-macos-push:
+    timeout-minutes: 3
+    if: github.event_name == 'push'
+    runs-on: macos-15
+    steps: *macos-native-steps
+
   # ─── macOS Godot export — runs on macos-latest so Godot's exporter can
   # bundle GDExtension Frameworks correctly. The previous setup ran the
   # macOS export from ubuntu-latest in build-godot, which produced a stub
@@ -685,8 +699,8 @@ jobs:
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
     timeout-minutes: 60
-    needs: [check-gdextension, build-macos, build-mcp-schema-helpers]
-    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push'))
+    needs: [check-gdextension, build-macos, build-macos-push, build-mcp-schema-helpers]
+    if: github.event_name == 'workflow_dispatch' && always() && needs.check-gdextension.result == 'success' && needs.build-macos.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all')
     continue-on-error: true
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
@@ -1257,7 +1271,7 @@ jobs:
       contents: read
       actions: read
     timeout-minutes: 5
-    needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-mcp-schema-helpers, build-godot-cef]
+    needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-linux-push, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
@@ -1679,8 +1693,8 @@ jobs:
   # SubProcess launching against this run's Windows builds. (The env context
   # is not available to a reusable-workflow call; keep equal to GODOT_VERSION.)
   platform-gate-windows:
-    needs: [build-windows, build-godot-cef, build-mcp-schema-helpers]
-    if: github.event_name == 'workflow_dispatch' && ((github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push'))
+    needs: [build-windows, build-windows-push, build-godot-cef, build-mcp-schema-helpers]
+    if: github.event_name == 'workflow_dispatch' && always() && needs.build-windows.result == 'success' && needs.build-godot-cef.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all')
     uses: ./.github/workflows/platform-gate-windows.yml
     with:
       godot_version: "4.6.2"
