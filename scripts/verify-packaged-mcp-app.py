@@ -171,13 +171,14 @@ def _phases(text: str) -> list[str]:
 def _process_snapshot(pid: int) -> str:
     if os.name == "nt":
         command = ["powershell", "-NoProfile", "-Command",
+                   "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
                    "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq %d -or "
                    "$_.ParentProcessId -eq %d } | Format-Table -AutoSize ProcessId, "
                    "ParentProcessId, Name, CreationDate | Out-String -Width 200" % (pid, pid)]
     else:
         command = ["ps", "-A", "-o", "pid=,ppid=,stat=,etime=,comm="]
     try:
-        listing = subprocess.run(command, capture_output=True, text=True, timeout=10,
+        listing = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=10,
                                  check=False).stdout
     except (OSError, subprocess.TimeoutExpired) as error:
         return f"unavailable: {error}"
@@ -223,7 +224,7 @@ def _stop_private_docket(root: Path) -> None:
         if type(pid) is not int or pid <= 1:
             raise RuntimeError("private Docket registration has invalid pid")
         command = subprocess.run(["ps", "-p", str(pid), "-o", "comm="],
-                                 capture_output=True, text=True, timeout=5, check=False)
+                                 capture_output=True, text=True, encoding="utf-8", timeout=5, check=False)
         if command.returncode == 1:
             continue  # Already exited; no PID is signalled.
         if command.returncode != 0 or not Path(command.stdout.strip()).name.lower().startswith("docket"):

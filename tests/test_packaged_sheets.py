@@ -17,12 +17,17 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("packaged_sheets", ROOT / "scripts/verify-packaged-sheets.py")
 assert SPEC is not None and SPEC.loader is not None
 PROBE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROBE)
+PREFETCH_SPEC = importlib.util.spec_from_file_location("prefetch", ROOT / "scripts/prefetch-required-releases.py")
+assert PREFETCH_SPEC is not None and PREFETCH_SPEC.loader is not None
+PREFETCH = importlib.util.module_from_spec(PREFETCH_SPEC)
+PREFETCH_SPEC.loader.exec_module(PREFETCH)
 
 
 class PackagedSheetsTests(unittest.TestCase):
@@ -106,6 +111,25 @@ class PackagedSheetsTests(unittest.TestCase):
         self.assertIn("minerva_sheets_get_data", self.calls)
         self.assertIn("minerva_plugin_remove", self.calls)
         self.assertEqual(self.calls[-3:], ["minerva_close_editor", "minerva_close_editor", "minerva_plugin_stop"])
+
+    def test_release_fetch_decodes_utf8_and_reports_failed_command(self) -> None:
+        release = [[{"body": "release \u008f"}]]
+        replies = iter([(0, json.dumps(release, ensure_ascii=False).encode("utf-8"), b""),
+                        (7, b"", "permission denied \u008f".encode("utf-8"))])
+        run = subprocess.run
+
+        def gh_output(_command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            code, output, errors = next(replies)
+            # Exercise the real pipe decoder with Windows' fallback on every OS.
+            options.setdefault("encoding", "cp1252")
+            program = (f"import sys; sys.stdout.buffer.write({output!r}); "
+                       f"sys.stderr.buffer.write({errors!r}); sys.exit({code})")
+            return run([sys.executable, "-c", program], **options)
+
+        with mock.patch.object(PREFETCH.subprocess, "run", side_effect=gh_output):
+            self.assertEqual(PREFETCH.fetch_releases(["owner/repo"]), {"owner/repo": release})
+            with self.assertRaisesRegex(RuntimeError, "gh api .*owner/repo.*exit code 7: permission denied \u008f"):
+                PREFETCH.fetch_releases(["owner/repo"])
 
     def test_broken_csv_reply_fails(self) -> None:
         self.replies["minerva_sheets_get_data"] = {"data": [["Name", "Value"], ["Zoë", 500], ["李", 7]]}
