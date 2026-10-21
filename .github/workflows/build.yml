@@ -153,41 +153,47 @@ jobs:
           fi
 
   build-windows:
-    timeout-minutes: 3
-    if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    # The cache-seeding Build Extension took 14m51s (run 26488257269).
+    # A dispatch on development seeds its cache; a cold push fails fast and
+    # needs one dispatch. Keep the push job's three-minute cap below.
+    timeout-minutes: 20
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all')
     runs-on: windows-latest
-    steps:
+    steps: &windows-native-steps
     - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
 
-    - name: Cache SCons build
+    - name: Setup Python and SCons
+      id: native-python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+    - run: pip install scons==4.11.1
+
+    - name: Identify native runner image
+      id: native-image
+      shell: pwsh
+      run: |
+        if (-not $env:ImageVersion) { throw 'Runner ImageVersion is unavailable' }
+        "version=$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
+    # Keep the signatures, generated objects and libraries from one build.
+    # Old source-only exact hits survived toolchain upgrades and could never
+    # be replaced; the separate godot-cpp cache also overwrote generated objects.
+    - name: Cache Windows native build
       uses: actions/cache@v4
       with:
         path: |
           src/.sconsign.dblite
           src/**/*.os
           src/**/*.obj
-        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
-        restore-keys: |
-          ${{ runner.os }}-scons-
-
-    - name: Cache godot-cpp
-      uses: actions/cache@v4
-      with:
-        path: |
           src/godot-cpp/bin/**
           src/godot-cpp/gen/**
-        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        key: Windows-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json', 'scripts/ci/windows/build-terminal.ps1') }}
         restore-keys: |
-          ${{ runner.os }}-godot-cpp-
-
-    - name: Setup Python and SCons
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-    - run: pip install scons
+          Windows-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
 
     # ── ghostty-vt shim (Windows) — DE-RISK STEP ──────────────────────────
     # The Windows terminal historically shipped without ghostty-vt entirely
@@ -230,6 +236,12 @@ jobs:
         path: |
           src/bin/libterminal*
           src/bin/minerva-vt.dll
+
+  build-windows-push:
+    timeout-minutes: 3
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    steps: *windows-native-steps
 
   build-linux:
     timeout-minutes: 3
@@ -1245,7 +1257,7 @@ jobs:
       contents: read
       actions: read
     timeout-minutes: 5
-    needs: [check-gdextension, build-windows, build-linux, build-mcp-schema-helpers, build-godot-cef]
+    needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
