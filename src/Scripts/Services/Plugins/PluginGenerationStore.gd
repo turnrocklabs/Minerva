@@ -16,6 +16,8 @@ const HOST_PATHS: Array[String] = [
 
 var directory: String
 var _error: String = ""
+static var _profile_path: String = ""
+static var _profile_real_path: String = ""
 
 
 func _init(plugin_id: String, generations_root: String = "user://plugins/.generations") -> void:
@@ -352,10 +354,49 @@ func _ensure_directory() -> bool:
 
 
 static func _has_link(path: String) -> bool:
+	if path != path.simplify_path():
+		return true
+	if _profile_path.is_empty():
+		_profile_path = OS.get_user_data_dir().simplify_path().trim_suffix("/")
+	if _profile_real_path.is_empty():
+		_profile_real_path = _resolve_profile_root(_profile_path)
+	if _profile_real_path.is_empty():
+		return true
 	var current := path
-	while current != current.get_base_dir():
+	# The OS-selected profile can live below system/home aliases. Only its
+	# root is resolved: plugin-controlled suffixes must retain their links.
+	if path == _profile_path or path.begins_with(_profile_path + "/"):
+		current = _profile_real_path + path.substr(_profile_path.length())
+	var boundary := _profile_real_path if current == _profile_real_path \
+		or current.begins_with(_profile_real_path + "/") else ""
+	while current != current.get_base_dir() and current != boundary:
 		var parent := DirAccess.open(current.get_base_dir())
 		if parent != null and parent.is_link(current.get_file()):
 			return true
 		current = current.get_base_dir()
 	return false
+
+
+## Resolve only the OS-owned root, never a plugin path. Bound link chains so
+## a broken/cyclic profile refuses instead of silently gaining authority.
+static func _resolve_profile_root(path: String) -> String:
+	var resolved := path
+	for _link: int in 40:
+		var current := resolved
+		var suffix := PackedStringArray()
+		var followed := false
+		while current != current.get_base_dir():
+			var parent := DirAccess.open(current.get_base_dir())
+			if parent != null and parent.is_link(current.get_file()):
+				var target := parent.read_link(current.get_file())
+				if target.is_empty():
+					return ""
+				resolved = target if target.is_absolute_path() else current.get_base_dir().path_join(target)
+				resolved = resolved.path_join("/".join(suffix)).simplify_path().trim_suffix("/")
+				followed = true
+				break
+			suffix.insert(0, current.get_file())
+			current = current.get_base_dir()
+		if not followed:
+			return resolved
+	return ""

@@ -32,7 +32,8 @@ BRIDGE_TIMEOUT_SECONDS = 360
 
 
 @contextmanager
-def _required_releases() -> Iterator[str | None]:
+def _required_releases(served_repositories: list[str] | None = None,
+                       served_assets: list[str] | None = None) -> Iterator[str | None]:
     """Serve CI's per-repository snapshot through the same paged API paths."""
     snapshot = os.environ.get("MINERVA_REQUIRED_RELEASES_JSON")
     if not snapshot:
@@ -49,9 +50,31 @@ def _required_releases() -> Iterator[str | None]:
             raise ValueError("required-release repository must contain an array of pages")
         releases_by_repo[repo] = [release for page in pages for release in page]
 
+    # Only the Sheets probe opts into download observation. Redirect to the
+    # original published URL, leaving the real archive and checksum untouched.
+    asset_urls: dict[str, str] = {}
+    if served_assets is not None:
+        for releases in releases_by_repo.values():
+            for release in releases:
+                for asset in release.get("assets", []):
+                    url = asset.get("browser_download_url", "")
+                    if url:
+                        path = f"/assets/{len(asset_urls)}"
+                        asset_urls[path] = url
+                        asset["browser_download_url"] = path
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             url = urlsplit(self.path)
+            if url.path in asset_urls:
+                original = asset_urls[url.path]
+                if served_assets is not None:
+                    served_assets.append(original)
+                self.send_response(302)
+                self.send_header("Location", original)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             try:
                 query = parse_qs(url.query, strict_parsing=True, keep_blank_values=True)
                 page = int(query.get("page", ["1"])[0])
@@ -66,6 +89,8 @@ def _required_releases() -> Iterator[str | None]:
             if repo not in releases_by_repo:
                 self.send_error(404)
                 return
+            if served_repositories is not None:
+                served_repositories.append(repo)
             releases = releases_by_repo[repo]
             body = json.dumps(releases[(page - 1) * count:page * count]).encode("utf-8")
             self.send_response(200)
@@ -78,6 +103,13 @@ def _required_releases() -> Iterator[str | None]:
             pass
 
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        if served_assets is not None:
+            for releases in releases_by_repo.values():
+                for release in releases:
+                    for asset in release.get("assets", []):
+                        path = asset.get("browser_download_url", "")
+                        if path in asset_urls:
+                            asset["browser_download_url"] = f"http://127.0.0.1:{server.server_port}{path}"
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -139,13 +171,14 @@ def _phases(text: str) -> list[str]:
 def _process_snapshot(pid: int) -> str:
     if os.name == "nt":
         command = ["powershell", "-NoProfile", "-Command",
+                   "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
                    "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq %d -or "
                    "$_.ParentProcessId -eq %d } | Format-Table -AutoSize ProcessId, "
                    "ParentProcessId, Name, CreationDate | Out-String -Width 200" % (pid, pid)]
     else:
         command = ["ps", "-A", "-o", "pid=,ppid=,stat=,etime=,comm="]
     try:
-        listing = subprocess.run(command, capture_output=True, text=True, timeout=10,
+        listing = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=10,
                                  check=False).stdout
     except (OSError, subprocess.TimeoutExpired) as error:
         return f"unavailable: {error}"
@@ -191,7 +224,7 @@ def _stop_private_docket(root: Path) -> None:
         if type(pid) is not int or pid <= 1:
             raise RuntimeError("private Docket registration has invalid pid")
         command = subprocess.run(["ps", "-p", str(pid), "-o", "comm="],
-                                 capture_output=True, text=True, timeout=5, check=False)
+                                 capture_output=True, text=True, encoding="utf-8", timeout=5, check=False)
         if command.returncode == 1:
             continue  # Already exited; no PID is signalled.
         if command.returncode != 0 or not Path(command.stdout.strip()).name.lower().startswith("docket"):
