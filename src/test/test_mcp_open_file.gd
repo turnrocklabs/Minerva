@@ -409,7 +409,7 @@ class MockEditor:
 
 ## Minimal reimplementation of the dispatch table from open_file_at_path,
 ## returning a MockEditor so we can assert on editor_kind without a live scene.
-## This mirrors singleton_object.gd's open_file_at_path logic exactly.
+## Spreadsheet reservations below use the real registry rather than this legacy fixture.
 func _resolve_ext_to_kind(abs_path: String) -> String:
 	var lower := abs_path.to_lower()
 	if lower.ends_with(".jpeg") or lower.ends_with(".jpg") or lower.ends_with(".png"):
@@ -418,8 +418,6 @@ func _resolve_ext_to_kind(abs_path: String) -> String:
 		return "PCB"
 	if lower.ends_with(".minkb"):
 		return "KANBAN"
-	if lower.ends_with(".minsheet"):
-		return "SPREADSHEET"
 	# No plugin registry in headless — falls through to TEXT.
 	return "TEXT"
 
@@ -445,8 +443,11 @@ func test_open_file_logic_minkb() -> void:
 
 
 func test_open_file_logic_minsheet() -> void:
-	var kind := _resolve_ext_to_kind(_tmp_dir.path_join("data.minsheet"))
-	check_eq("minsheet → SPREADSHEET", kind, "SPREADSHEET")
+	var registry := PluginEditorRegistry.new()
+	for extension: String in [".minsheet", ".csv", ".tsv", ".xlsx"]:
+		var claim: Dictionary = registry.resolve_file(extension)
+		check(extension + " reserves native Sheets instead of builtin/text fallback", claim.get("plugin_id") == "sheets"
+			and claim.get("panel_name") == "sheets_panel")
 
 
 func test_open_file_logic_idempotent() -> void:

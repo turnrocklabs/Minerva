@@ -72,7 +72,7 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 			return _failure("provider_not_ready: " + owner + ". " + str(manager.get_plugin_status(owner).get("notice", "")))
 		if action not in panel_info.get("file_actions", ["open", "create"]):
 			return _failure("Plugin '%s' does not support '%s' for '%s'" % [owner, action, ext])
-	elif action == "import" and panel_info.get("builtin") != "spreadsheet":
+	elif action == "import":
 		return _failure("no_import_handler_for_extension: " + ext)
 
 	# Reuse a tab only while its actual editor (or shared pair) owns this path.
@@ -87,6 +87,9 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 				break
 	for editor: Editor in existing_editors:
 		if editor.file == abs_path:
+			if editor.type == Editor.Type.PLUGIN_SCENE and (editor.plugin_scene_root == null
+					or not editor.plugin_scene_root.get_meta("_minerva_plugin_panel_load_ok", false)):
+				return _failure("provider_scene_unavailable: use Retry in the existing tab before reopening '%s'" % abs_path)
 			var expected_owner := str(panel_info.get("plugin_id", ""))
 			if not _matches_file_owner(editor, panel_info, abs_path):
 				return _failure("document_owner_changed: close the existing tab before reopening '%s' with '%s'" % [abs_path, expected_owner])
@@ -130,9 +133,6 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 	elif lower.ends_with(".minkb"):
 		result_editor = pane.add(Editor.Type.KANBAN, abs_path)
 		editor_kind = "KANBAN"
-	elif panel_info.get("builtin") == "spreadsheet":
-		result_editor = pane.add(Editor.Type.SPREADSHEET, abs_path)
-		editor_kind = "SPREADSHEET"
 	else:
 
 		if panel_info.has("plugin_id"):
@@ -147,7 +147,7 @@ func open_file_at_path(path: String, action: String = "open") -> Dictionary:
 				result_editor = open_paired.call(abs_path, p_id, p_name, action)
 				editor_kind = "PLUGIN_SCENE_PAIRED_DSL"
 			else:
-				result_editor = pane.add_plugin_scene_editor(p_id, p_name, abs_path, "", action)
+				result_editor = pane.add_plugin_scene_editor(p_id, p_name, abs_path, "", action, true)
 				editor_kind = "PLUGIN_SCENE"
 		else:
 			result_editor = pane.add(Editor.Type.TEXT, abs_path)
@@ -284,8 +284,9 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		# Render editor: anonymous plugin scene, broker attaches the unbacked
 		# buffer so text_changed signals from the TEXT editor flow to the panel
 		# via the substrate-reserved attach_buffer / text_changed channels.
-		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create")
+		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create", true)
 		if render_editor == null:
+			text_editor.free()
 			return _failure("render_editor_creation_failed")
 		var broker: PluginScenePanelBroker = scene_broker
 		if broker != null:
@@ -304,7 +305,7 @@ func create_plugin_editor(args: Dictionary) -> Dictionary:
 		})
 
 	# Non-paired_dsl (single-render) anonymous panel: same as before.
-	var editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create")
+	var editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title, "create", true)
 	if editor == null:
 		return _failure("editor_creation_failed")
 

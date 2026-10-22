@@ -36,10 +36,6 @@ static var editor_scene: PackedScene:
 static var graphics_editor_scene: PackedScene:
 	get: return load("res://Scenes/GraphicsEditorV2.tscn")
 
-static var spreadsheet_editor_scene: PackedScene:
-	get: return load("res://Scenes/SpreadsheetEditor.tscn")
-
-
 signal content_changed()
 signal activity_changed()
 ## The editor was given a document (attachment_revision counts them).
@@ -80,7 +76,6 @@ var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
 var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circular dependency
 var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
-var spreadsheet_editor  # SpreadsheetEditor
 var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
@@ -103,6 +98,8 @@ var plugin_panel_key: String = ""
 ## Set during create() from the panel definition; defaults to "host_owned".
 var plugin_save_mode: String = "host_owned"
 var plugin_write_guidance: String = ""
+var plugin_native_save_extensions: Array[String] = []
+var _plugin_save_prompt_busy: bool = false
 ## Chrome actions the plugin manifest asks Minerva to hide on this PLUGIN_SCENE tab.
 ## Each entry is one of "save_all" | "save" | "create_note" | "inject_toggle".
 ## Populated from manifest panel.chrome.suppress in create_plugin_scene().
@@ -133,6 +130,12 @@ var plugin_chrome_suppress: Array[String] = []
 @onready var text_is_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsIncoplete
 @onready var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
 
+const LEGACY_SPREADSHEET_TYPE: int = 6
+
+# A session that has not been accepted by its provider remains opaque.
+var pending_plugin_entry: Dictionary = {}
+var plugin_restore_busy: bool = false
+
 enum Type {
 	TEXT = 0,
 	GRAPHICS = 1,
@@ -140,7 +143,6 @@ enum Type {
 	PACKAGE = 3,
 	LOGS = 4,
 	KANBAN = 5,
-	SPREADSHEET = 6,
 	VIDEO_EDITOR = 8,
 	ACTIVITY_LOG = 9,
 	WEBVIEW = 10,
@@ -298,7 +300,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = n
 	# so we instantiate here and call create() with a dummy type that we override.
 	# Actually the cleanest path: instantiate directly and run only the PLUGIN_SCENE
 	# branch, mirroring what create() does for other types.
-	var editor = editor_scene.instantiate()
+	var editor: Editor = editor_scene.instantiate()
 	editor.type = Type.PLUGIN_SCENE
 	editor.set_meta("document_action", document_action)
 	editor._pending_file_handoff_action = document_action if file_ != null else ""
@@ -314,55 +316,55 @@ static func create_plugin_scene(p_id: String, p_name: String, file_: Variant = n
 	if file_:
 		editor.file = file_
 
-	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
+	var manager: PluginManager = _get_plugin_manager_safe()
+	editor.mount_plugin_scene(manager)
 
-	if p_id.is_empty() or p_name.is_empty():
+	return editor
+
+
+## Mount a provider surface on this same editor/key, including after Retry.
+func mount_plugin_scene(manager: PluginManager) -> void:
+	var vbox_container: VBoxContainer = get_node("VBoxContainer")
+
+	if plugin_id.is_empty() or panel_name.is_empty():
 		push_error(
 			"[Editor] create_plugin_scene(): plugin_id and panel_name must be non-empty"
 		)
 	else:
 		vbox_container.clip_contents = true
-		var pm = _get_plugin_manager_safe()
+		var pm: PluginManager = manager
 		if pm != null:
 			var db = pm.get_db()
-			var def = db.get_by_id(p_id) if db != null else null
+			var def = db.get_by_id(plugin_id) if db != null else null
 			if def != null:
 				for pd in def.ui_panels:
-					if pd is Dictionary and pd.get("name", "") == p_name:
-						editor.plugin_save_mode = pd.get("save_mode", "host_owned")
-						var panel_def: Dictionary = pd
-						editor.plugin_write_guidance = panel_def.get("write_guidance", "")
-						var cs_raw: Variant = pd.get("chrome_suppress", [])
-						var cs_list: Array[String] = []
-						if cs_raw is Array:
-							for cs_item in (cs_raw as Array):
-								cs_list.append(str(cs_item))
-						editor.plugin_chrome_suppress = cs_list
+					if pd is Dictionary and pd.get("name", "") == panel_name:
+						var panel_definition: Dictionary = pd
+						apply_scene_panel_definition(panel_definition)
 						break
 		var root: Control = PluginScenePanelHost.instantiate_into(
-			vbox_container, p_id, p_name, editor, editor.plugin_panel_key
+			vbox_container, plugin_id, panel_name, self, plugin_panel_key
 		)
-		editor.plugin_scene_root = root
+		self.plugin_scene_root = root
 		if root != null and root.has_signal("content_changed"):
-			root.content_changed.connect(editor._on_editor_changed)
+			root.content_changed.connect(self._on_editor_changed)
 		if pm != null:
 			var tscn_path: String = ""
 			var db2 = pm.get_db()
-			var def2 = db2.get_by_id(p_id) if db2 != null else null
+			var def2 = db2.get_by_id(plugin_id) if db2 != null else null
 			if def2 != null:
 				for pd2 in def2.ui_panels:
-					if pd2 is Dictionary and pd2.get("name", "") == p_name:
+					if pd2 is Dictionary and pd2.get("name", "") == panel_name:
 						var data_dir: String = def2.data_directory
 						var entry_rel: String = pd2.get("entry_scene", "")
 						if not entry_rel.is_empty() and not data_dir.is_empty():
 							tscn_path = data_dir.path_join(entry_rel).simplify_path()
 						break
 			pm.register_live_panel(
-				p_id, p_name, tscn_path, vbox_container, root, editor,
-				editor.plugin_panel_key
+				plugin_id, panel_name, tscn_path, vbox_container, root, self,
+				self.plugin_panel_key
 			)
 
-	return editor
 
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null, initial_setup: = true) -> Editor:
@@ -456,17 +458,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			kanban_widget.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(kanban_widget)
 			editor.kanban_board = kanban_widget
-
-		Editor.Type.SPREADSHEET:
-			var new_spreadsheet_editor = spreadsheet_editor_scene.instantiate()
-			new_spreadsheet_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-
-			if initial_setup:
-				new_spreadsheet_editor.ready.connect(new_spreadsheet_editor.setup)
-				new_spreadsheet_editor.content_changed.connect(editor._on_spreadsheet_editor_changed)
-
-			vbox_container.add_child(new_spreadsheet_editor)
-			editor.spreadsheet_editor = new_spreadsheet_editor
 
 		Editor.Type.VIDEO_EDITOR:
 			vbox_container.clip_contents = true
@@ -622,11 +613,10 @@ func _ready():
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
 			Type.KANBAN: _load_kanban_file(file)
-			Type.SPREADSHEET: _load_spreadsheet_file(file)
 			Type.WEBVIEW: _load_webview_file(file)
 			Type.PLUGIN_SCENE: _load_plugin_scene_file(file)
 
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -761,6 +751,17 @@ func _exit_tree() -> void:
 	# Buffer-canonical: detach from DocumentRegistry. If we were the last
 	# panel attached, the registry disposes the buffer.
 	_detach_document_buffer()
+	release_plugin_scene()
+	# Free any controls contributed by the panel via get_editor_actions().
+	for ctrl in _plugin_contributed_actions:
+		if is_instance_valid(ctrl):
+			ctrl.queue_free()
+	_plugin_contributed_actions.clear()
+
+
+
+## Release native-panel ownership even when a rejected editor never entered the tree.
+func release_plugin_scene() -> void:
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
@@ -768,11 +769,6 @@ func _exit_tree() -> void:
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
 			pm.unregister_live_panel(plugin_id, plugin_panel_key)
-	# Free any controls contributed by the panel via get_editor_actions().
-	for ctrl in _plugin_contributed_actions:
-		if is_instance_valid(ctrl):
-			ctrl.queue_free()
-	_plugin_contributed_actions.clear()
 
 
 func _sync_annotation_dock_layout() -> void:
@@ -860,12 +856,14 @@ func discard_plugin_surface_actions(surface: Control) -> void:
 func accepts_scene_panel_definition(definition: Dictionary) -> bool:
 	return plugin_save_mode == str(definition.get("save_mode", "host_owned")) \
 		and plugin_write_guidance == str(definition.get("write_guidance", "")) \
+		and plugin_native_save_extensions == PluginScenePanelHost.native_save_extensions(definition) \
 		and plugin_chrome_suppress == definition.get("chrome_suppress", [])
 
 
 func apply_scene_panel_definition(definition: Dictionary) -> void:
 	plugin_save_mode = str(definition.get("save_mode", "host_owned"))
 	plugin_write_guidance = str(definition.get("write_guidance", ""))
+	plugin_native_save_extensions = PluginScenePanelHost.native_save_extensions(definition)
 	var suppressed: Array = definition.get("chrome_suppress", [])
 	plugin_chrome_suppress.assign(suppressed)
 	if is_node_ready():
@@ -1319,18 +1317,6 @@ func _load_kanban_file(filename: String) -> void:
 		kanban_board.set_task_store(task_store)
 
 
-func _load_spreadsheet_file(filename: String) -> void:
-	if not spreadsheet_editor:
-		return
-	# Delegate to the canonical importer (SpreadsheetFileHandler dispatches by
-	# extension: csv / tsv / xlsx / minsheet), via the SAME entry point the
-	# editor's File→Import uses. Previously this method hand-rolled a JSON-only
-	# load and silently produced an empty sheet for a .csv. (bug 019e8a30efec)
-	var err: int = spreadsheet_editor.load_file(filename)
-	if err != OK:
-		SingletonObject.ErrorDisplay("Couldn't open spreadsheet", "%s (error %d)" % [filename.get_file(), err])
-
-
 func _load_webview_file(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		SingletonObject.ErrorDisplay("File not found", path)
@@ -1349,6 +1335,8 @@ func _load_webview_file(path: String) -> void:
 ## keys are merged into the document. Otherwise `raw_text` carries the body so
 ## non-JSON plugin formats (.mcad, custom DSLs) can read their own document.
 func _load_plugin_scene_file(path: String) -> void:
+	if not pending_plugin_entry.is_empty():
+		return # A refused session must not be replaced by backing-file replay.
 	if not FileAccess.file_exists(path):
 		SingletonObject.ErrorDisplay("File not found", path)
 		return
@@ -1468,6 +1456,13 @@ func override_save(save_function: Callable) -> void:
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straight away
 func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:	
+	if type == Type.PLUGIN_SCENE:
+		if _plugin_save_prompt_busy:
+			return false
+		_plugin_save_prompt_busy = true
+		_file_saved = false
+		if not file.is_empty() and not PluginScenePanelHost.accepts_save_path(file, plugin_native_save_extensions):
+			new_entry = true
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 	if open_in_this_path != "":
 		$FileDialog.current_path = open_in_this_path
@@ -1477,42 +1472,35 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 			$FileDialog.filters = PackedStringArray(["*.png"])
 		Type.KANBAN:
 			$FileDialog.filters = PackedStringArray(["*.minkb ; Minerva Kanban"])
-		Type.SPREADSHEET:
-			var filters := PackedStringArray()
-			for extension: String in PluginEditorRegistry.SPREADSHEET_SAVE_EXTENSIONS:
-				var label := "Minerva Spreadsheet" if extension == ".minsheet" else "CSV Files"
-				filters.append("*" + extension + " ; " + label)
-			$FileDialog.filters = filters
 		Type.WEBVIEW:
 			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])
 		Type.PLUGIN_SCENE:
-			# Set filter to the plugin's registered extension(s), falling back to all files.
-			var reg = _get_plugin_editor_registry_safe()
-			if reg != null:
-				var exts: Array[String] = reg.list_extensions()
-				var filters: PackedStringArray = PackedStringArray()
-				for ext in exts:
-					filters.append(("*%s ; Plugin file") % ext)
-				if not filters.is_empty():
-					$FileDialog.filters = filters
+			var filters := PackedStringArray()
+			for extension: String in plugin_native_save_extensions:
+				filters.append("*" + extension + " ; Plugin file")
+			$FileDialog.filters = filters
+			if not plugin_native_save_extensions.is_empty():
+				var name_base: String = file.get_file().get_basename() if not file.is_empty() else tab_title.get_basename()
+				var native_dialog: FileDialog = $FileDialog
+				native_dialog.current_file = name_base + plugin_native_save_extensions[0]
 
-	if not prompt_save: return true
+	if not prompt_save: return _finish_save_prompt(true)
 	if not show_save_file_dialog:
 		$CloseDialog.popup_centered(Vector2i(300, 100))
 
 		var should_save = await save_dialog
 		
 		if should_save == DialogResult.CANCEL:
-			return false
+			return _finish_save_prompt(false)
 		elif should_save == DialogResult.CLOSE:
-			return true
+			return _finish_save_prompt(true)
 	
 	if not file:
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
 		if type == Type.TEXT:
 			line_edit.text = tab_title# + "." + SingletonObject.supported_text_formats[0]
-		else:
+		elif type != Type.PLUGIN_SCENE or plugin_native_save_extensions.is_empty():
 			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
@@ -1530,14 +1518,32 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		else:
 			_on_file_dialog_file_selected(file)
 	
+	# FileDialog hides before emitting file_selected; let its synchronous host-owned
+	# save finish before reading the result. Keep overlapping prompts refused.
+	if type == Type.PLUGIN_SCENE:
+		await get_tree().process_frame
+
 	# _file_saved is set when user select a save file in `_on_file_dialog_file_selected`
 	# if we saved the file close the editor, and revert the _file_saved
 	if _file_saved:
 		_file_saved = false
-		return true
+		return _finish_save_prompt(true)
 	# if user canceled the file select dialog, just return to the editor
 	else:
-		return false
+		return _finish_save_prompt(false)
+
+
+func _show_plugin_save_error(message: String) -> void:
+	push_error(message)
+	var dialog: AcceptDialog = $SaveFailure
+	var label: RichTextLabel = $SaveFailure/Message
+	label.text = message
+	dialog.popup_centered(Vector2i(560, 160))
+
+
+func _finish_save_prompt(saved: bool) -> bool:
+	_plugin_save_prompt_busy = false
+	return saved
 
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
@@ -1602,14 +1608,6 @@ func get_saved_state() -> int:
 					state |= ASSOCIATED_OBJECT_SAVED
 		Type.LOGS:
 			if logs_viewer and logs_viewer.is_saved():
-				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
-
-		Type.SPREADSHEET:
-			# For now, spreadsheets are considered saved (no file association yet)
-			if not spreadsheet_editor:
-				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
-			else:
-				# TODO: Add proper save tracking for spreadsheet
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.KANBAN:
@@ -1698,7 +1696,16 @@ func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
 
 
+func _show_pending_sheet_restore() -> void:
+	var manager: PluginManager = _get_plugin_manager_safe()
+	preload("res://Scripts/Services/Plugins/SpreadsheetSession.gd").show_failure(self, manager,
+		"Sheets plugin is unavailable or refused this snapshot; your original data is preserved. File Save was refused.")
+
+
 func save_file_to_disc(path: String) -> bool:
+	if not pending_plugin_entry.is_empty():
+		_show_pending_sheet_restore()
+		return false
 	match type:
 		Type.TEXT:
 			if _document_buffer == null:
@@ -1767,18 +1774,6 @@ func save_file_to_disc(path: String) -> bool:
 					return false
 				save_file.store_string(json_string)
 
-		Type.SPREADSHEET:
-			if spreadsheet_editor:
-				var dict = spreadsheet_editor.serialize()
-				var json_string = JSON.stringify(dict, "\t")
-				var save_file = FileAccess.open(path, FileAccess.WRITE)
-				if save_file == null:
-					var error := error_string(FileAccess.get_open_error())
-					push_warning(error)
-					SingletonObject.ErrorDisplay("Couldn't save spreadsheet file", error)
-					return false
-				save_file.store_string(json_string)
-
 		Type.WEBVIEW:
 			if webview_editor:
 				var save_file = FileAccess.open(path, FileAccess.WRITE)
@@ -1794,6 +1789,9 @@ func save_file_to_disc(path: String) -> bool:
 					_update_note(associated_object)
 
 		Type.PLUGIN_SCENE:
+			if not PluginScenePanelHost.accepts_save_path(path, plugin_native_save_extensions):
+				_show_plugin_save_error("Choose a native format with Save As; the source file is unchanged.")
+				return false
 			if plugin_save_mode == "none":
 				return false
 			if plugin_save_mode == "plugin_owned":
@@ -1807,7 +1805,7 @@ func save_file_to_disc(path: String) -> bool:
 				return false
 			var save_r := PluginScenePanelHost.save_file(self, path, SingletonObject.plugin_scene_panel_broker)
 			if not save_r.ok:
-				SingletonObject.ErrorDisplay("Couldn't save plugin file", save_r.error)
+				_show_plugin_save_error(str(save_r.error))
 				return false
 			_plugin_scene_modified = false
 
@@ -1855,9 +1853,6 @@ func _on_create_note_button_pressed() -> void:
 			new_note = Note.create_text_note(tab_title, code_edit.text)
 		Type.GRAPHICS:
 			new_note = Note.create_image_note(tab_title, await graphics_editor.compose_final_image())
-		Type.SPREADSHEET:
-			var markdown_content: String = spreadsheet_editor.spreadsheet_data.to_markdown()
-			new_note = Note.create_spreadsheet_note(tab_title, tab_title, markdown_content)
 		Type.WEBVIEW:
 			if webview_editor:
 				var html = webview_editor.get_html()
@@ -2192,9 +2187,6 @@ func undo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.undo_command()
-		Type.SPREADSHEET:
-			if spreadsheet_editor:
-				spreadsheet_editor._perform_undo()
 		Type.PLUGIN_SCENE:
 			# The hosted panel owns its history; a reverted step is a content change.
 			if PluginScenePanelHost.invoke_undo(plugin_scene_root):
@@ -2209,9 +2201,6 @@ func redo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.redo_command()
-		Type.SPREADSHEET:
-			if spreadsheet_editor:
-				spreadsheet_editor._perform_redo()
 		Type.PLUGIN_SCENE:
 			if PluginScenePanelHost.invoke_redo(plugin_scene_root):
 				_plugin_scene_modified = true
@@ -2247,7 +2236,7 @@ func _on_mic_button_pressed() -> void:
 
 ## Returns whether or not this editor instance can be turned into a [class Note] objects
 func _supports_note():
-	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PLUGIN_SCENE]
+	return type in [Type.TEXT, Type.GRAPHICS, Type.PLUGIN_SCENE]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
@@ -2275,11 +2264,6 @@ func _create_note() -> Note:
 				push_error("[Editor] compose_final_image() returned null!")
 			note = Note.create_image_note("Editor Note", image)
 			print("[Editor] Image note created: %s" % note)
-		Type.SPREADSHEET:
-			print("[Editor] Creating SPREADSHEET note...")
-			var csv_content = spreadsheet_editor.get_content()
-			note = Note.create_text_note("Spreadsheet Note", csv_content)
-			print("[Editor] Spreadsheet note created: %s" % note)
 		Type.PLUGIN_SCENE:
 			note = await _create_plugin_scene_note()
 
@@ -2452,10 +2436,6 @@ func _update_note(note: Note) -> void:
 		var controls_container = note.get_controls_container() as NoteImageControls
 		controls_container.image = await graphics_editor.compose_final_image()
 
-	elif type == Type.SPREADSHEET:
-		var controls_container = note.get_controls_container() as NoteTextControls
-		controls_container.content = spreadsheet_editor.spreadsheet_data.to_markdown()
-
 	elif type == Type.WEBVIEW:
 		if webview_editor:
 			var html = webview_editor.get_html()
@@ -2593,10 +2573,6 @@ func _on_code_syntax_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_graphics_editor_changed() -> void:
-	content_changed.emit()
-
-
-func _on_spreadsheet_editor_changed() -> void:
 	content_changed.emit()
 
 

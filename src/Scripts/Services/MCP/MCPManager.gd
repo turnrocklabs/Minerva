@@ -707,7 +707,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 
 	if context.is_stopped():
 		return context.stopped_result()
-	var outcome = await connection.call_tool_outcome_with_context(tool_name, arguments, context)
+	var outcome: MCPToolCallOutcome = await connection.call_tool_outcome_with_context(tool_name, arguments, context)
 	if context.is_stopped():
 		return context.stopped_result()
 	if servers.get(server_name) != connection:
@@ -720,12 +720,13 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 			outcome.application = {"error":
 				"Tool result omitted structuredContent required by outputSchema",
 				"error_code": "invalid_result", "success": false}
+			outcome.application = context.fail(outcome.application)
 		else:
 			var output_check: Dictionary = await ToolSchemaRuntime.validate(
 				tool.native_output_schema(),
 				outcome.envelope.original_result.structuredContent)
 			if servers.get(server_name) != connection:
-				return {"error": "Server connection changed during output validation", "success": false}
+				return context.fail({"error": "Server connection changed during output validation", "success": false}, "connection_error")
 			if context.is_stopped():
 				return context.stopped_result()
 			if not output_check.get("ok", false):
@@ -733,6 +734,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 					"Tool structured result does not match its MCP outputSchema",
 					"error_code": str(output_check.get("error", {}).get("code", "invalid_result")),
 					"success": false}
+				outcome.application = context.fail(outcome.application)
 	result = outcome.application
 
 	# Normalize result

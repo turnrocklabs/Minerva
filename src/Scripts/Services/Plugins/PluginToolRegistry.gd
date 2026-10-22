@@ -180,6 +180,11 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 				]
 			}
 
+		var declared_tool: Dictionary = tool_entry
+		var membership: Variant = declared_tool.get("tool_set", "")
+		if not membership is String:
+			return {"error": "tool_set_invalid:%s (tool_set must be a string)" % tool_name}
+
 		# Executor: "panel" tools dispatch host-side to the plugin's live scene
 		# panel; "backend" (default when absent) forwards to the subprocess.
 		# PluginDefinition.validate() already rejects other values — this is
@@ -239,6 +244,7 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 			"input_schema": input_schema,
 			"llm_input_schema": input_schema.duplicate(true),
 			"source": "plugin:%s" % plugin_id,
+			"tool_set": membership,
 			"executor": executor,
 			"mcp_definition": mcp_definition,
 		}
@@ -423,6 +429,13 @@ func _capture_outcome(tool_name: String, args: Dictionary, context: ExecutionCon
 	return {"ok": true}
 
 
+## These owners could not publish a valid result; tool application refusals stay live.
+func _terminal_failure(context: ExecutionContext, message: String, code: String = "") -> ToolCallOutcome:
+	var outcome: ToolCallOutcome = ToolCallOutcome.failure(message, code)
+	outcome.application = context.fail(outcome.application)
+	return outcome
+
+
 func _handle_tool_with_context(tool_name: String, args: Dictionary, context: ExecutionContext) -> Dictionary:
 	var outcome = await _handle_tool_outcome_with_context(tool_name, args, context)
 	return outcome.application
@@ -494,7 +507,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 		registered_entry.get("input_schema", {}))
 	var input_check: Dictionary = await ToolSchemaRuntime.validate(input_schema, args)
 	if plugin_manager.get_connection(plugin_id) != conn:
-		return ToolCallOutcome.failure("Plugin connection changed during input validation")
+		return _terminal_failure(context, "Plugin connection changed during input validation")
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not input_check.get("ok", false):
@@ -506,7 +519,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	else:
 		refused = await plugin_manager.check_backend_tool(plugin_id, dispatch_name, args, "agent", write_binding)
 	if plugin_manager.get_connection(plugin_id) != conn:
-		return ToolCallOutcome.failure("Plugin connection changed while the host checked the call")
+		return _terminal_failure(context, "Plugin connection changed while the host checked the call")
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not refused.is_empty():
@@ -518,14 +531,14 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if plugin_manager.get_connection(plugin_id) != conn:
-		return ToolCallOutcome.failure("Plugin connection changed during tool execution")
+		return _terminal_failure(context, "Plugin connection changed during tool execution")
 	var result: Dictionary = outcome.application
 	if outcome.envelope != null and outcome.envelope.result_type == "complete" \
 			and not outcome.envelope.original_result.get("isError", false) \
 			and outcome.wire_authoritative \
 			and native_definition.has("outputSchema"):
 		if not outcome.envelope.original_result.has("structuredContent"):
-			outcome.application = ToolCallOutcome.failure(
+			outcome.application = _terminal_failure(context,
 				"Plugin result omitted structuredContent required by outputSchema",
 				"invalid_result").application
 			outcome.wire_authoritative = false
@@ -533,11 +546,11 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 		var output_check: Dictionary = await ToolSchemaRuntime.validate(
 			native_definition.outputSchema, outcome.envelope.original_result.structuredContent)
 		if plugin_manager.get_connection(plugin_id) != conn:
-			return ToolCallOutcome.failure("Plugin connection changed during output validation")
+			return _terminal_failure(context, "Plugin connection changed during output validation")
 		if context.is_stopped():
 			return ToolCallOutcome.from_error(context.stopped_result())
 		if not output_check.get("ok", false):
-			outcome.application = ToolCallOutcome.failure(
+			outcome.application = _terminal_failure(context,
 				"Plugin result does not match its MCP outputSchema",
 				str(output_check.get("error", {}).get("code", "invalid_result"))).application
 			outcome.wire_authoritative = false
@@ -748,18 +761,18 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not _panel_call_is_current(
 			plugin_id, tool_name, registered_entry, prepared):
-		return ToolCallOutcome.failure("Panel tool registration changed during input validation")
+		return _terminal_failure(context, "Panel tool registration changed during input validation")
 	if not input_check.get("ok", false):
 		return ToolCallOutcome.failure(
 			"Plugin tool arguments do not match its native MCP schema",
 			str(input_check.get("error", {}).get("code", "invalid_arguments")))
 	var application: Dictionary = await _dispatch_prepared_panel_tool(plugin_id,
-		tool_name, prepared.args, prepared.panel, prepared.editor_name)
+		tool_name, prepared.args, prepared.panel, prepared.editor_name, context)
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not _panel_call_is_current(
 			plugin_id, tool_name, registered_entry, prepared):
-		return ToolCallOutcome.failure("Panel tool registration changed during execution")
+		return _terminal_failure(context, "Panel tool registration changed during execution")
 	var outcome = ToolCallOutcome.new()
 	outcome.application = application
 	outcome.wire_authoritative = false
@@ -770,7 +783,7 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 		return outcome
 	var adapted: Dictionary = NativeWireAdapter.adapt(application)
 	if not adapted.get("ok", false):
-		return ToolCallOutcome.failure(str(adapted.get("error",
+		return _terminal_failure(context, str(adapted.get("error",
 			"Panel tool result is not MCP wire-safe")), "invalid_result")
 	var output_check: Dictionary = await ToolSchemaRuntime.validate(
 		native_definition.outputSchema, adapted.value)
@@ -778,9 +791,9 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not _panel_call_is_current(
 			plugin_id, tool_name, registered_entry, prepared):
-		return ToolCallOutcome.failure("Panel tool registration changed during output validation")
+		return _terminal_failure(context, "Panel tool registration changed during output validation")
 	if not output_check.get("ok", false):
-		return ToolCallOutcome.failure(
+		return _terminal_failure(context,
 			"Plugin result does not match its MCP outputSchema",
 			str(output_check.get("error", {}).get("code", "invalid_result")))
 	outcome.validated_structured_content = adapted.value
@@ -788,7 +801,7 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 
 
 func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: Dictionary,
-		panel: Object, editor_name: String) -> Dictionary:
+		panel: Object, editor_name: String, context: ExecutionContext) -> Dictionary:
 	# --- Policy/audit: same boundary events as backend dispatch ---
 	if audit_log != null:
 		audit_log.log_event(plugin_id, "policy_allow", {
@@ -803,7 +816,7 @@ func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: D
 		})
 
 	# --- Execute (duck-typed, async-capable) ---
-	if not panel.has_method("handle_tool"):
+	if not panel.has_method("handle_tool_with_context") and not panel.has_method("handle_tool"):
 		if audit_log != null:
 			audit_log.log_event(plugin_id, "tool_call_result", {
 				"tool": tool_name,
@@ -813,7 +826,11 @@ func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: D
 			})
 		return PluginErrors.panel_no_handler(plugin_id, editor_name)
 
-	var result: Variant = await panel.handle_tool(tool_name, args)
+	var result: Variant
+	if panel.has_method("handle_tool_with_context"):
+		result = await panel.call("handle_tool_with_context", tool_name, args, context)
+	else:
+		result = await panel.handle_tool(tool_name, args)
 
 	if not (result is Dictionary) or (result as Dictionary).is_empty():
 		if audit_log != null:
@@ -1132,6 +1149,15 @@ func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dict
 		# (bug 019f6d2dc767: this used to clobber them).
 		return _reregister_preserving_panel(plugin_id, [])
 
+	# Membership belongs to the current manifest, never to peer wire metadata.
+	var declared_sets := {}
+	if plugin_manager != null:
+		var database: PluginDB = plugin_manager.get_db()
+		var definition: PluginDefinition = database.get_by_id(plugin_id)
+		if definition != null:
+			for declared: Dictionary in definition.tools:
+				declared_sets[str(declared.get("name", ""))] = declared.get("tool_set", "")
+
 	# Transform each backend tool into a conformant entry dict.
 	var entries: Array[Dictionary] = []
 	for tool_def in raw_tools:
@@ -1154,6 +1180,7 @@ func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dict
 
 		var entry := {
 			"name": namespaced_name,
+			"tool_set": declared_sets.get(namespaced_name, ""),
 			"description": str(tool_def.description) if tool_def.description != null else "",
 			"input_schema": tool_def.input_schema if tool_def.input_schema != null else {"type": "object", "properties": {}},
 			"source": "plugin:%s" % plugin_id,

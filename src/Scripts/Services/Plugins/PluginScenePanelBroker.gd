@@ -1,5 +1,6 @@
 class_name PluginScenePanelBroker
 extends RefCounted
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 const ApplicationError = preload("res://Scripts/Services/MCP/MCPApplicationError.gd")
 ## IPC broker that mediates all communication between plugin Godot-scene panels
 ## and plugin backends / host capabilities.
@@ -752,7 +753,8 @@ func handle_scene_request(
 		payload: Dictionary,
 		reply_id: String,
 		generation: int = 0,
-		bulk: bool = false
+		bulk: bool = false,
+		context: ExecutionContext = null
 ) -> void:
 
 	# --- 1. Basic input validation -------------------------------------------
@@ -798,6 +800,9 @@ func handle_scene_request(
 		})
 		return
 	generation = _entry_generation(entry)
+	if context != null and context.is_stopped():
+		_deliver_error(panel_key, reply_id, context.stopped_result(), generation)
+		return
 
 	# Guard: check that the panel root is still alive (weak ref).
 	if not _is_panel_alive(entry):
@@ -918,7 +923,7 @@ func handle_scene_request(
 
 	var result: Dictionary
 	if channel.begins_with("capability:"):
-		result = await _dispatch_to_capability_broker(plugin_id, channel, payload)
+		result = await _dispatch_to_capability_broker(plugin_id, channel, payload, context)
 	else:
 		result = await _dispatch_to_plugin_backend(plugin_id, channel, payload)
 
@@ -1666,7 +1671,8 @@ func _validate_panel_ownership(plugin_id: String, panel_name: String) -> bool:
 func _dispatch_to_capability_broker(
 		plugin_id: String,
 		channel: String,
-		payload: Dictionary
+		payload: Dictionary,
+		context: ExecutionContext = null
 ) -> Dictionary:
 	var capability: String = channel.substr("capability:".length())
 	if capability.is_empty():
@@ -1678,7 +1684,7 @@ func _dispatch_to_capability_broker(
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"Host capability broker is not available")
 
-	return await capability_broker.dispatch(plugin_id, capability, payload)
+	return await capability_broker.dispatch(plugin_id, capability, payload, context)
 
 
 func _dispatch_to_plugin_backend(

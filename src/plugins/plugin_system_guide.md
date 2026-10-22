@@ -1,5 +1,7 @@
 # Minerva Plugin System Guide
 
+The [Plugin Developer Guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md) is the authoritative author reference, including manifest fields, readiness, contextual calls, generation handoff and release rules. This file retains host integration examples and a source-checked SDK index.
+
 Plugins are supervised out-of-process programs that communicate with Minerva via stdio MCP (JSON-RPC over stdin/stdout). Any language that can read stdin and write stdout works: Go, Python, Node.js, Rust, etc.
 
 Godot-scene UI panels are the exception to that process boundary: they run
@@ -64,7 +66,7 @@ my_plugin/
 - **args** are passed after the entrypoint (e.g., `["server.py"]`)
 - **Relative entrypoints** like `./my_binary` are resolved to absolute paths from the plugin directory
 - **stdout** is the MCP transport — ONLY write JSON-RPC messages to stdout
-- **stderr** is for logging — Minerva captures it and shows warnings/errors as toasts
+- **stderr** is for logging — set `log_stderr:true` to opt into bounded Minerva diagnostics
 - **filesystem permissions** apply to brokered `host.files.*` calls; in-process Godot scene panels are trusted host code and are not sandboxed by this field
 
 ### Protocol
@@ -110,11 +112,11 @@ This registers the plugin in Minerva's database. The plugin directory stays wher
 minerva_plugin_start(id: "my_plugin")    # Launch process, MCP handshake
 minerva_plugin_stop(id: "my_plugin")     # Graceful shutdown
 minerva_plugin_restart(id: "my_plugin")  # Stop + start (process misbehaving)
-minerva_plugin_reload(id: "my_plugin")   # Stop + start (code changed)
+minerva_plugin_reload(id: "my_plugin")   # Opt-in scene generation swap; otherwise process restart
 ```
 
 - **autostart**: Set via Plugin Manager UI or DB — starts the plugin on Minerva launch
-- **auto_reload**: Watches plugin files for changes and auto-restarts (hot reload for development)
+- **auto_reload**: Watches files and restarts the backend for process or manifest changes. Cached `.gd`/`.tscn`/`.tres` changes require an application restart unless the plugin opts into `live_reload`, which uses a scene generation swap.
 - **Crash detection**: 3+ crashes in 60 seconds → CRASH_LOOP state (won't auto-restart)
 
 ## Discovery
@@ -581,3 +583,162 @@ it declares `"host.terminal.list"`, `"host.terminal.read"`, `"host.terminal.writ
 | `minerva_plugin_reload` | Stop + start (code changed) |
 | `minerva_plugin_inspect` | Full manifest, capabilities, audit log |
 | `minerva_plugin_state` | Latest pushed state snapshot |
+
+## SDK declaration index
+
+`Minerva/scripts/check-fast` compares these rows with the existing declaration
+owners. The plugins repository checks guide/ledger links locally; final
+qualification supplies both repository paths explicitly to
+`scripts/check_plugin_docs.py --host-root … --plugins-root …`.
+No generated contract snapshot or sibling-checkout assumption is used.
+The census covers literal manifest reads in the top-level parser, panel and tool
+entries, and `PluginDependencyContract.parse`; it excludes nested `settings[]`,
+`editor_items[]`, `skills[]` and `setup` recipe fields. IPC coverage is the
+`request_*` methods plus `get_bulk_payload_limit`, not every SDK member.
+
+| Symbol | Contract | Author reference |
+|---|---|---|
+| `host.audio` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.chat.active` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.chat.input` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.chat_providers.register` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.core.session` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.dialogs.directory_picker` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.dialogs.file_picker` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.get_blob` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.get_node` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.get_state` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.list_open` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.mark_dirty` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.patch_state` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.put_blob` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.documents.set_state` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.echo` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.editors.export` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.editors.list` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.editors.open` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.delete` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.exists` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.list` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.mkdir` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.move` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.read` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.stat` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.files.write` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.models.list_models` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.models.list_providers` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.notes.create_from_editor` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.notify` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.pdf.generate` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.permissions.grant_scope` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.project.current` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.project.open` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.providers.chat` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.settings.get` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.settings.list` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.speech_log` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.terminal.exec` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.terminal.list` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.terminal.read` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.terminal.wait` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `host.terminal.write` | host_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#42-capability-reference) |
+| `mcp.proxy:` | capability_namespace | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#4-host-apis--capabilities-a-plugin-can-call) |
+| `secrets:` | capability_namespace | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#4-host-apis--capabilities-a-plugin-can-call) |
+| `host_owned_save` | plugin_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#31-there-is-one-dialect) |
+| `live_reload` | plugin_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#31-there-is-one-dialect) |
+| `plugin_dependencies` | plugin_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#31-there-is-one-dialect) |
+| `project_export` | plugin_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#31-there-is-one-dialect) |
+| `project_state` | plugin_capability | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#31-there-is-one-dialect) |
+| `backend` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `backend.args` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `backend.entrypoint` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `backend.transport` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `backend.working_dir` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `capabilities` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `editor_items` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `events` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `host_api_version` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `id` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `knowledge` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `knowledge_project` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `log_stderr` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `name` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `panel_authority` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.filesystem` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.filesystem.mode` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.filesystem.paths` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.host_capabilities` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.host_events` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.network` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `permissions.network.mode` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `project_export` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `project_export.apply_channel` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `project_export.collect_channel` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `project_file` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `project_file.deserialize_channel` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `project_file.serialize_channel` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `requires_plugins` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `requires_plugins[].actions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `requires_plugins[].id` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `requires_plugins[].min_version` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `settings` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `settings_title` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `setup` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `skills` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `state` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `state.schema` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `tools` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `tools[].executor` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `tools[].name` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `tools[].tool_set` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.ipc_messages` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].chrome` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].chrome.suppress` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].entry` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].entry_scene` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].file_actions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].file_extensions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].fullscreen_capable` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].ipc_channels` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].kind` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].layout_hint` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].multi_window` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].name` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].native_save_extensions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].render_mode` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].save_mode` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].scripts` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].write_guidance` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `version` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `_on_panel_apply_sync` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_capture_live_state` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_create_note_request` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_inject_toggle_changed` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_load_request` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_loaded` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_redo_request` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_render_for_llm` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_restore_from_note` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_restore_live_state` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_save_request` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_self_check` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_undo_request` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `_on_panel_unload` | panel_hook | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#71-panel-lifecycle-hooks-full-list) |
+| `res://Scripts/Services/Annotations/AnnotationV2Schema.gd` | host_path | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#public-scene-sdk) |
+| `res://Scripts/Services/Annotations/BuiltinKinds.gd` | host_path | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#public-scene-sdk) |
+| `res://Scripts/Services/Documents/DocumentBuffer.gd` | host_path | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#public-scene-sdk) |
+| `res://Scripts/Services/Plugins/AtomicFile.gd` | host_path | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#public-scene-sdk) |
+| `res://Scripts/Services/Plugins/MinervaPluginPanel.gd` | host_path | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#public-scene-sdk) |
+| `res://Scripts/UI/Controls/responsive_container.gd` | host_path | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#public-scene-sdk) |
+| `MinervaIPC.get_bulk_payload_limit` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `MinervaIPC.request_bulk` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `MinervaIPC.request_capability` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `MinervaIPC.request_private` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `RequiredPlugins.release_page` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `RequiredPlugins.repository` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |
+| `handle_tool` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `handle_tool_with_context` | sdk_method | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#contextual-calls-and-cancellation) |
+| `repo` | required_plugin_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#required-providers-and-readiness) |

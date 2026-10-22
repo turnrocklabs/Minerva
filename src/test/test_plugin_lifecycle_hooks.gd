@@ -29,7 +29,7 @@ extends SceneTree
 ##     - save_mode absent → defaults to "host_owned"
 ##     - save_mode applies to html panels as well as godot_scene panels
 
-const PluginScenePanelHost_ = preload("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
+var PluginScenePanelHost_: Script
 const PluginDefinition_ = preload("res://Scripts/Services/Plugins/PluginDefinition.gd")
 
 var _pass_count: int = 0
@@ -37,6 +37,12 @@ var _fail_count: int = 0
 
 
 func _init() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	# The real host owner references autoloads; load only after SceneTree initialization.
+	PluginScenePanelHost_ = load("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
 	print("=== PluginScenePanelHost Lifecycle Hook Tests ===\n")
 
 	print("-- invoke_save --")
@@ -62,6 +68,8 @@ func _init() -> void:
 	test_save_mode_invalid_rejected_with_structured_error()
 	test_save_mode_absent_defaults_to_host_owned()
 	test_save_mode_applies_to_html_panels()
+	test_native_save_extensions()
+	test_atomic_host_payloads()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -99,6 +107,7 @@ func check_eq(description: String, actual: Variant, expected: Variant) -> void:
 ## Returns a predictable Dictionary from _on_panel_save_request so tests can
 ## verify the return value is passed through unchanged.
 class MockSceneWithHooks extends Control:
+	var save_payload: Dictionary = {"version": 1, "data": "mock_save_payload"}
 	var save_called: bool = false
 	var save_ctx_received: Dictionary = {}
 	var load_called: bool = false
@@ -107,7 +116,7 @@ class MockSceneWithHooks extends Control:
 
 	func _on_panel_save_request() -> Dictionary:
 		save_called = true
-		return {"version": 1, "data": "mock_save_payload"}
+		return save_payload
 
 	func _on_panel_load_request(document: Dictionary) -> void:
 		load_called = true
@@ -374,3 +383,42 @@ func test_save_mode_applies_to_html_panels() -> void:
 		return
 	check_eq("save_mode html panel: save_mode persisted",
 		def.ui_panels[0].get("save_mode", ""), "plugin_owned")
+
+
+func test_native_save_extensions() -> void:
+	var panel := {"name": "native", "kind": "godot_scene", "entry_scene": "ui/Panel.tscn",
+		"scripts": ["ui/Panel.gd"], "file_extensions": [".cad", ".pcb"]}
+	var definition := PluginDefinition_._from_dict_internal(_minimal_manifest_with_panel(panel))
+	check("absent native formats preserve parsed dictionary contract", definition != null
+		and not definition.ui_panels[0].has("native_save_extensions"))
+	check_eq("absent native formats default to own claims", PluginScenePanelHost_.native_save_extensions(definition.ui_panels[0]), [".cad", ".pcb"])
+	panel["native_save_extensions"] = [".CAD"]
+	definition = PluginDefinition_._from_dict_internal(_minimal_manifest_with_panel(panel))
+	check("native subset normalizes case", definition != null and definition.ui_panels[0].native_save_extensions == [".cad"])
+	for invalid: Variant in [null, "*.cad", [], [7], [".txt"], [".cad", ".CAD"], ["../cad"]]:
+		panel["native_save_extensions"] = invalid
+		var parsed: Dictionary = PluginDefinition_._parse_panel_entry(panel, [])
+		check("invalid native subset refuses: " + str(invalid), parsed.get("error") == "panel_native_save_extensions_invalid")
+
+
+class SaveTarget extends RefCounted:
+	var plugin_scene_root: Control
+
+func test_atomic_host_payloads() -> void:
+	var target := SaveTarget.new()
+	var scene := MockSceneWithHooks.new()
+	target.plugin_scene_root = scene
+	var path := ProjectSettings.globalize_path("user://generic-panel-save")
+	var saved: Dictionary = PluginScenePanelHost_.save_file(target, path, null)
+	check("generic JSON payload publishes complete data", saved.ok and JSON.parse_string(FileAccess.get_file_as_string(path)) == JSON.parse_string(JSON.stringify(scene.save_payload)))
+	scene.save_payload = {"_bytes": PackedByteArray([0, 255, 17, 0])}
+	saved = PluginScenePanelHost_.save_file(target, path, null)
+	check("generic bytes payload publishes exact data", saved.ok and FileAccess.get_file_as_bytes(path) == scene.save_payload._bytes)
+	var blocked := path + "-blocked"
+	DirAccess.make_dir_recursive_absolute(blocked)
+	var marker := blocked.path_join("marker")
+	preload("res://Scripts/Services/Plugins/AtomicFile.gd").write(marker, "original")
+	saved = PluginScenePanelHost_.save_file(target, blocked, null)
+	check("generic payload failure is visible and preserves destination", not saved.ok and not saved.error.is_empty()
+		and FileAccess.get_file_as_string(marker) == "original")
+	scene.free()

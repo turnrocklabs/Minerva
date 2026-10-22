@@ -19,7 +19,6 @@ const CASES: Array[Dictionary] = [
 	{"script": "res://Scripts/Services/Providers/Core/dynamic_ui/note/NoteField.gd", "property": "_scene"},
 	{"script": "res://Scripts/UI/Controls/Editor.gd", "property": "editor_scene"},
 	{"script": "res://Scripts/UI/Controls/Editor.gd", "property": "graphics_editor_scene"},
-	{"script": "res://Scripts/UI/Controls/Editor.gd", "property": "spreadsheet_editor_scene"},
 	{"script": "res://Scripts/UI/Controls/ReasoningBlock.gd", "property": "_reasoning_block_scene"},
 	{"script": "res://Scripts/UI/Controls/RequestMetadataBlock.gd", "property": "_block_scene"},
 	{"script": "res://Scripts/UI/Controls/ToolCallBlock.gd", "property": "_tool_call_block_scene"},

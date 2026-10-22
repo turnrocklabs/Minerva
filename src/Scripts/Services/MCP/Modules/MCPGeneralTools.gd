@@ -132,6 +132,8 @@ func _open_file(args: Dictionary, context: MCPExecutionContext = null) -> Dictio
 		# Normalise to match MCPToolUtils.success envelope (adds success:true).
 		var data: Dictionary = result.duplicate()
 		data.erase("ok")
+		if context != null and not str(data.get("editor_name", "")).is_empty():
+			context.lifetime.recovery = {"tool": "minerva_open_file", "editor_name": data.editor_name}
 		return MCPToolUtils.success(data)
 	else:
 		# Flatten errors array into a single message for the MCP error field.
@@ -141,4 +143,7 @@ func _open_file(args: Dictionary, context: MCPExecutionContext = null) -> Dictio
 
 
 func _create_plugin_editor(args: Dictionary, context: MCPExecutionContext = null) -> Dictionary:
-	return await SingletonObject.create_plugin_editor_when_ready(args, context)
+	var result: Dictionary = await SingletonObject.create_plugin_editor_when_ready(args, context)
+	if context != null and result.get("success", false) and not str(result.get("editor_name", "")).is_empty():
+		context.lifetime.recovery = {"tool": "minerva_create_plugin_editor", "editor_name": result.editor_name}
+	return result

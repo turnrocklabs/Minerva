@@ -226,11 +226,6 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
-			Editor.Type.SPREADSHEET:
-				var tab_name = "spreadsheet " + str(Tabs.get_tab_count() )
-				Tabs.set_tab_title(Tabs.current_tab, tab_name)
-				editor_node.tab_title = tab_name
-
 			Editor.Type.VIDEO_EDITOR:
 				var tab_name = "video " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
@@ -289,7 +284,7 @@ func adopt_editor(editor_node: Editor) -> void:
 		buffer_control_editor.hide()
 
 
-func add_plugin_scene_editor(plugin_id: String, panel_name: String, file: Variant = null, name_: String = "", document_action: String = "") -> Editor:
+func add_plugin_scene_editor(plugin_id: String, panel_name: String, file: Variant = null, name_: String = "", document_action: String = "", require_live_mount: bool = false) -> Editor:
 	# Check if a plugin-scene editor for the same plugin/panel/file is already open.
 	# Match by (type, plugin_id, panel_name, file) — not by file alone — so that
 	# a sibling text editor on the same path (paired_dsl) doesn't shortcut us
@@ -314,6 +309,11 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file: Varian
 			title = editor_name_to_use(fname)
 
 	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title, null, document_action)
+	if require_live_mount and (editor_node.plugin_scene_root == null
+			or not editor_node.plugin_scene_root.get_meta("_minerva_plugin_panel_load_ok", false)):
+		editor_node.release_plugin_scene()
+		editor_node.free()
+		return null
 	adopt_editor(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count() - 1
 	if title:

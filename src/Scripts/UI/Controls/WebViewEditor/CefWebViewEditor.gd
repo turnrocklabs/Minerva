@@ -373,7 +373,8 @@ func _handle_minerva_call(ipc_id, payload: Dictionary, generation: int, context)
 		not (result.has("error") or result.has("error_code")
 		or not str(result.get("error_message", "")).is_empty()))) == true
 	_send_ipc_reply(ipc_id, {"success": succeeded, "result": result,
-		"error_message": result.get("error_message", result.get("error", ""))}, generation)
+		"error_message": result.get("error_message", result.get("error", "")),
+		"error_code": result.get("error_code", "")}, generation)
 
 
 func _send_ipc_reply(ipc_id, result: Dictionary, generation: int = -1) -> void:

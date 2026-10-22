@@ -24,20 +24,31 @@ def main() -> int:
     baseline = run_case(command + ["--live-integration-baseline"],
                         profile_env(evidence, Path(args.seed_user_dir)), baseline_path)
     child = run_case(command, profile_env(evidence, Path(args.seed_user_dir)), child_path)
-    remaining = Counter(normalized(*item) for item in diagnostics(baseline_path.read_text()))
+    # Alias only the OS profile's ancestry; plugin-owned child links still
+    # face the same refusal checks exercised by the integration body.
+    alias = evidence.with_name(evidence.name + "-profile-alias")
+    alias.symlink_to(evidence, target_is_directory=True)
+    linked_path = evidence / "live-integration-linked-profile.log"
+    linked = run_case(command, profile_env(alias, Path(args.seed_user_dir)), linked_path)
     unexpected: list[str] = []
-    for header, origin in diagnostics(child_path.read_text()):
-        key = normalized(header, origin)
-        if remaining[key] > 0:
-            remaining[key] -= 1
-        else:
-            unexpected.append(header.replace("SCRIPT ERROR:", "Child diagnostic:"))
-    summary = re.search(r"=== Results: ([1-9][0-9]*) passed, 0 failed ===", child.stdout)
-    ok = baseline.returncode == child.returncode == 0 and "BASELINE_DONE" in baseline.stdout
-    ok = ok and not unexpected and summary is not None
-    report = {"ok": ok, "checks": int(summary.group(1)) if summary else 0,
+    ok = baseline.returncode == 0 and "BASELINE_DONE" in baseline.stdout
+    checks = 0
+    for result, log in ((child, child_path), (linked, linked_path)):
+        remaining = Counter(normalized(*item) for item in diagnostics(baseline_path.read_text()))
+        for header, origin in diagnostics(log.read_text()):
+            key = normalized(header, origin)
+            if remaining[key] > 0:
+                remaining[key] -= 1
+            else:
+                unexpected.append(header.replace("SCRIPT ERROR:", "Child diagnostic:"))
+        summary = re.search(r"=== Results: ([1-9][0-9]*) passed, 0 failed ===", result.stdout)
+        ok = ok and result.returncode == 0 and summary is not None
+        checks += int(summary.group(1)) if summary else 0
+    ok = ok and not unexpected
+    report = {"ok": ok, "checks": checks,
               "new_engine_error_allowlist": [], "unexpected": unexpected,
-              "child_log": str(child_path), "baseline_log": str(baseline_path)}
+              "child_log": str(child_path), "linked_profile_log": str(linked_path),
+              "baseline_log": str(baseline_path)}
     (evidence / "live-integration-receipt.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report))
     return 0 if ok else 1

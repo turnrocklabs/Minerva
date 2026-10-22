@@ -167,6 +167,13 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
         elif name == "unsafe":
             self.reply(result({"unsafe": 9007199254740993}))
+        elif name == "unsafe-nested":
+            self.reply(result({"resultType": "complete", "content": [{
+                "type": "text", "text": '{"n":9007199254740993}'}]}))
+        elif name == "matrix-rpc-error":
+            self.reply({"jsonrpc": "2.0", "id": request_id, "error": {
+                "code": -32017, "message": "Deliberate HTTP peer failure",
+                "data": {"kept": True}}})
         elif name == "wrong-id":
             self.reply({"jsonrpc": "2.0", "id": "different", "result": {}})
         elif name in ("sse", "sse-progress"):

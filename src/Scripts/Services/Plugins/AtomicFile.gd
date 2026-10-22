@@ -13,11 +13,20 @@ static func write(path: String, text: String) -> bool:
 ## Prepare bytes without publishing them. Transactions call replace only after
 ## their in-memory swap; ordinary callers should keep using write.
 static func prepare(path: String, text: String) -> bool:
+	return prepare_bytes(path, text.to_utf8_buffer())
+
+
+## Write an opaque payload with the same atomic publication contract as text.
+static func write_bytes(path: String, bytes: PackedByteArray) -> bool:
+	return prepare_bytes(path, bytes) and replace(path + ".tmp", path)
+
+
+static func prepare_bytes(path: String, bytes: PackedByteArray) -> bool:
 	var tmp := path + ".tmp"
 	var file := FileAccess.open(tmp, FileAccess.WRITE)
 	if file == null:
 		return false
-	var stored := file.store_string(text)
+	var stored := file.store_buffer(bytes)
 	var written := file.get_error() == OK
 	file.flush()
 	var flushed := file.get_error() == OK

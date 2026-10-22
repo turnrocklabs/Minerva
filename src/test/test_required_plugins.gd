@@ -22,7 +22,7 @@ extends SceneTree
 ##     and keeps a capability the user revoked while it shipped built in;
 ##   - a required plugin cannot be removed, and starting one that is not
 ##     installed says which plugin is missing and how to get it.
-##   - all three required plugins default to updates on at first install;
+##   - all required plugins default to updates on at first install;
 ##     repairs and an update pass preserve existing opt-in and opt-out choices.
 ##
 ## Run: godot --headless --path src --script test/test_required_plugins.gd
@@ -69,7 +69,7 @@ func _init() -> void:
 		_grants_before = _pm._policy_ref._grants.get(RELAY)
 		_grants_recorded = true
 		_pm._policy_ref._grants.erase(RELAY)
-	RequiredPlugins.releases_url = "http://127.0.0.1:%d/releases.json" % port
+	RequiredPlugins.releases_url = "http://127.0.0.1:%d" % port
 	await _test_missing_plugin_is_installed_and_started()
 	await _test_broken_plugin_is_reinstalled_keeping_choices()
 	await _test_repair_leaves_developer_copy()
@@ -517,16 +517,22 @@ func _probe_args(host_tools: bool, id: String = RELAY) -> Array[String]:
 
 
 func _write_releases(port: int, plugin_ids: Array[String] = [RELAY], version: String = "9.9.9") -> bool:
-	var releases: Array[Dictionary] = []
+	var releases_by_repo := {}
 	for id: String in plugin_ids:
 		var asset := "%s-%s-%s.tar.gz" % [id, version, MarketplaceClient.resolve_platform_target()]
+		var repo := RequiredPlugins.repository(id)
+		var releases: Array = releases_by_repo.get(repo, [])
 		releases.append({"tag_name": "%s-v%s" % [id, version], "assets": [
 			{"name": asset, "browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]})
-	var f := FileAccess.open(_temp.path_join("releases.json"), FileAccess.WRITE)
-	if f == null:
-		return false
-	f.store_string(JSON.stringify(releases))
-	f.close()
+		releases_by_repo[repo] = releases
+	for repo: String in releases_by_repo:
+		var directory := _temp.path_join("repos").path_join(repo)
+		DirAccess.make_dir_recursive_absolute(directory)
+		var f := FileAccess.open(directory.path_join("releases"), FileAccess.WRITE)
+		if f == null:
+			return false
+		f.store_string(JSON.stringify(releases_by_repo[repo]))
+		f.close()
 	return true
 
 

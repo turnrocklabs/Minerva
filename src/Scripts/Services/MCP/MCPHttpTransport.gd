@@ -183,7 +183,15 @@ static func _failure_category(response: Dictionary) -> Dictionary:
 		category["kind"] = "invalid_initialize"
 	return category
 
-func request_method(method: String, params: Dictionary, schema: Variant = {}, context = null) -> Dictionary:
+func request_method(method: String, params: Dictionary, schema: Variant = {}, context: MCPExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = MCPExecutionContext.create("connection")
+	var response: Dictionary = await _request_method_op(method, params, schema, context)
+	if response.has("error") and not response.has("rpc_error"):
+		return context.fail(response, "connection_error")
+	return response
+
+func _request_method_op(method: String, params: Dictionary, schema: Variant = {}, context: MCPExecutionContext = null) -> Dictionary:
 	if profile.era == Profile.Era.UNKNOWN:
 		return {"error": "HTTP MCP connection is not negotiated"}
 	var request := {"jsonrpc": "2.0", "id": _id(), "method": method, "params": params}
@@ -193,7 +201,7 @@ func request_method(method: String, params: Dictionary, schema: Variant = {}, co
 			return {"error": "HTTP peer does not advertise tools"}
 	return await _send(request, profile.protocol_version, schema, context.remaining_seconds() if context != null else 120.0, context)
 
-func _send(message: Dictionary, version: String, schema: Variant, timeout: float, context = null) -> Dictionary:
+func _send(message: Dictionary, version: String, schema: Variant, timeout: float, context: MCPExecutionContext = null) -> Dictionary:
 	if _active.size() >= 32:
 		return {"error": "HTTP request admission limit reached", "error_code": "queue_full"}
 	if context != null and context.is_stopped():

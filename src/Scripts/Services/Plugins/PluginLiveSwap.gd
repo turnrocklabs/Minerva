@@ -149,10 +149,10 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 	add_child(staging)
 	for entry: Dictionary in entries:
 		var old: Control = entry.root
-		var state: Variant = Host.invoke_save(old, {})
+		var state: Variant = Host.invoke_capture_live_state(old)
 		if not state is Dictionary:
 			staging.free()
-			return _failure("Panel save hook must return a Dictionary")
+			return _failure("Panel live-state capture must return a Dictionary")
 		var envelope := {"encoding": "godot-variant-hex-v1", "bytes": var_to_bytes(state).hex_encode()}
 		# A JSON boundary with a byte encoding preserves large integer values.
 		var decoded: Dictionary = JSON.parse_string(JSON.stringify(envelope))
@@ -177,10 +177,10 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 			return _failure("Candidate panel root must be a Control")
 		var panel: Control = instance
 		staging.add_child(panel)
-		if not Host.invoke_load(panel, copied) or not Host.invoke_self_check(panel):
+		if not Host.invoke_restore_live_state(panel, copied) or not Host.invoke_self_check(panel):
 			staging.free()
 			return _failure("Candidate import or self-check refused")
-		if var_to_bytes(Host.invoke_save(panel, {})) != var_to_bytes(state):
+		if var_to_bytes(Host.invoke_capture_live_state(panel)) != var_to_bytes(state):
 			staging.free()
 			return _failure("Candidate did not preserve the complete transient state")
 		candidates.append({"entry": entry, "root": panel, "expected": var_to_bytes(state),
@@ -218,23 +218,23 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 			var old: Control = candidate.old
 			var expected: PackedByteArray = candidate.expected
 			if not Host.invoke_self_check(panel) \
-				or var_to_bytes(Host.invoke_save(panel, {})) != expected:
+				or var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
 				prepared.ok = false
 				prepared.error = "Candidate deferred initialization changed state or failed self-check"
 				break
 			# Old panels stayed editable during the waits. Capture their CURRENT
 			# state now, then give the candidate a separate decoded copy. Expected
 			# bytes are never supplied to a plugin or aliased to its dictionary.
-			var latest: Variant = Host.invoke_save(old, {})
+			var latest: Variant = Host.invoke_capture_live_state(old)
 			if not latest is Dictionary:
 				prepared.ok = false
 				prepared.error = "Current panel state could not be captured"
 				break
 			candidate.expected = var_to_bytes(latest)
 			expected = candidate.expected
-			if not Host.invoke_load(panel, bytes_to_var(expected)) \
+			if not Host.invoke_restore_live_state(panel, bytes_to_var(expected)) \
 				or not Host.invoke_self_check(panel) \
-				or var_to_bytes(Host.invoke_save(panel, {})) != expected:
+				or var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
 				prepared.ok = false
 				prepared.error = "Candidate refused the latest panel state"
 				break
@@ -270,11 +270,11 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		wired.append(candidate)
 		old.visible = false
 		panel.visible = candidate.visible
-		if not wire.call(entry, panel, true) or not Host.invoke_load(panel, bytes_to_var(expected)) \
+		if not wire.call(entry, panel, true) or not Host.invoke_restore_live_state(panel, bytes_to_var(expected)) \
 			or not Host.invoke_self_check(panel):
 			success = false
 			break
-		if var_to_bytes(Host.invoke_save(panel, {})) != expected:
+		if var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
 			success = false
 			break
 	OS.remove_logger(logger)
@@ -287,7 +287,7 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 			var old: Control = candidate.old
 			var expected: PackedByteArray = candidate.expected
 			wire.call(candidate.entry, old, false)
-			Host.invoke_load(old, bytes_to_var(expected))
+			Host.invoke_restore_live_state(old, bytes_to_var(expected))
 			old.visible = candidate.visible
 		for candidate: Dictionary in prepared.candidates:
 			var panel: Control = candidate.root

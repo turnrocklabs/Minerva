@@ -201,9 +201,11 @@ func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
 ## PluginManager's own, with DocketHost's guard.
 const RUNNING_MANAGER_SRC := """
 extends "res://Scripts/Services/Plugins/PluginManager.gd"
+func _init() -> void:
+	_db = PluginDB.new()
 var connection = null
 func get_plugin_status(_id: String) -> Dictionary:
-	return {"running": true}
+	return {"running": true, "ready": true, "state": PluginDefinition.State.RUNNING}
 func get_connection(_id: String) -> MCPServerConnection:
 	return connection
 """
@@ -225,6 +227,9 @@ var _made: Array[Node] = []
 var _store = null
 var _host = null
 var _saved_write_definitions: Dictionary = {}
+var _readiness: RefCounted
+var _fixture_db: PluginDB
+var _saved_docket: PluginDefinition
 ## The longest any wait here may take, in frames: a wait that runs out fails.
 const MAX_FRAMES := 300
 
@@ -301,6 +306,7 @@ func _run() -> void:
 			return
 	var saved_host = _so.docket_host
 	var saved_registry = _so.plugin_tool_registry
+	var saved_admission: Callable = _server().plugin_admission
 	var index = _server().tool_search_index
 	index.register_tool(CREATE_DEP, "a tool created skills depend on",
 		{"name": CREATE_DEP, "description": "a tool created skills depend on", "input_schema": {"type": "object"}}, "")
@@ -312,12 +318,18 @@ func _run() -> void:
 	_server().tool_budget_manager.reset()
 	_so.docket_host = saved_host
 	_so.plugin_tool_registry = saved_registry
+	_server().plugin_admission = saved_admission
 	for name in _saved_write_definitions:
 		if _saved_write_definitions[name] == null:
 			_server().mcp_manager.tool_registry.erase(name)
 		else:
 			_server().mcp_manager.tool_registry[name] = _saved_write_definitions[name]
 	_saved_write_definitions.clear()
+	if _fixture_db != null:
+		if _fixture_db.has_plugin("docket"):
+			check("remove fixture Docket record", _fixture_db.remove("docket"))
+		if _saved_docket != null:
+			check("restore original Docket record", _fixture_db.restore(_saved_docket))
 	_server().policy_engine.reload()
 	var skills = _so.get_skill_manager()
 	for skill in skills.skills.duplicate():
@@ -341,6 +353,14 @@ func _set_up() -> bool:
 	var wire = _make(WIRE_SRC)
 	var host = _make("extends \"res://Scripts/Services/DocketHost/DocketHost.gd\"")
 	if _store == null or host_manager == null or running == null or wire == null or host == null:
+		return false
+	_fixture_db = running.get_db()
+	var previous := _fixture_db.get_by_id("docket")
+	_saved_docket = previous
+	var definition := PluginDefinition.from_dict({"id": "docket", "name": "Docket fixture", "version": "1.0.0", "host_api_version": "2",
+		"backend": {"transport": "stdio", "entrypoint": "fixture"}})
+	if definition == null or not _fixture_db.restore(definition):
+		check("save fixture Docket manifest", false)
 		return false
 	_store.tree = get_tree()
 	_store.work.path = WORK_PATH
@@ -380,6 +400,8 @@ func _set_up() -> bool:
 	var registry = load(REGISTRY_PATH).new(running)
 	var published: Dictionary = registry.publish_backend_tools("docket", wire)
 	_so.plugin_tool_registry = registry
+	_readiness = load("res://Scripts/Services/Plugins/PluginReadiness.gd").new(running, registry)
+	_server().plugin_admission = Callable(_readiness, "wait_for_tool")
 	# Match the host's tools_registered wiring: coercion uses the published schema.
 	for entry in registry.get_plugin_tools("docket"):
 		var name: String = entry.name

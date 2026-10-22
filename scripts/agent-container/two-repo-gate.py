@@ -95,7 +95,7 @@ def run_gate(args):
     logs = host / "gate-evidence"
     logs.mkdir(exist_ok=False)
     env = dict(os.environ)
-    env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9/required-releases.json"
+    env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
     for key, subdir in (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"),
                         ("XDG_CACHE_HOME", "cache"), ("XDG_STATE_HOME", "state"),
                         ("XDG_RUNTIME_DIR", "runtime")):
@@ -125,6 +125,10 @@ def run_gate(args):
         return rc, output
 
     try:
+        rc, _ = command("spreadsheet-extraction", [sys.executable, "scripts/check-spreadsheet-extraction.py",
+                                                  "--plugins", str(plugins)], 120)
+        if rc:
+            raise ValueError("spreadsheet extraction boundary failed; see spreadsheet-extraction.log")
         scripts = changed_scripts(host, args.host_base) + changed_scripts(plugins, args.plugins_base)
         selected, plugin_scripts = plugin_checks(host, plugins, args.host_base, args.plugins_base, args.plugin)
         receipt["plugins_under_test"] = selected

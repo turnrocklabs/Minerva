@@ -82,6 +82,7 @@ HERMETIC_TESTS=(
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
 	test/test_mcp_stdio_profiles.gd
+	test/test_mcp_parent_context.gd
 	test/test_plugin_natural_exit.gd
 	test/test_service_account_prompt.gd
 	test/test_mcp_http_transport.gd
@@ -122,9 +123,6 @@ HERMETIC_TESTS=(
 	test/test_chat_groups.gd
 	test/test_chat_outgoing_queue.gd
 	test/test_note_entry_log.gd
-	test/test_spreadsheet_autofilter.gd
-	test/test_spreadsheet_autofilter_undo.gd
-	test/test_mcp_spreadsheet_filter_tools.gd
 	test/test_terminal_notify.gd
 	test/test_trigger_harness_delivery.gd
 	test/test_docket_wakeups.gd
@@ -143,6 +141,7 @@ HERMETIC_TESTS=(
 	test/test_plugin_manager_hot_reload.gd
 	test/test_plugin_live_swap_store.gd
 	test/test_plugin_live_swap.gd
+	test/test_plugin_live_state.gd
 	test/test_plugin_live_reload.gd
 	test/test_plugin_generation_cleanup.gd
 	test/test_plugin_live_actions.gd

@@ -56,6 +56,7 @@ Field semantics:
 | `entry` | plugin-relative path | if `kind=html` | Legacy `html` field (e.g. `ui/panel.html`). |
 | `scripts` | array of plugin-relative paths | if `kind=godot_scene` | Whitelist of `.gd` files the scene is allowed to load. See §4 for enforcement. |
 | `file_extensions` | array of strings | no | Extensions registered with Minerva's file-dialog and editor-container. Must start with `.`. Lowercase. Conflict handling: §7. |
+| `native_save_extensions` | nonempty array of strings | no | `godot_scene` only. Subset of this panel’s `file_extensions`; defaults to those claims. Save uses only these formats; an imported nonnative file opens Save As. |
 | `ipc_channels` | array of strings | no | Channels the scene may emit / receive. Must intersect with `ui.ipc_messages` for outbound calls (see §4). |
 | `fullscreen_capable` | bool | no | Default `false`. See §10. |
 | `multi_window` | bool | no | Default `false`. See §11. |

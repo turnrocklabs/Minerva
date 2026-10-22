@@ -338,15 +338,26 @@ static func save_file(editor: Object, path: String, broker: Object) -> Dictionar
 	var payload: Variant = invoke_save(editor.plugin_scene_root, {})
 	if not payload is Dictionary:
 		return {"ok": false, "error": "Plugin panel must return a Dictionary save payload."}
+	var atomic := preload("res://Scripts/Services/Plugins/AtomicFile.gd")
+	var written: bool
 	if payload.get("_bytes") is PackedByteArray:
-		var output := FileAccess.open(path, FileAccess.WRITE)
-		if output == null:
-			return {"ok": false, "error": error_string(FileAccess.get_open_error())}
-		output.store_buffer(payload._bytes)
-		output.flush()
-		var error := output.get_error()
-		return {"ok": error == OK, "error": error_string(error)}
-	return DiskAccess.write(path, JSON.stringify(payload, "\t"))
+		var bytes: PackedByteArray = payload._bytes
+		written = atomic.write_bytes(path, bytes)
+	else:
+		written = atomic.write(path, JSON.stringify(payload, "\t"))
+	return {"ok": written, "error": "" if written else "Couldn't atomically save file to " + path}
+
+
+## The absent field preserves the panel's existing format claims.
+static func native_save_extensions(definition: Dictionary) -> Array[String]:
+	var extensions: Array[String] = []
+	var configured: Array = definition.get("native_save_extensions", definition.get("file_extensions", []))
+	extensions.assign(configured)
+	return extensions
+
+
+static func accepts_save_path(path: String, extensions: Array[String]) -> bool:
+	return extensions.is_empty() or ("." + path.get_extension().to_lower()) in extensions
 
 
 ## Call `_on_panel_save_request()` on `panel_root` if the method exists.
@@ -424,6 +435,33 @@ static func invoke_load(panel_root: Node, document: Variant) -> bool:
 		return false
 	panel_root._on_panel_load_request(document)
 	return true
+
+
+## Optional paired hooks for in-memory reload state, never file/project saves.
+## A partial pair refuses reload; a panel with neither hook keeps save/load.
+static func invoke_capture_live_state(panel_root: Node) -> Variant:
+	if panel_root == null:
+		return null
+	var captures: bool = panel_root.has_method("_on_panel_capture_live_state")
+	var restores: bool = panel_root.has_method("_on_panel_restore_live_state")
+	if captures != restores:
+		return null
+	return panel_root.call("_on_panel_capture_live_state") if captures else invoke_save(panel_root, {})
+
+
+static func invoke_restore_live_state(panel_root: Node, state: Variant) -> bool:
+	if panel_root == null:
+		return false
+	var captures: bool = panel_root.has_method("_on_panel_capture_live_state")
+	var restores: bool = panel_root.has_method("_on_panel_restore_live_state")
+	if captures != restores:
+		return false
+	if not restores:
+		return invoke_load(panel_root, state)
+	if not state is Dictionary:
+		return false
+	var result: Variant = panel_root.call("_on_panel_restore_live_state", state)
+	return result is bool and result
 
 
 ## Scope the verb to the hook without adding host fields to opaque user data.
@@ -759,7 +797,7 @@ static func _audit_packed_scene(
 ## The returned Control is NOT added to any tree — callers that want to mount it
 ## should call vbox.add_child(placeholder).  _mount_placeholder() does this in
 ## one step.
-static func _build_placeholder(message: String, retry_callback = null) -> Control:
+static func _build_placeholder(message: String, retry_callback = null, selectable: bool = false) -> Control:
 	var root := VBoxContainer.new()
 	root.set_meta("_minerva_plugin_panel_load_ok", false)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -771,13 +809,24 @@ static func _build_placeholder(message: String, retry_callback = null) -> Contro
 	top_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(top_spacer)
 
-	var label := Label.new()
-	label.text = message
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
-	root.add_child(label)
+	if selectable:
+		var label := RichTextLabel.new()
+		label.text = message
+		label.selection_enabled = true
+		label.fit_content = true
+		label.scroll_active = false
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+		root.add_child(label)
+	else:
+		var label := Label.new()
+		label.text = message
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+		root.add_child(label)
 
 	if retry_callback != null and retry_callback is Callable:
 		var btn := Button.new()

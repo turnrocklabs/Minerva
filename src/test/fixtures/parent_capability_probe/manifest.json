@@ -1,0 +1,52 @@
+{
+  "id": "parent_fixture",
+  "name": "Parent provenance fixture",
+  "version": "0.1.0",
+  "host_api_version": "2",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": [
+      "probe.py"
+    ]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [
+      "host.echo",
+      "mcp.proxy:minerva_sheets_update_data",
+      "mcp.proxy:minerva_parent_fixture_parent"
+    ],
+    "network": {
+      "mode": "none"
+    },
+    "filesystem": {
+      "mode": "none",
+      "paths": []
+    }
+  },
+  "tools": [
+    {
+      "name": "minerva_parent_fixture_parent",
+      "description": "Real parent with output contract",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      }
+    }
+  ]
+}

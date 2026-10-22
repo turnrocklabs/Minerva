@@ -67,7 +67,7 @@ func register_tools() -> void:
 	, "webview")
 
 	server._register_tool("minerva_link_webview_to_note",
-		"Create a linked note from a webview panel. The note displays the rendered HTML. Editing the note reopens the webview editor. Similar to minerva_link_spreadsheet_to_note.",
+		"Create a linked note from a webview panel. The note displays the rendered HTML. Editing the note reopens the webview editor. Similar to minerva_sheets_link_to_note.",
 		{
 			"type": "object",
 			"properties": {

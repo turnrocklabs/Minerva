@@ -21,13 +21,15 @@ class Lifetime extends RefCounted:
 	var recovery := {}
 	var dispatch_recovery := {}
 	var _stopped_recovery := {}
+	var _stopped_failure := {}
 
-	func stop(value: String) -> void:
+	func stop(value: String, failure: Dictionary = {}) -> void:
 		if reason.is_empty():
 			reason = value
 			# Frozen before anyone hears of the stop, so every stopped result
 			# tells the same.
 			_stopped_recovery = recovery.duplicate(true)
+			_stopped_failure = failure.duplicate(true)
 			cancelled.emit()
 
 class Completion extends RefCounted:
@@ -95,6 +97,21 @@ func cancel() -> void:
 	lifetime.stop("cancelled")
 
 
+## Retire local work while preserving the first native failure and recovery.
+func fail(failure: Dictionary, default_code: String = "local_error") -> Dictionary:
+	var original: Dictionary = failure.duplicate(true)
+	original["success"] = false
+	var code: String = str(original.get("error_code", default_code))
+	original["error_code"] = code
+	if not original.has("error"):
+		original["error"] = str(original.get("error_message", "MCP call failed"))
+	lifetime.stop(code, original)
+	return stopped_result()
+
+
+func has_local_failure() -> bool:
+	return not lifetime._stopped_failure.is_empty()
+
 func is_stopped() -> bool:
 	if lifetime.deadline_ms > 0 and Time.get_ticks_msec() >= lifetime.deadline_ms:
 		lifetime.stop("deadline_exceeded")
@@ -104,6 +121,7 @@ func is_stopped() -> bool:
 func stopped_result() -> Dictionary:
 	var result := {"success": false, "error": "MCP call %s" % lifetime.reason,
 		"error_code": lifetime.reason}
+	result.merge(lifetime._stopped_failure, true)
 	if not lifetime._stopped_recovery.is_empty():
 		result["recovery"] = lifetime._stopped_recovery.duplicate(true)
 	return result
@@ -123,7 +141,12 @@ func run(operation: Callable) -> Dictionary:
 	if is_stopped():
 		return stopped_result()
 	var completion := Completion.new()
-	var on_cancel := func() -> void: completion.finish(stopped_result())
+	var on_cancel := func() -> void:
+		if has_local_failure():
+			# Let the failing owner publish its outcome before waking the caller.
+			completion.finish.call_deferred(stopped_result())
+		else:
+			completion.finish(stopped_result())
 	lifetime.cancelled.connect(on_cancel)
 	var timer: SceneTreeTimer = null
 	var on_deadline := func() -> void: lifetime.stop("deadline_exceeded")

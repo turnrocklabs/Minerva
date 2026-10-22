@@ -99,6 +99,8 @@ var _pending: Dictionary = {}  # typed request key -> _PendingRequest
 var _completed_wire_results: Dictionary = {}
 var protocol_profile = Profile.new()
 var _process_generation := 0
+## Legacy cancellation is opt-in per process, through explicit parent provenance.
+var _legacy_parent_generation: int = -1
 
 var stdio_startup_budget_sec := 12.0
 var stdio_discovery_budget_sec := 1.0
@@ -191,15 +193,18 @@ func request_method(method: String, params: Dictionary, timeout_sec: float = 120
 		return _conn_error("%s is not a private method" % method)
 	var request := _stdio_method_request(method, params)
 	var generation := _process_generation
-	var response := await _stdio_request(request, timeout_sec, method, null, generation)
+	var context := ExecutionContext.create("connection")
+	var response := await _stdio_request(request, timeout_sec, method, context, generation)
 	var wire = _take_completed_wire(request.id)
+	if context.is_stopped():
+		return context.stopped_result()
 	if wire != null:
 		var numeric: Dictionary = await WireAdapter.validate_for_application(wire)
 		if generation == _process_generation:
 			response = _stdio_finalize(wire.parsed) if numeric.get("ok", false) \
-				else _conn_error(_wire_validation_message(numeric))
+				else context.fail(_conn_error(_wire_validation_message(numeric)))
 	if generation != _process_generation:
-		return _conn_error("MCP process changed during %s" % method)
+		return context.fail(_conn_error("MCP process changed during %s" % method), "connection_error")
 	return response
 
 
@@ -308,7 +313,7 @@ func cancel_active_requests() -> void:
 				pending.context.cancel()
 			elif _pending.has(Protocol.request_id_key(pending.request_id)):
 				if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
-					_write_modern_cancel(pending.request_id, pending.generation)
+					_write_cancel_notification(pending.request_id, pending.generation)
 				_resolve_pending(pending.request_id,
 					_conn_error("MCP request was cancelled"), null, pending.generation)
 
@@ -683,7 +688,7 @@ func _stop_tool_catalog_watch(send_cancel: bool) -> void:
 	_catalog_watch_retry_token += 1
 	if send_cancel and transport == TransportType.STDIO \
 			and (_catalog_watch.waiting_ack or _catalog_watch.active):
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 	if _http_transport != null:
 		_http_transport.stop_tools_watch()
 	_suppress_watch_stop_callback = true
@@ -725,7 +730,7 @@ func _on_catalog_watch_protocol_stopped(owner: int, retry: bool) -> void:
 	if transport == TransportType.HTTP and _http_transport != null:
 		_http_transport.stop_tools_watch("HTTP catalog watch declined")
 	elif transport == TransportType.STDIO:
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 
 
 func _on_catalog_watch_closed(transient: bool, owner: int) -> void:
@@ -767,7 +772,7 @@ func _watch_catalog_ack_deadline(token: int, owner: int) -> void:
 			or not _catalog_watch.ack_expired():
 		return
 	if transport == TransportType.STDIO:
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 	elif _http_transport != null:
 		_http_transport.stop_tools_watch("HTTP catalog watch acknowledgment timed out")
 	_on_catalog_watch_closed(true, owner)
@@ -786,7 +791,24 @@ func _call_tool_http(tool_name: String, arguments: Dictionary, context: Executio
 
 
 func _call_tool_http_outcome(tool_name: String, arguments: Dictionary,
-		context: ExecutionContext = null):
+		context: ExecutionContext = null) -> ToolCallOutcome:
+	if context == null:
+		context = ExecutionContext.create("connection")
+	var outcome: ToolCallOutcome = await _call_tool_http_outcome_op(tool_name, arguments, context)
+	return _finalize_local_outcome(outcome, context)
+
+
+## Native rejections retire admitted children; validated peer replies retain authority.
+func _finalize_local_outcome(outcome: ToolCallOutcome, context: ExecutionContext) -> ToolCallOutcome:
+	var result: Dictionary = outcome.application
+	var failed: bool = result.get("success", not result.has("error")) == false
+	if failed and not result.has("rpc_error") and (outcome.envelope == null or not outcome.wire_authoritative):
+		outcome.application = context.fail(result)
+	return outcome
+
+
+func _call_tool_http_outcome_op(tool_name: String, arguments: Dictionary,
+		context: ExecutionContext = null) -> ToolCallOutcome:
 	if _http_transport == null:
 		return ToolCallOutcome.failure("HTTP transport is not connected")
 	var method := tool_name
@@ -819,7 +841,9 @@ func _call_tool_http_outcome(tool_name: String, arguments: Dictionary,
 		return list_outcome
 	var envelope = ToolResultEnvelope.from_mcp(raw_result,
 		owner.profile.era == Profile.Era.MODERN_2026_07_28, response.get("wire"))
-	var outcome = await ToolResultAdapter.adapt(envelope)
+	var outcome: ToolCallOutcome = await ToolResultAdapter.adapt(envelope)
+	if not outcome.wire_authoritative and outcome.application.get("success", true) == false:
+		return _finalize_local_outcome(outcome, context)
 	if owner != _http_transport or owner.generation != owner_generation \
 			or (context != null and context.is_stopped()):
 		return ToolCallOutcome.failure("HTTP request cancelled during result delivery")
@@ -915,7 +939,7 @@ func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: Exe
 					var result: Dictionary
 					if raw_result is Dictionary:
 						var envelope = ToolResultEnvelope.from_mcp(raw_result, false, response_wire)
-						var outcome = await ToolResultAdapter.adapt(envelope)
+						var outcome: ToolCallOutcome = await ToolResultAdapter.adapt(envelope)
 						interrupted = _websocket_delivery_interruption(owner, context,
 							"WebSocket request cancelled during result adaptation")
 						if not interrupted.is_empty():
@@ -1212,7 +1236,7 @@ func _write_stdio_notification(message: Dictionary, generation: int) -> bool:
 	return false
 
 
-func _write_modern_cancel(request_id: Variant, generation: int) -> void:
+func _write_cancel_notification(request_id: Variant, generation: int) -> void:
 	_write_stdio_notification({"jsonrpc": Protocol.JSON_RPC_VERSION,
 		"method": "notifications/cancelled", "params": {"requestId": request_id}}, generation)
 
@@ -1238,7 +1262,9 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	if not _subprocess or not _subprocess.is_running():
 		return _conn_error("MCP server '%s' is not running" % server_name)
 
-	if context != null and context.is_stopped():
+	if context == null:
+		context = ExecutionContext.create("connection")
+	if context.is_stopped():
 		return context.stopped_result()
 	var request_id: Variant = request.get("id")
 	var request_key := Protocol.request_id_key(request_id)
@@ -1259,8 +1285,8 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	pending.context = context
 	_pending[request_key] = pending
 	var on_cancel := func() -> void:
-		if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
-			_write_modern_cancel(request_id, owned_generation)
+		if protocol_profile.era == Profile.Era.MODERN_2026_07_28 or (protocol_profile.era == Profile.Era.INITIALIZED_LEGACY and _legacy_parent_generation == owned_generation):
+			_write_cancel_notification(request_id, owned_generation)
 		_resolve_pending(request_id, context.stopped_result(), null, owned_generation)
 	if context != null:
 		context.lifetime.cancelled.connect(on_cancel)
@@ -1280,6 +1306,7 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 		var label: String = tool_name if tool_name != "" else ("id " + str(request_id))
 		pending.deadline_error = _conn_error("MCP request (%s) to '%s' timed out after %s"
 				% [label, server_name, Diagnostics.timeout_text(timeout_sec)])
+		pending.deadline_error["error_code"] = "deadline_exceeded"
 		pending.deadline_timeout_sec = timeout_sec
 		_arm_pending_deadline(pending)
 
@@ -1302,6 +1329,10 @@ func _resolve_pending(request_id: Variant, result: Dictionary, wire_value = null
 	if generation >= 0 and pending.generation != generation:
 		return
 	_pending.erase(request_key)
+	# Local transport failure retires admitted children before waking the caller.
+	# A peer RPC error retains its original wire/error contract.
+	if wire_value == null and result.has("error") and pending.context != null:
+		pending.context.fail(result, "connection_error")
 	if wire_value != null and pending.capture_wire:
 		_completed_wire_results[request_key] = wire_value
 	pending.done = true
@@ -1420,10 +1451,27 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	SingletonObject.verbose_log("[MCP STDIO] Capability request plugin=%s name=%s id_type=%d" % [
 		plugin_id, capability, typeof(cap_id)])
 
+	var parent_context: ExecutionContext = null
+	var parent_error: Dictionary = {}
+	if params.has("parent_request_id"):
+		_legacy_parent_generation = _process_generation
+		var parent_key: String = Protocol.request_id_key(params.parent_request_id)
+		var parent: _PendingRequest = _pending.get(parent_key)
+		if parent == null or parent.context == null or parent.generation != _process_generation:
+			parent_error = {"success": false, "error_code": "parent_request_unknown",
+				"error_message": "Parent request is unknown or no longer outstanding."}
+		else:
+			parent_context = parent.context
+			if parent_context.is_stopped():
+				parent_error = parent_context.stopped_result()
 	var result_payload: Dictionary
-	if capability_request_handler.is_valid():
-		var broker_result: Dictionary = await capability_request_handler.call(plugin_id, capability, args)
-		result_payload = broker_result
+	if not parent_error.is_empty():
+		result_payload = parent_error
+	elif capability_request_handler.is_valid():
+		if parent_context != null:
+			result_payload = await capability_request_handler.call(plugin_id, capability, args, parent_context)
+		else:
+			result_payload = await capability_request_handler.call(plugin_id, capability, args)
 	else:
 		push_warning("[MCP STDIO] No capability_request_handler set — denying '%s' for plugin '%s'" % [capability, plugin_id])
 		result_payload = {
@@ -1460,7 +1508,15 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 
 
 func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
-		timeout_sec: float = 120.0, context: ExecutionContext = null):
+		timeout_sec: float = 120.0, context: ExecutionContext = null) -> ToolCallOutcome:
+	if context == null:
+		context = ExecutionContext.create("connection")
+	var outcome: ToolCallOutcome = await _call_tool_stdio_outcome_op(tool_name, arguments, timeout_sec, context)
+	return _finalize_local_outcome(outcome, context)
+
+
+func _call_tool_stdio_outcome_op(tool_name: String, arguments: Dictionary,
+		timeout_sec: float = 120.0, context: ExecutionContext = null) -> ToolCallOutcome:
 	if not _subprocess or not _subprocess.is_running():
 		return ToolCallOutcome.failure("STDIO transport not connected")
 	if protocol_profile.era == Profile.Era.MODERN_2026_07_28 \
@@ -1526,7 +1582,9 @@ func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
 		return ToolCallOutcome.failure("MCP tool result must be an object")
 	var envelope = ToolResultEnvelope.from_mcp(raw_result,
 		protocol_profile.era == Profile.Era.MODERN_2026_07_28, source_wire)
-	var outcome = await ToolResultAdapter.adapt(envelope)
+	var outcome: ToolCallOutcome = await ToolResultAdapter.adapt(envelope)
+	if not outcome.wire_authoritative and outcome.application.get("success", true) == false:
+		return _finalize_local_outcome(outcome, context)
 	if call_generation != _process_generation or (context != null and context.is_stopped()):
 		return ToolCallOutcome.failure("MCP request cancelled during result delivery")
 	tool_result_envelope_received.emit(tool_name, envelope)
@@ -1701,7 +1759,7 @@ func _queue_stdio_catalog_watch_frame(raw_line: String, message: Dictionary,
 		return
 	if _stdio_watch_queue.size() >= MAX_STDIO_WATCH_QUEUE:
 		_stdio_watch_queue.clear()
-		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_write_cancel_notification(_catalog_watch.request_id, _process_generation)
 		_on_catalog_watch_closed(true, protocol_profile.generation)
 		return
 	_stdio_watch_queue.append({"raw": raw_line, "message": message,

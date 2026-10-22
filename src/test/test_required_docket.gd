@@ -29,7 +29,9 @@ func until(ready: Callable) -> void:
 
 func offer(version: String) -> void:
 	var asset := "docket-%s-%s.tar.gz" % [version, MarketplaceClient.resolve_platform_target()]
-	var file := FileAccess.open(fixture.path_join("releases.json"), FileAccess.WRITE)
+	var directory := fixture.path_join("repos").path_join(RequiredPlugins.REPO)
+	DirAccess.make_dir_recursive_absolute(directory)
+	var file := FileAccess.open(directory.path_join("releases"), FileAccess.WRITE)
 	file.store_string(JSON.stringify([{"tag_name": "docket-v" + version, "assets": [{"name": asset,
 		"browser_download_url": "http://127.0.0.1:%d/%s" % [port, asset]}]}]))
 	file.close()
@@ -39,7 +41,7 @@ func _run() -> void:
 	check("wrapper revision advances but next upstream candidate wins", updater.compare_versions("0.3.0-rc.23.plugin.1", OLD) > 0 and updater.compare_versions(NEW, "0.3.0-rc.23.plugin.1") > 0)
 	for url in ["http://127.0.0.1?@evil.example/r.json", "http://127.0.0.1@evil.example/r.json",
 			"http://user@localhost/r.json", "http://localhost#@evil.example/r.json", "https://localhost.evil/r.json"]:
-		check("reject remote or ambiguous fixture authority", RequiredPlugins._initial_releases_url(url) == "https://api.github.com/repos/%s/releases" % RequiredPlugins.REPO)
+		check("reject remote or ambiguous fixture authority", RequiredPlugins._initial_releases_url(url) == "https://api.github.com")
 	for url in ["http://127.0.0.1:9/r.json", "http://[::1]:9/r.json", "https://localhost/r.json"]:
 		check("accept exact loopback fixture authority", RequiredPlugins._initial_releases_url(url) == url)
 	helpers = load("res://test/marketplace_test_helpers.gd").new(self)
@@ -58,7 +60,7 @@ func _run() -> void:
 		check("local release server started", false)
 		await finish()
 		return
-	RequiredPlugins.releases_url = "http://127.0.0.1:%d/releases.json" % port
+	RequiredPlugins.releases_url = "http://127.0.0.1:%d" % port
 	offer(OLD)
 	manager.start_plugins_at_launch("http://127.0.0.1:%d/registry.json" % port)
 	await until(func(): return host.state == "ready" and manager.get_db().has_plugin("docket"))
@@ -92,7 +94,7 @@ func finish() -> void:
 		await manager.stop_plugin("docket", true)
 	if helpers != null:
 		helpers.teardown()
-	RequiredPlugins.releases_url = "https://api.github.com/repos/%s/releases" % RequiredPlugins.REPO
+	RequiredPlugins.releases_url = "https://api.github.com"
 	if failed == 0:
 		print("REAL_REQUIRED_DOCKET_COMPLETE")
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])

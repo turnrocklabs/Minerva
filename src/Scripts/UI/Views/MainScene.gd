@@ -439,6 +439,9 @@ func _open_dropped_files(files: PackedStringArray) -> void:
 	var registry: PluginEditorRegistry = SingletonObject.plugin_editor_registry
 	for file: String in files:
 		var extension := file.get_extension().to_lower()
+		if PluginEditorRegistry.is_spreadsheet_extension("." + extension):
+			await SingletonObject.request_spreadsheet_gui("open", {"path": file})
+			continue
 		var claim := registry.resolve_file("." + extension)
 		var result: Dictionary = {"ok": true}
 		if not claim.is_empty():

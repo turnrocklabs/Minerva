@@ -74,7 +74,7 @@ func resolve_file(extension: String) -> Dictionary:
 	var claimed := resolve_extension(key)
 	if not claimed.is_empty():
 		return claimed
-	return {"builtin": "spreadsheet"} if is_spreadsheet_extension(key) else {}
+	return {"plugin_id": "sheets", "panel_name": "sheets_panel", "file_actions": ["open", "import", "create"]} if is_spreadsheet_extension(key) else {}
 
 
 ## extension (lowercased, leading '.') -> { plugin_id: String, panel_name: String }

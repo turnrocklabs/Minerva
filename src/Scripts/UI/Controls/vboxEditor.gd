@@ -1,6 +1,8 @@
 class_name EditorContainer
 extends VBoxContainer
 
+const SpreadsheetSession := preload("res://Scripts/Services/Plugins/SpreadsheetSession.gd")
+
 @export var editor_pane: EditorPane
 @export var editor_scene: PackedScene
 
@@ -43,11 +45,6 @@ func serialize() -> Array:
 		match editor.type:
 			Editor.Type.TEXT:
 				content = editor.code_edit.text
-			editor.Type.SPREADSHEET:
-				if editor.spreadsheet_editor:
-					content = editor.spreadsheet_editor.serialize()
-				else:
-					content = {}
 			Editor.Type.KANBAN:
 				# Serialize kanban board
 				if editor.kanban_board and editor.kanban_board.task_store:
@@ -166,6 +163,8 @@ func serialize() -> Array:
 				editor,
 				editor_pane.Tabs.get_tab_title(tab_idx)
 			)
+			if editor.plugin_id == "sheets" and editor.pending_plugin_entry.is_empty() and editor.has_meta("legacy_spreadsheet_reference"):
+				plugin_entry["legacy_spreadsheet_reference"] = editor.get_meta("legacy_spreadsheet_reference")
 			editors_serialized.append(plugin_entry)
 			tab_idx += 1
 			continue
@@ -185,6 +184,8 @@ func serialize() -> Array:
 
 static func deserialize(editors_array: Array) -> Array[Editor]:
 	var editor_instances: Array[Editor] = []
+	var original_entries: Array = editors_array
+	editors_array = SpreadsheetSession.convert_entries(editors_array)
 
 	# Pre-pass: any plugin referenced by a PLUGIN_SCENE tab must be RUNNING
 	# before its tab deserializes, so the deserialize_channel dispatch finds
@@ -193,7 +194,8 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 	# running, regardless of the manifest's autostart flag.
 	await _ensure_plugins_running_for_entries(editors_array)
 
-	for editor_ser in editors_array:
+	for entry_index: int in editors_array.size():
+		var editor_ser: Dictionary = editors_array[entry_index]
 		var ser_type: int = int(editor_ser.get("type", -1))
 		# Saved layouts can contain retired types; omit them before creating a blank tab.
 		if ser_type not in Editor.Type.values():
@@ -217,6 +219,14 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				SingletonObject.get_registered_object(editor_ser.get("associated_object")),
 				false
 			)
+		if SpreadsheetSession.is_sheet(editor_ser):
+			var original_entry: Dictionary = original_entries[entry_index]
+			editor_inst.pending_plugin_entry = original_entry.duplicate(true)
+			var reference: Variant = editor_ser.get("legacy_spreadsheet_reference")
+			if reference is String:
+				var legacy_reference: String = reference
+				if not legacy_reference.is_empty():
+					editor_inst.set_meta("legacy_spreadsheet_reference", legacy_reference)
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		await SingletonObject.editor_container.get_tree().process_frame
@@ -231,12 +241,6 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				var AutocoderTaskStoreClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTaskStore.gd")
 				var task_store = AutocoderTaskStoreClass.deserialize(content)
 				editor_inst.kanban_board.set_task_store(task_store)
-
-		elif editor_inst.type == Editor.Type.SPREADSHEET:
-			if editor_inst.spreadsheet_editor:
-				var content = editor_ser.get("content")
-				if content and content is Dictionary:
-					editor_inst.spreadsheet_editor.deserialize(content)
 
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditorV2 = editor_inst.graphics_editor
@@ -483,6 +487,8 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 ##
 ## tab_title is the display name of the tab (taken from Tabs.get_tab_title).
 func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictionary:
+	if not editor.pending_plugin_entry.is_empty():
+		return editor.pending_plugin_entry.duplicate(true)
 	var plugin_id: String = editor.plugin_id
 	var panel_name: String = editor.panel_name
 	var raw_editor_id = SingletonObject.registered_object_get_uuid(editor.associated_object)
@@ -614,17 +620,24 @@ static func _deserialize_plugin_scene_editor(
 ) -> void:
 	var plugin_id: String = editor_ser.get("plugin_id", editor_inst.plugin_id)
 	var panel_name: String = editor_ser.get("panel_name", editor_inst.panel_name)
-	var plugin_state: Dictionary = editor_ser.get("plugin_state", {})
+	var sheet_entry: bool = SpreadsheetSession.is_sheet(editor_ser)
+	var plugin_state: Dictionary = SpreadsheetSession.state(editor_ser) if sheet_entry else editor_ser.get("plugin_state", {})
 	var stored_version: String = str(editor_ser.get("plugin_version", ""))
-	var payload: Dictionary = plugin_state.get("payload", {})
+	var payload: Dictionary = SpreadsheetSession.payload(editor_ser) if sheet_entry else plugin_state.get("payload", {})
 
 	# Ensure the editor instance has the right plugin identity.
 	editor_inst.plugin_id = plugin_id
 	editor_inst.panel_name = panel_name
 
+	if sheet_entry:
+		var manager: PluginManager = SingletonObject.get("plugin_manager")
+		SpreadsheetSession.restore(editor_inst, editor_ser, manager)
+
 	# Check if plugin is installed.
 	var def: PluginDefinition = _get_plugin_def_static(plugin_id)
 	if def == null:
+		if sheet_entry:
+			return
 		# Plugin not installed — show a placeholder label.
 		_show_placeholder(
 			editor_inst,
@@ -642,7 +655,8 @@ static func _deserialize_plugin_scene_editor(
 	# Doing this before the server-side dispatch means a closed/crashed plugin
 	# server still gets a faithful UI restore — the user's text comes back even
 	# if the plugin's backend isn't running yet.
-	_restore_panel_state(editor_inst, payload)
+	if not sheet_entry:
+		_restore_panel_state(editor_inst, payload)
 
 	# Server-side deserialize is best-effort: only fires when the plugin is
 	# running AND declares a deserialize_channel. A plugin with no channel and
@@ -869,6 +883,9 @@ func open_file(filename: String) -> void:
 		# Keep the legacy is_graph/is_picture flags for the GRAPHICS branch.
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
+	if PluginEditorRegistry.is_spreadsheet_extension("." + filename.get_extension()):
+		await SingletonObject.request_spreadsheet_gui("open", {"path": filename})
+		return
 	var opened: Dictionary = await SingletonObject.open_file_when_ready(filename)
 	if not opened.get("ok", false):
 		SingletonObject.create_toast_notification(", ".join(PackedStringArray(opened.get("errors", []))), ToastNotification.Type.WARNING)

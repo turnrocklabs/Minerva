@@ -256,6 +256,13 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 	check("unknown action refuses before mutation", not invalid.get("ok", true) and pane.Tabs.get_tab_count() == before_refusal)
 	var invalid_mcp: Dictionary = await tools.handle("minerva_open_file", {"path": import_path, "action": 1})
 	check("malformed MCP action refuses without mutation", not invalid_mcp.get("success", true) and pane.Tabs.get_tab_count() == before_refusal)
+	var pair_scene: String = paired.ui_panels[0].entry_scene
+	paired.ui_panels[0].entry_scene = "MissingPairScene.tscn"
+	var before_broken_pair := pane.Tabs.get_tab_count()
+	var broken_pair: Dictionary = host.create_plugin_editor({"plugin_id": paired.id, "editor_item_id": paired.id + "_new", "tab_title": "Broken pair"})
+	check("strict paired create failure leaves neither source nor render tab", broken_pair.get("success") == false
+		and pane.Tabs.get_tab_count() == before_broken_pair)
+	paired.ui_panels[0].entry_scene = pair_scene
 	var paired_path := directory.path_join("source.pairedfmt")
 	_write(paired_path, text)
 	var paired_result: Dictionary = host.open_file_at_path(paired_path, "import")
@@ -304,24 +311,25 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 		and host.plugin_editor_registry.resolve_extension(".csv").is_empty())
 	var csv_path := directory.path_join("unclaimed.csv")
 	_write(csv_path, "name,value\nalpha,1\n")
-	# Assert both occupied and empty builtin drop routes independently.
+	# Missing Sheets must never construct a builtin or text fallback.
 	var builtin_drop_adapter := Control.new()
 	get_tree().root.add_child(builtin_drop_adapter)
 	builtin_drop_adapter.set_script(load("res://Scripts/UI/Views/MainScene.gd"))
 	var before_builtin := pane.Tabs.get_tab_count()
 	await builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
-	check("real occupied unclaimed CSV drop uses builtin spreadsheet", pane.Tabs.get_tab_count() == before_builtin + 1
-		and pane.Tabs.get_child(before_builtin).type == Editor.Type.SPREADSHEET)
+	check("real occupied unclaimed CSV drop refuses without a fallback editor", pane.Tabs.get_tab_count() == before_builtin
+		and _close_recoveries() == 1)
 	var occupied_tabs := pane.Tabs
 	var builtin_empty := TabContainer.new()
 	get_tree().root.add_child(builtin_empty)
 	pane.Tabs = builtin_empty
 	await builtin_drop_adapter.call("_on_files_dropped", PackedStringArray([csv_path]))
-	check("real empty unclaimed CSV drop uses builtin spreadsheet", builtin_empty.get_tab_count() == 1
-		and builtin_empty.get_child(0).type == Editor.Type.SPREADSHEET)
+	check("real empty unclaimed CSV drop refuses without a fallback editor", builtin_empty.get_tab_count() == 0
+		and _close_recoveries() == 1)
 	builtin_empty.free()
 	pane.Tabs = occupied_tabs
 	builtin_drop_adapter.free()
+	await load("res://test/helpers/spreadsheet_recovery_contract.gd").new().run(self, host, manager, pane, directory)
 	var unknown_path := directory.path_join("unclaimed.ordinaryfmt")
 	_write(unknown_path, "plain unclaimed data")
 	var fallback: Dictionary = host.open_file_at_path(unknown_path)
@@ -350,17 +358,17 @@ func _exercise(host: Node, manager: PluginManager, pane: EditorPane, broker: Plu
 
 func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String) -> void:
 	# Each real consumer gets a new file, so an existing tab cannot mask bypasses.
-	for surface: String in ["spreadsheet", "text", "package"]:
+	for surface: String in ["claim", "text", "package"]:
 		for claimed: bool in [true, false]:
 			var extension := ".fixturefmt" if claimed else ".tsv"
 			var path := directory.path_join("fixed-" + surface + "-" + str(claimed) + extension)
 			var contents := '{"value":"claimed source"}' if claimed else "value\t1\n"
 			_write(path, contents)
 			var registry: PluginEditorRegistry = host.get("plugin_editor_registry")
-			check(surface + " fixture claim is independently established", registry.resolve_file(extension).has("plugin_id") == claimed)
+			check(surface + " fixture claim is independently established", registry.resolve_file(extension).get("plugin_id") == ("file_contract" if claimed else "sheets"))
 			var decoy: Editor = null
 			if claimed and surface != "package":
-				var requested_name := ("fixed-sheet-" if surface == "spreadsheet" else "fixed-text-") + str(claimed)
+				var requested_name := ("fixed-sheet-" if surface == "claim" else "fixed-text-") + str(claimed)
 				decoy = pane.add(Editor.Type.TEXT, null, requested_name)
 				check(surface + " name collision fixture exists", decoy != null)
 			elif claimed:
@@ -372,16 +380,14 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 					and decoy != null and decoy.file == decoy_path and decoy.type == Editor.Type.PLUGIN_SCENE)
 				decoy.tab_title = "Duplicate package title"
 			var before := pane.Tabs.get_tab_count()
-			if surface == "spreadsheet":
-				var tools = load("res://Scripts/Services/MCP/Modules/MCPSpreadsheetTools.gd").new(null)
-				var result: Dictionary = await tools.handle_with_context("minerva_create_spreadsheet_editor",
-					{"name": "fixed-sheet-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
-				check("spreadsheet create reports its real result", result.get("success") == true)
+			if surface == "claim":
+				var result: Dictionary = await _call_initializer(host, "claim", {"name": "fixed-sheet-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
+				check("claimed-file initializer reports native claim or missing-provider refusal", result.get("success") == claimed)
 			elif surface == "text":
 				var tools = load("res://Scripts/Services/MCP/Modules/MCPEditorTools.gd").new(null)
 				var result: Dictionary = await tools.handle_with_context("minerva_create_text_editor",
 					{"name": "fixed-text-" + str(claimed), "file_path": path}, MCPExecutionContext.create("fixture"))
-				check("text create reports its real result", result.get("success") == true)
+				check("text create reports native claim or missing-provider refusal", result.get("success") == claimed)
 			else:
 				var package_script = load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd")
 				var package: Control = package_script.new()
@@ -391,23 +397,23 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 				var object = package_script.PackageObject.new(item, path, true)
 				item.select(0)
 				package.set("_dir_tree", tree)
-				package.call("_on_dir_tree_item_activated")
+				await package.call("_on_dir_tree_item_activated")
 				if claimed:
 					var target: Editor = pane.Tabs.get_current_tab_control()
 					target.tab_title = decoy.tab_title
 					check("package title collision is established before revisiting", target != decoy
 						and target.file == path and target.tab_title == decoy.tab_title)
-				# Native review tabs are plain Controls rather than Editors.
-				var other := Control.new()
-				pane.Tabs.add_child(other)
-				pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(other)
-				var repeat_count := pane.Tabs.get_tab_count()
-				package.call("_on_dir_tree_item_activated")
-				var selected: Editor = pane.Tabs.get_current_tab_control()
-				check("package repeated activation selects the existing tab", selected != null
-					and selected.file == path and pane.Tabs.get_tab_count() == repeat_count)
-				pane.Tabs.remove_child(other)
-				other.free()
+					# Native review tabs are plain Controls rather than Editors.
+					var other := Control.new()
+					pane.Tabs.add_child(other)
+					pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(other)
+					var repeat_count := pane.Tabs.get_tab_count()
+					await package.call("_on_dir_tree_item_activated")
+					var selected: Editor = pane.Tabs.get_current_tab_control()
+					check("package repeated activation selects the existing tab", selected != null
+						and selected.file == path and pane.Tabs.get_tab_count() == repeat_count)
+					pane.Tabs.remove_child(other)
+					other.free()
 				tree.free()
 				package.free()
 				check("package fixture uses the actual selected file", object.original_path == path)
@@ -416,11 +422,11 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 			for editor: Editor in pane.get_open_editors():
 				if editor.file == path:
 					opened = editor
-			var expected: int = Editor.Type.PLUGIN_SCENE if claimed else (Editor.Type.SPREADSHEET if surface == "spreadsheet" else Editor.Type.TEXT)
-			check(surface + " routes the claim and preserves the unclaimed type", pane.Tabs.get_tab_count() == before + 1
-				and opened != null and opened.type == expected
-				and (not claimed or opened.plugin_id == "file_contract")
-				and FileAccess.get_file_as_string(path) == contents)
+			check(surface + " routes claimed native file or refuses missing Sheets", FileAccess.get_file_as_string(path) == contents
+				and ((pane.Tabs.get_tab_count() == before + 1 and opened != null and opened.type == Editor.Type.PLUGIN_SCENE and opened.plugin_id == "file_contract")
+				if claimed else (pane.Tabs.get_tab_count() == before and opened == null)))
+			if not claimed and surface == "package":
+				check("package refusal is retryable and copyable", _close_recoveries() == 1)
 			if opened != null:
 				pane.Tabs.remove_child(opened)
 				opened.free()
@@ -438,7 +444,7 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 	pair_item.select(0)
 	pair_package.set("_dir_tree", pair_tree)
 	var before_pair := pane.Tabs.get_tab_count()
-	pair_package.call("_on_dir_tree_item_activated")
+	await pair_package.call("_on_dir_tree_item_activated")
 	var pair_selected: Control = pane.Tabs.get_current_tab_control()
 	check("pair_package new pair retains the handoff render selection", pair_selected is Editor
 		and pair_selected.type == Editor.Type.PLUGIN_SCENE and pair_selected.file == paired_path
@@ -451,11 +457,8 @@ func _exercise_fixed_type_paths(host: Node, pane: EditorPane, directory: String)
 	pair_package.free()
 
 func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory: String) -> void:
-	for kind: String in ["spreadsheet", "text"]:
-		var module_name := "MCPSpreadsheetTools" if kind == "spreadsheet" else "MCPEditorTools"
-		var tool_name := "minerva_create_spreadsheet_editor" if kind == "spreadsheet" else "minerva_create_text_editor"
-		var content_key := "csv_content" if kind == "spreadsheet" else "content"
-		var module = load("res://Scripts/Services/MCP/Modules/" + module_name + ".gd").new(null)
+	for kind: String in ["claim", "text"]:
+		var content_key := "csv_content" if kind == "claim" else "content"
 		var path := directory.path_join("create-arguments-" + kind + ".pairedfmt")
 		var original := "original paired source"
 		_write(path, original)
@@ -464,12 +467,12 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 		var before := pane.Tabs.get_tab_count()
 		var args := {"name": "Ignored " + kind, "file_path": path}
 		args[content_key] = "replacement source"
-		var refused: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		var refused: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
 		check(kind + " refuses owner-bypassing initialization before allocation", refused.get("success") == false
 			and str(refused.get("error", "")).contains(".pairedfmt is owned by plugin paired_contract; use minerva_open_file or the plugin's tools")
 			and pane.Tabs.get_tab_count() == before and FileAccess.get_file_as_string(path) == original)
 		args.erase(content_key)
-		var opened: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		var opened: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
 		var render: Editor = pane.Tabs.get_current_tab_control()
 		check(kind + " returns actual name and keeps new pair renderer selected", opened.get("success") == true
 			and opened.get("note") == "name ignored for plugin-owned file" and opened.get("editor_name") != args.name
@@ -483,7 +486,7 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 		check(kind + " returns the canonical text editor name for a pair", source != null
 			and opened.get("editor_name") == source.tab_title)
 		args.erase("name")
-		var unnamed: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		var unnamed: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
 		check(kind + " absent requested name produces no ignored-name note", unnamed.get("success") == true
 			and not unnamed.has("note") and unnamed.get("editor_name") == source.tab_title)
 		check(kind + " reopening keeps the selected renderer of the same pair", pane.Tabs.get_current_tab_control() == render
@@ -495,7 +498,7 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 		var decoy := Control.new()
 		pane.Tabs.add_child(decoy)
 		pane.Tabs.current_tab = pane.Tabs.get_tab_idx_from_control(decoy)
-		var reused: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
+		var reused: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
 		check(kind + " reuses and focuses the canonical file", reused.get("success") == true
 			and reused.get("editor_name") == source.tab_title and pane.Tabs.get_current_tab_control() == source
 			and pane.Tabs.get_tab_count() == before + 3 and FileAccess.get_file_as_string(path) == original)
@@ -507,26 +510,18 @@ func _exercise_claimed_create_arguments(host: Node, pane: EditorPane, directory:
 				editor.free()
 		var unclaimed_path := directory.path_join("unclaimed-content-" + kind + ".tsv")
 		_write(unclaimed_path, "file\tvalue\n")
-		check(kind + " legacy fixture is unclaimed", not registry.resolve_file(".tsv").has("plugin_id"))
+		check(kind + " legacy spreadsheet extension is reserved to Sheets", registry.resolve_file(".tsv").get("plugin_id") == "sheets")
 		args = {"name": "Legacy " + kind, "file_path": unclaimed_path}
 		args[content_key] = "supplied\tcontent\n"
-		var legacy: Dictionary = await module.handle_with_context(tool_name, args, MCPExecutionContext.create("fixture"))
-		var legacy_editor: Editor = pane.Tabs.get_current_tab_control()
-		check(kind + " unclaimed create keeps requested name and type", legacy.get("success") == true
-			and legacy.get("editor_name") == args.name and legacy_editor.tab_title == args.name
-			and legacy_editor.type == (Editor.Type.SPREADSHEET if kind == "spreadsheet" else Editor.Type.TEXT))
-		check(kind + " unclaimed initialization preserves legacy content behavior", (legacy_editor.code_edit.text == args[content_key]
-			if kind == "text" else legacy_editor.spreadsheet_editor.spreadsheet_data.get_cell_value(0, 0) == "file")
-			and FileAccess.get_file_as_string(unclaimed_path) == "file\tvalue\n")
-		pane.Tabs.remove_child(legacy_editor)
-		legacy_editor.free()
+		var before_missing := pane.Tabs.get_tab_count()
+		var legacy: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
+		check(kind + " missing Sheets refuses without fallback or source mutation", legacy.get("success") == false
+			and pane.Tabs.get_tab_count() == before_missing and FileAccess.get_file_as_string(unclaimed_path) == "file\tvalue\n")
+
 
 func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: EditorPane,
 		provider: PluginDefinition, directory: String) -> void:
-	for kind: String in ["spreadsheet", "text"]:
-		var script_name := "MCPSpreadsheetTools" if kind == "spreadsheet" else "MCPEditorTools"
-		var tool := "minerva_create_spreadsheet_editor" if kind == "spreadsheet" else "minerva_create_text_editor"
-		var module = load("res://Scripts/Services/MCP/Modules/" + script_name + ".gd").new(null)
+	for kind: String in ["claim", "text"]:
 		var path := directory.path_join("fixed-wait-" + kind + ".fixturefmt")
 		_write(path, '{"value":"waited source"}')
 		var args := {"name": "fixed-wait-" + kind, "file_path": path}
@@ -538,7 +533,7 @@ func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: Editor
 		get_tree().create_timer(0.02).timeout.connect(func() -> void:
 			check(kind + " MCP open waits without allocating", pane.Tabs.get_tab_count() == before)
 			release.call())
-		var opened: Dictionary = await module.handle_with_context(tool, args, MCPExecutionContext.create("fixture"))
+		var opened: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
 		check(kind + " MCP open continues exactly once after ready", opened.get("success") == true
 			and pane.Tabs.get_tab_count() == before + 1)
 		if pane.Tabs.get_tab_count() == before + 1:
@@ -548,7 +543,7 @@ func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: Editor
 		manager._ensure_runtime(provider.id)["ready"] = false
 		var context := MCPExecutionContext.create("fixture")
 		get_tree().create_timer(0.02).timeout.connect(context.cancel)
-		var cancelled: Dictionary = await module.handle_with_context(tool, args, context)
+		var cancelled: Dictionary = await _call_initializer(host, kind, args, context)
 		check(kind + " MCP caller cancellation refuses with no tab", cancelled.get("success") == false
 			and str(cancelled.get("error", "")).contains("cancelled") and pane.Tabs.get_tab_count() == before)
 		release.call()
@@ -560,7 +555,7 @@ func _exercise_fixed_type_waits(host: Node, manager: PluginManager, pane: Editor
 		get_tree().create_timer(0.02).timeout.connect(func() -> void:
 			lost_pane.free()
 			release.call())
-		var lost: Dictionary = await module.handle_with_context(tool, args, MCPExecutionContext.create("fixture"))
+		var lost: Dictionary = await _call_initializer(host, kind, args, MCPExecutionContext.create("fixture"))
 		host.set("editor_pane", pane)
 		check(kind + " MCP destination loss refuses after wait", lost.get("success") == false
 			and str(lost.get("error", "")).contains("editor_pane not available") and pane.Tabs.get_tab_count() == before)
@@ -826,3 +821,25 @@ func _exercise_conflicts(host: Node, manager: PluginManager, pane: EditorPane, d
 func _clear_tabs(tabs: TabContainer) -> void:
 	for child: Node in tabs.get_children():
 		child.free()
+
+
+func _close_recoveries() -> int:
+	var count: int = 0
+	for child: Node in get_tree().root.get_children():
+		if child is SpreadsheetRecoveryDialog and not child.is_queued_for_deletion():
+			var dialog: SpreadsheetRecoveryDialog = child
+			check("provider refusal is visible and copyable", dialog.visible and dialog.message.selection_enabled and not dialog.message.text.is_empty())
+			count += 1
+			dialog.call("_on_close")
+	return count
+
+
+## The removed legacy shim's file-initialization checks now exercise its public
+## rule owner. Real canonical/legacy Go-creation coverage is in Sheets staging.
+func _call_initializer(host: Node, kind: String, args: Dictionary, context: MCPExecutionContext) -> Dictionary:
+	if kind == "claim":
+		var registry: PluginEditorRegistry = host.get("plugin_editor_registry")
+		return await MCPToolUtils.open_claimed_file(str(args.get("file_path", "")), registry,
+			host.open_file_when_ready, context, str(args.get("csv_content", "")), str(args.get("name", "")))
+	var module = load("res://Scripts/Services/MCP/Modules/MCPEditorTools.gd").new(null)
+	return await module.handle_with_context("minerva_create_text_editor", args, context)

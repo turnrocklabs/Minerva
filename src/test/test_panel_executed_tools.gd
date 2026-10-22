@@ -44,6 +44,9 @@ var _manager = null         # PluginManager (real, off-tree, no subprocess)
 var _broker = null          # PluginScenePanelBroker
 var _audit: StubAuditLog = null
 var _panels: Array = []     # every Control we must free at the end
+var _fixture_db: PluginDB
+var _saved_plugins: Dictionary = {}
+const FIXTURE_IDS := ["pxa", "pxb", "pxc", "voice", "panel_consumer", "voice_helper"]
 
 
 func _init() -> void:
@@ -55,6 +58,7 @@ func _init() -> void:
 	var ok := _build_fixture_stack()
 	if not ok:
 		printerr("FATAL: fixture stack failed to build — aborting")
+		_teardown()
 		quit(1)
 		return
 
@@ -120,18 +124,6 @@ func check(description: String, condition: bool, detail: String = "") -> void:
 # ===========================================================================
 # Stubs / fixture classes
 # ===========================================================================
-
-## PluginDB stub (copied from test_plugin_scene_panel_broker.gd — test-local
-## stub classes can't be imported across suite files).
-class StubDB extends RefCounted:
-	var definitions: Dictionary = {}   # id -> PluginDefinition
-
-	func get_by_id(plugin_id: String) -> PluginDefinition:
-		return definitions.get(plugin_id, null)
-
-	func get_all() -> Array:
-		return definitions.values()
-
 
 ## PluginAuditLog stub: captures events (same pattern as the broker suite).
 class StubAuditLog extends PluginAuditLog:
@@ -270,15 +262,19 @@ func _build_fixture_stack() -> bool:
 		return false
 
 	# Real PluginManager, off-tree (never added to the tree ⇒ _ready/_process
-	# never run ⇒ no health checks, no real PluginDB touching user://).
+	# never run ⇒ no health checks). The real DB stays in the disposable profile.
 	var pm_script = load(PLUGIN_MANAGER_SCRIPT_PATH)
 	if pm_script == null:
 		return false
 	_manager = pm_script.new()
-	var db := StubDB.new()
-	db.definitions["pxa"] = _def_a
-	db.definitions["pxb"] = _def_b
-	db.definitions["pxc"] = _def_c
+	var db := PluginDB.new()
+	_fixture_db = db
+	for plugin_id: String in FIXTURE_IDS:
+		var previous := db.get_by_id(plugin_id)
+		_saved_plugins[plugin_id] = previous
+	for definition: PluginDefinition in [_def_a, _def_b, _def_c]:
+		if not db.restore(definition):
+			return false
 	_manager._db = db
 
 	_audit = StubAuditLog.new()
@@ -319,6 +315,14 @@ func _build_fixture_stack() -> bool:
 
 func _teardown() -> void:
 	AnnotationHostRegistry._reset_for_test()
+	if _fixture_db != null:
+		for plugin_id: String in _saved_plugins:
+			if _fixture_db.has_plugin(plugin_id):
+				check("remove fixture record " + plugin_id, _fixture_db.remove(plugin_id))
+			if _saved_plugins[plugin_id] != null:
+				check("restore original record " + plugin_id,
+					_fixture_db.restore(_saved_plugins[plugin_id]))
+		_saved_plugins.clear()
 	for p in _panels:
 		if is_instance_valid(p):
 			p.free()
@@ -670,7 +674,7 @@ func test_generic_panel_admission() -> void:
 	check("generic admission preserves a STOPPED backend's live panel", result.get("echoed_tool") == "minerva_pxa_panel_echo")
 	var voice := PluginDefinition.from_dict(_make_def_dict("voice", [_tool("minerva_voice_panel_echo", "panel")]))
 	voice.state = PluginDefinition.State.STOPPED
-	_manager._db.definitions[voice.id] = voice
+	check("current voice manifest is saved in the real database", _manager._db.restore(voice))
 	_registry.register_plugin_tools(voice.id, voice.tools)
 	var panel := EchoPanel.new()
 	root.add_child(panel)
@@ -681,7 +685,7 @@ func test_generic_panel_admission() -> void:
 	raw.requires_plugins = [{"id": voice.id, "min_version": voice.version, "actions": ["minerva_voice_panel_echo"]}]
 	var consumer := PluginDefinition.from_dict(raw)
 	check("panel requirement fixture is valid and registered", consumer != null and _registry.get_tool_owner("minerva_voice_panel_echo") == voice.id)
-	_manager._db.definitions[consumer.id] = consumer
+	check("current consumer manifest is saved in the real database", _manager._db.restore(consumer))
 	var context := MCPExecutionContext.create("fixture").for_plugin(consumer.id)
 	var allowed: Dictionary = await server.call_tool("minerva_voice_panel_echo", {"editor_name": "RequiredPanel"}, context)
 	check("declared panel action does not wait for its backend", allowed.get("echoed_tool") == "minerva_voice_panel_echo")
@@ -690,11 +694,11 @@ func test_generic_panel_admission() -> void:
 	var denied: Dictionary = await server.call_tool("minerva_voice_panel_echo", {"editor_name": "RequiredPanel"}, context)
 	check("declared panel action still enforces version without dispatch", str(denied).contains(">= 99.0.0") and panel.calls == calls)
 	var helper := PluginDefinition.from_dict(_make_def_dict("voice_helper", [_tool("minerva_voice_helper_status", "panel")]))
-	_manager._db.definitions[helper.id] = helper
+	check("current helper manifest is saved in the real database", _manager._db.restore(helper))
 	_registry.register_plugin_tools(helper.id, helper.tools)
 	raw.requires_plugins = [{"id": voice.id, "min_version": voice.version, "actions": ["minerva_voice_helper_status"]}]
 	consumer = PluginDefinition.from_dict(raw)
-	_manager._db.definitions[consumer.id] = consumer
+	check("current consumer manifest is saved in the real database", _manager._db.restore(consumer))
 	var collision: Dictionary = await server.call_tool("minerva_voice_helper_status", {"editor_name": "RequiredPanel"}, context)
 	check("a foreign prefix tool cannot satisfy the declared provider", str(collision).contains("registered owner voice_helper") and panel.calls == calls)
 	host.plugin_tool_registry = previous

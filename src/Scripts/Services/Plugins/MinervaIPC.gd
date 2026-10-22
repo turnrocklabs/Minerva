@@ -70,6 +70,23 @@ func request_bulk(channel: String, payload: Dictionary,
 	return await await_reply(reply_id, timeout_ms)
 
 
+## Host-provided per-call lifetime, without changing this panel's ownership or grants.
+func request_capability(capability: String, payload: Dictionary,
+		context: MCPExecutionContext, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
+	if not is_inside_tree() or _bulk_broker == null or _bulk_broker.get_ref() == null:
+		return _panel_closed_error()
+	if context == null:
+		return PluginErrors.schema_validation_failed("", "A host call context is required")
+	if context.is_stopped():
+		return context.stopped_result()
+	_bulk_sequence += 1
+	var reply_id := "capability:%d:%d" % [get_instance_id(), _bulk_sequence]
+	var broker: Object = _bulk_broker.get_ref()
+	broker.call_deferred("handle_scene_request", _bulk_panel_key,
+		"capability:" + capability, payload, reply_id, get_instance_id(), false, context)
+	return await await_reply(reply_id, timeout_ms, context)
+
+
 ## Action `action` (one of PluginPanelAuthority.ACTIONS) with `params` on
 ## the plugin's private panel channel, as this panel: the {success, result}
 ## or {success: false, error_code, error_message} reply.
@@ -125,7 +142,7 @@ func close_registration() -> void:
 	_registration_closed = true
 	_bulk_broker = null
 	for observer: _ReplyObserver in _pending.values():
-		observer._fire(_panel_closed_error())
+		observer.fail(_panel_closed_error())
 
 
 func _close_if_still_detached(departed_epoch: int) -> void:
@@ -165,7 +182,7 @@ func _panel_closed_error() -> Dictionary:
 ##
 ## This is a coroutine — callers must use `await`:
 ##   var result := await $_MinervaIPC.await_reply("my-id-123")
-func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
+func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS, context: MCPExecutionContext = null) -> Dictionary:
 	if reply_id.is_empty():
 		push_warning("[MinervaIPC] await_reply: reply_id must not be empty")
 		return {
@@ -179,6 +196,7 @@ func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict
 
 	# Create a per-reply observer. Held in _pending to keep it alive.
 	var observer := _ReplyObserver.new()
+	observer.context = context
 	_pending[reply_id] = observer
 
 	# Schedule a timeout that fires the observer with a timeout sentinel if
@@ -186,7 +204,7 @@ func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict
 	var timer := get_tree().create_timer(timeout_ms / 1000.0)
 	var on_timeout := func() -> void:
 		if _pending.get(reply_id) == observer:
-			observer._fire({
+			observer.fail({
 				"success": false,
 				"error_code": "timeout",
 				"error_message": "No reply received within %d ms" % timeout_ms,
@@ -250,6 +268,7 @@ class _ReplyObserver extends RefCounted:
 
 	## True once _fire() has been called; prevents double-fire.
 	var _fired: bool = false
+	var context: MCPExecutionContext = null
 
 	## Fire the signal with a result. Idempotent after the first call.
 	func _fire(result: Dictionary) -> void:
@@ -257,3 +276,10 @@ class _ReplyObserver extends RefCounted:
 			return
 		_fired = true
 		resolved.emit(result)
+
+	## Only a terminal observer settlement retires the call. Replies are application results.
+	func fail(result: Dictionary) -> void:
+		if _fired:
+			return
+		_fired = true
+		resolved.emit(context.fail(result) if context != null else result)

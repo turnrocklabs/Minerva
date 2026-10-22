@@ -740,6 +740,30 @@ func _notify_plugin_refusal(message: String) -> void:
 	create_toast_notification(message, ToastNotification.Type.ERROR)
 
 
+## GUI spreadsheet requests use the same admission as MCP, retaining a failed
+## request in a recovery dialog rather than creating a fallback document.
+func request_spreadsheet_gui(action: String, arguments: Dictionary) -> void:
+	var request_arguments := arguments.duplicate(true)
+	var operation := func(context: MCPExecutionContext) -> Dictionary:
+		if action == "create":
+			var created: Dictionary = await create_plugin_editor_when_ready(request_arguments, context)
+			return {"ok": created.get("success", false), "errors": [str(created.get("error", "Spreadsheet creation refused"))]}
+		return await open_file_when_ready(str(request_arguments.get("path", "")), action, context)
+	var provider_resolver := func() -> String:
+		if action == "create" or plugin_editor_registry == null:
+			return "sheets"
+		var path := str(request_arguments.get("path", ""))
+		return str(plugin_editor_registry.resolve_file("." + path.get_extension()).get("plugin_id", "sheets"))
+	var result: Dictionary = await operation.call(MCPExecutionContext.create("spreadsheet_gui"))
+	if not result.get("ok", false):
+		var recovery: SpreadsheetRecoveryDialog = preload("res://Scenes/SpreadsheetRecovery.tscn").instantiate()
+		get_tree().root.add_child(recovery)
+		var errors: Array = result.get("errors", [])
+		var manager: PluginManager = plugin_manager
+		recovery.configure(", ".join(PackedStringArray(errors)), operation, provider_resolver, manager, editor_pane)
+		recovery.popup_centered(Vector2i(600, 240))
+
+
 func _on_plugin_started_for_host_events(p_id: String) -> void:
 	var manager: PluginManager = plugin_manager
 	var db: PluginDB = manager.get_db()
@@ -803,7 +827,9 @@ func _wire_plugin_tools_to_mcp() -> void:
 				var ToolDefinition = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 				var tool_def = ToolDefinition.from_dict(entry.get("mcp_definition", {}), "minerva")
 				tool_def.server_name = "minerva"  # Must be "minerva" to pass discovery filters
-				tool_def.tool_set = ""  # Empty = default set, visible in all presets
+				var registered: Dictionary = entry
+				var membership: String = registered.get("tool_set", "")
+				tool_def.tool_set = membership
 				mcp_manager.tool_registry[entry["name"]] = tool_def
 				minerva_server.tool_search_index.register_tool(
 					entry["name"], entry["description"],
@@ -811,7 +837,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 						"name": entry["name"], "description": entry["description"],
 						"input_schema": entry["input_schema"]
 					},
-					"plugin"
+					membership if not membership.is_empty() else "plugin"
 				)
 			# Invalidate the HTTP server's tools/list cache so external MCP clients
 			# (Claude Code, etc.) see schema changes from plugin install/reload.
@@ -962,6 +988,9 @@ func _register_plugin_editor_items(id: String) -> void:
 		if native_item and claim.get("plugin_id") != id:
 			# The registry owns the collision notice; do not repeat it here.
 			continue
+		if id == "sheets" and item_id == "new_minsheet":
+			_ensure_spreadsheet_recovery_item()
+			continue # The host recovery entry remains available when Sheets stops.
 		var plugin_id_copy := id
 		var panel_name_copy := panel_name
 		var item_name_copy := item_name
@@ -1636,6 +1665,15 @@ func _ready():
 
 
 ## Register built-in editor types in the creatable items registry
+func _ensure_spreadsheet_recovery_item() -> void:
+	if creatable_item_registry == null or creatable_item_registry.get_item("new_minsheet") != null:
+		return
+	creatable_item_registry.register_item(CreatableItemRegistry.CreatableItem.create(
+		"new_minsheet", "New Spreadsheet",
+		func(): request_spreadsheet_gui("create", {"plugin_id": "sheets", "editor_item_id": "new_minsheet"}),
+		null, 30))
+
+
 func _init_creatable_items() -> void:
 	if editor_container == null:
 		return
@@ -1661,14 +1699,7 @@ func _init_creatable_items() -> void:
 		)
 	)
 
-	# Spreadsheet (sort_order: 30)
-	creatable_item_registry.register_item(
-		CreatableItemRegistry.CreatableItem.create(
-			"spreadsheet", "Spreadsheet",
-			func(): ep.add(Editor.Type.SPREADSHEET),
-			null, 30
-		)
-	)
+	_ensure_spreadsheet_recovery_item()
 
 	# PCB "New" item removed at cutover 2026-07-07 — the pcb plugin contributes its
 	# own "New PCB" (untitled.pcbskel) via its manifest editor_items.
@@ -1939,7 +1970,6 @@ func _editor_type_to_string(t: int) -> String:
 		Editor.Type.PACKAGE:         return "PACKAGE"
 		Editor.Type.LOGS:            return "LOGS"
 		Editor.Type.KANBAN:          return "KANBAN"
-		Editor.Type.SPREADSHEET:     return "SPREADSHEET"
 		Editor.Type.VIDEO_EDITOR:    return "VIDEO_EDITOR"
 		Editor.Type.ACTIVITY_LOG:    return "ACTIVITY_LOG"
 		Editor.Type.WEBVIEW:         return "WEBVIEW"

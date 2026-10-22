@@ -40,19 +40,9 @@ const BRIDGE_JS: String = """
 	}
 	// Minerva Bridge -- allows webview panels to call MCP tools
 	window.minerva = {
-		// Call any MCP tool: minerva.call('minerva_get_spreadsheet_data', {editor_name: 'My Sheet'})
+		// Call any MCP tool: minerva.call('minerva_get_note', {note_id: 'note-id'})
 		call: function(toolName, args) {
 			return request('minerva.call', {tool: toolName, arguments: args || {}});
-		},
-
-		// Convenience: get spreadsheet data
-		getSpreadsheet: function(name) {
-			return this.call('minerva_get_spreadsheet_data', { editor_name: name });
-		},
-
-		// Convenience: update spreadsheet
-		updateSpreadsheet: function(name, updates) {
-			return this.call('minerva_update_spreadsheet_data', { editor_name: name, updates: updates });
 		},
 
 		// Convenience: create a note
@@ -96,7 +86,11 @@ const BRIDGE_JS: String = """
 			if (!item) return;
 			pending.delete(result.id); clearTimeout(item.timer);
 			if (result.success) item.resolve(result.result);
-			else item.reject(new Error(result.error_message || result.error || 'IPC error'));
+			else {
+				var error = new Error(result.error_message || result.error || 'IPC error');
+				if (result.error_code) error.code = result.error_code;
+				item.reject(error);
+			}
 		},
 
 		// Called by Minerva (evaluate_javascript) to push plugin event
