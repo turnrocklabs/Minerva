@@ -115,13 +115,15 @@ class PackagedSheetsTests(unittest.TestCase):
     def test_release_fetch_decodes_utf8_and_reports_failed_command(self) -> None:
         release = [[{"body": "release \u008f"}]]
         replies = iter([(0, json.dumps(release, ensure_ascii=False).encode("utf-8"), b""),
-                        (7, b"", "permission denied \u008f".encode("utf-8"))])
+                        (7, b"", "permission denied \u008f".encode("utf-8")),
+                        (9, b"", b"permission denied \xff"), (0, b"\xff", b"")])
         run = subprocess.run
 
-        def gh_output(_command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        def gh_output(_command: list[str], **options: object) -> subprocess.CompletedProcess[str | bytes]:
             code, output, errors = next(replies)
             # Exercise the real pipe decoder with Windows' fallback on every OS.
-            options.setdefault("encoding", "cp1252")
+            if options.get("text"):
+                options.setdefault("encoding", "cp1252")
             program = (f"import sys; sys.stdout.buffer.write({output!r}); "
                        f"sys.stderr.buffer.write({errors!r}); sys.exit({code})")
             return run([sys.executable, "-c", program], **options)
@@ -129,6 +131,10 @@ class PackagedSheetsTests(unittest.TestCase):
         with mock.patch.object(PREFETCH.subprocess, "run", side_effect=gh_output):
             self.assertEqual(PREFETCH.fetch_releases(["owner/repo"]), {"owner/repo": release})
             with self.assertRaisesRegex(RuntimeError, "gh api .*owner/repo.*exit code 7: permission denied \u008f"):
+                PREFETCH.fetch_releases(["owner/repo"])
+            with self.assertRaisesRegex(RuntimeError, "exit code 9: permission denied \ufffd"):
+                PREFETCH.fetch_releases(["owner/repo"])
+            with self.assertRaises(UnicodeDecodeError):
                 PREFETCH.fetch_releases(["owner/repo"])
 
     def test_broken_csv_reply_fails(self) -> None:

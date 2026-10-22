@@ -77,6 +77,8 @@ func _run() -> void:
 		"create real plugin-controlled source link beneath the profile")
 	var alias_store := Store.new("linked_refusal", source_alias)
 	var alias_build := alias_store.bundle({"marker.txt": "must not publish".to_utf8_buffer()})
+	# Guard against over-permissiveness; the driver's linked-profile run is
+	# the fix's falsifier (it fails at scene activation before the repair).
 	check(not alias_store.archive(alias_build).ok and not DirAccess.dir_exists_absolute(alias_store.directory),
 		"textual profile prefix cannot authorize a plugin-controlled link")
 	for index: int in 3:

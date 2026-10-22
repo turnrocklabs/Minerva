@@ -16,11 +16,11 @@ def fetch_releases(repositories: Sequence[str]) -> dict[str, list[list[Any]]]:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise ValueError(f"Invalid repository: {repo}")
         command = ["gh", "api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"]
-        fetched = subprocess.run(command, check=False, capture_output=True, text=True, encoding="utf-8")
+        fetched = subprocess.run(command, check=False, capture_output=True)
         if fetched.returncode != 0:
             raise RuntimeError(f"{' '.join(command)} failed with exit code {fetched.returncode}: "
-                               f"{fetched.stderr.strip()}")
-        pages = json.loads(fetched.stdout)
+                               f"{fetched.stderr.decode('utf-8', errors='replace').strip()}")
+        pages = json.loads(fetched.stdout.decode("utf-8"))
         if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
             raise ValueError(f"Release listing for {repo} is not an array of pages")
         snapshot[repo] = pages

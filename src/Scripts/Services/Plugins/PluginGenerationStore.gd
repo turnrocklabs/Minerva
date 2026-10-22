@@ -358,6 +358,7 @@ static func _has_link(path: String) -> bool:
 		return true
 	if _profile_path.is_empty():
 		_profile_path = OS.get_user_data_dir().simplify_path().trim_suffix("/")
+	if _profile_real_path.is_empty():
 		_profile_real_path = _resolve_profile_root(_profile_path)
 	if _profile_real_path.is_empty():
 		return true
