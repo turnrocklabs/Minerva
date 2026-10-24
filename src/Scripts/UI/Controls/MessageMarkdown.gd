@@ -172,6 +172,7 @@ func _ready() -> void:
 ## sets loading label visibility to `loading_` and toggles_controls
 func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
+	%LoadingStatusLabel.visible = loading_ and not %LoadingStatusLabel.text.is_empty()
 
 	%MessageLabelsContainer.visible = not loading_
 	%ImagesGridContainer.visible = not loading_
@@ -179,6 +180,16 @@ func set_message_loading(loading_: bool):
 	_toggle_controls(not loading_)
 	await get_tree().process_frame
 	_update_sizes()
+
+
+## Optional plain status above the full-loading dots. Other callers leave it empty.
+func set_loading_status(text: String) -> void:
+	if %LoadingStatusLabel.text != text:
+		%LoadingStatusLabel.text = text
+	%LoadingStatusLabel.visible = loading and not text.is_empty()
+
+func clear_loading_status() -> void:
+	set_loading_status("")
 
 
 var _append_loading_label: RichTextLabel = null

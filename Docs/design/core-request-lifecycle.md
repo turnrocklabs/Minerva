@@ -82,10 +82,13 @@ and polling after Core registration under the same user.
 Regular `events{wait:true}` requests start at least five seconds apart. Held
 terminal replies are handled immediately, and `has_more` pages are fetched at
 once. These owner-authenticated polls renew the 300-second server lease; there
-is no separate keepalive timer. A gap, lost ring or inconsistent UTF-8 offset
-disables previews while final-result retrieval continues. Accumulated answer and
-reasoning use the loading message's append indicator; the authoritative result
-replaces that preview. Terminal results clear `PendingJob`. Non-completed states
+is no separate keepalive timer. While running, the full-loading bubble shows only
+a plain status line above its existing bouncing dots: `Queued…`, or the latest
+observed channel (`Thinking` / `Writing`), `last_seq` chunk number and elapsed
+`m:ss`. Its elapsed label ticks once a second from job or resume start, without
+rendering markdown or accumulating event text. Gaps and lost rings still advance
+the cursor; final text comes only from result retrieval. Completion renders the
+normal full result. Terminal results clear `PendingJob`. Non-completed states
 produce a `BotResponse.error`, and Stop sends best-effort cancel and stops local
 waiting. Disconnect preserves the pending job for registration and resume.
 

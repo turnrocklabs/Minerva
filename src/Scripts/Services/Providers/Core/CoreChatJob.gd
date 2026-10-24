@@ -11,24 +11,22 @@ var _online: Callable
 var _pause: Callable
 var _uuid: Callable
 var _persist: Callable
-var _preview: Callable
+var _status: Callable
 var _cancelled: bool = false
 var _job_id: String = ""
 var _after_seq: int = 0
-var _answer: String = ""
-var _reasoning: String = ""
-var _preview_enabled: bool = true
+var _phase: String = ""
 var _last_poll_ms: int = -1
 
 func _init(ask: Callable, online: Callable, pause: Callable, uuid: Callable,
-		persist: Callable, preview: Callable, item: ChatHistoryItem) -> void:
+		persist: Callable, status: Callable, item: ChatHistoryItem) -> void:
 	pending_item = item
 	_ask = ask
 	_online = online
 	_pause = pause
 	_uuid = uuid
 	_persist = persist
-	_preview = preview
+	_status = status
 
 func cancel() -> void:
 	_cancelled = true
@@ -164,25 +162,13 @@ func _number(value: Variant) -> int:
 	return -1
 
 func _accept_page(page: Dictionary) -> void:
-	if page.get("gap", false) or page.get("ring", "lost") == "lost":
-		_preview_enabled = false
-	if _preview_enabled:
-		for raw: Variant in page.get("events", []):
-			if not raw is Dictionary:
-				_preview_enabled = false
-				break
-			var channel: String = str(raw.get("channel", ""))
-			var text: Variant = raw.get("text")
-			var prior: String = _answer if channel == "answer" else _reasoning
-			if channel not in ["answer", "reasoning"] or not text is String or _number(raw.get("offset_utf8")) != prior.to_utf8_buffer().size():
-				_preview_enabled = false
-				break
-			if channel == "answer":
-				_answer += text
-			else:
-				_reasoning += text
+	# Gaps and lost rings need no text reconstruction: only observed channel
+	# metadata is shown, and the authoritative full text still comes from result.
+	for raw: Variant in page.get("events", []):
+		if raw is Dictionary and raw.get("channel") in ["answer", "reasoning"]:
+			_phase = str(raw["channel"])
 	var last: int = _number(page.get("last_seq"))
 	if last >= _after_seq:
 		_after_seq = last
-	if _preview.is_valid():
-		_preview.call(_answer if _preview_enabled else "", _reasoning if _preview_enabled else "")
+	if _status.is_valid():
+		_status.call(_phase, _after_seq)
