@@ -613,8 +613,7 @@ func _create_code_labels():
 		chat_node = chat_node.get_parent()
 	if chat_node is VBoxChat and chat_node.chat_history != null:
 		chat_title = chat_node.chat_history.HistoryName
-	var preview_html: Callable = SingletonObject.editor_pane.preview_html.bind(
-		SingletonObject.create_toast_notification, SingletonObject.main_ui.set_editor_pane_visible.bind(true))
+	var preview_html: Callable = EditorPane.request_html_preview
 	var block_number: int = 0
 
 	# Hide the label since we're showing the message content in nodes below

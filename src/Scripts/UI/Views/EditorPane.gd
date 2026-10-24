@@ -327,6 +327,16 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file: Varian
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)
 
+## Button entry point: restored message views may render before the main UI exists.
+static func request_html_preview(html: String, title: String, source: Object) -> Dictionary:
+	var pane: EditorPane = SingletonObject.editor_pane
+	var main_ui: Node = SingletonObject.main_ui
+	if not is_instance_valid(pane) or not is_instance_valid(main_ui):
+		SingletonObject.create_toast_notification("Editor pane not available")
+		return {"success": false, "error": "Editor pane not available"}
+	return pane.preview_html(html, title, source, SingletonObject.create_toast_notification,
+		Callable(main_ui, "set_editor_pane_visible").bind(true))
+
 ## Reuse the preview for a source tab/block, or a named tool preview.
 ## UI dependencies are supplied by the caller; web document lifetime stays in set_html.
 func preview_html(html: String, title: String, source: Object,

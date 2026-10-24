@@ -99,8 +99,12 @@ func register_tools() -> void:
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
-		"minerva_show_html": return _show_html(arguments, SingletonObject.editor_pane,
-			SingletonObject.main_ui.set_editor_pane_visible.bind(true))
+		"minerva_show_html":
+			var pane: EditorPane = SingletonObject.editor_pane
+			var main_ui: Node = SingletonObject.main_ui
+			if not is_instance_valid(pane) or not is_instance_valid(main_ui):
+				return MCPToolUtils.error("Editor pane not available")
+			return _show_html(arguments, pane, Callable(main_ui, "set_editor_pane_visible").bind(true))
 		"minerva_create_webview_panel": return _create_webview_panel(arguments)
 		"minerva_update_webview_panel": return _update_webview_panel(arguments)
 		"minerva_get_webview_source": return _get_webview_source(arguments)

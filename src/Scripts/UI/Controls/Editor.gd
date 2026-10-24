@@ -644,8 +644,7 @@ func _ready():
 		mic_button.show()
 		autowrap_button.show()
 		%PreviewHTMLButton.show()
-		%PreviewHTMLButton.pressed.connect(_preview_html_buffer.bind(SingletonObject.editor_pane,
-			SingletonObject.create_toast_notification, SingletonObject.main_ui.set_editor_pane_visible.bind(true)))
+		%PreviewHTMLButton.pressed.connect(_preview_html_buffer)
 		export_area_button.hide()
 		toggle_autowrap()
 		_init_annotation_host()
@@ -1329,9 +1328,9 @@ func _load_webview_file(path: String) -> void:
 		webview_editor.set_html(html)
 		webview_editor.mark_saved()
 
-func _preview_html_buffer(editor_pane: EditorPane, notify: Callable, show_editor: Callable) -> void:
+func _preview_html_buffer() -> void:
 	if code_edit != null:
-		editor_pane.preview_html(code_edit.text, "%s · HTML Preview" % tab_title, self, notify, show_editor)
+		EditorPane.request_html_preview(code_edit.text, "%s · HTML Preview" % tab_title, self)
 
 
 ## Load a file into a PLUGIN_SCENE editor by calling invoke_load on the scene root.
