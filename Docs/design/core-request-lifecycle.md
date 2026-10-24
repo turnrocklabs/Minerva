@@ -59,6 +59,36 @@ Disconnect also detaches it. Autocoder cancels its seven retained handlers on
 replacement, disconnect and view exit. An active request cannot change its ID,
 completion mode, or become a subscription. Updating its timeout remains supported.
 
+## Async model-chat jobs
+
+ChatPane supplies a `CoreChatJob` owner to `CoreProvider.generate_content`; its
+public result remains one awaitable `BotResponse`, including each tool round.
+Voice summaries and other callers retain the classic request path. The selected
+model uses jobs when its service advertises `model-chat/jobs/submit`. A missing
+topic or definitive `MODEL_NOT_PERMITTED` / `ASYNC_UNAVAILABLE` submit refusal
+selects classic for that model for the rest of the session.
+
+Before submit, the pending model history item receives a serialized `PendingJob`
+containing a UUIDv7 submission ID and model. It uses the existing project history
+save owner; it introduces no separate result cache. Retryable refusals retry the
+same body and ID. A lost acknowledgement, timeout or disconnect switches to
+lookup, never another generation or a classic fallback. Loading a saved pending
+item resumes lookup and polling after Core registration under the same user.
+
+Regular `events{wait:true}` requests start at least five seconds apart. Held
+terminal replies are handled immediately, and `has_more` pages are fetched at
+once. These owner-authenticated polls renew the 300-second server lease; there
+is no separate keepalive timer. A gap, lost ring or inconsistent UTF-8 offset
+disables previews while final-result retrieval continues. Accumulated answer and
+reasoning use the loading message's append indicator; the authoritative result
+replaces that preview. Terminal results clear `PendingJob`. Non-completed states
+produce a `BotResponse.error`, and Stop sends best-effort cancel and stops local
+waiting. Disconnect preserves the pending job for registration and resume.
+
+This client requires deployed GO291 for `wait:true`. Runtime acceptance belongs
+to the owner's manual check after that deployment; source syntax alone does not
+establish deployed behavior.
+
 Focused local verification:
 
 ```sh

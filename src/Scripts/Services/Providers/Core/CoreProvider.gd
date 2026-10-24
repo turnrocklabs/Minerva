@@ -2,8 +2,12 @@ class_name CoreProvider
 extends BaseProvider
 
 var _active_core_requests: Array[Core.AwaitMessage] = []
+var _active_chat_jobs: Array[CoreChatJob] = []
+static var _classic_models: Dictionary = {}
 
 func cancel_active_resquests() -> void:
+	for job: CoreChatJob in _active_chat_jobs.duplicate():
+		job.cancel()
 	for request in _active_core_requests.duplicate():
 		request.cancel()
 	super.cancel_active_resquests()
@@ -149,7 +153,7 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 		result.has("model") if result is Dictionary else false,
 		result.has("usage") if result is Dictionary else false
 	])
-	if result is Dictionary and result.has("choices") and result.has("model") and result.has("usage"):
+	if result is Dictionary and result.has("choices"):
 		print("[CoreProvider] Detected OpenAI format, calling to_bot_response")
 		bot_response = to_bot_response(result)  # Parse as OpenAI format
 	else:
@@ -184,7 +188,76 @@ func get_effective_num_gpu() -> int:
 	return int(resolved.values.get("num_gpu", -1)) if resolved.success else -1
 
 
+func _job_model_key() -> String:
+	return service.client_id + "/" + action.name if service != null and action != null else ""
+
+func supports_async_chat() -> bool:
+	if not requires_chat_model or service == null or service.client_id != "model-chat" or action == null:
+		return false
+	if _classic_models.has(_job_model_key()):
+		return false
+	for offered: Action in service.actions:
+		if offered.topic == "model-chat/jobs/submit":
+			return true
+	_classic_models[_job_model_key()] = true
+	return false
+
+func create_chat_job(item: ChatHistoryItem, persist: Callable, preview: Callable) -> CoreChatJob:
+	return CoreChatJob.new(_job_request, func() -> bool: return Core.registered,
+		_job_pause, UUIDGen.v7, persist, preview, item)
+
+func _job_input(data: Dictionary, model: String) -> Dictionary:
+	var body: Dictionary = data.duplicate(true)
+	body["model"] = model
+	body["stream"] = false
+	return body
+
+func _job_pause(seconds: float) -> void:
+	await Core.get_tree().create_timer(seconds).timeout
+
+func _job_response(result: Dictionary) -> BotResponse:
+	var response: BotResponse = to_bot_response(result.get("value", {}))
+	if not result.get("success", false):
+		response.error = str(result.get("error_message", "Async chat failed."))
+		response.set_meta("error_code", str(result.get("error_code", "async_job_failed")))
+	SingletonObject.chat_completed.emit(response)
+	return response
+
+func _job_request(kind: String, data: Dictionary) -> Dictionary:
+	var selected: Service = service
+	for known: Service in Core.services:
+		if known.client_id == "model-chat":
+			selected = known
+			break
+	var offered: Action = null
+	if selected != null:
+		for candidate: Action in selected.actions:
+			if candidate.topic == "model-chat/jobs/" + kind:
+				offered = candidate
+				break
+	if offered == null:
+		return {"success": false, "remote_error": true, "not_started": true,
+			"error_code": "ASYNC_UNAVAILABLE", "error_message": "Async job topic is unavailable."}
+	var request := Core.send_message(selected, offered, data, "json", 20.0)
+	_active_core_requests.append(request)
+	var completed: Dictionary = await request.receive_result()
+	_active_core_requests.erase(request)
+	if not completed.get("success", false):
+		return completed
+	var params: Dictionary = completed.get("json", {}).get("params", {})
+	if not params.get("result") is Dictionary:
+		return {"success": false, "error_code": "INVALID_JOB_REPLY", "error_message": "Invalid async job reply."}
+	return {"success": true, "value": params["result"]}
+
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
+	var chat_job: CoreChatJob = additional_params.get("_core_chat_job")
+	additional_params = additional_params.duplicate()
+	additional_params.erase("_core_chat_job")
+	if chat_job != null and not chat_job.pending_item.PendingJob.is_empty():
+		_active_chat_jobs.append(chat_job)
+		var resumed: Dictionary = await chat_job.run({}, chat_job.pending_item, str(chat_job.pending_item.PendingJob.get("model", "")))
+		_active_chat_jobs.erase(chat_job)
+		return _job_response(resumed)
 	if requires_chat_model:
 		var resolved := CoreModelCatalog.resolve(get_model_spec())
 		if not resolved.success:
@@ -225,6 +298,16 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		# HCP format: send last message as-is
 		var last_msg = prompt.back() if not prompt.is_empty() else {}
 		msg_data = last_msg
+
+	if chat_job != null and (not chat_job.pending_item.PendingJob.is_empty() or supports_async_chat()):
+		_active_chat_jobs.append(chat_job)
+		var model: String = str(chat_job.pending_item.PendingJob.get("model", action.name))
+		var job_result: Dictionary = await chat_job.run(_job_input(msg_data, model), chat_job.pending_item, model)
+		_active_chat_jobs.erase(chat_job)
+		if job_result.get("classic_fallback", false):
+			_classic_models[_job_model_key()] = true
+		else:
+			return _job_response(job_result)
 
 	var awaiter := Core.send_message(service, action, msg_data, "json", get_effective_timeout())
 	_active_core_requests.append(awaiter)
@@ -385,22 +468,25 @@ func wrap_memory(item: Note) -> Variant:
 	return ""
 
 func to_bot_response(data: Variant) -> BotResponse:
-	var response = BotResponse.new()
-
-	# set the used provider so update model name
+	var response := BotResponse.new()
 	response.provider = self
-
-	# the id will be useful if we need to complete the response with second request
-	response.id = data.get("id", "")
-
-	var message: Dictionary = data["choices"][0]["message"]
-	var finish_reason = data["choices"][0].get("finish_reason", "stop")
-
-	if finish_reason == "length":
-		response.complete = false
-
-	response.prompt_tokens = data["usage"]["prompt_tokens"]
-	response.completion_tokens = data["usage"]["completion_tokens"]
+	if not data is Dictionary or not data.get("choices") is Array or data["choices"].is_empty() or not data["choices"][0] is Dictionary:
+		response.error = "Invalid chat result."
+		return response
+	response.id = str(data.get("id", ""))
+	var first: Dictionary = data["choices"][0]
+	if not first.get("message") is Dictionary:
+		response.error = "Invalid chat result."
+		return response
+	var message: Dictionary = first["message"]
+	response.complete = first.get("finish_reason", "stop") != "length"
+	var usage: Dictionary = data.get("usage", {}) if data.get("usage") is Dictionary else {}
+	response.prompt_tokens = int(usage.get("prompt_tokens", 0))
+	response.completion_tokens = int(usage.get("completion_tokens", 0))
+	if data.has("model"):
+		response.set_meta("model", str(data["model"]))
+	if message.get("reasoning_content") is String and not message["reasoning_content"].is_empty():
+		response.add_reasoning(message["reasoning_content"])
 
 	# Handle content - can be null when there are tool calls
 	var content = message.get("content")
