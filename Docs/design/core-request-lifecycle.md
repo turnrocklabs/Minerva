@@ -70,8 +70,9 @@ topic uses classic for that turn and is checked again next turn. Only definitive
 model for the rest of the session.
 
 Before submit, the pending model history item receives a serialized `PendingJob`
-containing a UUIDv7 submission ID and model. It uses the existing project history
-save owner; it introduces no separate result cache. Retryable refusals retry the
+containing a UUIDv7 submission ID, model and `submitted_at` Unix seconds before
+the first submit. Retries preserve this original timestamp. It uses the existing
+project history save owner; it introduces no separate result cache. Retryable refusals retry the
 same body and ID. A lost acknowledgement, timeout or disconnect switches to
 lookup, never another generation or a classic fallback while acceptance remains
 unknown. A successful lookup proving absence retries the same body and ID in
@@ -83,9 +84,11 @@ Regular `events{wait:true}` requests start at least five seconds apart. Held
 terminal replies are handled immediately, and `has_more` pages are fetched at
 once. These owner-authenticated polls renew the 300-second server lease; there
 is no separate keepalive timer. While running, the full-loading bubble shows only
-a plain status line above its existing bouncing dots: `Queued…`, or the latest
+a plain status line above its existing bouncing dots: `Queued… · 0:42`, or the latest
 observed channel (`Thinking` / `Writing`), `last_seq` chunk number and elapsed
-`m:ss`. Its elapsed label ticks once a second from job or resume start, without
+`m:ss` (`h:mm:ss` at one hour). Its elapsed label ticks once a second from the
+original submitted time, including while queued and after resume. Legacy pending
+items without that timestamp count from resume. Status updates happen without
 rendering markdown or accumulating event text. Gaps and lost rings still advance
 the cursor; final text comes only from result retrieval. Completion renders the
 normal full result. Terminal results clear `PendingJob`. Non-completed states

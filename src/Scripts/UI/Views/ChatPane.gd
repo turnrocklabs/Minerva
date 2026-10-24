@@ -906,12 +906,19 @@ func _core_job_status(phase: String, last_seq: int, item: ChatHistoryItem, statu
 
 func _update_core_job_status(item: ChatHistoryItem, status: Dictionary) -> void:
 	if is_instance_valid(item.rendered_node):
-		var text: String = "Queued…"
+		var started_at: float = float(status["started_at"])
+		var submitted_at: Variant = item.PendingJob.get("submitted_at")
+		if (submitted_at is int or submitted_at is float) and is_finite(float(submitted_at)) and float(submitted_at) > 0.0:
+			started_at = float(submitted_at)
+		var elapsed: int = maxi(0, int(Time.get_unix_time_from_system() - started_at))
+		var elapsed_text: String = "%d:%02d" % [int(float(elapsed) / 60.0), elapsed % 60]
+		if elapsed >= 3600:
+			elapsed_text = "%d:%02d:%02d" % [int(float(elapsed) / 3600.0), int(float(elapsed % 3600) / 60.0), elapsed % 60]
+		var text: String = "Queued… · %s" % elapsed_text
 		var phase: String = str(status["phase"])
 		if phase in ["reasoning", "answer"]:
-			var elapsed: int = int(float(Time.get_ticks_msec() - int(status["started_ms"])) / 1000.0)
-			text = "%s · chunk %d · %d:%02d" % ["Thinking" if phase == "reasoning" else "Writing",
-				int(status["last_seq"]), int(float(elapsed) / 60.0), elapsed % 60]
+			text = "%s · chunk %d · %s" % ["Thinking" if phase == "reasoning" else "Writing",
+				int(status["last_seq"]), elapsed_text]
 		if status["text"] != text:
 			status["text"] = text
 			item.rendered_node.set_loading_status(text)
@@ -931,7 +938,8 @@ func _generate_core_job(history: ChatHistory, provider: CoreProvider, prompt: Ar
 	if is_instance_valid(item.rendered_node):
 		item.rendered_node.loading_append = false
 		item.rendered_node.loading = true
-	var status: Dictionary = {"phase": "", "last_seq": 0, "started_ms": Time.get_ticks_msec(), "text": ""}
+	# Legacy pending items have no submitted_at, so their clock starts on resume.
+	var status: Dictionary = {"phase": "", "last_seq": 0, "started_at": Time.get_unix_time_from_system(), "text": ""}
 	var status_timer := Timer.new()
 	status_timer.wait_time = 1.0
 	status_timer.timeout.connect(_update_core_job_status.bind(item, status))

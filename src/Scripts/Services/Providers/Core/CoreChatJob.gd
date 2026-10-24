@@ -73,7 +73,8 @@ func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 	var resumed: bool = not item.PendingJob.is_empty()
 	var submission_id: String = str(item.PendingJob.get("submission_id", "")) if resumed else str(_uuid.call())
 	if not resumed:
-		item.PendingJob = {"submission_id": submission_id, "model": model}
+		item.PendingJob = {"submission_id": submission_id, "model": model,
+			"submitted_at": Time.get_unix_time_from_system()}
 		await _save(item) # The pending model item is attached to history before this call.
 		var body: Dictionary = {"schema_version": 1, "submission_id": submission_id,
 			"kind": "chat/v1", "input": input.duplicate(true)}
