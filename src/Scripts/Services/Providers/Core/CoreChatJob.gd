@@ -63,6 +63,8 @@ func _lookup(submission_id: String) -> Dictionary:
 			var value: Dictionary = reply.get("value", {})
 			if value.get("found", false) and not str(value.get("job_id", "")).is_empty():
 				return value
+			if value.get("found") is bool and value["found"] == false:
+				return value # A successful lookup can prove submit never arrived.
 		elif reply.get("remote_error", false) and str(reply.get("error_code", "")) in ["SUBMISSION_EXPIRED", "RESULT_EXPIRED"]:
 			return reply
 		# Unknown acceptance is query-only, never another submit or classic call.
@@ -81,9 +83,10 @@ func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 			var reply: Dictionary = await _request("submit", body)
 			if reply.get("success", false):
 				_job_id = str(reply.get("value", {}).get("job_id", ""))
-				break
+				if not _job_id.is_empty():
+					break
 			var code: String = str(reply.get("error_code", ""))
-			var refused: bool = reply.get("remote_error", false) and reply.get("not_started", true) != false and code != "RESULT_UNKNOWN"
+			var refused: bool = reply.get("remote_error", false) and reply.get("not_started", true) != false and code not in ["RESULT_UNKNOWN", "SUBMISSION_IN_FLIGHT", "timeout", "TIMEOUT"]
 			if refused and code in CLASSIC:
 				item.PendingJob = {}
 				await _save(item)
@@ -95,11 +98,24 @@ func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 				item.PendingJob = {}
 				await _save(item)
 				return reply
-			break # A lost ACK, disconnect or timeout is resolved by lookup only.
+			# Uncertain acceptance remains query-only until lookup proves absence.
+			var found: Dictionary = await _lookup(submission_id)
+			if found.get("found") is bool and found["found"] == false:
+				continue # Still in-session: retry the exact same body and ID.
+			_job_id = str(found.get("job_id", ""))
+			if _job_id.is_empty():
+				return found
+			break
 	if _cancelled:
 		return _failure("cancelled")
 	if _job_id.is_empty():
 		var found: Dictionary = await _lookup(submission_id)
+		if found.get("found") is bool and found["found"] == false:
+			item.PendingJob = {}
+			await _save(item)
+			var missing: Dictionary = _failure("SUBMISSION_NOT_RECEIVED")
+			missing["error_message"] = "The server never received this request; resend it."
+			return missing # A resumed item has no original body to submit safely.
 		_job_id = str(found.get("job_id", ""))
 		if _job_id.is_empty():
 			return found

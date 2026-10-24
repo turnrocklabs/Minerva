@@ -199,7 +199,6 @@ func supports_async_chat() -> bool:
 	for offered: Action in service.actions:
 		if offered.topic == "model-chat/jobs/submit":
 			return true
-	_classic_models[_job_model_key()] = true
 	return false
 
 func create_chat_job(item: ChatHistoryItem, persist: Callable, preview: Callable) -> CoreChatJob:

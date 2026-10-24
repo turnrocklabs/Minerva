@@ -65,15 +65,19 @@ ChatPane supplies a `CoreChatJob` owner to `CoreProvider.generate_content`; its
 public result remains one awaitable `BotResponse`, including each tool round.
 Voice summaries and other callers retain the classic request path. The selected
 model uses jobs when its service advertises `model-chat/jobs/submit`. A missing
-topic or definitive `MODEL_NOT_PERMITTED` / `ASYNC_UNAVAILABLE` submit refusal
-selects classic for that model for the rest of the session.
+topic uses classic for that turn and is checked again next turn. Only definitive
+`MODEL_NOT_PERMITTED` / `ASYNC_UNAVAILABLE` submit refusals select classic for that
+model for the rest of the session.
 
 Before submit, the pending model history item receives a serialized `PendingJob`
 containing a UUIDv7 submission ID and model. It uses the existing project history
 save owner; it introduces no separate result cache. Retryable refusals retry the
 same body and ID. A lost acknowledgement, timeout or disconnect switches to
-lookup, never another generation or a classic fallback. Loading a saved pending
-item resumes lookup and polling after Core registration under the same user.
+lookup, never another generation or a classic fallback while acceptance remains
+unknown. A successful lookup proving absence retries the same body and ID in
+session. A restored pending item has no body; definitive absence clears it and
+asks the user to resend. Loading a saved pending item otherwise resumes lookup
+and polling after Core registration under the same user.
 
 Regular `events{wait:true}` requests start at least five seconds apart. Held
 terminal replies are handled immediately, and `has_more` pages are fetched at
