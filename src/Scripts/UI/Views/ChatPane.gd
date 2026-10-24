@@ -899,16 +899,29 @@ func _checkpoint_core_job(_item: ChatHistoryItem) -> void:
 	# PendingJob is serialized by the existing project history owner.
 	SingletonObject.save_state(false)
 
-func _core_job_preview(answer: String, reasoning: String, item: ChatHistoryItem) -> void:
-	item.Message = answer
-	item.Reasoning = []
-	if not reasoning.is_empty():
-		item.Reasoning = [{"kind": "thinking", "text": reasoning, "redacted": false, "order": 0}]
+func _core_job_status(phase: String, last_seq: int, item: ChatHistoryItem, status: Dictionary) -> void:
+	status["phase"] = phase
+	status["last_seq"] = last_seq
+	_update_core_job_status(item, status)
+
+func _update_core_job_status(item: ChatHistoryItem, status: Dictionary) -> void:
 	if is_instance_valid(item.rendered_node):
-		item.rendered_node.loading = false
-		item.rendered_node.loading_append = false
-		item.rendered_node.render()
-		item.rendered_node.loading_append = true
+		var started_at: float = float(status["started_at"])
+		var submitted_at: Variant = item.PendingJob.get("submitted_at")
+		if (submitted_at is int or submitted_at is float) and is_finite(float(submitted_at)) and float(submitted_at) > 0.0:
+			started_at = float(submitted_at)
+		var elapsed: int = maxi(0, int(Time.get_unix_time_from_system() - started_at))
+		var elapsed_text: String = "%d:%02d" % [int(float(elapsed) / 60.0), elapsed % 60]
+		if elapsed >= 3600:
+			elapsed_text = "%d:%02d:%02d" % [int(float(elapsed) / 3600.0), int(float(elapsed % 3600) / 60.0), elapsed % 60]
+		var text: String = "Queued… · %s" % elapsed_text
+		var phase: String = str(status["phase"])
+		if phase in ["reasoning", "answer"]:
+			text = "%s · chunk %d · %s" % ["Thinking" if phase == "reasoning" else "Writing",
+				int(status["last_seq"]), elapsed_text]
+		if status["text"] != text:
+			status["text"] = text
+			item.rendered_node.set_loading_status(text)
 
 func _generate_core_job(history: ChatHistory, provider: CoreProvider, prompt: Array,
 		params: Dictionary, existing: ChatHistoryItem = null) -> BotResponse:
@@ -921,12 +934,27 @@ func _generate_core_job(history: ChatHistory, provider: CoreProvider, prompt: Ar
 	var created_node: bool = false
 	if not is_instance_valid(item.rendered_node) and is_instance_valid(history.VBox):
 		history.VBox.add_history_item(item)
-		item.rendered_node.loading = true
 		created_node = true
-	var job: CoreChatJob = provider.create_chat_job(item, _checkpoint_core_job, _core_job_preview.bind(item))
+	if is_instance_valid(item.rendered_node):
+		item.rendered_node.loading_append = false
+		item.rendered_node.loading = true
+	# Legacy pending items have no submitted_at, so their clock starts on resume.
+	var status: Dictionary = {"phase": "", "last_seq": 0, "started_at": Time.get_unix_time_from_system(), "text": ""}
+	var status_timer := Timer.new()
+	status_timer.wait_time = 1.0
+	status_timer.timeout.connect(_update_core_job_status.bind(item, status))
+	add_child(status_timer)
+	status_timer.start()
+	_update_core_job_status(item, status)
+	var job: CoreChatJob = provider.create_chat_job(item, _checkpoint_core_job, _core_job_status.bind(item, status))
 	var request: Dictionary = params.duplicate()
 	request["_core_chat_job"] = job
 	var response: BotResponse = await provider.generate_content(prompt, request)
+	if is_instance_valid(status_timer):
+		status_timer.stop()
+		status_timer.queue_free()
+	if is_instance_valid(item.rendered_node):
+		item.rendered_node.clear_loading_status()
 	if item.PendingJob.is_empty():
 		if attached:
 			history.HistoryItemList.erase(item)
