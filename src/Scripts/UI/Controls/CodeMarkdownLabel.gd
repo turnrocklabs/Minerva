@@ -44,6 +44,8 @@ signal created_text_note(index, memory_item_UUID)
 signal update_expanded(index, is_expanded)
 var linked_memory_item: String = ""
 var dict_index: String = ""
+var _open_html_preview: Callable
+var _html_preview_title: String = "HTML Preview"
 
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
@@ -103,10 +105,23 @@ func _extract_code_label():
 
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
+func _on_html_preview_pressed() -> void:
+	if _open_html_preview.is_valid():
+		_open_html_preview.call(_parse_code_block(%CodeLabel.text), _html_preview_title, self)
+
+func _is_html(syntax: String, content: String, unlabelled: bool) -> bool:
+	var language: String = syntax.strip_edges().to_lower()
+	if language == "html":
+		return true
+	if not unlabelled:
+		return false
+	var source: String = _parse_code_block(content).strip_edges().to_lower()
+	return source.begins_with("<!doctype html") or source.begins_with("<html")
+
 ## Load on demand because the scene owns this script.
 static var code_markdown_label: PackedScene:
 	get: return load("res://Scenes/CodeMarkdownLabel.tscn")
-static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded_value: bool = true) -> CodeMarkdownLabel:
+static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded_value: bool = true, preview_html: Callable = Callable(), preview_title: String = "HTML Preview", unlabelled: bool = false) -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
 	var code_panel = code_markdown_label.instantiate()
 	code_panel.dict_index = index
@@ -119,6 +134,10 @@ static func create(code_text: String, syntax: String = "Plain Text", index: Stri
 	code_panel.expanded = expanded_value
 	code_panel.get_node("%CopyButton").pressed.connect(code_panel._copy_code_label)
 	code_panel.get_node("%ExtractButton").pressed.connect(code_panel._extract_code_label)
+	code_panel._open_html_preview = preview_html
+	code_panel._html_preview_title = preview_title
+	code_panel.get_node("%PreviewButton").visible = preview_html.is_valid() and code_panel._is_html(syntax, code_text, unlabelled)
+	code_panel.get_node("%PreviewButton").pressed.connect(code_panel._on_html_preview_pressed)
 	code_panel.get_node("%CodeLabel").finished.connect(code_panel._update_label_size)
 	return code_panel
 

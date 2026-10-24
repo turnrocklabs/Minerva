@@ -327,6 +327,55 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file: Varian
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)
 
+## Button entry point: restored message views may render before the main UI exists.
+static func request_html_preview(html: String, title: String, source: Object) -> Dictionary:
+	var pane: EditorPane = SingletonObject.editor_pane
+	var main_ui: Node = SingletonObject.main_ui
+	if not is_instance_valid(pane) or not is_instance_valid(main_ui):
+		SingletonObject.create_toast_notification("Editor pane not available")
+		return {"success": false, "error": "Editor pane not available"}
+	return pane.preview_html(html, title, source, SingletonObject.create_toast_notification,
+		Callable(main_ui, "set_editor_pane_visible").bind(true))
+
+## Reuse the preview for a source tab/block, or a named tool preview.
+## UI dependencies are supplied by the caller; web document lifetime stays in set_html.
+func preview_html(html: String, title: String, source: Object,
+		notify: Callable, show_editor: Callable) -> Dictionary:
+	if not ClassDB.class_exists("CefTexture"):
+		var message: String = "embedded browser not available on this build"
+		if notify.is_valid():
+			notify.call(message)
+		return {"success": false, "error": message}
+	var preview_title: String = title.strip_edges() if not title.strip_edges().is_empty() else "HTML Preview"
+	var preview: Editor = null
+	for editor: Editor in get_open_editors():
+		if editor.type != Editor.Type.WEBVIEW:
+			continue
+		var origin: Variant = editor.get_meta("html_preview_source", null)
+		if source != null and origin is WeakRef and origin.get_ref() == source:
+			preview = editor
+			break
+		if source == null and editor.get_meta("html_preview_title", "") == preview_title:
+			preview = editor
+			break
+	if preview == null:
+		preview = add_webview_editor(preview_title)
+		if preview != null:
+			if source != null:
+				preview.set_meta("html_preview_source", weakref(source))
+			else:
+				preview.set_meta("html_preview_title", preview_title)
+	if preview == null or preview.webview_editor == null:
+		var message: String = "Could not open HTML preview"
+		if notify.is_valid():
+			notify.call(message)
+		return {"success": false, "error": message}
+	preview.webview_editor.set_html(html)
+	Tabs.current_tab = Tabs.get_tab_idx_from_control(preview)
+	if show_editor.is_valid():
+		show_editor.call()
+	return {"success": true, "editor_id": preview.webview_editor.editor_id}
+
 func add_plugin_panel_editor(plugin_id: String, panel_name: String, panel_html: String, tab_title: String = "") -> Editor:
 	var title := tab_title if not tab_title.is_empty() else panel_name
 	var editor := add(Editor.Type.WEBVIEW, null, title, null, true)

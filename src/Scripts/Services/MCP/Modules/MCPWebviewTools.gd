@@ -8,6 +8,7 @@ const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
 
 func get_tool_names() -> Array[String]:
 	return [
+		"minerva_show_html",
 		"minerva_create_webview_panel",
 		"minerva_update_webview_panel",
 		"minerva_get_webview_source",
@@ -16,6 +17,13 @@ func get_tool_names() -> Array[String]:
 
 
 func register_tools() -> void:
+	server._register_tool("minerva_show_html",
+		"Preview HTML in the embedded browser without managing a file. Reuses and refreshes the preview with the same title.",
+		{"type": "object", "properties": {
+			"html": {"type": "string", "description": "HTML source to preview"},
+			"title": {"type": "string", "description": "Preview tab title (default: HTML Preview)"}
+		}, "required": ["html"]}, "webview")
+
 	server._register_tool("minerva_create_webview_panel",
 		"Creates a webview panel tab with HTML/CSS/JS content. The HTML is rendered in an isolated webview (fault-isolated from Minerva). After creating, use minerva_update_webview_panel to modify content, or minerva_get_webview_source to read current HTML.",
 		{
@@ -91,11 +99,27 @@ func register_tools() -> void:
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
+		"minerva_show_html":
+			var pane: EditorPane = SingletonObject.editor_pane
+			var main_ui: Node = SingletonObject.main_ui
+			if not is_instance_valid(pane) or not is_instance_valid(main_ui):
+				return MCPToolUtils.error("Editor pane not available")
+			return _show_html(arguments, pane, Callable(main_ui, "set_editor_pane_visible").bind(true))
 		"minerva_create_webview_panel": return _create_webview_panel(arguments)
 		"minerva_update_webview_panel": return _update_webview_panel(arguments)
 		"minerva_get_webview_source": return _get_webview_source(arguments)
 		"minerva_link_webview_to_note": return _link_webview_to_note(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
+
+func _show_html(arguments: Dictionary, editor_pane: EditorPane, show_editor: Callable) -> Dictionary:
+	if not arguments.get("html") is String:
+		return MCPToolUtils.error("'html' is required and must be a string")
+	if not arguments.get("title", "HTML Preview") is String:
+		return MCPToolUtils.error("'title' must be a string")
+	if editor_pane == null:
+		return MCPToolUtils.error("Editor pane not available")
+	return editor_pane.preview_html(arguments["html"], arguments.get("title", "HTML Preview"),
+		null, Callable(), show_editor)
 
 
 func _create_webview_panel(arguments: Dictionary) -> Dictionary:

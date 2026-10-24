@@ -169,6 +169,13 @@ icon_24 = ExtResource("6_6cyjk")
 icon_48 = ExtResource("8_rhomd")
 icon_68 = ExtResource("9_tritd")
 
+[node name="PreviewHTMLButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "Preview the current text as HTML"
+text = "Preview HTML"
+
 [node name="FindButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2

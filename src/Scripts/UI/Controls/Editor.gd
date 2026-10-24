@@ -643,6 +643,8 @@ func _ready():
 	if self.type == Type.TEXT:
 		mic_button.show()
 		autowrap_button.show()
+		%PreviewHTMLButton.show()
+		%PreviewHTMLButton.pressed.connect(_preview_html_buffer)
 		export_area_button.hide()
 		toggle_autowrap()
 		_init_annotation_host()
@@ -1325,6 +1327,10 @@ func _load_webview_file(path: String) -> void:
 	if webview_editor:
 		webview_editor.set_html(html)
 		webview_editor.mark_saved()
+
+func _preview_html_buffer() -> void:
+	if code_edit != null:
+		EditorPane.request_html_preview(code_edit.text, "%s · HTML Preview" % tab_title, self)
 
 
 ## Load a file into a PLUGIN_SCENE editor by calling invoke_load on the scene root.
