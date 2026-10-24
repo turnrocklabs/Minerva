@@ -35,6 +35,9 @@ with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
                          "inherited_set": [n for n in names if n in os.environ]}) + "\n")
 def save():
     state.write_text(json.dumps(data))
+if args[0] == "inspect" and os.environ.get("FAKE_INSPECT_ERROR"):
+    print("Cannot connect to the Docker daemon: fixture unavailable", file=sys.stderr)
+    sys.exit(1)
 if args[:2] == ["image", "inspect"]:
     if os.environ.get("FAKE_IMAGE") != "present":
         sys.exit(1)
@@ -52,6 +55,7 @@ if args[0] == "inspect" and any("Config.Labels" in a for a in args):
 if args[0] == "inspect":
     if args[-1] in data["running"]:
         print("true"); sys.exit(0)
+    print("Error: No such object: " + args[-1], file=sys.stderr)
     sys.exit(1)
 if args[0] == "stop":
     data["running"] = [c for c in data["running"] if c not in args[1:]]; save(); sys.exit(0)
@@ -674,6 +678,42 @@ class LauncherTest(unittest.TestCase):
 
 
     # ── planned jobs ──
+    def test_failed_inspect_never_finalizes_private_output(self) -> None:
+        self.start_alpha()
+        self.env.update(FAKE_INSPECT_ERROR="1", DUMMY_JOB_PRIVATE="dummy-inspect-canary-3347")
+        launcher = self.agent("run-job", "alpha", "--rev", "HEAD", "--command", "true",
+                              "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE", wait=False)
+        deadline = time.monotonic() + 10
+        while len(self.runs()) < 4:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.05)
+        launched = self.runs()[-1]
+        job_id = launched[launched.index("-l") + 1].split("=", 1)[1]
+        directory = self.home / "state/sessions/alpha/jobs" / job_id
+        original = self.env["DUMMY_JOB_PRIVATE"]
+        (directory / "out/job.log").write_text(original)
+        launcher.send_signal(signal.SIGTERM)
+        self.assertNotEqual(launcher.wait(timeout=10), 0)
+        for action in (("job-status", "alpha", job_id), ("drain", "alpha", "--wait", "0")):
+            code, answer = self.answer(*action)
+            self.assertEqual(code, 0, answer)
+            state = answer["jobs"][0] if action[0] == "drain" else answer
+            self.assertEqual(state["class"], "unknown")
+            self.assertFalse(state["final"])
+            self.assertIn("inspect failed", state["detail"])
+        code, answer = self.answer("run-job", "alpha", "--finalize", job_id,
+                                    "--env-from", "DUMMY_JOB_PRIVATE")
+        self.assertNotEqual(code, 0, answer)
+        self.assertIn("retry", answer["error"])
+        self.assertFalse((directory / "finalization.json").exists())
+        self.assertFalse((directory / "result.json").exists())
+        self.assertEqual((directory / "out/job.log").read_text(), original)
+        self.env.pop("FAKE_INSPECT_ERROR")
+        self.assertEqual(self.answer("drain", "alpha", "--wait", "0")[0], 0)
+        self.assertEqual(self.answer("run-job", "alpha", "--finalize", job_id,
+                                     "--env-from", "DUMMY_JOB_PRIVATE")[0], 0)
+        self.assertEqual((directory / "out/job.log").read_text(), "[REDACTED]")
+
     def test_private_launcher_signals_cleanup_and_sigkill_has_explicit_recovery(self) -> None:
         self.start_alpha()
         canary = "dummy-signal-canary-7742"

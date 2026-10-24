@@ -510,8 +510,9 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
                     start_egress(host, name, job, inherited, launch)
                 except host.Refused:
                     stop_egress(host, directory, job, inherited)
-                    finalize_private_output(host, directory, inherited)
-                    finish(host, directory, job, "failed", "Core egress did not start")
+                    if host.docker_state(job["container"]) == "stopped":
+                        finalize_private_output(host, directory, inherited)
+                        finish(host, directory, job, "failed", "Core egress did not start")
                     raise
                 mounts += host.bind_mount(job["egress"]["sockets"], "/run/minerva-agent/core", True)
             variables = {"MINERVA_JOB_ID": job_id, "MINERVA_JOB_REV": rev, "MINERVA_JOB_FOLDER": source["path"],
@@ -739,8 +740,8 @@ def reconcile(host, name, job_id, inherited: dict[str, str] | None = None):
         state = host.docker_state(job["container"])
         lost_launcher = private_output(job) and not launcher_present(directory)
         if state == "unknown":
-            return job, {"class": "unfinalized" if lost_launcher else "unknown", "final": False,
-                         "detail": "docker cannot be asked; private output cannot be finalized"}
+            return job, {"class": "unknown", "final": False,
+                         "detail": "docker inspect failed; output cannot be finalized; retry later"}
         deadline = job["started_at"] + job["limits"]["seconds"] + 2 * KILL_GRACE_S
         if state == "running" and time.time() > deadline:
             stop_owned(host, directory, job, "deadline_stop_at", inherited)
@@ -798,7 +799,10 @@ def finalize_job(host: ModuleType, name: str, job_id: str,
         with host.session_lock(name, "jobs.lock"):
             if launcher_present(directory):
                 raise host.Refused("private job still has a launcher or finalizer")
-            if host.docker_state(job["container"]) != "stopped":
+            state = host.docker_state(job["container"])
+            if state == "unknown":
+                raise host.Refused("docker inspect failed; retry --finalize later")
+            if state != "stopped":
                 raise host.Refused("--finalize requires a stopped container; drain the job first")
             launch.arm(host, directory)
             launch.check(host)

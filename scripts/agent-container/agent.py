@@ -510,7 +510,13 @@ def docker_state(container):
                                capture_output=True, text=True)
     except FileNotFoundError:
         return "unknown"
-    return "running" if probe.returncode == 0 and probe.stdout.strip() == "true" else "stopped"
+    if probe.returncode == 0:
+        return "running" if probe.stdout.strip() == "true" else "stopped"
+    missing = re.compile(r"^(?:Error(?: response from daemon)?: )?No such (?:object|container): "
+                         + re.escape(container) + r"$")
+    if any(missing.fullmatch(line.strip()) for line in probe.stderr.splitlines()):
+        return "stopped"
+    return "unknown"
 
 
 def running(container):
