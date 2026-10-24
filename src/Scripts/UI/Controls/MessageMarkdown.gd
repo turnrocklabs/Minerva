@@ -534,10 +534,12 @@ func _on_gui_input(event: InputEvent):
 class TextSegment:
 	var syntax: String
 	var content: String
+	var unlabelled_code: bool
 
-	func _init(content_: String, syntax_: String = ""):
+	func _init(content_: String, syntax_: String = "", unlabelled_code_: bool = false):
 		content = content_
 		syntax = syntax_
+		unlabelled_code = unlabelled_code_
 
 	func _to_string() -> String:
 		if syntax:
@@ -578,10 +580,11 @@ func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
 	# if theres no syntax, just set it to anything but empty string
 	# since empty string would mean it's not a code block
 	var syntax = match_.get_string("syntax")
+	var unlabelled_code: bool = syntax.is_empty()
 	if not syntax: syntax = "Plain Text"
 
 	# place code block between them
-	found.append(TextSegment.new(match_.get_string("content"), syntax))
+	found.append(TextSegment.new(match_.get_string("content"), syntax, unlabelled_code))
 
 	# same thing
 	var new_ts2 = _extract_text_segments(TextSegment.new(text.content.substr(match_.get_end())))
@@ -604,6 +607,15 @@ var _tool_block_regex: RegEx = null
 
 func _create_code_labels():
 	var segments: Array[TextSegment] = _extract_text_segments(TextSegment.new(label.text))
+	var chat_title: String = "Chat"
+	var chat_node: Node = get_parent()
+	while chat_node != null and not chat_node is VBoxChat:
+		chat_node = chat_node.get_parent()
+	if chat_node is VBoxChat and chat_node.chat_history != null:
+		chat_title = chat_node.chat_history.HistoryName
+	var preview_html: Callable = SingletonObject.editor_pane.preview_html.bind(
+		SingletonObject.create_toast_notification, SingletonObject.main_ui.set_editor_pane_visible.bind(true))
+	var block_number: int = 0
 
 	# Hide the label since we're showing the message content in nodes below
 	# but keep it so we can access the message content easily
@@ -619,6 +631,7 @@ func _create_code_labels():
 
 	for ts in segments:
 		if ts.syntax:
+			block_number += 1
 			var temp_UUID: String = ""
 			var temp_expanded: bool = true
 			if history_item.LinkedMemories.has(str(indexes)):
@@ -628,7 +641,8 @@ func _create_code_labels():
 				first_time_message = false
 			elif first_time_message and ts.content.split("\n").size() >= max_lines_expanded_code_segment:
 				temp_expanded = false
-			var node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID, temp_expanded)
+			var node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID, temp_expanded,
+				preview_html, "%s · block %d" % [chat_title, block_number], ts.unlabelled_code)
 			node.created_text_note.connect(update_linked_dict)
 			node.update_expanded.connect(update_expanded)
 			indexes += 1
