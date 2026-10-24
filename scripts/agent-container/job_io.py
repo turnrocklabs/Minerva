@@ -12,7 +12,6 @@ import re
 import secrets
 import select
 import signal
-import socket
 import stat
 import subprocess
 import sys
@@ -137,17 +136,6 @@ def finalize_output(out: Path, values: list[bytes], quarantine: Path) -> Finaliz
     return {"scanned": True, "refused": refused}
 
 
-def stop_egress() -> None:
-    if os.environ.get("MINERVA_JOB_NETWORK") != "core":
-        return
-    try:
-        with socket.socket(socket.AF_UNIX) as client:
-            client.settimeout(1)
-            client.connect("/run/minerva-agent/core/stop.sock")
-    except OSError:
-        pass  # Sidecar's deadline and host reconciliation are the fallbacks.
-
-
 def run(out: Path = Path("/out"), script: Path = Path("/job/run.sh")) -> int:
     started = time.monotonic()
     forwarder = None
@@ -212,7 +200,6 @@ def run(out: Path = Path("/out"), script: Path = Path("/job/run.sh")) -> int:
                 except subprocess.TimeoutExpired:
                     forwarder.kill()
                     forwarder.wait(timeout=5)
-            stop_egress()
             log.write(redactor.feed(b"", final=True))
             (out / "exit").write_text(f"{rc} {int(time.monotonic() - started)}\n")
     return rc

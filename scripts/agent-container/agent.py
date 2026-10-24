@@ -20,6 +20,7 @@
   agent.py list
   agent.py run-job NAME --rev REV --command CMD [--env K=V]... [--artifact PATH]...
                    [--cpus N] [--memory SIZE] [--seconds S] [--folder PATH]
+  agent.py run-job NAME --finalize JOB [--env-from NAME]...
   agent.py job-status NAME [JOB]
   agent.py job-log NAME JOB [--tail BYTES]
   agent.py drain NAME [--wait S] [--lift]
@@ -1256,6 +1257,12 @@ def cmd_list(args):
 
 
 def cmd_run_job(args):
+    if args.finalize:
+        if any(value is not None for value in (args.rev, args.job_command, args.env, args.artifact,
+                                                args.cpus, args.memory, args.seconds, args.folder, args.sibling)) \
+                or args.network != "none":
+            raise Refused("--finalize takes only a job id and its original --env-from names")
+        return jobs.finalize_job(HOST, args.name, args.finalize, args.env_from)
     return jobs.run_job(HOST, args.name, args.rev, args.job_command, args.env, args.artifact,
                         args.cpus, args.memory, args.seconds, args.folder, args.sibling,
                         args.network, args.env_from)
@@ -1274,9 +1281,10 @@ def cmd_drain(args):
 
 
 def job_options(p):
-    p.add_argument("--rev", required=True, metavar="REV")
+    p.add_argument("--rev", metavar="REV")
     # dest differs from the subcommand's own "command".
-    p.add_argument("--command", dest="job_command", required=True, metavar="SHELL_COMMAND")
+    p.add_argument("--command", dest="job_command", metavar="SHELL_COMMAND")
+    p.add_argument("--finalize", metavar="JOB", help="scan a stopped private job using re-supplied --env-from values")
     p.add_argument("--env", action="append", metavar="KEY=VALUE")
     p.add_argument("--env-from", action="append", metavar="NAME",
                    help="inherit a process environment variable without recording its value")

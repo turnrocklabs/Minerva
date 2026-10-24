@@ -55,7 +55,7 @@ class JobIOTest(unittest.TestCase):
         self.assertEqual((timed / "ended").read_text().split()[:2], ["command", "124"])
 
     def test_evidence_refuses_literal_escaped_and_linked_private_content(self) -> None:
-        scratch = Path(tempfile.mkdtemp(prefix="agent-evidence-"))
+        scratch = Path(tempfile.mkdtemp(prefix="agent-evidence-")).resolve()
         safe = scratch / "safe.json"
         safe.write_text('{"status":"completed"}\n')
         job_io.check_artifact(safe, [b"dummy-private"])

@@ -152,9 +152,24 @@ Inherited values, JSON escapes, percent encodings and HTTP Basic pair encodings
 are masked across stdout/stderr reads and in the final `job.log`. Other matching
 files, symlinks and special files move to a private quarantine outside `/out`;
 the job fails and claims no complete artifacts. `job-log` withholds private logs
-until finalization succeeds. If the launcher is interrupted, output remains
-unfinalized and must not be used as evidence; no secret is persisted to resume
-the scan. These protect against accidental disclosure. Tests must
+until finalization succeeds. SIGINT, SIGTERM and SIGHUP stop the owned job and
+sidecar and finalize output with the values still in memory. Runtime sidecar
+logs are captured and masked before stopping it, in the private job directory.
+If the launcher is killed uncatchably, an OS lock releases and status reports
+`unfinalized`; those files must not be used as evidence. Drain stops these jobs
+without waiting for a lost finalizer. Re-supply the **original values** through
+the environment to finalize a stopped job, without rerunning it:
+
+```bash
+sops exec-env /path/to/secrets.enc.json \
+  'python3 scripts/agent-container/agent.py run-job NAME --finalize JOB \
+   --env-from MINERVA_TEST_USERNAME --env-from MINERVA_TEST_PASSWORD'
+```
+
+No inherited value is stored to enable recovery. If status/drain stops the
+sidecar without values available for masking, its whole runtime diagnostic is
+withheld. The sidecar also retains its own seconds+30 deadline after launcher
+loss. These protect against accidental disclosure. Tests must
 still redact username/password fields and newly minted tokens, select only
 sanitized evidence, and keep preferences and other private app data on the
 job's exec tmpfs. Never put credentials in `--command`, `--env`, filenames or

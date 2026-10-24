@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -54,6 +55,9 @@ if args[0] == "inspect":
     sys.exit(1)
 if args[0] == "stop":
     data["running"] = [c for c in data["running"] if c not in args[1:]]; save(); sys.exit(0)
+if args[0] == "logs":
+    print("runtime fixture: " + os.environ.get("FAKE_RUNTIME_LOG", "ordinary diagnostic"), file=sys.stderr)
+    sys.exit(0)
 if args[0] == "compose" and "run" in args:
     name = args[args.index("--name") + 1]
     if "gateway" in args:
@@ -73,7 +77,10 @@ if args[0] == "compose" and "run" in args:
                     socket.socket(socket.AF_UNIX).bind(f"{sock_dir}/{s}.sock")
     if "-l" in args:
         data.setdefault("labels", {})[name] = args[args.index("-l") + 1].split("=", 1)[1]
-    data["running"].append(name); save(); sys.exit(0)
+    data["running"].append(name); save()
+    if os.environ.get("FAKE_START_PAUSE") == ("egress" if "job-egress" in args else "job"):
+        time.sleep(2)
+    sys.exit(0)
 if args[0] == "exec" and "list-clients" in args:
     if data.get("attaching") and os.environ.get("FAKE_LIST_SLEEP"):
         time.sleep(float(os.environ["FAKE_LIST_SLEEP"]))   # tmux stops answering mid-attach
@@ -667,6 +674,88 @@ class LauncherTest(unittest.TestCase):
 
 
     # ── planned jobs ──
+    def test_private_launcher_signals_cleanup_and_sigkill_has_explicit_recovery(self) -> None:
+        self.start_alpha()
+        canary = "dummy-signal-canary-7742"
+        self.env.update(DUMMY_JOB_PRIVATE=canary, FAKE_RUNTIME_LOG=canary)
+        jobs_dir = self.home / "state/sessions/alpha/jobs"
+
+        def launch_job(pause: str) -> tuple[subprocess.Popen, Path]:
+            self.env["FAKE_START_PAUSE"] = pause
+            before = set(jobs_dir.iterdir()) if jobs_dir.exists() else set()
+            process = self.agent("run-job", "alpha", "--rev", "HEAD", "--command", "true",
+                                 "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE", wait=False)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                created = set(jobs_dir.iterdir()) - before if jobs_dir.exists() else set()
+                if created:
+                    directory = next(iter(created))
+                    if (directory / "job.json").exists():
+                        record = json.loads((directory / "job.json").read_text())
+                        state = json.loads((self.s / "docker-state.json").read_text())
+                        target = record["egress"]["container"] if pause == "egress" else record["container"]
+                        if target in state["running"]:
+                            return process, directory
+                time.sleep(.05)
+            process.terminate()
+            process.wait(timeout=10)
+            self.fail("fixture job never reached the selected launch stage")
+
+        for pause in ("egress", "job", "wait"):
+            with self.subTest(stage=pause):
+                process, directory = launch_job(pause)
+                (directory / "out/job.log").write_text(canary)
+                (directory / "out/direct-private").write_text(canary)
+                process.send_signal(signal.SIGTERM)
+                self.assertNotEqual(process.wait(timeout=10), 0)
+                state = json.loads((self.s / "docker-state.json").read_text())
+                self.assertFalse(any(directory.name in name for name in state["running"]))
+                self.assertTrue(json.loads((directory / "finalization.json").read_text())["scanned"])
+                self.assertEqual((directory / "out/job.log").read_text(), "[REDACTED]")
+                self.assertFalse((directory / "out/direct-private").exists())
+                self.assertIn("runtime fixture: [REDACTED]", (directory / "egress.log").read_text())
+                calls = self.docker_calls()
+                logged = next(i for i, c in enumerate(calls)
+                              if c["argv"][:1] == ["logs"] and directory.name in c["argv"][-1])
+                stopped = next(i for i, c in enumerate(calls)
+                               if c["argv"][:1] == ["stop"] and c["argv"][-1].endswith(directory.name + "-egress"))
+                self.assertLess(logged, stopped)
+
+        process, directory = launch_job("wait")
+        job_id = directory.name
+        self.assertNotEqual(self.answer("run-job", "alpha", "--finalize", job_id,
+                                        "--env-from", "DUMMY_JOB_PRIVATE")[0], 0)
+        process.kill()
+        self.assertEqual(process.wait(timeout=10), -signal.SIGKILL)
+        (directory / "out/job.log").write_text(canary)
+        (directory / "out/direct-private").write_text(canary)
+        code, state = self.answer("job-status", "alpha", job_id)
+        self.assertEqual(code, 0, state)
+        self.assertEqual(state["class"], "unfinalized")
+        self.assertFalse(state["final"])
+        self.assertNotEqual(self.answer("run-job", "alpha", "--finalize", job_id,
+                                        "--env-from", "DUMMY_JOB_PRIVATE")[0], 0)
+        started = time.monotonic()
+        code, drained = self.answer("drain", "alpha", "--wait", "30")
+        self.assertEqual(code, 0, drained)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(drained["jobs"][0]["class"], "unfinalized")
+        self.assertEqual(self.answer("job-status", "alpha", job_id)[1]["class"], "unfinalized")
+        self.assertNotEqual(self.answer("job-log", "alpha", job_id)[0], 0)
+        self.assertIn("WITHHELD", (directory / "egress.log").read_text())
+        self.assertNotIn(canary, (directory / "egress.log").read_text())
+        self.assertNotEqual(self.answer("run-job", "alpha", "--finalize", job_id)[0], 0)
+        launches = len(self.runs())
+        code, finalized = self.answer("run-job", "alpha", "--finalize", job_id,
+                                      "--env-from", "DUMMY_JOB_PRIVATE")
+        self.assertEqual(code, 0, finalized)
+        self.assertTrue(finalized["final"])
+        self.assertEqual(finalized["class"], "failed")
+        self.assertEqual(len(self.runs()), launches)
+        self.assertEqual((directory / "out/job.log").read_text(), "[REDACTED]")
+        self.assertFalse((directory / "out/direct-private").exists())
+        self.assertNotIn(canary, (directory / "result.json").read_text())
+
     def test_core_job_is_opt_in_and_inherited_values_never_enter_receipts_or_argv(self) -> None:
         self.start_alpha()
         canary = "dummy-private-canary-4812"

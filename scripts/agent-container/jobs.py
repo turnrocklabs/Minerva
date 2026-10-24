@@ -3,6 +3,7 @@ clone, bounded in CPU, memory and time, with a classified result, and drain.
 
   agent.py run-job NAME --rev REV --command CMD [--env KEY=VALUE]... [--artifact PATH]...
                    [--cpus N] [--memory SIZE] [--seconds S] [--folder PATH]
+  agent.py run-job NAME --finalize JOB [--env-from NAME]...
   agent.py job-status NAME [JOB]      one job, or every job of the session
   agent.py job-log NAME JOB [--tail BYTES]
   agent.py drain NAME [--wait S] [--lift]
@@ -63,6 +64,9 @@ While the container runs the class is `running`; when docker cannot be
 asked it is `unknown` with final false. A final class is written to
 result.json once and read back from then on. Only succeeded and failed jobs
 claim artifacts complete; a timed_out, interrupted or unknown job claims none.
+Private jobs whose launcher is lost are `unfinalized` with final false;
+drain stops them without waiting, and --finalize scans their stopped output
+using the original inherited environment values supplied again by the caller.
 
 Drain writes control/drain.json, after which run-job refuses the session
 until `drain --lift`. It waits up to --wait seconds for running jobs to end
@@ -72,12 +76,17 @@ outstanding with its final class. A drained job is interrupted, never
 failed, and nothing is retried: a job runs once, under its own id.
 `agent.py stop` stops the session's own containers, not its jobs; drain does.
 """
+import fcntl
 import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from types import ModuleType
 from typing import NotRequired, TypedDict
 
@@ -103,6 +112,26 @@ class JobNetworkRecord(TypedDict):
     egress: NotRequired[EgressRecord]
     env_from: NotRequired[list[str]]
     network: NotRequired[str]
+
+
+@dataclass
+class PrivateLaunch:
+    directory: Path | None = None
+    lock_fd: int | None = None
+    interrupted: int = 0
+
+    def arm(self, host: ModuleType, directory: Path) -> None:
+        fd = os.open(directory / "launcher.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            raise host.Refused("private job already has a launcher or finalizer") from None
+        self.lock_fd, self.directory = fd, directory
+
+    def check(self, host: ModuleType) -> None:
+        if self.interrupted:
+            raise host.Refused(f"private job launcher interrupted by {signal.Signals(self.interrupted).name}")
 
 CLASSES = ("succeeded", "failed", "timed_out", "interrupted", "unknown")
 JOB_ID = re.compile(r"j[0-9]{8}t[0-9]{6}-[0-9a-f]{6}")
@@ -288,10 +317,64 @@ def masked_detail(text: str, inherited: dict[str, str]) -> str:
     return redactor.feed(text.encode(), final=True).decode(errors="replace").strip()[-400:]
 
 
-def wait_private_output(host: ModuleType, name: str, job_id: str, inherited: dict[str, str]) -> None:
+def launcher_present(directory: Path) -> bool:
+    fd = os.open(directory / "launcher.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        return False
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def private_lifecycle(host: ModuleType, name: str, inherited: dict[str, str],
+                      enabled: bool) -> Iterator[PrivateLaunch]:
+    launch = PrivateLaunch()
+
+    def interrupted(signum: int, _frame: object) -> None:
+        # Let an in-flight Docker launch return before retiring its container.
+        # Raising in subprocess.run could kill the client while the daemon
+        # is still starting a detached container, racing the cleanup probe.
+        launch.interrupted = signum
+
+    previous = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)} \
+        if enabled else {}
+    try:
+        yield launch
+        launch.check(host)
+    finally:
+        try:
+            for sig in previous:
+                signal.signal(sig, signal.SIG_IGN)
+            directory = launch.directory
+            if directory is not None and (directory / "job.json").is_file():
+                with host.session_lock(name, "jobs.lock"):
+                    job = host.read_json(directory / "job.json")
+                    if host.read_json(directory / "result.json").get("class") not in CLASSES:
+                        try:
+                            stop_owned(host, directory, job, "launcher_interrupted_at", inherited)
+                        finally:
+                            if host.docker_state(job["container"]) == "stopped" \
+                                    and not host.read_json(directory / "finalization.json"):
+                                finalize_private_output(host, directory, inherited)
+                reconcile(host, name, job["id"], inherited)
+        finally:
+            if launch.lock_fd is not None:
+                os.close(launch.lock_fd)
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+
+
+def wait_private_output(host: ModuleType, name: str, job_id: str, inherited: dict[str, str],
+                         launch: PrivateLaunch | None = None) -> None:
     # Keep values only in this original process, never in a receipt or helper file.
     while True:
-        _, result = reconcile(host, name, job_id)
+        if launch is not None:
+            launch.check(host)
+        _, result = reconcile(host, name, job_id, inherited)
         if result["final"]:
             return
         if result.get("needs_finalization"):
@@ -389,80 +472,87 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
     tag = host.image_tag()
     if not host.image_built(tag):
         raise host.Refused(f"image {tag} is not built: run `agent.py build` first")
-    with host.session_lock(name, "jobs.lock"):
-        if draining(host, name):
-            raise host.Refused(f"session {name} is draining: no new jobs until `agent.py drain {name} --lift`")
-        host.private_dir(jobs_root(host, name))
-        job_id = time.strftime("j%Y%m%dt%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
-        directory = host.private_dir(jobs_root(host, name) / job_id)
-        out = host.private_dir(directory / "out")
-        given = host.private_dir(directory / "in")
-        job = {"version": 1, "id": job_id, "session": name, "revision_requested": rev,
-               "folder": source["path"], "siblings": siblings, "command": command, "env": env,
-               "env_from": list(inherited), "network": network, "limits": limits,
-               "artifacts": artifacts, "container": container_name(name, job_id), "image": tag,
-               "started_at": time.time()}
-        if network == "core":
-            sockets = host.private_dir(directory / "egress")
-            job["egress"] = {"container": job["container"] + "-egress", "sockets": str(sockets),
-                             "targets": ["www.turnrock.ai:4040", "www.turnrock.ai:27500"]}
-        public_metadata(host, job, list(inherited.values()))
-        for file, text in (("run.sh", IN_JOB), ("command.sh", command + "\n"),
-                           ("artifacts.txt", "".join(a + "\n" for a in artifacts)),
-                           ("siblings.tsv", "".join(f"{s['name']}\t{s['revision']}\n" for s in siblings))):
-            (given / file).write_text(text)
-        if private_io:
-            (given / "io.py").write_text((Path(__file__).parent / "job_io.py").read_text())
-        mounts = host.natives_manifest(directory) + host.bind_mount(source["path"], "/src", True) \
-            + host.bind_mount(given, "/job", True) + host.bind_mount(out, "/out")
-        for sibling in siblings:
-            mounts += host.bind_mount(sibling["folder"], f"/sources/{sibling['name']}", True)
-        host.write_json(directory / "job.json", job)
-        if network == "core":
-            try:
-                start_egress(host, name, job, inherited)
-            except host.Refused:
-                finalize_private_output(host, directory, inherited)
-                finish(host, directory, job, "failed", "Core egress did not start")
-                raise
-            mounts += host.bind_mount(job["egress"]["sockets"], "/run/minerva-agent/core", True)
-        variables = {"MINERVA_JOB_ID": job_id, "MINERVA_JOB_REV": rev, "MINERVA_JOB_FOLDER": source["path"],
-                     "MINERVA_JOB_SECONDS": str(limits["seconds"]),
-                     "MINERVA_JOB_DEADLINE": str(limits["seconds"] + KILL_GRACE_S),
-                     "MINERVA_JOB_PRIMARY": Path(source["path"]).name if siblings else "src",
-                     "MINERVA_NATIVES_MANIFEST": host.NATIVES_MANIFEST, **env}
-        if private_io:
-            variables.update(MINERVA_JOB_PRIVATE_IO="1", MINERVA_JOB_NETWORK=network,
-                             MINERVA_JOB_ENV_FROM=",".join(inherited))
-        env_args = [arg for key, value in variables.items() for arg in ("-e", f"{key}={value}")]
-        # Docker inherits these names from its environment. Values never enter argv.
-        env_args += [arg for key in inherited for arg in ("-e", key)]
-        routes = ["--add-host", "www.turnrock.ai:127.0.0.1"] if network == "core" else []
-        started = subprocess.run(
-            host.compose(name, "run", "-d", "--rm", "--name", job["container"],
-                         "-l", f"{JOB_LABEL}={job_id}", *env_args, *routes, *mounts, "job", "bash", "-c",
-                         "python3 -B /job/io.py run" if private_io else OUTER),
-            env={**host.compose_env(), "MINERVA_JOB_CPUS": str(limits["cpus"]),
-                 "MINERVA_JOB_MEMORY": limits["memory"]},
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        if started.returncode != 0:
-            detail = masked_detail(started.stderr or "", inherited)
+    with private_lifecycle(host, name, inherited, private_io) as launch:
+        with host.session_lock(name, "jobs.lock"):
+            if draining(host, name):
+                raise host.Refused(f"session {name} is draining: no new jobs until `agent.py drain {name} --lift`")
+            host.private_dir(jobs_root(host, name))
+            job_id = time.strftime("j%Y%m%dt%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
+            directory = host.private_dir(jobs_root(host, name) / job_id)
+            out = host.private_dir(directory / "out")
+            given = host.private_dir(directory / "in")
+            job = {"version": 1, "id": job_id, "session": name, "revision_requested": rev,
+                   "folder": source["path"], "siblings": siblings, "command": command, "env": env,
+                   "env_from": list(inherited), "network": network, "limits": limits,
+                   "artifacts": artifacts, "container": container_name(name, job_id), "image": tag,
+                   "started_at": time.time()}
+            if network == "core":
+                sockets = host.private_dir(directory / "egress")
+                job["egress"] = {"container": job["container"] + "-egress", "sockets": str(sockets),
+                                 "targets": ["www.turnrock.ai:4040", "www.turnrock.ai:27500"]}
+            public_metadata(host, job, list(inherited.values()))
+            for file, text in (("run.sh", IN_JOB), ("command.sh", command + "\n"),
+                               ("artifacts.txt", "".join(a + "\n" for a in artifacts)),
+                               ("siblings.tsv", "".join(f"{s['name']}\t{s['revision']}\n" for s in siblings))):
+                (given / file).write_text(text)
             if private_io:
-                stop_owned(host, directory, job, "startup_stop_at")
-                if host.docker_state(job["container"]) != "stopped":
-                    raise host.Refused(f"job {job_id} launch failed; output withheld until container exit")
-                finalize_private_output(host, directory, inherited)
-            finish(host, directory, job, "failed", f"the job container did not start: {detail}")
-            raise host.Refused(f"job {job_id} did not start: {detail or 'docker compose run failed'}")
-    if private_io:
-        wait_private_output(host, name, job_id, inherited)
-    return {"ok": True, "id": name, "job": describe(host, name, job_id),
-            "message": f"job {job_id} {'finished' if private_io else 'running'} {command!r} at {rev} "
-                       f"({limits['cpus']} CPUs, {limits['memory']}, {limits['seconds']} s)"}
+                (given / "io.py").write_text((Path(__file__).parent / "job_io.py").read_text())
+            mounts = host.natives_manifest(directory) + host.bind_mount(source["path"], "/src", True) \
+                + host.bind_mount(given, "/job", True) + host.bind_mount(out, "/out")
+            for sibling in siblings:
+                mounts += host.bind_mount(sibling["folder"], f"/sources/{sibling['name']}", True)
+            if private_io:
+                launch.arm(host, directory)
+            host.write_json(directory / "job.json", job)
+            launch.check(host)
+            if network == "core":
+                try:
+                    start_egress(host, name, job, inherited, launch)
+                except host.Refused:
+                    stop_egress(host, directory, job, inherited)
+                    finalize_private_output(host, directory, inherited)
+                    finish(host, directory, job, "failed", "Core egress did not start")
+                    raise
+                mounts += host.bind_mount(job["egress"]["sockets"], "/run/minerva-agent/core", True)
+            variables = {"MINERVA_JOB_ID": job_id, "MINERVA_JOB_REV": rev, "MINERVA_JOB_FOLDER": source["path"],
+                         "MINERVA_JOB_SECONDS": str(limits["seconds"]),
+                         "MINERVA_JOB_DEADLINE": str(limits["seconds"] + KILL_GRACE_S),
+                         "MINERVA_JOB_PRIMARY": Path(source["path"]).name if siblings else "src",
+                         "MINERVA_NATIVES_MANIFEST": host.NATIVES_MANIFEST, **env}
+            if private_io:
+                variables.update(MINERVA_JOB_PRIVATE_IO="1", MINERVA_JOB_NETWORK=network,
+                                 MINERVA_JOB_ENV_FROM=",".join(inherited))
+            env_args = [arg for key, value in variables.items() for arg in ("-e", f"{key}={value}")]
+            # Docker inherits these names from its environment. Values never enter argv.
+            env_args += [arg for key in inherited for arg in ("-e", key)]
+            routes = ["--add-host", "www.turnrock.ai:127.0.0.1"] if network == "core" else []
+            launch.check(host)
+            started = subprocess.run(
+                host.compose(name, "run", "-d", "--rm", "--name", job["container"],
+                             "-l", f"{JOB_LABEL}={job_id}", *env_args, *routes, *mounts, "job", "bash", "-c",
+                             "python3 -B /job/io.py run" if private_io else OUTER),
+                env={**host.compose_env(), "MINERVA_JOB_CPUS": str(limits["cpus"]),
+                     "MINERVA_JOB_MEMORY": limits["memory"]},
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            launch.check(host)
+            if started.returncode != 0:
+                detail = masked_detail(started.stderr or "", inherited)
+                if private_io:
+                    stop_owned(host, directory, job, "startup_stop_at", inherited)
+                    if host.docker_state(job["container"]) != "stopped":
+                        raise host.Refused(f"job {job_id} launch failed; output withheld until container exit")
+                    finalize_private_output(host, directory, inherited)
+                finish(host, directory, job, "failed", f"the job container did not start: {detail}")
+                raise host.Refused(f"job {job_id} did not start: {detail or 'docker compose run failed'}")
+        if private_io:
+            wait_private_output(host, name, job_id, inherited, launch)
+        return {"ok": True, "id": name, "job": describe(host, name, job_id),
+                "message": f"job {job_id} {'finished' if private_io else 'running'} {command!r} at {rev} "
+                           f"({limits['cpus']} CPUs, {limits['memory']}, {limits['seconds']} s)"}
 
 
 def start_egress(host: ModuleType, name: str, job: JobNetworkRecord,
-                 inherited: dict[str, str]) -> None:
+                 inherited: dict[str, str], launch: PrivateLaunch) -> None:
     egress = job["egress"]
     # The network sidecar receives neither source, output nor account credentials.
     environment = {k: v for k, v in host.compose_env().items() if k not in inherited}
@@ -476,25 +566,43 @@ def start_egress(host: ModuleType, name: str, job: JobNetworkRecord,
                      str(job["limits"]["seconds"] + KILL_GRACE_S)),
         env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace", check=False)
+    launch.check(host)
     if started.returncode != 0:
         detail = masked_detail(started.stderr or "", inherited)
         raise host.Refused(f"Core egress container did not start: {detail or 'docker compose run failed'}")
     deadline = time.monotonic() + 5
     while not all((Path(egress["sockets"]) / (route + ".sock")).is_socket()
                   for route in ("auth", "core", "stop")):
+        launch.check(host)
         if time.monotonic() >= deadline:
             raise host.Refused("Core egress sockets did not become ready")
         time.sleep(0.05)
+    launch.check(host)
 
 
-def stop_egress(host: ModuleType, job: JobNetworkRecord) -> None:
+def stop_egress(host: ModuleType, directory: Path, job: JobNetworkRecord,
+                inherited: dict[str, str] | None = None) -> None:
     if job.get("egress"):
         sidecar = {**job, "container": job["egress"]["container"]}
         if owned(host, sidecar):
-            # No evidence is written by this relay; retire it promptly even
-            # when its process does not handle TERM after the primary dies.
-            subprocess.run(["docker", "stop", "-t", "1", sidecar["container"]],
-                           capture_output=True, check=False)
+            try:
+                try:
+                    logs = subprocess.run(["docker", "logs", "--tail", "200", sidecar["container"]],
+                                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                          timeout=1, check=False)
+                    if inherited is None and job.get("env_from"):
+                        text = "[WITHHELD: inherited values unavailable for runtime-log masking]\n"
+                    else:
+                        redactor = job_io.Redactor(job_io.redaction_values(list((inherited or {}).values())))
+                        text = redactor.feed((logs.stdout + logs.stderr).encode(), final=True).decode(errors="replace")
+                    (directory / "egress.log").write_text(text[-LOG_TAIL:])
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    (directory / "egress.log").write_text(f"Runtime log capture failed: {type(error).__name__}\n")
+            finally:
+                # No evidence is written by this relay; retire it promptly even
+                # when its process does not handle TERM after the primary dies.
+                subprocess.run(["docker", "stop", "-t", "1", sidecar["container"]],
+                               capture_output=True, check=False)
 
 
 # ── classifying ──────────────────────────────────────────────────────────
@@ -529,8 +637,8 @@ def classify(job, out):
     outer = _read_ints(out / "exit", 2)
     if outer and len(outer) == 2 and outer[0] in TIMEOUT_RCS and outer[1] >= seconds + KILL_GRACE_S:
         return "timed_out", f"the job was stopped {KILL_GRACE_S} s after its {seconds} s limit", outer[0], outer[1]
-    if job.get("drained_at"):
-        return "interrupted", "drain stopped the job before it ended; it was not retried", None, None
+    if job.get("drained_at") or job.get("launcher_interrupted_at"):
+        return "interrupted", "the launcher or drain stopped the job; it was not retried", None, None
     if job.get("deadline_stop_at"):
         return "timed_out", "the job outlived its deadline and was stopped", None, None
     return "unknown", "the job's container ended without recording how (stopped outside the job?)", \
@@ -579,7 +687,7 @@ def assembled_revisions(out):
 
 def finish(host, directory, job, cls, detail, exit_code=None, elapsed=None):
     """Write result.json once; an existing one is kept and returned."""
-    stop_egress(host, job)
+    stop_egress(host, directory, job)
     existing = host.read_json(directory / "result.json")
     if existing.get("class") in CLASSES:
         return existing
@@ -608,16 +716,18 @@ def owned(host, job):
     return probe.returncode == 0 and probe.stdout.strip() == job["id"]
 
 
-def stop_owned(host, directory, job, mark):
+def stop_owned(host, directory, job, mark, inherited: dict[str, str] | None = None):
     """Record `mark` on the job, then stop its container if it is ours."""
     job[mark] = time.time()
     host.write_json(directory / "job.json", job)
-    if owned(host, job):
-        subprocess.run(["docker", "stop", "-t", str(STOP_GRACE_S), job["container"]], capture_output=True)
-    stop_egress(host, job)
+    try:
+        if owned(host, job):
+            subprocess.run(["docker", "stop", "-t", str(STOP_GRACE_S), job["container"]], capture_output=True)
+    finally:
+        stop_egress(host, directory, job, inherited)
 
 
-def reconcile(host, name, job_id):
+def reconcile(host, name, job_id, inherited: dict[str, str] | None = None):
     """The job's current answer, finishing it (result.json) once its
     container is gone. Holds the session's jobs lock."""
     with host.session_lock(name, "jobs.lock"):
@@ -627,21 +737,24 @@ def reconcile(host, name, job_id):
         if result.get("class") in CLASSES:
             return job, dict(result, final=True)
         state = host.docker_state(job["container"])
+        lost_launcher = private_output(job) and not launcher_present(directory)
         if state == "unknown":
-            return job, {"class": "unknown", "final": False, "detail": "docker cannot be asked"}
+            return job, {"class": "unfinalized" if lost_launcher else "unknown", "final": False,
+                         "detail": "docker cannot be asked; private output cannot be finalized"}
         deadline = job["started_at"] + job["limits"]["seconds"] + 2 * KILL_GRACE_S
         if state == "running" and time.time() > deadline:
-            stop_owned(host, directory, job, "deadline_stop_at")
+            stop_owned(host, directory, job, "deadline_stop_at", inherited)
             state = host.docker_state(job["container"])
         if state == "running":
-            return job, {"class": "running", "final": False,
+            return job, {"class": "unfinalized" if lost_launcher else "running", "final": False,
                          "elapsed_s": int(time.time() - job["started_at"]),
-                         "detail": f"running; limit {job['limits']['seconds']} s"}
-        stop_egress(host, job)
+                         "detail": "private launcher lost; drain then re-supply values with --finalize" if lost_launcher
+                         else f"running; limit {job['limits']['seconds']} s"}
+        stop_egress(host, directory, job, inherited)
         finalized = host.read_json(directory / "finalization.json")
         if private_output(job) and not finalized:
-            return job, {"class": "running", "final": False, "needs_finalization": True,
-                         "detail": "container exited; retained output awaits private finalization"}
+            return job, {"class": "unfinalized", "final": False, "needs_finalization": True,
+                         "detail": "container exited; re-supply inherited values with run-job --finalize"}
         cls, detail, rc, elapsed = classify(job, directory / "out")
         if finalized and (not finalized["scanned"] or finalized["refused"]):
             cls, detail = "failed", "retained output refused; private files quarantined outside evidence"
@@ -665,6 +778,35 @@ def job_ids(host, name):
 
 
 # ── commands ─────────────────────────────────────────────────────────────
+
+def finalize_job(host: ModuleType, name: str, job_id: str,
+                  env_names: list[str] | None) -> dict[str, object]:
+    """Re-enter a lost private launch with its original environment values.
+
+    Receipts use the launcher's existing dynamic JSON response contract.
+    No job is rerun and no missing value is guessed or stored.
+    """
+    host.check_layout()
+    if host.load_record(name) is None:
+        raise host.Refused(f"no session {name}")
+    directory = job_dir(host, name, job_id)
+    job = host.read_json(directory / "job.json")
+    if not private_output(job) or set(env_names or []) != set(job.get("env_from", [])):
+        raise host.Refused("--finalize requires a private job and its original --env-from names")
+    inherited = inherited_from(host, env_names, {})
+    with private_lifecycle(host, name, inherited, True) as launch:
+        with host.session_lock(name, "jobs.lock"):
+            if launcher_present(directory):
+                raise host.Refused("private job still has a launcher or finalizer")
+            if host.docker_state(job["container"]) != "stopped":
+                raise host.Refused("--finalize requires a stopped container; drain the job first")
+            launch.arm(host, directory)
+            launch.check(host)
+            stop_egress(host, directory, job, inherited)
+            if not host.read_json(directory / "finalization.json"):
+                finalize_private_output(host, directory, inherited)
+        return job_status(host, name, job_id)
+
 
 def job_status(host, name, job_id):
     host.check_layout()
@@ -716,13 +858,23 @@ def drain(host, name, wait_s, lift):
     wait_s = 0 if wait_s is None else wait_s
     if not 0 <= wait_s <= MAX_DRAIN_WAIT_S:
         raise host.Refused(f"--wait must be 0-{MAX_DRAIN_WAIT_S} seconds")
-    outstanding = [j for j in job_ids(host, name) if not reconcile(host, name, j)[1]["final"]]
+    states = {j: reconcile(host, name, j)[1] for j in job_ids(host, name)}
+    outstanding = [j for j, state in states.items() if not state["final"]]
+    # A lost launcher cannot finalize itself during --wait. Stop its owned
+    # containers now and return the recovery state without burning that wait.
+    for job_id in outstanding:
+        if states[job_id]["class"] == "unfinalized":
+            with host.session_lock(name, "jobs.lock"):
+                directory = job_dir(host, name, job_id)
+                job = host.read_json(directory / "job.json")
+                stop_owned(host, directory, job, "drained_at")
     deadline = time.monotonic() + wait_s
-    running = list(outstanding)
+    running = [j for j in outstanding if states[j]["class"] != "unfinalized"]
     while running and time.monotonic() < deadline:
         time.sleep(1)
-        running = [j for j in running if not reconcile(host, name, j)[1]["final"]]
-    for job_id in running:
+        running = [j for j in running if not (state := reconcile(host, name, j)[1])["final"]
+                   and state["class"] != "unfinalized"]
+    for job_id in outstanding:
         with host.session_lock(name, "jobs.lock"):
             directory = job_dir(host, name, job_id)
             job = host.read_json(directory / "job.json")
