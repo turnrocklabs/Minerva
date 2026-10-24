@@ -201,9 +201,9 @@ func supports_async_chat() -> bool:
 			return true
 	return false
 
-func create_chat_job(item: ChatHistoryItem, persist: Callable, preview: Callable) -> CoreChatJob:
+func create_chat_job(item: ChatHistoryItem, persist: Callable, status: Callable) -> CoreChatJob:
 	return CoreChatJob.new(_job_request, func() -> bool: return Core.registered,
-		_job_pause, UUIDGen.v7, persist, preview, item)
+		_job_pause, UUIDGen.v7, persist, status, item)
 
 func _job_input(data: Dictionary, model: String) -> Dictionary:
 	var body: Dictionary = data.duplicate(true)

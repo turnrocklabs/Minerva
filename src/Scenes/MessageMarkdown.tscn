@@ -295,6 +295,11 @@ h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
 
+[node name="LoadingStatusLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
 [node name="LoadingLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 visible = false
