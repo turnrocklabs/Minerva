@@ -101,6 +101,8 @@ class JobNetworkRecord(TypedDict):
     container: str
     limits: JobLimits
     egress: NotRequired[EgressRecord]
+    env_from: NotRequired[list[str]]
+    network: NotRequired[str]
 
 CLASSES = ("succeeded", "failed", "timed_out", "interrupted", "unknown")
 JOB_ID = re.compile(r"j[0-9]{8}t[0-9]{6}-[0-9a-f]{6}")
@@ -162,9 +164,6 @@ if [ "$SECONDS" -lt "$MINERVA_JOB_SECONDS" ]; then
 	while IFS= read -r path; do
 		[ -n "$path" ] || continue
 		if [ -e "$path" ] || [ -L "$path" ]; then
-			if [ "${MINERVA_JOB_PRIVATE_IO:-}" = 1 ]; then
-				python3 -B /job/io.py artifact "$path" || ended command 89
-			fi
 			mkdir -p "/out/artifacts/$(dirname "$path")" && cp -a -- "$path" "/out/artifacts/$path"
 		else
 			echo "== artifact missing: $path"
@@ -280,6 +279,42 @@ def public_metadata(host: ModuleType, data: object, values: list[str]) -> None:
     visit(data)
 
 
+def private_output(job: JobNetworkRecord) -> bool:
+    return bool(job.get("env_from")) or job.get("network") == "core"
+
+
+def masked_detail(text: str, inherited: dict[str, str]) -> str:
+    redactor = job_io.Redactor(job_io.redaction_values(list(inherited.values())))
+    return redactor.feed(text.encode(), final=True).decode(errors="replace").strip()[-400:]
+
+
+def wait_private_output(host: ModuleType, name: str, job_id: str, inherited: dict[str, str]) -> None:
+    # Keep values only in this original process, never in a receipt or helper file.
+    while True:
+        _, result = reconcile(host, name, job_id)
+        if result["final"]:
+            return
+        if result.get("needs_finalization"):
+            with host.session_lock(name, "jobs.lock"):
+                directory = job_dir(host, name, job_id)
+                if not host.read_json(directory / "finalization.json"):
+                    finalize_private_output(host, directory, inherited)
+            continue
+        time.sleep(0.2)
+
+
+def finalize_private_output(host: ModuleType, directory: Path, inherited: dict[str, str]) -> None:
+    try:
+        report = job_io.finalize_output(directory / "out",
+                                       job_io.redaction_values(list(inherited.values())), directory / "quarantine")
+    except OSError:
+        # An unreadable snapshot is not evidence. Retain it privately and fail closed.
+        (directory / "out").rename(directory / ("unscanned-" + secrets.token_hex(16)))
+        host.private_dir(directory / "out")
+        report = {"scanned": False, "refused": 1}
+    host.write_json(directory / "finalization.json", report)
+
+
 def artifacts_from(host, paths):
     paths = list(dict.fromkeys(paths or []))
     if len(paths) > MAX_ARTIFACTS:
@@ -387,6 +422,7 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
             try:
                 start_egress(host, name, job, inherited)
             except host.Refused:
+                finalize_private_output(host, directory, inherited)
                 finish(host, directory, job, "failed", "Core egress did not start")
                 raise
             mounts += host.bind_mount(job["egress"]["sockets"], "/run/minerva-agent/core", True)
@@ -410,11 +446,18 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
                  "MINERVA_JOB_MEMORY": limits["memory"]},
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         if started.returncode != 0:
-            detail = (started.stderr or "").strip()[-400:]
+            detail = masked_detail(started.stderr or "", inherited)
+            if private_io:
+                stop_owned(host, directory, job, "startup_stop_at")
+                if host.docker_state(job["container"]) != "stopped":
+                    raise host.Refused(f"job {job_id} launch failed; output withheld until container exit")
+                finalize_private_output(host, directory, inherited)
             finish(host, directory, job, "failed", f"the job container did not start: {detail}")
             raise host.Refused(f"job {job_id} did not start: {detail or 'docker compose run failed'}")
+    if private_io:
+        wait_private_output(host, name, job_id, inherited)
     return {"ok": True, "id": name, "job": describe(host, name, job_id),
-            "message": f"job {job_id} running {command!r} at {rev} "
+            "message": f"job {job_id} {'finished' if private_io else 'running'} {command!r} at {rev} "
                        f"({limits['cpus']} CPUs, {limits['memory']}, {limits['seconds']} s)"}
 
 
@@ -431,9 +474,11 @@ def start_egress(host: ModuleType, name: str, job: JobNetworkRecord,
                      "python3", "-B", "/opt/minerva-agent/gateway/job_egress.py",
                      "--sockets", "/run/minerva-agent/core", "--seconds",
                      str(job["limits"]["seconds"] + KILL_GRACE_S)),
-        env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", check=False)
     if started.returncode != 0:
-        raise host.Refused("Core egress container did not start")
+        detail = masked_detail(started.stderr or "", inherited)
+        raise host.Refused(f"Core egress container did not start: {detail or 'docker compose run failed'}")
     deadline = time.monotonic() + 5
     while not all((Path(egress["sockets"]) / (route + ".sock")).is_socket()
                   for route in ("auth", "core", "stop")):
@@ -446,7 +491,9 @@ def stop_egress(host: ModuleType, job: JobNetworkRecord) -> None:
     if job.get("egress"):
         sidecar = {**job, "container": job["egress"]["container"]}
         if owned(host, sidecar):
-            subprocess.run(["docker", "stop", "-t", str(STOP_GRACE_S), sidecar["container"]],
+            # No evidence is written by this relay; retire it promptly even
+            # when its process does not handle TERM after the primary dies.
+            subprocess.run(["docker", "stop", "-t", "1", sidecar["container"]],
                            capture_output=True, check=False)
 
 
@@ -500,11 +547,12 @@ def _source(out, filename="source-status"):
             "untracked": untracked}
 
 
-def _artifacts(job, out, cls):
+def _artifacts(job, out, cls, output_safe: bool = True):
     """Each declared artifact with where it was copied and whether it is
     claimed complete: only for succeeded or failed jobs whose collection
     finished, and never through a symlink."""
     collected = cls in ("succeeded", "failed") and (out / "artifacts.done").is_file()
+    collected = collected and output_safe
     root = out / "artifacts"
     listed = []
     for path in job["artifacts"]:
@@ -536,6 +584,8 @@ def finish(host, directory, job, cls, detail, exit_code=None, elapsed=None):
     if existing.get("class") in CLASSES:
         return existing
     out = directory / "out"
+    finalized = host.read_json(directory / "finalization.json")
+    output_safe = not private_output(job) or (finalized.get("scanned") and finalized.get("refused") == 0)
     try:
         revision = (out / "revision").read_text()[:100].strip()
     except OSError:
@@ -546,7 +596,7 @@ def finish(host, directory, job, cls, detail, exit_code=None, elapsed=None):
               "assembled_revisions": assembled_revisions(out),
               "siblings": [{**s, "source": _source(out, f"source-status-{s['name']}")}
                            for s in job.get("siblings", [])], "source": {"folder": job["folder"], **_source(out)},
-              "artifacts": _artifacts(job, out, cls), "finished_at": time.time()}
+              "artifacts": _artifacts(job, out, cls, output_safe), "finished_at": time.time()}
     host.write_json(directory / "result.json", result)
     return result
 
@@ -587,7 +637,14 @@ def reconcile(host, name, job_id):
             return job, {"class": "running", "final": False,
                          "elapsed_s": int(time.time() - job["started_at"]),
                          "detail": f"running; limit {job['limits']['seconds']} s"}
+        stop_egress(host, job)
+        finalized = host.read_json(directory / "finalization.json")
+        if private_output(job) and not finalized:
+            return job, {"class": "running", "final": False, "needs_finalization": True,
+                         "detail": "container exited; retained output awaits private finalization"}
         cls, detail, rc, elapsed = classify(job, directory / "out")
+        if finalized and (not finalized["scanned"] or finalized["refused"]):
+            cls, detail = "failed", "retained output refused; private files quarantined outside evidence"
         return job, dict(finish(host, directory, job, cls, detail, rc, elapsed), final=True)
 
 
@@ -630,7 +687,11 @@ def job_log(host, name, job_id, tail):
     if not 1 <= tail <= MAX_LOG_TAIL:
         raise host.Refused(f"--tail must be 1-{MAX_LOG_TAIL} bytes")
     described = describe(host, name, job_id)
-    path = job_dir(host, name, job_id) / "out" / "job.log"
+    directory = job_dir(host, name, job_id)
+    job = host.read_json(directory / "job.json")
+    if private_output(job) and not host.read_json(directory / "finalization.json").get("scanned"):
+        raise host.Refused("private job log withheld until retained output finalization succeeds")
+    path = directory / "out" / "job.log"
     try:
         with open(path, "rb") as f:
             size = f.seek(0, os.SEEK_END)

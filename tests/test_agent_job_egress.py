@@ -1,18 +1,83 @@
 """Opaque local socket fixtures only: no Core calls or external network."""
+import json
+import os
+import secrets
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
+from types import ModuleType
 
 GATEWAY = Path(__file__).resolve().parents[1] / "scripts/agent-container/gateway"
 sys.path.insert(0, str(GATEWAY))
 import job_egress
 
+sys.path.insert(0, str(GATEWAY.parent))
+import jobs
+
 
 class EgressTest(unittest.TestCase):
+    def test_hard_killed_container_is_observed_and_its_owned_sidecar_stops(self) -> None:
+        if not shutil.which("docker"):
+            self.skipTest("Docker CLI unavailable for offline lifecycle fixture")
+        image = "minerva-agent:cc53fded52db"
+        if subprocess.run(["docker", "image", "inspect", image], capture_output=True, check=False).returncode:
+            self.skipTest("existing offline fixture image unavailable")
+        directory = Path(tempfile.mkdtemp(prefix="job-hard-kill-"))
+        job_id = "j20261024t230000-" + secrets.token_hex(3)
+        primary = "minerva-test-" + job_id
+        sidecar = primary + "-egress"
+        host = ModuleType("offline_job_fixture")
+        host.session_lock = lambda *_: nullcontext()
+        host.read_json = lambda p: json.loads(p.read_text()) if p.exists() else {}
+        host.write_json = lambda p, data: p.write_text(json.dumps(data))
+        host.private_dir = lambda p: (p.mkdir(mode=0o700, exist_ok=True), p)[1]
+        # Match job_dir's ordinary session layout without changing that owner.
+        session = directory / "session"
+        job_directory = session / "jobs" / job_id
+        (job_directory / "out").mkdir(parents=True)
+        # Fixture paths are supplied by the same host contract as the launcher.
+        host.session_dir = lambda _: session
+
+        def state(container: str) -> str:
+            probe = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", container],
+                                   capture_output=True, text=True, check=False)
+            return "running" if probe.returncode == 0 and probe.stdout.strip() == "true" else "stopped"
+        host.docker_state = state
+        record = {"id": job_id, "container": primary, "limits": {"seconds": 60},
+                  "started_at": time.time(), "network": "core", "env_from": [], "artifacts": [],
+                  "revision_requested": "HEAD", "folder": "fixture", "command": "sleep",
+                  "egress": {"container": sidecar}}
+        host.write_json(job_directory / "job.json", record)
+        launched = []
+        try:
+            for container in (primary, sidecar):
+                subprocess.run(["docker", "run", "-d", "--rm", "--network", "none", "--read-only",
+                                "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+                                "--user", f"{os.getuid()}:{os.getgid()}", "--name", container,
+                                "--label", f"{jobs.JOB_LABEL}={job_id}", image, "sleep", "60"],
+                               capture_output=True, check=True)
+                launched.append(container)
+            observer = threading.Thread(target=jobs.wait_private_output, args=(host, "fixture", job_id, {}))
+            observer.start()
+            subprocess.run(["docker", "kill", "--signal", "KILL", primary], capture_output=True, check=True)
+            killed_at = time.monotonic()
+            observer.join(5)
+            self.assertFalse(observer.is_alive(), "exit observer did not finish within seconds")
+            self.assertLess(time.monotonic() - killed_at, 5)
+            self.assertEqual(state(sidecar), "stopped")
+            self.assertTrue(host.read_json(job_directory / "finalization.json")["scanned"])
+            self.assertEqual(host.read_json(job_directory / "result.json")["class"], "unknown")
+        finally:
+            for container in launched:
+                subprocess.run(["docker", "stop", "-t", "0", container], capture_output=True, check=False)
+
     def test_fixed_routes_relay_opaque_bytes_and_reject_private_dns(self) -> None:
         directory = Path(tempfile.mkdtemp(prefix="job-egress-"))
         fixture = socket.create_server(("127.0.0.1", 0))

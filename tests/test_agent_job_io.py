@@ -1,10 +1,13 @@
 """Real child pipes and retained dummy evidence; no account credentials."""
+import base64
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import quote, quote_plus
 
 AGENT = Path(__file__).resolve().parents[1] / "scripts/agent-container"
 sys.path.insert(0, str(AGENT))
@@ -72,6 +75,31 @@ class JobIOTest(unittest.TestCase):
         named.write_text("safe content")
         with self.assertRaises(ValueError):
             job_io.check_artifact(named, [b"dummy-private"])
+
+        # The final retained copy, including direct /out writes and a log
+        # overwritten by the command, is authoritative after all writers exit.
+        out = scratch / "out"
+        out.mkdir()
+        user, password = 'dummy user/+', 'dummy"private +/☃'
+        variants = [user.encode(), password.encode(), json.dumps(password)[1:-1].encode(),
+                    quote(password).encode(), quote(password, safe="").encode(), quote_plus(password).encode(),
+                    base64.b64encode(f"{user}:{password}".encode())]
+        (out / "job.log").write_bytes(b"\n".join(variants))
+        (out / "artifacts").mkdir()
+        (out / "artifacts/safe.json").write_text("completed")
+        for index, value in enumerate(variants):
+            (out / f"direct-{index}").write_bytes(b"x" * 65533 + value)
+        (out / "artifacts/raced-copy").write_text(password)
+        (out / "link").symlink_to(safe)
+        (out / user.replace("/", "_")).write_text("safe name content")
+        report = job_io.finalize_output(out, job_io.redaction_values([user, password]), scratch / "quarantine")
+        self.assertTrue(report["scanned"])
+        self.assertEqual(report["refused"], len(variants) + 2)
+        self.assertEqual((out / "job.log").read_bytes(), b"\n".join([b"[REDACTED]"] * len(variants)))
+        self.assertEqual((out / "artifacts/safe.json").read_text(), "completed")
+        for candidate in out.rglob("*"):
+            if candidate.is_file():
+                job_io.check_artifact(candidate, job_io.redaction_values([user, password]))
 
 
 if __name__ == "__main__":

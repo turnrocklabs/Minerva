@@ -145,10 +145,16 @@ sops exec-env /path/to/secrets.enc.json \
    --command "python3 /path/to/reviewed-test.py" --artifact evidence/report.json'
 ```
 
-Inherited values and their JSON escapes are masked across stdout/stderr reads
-before `job.log` is written. Evidence containing those values, symlinks or
-special files is refused before collection. These protect against accidental
-disclosure, not malicious commands writing directly to `/out`. Tests must
+Private/Core `run-job` calls wait for the container to exit, keeping inherited
+values only in the original launcher process. The launcher observes exit and
+stops the owned sidecar, then scans **every** file retained under `/out`.
+Inherited values, JSON escapes, percent encodings and HTTP Basic pair encodings
+are masked across stdout/stderr reads and in the final `job.log`. Other matching
+files, symlinks and special files move to a private quarantine outside `/out`;
+the job fails and claims no complete artifacts. `job-log` withholds private logs
+until finalization succeeds. If the launcher is interrupted, output remains
+unfinalized and must not be used as evidence; no secret is persisted to resume
+the scan. These protect against accidental disclosure. Tests must
 still redact username/password fields and newly minted tokens, select only
 sanitized evidence, and keep preferences and other private app data on the
 job's exec tmpfs. Never put credentials in `--command`, `--env`, filenames or

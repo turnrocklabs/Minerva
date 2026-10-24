@@ -1,13 +1,15 @@
-"""Private job environment output: filter before logging, check before copying.
+"""Private job output: filter pipes and finalize retained output after exit.
 
 Only the variable names are persisted by the launcher. Values arrive through
 the process environment, never a command argument or a runner-owned file.
 This is accidental-disclosure protection, not containment of malicious jobs:
 the test still owns sanitizing selected evidence and newly minted auth data.
 """
+import base64
 import json
 import os
 import re
+import secrets
 import select
 import signal
 import socket
@@ -16,14 +18,20 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TypedDict
+from urllib.parse import quote, quote_plus
 
 
 def redaction_values(strings: list[str]) -> list[bytes]:
     values = set()
     for value in strings:
         values.add(value.encode())
+        values.update(encoded.encode() for encoded in (quote(value), quote(value, safe=""), quote_plus(value)))
         for ascii_only in [False, True]:
             values.add(json.dumps(value, ensure_ascii=ascii_only)[1:-1].encode())
+    # Names need not be supplied in username/password order. Mask each pairing.
+    values.update(base64.b64encode(f"{user}:{password}".encode())
+                  for user in strings for password in strings)
     return sorted(filter(None, values), key=len, reverse=True)
 
 
@@ -61,7 +69,7 @@ class Redactor:
 
 
 def check_artifact(path: Path, values: list[bytes]) -> None:
-    """Refuse secret-bearing, linked or non-regular evidence before collection."""
+    """Check a stopped job's retained file; never validate a live copy source."""
     if path.absolute() != path.resolve():
         raise ValueError("linked artifact refused")
     for candidate in [path, *(path.rglob("*") if path.is_dir() else [])]:
@@ -83,6 +91,50 @@ def check_artifact(path: Path, values: list[bytes]) -> None:
         redactor.feed(b"", final=True)
         if redactor.found:
             raise ValueError("inherited environment content in artifact; sanitize it first")
+
+
+class Finalization(TypedDict):
+    scanned: bool
+    refused: int
+
+
+def finalize_output(out: Path, values: list[bytes], quarantine: Path) -> Finalization:
+    """Called only after the container exits, when it has no surviving writers.
+
+    Quarantine is private and outside the evidence tree. Its random names do
+    not repeat potentially sensitive original filenames in metadata.
+    """
+    quarantine.mkdir(mode=0o700, exist_ok=True)
+    refused = 0
+
+    def visit(directory: Path) -> None:
+        nonlocal refused
+        for candidate in directory.iterdir():
+            name = Redactor(values)
+            name.feed(candidate.name.encode(), final=True)
+            mode = candidate.lstat().st_mode
+            if name.found or not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                candidate.rename(quarantine / secrets.token_hex(16))
+                refused += 1
+            elif stat.S_ISDIR(mode):
+                visit(candidate)
+            elif candidate == out / "job.log":
+                redactor = Redactor(values)
+                sanitized = quarantine.parent / "sanitized-log"
+                with candidate.open("rb") as source, sanitized.open("wb") as target:
+                    while chunk := source.read(65536):
+                        target.write(redactor.feed(chunk))
+                    target.write(redactor.feed(b"", final=True))
+                sanitized.replace(candidate)
+            else:
+                try:
+                    check_artifact(candidate, values)
+                except ValueError:
+                    candidate.rename(quarantine / secrets.token_hex(16))
+                    refused += 1
+
+    visit(out)
+    return {"scanned": True, "refused": refused}
 
 
 def stop_egress() -> None:
@@ -169,13 +221,6 @@ def run(out: Path = Path("/out"), script: Path = Path("/job/run.sh")) -> int:
 def main() -> int:
     if sys.argv[1:] == ["run"]:
         return run()
-    if len(sys.argv) == 3 and sys.argv[1] == "artifact":
-        try:
-            check_artifact(Path(sys.argv[2]), private_values())
-        except (OSError, ValueError):
-            print("artifact refused: sanitize inherited values and use regular, unlinked files", file=sys.stderr)
-            return 1
-        return 0
     return 2
 
 

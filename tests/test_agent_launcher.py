@@ -63,6 +63,9 @@ if args[0] == "compose" and "run" in args:
                 for s in ("minerva", "docket", "nudge", "proxy"):
                     socket.socket(socket.AF_UNIX).bind(f"{sock_dir}/{s}.sock")
     if "job-egress" in args:
+        if os.environ.get("FAKE_EGRESS_ERROR"):
+            print("fixture sidecar launch failed: " + os.environ["FAKE_EGRESS_ERROR"], file=sys.stderr)
+            sys.exit(1)
         for i, a in enumerate(args):
             if a == "-v" and args[i + 1].endswith(":/run/minerva-agent/core"):
                 sock_dir = args[i + 1].rsplit(":", 1)[0]
@@ -671,46 +674,77 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(code, 0, normal)
         before = len(self.docker_calls())
         self.env["DUMMY_JOB_PRIVATE"] = canary
-        code, answer = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true",
-                                   "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE")
-        self.assertEqual(code, 0, answer)
+        launcher = self.agent("run-job", "alpha", "--rev", "HEAD", "--command", "true",
+                              "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE", wait=False)
+        deadline = time.monotonic() + 10
+        while len(self.runs()) < 5:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.05)
         calls = self.docker_calls()[before:]
         launches = [c for c in calls if c["argv"][0] == "compose" and "run" in c["argv"]]
         self.assertEqual(len(launches), 2)
         self.assertNotIn(canary, json.dumps(calls))
         sidecar, job = launches
         self.assertIn("job-egress", sidecar["argv"])
+        self.assertEqual(sidecar["argv"][-1], "1830")
         self.assertNotIn("DUMMY_JOB_PRIVATE", sidecar["argv"])
         self.assertIn("DUMMY_JOB_PRIVATE", job["inherited_set"])
         self.assertIn("www.turnrock.ai:127.0.0.1", job["argv"])
-        directory = self.home / "state/sessions/alpha/jobs" / answer["job"]["job"]
+        job_id = job["argv"][job["argv"].index("-l") + 1].split("=", 1)[1]
+        directory = self.home / "state/sessions/alpha/jobs" / job_id
         receipt = (directory / "job.json").read_text()
         self.assertNotIn(canary, receipt)
         self.assertEqual(json.loads(receipt)["env_from"], ["DUMMY_JOB_PRIVATE"])
         self.assertEqual(json.loads(receipt)["network"], "core")
+        (directory / "out/job.log").write_text(canary)
+        code, withheld = self.answer("job-log", "alpha", job_id)
+        self.assertNotEqual(code, 0, withheld)
+        self.assertNotIn(canary, json.dumps(withheld))
         code, drained = self.answer("drain", "alpha", "--wait", "0")
         self.assertEqual(code, 0, drained)
+        self.assertEqual(launcher.wait(timeout=10), 0)
         state = json.loads((self.s / "docker-state.json").read_text())
-        self.assertFalse(any(answer["job"]["job"] in n for n in state["running"]))
+        self.assertFalse(any(job_id in n for n in state["running"]))
+        self.assertEqual((directory / "out/job.log").read_text(), "[REDACTED]")
         self.assertEqual(self.answer("drain", "alpha", "--lift")[0], 0)
-        code, failed = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "false",
-                                   "--network", "core")
-        self.assertEqual(code, 0, failed)
-        job_id = failed["job"]["job"]
+        count = len(self.runs())
+        launcher = self.agent("run-job", "alpha", "--rev", "HEAD", "--command", "false",
+                              "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE",
+                              "--artifact", "evidence", wait=False)
+        deadline = time.monotonic() + 10
+        while len(self.runs()) < count + 2:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.05)
+        launched = self.runs()[-1]
+        job_id = launched[launched.index("-l") + 1].split("=", 1)[1]
         directory = self.home / "state/sessions/alpha/jobs" / job_id
-        (directory / "out/ended").write_text("command 1 1\n")
+        (directory / "out/ended").write_text("command 0 1\n")
+        (directory / "out/artifacts/evidence").mkdir(parents=True)
+        (directory / "out/artifacts/evidence/private").write_text(canary)
+        (directory / "out/artifacts.done").touch()
+        (directory / "out/direct.json").write_text(canary)
         state = json.loads((self.s / "docker-state.json").read_text())
         state["running"].remove(f"minerva-agent-job-alpha-{job_id}")
         (self.s / "docker-state.json").write_text(json.dumps(state))
+        self.assertEqual(launcher.wait(timeout=10), 0)
         code, status = self.answer("job-status", "alpha", job_id)
         self.assertEqual(code, 0, status)
         self.assertEqual(status["class"], "failed")
+        self.assertFalse(status["result"]["artifacts"][0]["complete"])
+        self.assertFalse((directory / "out/direct.json").exists())
+        self.assertEqual(len(list((directory / "quarantine").iterdir())), 2)
         state = json.loads((self.s / "docker-state.json").read_text())
         self.assertFalse(any(job_id in n for n in state["running"]))
         code, refused = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true",
                                     "--env-from", "DUMMY_JOB_PRIVATE", "--artifact", canary)
         self.assertNotEqual(code, 0)
         self.assertNotIn(canary, json.dumps(refused))
+        self.env["FAKE_EGRESS_ERROR"] = canary
+        code, failed = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true",
+                                   "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE")
+        self.assertNotEqual(code, 0)
+        self.assertIn("fixture sidecar launch failed", failed["error"])
+        self.assertNotIn(canary, json.dumps(failed))
 
     def test_drain_interrupts_and_only_a_finished_job_claims_its_artifact(self):
         # Oracle: result.json and the out/ markers on disk; the fake docker
