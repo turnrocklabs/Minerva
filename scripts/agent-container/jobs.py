@@ -526,11 +526,16 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
             env_args = [arg for key, value in variables.items() for arg in ("-e", f"{key}={value}")]
             # Docker inherits these names from its environment. Values never enter argv.
             env_args += [arg for key in inherited for arg in ("-e", key)]
-            routes = ["--add-host", "www.turnrock.ai:127.0.0.1"] if network == "core" else []
+            # extra_hosts is Compose service configuration, not a `run` flag.
+            overrides = []
+            if network == "core":
+                override = directory / "core-compose.yml"
+                override.write_text('services:\n  job:\n    extra_hosts: ["www.turnrock.ai:127.0.0.1"]\n')
+                overrides = ["-f", str(override)]
             launch.check(host)
             started = subprocess.run(
-                host.compose(name, "run", "-d", "--rm", "--name", job["container"],
-                             "-l", f"{JOB_LABEL}={job_id}", *env_args, *routes, *mounts, "job", "bash", "-c",
+                host.compose(name, *overrides, "run", "-d", "--rm", "--name", job["container"],
+                             "-l", f"{JOB_LABEL}={job_id}", *env_args, *mounts, "job", "bash", "-c",
                              "python3 -B /job/io.py run" if private_io else OUTER),
                 env={**host.compose_env(), "MINERVA_JOB_CPUS": str(limits["cpus"]),
                      "MINERVA_JOB_MEMORY": limits["memory"]},

@@ -801,6 +801,8 @@ class LauncherTest(unittest.TestCase):
         canary = "dummy-private-canary-4812"
         code, normal = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true")
         self.assertEqual(code, 0, normal)
+        normal_directory = self.home / "state/sessions/alpha/jobs" / normal["job"]["job"]
+        self.assertFalse((normal_directory / "core-compose.yml").exists())
         before = len(self.docker_calls())
         self.env["DUMMY_JOB_PRIVATE"] = canary
         launcher = self.agent("run-job", "alpha", "--rev", "HEAD", "--command", "true",
@@ -818,9 +820,25 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(sidecar["argv"][-1], "1830")
         self.assertNotIn("DUMMY_JOB_PRIVATE", sidecar["argv"])
         self.assertIn("DUMMY_JOB_PRIVATE", job["inherited_set"])
-        self.assertIn("www.turnrock.ai:127.0.0.1", job["argv"])
+        self.assertNotIn("--add-host", job["argv"])
         job_id = job["argv"][job["argv"].index("-l") + 1].split("=", 1)[1]
         directory = self.home / "state/sessions/alpha/jobs" / job_id
+        override = directory / "core-compose.yml"
+        self.assertEqual(override.read_text(),
+                         'services:\n  job:\n    extra_hosts: ["www.turnrock.ai:127.0.0.1"]\n')
+        position = job["argv"].index(str(override))
+        self.assertEqual(job["argv"][position - 1], "-f")
+        self.assertLess(position, job["argv"].index("run"))
+        if shutil.which("docker"):
+            configured = subprocess.run(["docker", "compose", "-f", str(AGENT / "docker-compose.yml"),
+                                         "-f", str(override), "--profile", "session", "config", "--format", "json"],
+                                        env={**os.environ, "MINERVA_AGENT_IMAGE": "minerva-agent:fixture",
+                                             "MINERVA_BUILDER_IMAGE": "minerva-builder:fixture",
+                                             "AGENT_UID": str(os.getuid()), "AGENT_GID": str(os.getgid())},
+                                        capture_output=True, text=True, check=True)
+            service = json.loads(configured.stdout)["services"]["job"]
+            self.assertEqual(service["network_mode"], "none")
+            self.assertEqual(service["extra_hosts"], ["www.turnrock.ai=127.0.0.1"])
         receipt = (directory / "job.json").read_text()
         self.assertNotIn(canary, receipt)
         self.assertEqual(json.loads(receipt)["env_from"], ["DUMMY_JOB_PRIVATE"])
