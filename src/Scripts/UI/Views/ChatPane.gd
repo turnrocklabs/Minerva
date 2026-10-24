@@ -839,7 +839,7 @@ static func _dispatch_refusal(provider: BaseProvider, history_list: Array) -> Di
 
 
 # Generate content from provider
-func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, pending_item: ChatHistoryItem = null) -> Variant:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
 	print("[ChatPane] generate_content_from_provider called, provider: %s" % provider.provider_name)
 	var bot_response
@@ -876,6 +876,8 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 		bot_response.provider = provider
 		bot_response.error = str(refusal["message"])
 		bot_response.set_meta("error_code", str(refusal["code"]))
+	elif provider is CoreProvider and (provider.supports_async_chat() or pending_item != null and not pending_item.PendingJob.is_empty()):
+		bot_response = await _generate_core_job(history, provider, history_list, optional_params, pending_item)
 	else:
 		bot_response = await provider.generate_content(history_list, optional_params)
 	if bot_response and not str(bot_response.error).is_empty():
@@ -893,6 +895,83 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	return bot_response
 
 # Process bot response into chat history item
+func _checkpoint_core_job(_item: ChatHistoryItem) -> void:
+	# PendingJob is serialized by the existing project history owner.
+	SingletonObject.save_state(false)
+
+func _core_job_preview(answer: String, reasoning: String, item: ChatHistoryItem) -> void:
+	item.Message = answer
+	item.Reasoning = []
+	if not reasoning.is_empty():
+		item.Reasoning = [{"kind": "thinking", "text": reasoning, "redacted": false, "order": 0}]
+	if is_instance_valid(item.rendered_node):
+		item.rendered_node.loading = false
+		item.rendered_node.loading_append = false
+		item.rendered_node.render()
+		item.rendered_node.loading_append = true
+
+func _generate_core_job(history: ChatHistory, provider: CoreProvider, prompt: Array,
+		params: Dictionary, existing: ChatHistoryItem = null) -> BotResponse:
+	var item: ChatHistoryItem = existing if existing != null else ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.MODEL)
+	item.provider = provider
+	item.Complete = false
+	var attached: bool = not history.HistoryItemList.has(item)
+	if attached:
+		history.HistoryItemList.append(item)
+	var created_node: bool = false
+	if not is_instance_valid(item.rendered_node) and is_instance_valid(history.VBox):
+		history.VBox.add_history_item(item)
+		item.rendered_node.loading = true
+		created_node = true
+	var job: CoreChatJob = provider.create_chat_job(item, _checkpoint_core_job, _core_job_preview.bind(item))
+	var request: Dictionary = params.duplicate()
+	request["_core_chat_job"] = job
+	var response: BotResponse = await provider.generate_content(prompt, request)
+	if item.PendingJob.is_empty():
+		if attached:
+			history.HistoryItemList.erase(item)
+		if created_node and is_instance_valid(item.rendered_node):
+			item.rendered_node.queue_free()
+	return response
+
+func _resume_core_jobs(history: ChatHistory) -> void:
+	if not history.provider is CoreProvider or history.is_request_active:
+		return
+	for item: ChatHistoryItem in history.HistoryItemList.duplicate():
+		if item.PendingJob.is_empty():
+			continue
+		var token: int = _begin_chat_turn(history)
+		var response: BotResponse = await _generate_core_job(history, history.provider, [], {}, item)
+		if _turn_stopped(history, token):
+			return
+		item.Message = response.text
+		item.Error = response.error
+		item.Reasoning = response.reasoning
+		item.ToolCalls = response.tool_calls
+		item.IsToolCall = response.has_tool_calls()
+		item.Complete = response.complete
+		item.InputTokens = response.prompt_tokens
+		item.OutputTokens = response.completion_tokens
+		if is_instance_valid(item.rendered_node):
+			item.rendered_node.loading = false
+			item.rendered_node.loading_append = false
+			item.rendered_node.render()
+		if history.AgentModeEnabled and response.error.is_empty() and response.has_tool_calls():
+			var user: ChatHistoryItem = null
+			for earlier: ChatHistoryItem in history.HistoryItemList:
+				if earlier == item:
+					break
+				if earlier.Role == ChatHistoryItem.ChatRole.USER:
+					user = earlier
+			if user != null:
+				if history.provider.has_method("set_tools"):
+					var tools: Array[Dictionary] = SingletonObject.get_mcp_manager().get_tools_for_chat(history)
+					history.provider.set_tools(tools)
+				_configure_tool_memory_manager(history)
+				await handle_tool_calls(history, response.tool_calls, 0, item, user, null, token)
+		_release_chat_turn(history, token)
+
+
 func process_bot_response(bot_response, _history_provider: BaseProvider) -> ChatHistoryItem:
 	var chi = ChatHistoryItem.new()
 
@@ -1876,7 +1955,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	if existing_response.rendered_node:
 		existing_response.rendered_node.loading = true
 
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response = await generate_content_from_provider(history, history_list, null, null, existing_response)
 
 	# if there was an error with the request
 	if not bot_response:
@@ -2566,7 +2645,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	var _pt_status: PassthroughTurnStatusScript = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response = await generate_content_from_provider(history, history_list, null, null, dummy_item)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
 	# Stop invalidates the turn and frees its loading message. A late response
 	# must not pass that freed node into the relay or write into a newer turn.
@@ -3904,6 +3983,8 @@ func render_history(chat_history: ChatHistory):
 			slider_containers.set(item.SliderContainerId, slider)
 			multi_slider_containers.set(item.MultiSliderContainerId, new_multi_slider_cont)
 			vboxChat.add_child(new_multi_slider_cont)
+
+	call_deferred("_resume_core_jobs", chat_history)
 
 
 # Called when the node enters the scene tree for the first time.

@@ -36,7 +36,8 @@ static var SERIALIZER_FIELDS = [
 	"ToolSummary",
 	"ToolArtifactNoteId",
 	"RequestMetadata",
-	"Reasoning"
+	"Reasoning",
+	"PendingJob"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -185,6 +186,10 @@ var ToolArtifactNoteId: String = "":
 var RequestMetadata: Dictionary = {}:
 	set(value): _queue_save_state(); RequestMetadata = value
 
+## Submission identity only; accepted output remains server-owned until result retrieval.
+var PendingJob: Dictionary = {}:
+	set(value): _queue_save_state(); PendingJob = value
+
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
 
@@ -289,6 +294,7 @@ func Serialize() -> Dictionary:
 		"MultiSliderContainerId": MultiSliderContainerId,
 		"ToolExecutions": ToolExecutions,
 		"Reasoning": Reasoning,
+		"PendingJob": PendingJob,
 		# Tool-related fields for agentic mode
 		"ToolCallId": ToolCallId,
 		"ToolName": ToolName,
@@ -383,6 +389,9 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 				if value is Array:
 					segments.assign(value)
 				value = segments
+
+			"PendingJob":
+				value = value if value is Dictionary else {}
 
 			"ToolCalls":
 				# Convert to typed array for backwards compatibility
