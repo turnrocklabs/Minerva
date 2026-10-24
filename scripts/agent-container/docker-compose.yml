@@ -11,7 +11,7 @@
 #   job      one planned job (jobs.py, `agent.py run-job`): dev's hardening,
 #            no network, CPU and memory limits set per job by agent.py
 #            (MINERVA_JOB_CPUS, MINERVA_JOB_MEMORY), mounts per job.
-# All three services sit in the "session" profile, so a bare `docker compose up`
+# All services sit in the "session" profile, so a bare `docker compose up`
 # starts nothing half-configured. Build with `agent.py build`.
 x-hardened: &hardened
   image: "${MINERVA_AGENT_IMAGE:?set by agent.py}"
@@ -53,6 +53,13 @@ services:
     cpus: 4
     restart: "no"
     command: [/opt/minerva-agent/minerva-session]
+
+  job-egress:
+    <<: *hardened
+    network_mode: host
+    pids_limit: 64
+    mem_limit: 128m
+    command: [python3, -B, /opt/minerva-agent/gateway/job_egress.py]
 
   job:
     <<: *hardened

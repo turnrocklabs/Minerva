@@ -78,6 +78,29 @@ import re
 import secrets
 import subprocess
 import time
+from types import ModuleType
+from typing import NotRequired, TypedDict
+
+import job_io
+
+
+class JobLimits(TypedDict):
+    cpus: float
+    memory: str
+    seconds: int
+
+
+class EgressRecord(TypedDict):
+    container: str
+    sockets: str
+    targets: list[str]
+
+
+class JobNetworkRecord(TypedDict):
+    id: str
+    container: str
+    limits: JobLimits
+    egress: NotRequired[EgressRecord]
 
 CLASSES = ("succeeded", "failed", "timed_out", "interrupted", "unknown")
 JOB_ID = re.compile(r"j[0-9]{8}t[0-9]{6}-[0-9a-f]{6}")
@@ -107,7 +130,7 @@ TIMEOUT_RCS = (124, 137)
 # run the command for the time left, collect artifacts, record how it ended.
 IN_JOB = r"""
 set -uo pipefail
-exec >>/out/job.log 2>&1
+if [ "${MINERVA_JOB_PRIVATE_IO:-}" != 1 ]; then exec >>/out/job.log 2>&1; fi
 ended() { printf '%s %s %s\n' "$1" "$2" "$SECONDS" > /out/ended; exit "$2"; }
 echo "== job $MINERVA_JOB_ID: $MINERVA_JOB_REV of $MINERVA_JOB_FOLDER"
 sha="$(git --no-optional-locks -C /src rev-parse --verify --end-of-options "$MINERVA_JOB_REV^{commit}")" \
@@ -139,6 +162,9 @@ if [ "$SECONDS" -lt "$MINERVA_JOB_SECONDS" ]; then
 	while IFS= read -r path; do
 		[ -n "$path" ] || continue
 		if [ -e "$path" ] || [ -L "$path" ]; then
+			if [ "${MINERVA_JOB_PRIVATE_IO:-}" = 1 ]; then
+				python3 -B /job/io.py artifact "$path" || ended command 89
+			fi
 			mkdir -p "/out/artifacts/$(dirname "$path")" && cp -a -- "$path" "/out/artifacts/$path"
 		else
 			echo "== artifact missing: $path"
@@ -221,6 +247,39 @@ def env_from(host, pairs):
     return env
 
 
+def inherited_from(host: ModuleType, names: list[str] | None, explicit: dict[str, str]) -> dict[str, str]:
+    inherited = {}
+    for name in names or []:
+        if not ENV_NAME.fullmatch(name) or name.startswith(RESERVED_ENV) \
+                or name == "MINERVA_NATIVES_MANIFEST" or name in explicit:
+            raise host.Refused("--env-from needs a non-reserved name absent from --env")
+        value = os.environ.get(name)
+        if not value or "\0" in value:
+            raise host.Refused(f"--env-from {name} is absent, empty or invalid")
+        inherited[name] = value
+    return inherited
+
+
+def public_metadata(host: ModuleType, data: object, values: list[str]) -> None:
+    variants = job_io.redaction_values(values)
+
+    def visit(value: object) -> None:
+        if isinstance(value, str):
+            redactor = job_io.Redactor(variants)
+            redactor.feed(value.encode(), final=True)
+            if redactor.found:
+                raise host.Refused("inherited environment content cannot appear in job metadata")
+        elif isinstance(value, dict):
+            for key, child in value.items():
+                visit(key)
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(data)
+
+
 def artifacts_from(host, paths):
     paths = list(dict.fromkeys(paths or []))
     if len(paths) > MAX_ARTIFACTS:
@@ -271,7 +330,8 @@ def siblings_from(host, record, primary, pairs):
     return selected
 
 
-def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, seconds, folder, sibling_pairs=None):
+def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, seconds, folder,
+            sibling_pairs=None, network: str = "none", env_names: list[str] | None = None):
     host.check_layout()
     record = host.load_record(name)
     if record is None:
@@ -283,7 +343,12 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
         raise host.Refused(f"--command is a non-empty shell command of at most {MAX_COMMAND} characters")
     limits = limits_from(host, cpus, memory, seconds)
     env = env_from(host, env_pairs)
+    inherited = inherited_from(host, env_names, env)
+    if network not in ("none", "core"):
+        raise host.Refused("job network must be none or core")
+    private_io = bool(inherited) or network == "core"
     artifacts = artifacts_from(host, artifact_paths)
+    public_metadata(host, {"command": command, "env": env, "artifacts": artifacts}, list(inherited.values()))
     source = source_clone(host, record, folder)
     siblings = siblings_from(host, record, source, sibling_pairs)
     tag = host.image_tag()
@@ -297,28 +362,50 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
         directory = host.private_dir(jobs_root(host, name) / job_id)
         out = host.private_dir(directory / "out")
         given = host.private_dir(directory / "in")
+        job = {"version": 1, "id": job_id, "session": name, "revision_requested": rev,
+               "folder": source["path"], "siblings": siblings, "command": command, "env": env,
+               "env_from": list(inherited), "network": network, "limits": limits,
+               "artifacts": artifacts, "container": container_name(name, job_id), "image": tag,
+               "started_at": time.time()}
+        if network == "core":
+            sockets = host.private_dir(directory / "egress")
+            job["egress"] = {"container": job["container"] + "-egress", "sockets": str(sockets),
+                             "targets": ["www.turnrock.ai:4040", "www.turnrock.ai:27500"]}
+        public_metadata(host, job, list(inherited.values()))
         for file, text in (("run.sh", IN_JOB), ("command.sh", command + "\n"),
                            ("artifacts.txt", "".join(a + "\n" for a in artifacts)),
                            ("siblings.tsv", "".join(f"{s['name']}\t{s['revision']}\n" for s in siblings))):
             (given / file).write_text(text)
+        if private_io:
+            (given / "io.py").write_text((Path(__file__).parent / "job_io.py").read_text())
         mounts = host.natives_manifest(directory) + host.bind_mount(source["path"], "/src", True) \
             + host.bind_mount(given, "/job", True) + host.bind_mount(out, "/out")
         for sibling in siblings:
             mounts += host.bind_mount(sibling["folder"], f"/sources/{sibling['name']}", True)
-        job = {"version": 1, "id": job_id, "session": name, "revision_requested": rev,
-               "folder": source["path"], "siblings": siblings, "command": command, "env": env, "limits": limits,
-               "artifacts": artifacts, "container": container_name(name, job_id), "image": tag,
-               "started_at": time.time()}
         host.write_json(directory / "job.json", job)
+        if network == "core":
+            try:
+                start_egress(host, name, job, inherited)
+            except host.Refused:
+                finish(host, directory, job, "failed", "Core egress did not start")
+                raise
+            mounts += host.bind_mount(job["egress"]["sockets"], "/run/minerva-agent/core", True)
         variables = {"MINERVA_JOB_ID": job_id, "MINERVA_JOB_REV": rev, "MINERVA_JOB_FOLDER": source["path"],
                      "MINERVA_JOB_SECONDS": str(limits["seconds"]),
                      "MINERVA_JOB_DEADLINE": str(limits["seconds"] + KILL_GRACE_S),
                      "MINERVA_JOB_PRIMARY": Path(source["path"]).name if siblings else "src",
                      "MINERVA_NATIVES_MANIFEST": host.NATIVES_MANIFEST, **env}
+        if private_io:
+            variables.update(MINERVA_JOB_PRIVATE_IO="1", MINERVA_JOB_NETWORK=network,
+                             MINERVA_JOB_ENV_FROM=",".join(inherited))
         env_args = [arg for key, value in variables.items() for arg in ("-e", f"{key}={value}")]
+        # Docker inherits these names from its environment. Values never enter argv.
+        env_args += [arg for key in inherited for arg in ("-e", key)]
+        routes = ["--add-host", "www.turnrock.ai:127.0.0.1"] if network == "core" else []
         started = subprocess.run(
             host.compose(name, "run", "-d", "--rm", "--name", job["container"],
-                         "-l", f"{JOB_LABEL}={job_id}", *env_args, *mounts, "job", "bash", "-c", OUTER),
+                         "-l", f"{JOB_LABEL}={job_id}", *env_args, *routes, *mounts, "job", "bash", "-c",
+                         "python3 -B /job/io.py run" if private_io else OUTER),
             env={**host.compose_env(), "MINERVA_JOB_CPUS": str(limits["cpus"]),
                  "MINERVA_JOB_MEMORY": limits["memory"]},
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
@@ -329,6 +416,38 @@ def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, s
     return {"ok": True, "id": name, "job": describe(host, name, job_id),
             "message": f"job {job_id} running {command!r} at {rev} "
                        f"({limits['cpus']} CPUs, {limits['memory']}, {limits['seconds']} s)"}
+
+
+def start_egress(host: ModuleType, name: str, job: JobNetworkRecord,
+                 inherited: dict[str, str]) -> None:
+    egress = job["egress"]
+    # The network sidecar receives neither source, output nor account credentials.
+    environment = {k: v for k, v in host.compose_env().items() if k not in inherited}
+    started = subprocess.run(
+        host.compose(name, "run", "-d", "--rm", "--name", egress["container"],
+                     "-l", f"{JOB_LABEL}={job['id']}",
+                     *host.bind_mount(egress["sockets"], "/run/minerva-agent/core"),
+                     "job-egress", "timeout", "-k", "10", str(job["limits"]["seconds"] + KILL_GRACE_S),
+                     "python3", "-B", "/opt/minerva-agent/gateway/job_egress.py",
+                     "--sockets", "/run/minerva-agent/core", "--seconds",
+                     str(job["limits"]["seconds"] + KILL_GRACE_S)),
+        env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if started.returncode != 0:
+        raise host.Refused("Core egress container did not start")
+    deadline = time.monotonic() + 5
+    while not all((Path(egress["sockets"]) / (route + ".sock")).is_socket()
+                  for route in ("auth", "core", "stop")):
+        if time.monotonic() >= deadline:
+            raise host.Refused("Core egress sockets did not become ready")
+        time.sleep(0.05)
+
+
+def stop_egress(host: ModuleType, job: JobNetworkRecord) -> None:
+    if job.get("egress"):
+        sidecar = {**job, "container": job["egress"]["container"]}
+        if owned(host, sidecar):
+            subprocess.run(["docker", "stop", "-t", str(STOP_GRACE_S), sidecar["container"]],
+                           capture_output=True, check=False)
 
 
 # ── classifying ──────────────────────────────────────────────────────────
@@ -412,6 +531,7 @@ def assembled_revisions(out):
 
 def finish(host, directory, job, cls, detail, exit_code=None, elapsed=None):
     """Write result.json once; an existing one is kept and returned."""
+    stop_egress(host, job)
     existing = host.read_json(directory / "result.json")
     if existing.get("class") in CLASSES:
         return existing
@@ -444,6 +564,7 @@ def stop_owned(host, directory, job, mark):
     host.write_json(directory / "job.json", job)
     if owned(host, job):
         subprocess.run(["docker", "stop", "-t", str(STOP_GRACE_S), job["container"]], capture_output=True)
+    stop_egress(host, job)
 
 
 def reconcile(host, name, job_id):

@@ -119,6 +119,43 @@ dirty. Minerva's twins are `minerva_agent_session_run_job`, `_job_status`,
 `_job_log`, `_drain` and the Jobs section of Preferences > Containers.
 `jobs.py` documents the classification rules.
 
+### Core-only egress and inherited environment
+
+Jobs default to `--network none`. `--network core` opts one job into opaque
+TLS tunnels to **www.turnrock.ai:4040** (auth HTTPS) and **:27500** (Core WSS).
+The job still has `network_mode: none`: an owned, deadline-bounded hardened
+sidecar exposes two data Unix sockets, forwarded to the job's loopback ports,
+plus a job-owned shutdown socket.
+A hosts entry preserves the original URL hostname, SNI and certificate
+validation; TLS is not terminated here. Destinations resolve once and every
+address must be public. Paths inside the encrypted connection are not filtered.
+No other egress or host-service/MCP sockets are mounted. Normal jobs and dev
+sessions are unchanged. Job completion, drain and the sidecar's deadline stop
+only the labelled sidecar belonging to that job.
+
+Use `--env` only for non-secret values: they are recorded. `--env-from NAME`
+inherits a variable from the launcher's process environment, records only its
+name and passes Docker `-e NAME`, never a value in argv. For the approved e2e
+account, invoke the launcher through `sops exec-env` and name the variables:
+
+```bash
+sops exec-env /path/to/secrets.enc.json \
+  'python3 scripts/agent-container/agent.py run-job NAME --rev SHA --network core \
+   --env-from MINERVA_TEST_USERNAME --env-from MINERVA_TEST_PASSWORD \
+   --command "python3 /path/to/reviewed-test.py" --artifact evidence/report.json'
+```
+
+Inherited values and their JSON escapes are masked across stdout/stderr reads
+before `job.log` is written. Evidence containing those values, symlinks or
+special files is refused before collection. These protect against accidental
+disclosure, not malicious commands writing directly to `/out`. Tests must
+still redact username/password fields and newly minted tokens, select only
+sanitized evidence, and keep preferences and other private app data on the
+job's exec tmpfs. Never put credentials in `--command`, `--env`, filenames or
+artifacts. The launcher refuses literal inherited values in recorded commands.
+This option does not authorize a live target or account; obtain task-specific
+approval and review before using it.
+
 ## Toolchain profiles
 
 A profile names the tools a session needs, each with an optional minimum

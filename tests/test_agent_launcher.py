@@ -29,7 +29,9 @@ state = Path(os.environ["FAKE_DOCKER_STATE"])
 data = json.loads(state.read_text()) if state.exists() else {"running": []}
 args = sys.argv[1:]
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
-    log.write(json.dumps({"argv": args, "image": os.environ.get("MINERVA_AGENT_IMAGE")}) + "\n")
+    names = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "-e" and "=" not in args[i + 1]]
+    log.write(json.dumps({"argv": args, "image": os.environ.get("MINERVA_AGENT_IMAGE"),
+                         "inherited_set": [n for n in names if n in os.environ]}) + "\n")
 def save():
     state.write_text(json.dumps(data))
 if args[:2] == ["image", "inspect"]:
@@ -59,6 +61,12 @@ if args[0] == "compose" and "run" in args:
             if a == "-v" and args[i + 1].endswith(":/run/minerva-agent/sock"):
                 sock_dir = args[i + 1].rsplit(":", 1)[0]
                 for s in ("minerva", "docket", "nudge", "proxy"):
+                    socket.socket(socket.AF_UNIX).bind(f"{sock_dir}/{s}.sock")
+    if "job-egress" in args:
+        for i, a in enumerate(args):
+            if a == "-v" and args[i + 1].endswith(":/run/minerva-agent/core"):
+                sock_dir = args[i + 1].rsplit(":", 1)[0]
+                for s in ("auth", "core", "stop"):
                     socket.socket(socket.AF_UNIX).bind(f"{sock_dir}/{s}.sock")
     if "-l" in args:
         data.setdefault("labels", {})[name] = args[args.index("-l") + 1].split("=", 1)[1]
@@ -656,6 +664,54 @@ class LauncherTest(unittest.TestCase):
 
 
     # ── planned jobs ──
+    def test_core_job_is_opt_in_and_inherited_values_never_enter_receipts_or_argv(self) -> None:
+        self.start_alpha()
+        canary = "dummy-private-canary-4812"
+        code, normal = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true")
+        self.assertEqual(code, 0, normal)
+        before = len(self.docker_calls())
+        self.env["DUMMY_JOB_PRIVATE"] = canary
+        code, answer = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true",
+                                   "--network", "core", "--env-from", "DUMMY_JOB_PRIVATE")
+        self.assertEqual(code, 0, answer)
+        calls = self.docker_calls()[before:]
+        launches = [c for c in calls if c["argv"][0] == "compose" and "run" in c["argv"]]
+        self.assertEqual(len(launches), 2)
+        self.assertNotIn(canary, json.dumps(calls))
+        sidecar, job = launches
+        self.assertIn("job-egress", sidecar["argv"])
+        self.assertNotIn("DUMMY_JOB_PRIVATE", sidecar["argv"])
+        self.assertIn("DUMMY_JOB_PRIVATE", job["inherited_set"])
+        self.assertIn("www.turnrock.ai:127.0.0.1", job["argv"])
+        directory = self.home / "state/sessions/alpha/jobs" / answer["job"]["job"]
+        receipt = (directory / "job.json").read_text()
+        self.assertNotIn(canary, receipt)
+        self.assertEqual(json.loads(receipt)["env_from"], ["DUMMY_JOB_PRIVATE"])
+        self.assertEqual(json.loads(receipt)["network"], "core")
+        code, drained = self.answer("drain", "alpha", "--wait", "0")
+        self.assertEqual(code, 0, drained)
+        state = json.loads((self.s / "docker-state.json").read_text())
+        self.assertFalse(any(answer["job"]["job"] in n for n in state["running"]))
+        self.assertEqual(self.answer("drain", "alpha", "--lift")[0], 0)
+        code, failed = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "false",
+                                   "--network", "core")
+        self.assertEqual(code, 0, failed)
+        job_id = failed["job"]["job"]
+        directory = self.home / "state/sessions/alpha/jobs" / job_id
+        (directory / "out/ended").write_text("command 1 1\n")
+        state = json.loads((self.s / "docker-state.json").read_text())
+        state["running"].remove(f"minerva-agent-job-alpha-{job_id}")
+        (self.s / "docker-state.json").write_text(json.dumps(state))
+        code, status = self.answer("job-status", "alpha", job_id)
+        self.assertEqual(code, 0, status)
+        self.assertEqual(status["class"], "failed")
+        state = json.loads((self.s / "docker-state.json").read_text())
+        self.assertFalse(any(job_id in n for n in state["running"]))
+        code, refused = self.answer("run-job", "alpha", "--rev", "HEAD", "--command", "true",
+                                    "--env-from", "DUMMY_JOB_PRIVATE", "--artifact", canary)
+        self.assertNotEqual(code, 0)
+        self.assertNotIn(canary, json.dumps(refused))
+
     def test_drain_interrupts_and_only_a_finished_job_claims_its_artifact(self):
         # Oracle: result.json and the out/ markers on disk; the fake docker
         # plays the job container (running until stopped, labelled as started).
@@ -812,7 +868,7 @@ class StaticTest(unittest.TestCase):
         out = subprocess.run(["docker", "compose", "-f", str(AGENT / "docker-compose.yml"), "--profile", "session",
                               "config", "--format", "json"], env=env, capture_output=True, text=True, check=True)
         services = json.loads(out.stdout)["services"]
-        self.assertEqual(set(services), {"gateway", "dev", "job"})
+        self.assertEqual(set(services), {"gateway", "dev", "job", "job-egress"})
         for name, svc in services.items():
             with self.subTest(name):
                 self.assertTrue(svc["read_only"])
@@ -822,6 +878,7 @@ class StaticTest(unittest.TestCase):
                 self.assertNotIn("volumes", svc)                 # every mount comes from agent.py
                 self.assertFalse(svc.get("privileged", False))
         self.assertEqual(services["gateway"]["network_mode"], "host")
+        self.assertEqual(services["job-egress"]["network_mode"], "host")
         self.assertEqual(services["dev"]["network_mode"], "none")
         self.assertEqual(services["job"]["network_mode"], "none")
         self.assertEqual(services["gateway"]["build"]["args"]["BUILDER_IMAGE"], "minerva-container-build:test")
