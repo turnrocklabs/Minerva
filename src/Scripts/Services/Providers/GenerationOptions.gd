@@ -217,6 +217,10 @@ static func chat_params(history: ChatHistory, provider: BaseProvider, request: D
 		params = {"temperature": history.Temperature, "top_p": history.TopP,
 			"presence_penalty": history.PresencePenalty, "frequency_penalty": history.FrequencyPenalty}
 		params.merge(request, true)
+	else:
+		for option: String in REASONING_KEYS:
+			if request.has(option):
+				params[option] = request[option]
 	return params
 
 
@@ -231,7 +235,7 @@ static func reasoning_request(provider: BaseProvider, request: Dictionary) -> Di
 		var rule: Dictionary = schema.get(name, {})
 		if saved.has(name) or rule.is_empty() or not CoreModelDescriptor.value_matches(filtered[name], rule):
 			filtered.erase(name)
-	if filtered.get("enable_thinking") == false:
+	if filtered.get("enable_thinking") == false or saved.get("enable_thinking") == false:
 		filtered.erase("reasoning_effort")
 	return filtered
 

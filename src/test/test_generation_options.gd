@@ -297,6 +297,11 @@ func _check_native_reasoning(gen: GDScript, core: Node, settings: Node) -> void:
 	check("explicit effort while thinking disabled is refused", not gen.resolve(qwen_schema, {}, {}, {"reasoning_effort": "low", "enable_thinking": false}).success)
 	var off: Dictionary = gen.resolve(qwen_schema, {"enable_thinking": false})
 	check("thinking off omits inactive inherited effort", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort"))
+	gen.save_model(qwen, {"enable_thinking": false})
+	var qwen_history = load("res://Scripts/Models/ChatHistory.gd").new(qwen, "qwen-replayed-low")
+	var replayed: Dictionary = gen.chat_params(qwen_history, qwen, {"reasoning_effort": "low"})
+	var off_body: Dictionary = qwen.build_chat_payload([], replayed)
+	check("Qwen saved Off wins over replayed Low without blocking send", off_body.success and off_body.payload.get("enable_thinking") == false and not off_body.payload.has("reasoning_effort"))
 	var generic: Dictionary = service.actions[1].model_metadata.generation_settings.duplicate(true)
 	generic.parameters.reasoning_effort.supported = false
 	generic.parameters.enable_thinking.supported = false

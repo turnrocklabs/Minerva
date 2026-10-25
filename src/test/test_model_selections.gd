@@ -166,9 +166,29 @@ func check_controls_and_requests() -> void:
 	api.model_name = "gpt-5.2"
 	var chatgpt = fixtures.ChatGPT.new()
 	chatgpt.supported_reasoning_levels = [{"effort": "low"}, {"effort": "medium"}, {"effort": "high"}]
+	gen.save_model(chatgpt, {})
+	await chatgpt.generate_content([])
+	check("untouched unconfigured ChatGPT request has no reasoning effort", not chatgpt.captured.get("reasoning", {}).has("effort"))
+	chatgpt.reasoning_effort = "medium"
+	await chatgpt.generate_content([])
+	check("configured ChatGPT default may reach the native request", chatgpt.captured.get("reasoning", {}).get("effort") == "medium")
+	chatgpt.reasoning_effort = ""
 	var google = fixtures.Google.new()
 	var router = fixtures.Router.new()
 	router.is_reasoning_model = true
+	var request_pane = load("res://Scripts/UI/Views/ChatPane.gd").new()
+	for destination in [sonnet, chatgpt, google, router]:
+		gen.save_model(destination, {})
+		singleton._enabled_providers[destination.PROVIDER] = true
+		var accepted: Dictionary = gen.public_request(destination, {"reasoning_effort": "high"})
+		check(destination.provider_name + " accepts API reasoning request intent", accepted.success)
+		var request_history = load("res://Scripts/Models/ChatHistory.gd").new(destination, "api-request-" + destination.provider_name)
+		await request_pane.generate_content_from_provider(request_history, [], accepted.values)
+	check("API send boundary applies accepted Anthropic request effort", sonnet.captured.get("thinking", {}).get("budget_tokens") == 16384)
+	check("API send boundary applies accepted ChatGPT request effort", chatgpt.captured.get("reasoning", {}).get("effort") == "high")
+	check("API send boundary applies accepted Google request effort", google.captured.get("generationConfig", {}).get("thinkingConfig", {}).get("thinkingBudget") == 24576)
+	check("API send boundary applies accepted OpenRouter request effort", router.captured.get("reasoning", {}).get("effort") == "high")
+	request_pane.free()
 	for provider in [sonnet, api, chatgpt, google, router]:
 		check(provider.provider_name + " saves reasoning through existing model layer", gen.save_model(provider, {"reasoning_effort": "high"}).success)
 		await provider.generate_content([])
