@@ -439,7 +439,7 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	if http_request.has_meta("request_cancelled"):
 		active_requests.erase(http_request)
 		http_request.queue_free()
-		return RequestResults.from_error("Request cancelled")
+		return RequestResults.from_error("Request cancelled.")
 
 	# Check if we timed out
 	if timed_out:
