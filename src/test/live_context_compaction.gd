@@ -11,7 +11,6 @@ var usage: Dictionary = {}
 var jobs: Dictionary = {}
 var times: Dictionary = {}
 var summary_glm: bool = false
-var glm_topic: String = ""
 var prior_entries: Array[String] = []
 var compactions: Array[Dictionary] = []
 var saw_activity: bool = false
@@ -58,7 +57,6 @@ func _setup() -> void:
 			for action in service.actions:
 				async_advertised = async_advertised or action.topic == "model-chat/jobs/submit"
 				if action.name.to_lower() == MODEL:
-					glm_topic = action.topic
 					var rule: Dictionary = action.model_metadata.get("generation_settings", {}).get("parameters", {}).get("max_tokens", {})
 					for key: String in ["minimum", "maximum", "default", "default_source"]:
 						if rule.has(key):
@@ -225,9 +223,16 @@ func _wire(message: Dictionary) -> void:
 		if body.get("status", {}).get("state") in ["completed", "failed", "cancelled", "stalled", "abandoned", "interrupted"]:
 			times["terminal"] = Time.get_unix_time_from_system()
 	var response: Dictionary = body.get("response", body) if body.get("response", body) is Dictionary else {}
-	if topic == glm_topic and response.get("choices") is Array:
-		# Summarization uses the discovered GLM action; normal turns use jobs.
-		summary_glm = not response.has("model") or str(response.model).to_lower() == MODEL
+	if topic == "model-chat/jobs/result" and jobs.size() == 1 and response.get("choices") is Array:
+		# The summary job completes before the main job is submitted. A main
+		# reply cannot stand in for a failed summary once both IDs are present.
+		var choices: Array = response.choices
+		if not choices.is_empty() and choices[0] is Dictionary:
+			var choice: Dictionary = choices[0]
+			var summary_message: Variant = choice.get("message")
+			summary_glm = str(response.get("model", "")).to_lower() == MODEL \
+				and summary_message is Dictionary and summary_message.get("content") is String \
+				and not str(summary_message.content).strip_edges().is_empty()
 	if topic == "model-chat/jobs/result" and response.get("usage") is Dictionary:
 		for key: String in ["prompt_tokens", "completion_tokens", "reasoning_tokens"]:
 			if response.usage.get(key) is int or response.usage.get(key) is float:

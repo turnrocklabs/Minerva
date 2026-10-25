@@ -171,7 +171,7 @@ def exercise(private: Path, app: subprocess.Popen, deadline: float) -> int:
             fresh = after['compactions'][prior_count:]
             record.update({'times': after['times'], 'usage': after['usage'], 'reply': after['reply'],
                            'job_ids': after['job_ids'], 'compactions': fresh, 'finished_at': time.time()})
-            check(not after['reply'].get('error') and len(after['job_ids']) == 1, 'async_turn_failed')
+            check(not after['reply'].get('error') and len(after['job_ids']) == (2 if fresh else 1), 'async_turn_failed')
             check('prompt_tokens' in after['usage'] and 'completion_tokens' in after['usage'], 'server_usage_missing')
             check(after['usage']['completion_tokens'] <= 4000, 'output_limit_exceeded')
             input_used = fresh[-1]['input_after'] if fresh else before['input_estimate']
