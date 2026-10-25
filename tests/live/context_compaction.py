@@ -291,7 +291,7 @@ def run() -> int:
                         return
                     body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))))
                     (PRIVATE / 'local-capture.json').write_text(json.dumps({'num_ctx': body.get('options', {}).get('num_ctx')}))
-                    reply = json.dumps({'choices': [{'message': {'role': 'assistant', 'content': 'ok'}, 'finish_reason': 'stop'}], 'usage': {}}).encode()
+                    reply = json.dumps({'id': 'local-safety', 'choices': [{'message': {'role': 'assistant', 'content': 'ok'}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2}}).encode()
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.send_header('Content-Length', str(len(reply)))
