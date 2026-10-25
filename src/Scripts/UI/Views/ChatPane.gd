@@ -531,7 +531,9 @@ func check_agent_context_limits(history: ChatHistory, prepared_prompt: Array = [
 		var resolved := GenerationOptions.for_provider(provider, GenerationOptions.chat_params(history, provider, request))
 		if not resolved.success:
 			return {"ok": false, "warning": false, "message": str(resolved.error_message)}
-		reserve = int(resolved.payload.get("max_tokens", reserve))
+		var payload: Dictionary = resolved.payload
+		var output: int = payload.get("max_tokens", reserve)
+		reserve = output
 	var estimate := _context_input_estimate(history, prepared_prompt, provider)
 	var estimated: int = estimate.input
 	var fits := estimated + reserve <= window
