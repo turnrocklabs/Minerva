@@ -177,7 +177,7 @@ func _command(command: Dictionary) -> void:
 			if node is Label and node.text == "Context":
 				result["context_heading"] = true
 		var reasoning: Node = dialog.get_node("%ModelReasoningSettings")
-		result["reasoning_low"] = reasoning.get_node("Selection").text == "Low"
+		result["reasoning_low"] = reasoning.get_node("Selection").text == "low"
 		result["values"] = values
 		result["visible"] = dialog.visible
 		dialog.hide()
