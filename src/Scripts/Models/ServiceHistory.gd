@@ -1,6 +1,8 @@
 class_name ServiceHistory
 extends RefCounted
 
+signal settings_binding_changed()
+
 # Don't reorder, only add new entries
 enum ServiceType {
 	NONE,
@@ -85,12 +87,6 @@ var AgentSummarizeThreshold: int = 0:
 ## Whether agent mode is enabled for this chat
 var AgentModeEnabled: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentModeEnabled = value
-
-## Per-chat reasoning effort for providers that use the effort picker
-## (Anthropic/OpenRouter/Gemini/ChatGPT). "" = provider default (no override);
-## other values: "off", or a level from the provider's reasoning_effort_levels().
-var ReasoningEffort: String = "":
-	set(value): SingletonObject.call_deferred("save_state", false); ReasoningEffort = value
 
 ## Whether to request a human-readable reasoning summary (ChatGPT). Default on.
 var ReasoningSummary: bool = true:
@@ -190,7 +186,10 @@ var ConfiguredSkills: Array[String] = []:
 ## terminal-backed plugin provider for its whole life — the provider chooser is
 ## locked and never auto-falls-back (recovery is W3's relaunch affordance).
 var PassthroughMode: bool = false:
-	set(value): SingletonObject.call_deferred("save_state", false); PassthroughMode = value
+	set(value):
+		SingletonObject.call_deferred("save_state", false)
+		PassthroughMode = value
+		settings_binding_changed.emit()
 
 ## Terminal id the passthrough provider is bound to (empty until launch wires it).
 var BoundTerminalId: String = "":
@@ -224,6 +223,7 @@ var provider: BaseProvider:
 		provider = value
 		if is_instance_valid(provider):
 			provider.owner_history_id = HistoryId
+		settings_binding_changed.emit()
 
 static var SERIALIZER_FIELDS = [
 	"HistoryId",
@@ -248,7 +248,6 @@ static var SERIALIZER_FIELDS = [
 	"AgentContextHardLimit",
 	"AgentSummarizeThreshold",
 	"AgentModeEnabled",
-	"ReasoningEffort",
 	"ReasoningSummary",
 	"IsAgentChat",
 	"AgentDefinitionId",
@@ -409,8 +408,6 @@ func Serialize() -> Dictionary:
 		"AgentContextHardLimit": AgentContextHardLimit,
 		"AgentSummarizeThreshold": AgentSummarizeThreshold,
 		"AgentModeEnabled": AgentModeEnabled,
-		"ReasoningEffort": ReasoningEffort,
-		"ReasoningSettingsVersion": 1,
 		"ReasoningSummary": ReasoningSummary,
 		"IsAgentChat": IsAgentChat,
 		"AgentDefinitionId": AgentDefinitionId,
@@ -529,15 +526,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
 	if data.has("AgentModeEnabled"):
 		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
-	if data.has("ReasoningEffort"):
-		history.ReasoningEffort = str(data.get("ReasoningEffort", ""))
-	# OpenAI previously ignored the chat override and always used its entry's effort.
-	var reasoning_version: float = data.get("ReasoningSettingsVersion", 0)
-	if reasoning_version < 1 and (provider_obj is OpenAIProvider or history.ReasoningEffort.is_empty()):
-		history.ReasoningEffort = str(provider_obj.get_meta("legacy_reasoning_effort", ""))
-	if provider_obj is ChatGPTProvider:
-		var chatgpt: ChatGPTProvider = provider_obj
-		history.ReasoningEffort = chatgpt.restore_reasoning_choice(history.ReasoningEffort, reasoning_version < 1)
+	# Retired per-chat ReasoningEffort is intentionally ignored (owner D4).
 	if data.has("ReasoningSummary"):
 		history.ReasoningSummary = bool(data.get("ReasoningSummary", true))
 	if data.has("IsAgentChat"):

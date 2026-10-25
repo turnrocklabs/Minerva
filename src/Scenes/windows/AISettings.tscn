@@ -4,6 +4,7 @@
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_bfm0p"]
 
 [ext_resource type="PackedScene" path="res://Scenes/controls/CoreGenerationSettings.tscn" id="3_core_generation"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/ModelReasoningSettings.gd" id="4_reasoning"]
 
 [node name="AISettings" type="Window" unique_id=1767940973]
 oversampling_override = 1.0
@@ -26,10 +27,11 @@ theme_override_constants/margin_bottom = 15
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="SettingTitleLabel" type="Label" parent="MarginContainer/MainVBox" unique_id=1831313935]
+[node name="SelectedModelLabel" type="Label" parent="MarginContainer/MainVBox" unique_id=1831313935]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "Settings"
+text = "Settings for selected model"
 horizontal_alignment = 1
 
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/MainVBox" unique_id=1637088504]
@@ -40,49 +42,35 @@ layout_mode = 2
 size_flags_vertical = 3
 current_tab = 1
 
-[node name="Model" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer" unique_id=1151873437]
+[node name="ThisChat" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer" unique_id=1151873437]
 visible = false
 layout_mode = 2
 horizontal_scroll_mode = 0
 metadata/_tab_index = 0
 
-[node name="ModelVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model" unique_id=695617992]
+[node name="ChatSettings" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat" unique_id=695617992]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="CoreGenerationSettings" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" instance=ExtResource("3_core_generation")]
+[node name="CoreGenerationSettings" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" instance=ExtResource("3_core_generation")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="ProviderHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=1651668266]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/ProviderHBox" unique_id=1902949485]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Default Provider:"
-vertical_alignment = 1
-
-[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/ProviderHBox" unique_id=1570663374]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="TemperatureHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=283689175]
+[node name="TemperatureHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=283689175]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 16
 
-[node name="TempLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer" unique_id=1117302276]
+[node name="TempLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TemperatureHBoxContainer" unique_id=1117302276]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Temperature"
 
-[node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer" unique_id=1848231979]
+[node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TemperatureHBoxContainer" unique_id=1848231979]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -92,29 +80,29 @@ max_value = 2.0
 step = 0.1
 value = 1.0
 
-[node name="TempSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer" unique_id=1455947640]
+[node name="TempSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TemperatureHBoxContainer" unique_id=1455947640]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 text = "1.0"
 
-[node name="TemperatureWarning" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=1331170020]
+[node name="TemperatureWarning" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=1331170020]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.7, 0.2, 1)
 theme_override_font_sizes/font_size = 12
 
-[node name="TopPHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=1188788346]
+[node name="TopPHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=1188788346]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="TopPLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer" unique_id=1485340375]
+[node name="TopPLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TopPHBoxContainer" unique_id=1485340375]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Top P:"
 
-[node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer" unique_id=850757782]
+[node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TopPHBoxContainer" unique_id=850757782]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -124,24 +112,24 @@ max_value = 1.0
 step = 0.1
 value = 1.0
 
-[node name="TopPValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer" unique_id=1761404113]
+[node name="TopPValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TopPHBoxContainer" unique_id=1761404113]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 text = "1"
 
-[node name="FrequencyBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=927035376]
+[node name="FrequencyBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=927035376]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 16
 
-[node name="FreqPenLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer" unique_id=895580091]
+[node name="FreqPenLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/FrequencyBoxContainer" unique_id=895580091]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Frequency Penalty:"
 
-[node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer" unique_id=935954238]
+[node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/FrequencyBoxContainer" unique_id=935954238]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -150,24 +138,24 @@ min_value = -2.0
 max_value = 2.0
 step = 0.1
 
-[node name="FreqPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer" unique_id=714912042]
+[node name="FreqPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/FrequencyBoxContainer" unique_id=714912042]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 text = "0"
 
-[node name="PresenceHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=1901168550]
+[node name="PresenceHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=1901168550]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 16
 
-[node name="PresPenLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer" unique_id=1527720598]
+[node name="PresPenLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/PresenceHBoxContainer" unique_id=1527720598]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Presence Penalty:"
 
-[node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer" unique_id=1098277871]
+[node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/PresenceHBoxContainer" unique_id=1098277871]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -176,25 +164,25 @@ min_value = -2.0
 max_value = 2.0
 step = 0.1
 
-[node name="PresPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer" unique_id=191007093]
+[node name="PresPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/PresenceHBoxContainer" unique_id=191007093]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 text = "0"
 
-[node name="SystemPromptSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=159587135]
+[node name="SystemPromptSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=159587135]
 layout_mode = 2
 
-[node name="SystemPromptVBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=1480953511]
+[node name="SystemPromptVBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=1480953511]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer" unique_id=1728506269]
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer" unique_id=1728506269]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer" unique_id=2130465438]
+[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer/HBoxContainer" unique_id=2130465438]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "System prompts are special messages used to steer
@@ -205,19 +193,19 @@ customizable and adaptable for various use cases."
 mouse_filter = 0
 text = "System Prompt:"
 
-[node name="SystemPromptEnabledCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer" unique_id=1376297138]
+[node name="SystemPromptEnabledCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer/HBoxContainer" unique_id=1376297138]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Enable or disable the system prompt for this chat"
 button_pressed = true
 text = "Enabled"
 
-[node name="RecordSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer" unique_id=833148644]
+[node name="RecordSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer/HBoxContainer" unique_id=833148644]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("2_bfm0p")
 
-[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer" unique_id=1496761789]
+[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer" unique_id=1496761789]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(320, 120)
 layout_mode = 2
@@ -225,43 +213,38 @@ placeholder_text = "Type System Prompt here"
 wrap_mode = 1
 caret_blink = true
 
-[node name="Agentic" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer" unique_id=1316771238]
-layout_mode = 2
-horizontal_scroll_mode = 0
-metadata/_tab_index = 1
-
-[node name="AgenticVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic" unique_id=1311898846]
+[node name="AgenticSettings" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings" unique_id=1311898846]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="MaxToolRoundsHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1585839207]
+[node name="MaxToolRoundsHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1585839207]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="MaxToolRoundsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxToolRoundsHBox" unique_id=756034145]
+[node name="MaxToolRoundsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/MaxToolRoundsHBox" unique_id=756034145]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Max Tool Rounds:"
 
-[node name="MaxToolRoundsSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxToolRoundsHBox" unique_id=1042008879]
+[node name="MaxToolRoundsSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/MaxToolRoundsHBox" unique_id=1042008879]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 1.0
 value = 10.0
 
-[node name="AutoContinueCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1621451656]
+[node name="AutoContinueCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1621451656]
 unique_name_in_owner = true
 layout_mode = 2
 button_pressed = true
 text = "Auto-continue after tool calls"
 
-[node name="MaxImageIterationsHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1228664527]
+[node name="MaxImageIterationsHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1228664527]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="MaxImageIterationsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox" unique_id=500287911]
+[node name="MaxImageIterationsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/MaxImageIterationsHBox" unique_id=500287911]
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Maximum iterations for iterative image generation.
@@ -269,57 +252,57 @@ Used when LLM refines images based on criteria."
 mouse_filter = 0
 text = "Max Image Iterations:"
 
-[node name="MaxImageIterationsSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox" unique_id=1998600054]
+[node name="MaxImageIterationsSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/MaxImageIterationsHBox" unique_id=1998600054]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 1.0
 max_value = 20.0
 value = 3.0
 
-[node name="ToolSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1668405747]
+[node name="ToolSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1668405747]
 layout_mode = 2
 
-[node name="ToolAccessVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1158178489]
+[node name="ToolAccessVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1158178489]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="ToolAccessLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox" unique_id=709048527]
+[node name="ToolAccessLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ToolAccessVBox" unique_id=709048527]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Tool Access:"
 
-[node name="ToolMarginContainer" type="MarginContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox" unique_id=328085861]
+[node name="ToolMarginContainer" type="MarginContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ToolAccessVBox" unique_id=328085861]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/margin_left = 20
 theme_override_constants/margin_right = 20
 
-[node name="ToolScrollContainer" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox/ToolMarginContainer" unique_id=270893946]
+[node name="ToolScrollContainer" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ToolAccessVBox/ToolMarginContainer" unique_id=270893946]
 custom_minimum_size = Vector2(0, 150)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="ToolCheckboxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox/ToolMarginContainer/ToolScrollContainer" unique_id=71690825]
+[node name="ToolCheckboxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ToolAccessVBox/ToolMarginContainer/ToolScrollContainer" unique_id=71690825]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="DirSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1350192236]
+[node name="DirSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1350192236]
 layout_mode = 2
 
-[node name="AllowedDirsVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=764558870]
+[node name="AllowedDirsVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=764558870]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="AllowedDirsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AllowedDirsVBox" unique_id=467359760]
+[node name="AllowedDirsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AllowedDirsVBox" unique_id=467359760]
 layout_mode = 2
 text = "Allowed Directories (one per line, empty = allow all):"
 
-[node name="AllowedDirsTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AllowedDirsVBox" unique_id=1315471147]
+[node name="AllowedDirsTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AllowedDirsVBox" unique_id=1315471147]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
@@ -327,14 +310,14 @@ placeholder_text = "/home/user/projects
 /tmp/safe-work"
 wrap_mode = 1
 
-[node name="ContextLimitsSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1875181644]
+[node name="ContextLimitsSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1875181644]
 layout_mode = 2
 
-[node name="ContextLimitsVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=536627225]
+[node name="ContextLimitsVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=536627225]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="ContextLimitsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox" unique_id=1560525001]
+[node name="ContextLimitsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox" unique_id=1560525001]
 layout_mode = 2
 tooltip_text = "Configure context management for agent mode.
 Set to 0 to use default values.
@@ -342,10 +325,10 @@ These settings help prevent 'prompt too long' errors."
 mouse_filter = 0
 text = "Context Limits (0 = default):"
 
-[node name="MaxToolResultHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox" unique_id=782306496]
+[node name="MaxToolResultHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox" unique_id=782306496]
 layout_mode = 2
 
-[node name="MaxToolResultLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/MaxToolResultHBox" unique_id=87303334]
+[node name="MaxToolResultLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/MaxToolResultHBox" unique_id=87303334]
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Maximum characters for a single tool result before truncation.
@@ -353,16 +336,16 @@ Default: 8000"
 mouse_filter = 0
 text = "Max Tool Result Length:"
 
-[node name="MaxToolResultSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/MaxToolResultHBox" unique_id=383755003]
+[node name="MaxToolResultSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/MaxToolResultHBox" unique_id=383755003]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 50000.0
 step = 1000.0
 
-[node name="ContextWarningHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox" unique_id=1168733907]
+[node name="ContextWarningHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox" unique_id=1168733907]
 layout_mode = 2
 
-[node name="ContextWarningLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox" unique_id=44307528]
+[node name="ContextWarningLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/ContextWarningHBox" unique_id=44307528]
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Token count threshold for showing a warning.
@@ -370,16 +353,16 @@ Default: 80000"
 mouse_filter = 0
 text = "Warning Threshold:"
 
-[node name="ContextWarningSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox" unique_id=1725005821]
+[node name="ContextWarningSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/ContextWarningHBox" unique_id=1725005821]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 200000.0
 step = 5000.0
 
-[node name="ContextHardLimitHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox" unique_id=456605620]
+[node name="ContextHardLimitHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox" unique_id=456605620]
 layout_mode = 2
 
-[node name="ContextHardLimitLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox" unique_id=1981907863]
+[node name="ContextHardLimitLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/ContextHardLimitHBox" unique_id=1981907863]
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Token count threshold for stopping the agent.
@@ -387,16 +370,16 @@ Default: 100000"
 mouse_filter = 0
 text = "Hard Limit:"
 
-[node name="ContextHardLimitSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox" unique_id=558907713]
+[node name="ContextHardLimitSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/ContextHardLimitHBox" unique_id=558907713]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 250000.0
 step = 5000.0
 
-[node name="SummarizeThresholdHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox" unique_id=799798632]
+[node name="SummarizeThresholdHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox" unique_id=799798632]
 layout_mode = 2
 
-[node name="SummarizeThresholdLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox" unique_id=1901119283]
+[node name="SummarizeThresholdLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/SummarizeThresholdHBox" unique_id=1901119283]
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Token count threshold for auto-summarizing history.
@@ -404,24 +387,24 @@ Default: 60000"
 mouse_filter = 0
 text = "Summarize Threshold:"
 
-[node name="SummarizeThresholdSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox" unique_id=485566202]
+[node name="SummarizeThresholdSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/SummarizeThresholdHBox" unique_id=485566202]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 200000.0
 step = 5000.0
 
-[node name="AgenticSystemPromptSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=871973974]
+[node name="AgenticSystemPromptSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=871973974]
 layout_mode = 2
 
-[node name="AgenticSystemPromptVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox" unique_id=1068160761]
+[node name="AgenticSystemPromptVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings" unique_id=1068160761]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox" unique_id=516863117]
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox" unique_id=516863117]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="AgenticSystemPromptLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer" unique_id=1692486739]
+[node name="AgenticSystemPromptLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox/HBoxContainer" unique_id=1692486739]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "System prompt used when Agent Mode is enabled.
@@ -430,19 +413,19 @@ Leave empty to use the default agent prompt with tool usage guidelines."
 mouse_filter = 0
 text = "Agent System Prompt (empty = use default):"
 
-[node name="AgenticSystemPromptEnabledCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer" unique_id=2085244964]
+[node name="AgenticSystemPromptEnabledCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox/HBoxContainer" unique_id=2085244964]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Enable or disable the agentic system prompt for this chat"
 button_pressed = true
 text = "Enabled"
 
-[node name="RecordAgenticSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer" unique_id=358008778]
+[node name="RecordAgenticSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox/HBoxContainer" unique_id=358008778]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("2_bfm0p")
 
-[node name="AgenticSystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox" unique_id=642161365]
+[node name="AgenticSystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox" unique_id=642161365]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(320, 120)
 layout_mode = 2
@@ -454,6 +437,53 @@ placeholder_text = "Default: AI assistant with tool usage guidelines...
 (Leave empty to use this default)"
 wrap_mode = 1
 caret_blink = true
+
+[node name="ThisModel" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+metadata/_tab_index = 1
+
+[node name="ModelSettings" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisModel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="ModelGenerationSettings" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings" instance=ExtResource("3_core_generation")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="ModelReasoningSettings" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+script = ExtResource("4_reasoning")
+
+[node name="Separator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+text = "Reasoning effort"
+
+[node name="Effort" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+step = 1.0
+tick_count = 3
+ticks_on_borders = true
+tooltip_text = "Reasoning effort for this model. Changes save immediately."
+
+[node name="Levels" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Selection" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+
+[node name="Message" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+autowrap_mode = 3
 
 [node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox" unique_id=195839022]
 layout_mode = 2
@@ -471,23 +501,22 @@ text = "Close"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
-[connection signal="item_selected" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
-[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer/SystemPromptEnabledCheckButton" to="." method="_on_system_prompt_enabled_check_button_toggled"]
-[connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer/RecordSystemPromptButton" to="." method="_on_record_system_prompt_button_pressed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxToolRoundsHBox/MaxToolRoundsSpinBox" to="." method="_on_max_tool_rounds_spin_box_value_changed"]
-[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AutoContinueCheckButton" to="." method="_on_auto_continue_check_button_toggled"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox/MaxImageIterationsSpinBox" to="." method="_on_max_image_iterations_spin_box_value_changed"]
-[connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AllowedDirsVBox/AllowedDirsTextEdit" to="." method="_on_allowed_dirs_text_edit_text_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/MaxToolResultHBox/MaxToolResultSpinBox" to="." method="_on_max_tool_result_spin_box_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox/ContextWarningSpinBox" to="." method="_on_context_warning_spin_box_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox/ContextHardLimitSpinBox" to="." method="_on_context_hard_limit_spin_box_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox/SummarizeThresholdSpinBox" to="." method="_on_summarize_threshold_spin_box_value_changed"]
-[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer/AgenticSystemPromptEnabledCheckButton" to="." method="_on_agentic_system_prompt_enabled_check_button_toggled"]
-[connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer/RecordAgenticSystemPromptButton" to="." method="_on_record_agentic_system_prompt_button_pressed"]
-[connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/AgenticSystemPromptTextEdit" to="." method="_on_agentic_system_prompt_text_edit_text_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/FrequencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
+[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer/HBoxContainer/SystemPromptEnabledCheckButton" to="." method="_on_system_prompt_enabled_check_button_toggled"]
+[connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/SystemPromptVBoxContainer/HBoxContainer/RecordSystemPromptButton" to="." method="_on_record_system_prompt_button_pressed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/MaxToolRoundsHBox/MaxToolRoundsSpinBox" to="." method="_on_max_tool_rounds_spin_box_value_changed"]
+[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AutoContinueCheckButton" to="." method="_on_auto_continue_check_button_toggled"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/MaxImageIterationsHBox/MaxImageIterationsSpinBox" to="." method="_on_max_image_iterations_spin_box_value_changed"]
+[connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AllowedDirsVBox/AllowedDirsTextEdit" to="." method="_on_allowed_dirs_text_edit_text_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/MaxToolResultHBox/MaxToolResultSpinBox" to="." method="_on_max_tool_result_spin_box_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/ContextWarningHBox/ContextWarningSpinBox" to="." method="_on_context_warning_spin_box_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/ContextHardLimitHBox/ContextHardLimitSpinBox" to="." method="_on_context_hard_limit_spin_box_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/ContextLimitsVBox/SummarizeThresholdHBox/SummarizeThresholdSpinBox" to="." method="_on_summarize_threshold_spin_box_value_changed"]
+[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox/HBoxContainer/AgenticSystemPromptEnabledCheckButton" to="." method="_on_agentic_system_prompt_enabled_check_button_toggled"]
+[connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox/HBoxContainer/RecordAgenticSystemPromptButton" to="." method="_on_record_agentic_system_prompt_button_pressed"]
+[connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/ThisChat/ChatSettings/AgenticSettings/AgenticSystemPromptVBox/AgenticSystemPromptTextEdit" to="." method="_on_agentic_system_prompt_text_edit_text_changed"]
 [connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
 [connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]

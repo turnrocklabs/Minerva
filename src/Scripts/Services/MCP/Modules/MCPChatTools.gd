@@ -182,7 +182,7 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "The UUID returned from minerva_create_chat (not the display name)"
 				},
-				"generation_options": {"type": "object", "description": "Core-only per-request overrides; inspect advertised keys with minerva_get_generation_options. Not saved as chat/model preferences."},
+				"generation_options": {"type": "object", "description": "Per-request Core generation or API reasoning options; inspect advertised keys with minerva_get_generation_options. Not saved as chat/model preferences; saved model reasoning choices take precedence."},
 				"message": {
 					"type": "string",
 					"description": "The message to send"

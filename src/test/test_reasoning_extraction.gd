@@ -14,7 +14,12 @@ var _skip_count: int = 0
 var _provider_available: bool = false
 
 
-func _init():
+func _init() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	await process_frame
 	print("=== Reasoning Extraction Tests (Stage A) ===\n")
 
 	print("-- BotResponse reasoning sequence --")
@@ -23,7 +28,7 @@ func _init():
 
 	_provider_available = _probe_provider()
 	if not _provider_available:
-		print("  NOTE: OpenRouterProvider unavailable (autoload not compiled). Provider tests skipped.\n")
+		_ok(false, "provider extraction requires the project autoload context")
 	else:
 		print("\n-- OpenRouter extract_reasoning --")
 		test_extract_flat_reasoning_string()
@@ -67,11 +72,11 @@ func _singleton_node_exists() -> bool:
 
 
 # ----------------------------------------------------------------------------
-# BotResponse sequence helpers (no autoload dependency)
+# Runtime loading also defers BotResponse's BaseProvider type dependency.
 # ----------------------------------------------------------------------------
 
 func test_botresponse_add_reasoning() -> void:
-	var r := BotResponse.new()
+	var r = load("res://Scripts/Models/BotResponse.gd").new()
 	_ok(not r.has_reasoning(), "fresh BotResponse has no reasoning")
 	r.add_reasoning("first thought", "thinking", false)
 	r.add_reasoning("a summary", "summary", false)
@@ -84,7 +89,7 @@ func test_botresponse_add_reasoning() -> void:
 
 
 func test_botresponse_empty_by_default() -> void:
-	var r := BotResponse.new()
+	var r = load("res://Scripts/Models/BotResponse.gd").new()
 	_ok(r.reasoning is Array and r.reasoning.is_empty(), "reasoning defaults to empty array")
 
 
@@ -93,7 +98,7 @@ func test_botresponse_empty_by_default() -> void:
 # ----------------------------------------------------------------------------
 
 func _make_provider():
-	return OpenRouterProvider.new()
+	return load("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd").new()
 
 
 func _base_response(message: Dictionary) -> Dictionary:
@@ -177,7 +182,7 @@ func _anthropic_response(content: Array) -> Dictionary:
 
 
 func test_anthropic_thinking_block() -> void:
-	var p = AnthropicProvider.new()
+	var p = load("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd").new()
 	var data := _anthropic_response([
 		{"type": "thinking", "thinking": "step by step reasoning", "signature": "sig123"},
 		{"type": "text", "text": "Final answer."}
@@ -191,7 +196,7 @@ func test_anthropic_thinking_block() -> void:
 
 
 func test_anthropic_redacted_thinking() -> void:
-	var p = AnthropicProvider.new()
+	var p = load("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd").new()
 	var data := _anthropic_response([
 		{"type": "redacted_thinking", "data": "ENCRYPTED=="},
 		{"type": "thinking", "thinking": "", "signature": "sig"},
@@ -215,7 +220,7 @@ func _gemini_response(parts: Array) -> Dictionary:
 
 
 func test_gemini_thought_routes_to_reasoning() -> void:
-	var p = GoogleProvider.new()
+	var p = load("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd").new()
 	var data := _gemini_response([
 		{"text": "internal deliberation", "thought": true},
 		{"text": "Visible answer."}
@@ -227,7 +232,7 @@ func test_gemini_thought_routes_to_reasoning() -> void:
 
 
 func test_gemini_thought_does_not_leak_into_text() -> void:
-	var p = GoogleProvider.new()
+	var p = load("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd").new()
 	var data := _gemini_response([
 		{"text": "secret reasoning", "thought": true},
 		{"text": "Hello user."}

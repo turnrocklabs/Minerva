@@ -16,7 +16,7 @@ func _init(action_parameters: Dictionary) -> void:
 	input_parameters = action_parameters.get("input_parameters", {})
 	output_parameters = action_parameters.get("output_parameters", {})
 
-	for field in ["chat_model", "generation_options"]:
+	for field in ["chat_model", "generation_options", "generation_settings"]:
 		if action_parameters.has(field):
 			model_metadata[field] = action_parameters[field]
 	model_metadata = model_metadata.duplicate(true)

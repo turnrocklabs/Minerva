@@ -61,6 +61,10 @@ func reasoning_effort_levels() -> Array:
 	return [legacy] if not legacy.is_empty() else []
 
 
+func default_reasoning_effort() -> String:
+	return reasoning_effort if reasoning_effort in reasoning_effort_levels() else ""
+
+
 func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
 	var effort := level if enabled else "none"
 	if effort in reasoning_effort_levels():
@@ -134,6 +138,10 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	var reasoning_options := model_reasoning_params(additional_params)
+	if not reasoning_options.success:
+		return generation_options_failure(reasoning_options)
+	additional_params = reasoning_options.values
 	# Build messages array - prepend system prompt if set
 	var messages: Array = []
 	if not system_prompt.is_empty() and supports_system_prompt:

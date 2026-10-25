@@ -1,0 +1,369 @@
+{
+  "source_revision": "1e4daccce3feee432d8dc2ec9dd843c3315b6815",
+  "source": "native_profile(policy, max_output=cap, default_output=cap) and native_options(cap); model-chat action envelope",
+  "params": {
+    "client_id": "model-chat",
+    "name": "Model Chat Service",
+    "actions": [
+      {
+        "name": "GLM-5.3-Flash",
+        "topic": "model-chat/GLM-5.3-Flash",
+        "chat_model": true,
+        "generation_options": {
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 96000
+          }
+        },
+        "generation_settings": {
+          "version": 1,
+          "policy": "glm5.3",
+          "default_mode": "thinking",
+          "parameters": {
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": false,
+              "default": 1.0,
+              "default_source": "owner_selected_publisher_eval_recipe"
+            },
+            "top_p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "supported": true,
+              "overridable": true,
+              "advanced": false,
+              "default": 0.95,
+              "default_source": "owner_selected_publisher_eval_recipe"
+            },
+            "top_k": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher"
+            },
+            "min_p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher"
+            },
+            "presence_penalty": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher"
+            },
+            "frequency_penalty": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher"
+            },
+            "repetition_penalty": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher",
+              "exclusive_minimum": true
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher",
+              "description": "Best effort reproducibility; not a deterministic output guarantee"
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 96000,
+              "supported": true,
+              "overridable": true,
+              "advanced": false,
+              "default": 96000,
+              "default_source": "model_maximum",
+              "description": "Total reasoning+content tokens. At least 2048 reasoning tokens observed; small or default caps can end LENGTH with reasoning only. No quality-success guarantee."
+            },
+            "enable_thinking": {
+              "type": "boolean",
+              "supported": true,
+              "overridable": false,
+              "enum": [
+                true
+              ],
+              "default": true,
+              "default_source": "publisher_card_or_template"
+            },
+            "reasoning_effort": {
+              "type": "string",
+              "supported": true,
+              "overridable": true,
+              "enum": [
+                "low",
+                "high",
+                "max"
+              ],
+              "default": "high",
+              "default_source": "publisher_card_or_template",
+              "inactive_when": {
+                "enable_thinking": false
+              }
+            }
+          },
+          "per_mode_defaults": {
+            "thinking": {
+              "enable_thinking": true,
+              "reasoning_effort": "high",
+              "temperature": 1.0,
+              "top_p": 0.95
+            }
+          },
+          "server_owned": [
+            "chat_template_kwargs",
+            "clear_thinking",
+            "num_ctx",
+            "num_gpu",
+            "preserve_thinking",
+            "specprefill",
+            "specprefill_keep_pct",
+            "specprefill_threshold",
+            "stop",
+            "thinking_budget"
+          ]
+        },
+        "input_parameters": {
+          "messages": {
+            "type": "array",
+            "required": true
+          }
+        },
+        "output_parameters": {
+          "choices": {
+            "type": "array"
+          }
+        }
+      },
+      {
+        "name": "Qwen3.8-Flash-Next",
+        "topic": "model-chat/Qwen3.8-Flash-Next",
+        "chat_model": true,
+        "generation_options": {
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18000
+          }
+        },
+        "generation_settings": {
+          "version": 1,
+          "policy": "qwen3.8",
+          "default_mode": "thinking",
+          "parameters": {
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": false,
+              "default": 1.0,
+              "default_source": "publisher_card_or_template"
+            },
+            "top_p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "supported": true,
+              "overridable": true,
+              "advanced": false,
+              "default": 0.95,
+              "default_source": "publisher_card_or_template"
+            },
+            "top_k": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": 20,
+              "default_source": "publisher_card_or_template"
+            },
+            "min_p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": 0.0,
+              "default_source": "publisher_card_or_template"
+            },
+            "presence_penalty": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": 0.0,
+              "default_source": "publisher_card_or_template"
+            },
+            "frequency_penalty": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher"
+            },
+            "repetition_penalty": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": 1.0,
+              "default_source": "publisher_card_or_template",
+              "exclusive_minimum": true
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295,
+              "supported": true,
+              "overridable": true,
+              "advanced": true,
+              "default": null,
+              "default_source": "backend_default_unspecified_by_publisher",
+              "description": "Best effort reproducibility; not a deterministic output guarantee"
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 18000,
+              "supported": true,
+              "overridable": true,
+              "advanced": false,
+              "default": 18000,
+              "default_source": "model_maximum"
+            },
+            "enable_thinking": {
+              "type": "boolean",
+              "supported": true,
+              "overridable": true,
+              "enum": [
+                true,
+                false
+              ],
+              "default": true,
+              "default_source": "publisher_card_or_template"
+            },
+            "reasoning_effort": {
+              "type": "string",
+              "supported": true,
+              "overridable": true,
+              "enum": [
+                "xhigh",
+                "medium",
+                "low"
+              ],
+              "default": "xhigh",
+              "default_source": "publisher_card_or_template",
+              "inactive_when": {
+                "enable_thinking": false
+              }
+            }
+          },
+          "per_mode_defaults": {
+            "thinking": {
+              "top_k": 20,
+              "min_p": 0.0,
+              "repetition_penalty": 1.0,
+              "enable_thinking": true,
+              "reasoning_effort": "xhigh",
+              "temperature": 1.0,
+              "top_p": 0.95,
+              "presence_penalty": 0.0
+            },
+            "nonthinking": {
+              "top_k": 20,
+              "min_p": 0.0,
+              "repetition_penalty": 1.0,
+              "enable_thinking": false,
+              "temperature": 0.7,
+              "top_p": 0.8,
+              "presence_penalty": 1.5
+            }
+          },
+          "server_owned": [
+            "chat_template_kwargs",
+            "clear_thinking",
+            "num_ctx",
+            "num_gpu",
+            "preserve_thinking",
+            "specprefill",
+            "specprefill_keep_pct",
+            "specprefill_threshold",
+            "stop",
+            "thinking_budget"
+          ]
+        },
+        "input_parameters": {
+          "messages": {
+            "type": "array",
+            "required": true
+          }
+        },
+        "output_parameters": {
+          "choices": {
+            "type": "array"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -191,14 +191,80 @@ func extract_reasoning(_data: Variant, _bot_response: BotResponse) -> void:
 func apply_reasoning_options(_params: Dictionary, _level: String, _enabled: bool) -> void:
 	pass
 
-## Whether reasoning effort is chosen via the chat settings picker.
+## Whether this model exposes a reasoning preference.
 func uses_reasoning_effort_picker() -> bool:
 	return false
 
-## Coarse effort levels the picker offers; apply_reasoning_options maps them to
-## native request params. Default: low/medium/high.
+## Native level names, including an off value only when the provider supports it.
 func reasoning_effort_levels() -> Array:
-	return ["low", "medium", "high"]
+	return []
+
+
+## Empty means the remote provider owns an unspecified default.
+func default_reasoning_effort() -> String:
+	return ""
+
+
+func reasoning_schema() -> Dictionary:
+	if not uses_reasoning_effort_picker():
+		return {}
+	var levels := ReasoningSelection.ordered_levels(reasoning_effort_levels())
+	if levels.is_empty():
+		return {}
+	var rule := {"type": "string", "enum": levels}
+	var default_effort := default_reasoning_effort()
+	if default_effort in levels:
+		rule["default"] = default_effort
+	return {"reasoning_effort": rule}
+
+
+## Resolve the shared model layer before provider-native request construction.
+## Only explicit, destination-supported reasoning choices reach native formatters.
+signal generation_options_notice(message: String)
+
+
+func notify_generation_options(message: String) -> void:
+	generation_options_notice.emit(message)
+
+
+func model_reasoning_params(request: Dictionary) -> Dictionary:
+	request = GenerationOptions.reasoning_request(self, request)
+	var canonical: Dictionary = {}
+	for option_name: String in GenerationOptions.REASONING_KEYS:
+		if request.has(option_name):
+			canonical[option_name] = request[option_name]
+	var resolved := GenerationOptions.for_provider(self, canonical)
+	if not resolved.success:
+		return resolved
+	var params: Dictionary = request.duplicate(true)
+	# Preserved provider-native controls belong to the old model too.
+	for field: String in ["reasoning_effort", "enable_thinking", "reasoning", "thinking"]:
+		params.erase(field)
+	if params.get("generationConfig") is Dictionary:
+		var request_config: Dictionary = params.generationConfig
+		request_config = request_config.duplicate(true)
+		request_config.erase("thinkingConfig")
+		params.generationConfig = request_config
+	var values: Dictionary = resolved.payload
+	if values.has("reasoning_effort"):
+		var effort: String = str(values.reasoning_effort)
+		var native: Dictionary = {}
+		apply_reasoning_options(native, effort, effort not in ["off", "none"])
+		if native.has("generationConfig") and params.get("generationConfig") is Dictionary:
+			var merged_config: Dictionary = params.generationConfig
+			var reasoning_config: Dictionary = native.generationConfig
+			merged_config.merge(reasoning_config, true)
+			native.generationConfig = merged_config
+		params.merge(native, true)
+	return {"success": true, "values": params}
+
+
+func generation_options_failure(failure: Dictionary) -> BotResponse:
+	var response := BotResponse.new()
+	response.provider = self
+	response.error = str(failure.error_message)
+	response.set_meta("error_code", str(failure.error_code))
+	return response
 
 #endregion
 

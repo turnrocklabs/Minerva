@@ -76,53 +76,30 @@ func check_saved_chats(manager) -> void:
 	var saved = singleton._dynamic_provider_map[60000].manager
 	singleton._dynamic_provider_map[60000].manager = manager
 	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
-	var legacy = history_script.Deserialize({"Provider": 60002, "HistoryId": "migration-check", "HistoryName": "Legacy", "HistoryItemList": [], "ReasoningEffort": ""})
-	check("real saved chat restores original model and effort", legacy.provider.model_name == "example" and legacy.ReasoningEffort == "high")
-	var selection = load("res://Scripts/Services/Providers/ReasoningSelection.gd")
-	check("legacy configured effort survives request validation without catalog metadata", selection.validate(legacy.ReasoningEffort, legacy.provider.reasoning_effort_levels()) == "high")
-	manager.legacy_models["60003"] = {"id": 60003, "model_name": "manual"}
-	for effort: String in ["high", "off"]:
-		var manual = history_script.Deserialize({"Provider": 60003, "HistoryId": "manual-" + effort, "HistoryName": "Manual", "HistoryItemList": [], "ReasoningEffort": effort})
-		var effective := "low" if effort == "off" else "high"
-		var request: Dictionary = {}
-		manual.provider.apply_reasoning_options(request, selection.validate(manual.ReasoningEffort, manual.provider.reasoning_effort_levels()), true)
-		var restored = history_script.Deserialize(JSON.parse_string(JSON.stringify(manual.Serialize())))
-		check("manual legacy " + effort + " survives migration, validation and save/reopen", request.get("reasoning", {}).get("effort") == effective and restored.ReasoningEffort == effective and selection.validate(restored.ReasoningEffort, restored.provider.reasoning_effort_levels()) == effective)
-		manual.provider.free()
-		restored.provider.free()
-	var mcp_script = load("res://Scripts/Services/MCP/Modules/MCPModelTools.gd")
-	var mcp = mcp_script.new()
+	var config_before: String = singleton.config_file.encode_to_text()
+	for effort: String in ["", "off", "high"]:
+		var legacy_chat = history_script.Deserialize({"Provider": 60002, "HistoryId": "migration-" + effort,
+			"HistoryName": "Legacy", "HistoryItemList": [], "ReasoningEffort": effort})
+		check("old per-chat " + effort + " is dropped without losing model identity", legacy_chat.provider.model_name == "example" and not legacy_chat.Serialize().has("ReasoningEffort"))
+		var reopened = history_script.Deserialize(JSON.parse_string(JSON.stringify(legacy_chat.Serialize())))
+		check("dropped chat effort stays absent after JSON save/reopen", reopened.provider.model_name == "example" and not reopened.Serialize().has("ReasoningEffort"))
+		legacy_chat.provider.free()
+		reopened.provider.free()
+	check("old chat reasoning is not migrated into model preferences", singleton.config_file.encode_to_text() == config_before)
+	var mcp = load("res://Scripts/Services/MCP/Modules/MCPModelTools.gd").new()
 	check("archived model update and delete return truthful errors", not mcp._update_model({"model_id": 60002, "short_name": "wrong"}).get("success", false) and not mcp._remove_model({"model_id": 60002}).get("success", false))
-	var pane_script = load("res://Scripts/UI/Views/ChatPane.gd")
-	var pane = pane_script.new()
-	check("retired picker identity is exact", pane._resolve_provider_enum_id(legacy.provider) == 60002)
+	var legacy = history_script.Deserialize({"Provider": 60002, "HistoryId": "identity-check", "HistoryName": "Identity", "HistoryItemList": []})
+	var pane = load("res://Scripts/UI/Views/ChatPane.gd").new()
+	check("retired picker identity remains exact", pane._resolve_provider_enum_id(legacy.provider) == 60002)
 	pane.free()
-	var chooser_script = load("res://Scripts/UI/Controls/ProviderOptionButton.gd")
-	var chooser = chooser_script.new()
+	var chooser = load("res://Scripts/UI/Controls/ProviderOptionButton.gd").new()
 	chooser.add_item("Example", 60001)
-	check("retired variant displays canonical choice without duplicate", chooser.get_item_index_for_provider(legacy.provider) == 0 and chooser.item_count == 1 and legacy.provider.get_meta("dynamic_model_id") == 60002)
+	check("retired variant still displays canonical model without duplicate", chooser.get_item_index_for_provider(legacy.provider) == 0 and chooser.item_count == 1)
 	chooser.free()
-	var serialized: Dictionary = legacy.Serialize()
-	var reopened = history_script.Deserialize(JSON.parse_string(JSON.stringify(serialized)))
-	check("migrated chat survives JSON save/reopen", reopened.provider.model_name == "example" and reopened.ReasoningEffort == "high")
-	serialized.ReasoningEffort = ""
-	var defaults = history_script.Deserialize(serialized)
-	check("new Default is not remigrated to legacy effort", defaults.ReasoningEffort.is_empty())
-	var deep = history_script.Deserialize({"Provider": singleton.API_MODEL_PROVIDERS.GPT_DEEP, "HistoryId": "deep-migration", "HistoryName": "Deep", "HistoryItemList": [], "ReasoningEffort": "high"})
-	check("old OpenAI preserves effective effort over stale chat override", deep.ReasoningEffort == "xhigh")
-	deep.provider.free()
-	var settings_script = load("res://Scripts/UI/Views/AISettings.gd")
-	var settings = settings_script.new()
-	var picker := OptionButton.new()
-	picker.add_item("Default", 0)
-	picker.add_item("Off", 1)
-	settings._select_reasoning_value(picker, "none")
-	check("native none displays as Off", picker.get_selected_id() == 1)
-	picker.free()
-	settings.free()
 	legacy.provider.free()
-	reopened.provider.free()
-	defaults.provider.free()
+	var deep = history_script.Deserialize({"Provider": singleton.API_MODEL_PROVIDERS.GPT_DEEP, "HistoryId": "deep-migration", "HistoryName": "Deep", "HistoryItemList": [], "ReasoningEffort": "high"})
+	check("old OpenAI chat effort is dropped too", not deep.Serialize().has("ReasoningEffort"))
+	deep.provider.free()
 	singleton._dynamic_provider_map[60000].manager = saved
 
 
@@ -141,6 +118,13 @@ func check_reasoning() -> void:
 	check("unsupported Off cannot silently become Low", selection.validate("off", provider.reasoning_effort_levels()) == "")
 	provider.free()
 	var openai_script = load("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
+	var unspecified = chatgpt_script.create_from_config({"model_name": "no-default", "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]})
+	check("ChatGPT without an advertised default sends no invented effort", not unspecified.reasoning_schema().reasoning_effort.has("default") and not unspecified._build_reasoning_options().has("effort") and unspecified.model_reasoning_params({}).values.is_empty())
+	unspecified.free()
+	var bare = chatgpt_script.new()
+	bare.supported_reasoning_levels = [{"effort": "medium"}, {"effort": "high"}]
+	check("bare ChatGPT has no implicit configured Medium default", bare.default_reasoning_effort().is_empty() and not bare._build_reasoning_options().has("effort"))
+	bare.free()
 	var api = openai_script.create_from_config({"model_name": "gpt-5.2"})
 	request = {}
 	api.apply_reasoning_options(request, "high", true)
@@ -162,71 +146,98 @@ func check_reasoning() -> void:
 
 
 func check_controls_and_requests() -> void:
-	# Exercise the real credential getter with an isolated preferences object.
 	var singleton = root.get_node("SingletonObject")
 	var original_preferences = singleton.preferences_popup
 	var preferences = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
-	preferences.config_file.set_value("API KEYS", "openai", "fixture-key")
+	for key: String in ["openai", "anthropic", "google", "openrouter"]:
+		preferences.config_file.set_value("API KEYS", key, "fixture-key")
 	singleton.preferences_popup = preferences
+	var gen = load("res://Scripts/Services/Providers/GenerationOptions.gd")
 	var fixtures = load("res://test/fixtures/model_request_capture.gd")
-	var history_script = load("res://Scripts/Models/ChatHistory.gd")
-	var settings_script = load("res://Scripts/UI/Views/AISettings.gd")
 	var chatgpt_script = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTProvider.gd")
-	var auth_script = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTAuth.gd")
 	var original_auth = chatgpt_script.auth
-	var auth = auth_script.new()
+	var auth = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTAuth.gd").new()
 	auth.access_token = "fixture-token"
 	auth.account_id = "fixture-account"
 	auth.expires_at = int(Time.get_unix_time_from_system() * 1000) + 3600000
 	chatgpt_script.auth = auth
+	var sonnet = fixtures.Anthropic.new()
 	var api = fixtures.OpenAI.new()
+	api.model_name = "gpt-5.2"
 	var chatgpt = fixtures.ChatGPT.new()
 	chatgpt.supported_reasoning_levels = [{"effort": "low"}, {"effort": "medium"}, {"effort": "high"}]
-	for provider in [api, chatgpt]:
-		var history = history_script.new(provider)
-		var other = history_script.new(provider)
-		var settings = settings_script.new()
-		settings.current_chat_tab_ref = history
-		var container := VBoxContainer.new()
-		var row := HBoxContainer.new()
-		row.name = "ReasoningHBox"
-		container.add_child(row)
-		var picker := OptionButton.new()
-		picker.name = "ReasoningOptionButton"
-		row.add_child(picker)
-		var summary := CheckButton.new()
-		summary.name = "ReasoningSummaryCheck"
-		container.add_child(summary)
-		settings._reasoning_settings_container = container
-		picker.item_selected.connect(settings._on_reasoning_effort_selected)
-		settings._update_reasoning_settings_visibility(provider)
-		check("Off visibility follows actual provider capabilities", (picker.get_item_index(1) >= 0) == (provider == api))
-		for effort: String in ["high", "", "off"]:
-			if effort == "off" and provider != api:
-				continue
-			settings._select_reasoning_value(picker, effort)
-			picker.item_selected.emit(picker.selected)
-			check("picker stores per-chat effort without changing another chat", history.ReasoningEffort == effort and other.ReasoningEffort.is_empty())
-			var params: Dictionary = {}
-			if not effort.is_empty():
-				provider.apply_reasoning_options(params, effort, effort != "off")
-			await provider.generate_content([], params)
-			var body: Dictionary = provider.captured
-			if provider == api:
-				check("OpenAI full request reflects " + ("Default" if effort.is_empty() else effort), not body.has("reasoning_effort") if effort.is_empty() else body.get("reasoning_effort") == ("none" if effort == "off" else effort))
-			else:
-				check("ChatGPT full request reflects " + ("Default" if effort.is_empty() else effort), body.get("reasoning", {}).get("effort") == ("medium" if effort.is_empty() else effort))
-		settings.free()
-		container.free()
-	chatgpt.supported_reasoning_levels = []
-	for old_effort: String in ["high", "off"]:
-		var effective: String = chatgpt.restore_reasoning_choice(old_effort, true)
-		var params: Dictionary = {}
-		chatgpt.apply_reasoning_options(params, effective, true)
-		await chatgpt.generate_content([], params)
-		check("manual legacy choice reaches full request: " + old_effort, chatgpt.captured.get("reasoning", {}).get("effort") == ("low" if old_effort == "off" else "high"))
-	api.free()
-	chatgpt.free()
+	gen.save_model(chatgpt, {})
+	await chatgpt.generate_content([])
+	check("untouched unconfigured ChatGPT request has no reasoning effort", not chatgpt.captured.get("reasoning", {}).has("effort"))
+	chatgpt.reasoning_effort = "medium"
+	await chatgpt.generate_content([])
+	check("configured ChatGPT default may reach the native request", chatgpt.captured.get("reasoning", {}).get("effort") == "medium")
+	chatgpt.reasoning_effort = ""
+	var google = fixtures.Google.new()
+	var router = fixtures.Router.new()
+	router.is_reasoning_model = true
+	var request_pane = load("res://Scripts/UI/Views/ChatPane.gd").new()
+	for destination in [sonnet, chatgpt, google, router]:
+		gen.save_model(destination, {})
+		singleton._enabled_providers[destination.PROVIDER] = true
+		var accepted: Dictionary = gen.public_request(destination, {"reasoning_effort": "high"})
+		check(destination.provider_name + " accepts API reasoning request intent", accepted.success)
+		var request_history = load("res://Scripts/Models/ChatHistory.gd").new(destination, "api-request-" + destination.provider_name)
+		await request_pane.generate_content_from_provider(request_history, [], accepted.values)
+	check("API send boundary applies accepted Anthropic request effort", sonnet.captured.get("thinking", {}).get("budget_tokens") == 16384)
+	check("API send boundary applies accepted ChatGPT request effort", chatgpt.captured.get("reasoning", {}).get("effort") == "high")
+	check("API send boundary applies accepted Google request effort", google.captured.get("generationConfig", {}).get("thinkingConfig", {}).get("thinkingBudget") == 24576)
+	check("API send boundary applies accepted OpenRouter request effort", router.captured.get("reasoning", {}).get("effort") == "high")
+	request_pane.free()
+	for provider in [sonnet, api, chatgpt, google, router]:
+		check(provider.provider_name + " saves reasoning through existing model layer", gen.save_model(provider, {"reasoning_effort": "high"}).success)
+		await provider.generate_content([])
+	check("Sonnet High reaches full request thinking budget", sonnet.captured.get("thinking", {}).get("budget_tokens") == 16384)
+	check("OpenAI model effort reaches Chat Completions", api.captured.get("reasoning_effort") == "high")
+	check("ChatGPT model effort reaches Responses", chatgpt.captured.get("reasoning", {}).get("effort") == "high")
+	check("Google model effort reaches thinkingConfig", google.captured.get("generationConfig", {}).get("thinkingConfig", {}).get("thinkingBudget") == 24576)
+	await google.generate_content([], {"generationConfig": {"temperature": 0.25, "thinkingConfig": {"thinkingBudget": 1}}})
+	check("destination reasoning replaces replay without losing other generation fields", google.captured.get("generationConfig", {}).get("temperature") == 0.25 and google.captured.get("generationConfig", {}).get("thinkingConfig", {}).get("thinkingBudget") == 24576)
+	check("OpenRouter model effort reaches native reasoning", router.captured.get("reasoning", {}).get("effort") == "high")
+	var next_sonnet = fixtures.Anthropic.new()
+	var history = load("res://Scripts/Models/ChatHistory.gd").new(next_sonnet)
+	await history.provider.generate_content([])
+	check("Sonnet High is inherited by a new chat on the same model", next_sonnet.captured.get("thinking", {}).get("budget_tokens") == 16384)
+	var other = fixtures.Anthropic.new()
+	other.model_name = "claude-other-model"
+	await other.generate_content([])
+	check("untouched Anthropic default sends no thinking field", gen.saved_for(other).is_empty() and not other.captured.has("thinking"))
+	var replay_history = load("res://Scripts/Models/ChatHistory.gd").new(api)
+	var user_item = load("res://Scripts/Models/ChatHistoryItem.gd").new()
+	user_item.Role = user_item.ChatRole.USER
+	user_item.RequestMetadata["generation_options_request"] = {"reasoning_effort": "max", "enable_thinking": true}
+	replay_history.HistoryItemList.append(user_item)
+	var replay: Dictionary = gen.chat_params(replay_history, api, gen.request_from_history(replay_history))
+	await api.generate_content([], replay)
+	check("regenerated GLM Max on GPT-5.2 uses destination model High", api.captured.get("reasoning_effort") == "high" and not api.captured.has("enable_thinking"))
+	gen.save_model(api, {})
+	await api.generate_content([], replay)
+	check("unsupported preserved Max never reaches untouched GPT-5.2", not api.captured.has("reasoning_effort") and not api.captured.has("enable_thinking"))
+	var stored: Dictionary = singleton.config_file.get_value("Models", "GenerationOptions", {}).duplicate(true)
+	stored[api.get_model_settings_key()] = {"reasoning_effort": "retired"}
+	singleton.config_file.set_value("Models", "GenerationOptions", stored)
+	var notices: Array[String] = []
+	api.generation_options_notice.connect(func(message: String): notices.append(message))
+	await api.generate_content([])
+	check("send resets obsolete saved effort with notice before gear opens", gen.saved_for(api).is_empty() and not api.captured.has("reasoning_effort") and notices.size() == 1 and "unavailable" in notices[0])
+	var module = load("res://Scripts/Services/MCP/Modules/MCPGenerationTools.gd").new()
+	singleton.ChatList.append(replay_history)
+	var written: Dictionary = module.handle("minerva_set_generation_options", {"chat_id": replay_history.HistoryId, "scope": "model", "options": {"reasoning_effort": "none"}})
+	var inspected: Dictionary = module.handle("minerva_get_generation_options", {"chat_id": replay_history.HistoryId})
+	check("API MCP model scope shares GUI reasoning preferences", written.success and inspected.success and inspected.model_options.get("reasoning_effort") == "none")
+	check("API MCP refuses non-reasoning and chat scope", not module.handle("minerva_set_generation_options", {"chat_id": replay_history.HistoryId, "scope": "model", "options": {"temperature": 1}}).success and not gen.set_chat(replay_history, {"reasoning_effort": "high"}).success)
+	singleton.ChatList.erase(replay_history)
+	check("Anthropic offers native Off through Max stops", sonnet.reasoning_effort_levels() == ["off", "low", "medium", "high", "max"])
+	gen.save_model(sonnet, {"reasoning_effort": "max"})
+	await sonnet.generate_content([])
+	check("Anthropic Max is largest budget below model output cap", sonnet.captured.get("thinking", {}).get("budget_tokens") == sonnet.max_tokens - 1)
+	for provider in [sonnet, api, chatgpt, google, router, next_sonnet, other]:
+		provider.free()
 	chatgpt_script.auth = original_auth
 	singleton.preferences_popup = original_preferences
 	preferences.free()

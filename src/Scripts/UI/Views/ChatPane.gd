@@ -848,22 +848,10 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	provider.chat_id = history.HistoryId
 
 	var request: Dictionary = GenerationOptions.request_from_history(history) if request_options == null else request_options
+	var on_notice := SingletonObject.create_toast_notification.bind(ToastNotification.Type.WARNING)
+	if not provider.generation_options_notice.is_connected(on_notice):
+		provider.generation_options_notice.connect(on_notice)
 	var optional_params := GenerationOptions.chat_params(history, provider, request)
-
-	if provider is OpenAIProvider or provider is ChatGPTProvider:
-		var valid_effort := ReasoningSelection.validate(history.ReasoningEffort, provider.reasoning_effort_levels())
-		if valid_effort != history.ReasoningEffort:
-			var notice := ReasoningSelection.reset_message(history.ReasoningEffort, provider.display_name)
-			history.ReasoningEffort = valid_effort
-			SingletonObject.ErrorDisplay("Reasoning setting reset", notice)
-
-	# Per-chat reasoning effort → provider-native request params. Applied only
-	# when the user configured reasoning for this chat (ReasoningEffort != "");
-	# apply_reasoning_options is a no-op for providers without an override.
-	if history.ReasoningEffort != "":
-		var reasoning_enabled := history.ReasoningEffort != "off"
-		var reasoning_level := history.ReasoningEffort if reasoning_enabled else "medium"
-		provider.apply_reasoning_options(optional_params, reasoning_level, reasoning_enabled)
 
 	# Reasoning-summary preference (ChatGPT). Duck-typed so only providers that
 	# expose the field react — no provider-type coupling in ChatPane.
@@ -4450,7 +4438,6 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 
 func _on_btn_chat_settings_pressed():
-	%AISettings.sync_provider_to_current_chat()
 	%AISettings.load_current_chat_settings()
 	%AISettings.popup_centered()
 
@@ -6099,7 +6086,10 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		dynamic_ui_container.visible = false
 		_chat_button.enabled = true
 
-	if SingletonObject.ChatList.is_empty(): return
+	if SingletonObject.ChatList.is_empty():
+		_remember_model_selection(_provider_option_button, SingletonObject.save_to_config_file)
+		_refresh_open_settings()
+		return
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
@@ -6114,12 +6104,8 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		sync_provider_picker_to_chat(history.HistoryId)
 		return
 
+	_remember_model_selection(_provider_option_button, SingletonObject.save_to_config_file)
 	history.provider = provider_
-	if provider_ is OpenAIProvider or provider_ is ChatGPTProvider:
-		var valid_effort := ReasoningSelection.validate(history.ReasoningEffort, provider_.reasoning_effort_levels())
-		if valid_effort != history.ReasoningEffort:
-			history.VBox.add_program_message(ReasoningSelection.reset_message(history.ReasoningEffort, provider_.display_name))
-			history.ReasoningEffort = valid_effort
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
 
@@ -6130,6 +6116,11 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		print("[Chat] Added default system prompt for %s" % provider_.model_name)
 
 	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
+
+
+func _remember_model_selection(picker: ProviderOptionButton, save_setting: Callable) -> void:
+	save_setting.call("Providers", "DefaultProviderId", picker.get_selected_id())
+	save_setting.call("Providers", "DefaultProviderName", picker.get_item_text(picker.selected))
 
 
 # when tab changes, set the provider picker to the provider that chat tab is using
@@ -6159,6 +6150,7 @@ func sync_provider_picker_to_chat(tab_or_chat_id: Variant = -1) -> void:
 				break
 
 	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		_refresh_open_settings()
 		return
 
 	# The picker describes the currently visible chat. If an MCP call changes a
@@ -6181,6 +6173,16 @@ func sync_provider_picker_to_chat(tab_or_chat_id: Variant = -1) -> void:
 
 	SingletonObject.last_tab_index = tab
 	update_token_estimation(active_provider)
+	_refresh_open_settings()
+
+
+func _refresh_open_settings() -> void:
+	var settings: AISettingsWindow = %AISettings
+	if settings.visible:
+		if SingletonObject.ChatList.is_empty() or current_tab >= 0 and current_tab < SingletonObject.ChatList.size():
+			settings.load_current_chat_settings()
+		else:
+			settings.hide()
 
 
 func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
