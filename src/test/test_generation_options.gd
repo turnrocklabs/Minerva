@@ -39,6 +39,7 @@ func _run() -> void:
 		rejected = rejected and not gen.resolve(schema, {}, {}, invalid).success
 	check("invalid, fractional, nonfinite and unsupported explicit options are rejected", rejected)
 	check("unsupported advertised option refuses explicit zero", gen.resolve({}, {}, {}, {"temperature": 0}).get("error_code") == "unsupported_generation_option")
+	check("legacy implicit bounds still constrain defaults", not descriptor.validate_options({"max_tokens": {"type": "integer", "default": 0}}).diagnostics.is_empty())
 
 	check("invalid saved options name their layer in the user error", "Model generation options" in gen.resolve(schema, {"temperature": "bad"}).error_message)
 	var so = root.get_node("SingletonObject")
@@ -306,7 +307,9 @@ func _check_native_reasoning(gen: GDScript, core: Node, settings: Node) -> void:
 	generic.parameters.reasoning_effort.supported = false
 	generic.parameters.enable_thinking.supported = false
 	var descriptor = load("res://Scripts/Services/Providers/Core/CoreModelDescriptor.gd")
-	check("native-generic unsupported reasoning controls stay absent", descriptor.reasoning_options(generic).options.is_empty())
+	var generic_profile: Dictionary = descriptor.profile_options(generic)
+	check("unsupported reasoning stays absent while native samplers remain", generic_profile.diagnostics.is_empty() and not generic_profile.options.has("reasoning_effort") and not generic_profile.options.has("enable_thinking") and generic_profile.options.has("top_k") and generic_profile.profile.parameters.enable_thinking.supported == false)
+	_check_full_native_profile(gen, provider, qwen)
 	var malformed: Dictionary = fixture.params.duplicate(true)
 	malformed.actions[0].generation_settings = {"version": 1, "parameters": {"reasoning_effort": "broken"}}
 	var bad_service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new(malformed)
@@ -318,3 +321,45 @@ func _check_native_reasoning(gen: GDScript, core: Node, settings: Node) -> void:
 	usable.free()
 	provider.free()
 	qwen.free()
+
+
+func _check_full_native_profile(gen: GDScript, glm: Node, qwen: Node) -> void:
+	var original_glm: Dictionary = gen.saved_for(glm)
+	var original_qwen: Dictionary = gen.saved_for(qwen)
+	check("native full-profile fixture clears only its own choices", gen.save_model(glm, {}).success and gen.save_model(qwen, {}).success)
+	var schema: Dictionary = gen.schema_for(glm)
+	check("all eleven GLM parameters retain publisher metadata", schema.size() == 11 and schema.top_k.advanced and schema.temperature.default_source == "owner_selected_publisher_eval_recipe" and "reproducibility" in schema.seed.description and not schema.enable_thinking.overridable)
+	var inherited: Dictionary = gen.for_provider(glm)
+	check("GLM defaults are effective without becoming request overrides", inherited.success and inherited.mode == "thinking" and inherited.values.temperature == 1.0 and inherited.values.top_p == 0.95 and inherited.payload.is_empty())
+	check("null defaults remain unspecified and are not explicit values", schema.seed.has("default") and schema.seed.default == null and not inherited.values.has("seed") and not gen.public_request(glm, {"seed": null}).success)
+	check("exclusive minimum refuses zero and accepts a positive penalty", not gen.public_request(glm, {"repetition_penalty": 0}).success and gen.public_request(glm, {"repetition_penalty": 0.5}).success)
+	var maximum: Dictionary = gen.public_request(glm, JSON.parse_string('{"seed":4294967295}'))
+	check("JSON integer seed reaches its advertised maximum as an integer", maximum.success and maximum.values.seed is int and maximum.values.seed == 4294967295)
+	var rejected: bool = true
+	for value: Variant in [-1, 1.5, 4294967296, "42", false]:
+		rejected = rejected and not gen.public_request(glm, {"seed": value}).success
+	check("seed rejects fractional, out-of-range and wrong-type values", rejected)
+	check("fixed thinking remains readable but cannot be overridden", schema.enable_thinking.default == true and not gen.public_request(glm, {"enable_thinking": true}).success)
+	var chosen := {"top_k": 20, "seed": 42, "repetition_penalty": 0.5}
+	check("full native sampler choices persist per model", gen.save_model(glm, JSON.parse_string(JSON.stringify(chosen))).success)
+	var classic: Dictionary = glm.build_chat_payload([])
+	check("classic request contains exactly the explicit sampler choices", classic.success and classic.payload == {"messages": [], "top_k": 20, "seed": 42, "repetition_penalty": 0.5})
+	var job: Dictionary = glm._job_input(classic.payload, glm.model_name)
+	check("chat/v1 request carries only those choices plus its envelope", job == {"messages": [], "top_k": 20, "seed": 42, "repetition_penalty": 0.5, "model": "GLM-5.3-Flash", "stream": false})
+	var requested: Dictionary = gen.for_provider(glm, {"seed": 7, "top_k": 0})
+	check("explicit request precedence preserves zero without changing saved choices", requested.success and requested.payload.seed == 7 and requested.payload.top_k == 0 and gen.saved_for(glm).seed == 42)
+	var thinking: Dictionary = gen.for_provider(qwen)
+	check("Qwen inherits its thinking recipe without sending it", thinking.success and thinking.mode == "thinking" and thinking.values.temperature == 1.0 and thinking.values.top_p == 0.95 and thinking.payload.is_empty())
+	var off: Dictionary = gen.for_provider(qwen, {"enable_thinking": false})
+	check("Qwen off switches the effective recipe and schema defaults", off.success and off.mode == "nonthinking" and off.values.temperature == 0.7 and off.values.top_p == 0.8 and off.values.presence_penalty == 1.5 and off.schema.temperature.default == 0.7 and off.payload == {"enable_thinking": false})
+	check("Qwen explicit samplers survive its mode switch", gen.save_model(qwen, {"enable_thinking": false, "temperature": 0.25, "top_k": 37}).success)
+	var preserved: Dictionary = gen.for_provider(qwen)
+	check("explicit values win while inherited fields follow the new mode", preserved.success and preserved.values.temperature == 0.25 and preserved.values.top_k == 37 and preserved.values.top_p == 0.8 and preserved.schema.temperature.default == 0.7 and preserved.sources.temperature == "model")
+	# Simulate an older model map, before the publisher marked thinking fixed.
+	var singleton = root.get_node("SingletonObject")
+	var stored: Dictionary = singleton.config_file.get_value("Models", "GenerationOptions", {}).duplicate(true)
+	stored[glm.get_model_settings_key()] = {"enable_thinking": true, "seed": 42}
+	singleton.config_file.set_value("Models", "GenerationOptions", stored)
+	var repaired: Dictionary = gen.for_provider(glm)
+	check("newly read-only saved choices reset visibly without losing valid samplers", repaired.success and "no longer overridable" in repaired.notice and repaired.payload == {"seed": 42} and gen.saved_for(glm) == {"seed": 42})
+	check("full-profile fixture restores preceding model choices", gen.save_model(glm, original_glm).success and gen.save_model(qwen, original_qwen).success)

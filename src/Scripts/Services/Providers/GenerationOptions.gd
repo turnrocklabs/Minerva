@@ -35,6 +35,8 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 		if not schema.has(name):
 			return failure("unsupported_generation_option", "This model does not support %s" % name)
 		var rule: Dictionary = schema[name]
+		if not rule.get("supported", true) or not rule.get("overridable", true):
+			return failure("unsupported_generation_option", "This model does not allow overriding %s" % name)
 		if not CoreModelDescriptor.value_matches(value, rule):
 			return failure("invalid_generation_option", "Invalid %s: expected an advertised %s value" % [name, rule.type])
 		if rule.type == "integer":
@@ -47,7 +49,8 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 	return {"success": true, "values": values}
 
 
-static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {}, request: Variant = {}, model: String = "this model") -> Dictionary:
+static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {}, request: Variant = {},
+		model: String = "this model", profile: Dictionary = {}) -> Dictionary:
 	var checked := CoreModelDescriptor.validate_options(schema)
 	var diagnostics: Array = checked.diagnostics
 	if not diagnostics.is_empty():
@@ -57,11 +60,20 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 	if saved is Dictionary:
 		var saved_values: Dictionary = saved
 		reset = ReasoningSelection.reset_saved(options, saved_values, model)
+		# A newly published fixed setting cannot retain an old explicit override.
+		# Use the same visible reset path as retired reasoning choices.
+		var reset_values: Dictionary = reset.values
+		for name: Variant in reset_values.keys():
+			var rule: Dictionary = options.get(name, {})
+			if not rule.get("overridable", true):
+				reset_values.erase(name)
+				if str(reset.notice).is_empty():
+					reset.notice = "Saved %s is no longer overridable for %s. Using the model default." % [str(name), model]
 	var values: Dictionary = {}
 	var sources: Dictionary = {}
 	for name: String in options:
 		var rule: Dictionary = options[name]
-		if rule.has("default"):
+		if rule.get("default") != null:
 			values[name] = rule.default
 			sources[name] = "default"
 	var layers := {"model": reset.values, "chat": chat, "request": request}
@@ -76,15 +88,42 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 				continue
 			values[name] = normalized.values[name]
 			sources[name] = layer
+	var mode := _apply_mode_defaults(options, profile, values, sources)
 	var inactive := _check_inactive(options, values, sources)
 	if not inactive.success:
 		return inactive
 	var explicit: Dictionary = values.duplicate(true)
-	for name: String in REASONING_KEYS:
-		if sources.get(name) == "default":
+	for name: String in values:
+		if sources.get(name) == "default" and (not profile.is_empty() or name in REASONING_KEYS):
 			explicit.erase(name)
 	return {"success": true, "values": values, "sources": sources, "schema": options,
-		"payload": serialize(explicit), "notice": reset.notice, "model_options": reset.values}
+		"payload": serialize(explicit), "notice": reset.notice, "model_options": reset.values,
+		"profile": profile.duplicate(true), "mode": mode}
+
+
+## Recipes change inherited defaults, never a user's explicit sampler choices.
+static func _apply_mode_defaults(schema: Dictionary, profile: Dictionary, values: Dictionary, sources: Dictionary) -> String:
+	if profile.is_empty():
+		return ""
+	var modes: Dictionary = profile.get("per_mode_defaults", {})
+	var mode: String = str(profile.get("default_mode", ""))
+	if values.get("enable_thinking") == false and modes.has("nonthinking"):
+		mode = "nonthinking"
+	var defaults: Dictionary = modes.get(mode, {})
+	for name: String in defaults:
+		if not schema.has(name):
+			continue
+		var rule: Dictionary = schema[name]
+		rule["default"] = defaults[name]
+		if sources.has(name) and sources[name] != "default":
+			continue
+		if defaults[name] == null:
+			values.erase(name)
+			sources.erase(name)
+		else:
+			values[name] = defaults[name]
+			sources[name] = "default"
+	return mode
 
 
 static func _check_inactive(schema: Dictionary, values: Dictionary, sources: Dictionary = {}) -> Dictionary:
@@ -123,7 +162,7 @@ static func _offering(provider: BaseProvider) -> Dictionary:
 	if provider is CoreProvider:
 		var core_provider := provider as CoreProvider
 		return CoreModelCatalog.resolve(core_provider.get_model_spec())
-	return {"success": true, "entry": {"generation_options": provider.reasoning_schema()}}
+	return {"success": true, "entry": {"generation_options": provider.reasoning_schema(), "generation_profile": {}}}
 
 
 static func schema_for(provider: BaseProvider) -> Dictionary:
@@ -155,7 +194,8 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 		return failure(offering.error_code, offering.error_message)
 	var entry: Dictionary = offering.entry
 	var schema: Dictionary = entry.generation_options
-	var result := resolve(schema, saved_for(provider), request.get(CHAT_LAYER, {}), request, provider.display_name)
+	var profile: Dictionary = entry.get("generation_profile", {})
+	var result := resolve(schema, saved_for(provider), request.get(CHAT_LAYER, {}), request, provider.display_name, profile)
 	if result.success:
 		var notice: String = str(result.notice)
 		if not notice.is_empty():

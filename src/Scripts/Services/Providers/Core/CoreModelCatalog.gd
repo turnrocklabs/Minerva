@@ -89,6 +89,7 @@ static func _entry(pair: Dictionary, descriptor: Dictionary, core: Node, host: N
 	var spec := CoreActionCatalog.spec_for(pair.service, pair.action)
 	var entry := {"model_name": pair.action.name, "display": CoreActionCatalog.display_for(pair.service, pair.action),
 		"model_spec": spec, "settings_key": settings_key(spec), "generation_options": descriptor.generation_options,
+		"generation_profile": descriptor.get("generation_profile", {}),
 		"legacy": descriptor.legacy, "diagnostics": descriptor.diagnostics, "available": true,
 		"unavailable_reason": "", "unavailable_message": ""}
 	if not descriptor.valid:

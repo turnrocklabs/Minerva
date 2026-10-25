@@ -9,11 +9,14 @@ const LEGACY_OPTIONS := {
 	"num_gpu": {"type": "integer", "minimum": 0},
 }
 const REASONING_TYPES := {"reasoning_effort": "string", "enable_thinking": "boolean"}
+const SAMPLING_TYPES := {"top_p": "number", "top_k": "integer", "min_p": "number",
+	"presence_penalty": "number", "frequency_penalty": "number", "repetition_penalty": "number", "seed": "integer"}
+const METADATA_FIELDS := ["supported", "overridable", "advanced", "default_source", "description"]
 
 
 static func describe(service: Service, action: Action) -> Dictionary:
 	var result := {"eligible": false, "legacy": false, "valid": true,
-		"generation_options": {}, "diagnostics": []}
+		"generation_options": {}, "generation_profile": {}, "diagnostics": []}
 	if service == null or action == null:
 		return result
 	var metadata := action.model_metadata
@@ -40,11 +43,16 @@ static func describe(service: Service, action: Action) -> Dictionary:
 	var diagnostics: Array = checked.diagnostics
 	result.valid = diagnostics.is_empty()
 	if service.client_id == "model-chat" and metadata.has("generation_settings"):
-		var native := reasoning_options(metadata.generation_settings)
+		var native := profile_options(metadata.generation_settings)
 		var native_options: Dictionary = native.options
 		var native_diagnostics: Array = native.diagnostics
 		if native_diagnostics.is_empty():
+			var profile: Dictionary = native.profile
+			for name: String in profile.parameters:
+				if not profile.parameters[name].supported:
+					options.erase(name)
 			options.merge(native_options, true)
+			result.generation_profile = profile
 		diagnostics.append_array(native_diagnostics)
 	result.generation_options = options
 	result.diagnostics = diagnostics
@@ -52,35 +60,72 @@ static func describe(service: Service, action: Action) -> Dictionary:
 
 
 ## Consume the additive native profile, keeping its names and values unchanged.
-static func reasoning_options(raw: Variant) -> Dictionary:
+static func profile_options(raw: Variant) -> Dictionary:
 	if not raw is Dictionary:
-		return {"options": {}, "diagnostics": ["Invalid native generation_settings profile"]}
+		return _profile_failure("Invalid native generation_settings profile")
 	var profile: Dictionary = raw
-	if profile.get("version") != 1 or not profile.get("parameters") is Dictionary:
-		return {"options": {}, "diagnostics": ["Invalid native generation_settings profile"]}
+	if profile.get("version") != 1 or not profile.get("parameters") is Dictionary \
+			or not profile.get("default_mode") is String or not profile.get("per_mode_defaults") is Dictionary:
+		return _profile_failure("Invalid native generation_settings profile")
 	var parameters: Dictionary = profile.parameters
 	var options: Dictionary = {}
-	for name: String in REASONING_TYPES:
-		if not parameters.has(name):
-			continue
+	for raw_name: Variant in parameters:
+		if not raw_name is String or option_type(str(raw_name)).is_empty():
+			return _profile_failure("Unsupported native generation setting: " + str(raw_name).left(128))
+		var name: String = str(raw_name)
 		var raw_parameter: Variant = parameters[name]
 		if not raw_parameter is Dictionary:
-			return {"options": {}, "diagnostics": ["Invalid native generation setting: " + name]}
+			return _profile_failure("Invalid native generation setting: " + name)
 		var parameter: Dictionary = raw_parameter
-		if not parameter.get("supported") is bool:
-			return {"options": {}, "diagnostics": ["Invalid native generation setting: " + name]}
+		if not parameter.get("supported") is bool or parameter.get("type") != option_type(name) \
+				or not _metadata_valid(parameter):
+			return _profile_failure("Invalid native generation setting: " + name)
 		if not parameter.supported:
 			continue
-		var rule: Dictionary = {}
-		for field: String in ["type", "enum", "default", "inactive_when"]:
-			if parameter.has(field):
-				rule[field] = parameter[field]
-		options[name] = rule
-	return validate_options(options)
+		options[name] = parameter.duplicate(true)
+	var checked := validate_options(options)
+	var diagnostics: Array = checked.diagnostics
+	if not diagnostics.is_empty():
+		return {"options": {}, "profile": {}, "diagnostics": diagnostics}
+	options = checked.options
+	var modes: Dictionary = profile.per_mode_defaults
+	if not modes.has(profile.default_mode):
+		return _profile_failure("Native default_mode has no defaults recipe")
+	for mode: Variant in modes:
+		if not mode is String or not modes[mode] is Dictionary:
+			return _profile_failure("Invalid native defaults recipe")
+		var defaults: Dictionary = modes[mode]
+		for name: Variant in defaults:
+			if not name is String or not parameters.has(name):
+				return _profile_failure("Unknown setting in native defaults recipe")
+			# Unsupported fields never become controls or defaults, even if a
+			# publisher retains an old value in an additive recipe.
+			if not options.has(name):
+				continue
+			var rule: Dictionary = options[name]
+			if defaults[name] != null and not value_matches(defaults[name], rule):
+				return _profile_failure("Invalid native default for " + str(name))
+	return {"options": options, "profile": profile.duplicate(true), "diagnostics": []}
+
+
+static func _profile_failure(message: String) -> Dictionary:
+	return {"options": {}, "profile": {}, "diagnostics": [message]}
+
+
+static func _metadata_valid(rule: Dictionary) -> bool:
+	for field: String in ["supported", "overridable", "advanced", "exclusive_minimum"]:
+		if rule.has(field) and not rule[field] is bool:
+			return false
+	for field: String in ["default_source", "description"]:
+		if rule.has(field) and not rule[field] is String:
+			return false
+	return true
 
 
 static func option_type(name: String) -> String:
-	return str(LEGACY_OPTIONS[name].type) if LEGACY_OPTIONS.has(name) else str(REASONING_TYPES.get(name, ""))
+	if LEGACY_OPTIONS.has(name):
+		return str(LEGACY_OPTIONS[name].type)
+	return str(REASONING_TYPES.get(name, SAMPLING_TYPES.get(name, "")))
 
 
 static func validate_options(raw: Variant) -> Dictionary:
@@ -103,10 +148,10 @@ static func validate_options(raw: Variant) -> Dictionary:
 		if definition.get("type") != type_name:
 			diagnostics.append("Invalid type for generation option: %s" % name)
 			continue
-		var valid := true
+		var valid := _metadata_valid(definition)
 		if name in REASONING_TYPES:
 			for field: Variant in definition:
-				if field not in ["type", "enum", "default", "inactive_when"]:
+				if field not in ["type", "enum", "default", "inactive_when"] and field not in METADATA_FIELDS:
 					valid = false
 			var choices: Variant = definition.get("enum")
 			if not choices is Array:
@@ -120,7 +165,7 @@ static func validate_options(raw: Variant) -> Dictionary:
 					if not _type_matches(choice, type_name) or choice in seen:
 						valid = false
 					seen.append(choice)
-			if definition.has("default") and not value_matches(definition.default, definition):
+			if definition.get("default") != null and not value_matches(definition.default, definition):
 				valid = false
 			if definition.has("inactive_when"):
 				var raw_condition: Variant = definition.inactive_when
@@ -136,28 +181,35 @@ static func validate_options(raw: Variant) -> Dictionary:
 				diagnostics.append("Invalid constraints/default for generation option: %s" % name)
 			continue
 		for field in definition:
-			if field not in ["type", "default", "minimum", "maximum"]:
+			if field not in ["type", "default", "minimum", "maximum", "exclusive_minimum"] and field not in METADATA_FIELDS:
 				valid = false
 		for field in ["minimum", "maximum", "default"]:
-			if definition.has(field) and not _number_matches(definition[field], definition.type):
+			if field == "default" and definition.get(field) == null:
+				continue
+			if definition.has(field) and not _number_matches(definition[field], type_name):
 				valid = false
 		if valid:
-			var lower: float = definition.get("minimum", LEGACY_OPTIONS[name].minimum)
+			var legacy: Dictionary = LEGACY_OPTIONS.get(name, {})
+			var floor_value: float = legacy.get("minimum", -INF)
+			var lower: float = definition.get("minimum", floor_value)
 			var default_upper := INF
 			if name == "temperature":
 				default_upper = 2.0
 			var upper: float = definition.get("maximum", default_upper)
-			if lower < LEGACY_OPTIONS[name].minimum or lower > upper:
+			if lower < floor_value or lower > upper \
+					or (definition.get("exclusive_minimum", false) and (not definition.has("minimum") or lower == upper)):
 				valid = false
 			if name == "temperature" and upper > 2:
 				valid = false
-			if definition.has("default") and (definition.default < lower or definition.default > upper):
-				valid = false
+			if definition.get("default") != null:
+				if definition.default < lower or definition.default > upper \
+						or (definition.get("exclusive_minimum", false) and definition.default == lower):
+					valid = false
 		if not valid:
 			diagnostics.append("Invalid constraints/default for generation option: %s" % name)
 			continue
 		options[name] = definition.duplicate(true)
-		if not options[name].has("minimum"):
+		if not options[name].has("minimum") and LEGACY_OPTIONS.has(name):
 			options[name]["minimum"] = LEGACY_OPTIONS[name].minimum
 		if name == "temperature" and not options[name].has("maximum"):
 			options[name]["maximum"] = 2
@@ -179,7 +231,8 @@ static func value_matches(value: Variant, rule: Dictionary) -> bool:
 		return false
 	if rule.type in ["number", "integer"]:
 		return not (rule.type == "integer" and value is float and value >= 9223372036854775808.0) \
-			and value >= rule.get("minimum", -INF) and value <= rule.get("maximum", INF)
+			and value >= rule.get("minimum", -INF) and value <= rule.get("maximum", INF) \
+			and (not rule.get("exclusive_minimum", false) or value > rule.get("minimum", -INF))
 	return true
 
 
