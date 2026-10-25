@@ -417,21 +417,29 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 		var provider_ref: WeakRef = weakref(self)
 		var request_ref: WeakRef = weakref(http_request)
 		timeout_timer.timeout.connect(func():
-			var provider = provider_ref.get_ref()
+			var provider: BaseProvider = provider_ref.get_ref()
 			if provider == null:
 				return
 			# Only timeout if this timer belongs to the current request.
 			if my_generation == provider._request_generation:
-				provider.timed_out = true
-				var req = request_ref.get_ref()
-				if req != null:
+				var req: HTTPRequest = request_ref.get_ref()
+				if req != null and provider.active_requests.has(req):
+					provider.timed_out = true
 					req.cancel_request()
+					# cancel_request emits no completion. Resolve the existing
+					# waiter explicitly; it owns cleanup and releases the turn.
+					req.request_completed.emit(HTTPRequest.RESULT_TIMEOUT, 0, PackedStringArray(), PackedByteArray())
 		)
 
 	# data returned from awaited signal is array of arguments that would
 	# be received by callback for that same signal
 
 	var request_results: Array = await http_request.request_completed
+
+	if http_request.has_meta("request_cancelled"):
+		active_requests.erase(http_request)
+		http_request.queue_free()
+		return RequestResults.from_error("Request cancelled")
 
 	# Check if we timed out
 	if timed_out:
@@ -463,9 +471,11 @@ static func parse_retry_after(headers: PackedStringArray) -> float:
 
 
 func cancel_active_resquests() -> void:
-	for i: HTTPRequest in active_requests:
-		if i.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
-			i.cancel_request()
-			#i.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
-			active_requests.erase(i)
-			i.queue_free()
+	_request_generation += 1 # Invalidate timeout callbacks before resuming waits.
+	# Completion resumes make_request synchronously and mutates active_requests.
+	var requests: Array[HTTPRequest] = active_requests.duplicate()
+	for request: HTTPRequest in requests:
+		if is_instance_valid(request) and active_requests.has(request):
+			request.set_meta("request_cancelled", true)
+			request.cancel_request()
+			request.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())

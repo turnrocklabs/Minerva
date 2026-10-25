@@ -774,7 +774,7 @@ Key points from earlier conversation:
 				var node: MessageMarkdown = box.add_history_item(item)
 				if node != null:
 					box.move_child(node, new_history.find(item))
-		var archive_notice := " Full text and tool data are in Ledger; images are marked as omitted." if ledger_entry else ""
+		var archive_notice := " Ledger: full text; large tool results by reference; images marked as omitted." if ledger_entry else ""
 		box.add_program_message("Compacted %d earlier messages.%s" % [summarize_end - summarize_start, archive_notice])
 
 	var compacted_count = summarize_end - summarize_start
@@ -1934,7 +1934,7 @@ func _build_history_list_with_system_prompt(history: ChatHistory, provider: Base
 	for chat: ChatHistoryItem in projected_history:
 		# Apply predicate if provided
 		if predicate.is_valid():
-			var results = predicate.call(chat)
+			var results = predicate.call(chat.source_for_prompt())
 			var should_add: bool = results[0]
 			var should_continue: bool = results[1]
 

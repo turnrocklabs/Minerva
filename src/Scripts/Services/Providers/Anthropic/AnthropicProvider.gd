@@ -184,7 +184,8 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 			retry_body, ["Content-Type: application/json", "x-api-key: %s" % API_KEY,
 				"anthropic-version: 2023-06-01"])
 
-	_debug_log_response(response)
+	var sent_limit: int = request_body.max_tokens
+	_debug_log_response(response, sent_limit)
 
 	var item = _parse_request_results(response)
 
@@ -207,8 +208,8 @@ static func _debug_log_request(body: String) -> void:
 	_debug_append_log(JSON.stringify(entry, "\t"))
 
 
-static func _debug_log_response(response: RequestResults) -> void:
-	if debug_log_path.is_empty() or response.response_code < 200 or response.response_code > 299:
+static func _debug_log_response(response: RequestResults, requested_limit: int = 0) -> void:
+	if debug_log_path.is_empty() or _rejected_output_maximum(response, requested_limit) > 0:
 		return
 	var body_text := response.body.get_string_from_utf8() if response.body else ""
 	var entry := {
@@ -491,23 +492,14 @@ func output_token_limit() -> int:
 
 
 func resolve_context_options(saved: Dictionary, maximum: int, minimum: int) -> Dictionary:
-	var layer := saved.duplicate(true)
-	var requested_value: Variant = layer.get("max_output_tokens", maximum)
-	var valid := CoreModelDescriptor.value_matches(requested_value,
-		{"type": "integer", "minimum": minimum})
-	if not valid:
-		return ModelContextOptions.resolve(layer, maximum, minimum)
-	var requested: int = requested_value
-	layer["max_output_tokens"] = mini(requested, maximum)
-	var result := ModelContextOptions.resolve(layer, maximum, minimum)
+	# Catalog validation is shared with Core. Only the learned bound clamps
+	# a choice that was valid before the provider taught us a smaller maximum.
+	var result := ModelContextOptions.resolve(saved, maximum, minimum)
 	if not result.success:
 		return result
-	# Keep saved intent independent from changing provider/catalog limits.
-	var explicit: Dictionary = result.explicit
-	if saved.has("max_output_tokens") and requested != maximum:
-		explicit["max_output_tokens"] = requested
 	var effective_maximum := _learned_maximum()
 	var values: Dictionary = result.values
+	var requested: int = values.max_output_tokens
 	values["max_output_tokens"] = mini(requested, effective_maximum)
 	var definitions: Dictionary = result.schema
 	var rule: Dictionary = definitions.max_output_tokens

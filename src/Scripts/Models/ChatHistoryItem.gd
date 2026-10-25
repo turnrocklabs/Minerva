@@ -66,6 +66,8 @@ var CompactionNotes: Array[String] = []:
 
 var _context_estimate_key: int = 0
 var _context_estimate_tokens: int = -1
+## Transient canonical identity for prompt-only projections; never serialized.
+var _prompt_source: ChatHistoryItem
 
 var HcpData: Dictionary:
 	set(value): _queue_save_state(); HcpData = value
@@ -450,6 +452,7 @@ func ledger_original() -> Dictionary:
 		"compaction_notes": CompactionNotes.duplicate(), "images": image_markers,
 		"is_tool_call": IsToolCall, "tool_calls": ContextTokenEstimate.archive_value(ToolCalls),
 		"tool_call_id": ToolCallId, "tool_name": ToolName,
+		"tool_artifact_note_id": ToolArtifactNoteId, "tool_summary": ToolSummary,
 		"tool_executions": ContextTokenEstimate.archive_value(ToolExecutions),
 		"hcp_data": ContextTokenEstimate.archive_value(HcpData),
 		"hcp_structure": ContextTokenEstimate.archive_value(HcpStructure),
@@ -467,8 +470,13 @@ func duplicate_for_prompt() -> ChatHistoryItem:
 	copy.provider = provider
 	copy.Complete = Complete
 	copy.Error = Error
+	copy._prompt_source = source_for_prompt()
 	copy._suppress_save_state = false
 	return copy
+
+
+func source_for_prompt() -> ChatHistoryItem:
+	return _prompt_source if _prompt_source != null else self
 
 
 ## Merges two history items together
