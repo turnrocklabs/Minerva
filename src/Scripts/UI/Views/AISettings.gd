@@ -2,8 +2,9 @@ extends PersistentWindow
 
 signal create_system_prompt_message(message)
 
-@onready var _provider_option_button = %ProviderOptionButton as OptionButton
-
+@onready var _selected_model_label: Label = %SelectedModelLabel
+@onready var _chat_generation_settings: CoreGenerationSettings = %CoreGenerationSettings
+@onready var _model_generation_settings: CoreGenerationSettings = %ModelGenerationSettings
 # Nano Banana Pro settings container (created dynamically)
 var _nbp_settings_container: VBoxContainer = null
 
@@ -33,12 +34,6 @@ var _loading_values: bool = false
 var _agentic_prompt_placeholder := ""
 # Counts the default-prompt reads: only the latest one shows its result.
 var _agentic_prompt_reads := 0
-
-## Returns the script of the provider thats selected.
-## `get_selected_provider().new()` to instantiate it
-func get_selected_provider() -> GDScript:
-	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[_provider_option_button.get_selected_id()]
-
 
 ## Load all settings from the current chat tab (or defaults if no chat).
 ## Called by ChatPane before showing this window.
@@ -143,99 +138,11 @@ func load_current_chat_settings() -> void:
 	_loading_values = false
 
 
-## Sync the provider dropdown to match ChatPane's current selection.
-## Called by ChatPane before showing this window.
-func sync_provider_to_current_chat() -> void:
-	# Get the currently selected provider instance from ChatPane
-	var provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
-	if provider == null:
-		return
-
-	# Build the display text in the same format we use (provider_name + display_name)
-	var target_text = "%s %s" % [provider.provider_name, provider.display_name]
-
-	# Find and select matching item in our dropdown
-	for i in range(_provider_option_button.get_item_count()):
-		if _provider_option_button.get_item_text(i) == target_text:
-			_provider_option_button.select(i)
-			return
-
-
-func _ready():
+func _ready() -> void:
 	super()
-	_rebuild_provider_dropdown()
-
-	# Rebuild dropdown when providers are enabled/disabled
-	SingletonObject.provider_enabled_changed.connect(_on_provider_enabled_changed)
-
-	if SingletonObject.config_has_saved_section("Providers"):
-		var provider = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
-		if provider != null:
-			var idx = _provider_option_button.get_item_index(provider)
-			if idx >= 0:
-				_provider_option_button.select(idx)
-
-
-## Handle provider enable/disable changes
-func _on_provider_enabled_changed(_provider: SingletonObject.API_PROVIDER, _enabled: bool) -> void:
-	_rebuild_provider_dropdown()
-
-
-## Rebuild the provider dropdown with only enabled providers
-func _rebuild_provider_dropdown() -> void:
-	var current_id = _provider_option_button.get_selected_id()
-	_provider_option_button.clear()
-
-	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
-	sorted_keys.sort_custom(
-		func(a, b):
-			return _get_provider_cost(a) < _get_provider_cost(b)
-	)
-
-	for key in sorted_keys:
-		# Skip models whose provider is disabled
-		if not SingletonObject.is_model_enabled(key):
-			continue
-
-		var instance = _get_provider_instance(key)
-		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
-		instance.free()
-
-	# Restore previous selection if still available
-	if current_id >= 0:
-		var idx = _provider_option_button.get_item_index(current_id)
-		if idx >= 0:
-			_provider_option_button.select(idx)
-
-
-## Creates a provider instance for the given model key, applying config for dynamic models
-func _get_provider_instance(key: int) -> BaseProvider:
-	if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		var instance = SingletonObject.create_dynamic_provider(key)
-		if instance:
-			return instance
-	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new()
-
-
-func _get_provider_cost(key: int) -> float:
-	var instance := _get_provider_instance(key)
-	var cost := instance.token_cost
-	instance.free()
-	return cost
-
-
-func _on_provider_option_button_item_selected(index: int):
-	var item_id = _provider_option_button.get_item_id(index)
-
-	var provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
-
-	SingletonObject.Chats.default_provider_script = provider_script
-	SingletonObject.save_to_config_file("Providers", "DefaultProviderId", item_id)
-	SingletonObject.save_to_config_file("Providers", "DefaultProviderName", _provider_option_button.get_item_text(index))
-
-	# Update ChatPane's dropdown selection only when no chats are open (for consistency)
-	if SingletonObject.ChatList.is_empty():
-		SingletonObject.Chats._provider_option_button.select(index)
+	var tabs: TabContainer = $MarginContainer/MainVBox/TabContainer
+	tabs.set_tab_title(0, "This chat")
+	tabs.set_tab_title(1, "This model")
 
 
 func _on_accept_button_pressed() -> void:
@@ -410,6 +317,8 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	if provider == null:
 		return
 
+	_selected_model_label.text = "Settings for %s (%s)" % [provider.display_name, provider.provider_name]
+
 	# Temperature section visibility
 	%TemperatureHBoxContainer.visible = provider.supports_temperature and not provider is CoreProvider
 	if provider.temperature_warning and not provider.temperature_warning.is_empty():
@@ -438,9 +347,13 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	# Model-chat settings (context window)
 	var is_model_chat: bool = provider.get("supports_num_ctx") == true and not provider is CoreProvider
 	_update_model_chat_settings_visibility(is_model_chat, provider)
-	%CoreGenerationSettings.visible = provider is CoreProvider
+	_chat_generation_settings.visible = provider is CoreProvider and current_chat_tab_ref != null
+	_model_generation_settings.visible = provider is CoreProvider
 	if provider is CoreProvider:
-		%CoreGenerationSettings.configure(provider, current_chat_tab_ref)
+		var core_provider := provider as CoreProvider
+		if current_chat_tab_ref != null:
+			_chat_generation_settings.configure(core_provider, current_chat_tab_ref, 0, ["temperature", "max_tokens"])
+		_model_generation_settings.configure(core_provider, null, 1, ["num_ctx", "num_gpu"])
 
 	# Reasoning options follow the current model capabilities.
 	_update_reasoning_settings_visibility(provider)
@@ -650,13 +563,7 @@ func _create_model_chat_settings() -> void:
 	gpu_hbox.add_child(gpu_spin)
 	_model_chat_settings_container.add_child(gpu_hbox)
 
-	# Insert after NBP settings (or after PresenceHBoxContainer)
-	var model_vbox = %PresenceHBoxContainer.get_parent()
-	var insert_idx = %PresenceHBoxContainer.get_index() + 1
-	if _nbp_settings_container:
-		insert_idx = _nbp_settings_container.get_index() + 1
-	model_vbox.add_child(_model_chat_settings_container)
-	model_vbox.move_child(_model_chat_settings_container, insert_idx)
+	%ModelSettings.add_child(_model_chat_settings_container)
 
 
 ## Create or update the reasoning-effort picker for the selected provider.
@@ -749,13 +656,7 @@ func _create_reasoning_settings() -> void:
 	summary_check.toggled.connect(_on_reasoning_summary_toggled)
 	_reasoning_settings_container.add_child(summary_check)
 
-	# Insert after model-chat settings (or after Presence penalty)
-	var model_vbox = %PresenceHBoxContainer.get_parent()
-	var insert_idx = %PresenceHBoxContainer.get_index() + 1
-	if _model_chat_settings_container:
-		insert_idx = _model_chat_settings_container.get_index() + 1
-	model_vbox.add_child(_reasoning_settings_container)
-	model_vbox.move_child(_reasoning_settings_container, insert_idx)
+	%PresenceHBoxContainer.get_parent().add_child(_reasoning_settings_container)
 
 
 ## Persist the chosen reasoning effort onto the current chat.
@@ -857,15 +758,7 @@ func _create_timeout_settings() -> void:
 	timeout_hbox.add_child(timeout_spin)
 	_timeout_settings_container.add_child(timeout_hbox)
 
-	# Insert after model-chat settings (or NBP settings, or PresenceHBoxContainer)
-	var model_vbox = %PresenceHBoxContainer.get_parent()
-	var insert_idx = %PresenceHBoxContainer.get_index() + 1
-	if _nbp_settings_container:
-		insert_idx = _nbp_settings_container.get_index() + 1
-	if _model_chat_settings_container:
-		insert_idx = _model_chat_settings_container.get_index() + 1
-	model_vbox.add_child(_timeout_settings_container)
-	model_vbox.move_child(_timeout_settings_container, insert_idx)
+	%ModelSettings.add_child(_timeout_settings_container)
 
 
 func _on_timeout_changed(value: float) -> void:

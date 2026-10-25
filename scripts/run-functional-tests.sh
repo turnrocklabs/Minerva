@@ -58,6 +58,7 @@ TURNROCK_TESTS=(
 	test/test_model_selections.gd
 	test/test_plugin_chat_providers.gd
 	test/test_generation_options.gd
+	test/test_model_settings.gd
 	test/test_core_request_lifecycle.gd
 	test/test_core_binary_voice_routing.gd
 	test/test_voice_contracts.gd

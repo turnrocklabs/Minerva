@@ -4450,7 +4450,6 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 
 func _on_btn_chat_settings_pressed():
-	%AISettings.sync_provider_to_current_chat()
 	%AISettings.load_current_chat_settings()
 	%AISettings.popup_centered()
 
@@ -6099,7 +6098,9 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		dynamic_ui_container.visible = false
 		_chat_button.enabled = true
 
-	if SingletonObject.ChatList.is_empty(): return
+	if SingletonObject.ChatList.is_empty():
+		_remember_model_selection(_provider_option_button, SingletonObject.save_to_config_file)
+		return
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
@@ -6114,6 +6115,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		sync_provider_picker_to_chat(history.HistoryId)
 		return
 
+	_remember_model_selection(_provider_option_button, SingletonObject.save_to_config_file)
 	history.provider = provider_
 	if provider_ is OpenAIProvider or provider_ is ChatGPTProvider:
 		var valid_effort := ReasoningSelection.validate(history.ReasoningEffort, provider_.reasoning_effort_levels())
@@ -6130,6 +6132,11 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		print("[Chat] Added default system prompt for %s" % provider_.model_name)
 
 	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
+
+
+func _remember_model_selection(picker: ProviderOptionButton, save_setting: Callable) -> void:
+	save_setting.call("Providers", "DefaultProviderId", picker.get_selected_id())
+	save_setting.call("Providers", "DefaultProviderName", picker.get_item_text(picker.selected))
 
 
 # when tab changes, set the provider picker to the provider that chat tab is using
