@@ -7,6 +7,7 @@ signal create_system_prompt_message(message)
 @onready var _chat_generation_settings: CoreGenerationSettings = %CoreGenerationSettings
 @onready var _model_generation_settings: CoreGenerationSettings = %ModelGenerationSettings
 @onready var _model_reasoning_settings: ModelReasoningSettings = %ModelReasoningSettings
+@onready var _schema_generation_settings: SchemaGenerationSettings = %SchemaGenerationSettings
 # Nano Banana Pro settings container (created dynamically)
 var _nbp_settings_container: VBoxContainer = null
 
@@ -161,6 +162,7 @@ func _ready() -> void:
 	tabs.set_tab_title(1, "This model")
 	var clear_model: Button = _model_generation_settings.get_node("Clear")
 	clear_model.pressed.connect(_model_reasoning_settings.refresh)
+	_model_reasoning_settings.settings_changed.connect(_schema_generation_settings.refresh)
 
 
 func _on_accept_button_pressed() -> void:
@@ -368,7 +370,12 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	_chat_generation_settings.visible = provider is CoreProvider and current_chat_tab_ref != null
 	_model_generation_settings.visible = provider is CoreProvider
 	# Shared resolution resets retired preferences before the numeric editors load.
+	if _model_reasoning_settings.get_parent() != %ModelSettings:
+		_model_reasoning_settings.reparent(%ModelSettings)
+	_model_reasoning_settings.show()
 	_model_reasoning_settings.configure(provider)
+	_schema_generation_settings.configure(provider, _model_reasoning_settings)
+	_model_generation_settings.visible = provider is CoreProvider and not _schema_generation_settings.visible
 	if provider is CoreProvider:
 		var core_provider := provider as CoreProvider
 		if current_chat_tab_ref != null:

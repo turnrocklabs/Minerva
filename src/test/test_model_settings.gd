@@ -144,11 +144,16 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	if control == null:
 		return
 	var gen = load("res://Scripts/Services/Providers/GenerationOptions.gd")
+	check("native UI fixture starts with inherited model settings", gen.save_model(history.provider, {}).success)
+	settings.load_current_chat_settings()
 	var slider: HSlider = control.get_node("Effort")
 	if OS.get_environment("MINERVA_MODEL_REASONING_FALSIFIER") == "1":
 		var body: Dictionary = history.provider.build_chat_payload([])
 		check("FALSIFIER: reverted ingestion hides slider", not slider.visible and control.levels.is_empty())
 		check("FALSIFIER: reverted ingestion omits reasoning field", body.success and not body.payload.has("reasoning_effort"))
+		settings.hide()
+		return
+	if not _check_native_fields(gen, history, settings):
 		settings.hide()
 		return
 	check("GLM slider stops are native low/high/max with high default", control.levels == ["low", "high", "max"] and control.default_effort == "high" and slider.visible and slider.value == 1)
@@ -173,9 +178,9 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	singleton.config_file.save(singleton._config_file_name)
 	pane._on_btn_chat_settings_pressed()
 	check("stale effort resets to model default with a visible notice", gen.for_provider(next_history.provider).values.get("reasoning_effort") == "high" and "unavailable" in control.get_node("Message").text and slider.value == 1)
-	check("reset clears Core editor validation error", settings.find_child("ModelGenerationSettings", true, false).get_node("Error").text.is_empty())
+	check("reset clears schema editor validation error", settings.find_child("SchemaGenerationSettings", true, false).get_node("Error").text.is_empty())
 	slider.value = 2
-	var model_editor: Control = settings.find_child("ModelGenerationSettings", true, false)
+	var model_editor: Control = settings.find_child("SchemaGenerationSettings", true, false)
 	model_editor.get_node("Clear").pressed.emit()
 	check("clearing model overrides refreshes reasoning to its default", gen.for_provider(next_history.provider).values.get("reasoning_effort") == "high" and slider.value == 1)
 	var glm_key: String = next_history.provider.get_model_settings_key()
@@ -186,11 +191,17 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	picker.item_selected.emit(picker.selected)
 	var qwen = next_history.provider
 	check("open gear rebinds label and model editor to Qwen", "Qwen3.8" in label.text and settings.current_chat_tab_ref == next_history and control.levels == ["low", "medium", "xhigh"])
-	check("Qwen slider orders native levels and marks its real default", control.levels == ["low", "medium", "xhigh"] and control.default_effort == "xhigh" and slider.value == 3)
-	slider.value = 0
+	check("Qwen slider orders native levels with a separate thinking toggle", control.levels == ["low", "medium", "xhigh"] and control.default_effort == "xhigh" and slider.value == 2)
+	var thinking: CheckButton = model_editor.get_node("Basic/enable_thinking/Toggle")
+	var temperature: SpinBox = model_editor.get_node("Basic/temperature/Numeric/Value")
+	model_editor.get_node("Basic/temperature/Heading/Custom").button_pressed = true
+	temperature.value = 0.25
+	thinking.button_pressed = false
 	var off: Dictionary = qwen.build_chat_payload([])
-	check("Qwen Off disables thinking without an inactive effort", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort"))
-	slider.value = 1
+	check("Qwen Off disables thinking and the inactive effort editor", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort") and not slider.editable)
+	check("Qwen mode updates displayed defaults while keeping an explicit sampler", "Default: 0.7" in model_editor.get_node("Basic/temperature/Default").text and "Default: 0.8" in model_editor.get_node("Basic/top_p/Default").text and temperature.value == 0.25 and gen.saved_for(qwen).temperature == 0.25)
+	thinking.button_pressed = true
+	slider.value = 0
 	var low: Dictionary = qwen.build_chat_payload([])
 	check("Qwen effort re-enables thinking with the native value", low.success and low.payload.get("enable_thinking") == true and low.payload.get("reasoning_effort") == "low")
 	check("open gear saves only the rebound Qwen key", gen.saved_for(qwen).get("reasoning_effort") == "low" and not singleton.config_file.get_value("Models", "GenerationOptions", {}).get(glm_key, {}).has("reasoning_effort"))
@@ -222,3 +233,40 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	check("unknown provider default is an initial inheritance stop", inherited.success and control.default_effort.is_empty() and slider.value == 0 and control.get_node("Selection").text == "Provider default" and google.model_reasoning_params({}).values.is_empty())
 	check("provider-default fixture restores the preceding model preference", gen.save_model(google, prior_google).success and gen.saved_for(google) == prior_google)
 	google.free()
+
+
+func _check_native_fields(gen: GDScript, history: RefCounted, settings: Window) -> bool:
+	var editor: Control = settings.find_child("SchemaGenerationSettings", true, false)
+	var temperature: Node = editor.get_node_or_null("Basic/temperature")
+	var top_k: Node = editor.get_node_or_null("Advanced/top_k")
+	check("U1/U2: native schema generates the advanced sampler fields", editor.visible and temperature != null and top_k != null)
+	# Reverting U1 must fail the integration oracle cleanly, without a null access.
+	if not editor.visible or temperature == null or top_k == null:
+		return false
+	check("Advanced starts collapsed", not editor.get_node("ExpandAdvanced").button_pressed and not editor.get_node("Advanced").visible)
+	check("GLM temperature default shows 1.0 and its published source", "Default: 1.0" in temperature.get_node("Default").text and "owner selected publisher eval recipe" in temperature.get_node("Default").text)
+	check("GLM top_p default is displayed", "Default: 0.95" in editor.get_node("Basic/top_p/Default").text)
+	check("fixed thinking is read-only", editor.get_node("Basic/enable_thinking/Toggle").disabled and editor.get_node("Basic/enable_thinking/Heading/Custom").disabled)
+	editor.get_node("ExpandAdvanced").button_pressed = true
+	check("Advanced expands through its real toggle", editor.get_node("Advanced").visible)
+	top_k.get_node("Heading/Custom").button_pressed = true
+	top_k.get_node("Numeric/Value").value = 20
+	var seed_row: Node = editor.get_node("Advanced/seed")
+	seed_row.get_node("Heading/Custom").button_pressed = true
+	seed_row.get_node("Numeric/Value").value = 42
+	check("top_k20 and seed42 persist under this model key", gen.saved_for(history.provider) == {"top_k": 20, "seed": 42} and history.GenerationOverrides.is_empty())
+	check("seed description and unspecified default stay visible", "reproducibility" in seed_row.tooltip_text and "Unspecified" in seed_row.get_node("Default").text)
+	var classic: Dictionary = history.provider.build_chat_payload([])
+	check("schema gear choices reach both native request builders", classic.success and classic.payload.get("top_k") == 20 and classic.payload.get("seed") == 42 and history.provider._job_input(classic.payload, history.provider.model_name).get("seed") == 42)
+	var repetition: Node = editor.get_node("Advanced/repetition_penalty")
+	repetition.get_node("Heading/Custom").button_pressed = true
+	check("exclusive zero is refused visibly without being saved", not editor.get_node("Error").text.is_empty() and not gen.saved_for(history.provider).has("repetition_penalty"))
+	repetition.get_node("Numeric/Value").value = 0.5
+	check("a valid fractional penalty saves and clears the error", gen.saved_for(history.provider).get("repetition_penalty") == 0.5 and editor.get_node("Error").text.is_empty())
+	repetition.get_node("Heading/Reset").pressed.emit()
+	seed_row.get_node("Heading/Reset").pressed.emit()
+	check("individual Reset preserves other explicit model choices", gen.saved_for(history.provider) == {"top_k": 20})
+	settings.hide()
+	settings.load_current_chat_settings()
+	check("reopening the gear restores per-model sampler values", editor.get_node("Advanced/top_k/Numeric/Value").value == 20 and editor.get_node("Advanced/top_k/Heading/Custom").button_pressed)
+	return true

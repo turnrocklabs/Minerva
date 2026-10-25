@@ -1,0 +1,43 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/ModelGenerationRow.gd" id="1"]
+
+[node name="ModelGenerationRow" type="VBoxContainer"]
+layout_mode = 2
+script = ExtResource("1")
+
+[node name="Heading" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Heading"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Custom" type="CheckButton" parent="Heading"]
+layout_mode = 2
+text = "Custom"
+tooltip_text = "Save an explicit value for this model. Turn off to inherit its default."
+
+[node name="Reset" type="Button" parent="Heading"]
+layout_mode = 2
+text = "Reset"
+tooltip_text = "Remove this override and use the model default."
+
+[node name="Numeric" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Slider" type="HSlider" parent="Numeric"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Value" type="SpinBox" parent="Numeric"]
+custom_minimum_size = Vector2(165, 0)
+layout_mode = 2
+
+[node name="Toggle" type="CheckButton" parent="."]
+layout_mode = 2
+text = "Enabled"
+
+[node name="Default" type="Label" parent="."]
+layout_mode = 2
+autowrap_mode = 3

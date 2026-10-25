@@ -2,10 +2,14 @@ class_name ModelReasoningSettings
 extends VBoxContainer
 ## Scene presentation for the shared per-model generation layer.
 
+signal settings_changed(model_key: String)
+
 @onready var _slider: HSlider = $Effort
 @onready var _levels_label: Label = $Levels
 @onready var _selection: Label = $Selection
 @onready var _message: Label = $Message
+@onready var _default_label: Label = $Default
+@onready var _reset_button: Button = $Reset
 var _provider: BaseProvider
 var _schema: Dictionary = {}
 var _stops: Array[String] = []
@@ -13,31 +17,35 @@ var _thinking_off: bool = false
 var _loading: bool = false
 var _model_key: String = ""
 var _notice: String = ""
+var _native_profile: bool = false
 var levels: Array[String] = []
 var default_effort: String = ""
 
 
 func _ready() -> void:
 	_slider.value_changed.connect(_on_effort_changed)
+	_reset_button.pressed.connect(_reset_effort)
 
 
 func refresh() -> void:
 	if is_instance_valid(_provider):
-		configure(_provider)
+		configure(_provider, _native_profile)
 
 
-func configure(provider: BaseProvider) -> void:
+func configure(provider: BaseProvider, native_profile: bool = false) -> void:
 	var key := provider.get_model_settings_key()
 	if key != _model_key:
 		_notice = ""
 	_model_key = key
 	_provider = provider
+	_native_profile = native_profile
 	_loading = true
 	_schema = GenerationOptions.schema_for(provider)
 	var resolved := GenerationOptions.for_provider(provider)
 	if not resolved.success:
 		_show_unavailable(str(resolved.error_message))
 		return
+	_schema = resolved.schema
 	if not str(resolved.notice).is_empty():
 		_notice = str(resolved.notice)
 	var rule: Dictionary = _schema.get("reasoning_effort", {})
@@ -48,9 +56,9 @@ func configure(provider: BaseProvider) -> void:
 		return
 	var thinking_rule: Dictionary = _schema.get("enable_thinking", {})
 	var thinking_values: Array = thinking_rule.get("enum", [])
-	_thinking_off = false in thinking_values
+	_thinking_off = not native_profile and false in thinking_values
 	_stops = levels.duplicate()
-	default_effort = str(rule.get("default", ""))
+	default_effort = str(rule.default) if rule.get("default") != null else ""
 	if _thinking_off and not "off" in _stops and not "none" in _stops:
 		_stops.push_front("off")
 	if _thinking_off and thinking_rule.get("default") == false:
@@ -69,10 +77,17 @@ func configure(provider: BaseProvider) -> void:
 	_slider.tick_count = _stops.size()
 	_slider.set_value_no_signal(_stops.find(effective))
 	_selection.text = _label(effective)
+	var inactive: bool = native_profile and values.get("enable_thinking") == false
+	_slider.editable = rule.get("overridable", true) and not inactive
+	_slider.tooltip_text = str(rule.get("description", "Reasoning effort for this model. Changes save immediately."))
+	_default_label.visible = native_profile
+	_default_label.text = "Default: %s · Source: %s" % [default_effort if not default_effort.is_empty() else "Unspecified", str(rule.get("default_source", "service default")).replace("_", " ")]
+	_reset_button.visible = native_profile
+	_reset_button.disabled = not rule.get("overridable", true) or not GenerationOptions.saved_for(provider).has("reasoning_effort")
 	_slider.visible = true
 	_levels_label.visible = true
 	_selection.visible = true
-	_message.text = _notice
+	_message.text = "Reasoning effort is inactive while thinking is disabled." if inactive else _notice
 	_loading = false
 
 
@@ -83,6 +98,8 @@ func _show_unavailable(message: String) -> void:
 	_slider.visible = false
 	_levels_label.visible = false
 	_selection.visible = false
+	_default_label.hide()
+	_reset_button.hide()
 	_message.text = message
 	_loading = false
 
@@ -114,6 +131,19 @@ func _on_effort_changed(value: float) -> void:
 			saved["enable_thinking"] = true
 	var result := GenerationOptions.save_model(_provider, saved)
 	_notice = ""
-	configure(_provider)
+	configure(_provider, _native_profile)
 	if not result.success:
+		_message.text = str(result.error_message)
+	else:
+		settings_changed.emit(_model_key)
+
+
+func _reset_effort() -> void:
+	var saved := GenerationOptions.saved_for(_provider)
+	saved.erase("reasoning_effort")
+	var result := GenerationOptions.save_model(_provider, saved)
+	configure(_provider, _native_profile)
+	if result.success:
+		settings_changed.emit(_model_key)
+	else:
 		_message.text = str(result.error_message)

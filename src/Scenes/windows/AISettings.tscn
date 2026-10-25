@@ -5,6 +5,7 @@
 
 [ext_resource type="PackedScene" path="res://Scenes/controls/CoreGenerationSettings.tscn" id="3_core_generation"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/ModelReasoningSettings.gd" id="4_reasoning"]
+[ext_resource type="PackedScene" path="res://Scenes/controls/SchemaGenerationSettings.tscn" id="5_profile"]
 
 [node name="AISettings" type="Window" unique_id=1767940973]
 oversampling_override = 1.0
@@ -484,6 +485,21 @@ layout_mode = 2
 [node name="Message" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
 layout_mode = 2
 autowrap_mode = 3
+
+[node name="Default" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Reset" type="Button" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+visible = false
+layout_mode = 2
+text = "Reset reasoning effort"
+
+[node name="SchemaGenerationSettings" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings" instance=ExtResource("5_profile")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
 
 [node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox" unique_id=195839022]
 layout_mode = 2
