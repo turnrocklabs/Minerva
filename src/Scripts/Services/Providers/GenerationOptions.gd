@@ -303,11 +303,6 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 	var chat: Variant = request.get(CHAT_LAYER, {})
 	if not profile.is_empty():
 		chat = {}
-	elif maximum > 0 and chat is Dictionary:
-		var chat_options: Dictionary = chat
-		chat_options = chat_options.duplicate(true)
-		chat_options.erase("max_tokens") # Output limits now belong to the model layer.
-		chat = chat_options
 	var result := resolve(schema, _engine_model(saved, maximum), chat, request, provider.display_name, profile)
 	if result.success:
 		result["context"] = context.values
@@ -463,7 +458,7 @@ static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
 		var layer: Dictionary = raw
 		var aliases_value: Variant = layer.get("options", {})
 		var aliases: Dictionary = aliases_value if aliases_value is Dictionary else {}
-		if layer.has("max_tokens") or aliases.has("num_predict"):
+		if has_native_profile(history.provider) and (layer.has("max_tokens") or aliases.has("num_predict")):
 			return failure("model_only_generation_option", "Output limits are saved per model; use scope=model and max_output_tokens")
 		for key: String in ModelContextOptions.KEYS:
 			if layer.has(key):

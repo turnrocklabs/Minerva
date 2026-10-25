@@ -515,7 +515,7 @@ func _context_system_prompt(history: ChatHistory) -> String:
 
 ## One model budget for normal sends and agent continuations. Compaction compares
 ## INPUT with the threshold; the hard stop includes the reserved output tokens.
-func check_agent_context_limits(history: ChatHistory, prepared_prompt: Array = [], provider_override: BaseProvider = null) -> Dictionary:
+func check_agent_context_limits(history: ChatHistory, prepared_prompt: Array = [], provider_override: BaseProvider = null, request_options: Variant = null) -> Dictionary:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
 	if not is_instance_valid(provider):
 		return {"ok": false, "warning": false, "message": "Select a model before sending."}
@@ -526,6 +526,12 @@ func check_agent_context_limits(history: ChatHistory, prepared_prompt: Array = [
 	var window: int = values.context_window
 	var threshold: int = values.auto_compact_at
 	var reserve: int = values.get("max_output_tokens", 0)
+	if provider is CoreProvider:
+		var request: Dictionary = GenerationOptions.request_from_history(history) if request_options == null else request_options
+		var resolved := GenerationOptions.for_provider(provider, GenerationOptions.chat_params(history, provider, request))
+		if not resolved.success:
+			return {"ok": false, "warning": false, "message": str(resolved.error_message)}
+		reserve = int(resolved.payload.get("max_tokens", reserve))
 	var estimate := _context_input_estimate(history, prepared_prompt, provider)
 	var estimated: int = estimate.input
 	var fits := estimated + reserve <= window
@@ -1005,7 +1011,7 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 
 	var refusal := _dispatch_refusal(provider, history_list)
 	if refusal.is_empty():
-		var context_status := check_agent_context_limits(history, history_list, provider)
+		var context_status := check_agent_context_limits(history, history_list, provider, request)
 		if not context_status.ok:
 			refusal = {"code": "context_budget_exceeded", "message": context_status.message}
 	if not refusal.is_empty():
