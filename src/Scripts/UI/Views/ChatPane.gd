@@ -470,29 +470,34 @@ func _call_agent_context_summary_provider(provider_spec: Dictionary, settings: D
 ## check below. Formatting through the prompt owner includes injected notes and
 ## tool-memory projection; prepared prompts also include this turn's fresh notes.
 func estimate_agent_context_size(history: ChatHistory, prepared_prompt: Array = [], provider_override: BaseProvider = null) -> int:
+	var estimate := _context_input_estimate(history, prepared_prompt, provider_override)
+	return estimate.input
+
+
+func _context_input_estimate(history: ChatHistory, prepared_prompt: Array, provider_override: BaseProvider) -> Dictionary:
 	var provider: BaseProvider = provider_override if provider_override != null else history.provider
 	if not is_instance_valid(provider):
-		return 0
+		return {"input": 0, "fixed": 0}
 	var system_prompt := _context_system_prompt(history)
-	var messages: Array = prepared_prompt
-	if messages.is_empty():
-		messages = _build_history_list_with_system_prompt(history, provider, system_prompt, Callable(), history.AgentModeEnabled)
-	elif "system_prompt" in provider:
-		system_prompt = str(provider.get("system_prompt"))
+	var input := 0
+	if prepared_prompt.is_empty():
+		# Projection changes tool text, but does not Format or encode images.
+		var projected: Array = history.tool_memory_manager.project(history, provider)
+		for item: ChatHistoryItem in projected:
+			if item.Role != ChatHistoryItem.ChatRole.SYSTEM:
+				input += item.context_input_tokens()
+	else:
+		input = ContextTokenEstimate.tokens(prepared_prompt)
+		if "system_prompt" in provider:
+			system_prompt = str(provider.get("system_prompt"))
 	if system_prompt.is_empty() and provider.requires_default_system_prompt:
 		system_prompt = provider.default_system_prompt
-	var tokens := _context_tokens(messages)
-	if provider.supports_system_prompt and not system_prompt.is_empty():
-		tokens += _context_tokens(system_prompt) + 4
+	var fixed := ContextTokenEstimate.tokens(system_prompt) + (4 if not system_prompt.is_empty() else 0)
 	if history.AgentModeEnabled and provider.has_method("set_tools"):
 		var manager: MCPManager = SingletonObject.get_mcp_manager()
 		var tools: Array[Dictionary] = manager.get_tools_for_chat(history)
-		tokens += _context_tokens(tools)
-	return tokens
-
-
-func _context_tokens(value: Variant) -> int:
-	return ceili(JSON.stringify(value).length() / 4.0)
+		fixed += ContextTokenEstimate.tokens(tools)
+	return {"input": input + fixed, "fixed": fixed}
 
 
 func _context_system_prompt(history: ChatHistory) -> String:
@@ -521,24 +526,42 @@ func check_agent_context_limits(history: ChatHistory, prepared_prompt: Array = [
 	var window: int = values.context_window
 	var threshold: int = values.auto_compact_at
 	var reserve: int = values.get("max_output_tokens", 0)
-	var estimated := estimate_agent_context_size(history, prepared_prompt, provider)
+	var estimate := _context_input_estimate(history, prepared_prompt, provider)
+	var estimated: int = estimate.input
 	var fits := estimated + reserve <= window
 	return {"ok": fits, "warning": estimated >= threshold,
 		"message": "" if fits else "Context budget exceeded: ~%d input + %d reserved output > %d tokens. Compact the chat or lower max output tokens." % [estimated, reserve, window],
 		"estimated_tokens": estimated, "summarize_threshold": threshold,
-		"output_reserve": reserve, "context_window": window}
+		"output_reserve": reserve, "context_window": window, "fixed_tokens": estimate.fixed}
 
 
-func _prepare_context(history: ChatHistory, turn_token: int) -> Dictionary:
-	var status := check_agent_context_limits(history)
-	# Compact before testing the hard stop, so a large history gets a chance
-	# to fit. A noncompactable last exchange still gets a clear local refusal.
-	if status.warning:
-		await compact_chat(history, 0, turn_token)
+## Build fresh notes once, compact against the actual outgoing input, then
+## rebuild from the same prepared notes. All sends still use the final hard gate.
+func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refresh_detached: bool, turn_token: int, predicate: Callable = Callable()) -> Array[Variant]:
+	var prompt := await create_prompt(append_item, refresh_detached, history.provider, predicate, history, turn_token)
+	if _turn_stopped(history, turn_token) or not _prompt_refusal(prompt).is_empty():
+		return prompt
+	# create_prompt's public signature stays stable. Its per-turn receipt is
+	# consumed immediately after the await, before another event can replace it.
+	var prepared: Dictionary = history.get_meta("context_prepared_append", {})
+	var prepared_item: ChatHistoryItem = append_item
+	if prepared.get("turn") == turn_token:
+		prepared_item = prepared.get("item")
+		history.remove_meta("context_prepared_append")
+	var status := check_agent_context_limits(history, prompt)
+	if status.warning or not status.ok:
+		var compacted := await compact_chat(history, 0, turn_token)
 		if _turn_stopped(history, turn_token):
-			return {"ok": false, "warning": false, "message": "Turn stopped"}
-		status = check_agent_context_limits(history)
-	return status
+			return []
+		if compacted:
+			prompt = _build_history_list_with_system_prompt(history, history.provider, _context_system_prompt(history), predicate, history.AgentModeEnabled)
+			if prepared_item != null:
+				var formatted: Variant = history.provider.Format(prepared_item)
+				if formatted != null:
+					prompt.append(formatted)
+	elif history.has_meta("compaction_no_progress"):
+		history.remove_meta("compaction_no_progress")
+	return prompt
 
 
 ## Keep complete recent exchanges up to half the model's threshold, always at
@@ -556,7 +579,7 @@ func _compaction_boundary(history: ChatHistory, keep_recent: int = 0) -> int:
 	var tokens := 0
 	for i in range(items.size() - 1, start - 1, -1):
 		var item: ChatHistoryItem = items[i]
-		tokens += _context_tokens(history.provider.Format(item))
+		tokens += item.context_input_tokens()
 		if not _starts_context_exchange(item):
 			continue
 		if boundary == items.size() or tokens <= budget or items.size() - boundary < keep_recent:
@@ -593,20 +616,52 @@ func _compaction_boundary(history: ChatHistory, keep_recent: int = 0) -> int:
 
 
 func _starts_context_exchange(item: ChatHistoryItem) -> bool:
-	# A tool round is an exchange too: an agent can run many rounds after one
-	# user message. Keeping that whole user turn would prevent agent compaction.
-	return item.Role == ChatHistoryItem.ChatRole.USER or (item.IsToolCall and item.Role in [ChatHistoryItem.ChatRole.MODEL, ChatHistoryItem.ChatRole.ASSISTANT])
+	# A tool chain shares one display accumulator. Keep its entire user exchange
+	# so hidden continuations never outlive the accumulator in saved history.
+	return item.Role == ChatHistoryItem.ChatRole.USER
 
 
 ## Compact older exchanges using THIS history's provider and archive to Ledger.
 ## keep_recent=0 selects the token budget; positive values add a message minimum.
 func compact_chat(history: ChatHistory, keep_recent: int = 0, turn_token: int = -1) -> bool:
+	if turn_token >= 0:
+		if _turn_stopped(history, turn_token):
+			return false
+		return await _compact_chat_locked(history, keep_recent, turn_token)
+	# Manual/MCP compaction owns the same lock as sends. No await occurs
+	# between checking busy and claiming it, so arrivals join the existing queue.
+	if history.is_request_active:
+		return false
+	var owned_token := _begin_chat_turn(history)
+	_silence_turn(history, owned_token)
+	var compacted := await _compact_chat_locked(history, keep_recent, owned_token)
+	_release_chat_turn(history, owned_token)
+	return compacted
+
+
+func _compact_chat_locked(history: ChatHistory, keep_recent: int, turn_token: int) -> bool:
 	var item_count := history.HistoryItemList.size()
 	var has_system_prompt := not history.HistoryItemList.is_empty() and history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM
 	var summarize_start := 1 if has_system_prompt else 0
 	var summarize_end := _compaction_boundary(history, keep_recent)
-	if summarize_end <= summarize_start:
+	var status := check_agent_context_limits(history)
+	if not status.has("summarize_threshold"):
 		return false
+	var threshold: int = status.summarize_threshold
+	var fixed: int = status.fixed_tokens
+	var compactable := 0
+	var projected: Array = history.tool_memory_manager.project(history, history.provider)
+	for i in range(summarize_start, summarize_end):
+		var item: ChatHistoryItem = projected[i]
+		compactable += item.context_input_tokens()
+	if fixed >= threshold:
+		_compaction_no_progress(history, "System instructions and tools already reach the auto-compact threshold.")
+		return false
+	if summarize_end <= summarize_start or compactable < ceili(threshold * 0.25):
+		_compaction_no_progress(history, "Keeping the last complete exchange leaves too little earlier context to compact.")
+		return false
+	if history.has_meta("compaction_no_progress"):
+		history.remove_meta("compaction_no_progress")
 
 	# Build conversation text for LLM summarization and naive fallback
 	var conversation_text: PackedStringArray = []
@@ -616,7 +671,7 @@ func compact_chat(history: ChatHistory, keep_recent: int = 0, turn_token: int = 
 	var assistant_messages_count := 0
 
 	for i in range(summarize_start, summarize_end):
-		var item = history.HistoryItemList[i]
+		var item: ChatHistoryItem = history.HistoryItemList[i]
 		for note: Variant in item.InjectedNotes:
 			if note is String:
 				conversation_text.append("Reference: %s" % note)
@@ -672,13 +727,8 @@ Key points from earlier conversation:
 		ledger_entry.message_range = "messages %d-%d" % [summarize_start + 1, summarize_end]
 		ledger_entry.summary_text = summary_text
 		for i in range(summarize_start, summarize_end):
-			var item = history.HistoryItemList[i]
-			ledger_entry.original_messages.append({
-				"role": item.Role,
-				"message": item.Message.substr(0, 4000),
-				"is_tool_call": item.IsToolCall,
-				"tool_name": item.ToolName,
-			})
+			var item: ChatHistoryItem = history.HistoryItemList[i]
+			ledger_entry.original_messages.append(item.ledger_original())
 		SingletonObject.ledger_manager.add_entry(ledger_entry)
 
 	# Inject summary as reference information on the first USER message in kept history,
@@ -694,30 +744,37 @@ Key points from earlier conversation:
 		new_history.append(history.HistoryItemList[0])
 	var injected := false
 	for i in range(summarize_end, item_count):
-		var item = history.HistoryItemList[i]
+		var item: ChatHistoryItem = history.HistoryItemList[i]
 		if not injected and item.Role == ChatHistoryItem.ChatRole.USER:
+			item.CompactionNotes.append(injection_text)
 			item.InjectedNotes.append(injection_text)
 			injected = true
 		new_history.append(item)
 	# If no USER message found in kept history, create one to carry the summary
 	if not injected:
-		var summary_item = ChatHistoryItem.new()
+		var summary_item := ChatHistoryItem.new()
 		summary_item.Role = ChatHistoryItem.ChatRole.USER
 		summary_item.Message = ""
+		summary_item.CompactionNotes.append(injection_text)
 		summary_item.InjectedNotes.append(injection_text)
 		summary_item.provider = history.provider
 		new_history.insert(1 if has_system_prompt else 0, summary_item)
 
+	# Only archived nodes leave the view. The live accumulator and all retained
+	# nodes keep their identity during a tool chain and after a tab reopen.
+	for i in range(summarize_start, summarize_end):
+		var archived: ChatHistoryItem = history.HistoryItemList[i]
+		if is_instance_valid(archived.rendered_node):
+			archived.rendered_node.queue_free()
 	history.HistoryItemList = new_history
 	if is_instance_valid(history.VBox):
 		var box: VBoxChat = history.VBox
-		for child: Node in box.get_children():
-			if child != history.provider:
-				box.remove_child(child)
-				child.queue_free()
 		for item: ChatHistoryItem in new_history:
-			box.add_history_item(item)
-		var archive_notice := " Originals are available in Ledger." if ledger_entry else ""
+			if item.Visible and not is_instance_valid(item.rendered_node):
+				var node: MessageMarkdown = box.add_history_item(item)
+				if node != null:
+					box.move_child(node, new_history.find(item))
+		var archive_notice := " Full text and tool data are in Ledger; images are marked as omitted." if ledger_entry else ""
 		box.add_program_message("Compacted %d earlier messages.%s" % [summarize_end - summarize_start, archive_notice])
 
 	var compacted_count = summarize_end - summarize_start
@@ -730,6 +787,15 @@ Key points from earlier conversation:
 		ToastNotification.Type.SUCCESS
 	)
 	return true
+
+
+## One notice per no-progress episode; a successful eligibility check resets it.
+func _compaction_no_progress(history: ChatHistory, reason: String) -> void:
+	if history.has_meta("compaction_no_progress"):
+		return
+	history.set_meta("compaction_no_progress", true)
+	if is_instance_valid(history.VBox):
+		history.VBox.add_program_message("Auto-compact skipped: %s" % reason)
 
 
 ## Attempt LLM summarization with the history being compacted, including when
@@ -792,22 +858,24 @@ func _summarize_conversation_with_provider(provider: BaseProvider, conversation_
 		var empty_tools: Array[Dictionary] = []
 		provider.set_tools(empty_tools)
 
-	var bot_response = await provider.generate_content(prompt_list)
+	var previous_chat_id := provider.chat_id
+	provider.chat_id = cost_history_id
+	var bot_response: BotResponse = await provider.generate_content(prompt_list)
+	provider.chat_id = previous_chat_id
 	if provider.has_method("set_tools"):
 		provider.call("set_tools", saved_tools)
-
-	if not bot_response:
-		return {"ok": false, "text": "", "error": "no_response"}
-	if not bot_response.error.is_empty():
-		return {"ok": false, "text": "", "error": bot_response.error}
-	if bot_response.text.is_empty():
-		return {"ok": false, "text": "", "error": "empty_response_text"}
-
-	# Record cost against the originating chat
+	if bot_response == null:
+		return {"ok": false, "text": "", "error": "no_response", "usage": {"available": false}}
+	var usage := {"available": true, "prompt_tokens": bot_response.prompt_tokens, "completion_tokens": bot_response.completion_tokens}
 	if SingletonObject.cost_tracker and not cost_history_id.is_empty():
-		SingletonObject.cost_tracker.record_chat_cost(bot_response, cost_history_id)
+		SingletonObject.cost_tracker.record_chat_cost(bot_response, cost_history_id, "compaction_summary")
+	if not bot_response.error.is_empty():
+		return {"ok": false, "text": "", "error": bot_response.error, "usage": usage}
+	if bot_response.text.is_empty():
+		return {"ok": false, "text": "", "error": "empty_response_text", "usage": usage}
 
-	return {"ok": true, "text": bot_response.text, "error": ""}
+
+	return {"ok": true, "text": bot_response.text, "error": "", "usage": usage}
 
 
 ## Check tool arguments for paths and validate against allowed directories.
@@ -1791,11 +1859,17 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 	# append the working memory + any cited annotation refs (C7) resolved to their
 	# current re-anchored code + intent (DCR 019e9f602391 P4).
 	if append_item:
-		append_item.InjectedNotes = working_memory + _resolve_cited_refs(append_item)
+		var combined_notes: Array[Variant] = []
+		combined_notes.append_array(append_item.CompactionNotes)
+		combined_notes.append_array(working_memory)
+		combined_notes.append_array(_resolve_cited_refs(append_item))
+		append_item.InjectedNotes = combined_notes
 		# also append the new item since it's not in the history yet
 		var item = provider.Format(append_item)
 		if item: history_list.append(item)
 
+	if history != null and turn_token >= 0:
+		history.set_meta("context_prepared_append", {"turn": turn_token, "item": append_item})
 	return history_list
 
 
@@ -2011,10 +2085,10 @@ func regenerate_response(chi: ChatHistoryItem):
 	history.VBox.add_history_item(existing_response)
 
 	# We format items until we get to the user response
-	var predicate = func(item: ChatHistoryItem) -> Array:
+	var predicate: Callable = func(item: ChatHistoryItem) -> Array:
 		return [
-			history.HistoryItemList.find(item) < index,
-			history.HistoryItemList.find(item) < index,
+			item != chi,
+			item != chi,
 		]
 
 	# Setup agent mode tools if enabled for this chat (same as execute_regular_chat)
@@ -2026,7 +2100,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		history.provider.set_tools(filtered_tools)
 		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
-	var history_list = await create_prompt(chi, false, history.provider, predicate, history, turn_token)
+	var history_list := await _prepare_context(history, chi, false, turn_token, predicate)
 	if _turn_stopped(history, turn_token):
 		# Stopped while its prompt was built: the empty response goes too.
 		_drop_item(history, existing_response)
@@ -2627,7 +2701,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	history.termination_reason = ""
 	history.termination_message = ""
 
-	var user_history_item = create_user_history_item(text)
+	var user_history_item: ChatHistoryItem = create_user_history_item(text)
 	user_history_item.provider = history.provider
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
@@ -2667,21 +2741,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# Configure tool memory manager callables before prompt building
 	_configure_tool_memory_manager(history)
 
-	var context_status := await _prepare_context(history, turn_token)
-	if _turn_stopped(history, turn_token):
-		_settle_box_send(history, send_id, "stopped")
-		return
-	if not context_status.ok:
-		var message: String = context_status.message
-		_terminate_turn(history, turn_token, "quota_exhausted", message)
-		if is_instance_valid(history.VBox):
-			history.VBox.add_program_message(message)
-		_settle_box_send(history, send_id, "context_budget_exceeded")
-		_release_chat_turn(history, turn_token)
-		return
-
-	# make a chat request
-	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history, turn_token)
+	var history_list := await _prepare_context(history, user_history_item, true, turn_token)
 	if _turn_stopped(history, turn_token):
 		_settle_box_send(history, send_id, "stopped")
 		return
@@ -3385,17 +3445,6 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	else:
 		model_chi.Message = "{{TOOL_BLOCK:%d}}" % tool_count
 
-	var context_status := await _prepare_context(history, turn_token)
-	if _turn_stopped(history, turn_token):
-		return
-	if not context_status.ok:
-		var stop_message: String = context_status.message
-		_terminate_turn(history, turn_token, "quota_exhausted", stop_message)
-		if is_instance_valid(history.VBox):
-			history.VBox.add_program_message(stop_message)
-		finish_with_signal.call()
-		return
-
 	# Ensure tools are still enabled for continuation request (with filtering)
 	if history.provider.has_method("set_tools"):
 		var filtered_tools: Array[Dictionary] = mcp_manager.get_tools_for_chat(history)
@@ -3414,7 +3463,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# NOTE: Use refresh_detached=false to use cached notes (created when tool enabled "Send to LLM")
 	# instead of calling the initializer again, which can cause issues with graphics composition
 	# Pass history explicitly to avoid current_tab race with concurrent sub-agent chats
-	var continuation_list = await create_prompt(null, false, null, Callable(), history, turn_token)
+	var continuation_list := await _prepare_context(history, null, false, turn_token)
 	# A turn stopped while this prompt was built is over: nothing is sent or
 	# finished for it (its Stop did that).
 	if turn_token >= 0 and _turn_stopped(history, turn_token):

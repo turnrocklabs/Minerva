@@ -223,6 +223,11 @@ func output_token_limit() -> int:
 	return 0
 
 
+## Providers may apply a learned cap without rewriting the user's saved choice.
+func resolve_context_options(saved: Dictionary, maximum: int, minimum: int) -> Dictionary:
+	return ModelContextOptions.resolve(saved, maximum, minimum)
+
+
 ## Resolve the shared model layer before provider-native request construction.
 ## Only explicit, destination-supported reasoning choices reach native formatters.
 signal generation_options_notice(message: String)

@@ -55,6 +55,7 @@ func _handle_options(tool_name: String, args: Dictionary, provider: BaseProvider
 	var checked := GenerationOptions.public_request(provider, args.get("request_options", {}))
 	if not checked.success:
 		return checked
+	var notice := ""
 	if tool_name == "minerva_set_generation_options":
 		if not args.has("options"):
 			return GenerationOptions.failure("invalid_generation_options", "options is required")
@@ -69,6 +70,7 @@ func _handle_options(tool_name: String, args: Dictionary, provider: BaseProvider
 			return GenerationOptions.failure("invalid_generation_options", "Chat scope requires chat_id; scope must be model or chat")
 		if not saved.success:
 			return saved
+		notice = str(saved.get("notice", ""))
 	var request: Dictionary = checked.values
 	var chat: Dictionary = history.GenerationOverrides if history != null else {}
 	request[GenerationOptions.CHAT_LAYER] = chat
@@ -91,4 +93,5 @@ func _handle_options(tool_name: String, args: Dictionary, provider: BaseProvider
 		sources[key] = "model" if model_options.has(key) else "default"
 	return {"success": true, "model_spec": ModelResolver.spec_for(provider), "schema": schema,
 		"model_options": GenerationOptions.saved_for(provider), "chat_options": chat.duplicate(true),
-		"effective_options": effective, "sources": sources}
+		"effective_options": effective, "sources": sources, "notice": notice,
+		"output_notice": resolved.get("output_notice", "")}

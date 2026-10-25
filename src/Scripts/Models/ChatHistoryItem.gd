@@ -7,6 +7,7 @@ enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM, TOOL}
 static var SERIALIZER_FIELDS = [
 	"Role",
 	"InjectedNotes",
+	"CompactionNotes",
 	"Message",
 	"HcpStructure",
 	"HcpData",
@@ -57,6 +58,14 @@ var Role: ChatRole:
 
 var InjectedNotes: Array[Variant]:
 	set(value): _queue_save_state(); InjectedNotes = value
+
+## Persistent summaries are also projected into InjectedNotes for providers.
+## Regeneration replaces ordinary notes while retaining these archive links.
+var CompactionNotes: Array[String] = []:
+	set(value): _queue_save_state(); CompactionNotes = value
+
+var _context_estimate_key: int = 0
+var _context_estimate_tokens: int = -1
 
 var HcpData: Dictionary:
 	set(value): _queue_save_state(); HcpData = value
@@ -271,6 +280,7 @@ func Serialize() -> Dictionary:
 	var save_dict: Dictionary = {
 		"Role": Role,
 		"InjectedNotes": Marshalls.variant_to_base64(InjectedNotes),
+		"CompactionNotes": CompactionNotes,
 		"Message": Message,
 		"HcpData": HcpData,
 		"HcpStructure": HcpStructure,
@@ -333,7 +343,7 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	if data["Captions"].size() == data["Images"].size():
 		data["Captions"].resize(data.get("Images").size())
 
-	var chi = ChatHistoryItem.new()
+	var chi := ChatHistoryItem.new()
 
 	# InjectedNote changed to InjectedNotes.
 	# Just place the old InjectedNote into the array
@@ -347,6 +357,14 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 		var value = data.get(prop)
 		
 		match prop:
+			"CompactionNotes":
+				var notes: Array[String] = []
+				if value is Array:
+					var source: Array = value
+					for note: Variant in source:
+						if note is String:
+							notes.append(note)
+				value = notes
 			"Images":
 				var img_arr: Array[Image] = []
 				img_arr.assign((value as Array).map(
@@ -402,7 +420,40 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 
 		chi.set(prop, value)
 
+	# Older archives carried summaries only in InjectedNotes. Migrate once;
+	# ordinary note text is never parsed on the regeneration path.
+	if not data.has("CompactionNotes"):
+		for note: Variant in chi.InjectedNotes:
+			if note is String:
+				var text_note: String = note
+				if text_note.begins_with("### Conversation Summary") and text_note.contains("### End Summary ###"):
+					chi.CompactionNotes.append(text_note)
 	return chi
+
+
+## Cache only the estimate, never a provider payload or an image encoding.
+func context_input_tokens() -> int:
+	var source := [Message, InjectedNotes, ToolCalls, ToolCallId, ToolName, Role, Images.size()]
+	var key := hash(source)
+	if _context_estimate_tokens < 0 or key != _context_estimate_key:
+		_context_estimate_key = key
+		_context_estimate_tokens = ContextTokenEstimate.tokens(source) + Images.size() * ContextTokenEstimate.IMAGE_TOKENS
+	return _context_estimate_tokens
+
+
+func ledger_original() -> Dictionary:
+	var image_markers: Array[Dictionary] = []
+	for image: Image in Images:
+		image_markers.append({"image": "omitted", "caption": str(image.get_meta("caption", ""))})
+	return {"role": Role, "message": Message,
+		"injected_notes": ContextTokenEstimate.archive_value(InjectedNotes),
+		"compaction_notes": CompactionNotes.duplicate(), "images": image_markers,
+		"is_tool_call": IsToolCall, "tool_calls": ContextTokenEstimate.archive_value(ToolCalls),
+		"tool_call_id": ToolCallId, "tool_name": ToolName,
+		"tool_executions": ContextTokenEstimate.archive_value(ToolExecutions),
+		"hcp_data": ContextTokenEstimate.archive_value(HcpData),
+		"hcp_structure": ContextTokenEstimate.archive_value(HcpStructure),
+		"reasoning": Reasoning.duplicate(true)}
 
 
 ## Create a shallow prompt-safe copy of this history item.
@@ -422,6 +473,7 @@ func duplicate_for_prompt() -> ChatHistoryItem:
 
 ## Merges two history items together
 func merge(item: ChatHistoryItem) -> void:
+	CompactionNotes.append_array(item.CompactionNotes)
 	if Message and item.Message and Images.is_empty() and item.Images.is_empty():
 		# Merge text messages
 		var separator = "\u200B\u200C\u200D"  # Combination of invisible characters

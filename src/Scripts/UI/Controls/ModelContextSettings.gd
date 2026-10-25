@@ -6,6 +6,7 @@ signal settings_changed
 const ROWS: Dictionary[String, NodePath] = {"context_window": ^"Window", "auto_compact_at": ^"Compact", "max_output_tokens": ^"Output"}
 @onready var _clear_button: Button = $Clear
 @onready var _error: Label = $Error
+@onready var _source: Label = $Source
 var _provider: BaseProvider
 var _loading: bool = false
 
@@ -30,6 +31,7 @@ func configure(provider: BaseProvider) -> void:
 	_loading = true
 	var resolved := GenerationOptions.context_for(provider)
 	_error.text = "" if resolved.success else str(resolved.error_message)
+	_source.text = str(resolved.get("output_notice", ""))
 	var definitions: Dictionary = resolved.get("schema", {})
 	var values: Dictionary = resolved.get("values", {})
 	var explicit: Dictionary = resolved.get("explicit", {})
@@ -67,6 +69,7 @@ func _edit(key: String, value: int, reset: bool) -> void:
 	var result := GenerationOptions.save_model(_provider, saved)
 	refresh()
 	if result.success:
+		_error.text = str(result.get("notice", ""))
 		settings_changed.emit()
 	else:
 		_error.text = str(result.error_message)

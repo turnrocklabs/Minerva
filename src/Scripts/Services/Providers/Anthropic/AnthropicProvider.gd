@@ -105,7 +105,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		return generation_options_failure(reasoning_options)
 	additional_params = reasoning_options.values
 	var thinking: Dictionary = additional_params.get("thinking", {})
-	var output_limit: int = additional_params.get("max_tokens", max_tokens)
+	var output_limit: int = additional_params.get("max_tokens", output_token_limit())
 	if thinking.get("type") == "enabled" and output_limit <= 1024:
 		return generation_options_failure(GenerationOptions.failure("invalid_generation_option",
 			"Thinking requires max output tokens above 1,024. Raise the output limit or turn thinking off."))
@@ -134,7 +134,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	var request_body = {
 		"model": api_model_id,
 		"messages": request_messages,
-		"max_tokens": max_tokens,
+		"max_tokens": output_limit,
 		"system": system_payload
 	}
 
@@ -162,6 +162,28 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		],
 	)
 
+	# Inspect only the documented maximum number in this particular rejection.
+	# No error body is logged by the learning path; all other errors surface
+	# through the existing parser, without a retry.
+	var learned := _rejected_output_maximum(response, output_limit)
+	if learned > 0:
+		_save_learned_maximum(learned)
+		request_body["max_tokens"] = mini(output_limit, learned)
+		if thinking.get("type") == "enabled":
+			if learned <= 1024:
+				return generation_options_failure(GenerationOptions.failure("invalid_generation_option",
+					"The provider's learned output maximum is too small for thinking. Turn thinking off."))
+			var budget: int = thinking.get("budget_tokens", 1024)
+			thinking = thinking.duplicate(true)
+			thinking["budget_tokens"] = mini(budget, learned - 1)
+			request_body["thinking"] = thinking
+		# One retry only. Reusing the body also preserves every unrelated control.
+		var retry_body := JSON.stringify(request_body)
+		_debug_log_request(retry_body)
+		response = await make_request("%s/messages" % BASE_URL, HTTPClient.METHOD_POST,
+			retry_body, ["Content-Type: application/json", "x-api-key: %s" % API_KEY,
+				"anthropic-version: 2023-06-01"])
+
 	_debug_log_response(response)
 
 	var item = _parse_request_results(response)
@@ -186,7 +208,7 @@ static func _debug_log_request(body: String) -> void:
 
 
 static func _debug_log_response(response: RequestResults) -> void:
-	if debug_log_path.is_empty():
+	if debug_log_path.is_empty() or response.response_code < 200 or response.response_code > 299:
 		return
 	var body_text := response.body.get_string_from_utf8() if response.body else ""
 	var entry := {
@@ -466,6 +488,76 @@ func default_reasoning_effort() -> String:
 
 func output_token_limit() -> int:
 	return max_tokens
+
+
+func resolve_context_options(saved: Dictionary, maximum: int, minimum: int) -> Dictionary:
+	var layer := saved.duplicate(true)
+	var requested_value: Variant = layer.get("max_output_tokens", maximum)
+	var valid := CoreModelDescriptor.value_matches(requested_value,
+		{"type": "integer", "minimum": minimum})
+	if not valid:
+		return ModelContextOptions.resolve(layer, maximum, minimum)
+	var requested: int = requested_value
+	layer["max_output_tokens"] = mini(requested, maximum)
+	var result := ModelContextOptions.resolve(layer, maximum, minimum)
+	if not result.success:
+		return result
+	# Keep saved intent independent from changing provider/catalog limits.
+	var explicit: Dictionary = result.explicit
+	if saved.has("max_output_tokens") and requested != maximum:
+		explicit["max_output_tokens"] = requested
+	var effective_maximum := _learned_maximum()
+	var values: Dictionary = result.values
+	values["max_output_tokens"] = mini(requested, effective_maximum)
+	var definitions: Dictionary = result.schema
+	var rule: Dictionary = definitions.max_output_tokens
+	rule["maximum"] = effective_maximum
+	rule["default"] = effective_maximum
+	if requested > effective_maximum:
+		result["output_notice"] = "Max output tokens limited to %d by the provider." % effective_maximum
+	return result
+
+
+## Config/catalog values populate max_tokens at creation; a learned bound is
+## valid only for that exact catalog value and API model identity.
+func _learned_maximum() -> int:
+	var saved_value: Variant = SingletonObject.config_file.get_value("Models", "AnthropicLearnedMax", {})
+	var saved: Dictionary = saved_value if saved_value is Dictionary else {}
+	var record_value: Variant = saved.get(api_model_id, {})
+	var record: Dictionary = record_value if record_value is Dictionary else {}
+	var limit_value: Variant = record.get("maximum")
+	if record.get("catalog") != max_tokens or not CoreModelDescriptor.value_matches(limit_value,
+			{"type": "integer", "minimum": 1, "maximum": max_tokens}):
+		return max_tokens
+	var limit: int = limit_value
+	return limit
+
+
+func _save_learned_maximum(limit: int) -> void:
+	var saved_value: Variant = SingletonObject.config_file.get_value("Models", "AnthropicLearnedMax", {})
+	var saved: Dictionary = saved_value if saved_value is Dictionary else {}
+	saved = saved.duplicate(true)
+	saved[api_model_id] = {"catalog": max_tokens, "maximum": limit}
+	var config: ConfigFile = SingletonObject.config_file
+	config.set_value("Models", "AnthropicLearnedMax", saved)
+	var error := config.save(SingletonObject._config_file_name)
+	if error != OK:
+		push_warning("Could not persist Anthropic's learned maximum: %s" % error_string(error))
+
+
+static func _rejected_output_maximum(response: RequestResults, requested: int) -> int:
+	if not response.success or response.http_request_result != HTTPRequest.RESULT_SUCCESS or response.response_code != 400:
+		return 0
+	var pattern := RegEx.new()
+	pattern.compile("max_tokens:\\s*[0-9]+\\s*>\\s*([0-9]+),?\\s+which is the maximum allowed")
+	var found := pattern.search(response.body.get_string_from_utf8())
+	if found == null:
+		return 0
+	var number := found.get_string(1)
+	if number.length() > 9:
+		return 0
+	var limit := number.to_int()
+	return limit if limit > 0 and limit < requested else 0
 
 
 ## Map the picker's effort onto Anthropic extended thinking. budget_tokens must

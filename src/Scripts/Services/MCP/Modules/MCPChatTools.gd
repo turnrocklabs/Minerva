@@ -1401,17 +1401,20 @@ func _compact_chat_mcp(args: Dictionary) -> Dictionary:
 	if chat_id.is_empty():
 		return MCPToolUtils.error("chat_id is required")
 
-	var chats = SingletonObject.Chats
+	var chats: ChatPane = SingletonObject.Chats
 	if not chats:
 		return MCPToolUtils.error("Chat pane not available")
 
 	# Find the chat by ID
-	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	var history: ChatHistory = MCPToolUtils.find_chat_by_id(chat_id)
 
 	if not history:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
-	var result = await chats.compact_chat(history)
+	if history.is_request_active:
+		return MCPToolUtils.error("Chat is busy; compact after the active request finishes")
+
+	var result: bool = await chats.compact_chat(history)
 	if not result:
 		return {"success": false, "message": "Not enough messages to compact"}
 

@@ -69,6 +69,10 @@ max_value = 1000000.0
 layout_mode = 2
 text = "Reset"
 
+[node name="Source" type="Label" parent="."]
+layout_mode = 2
+autowrap_mode = 3
+
 [node name="Error" type="Label" parent="."]
 layout_mode = 2
 autowrap_mode = 3

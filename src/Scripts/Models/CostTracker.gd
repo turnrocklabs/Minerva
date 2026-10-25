@@ -90,12 +90,12 @@ func _on_chat_completed(bot_response: BotResponse) -> void:
 
 
 ## Record a cost entry with an explicit chat_id (called from ChatPane)
-func record_chat_cost(bot_response: BotResponse, chat_id: String) -> void:
+func record_chat_cost(bot_response: BotResponse, chat_id: String, purpose: String = "") -> void:
 	if bot_response == null or bot_response.provider == null:
 		return
-	if bot_response.prompt_tokens == 0 and bot_response.completion_tokens == 0:
+	if purpose.is_empty() and bot_response.prompt_tokens == 0 and bot_response.completion_tokens == 0:
 		return
-	if bot_response.provider.PROVIDER == SingletonObject.API_PROVIDER.LOCAL:
+	if purpose.is_empty() and bot_response.provider.PROVIDER == SingletonObject.API_PROVIDER.LOCAL:
 		return
 
 	var provider = bot_response.provider
@@ -116,6 +116,8 @@ func record_chat_cost(bot_response: BotResponse, chat_id: String) -> void:
 		"output_tokens": bot_response.completion_tokens,
 		"cost_usd": cost_usd,
 		"chat_id": chat_id,
+		"purpose": purpose,
+		"response_error": not bot_response.error.is_empty(),
 	}
 
 	_record_entry(entry)

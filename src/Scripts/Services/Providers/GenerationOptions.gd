@@ -197,7 +197,7 @@ static func _maximum_output(provider: BaseProvider, entry: Dictionary) -> int:
 
 
 ## Older model-layer max_tokens/num_predict choices seed the new output limit.
-static func _context_layer(saved: Dictionary, maximum: int, entry: Dictionary) -> Dictionary:
+static func _context_layer(saved: Dictionary, maximum: int, entry: Dictionary, provider: BaseProvider) -> Dictionary:
 	var layer := saved.duplicate(true)
 	if maximum > 0 and not layer.has("max_output_tokens"):
 		var aliases: Variant = layer.get("options", {})
@@ -210,7 +210,7 @@ static func _context_layer(saved: Dictionary, maximum: int, entry: Dictionary) -
 	var rule: Dictionary = options.get("max_tokens", {})
 	var bound: float = rule.get("minimum", 1)
 	var minimum := maxi(1, floori(bound) + 1 if rule.get("exclusive_minimum", false) else ceili(bound))
-	return ModelContextOptions.resolve(layer, maximum, minimum)
+	return provider.resolve_context_options(layer, maximum, minimum)
 
 
 static func _engine_model(saved: Dictionary, maximum: int) -> Dictionary:
@@ -230,7 +230,7 @@ static func context_for(provider: BaseProvider) -> Dictionary:
 	if not offering.success:
 		return offering
 	var entry: Dictionary = offering.entry
-	return _context_layer(saved_for(provider), _maximum_output(provider, entry), entry)
+	return _context_layer(saved_for(provider), _maximum_output(provider, entry), entry, provider)
 
 
 ## Apply a ceiling, never transmit Minerva-only budgets or a default override.
@@ -297,7 +297,7 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 	var profile: Dictionary = entry.get("generation_profile", {})
 	var maximum := _maximum_output(provider, entry)
 	var saved := saved_for(provider)
-	var context := _context_layer(saved, maximum, entry)
+	var context := _context_layer(saved, maximum, entry, provider)
 	if not context.success:
 		return context
 	var chat: Variant = request.get(CHAT_LAYER, {})
@@ -313,6 +313,7 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 		result["context"] = context.values
 		result["context_schema"] = context.schema
 		result["maximum_output"] = maximum
+		result["output_notice"] = context.get("output_notice", "")
 		var model_options: Dictionary = result.model_options
 		var explicit_context: Dictionary = context.explicit
 		var context_values: Dictionary = context.values
@@ -350,9 +351,29 @@ static func save_model(provider: BaseProvider, raw: Variant) -> Dictionary:
 	if not raw is Dictionary:
 		return failure("invalid_generation_options", "Generation options must be an object")
 	var layer: Dictionary = raw
+	layer = layer.duplicate(true)
 	var entry: Dictionary = offering.entry
 	var maximum := _maximum_output(provider, entry)
-	var context := _context_layer(layer, maximum, entry)
+	var notice := ""
+	var previous := saved_for(provider)
+	var old_window_value: Variant = previous.get("context_window", ModelContextOptions.WINDOW)
+	var new_window_value: Variant = layer.get("context_window", ModelContextOptions.WINDOW)
+	var definitions := ModelContextOptions.schema(maximum)
+	var window_rule: Dictionary = definitions.context_window
+	var old_window: int = ModelContextOptions.WINDOW
+	if CoreModelDescriptor.value_matches(old_window_value, window_rule):
+		old_window = old_window_value
+	if CoreModelDescriptor.value_matches(new_window_value, window_rule):
+		var new_window: int = new_window_value
+		var old_threshold_value: Variant = previous.get("auto_compact_at", 0)
+		var old_threshold: int = 0
+		if CoreModelDescriptor.value_matches(old_threshold_value, {"type": "integer", "minimum": 1, "maximum": old_window - 1}):
+			old_threshold = old_threshold_value
+		if new_window < old_window and old_threshold > 0 \
+				and layer.get("auto_compact_at") == old_threshold and old_threshold >= new_window:
+			layer.erase("auto_compact_at")
+			notice = "Auto-compact reset to 20% of the new context window."
+	var context := _context_layer(layer, maximum, entry, provider)
 	if not context.success:
 		return context
 	var normalized := normalize(offering.entry.generation_options, _engine_model(layer, maximum), false, true)
@@ -374,7 +395,9 @@ static func save_model(provider: BaseProvider, raw: Variant) -> Dictionary:
 	if error != OK:
 		return failure("persistence_error", "Could not save model settings: %s" % error_string(error))
 	config.set_value("Models", MODEL_SECTION, modern)
-	return {"success": true, "values": values}
+	if not notice.is_empty():
+		provider.notify_generation_options(notice)
+	return {"success": true, "values": values, "notice": notice}
 
 
 static func request_from_history(history: ChatHistory, through_item: ChatHistoryItem = null) -> Dictionary:
@@ -438,6 +461,10 @@ static func public_request(provider: BaseProvider, raw: Variant) -> Dictionary:
 static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
 	if raw is Dictionary:
 		var layer: Dictionary = raw
+		var aliases_value: Variant = layer.get("options", {})
+		var aliases: Dictionary = aliases_value if aliases_value is Dictionary else {}
+		if layer.has("max_tokens") or aliases.has("num_predict"):
+			return failure("model_only_generation_option", "Output limits are saved per model; use scope=model and max_output_tokens")
 		for key: String in ModelContextOptions.KEYS:
 			if layer.has(key):
 				return failure("model_only_generation_option", "Context settings are saved per model")
