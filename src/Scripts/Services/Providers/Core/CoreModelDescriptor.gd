@@ -8,6 +8,7 @@ const LEGACY_OPTIONS := {
 	"num_ctx": {"type": "integer", "default": 40000, "minimum": 1},
 	"num_gpu": {"type": "integer", "minimum": 0},
 }
+const REASONING_TYPES := {"reasoning_effort": "string", "enable_thinking": "boolean"}
 
 
 static func describe(service: Service, action: Action) -> Dictionary:
@@ -35,10 +36,51 @@ static func describe(service: Service, action: Action) -> Dictionary:
 			result.diagnostics.append("Public chat descriptors require generation_options")
 		return result
 	var checked := validate_options(metadata.generation_options)
-	result.valid = checked.diagnostics.is_empty()
-	result.generation_options = checked.options
-	result.diagnostics = checked.diagnostics
+	var options: Dictionary = checked.options
+	var diagnostics: Array = checked.diagnostics
+	result.valid = diagnostics.is_empty()
+	if service.client_id == "model-chat" and metadata.has("generation_settings"):
+		var native := reasoning_options(metadata.generation_settings)
+		var native_options: Dictionary = native.options
+		var native_diagnostics: Array = native.diagnostics
+		if native_diagnostics.is_empty():
+			options.merge(native_options, true)
+		diagnostics.append_array(native_diagnostics)
+	result.generation_options = options
+	result.diagnostics = diagnostics
 	return result
+
+
+## Consume the additive native profile, keeping its names and values unchanged.
+static func reasoning_options(raw: Variant) -> Dictionary:
+	if not raw is Dictionary:
+		return {"options": {}, "diagnostics": ["Invalid native generation_settings profile"]}
+	var profile: Dictionary = raw
+	if profile.get("version") != 1 or not profile.get("parameters") is Dictionary:
+		return {"options": {}, "diagnostics": ["Invalid native generation_settings profile"]}
+	var parameters: Dictionary = profile.parameters
+	var options: Dictionary = {}
+	for name: String in REASONING_TYPES:
+		if not parameters.has(name):
+			continue
+		var raw_parameter: Variant = parameters[name]
+		if not raw_parameter is Dictionary:
+			return {"options": {}, "diagnostics": ["Invalid native generation setting: " + name]}
+		var parameter: Dictionary = raw_parameter
+		if not parameter.get("supported") is bool:
+			return {"options": {}, "diagnostics": ["Invalid native generation setting: " + name]}
+		if not parameter.supported:
+			continue
+		var rule: Dictionary = {}
+		for field: String in ["type", "enum", "default", "inactive_when"]:
+			if parameter.has(field):
+				rule[field] = parameter[field]
+		options[name] = rule
+	return validate_options(options)
+
+
+static func option_type(name: String) -> String:
+	return str(LEGACY_OPTIONS[name].type) if LEGACY_OPTIONS.has(name) else str(REASONING_TYPES.get(name, ""))
 
 
 static func validate_options(raw: Variant) -> Dictionary:
@@ -46,15 +88,53 @@ static func validate_options(raw: Variant) -> Dictionary:
 	var diagnostics: Array[String] = []
 	if not raw is Dictionary:
 		return {"options": options, "diagnostics": ["generation_options must be an object"]}
-	for name in raw:
-		if not name is String or not LEGACY_OPTIONS.has(name):
-			diagnostics.append("Unsupported generation option: %s" % str(name).left(128))
+	var definitions: Dictionary = raw
+	for raw_name: Variant in definitions:
+		if not raw_name is String or option_type(str(raw_name)).is_empty():
+			diagnostics.append("Unsupported generation option: %s" % str(raw_name).left(128))
 			continue
-		var definition: Variant = raw[name]
-		if not definition is Dictionary or definition.get("type") != LEGACY_OPTIONS[name].type:
+		var name: String = str(raw_name)
+		var raw_definition: Variant = definitions[name]
+		if not raw_definition is Dictionary:
+			diagnostics.append("Invalid type for generation option: %s" % name)
+			continue
+		var definition: Dictionary = raw_definition
+		var type_name := option_type(name)
+		if definition.get("type") != type_name:
 			diagnostics.append("Invalid type for generation option: %s" % name)
 			continue
 		var valid := true
+		if name in REASONING_TYPES:
+			for field: Variant in definition:
+				if field not in ["type", "enum", "default", "inactive_when"]:
+					valid = false
+			var choices: Variant = definition.get("enum")
+			if not choices is Array:
+				valid = false
+			else:
+				var enum_values: Array = choices
+				if enum_values.is_empty():
+					valid = false
+				var seen: Array = []
+				for choice: Variant in enum_values:
+					if not _type_matches(choice, type_name) or choice in seen:
+						valid = false
+					seen.append(choice)
+			if definition.has("default") and not value_matches(definition.default, definition):
+				valid = false
+			if definition.has("inactive_when"):
+				var raw_condition: Variant = definition.inactive_when
+				if not raw_condition is Dictionary:
+					valid = false
+				else:
+					var condition: Dictionary = raw_condition
+					if name != "reasoning_effort" or condition.size() != 1 or not condition.get("enable_thinking") is bool:
+						valid = false
+			if valid:
+				options[name] = definition.duplicate(true)
+			else:
+				diagnostics.append("Invalid constraints/default for generation option: %s" % name)
+			continue
 		for field in definition:
 			if field not in ["type", "default", "minimum", "maximum"]:
 				valid = false
@@ -82,6 +162,25 @@ static func validate_options(raw: Variant) -> Dictionary:
 		if name == "temperature" and not options[name].has("maximum"):
 			options[name]["maximum"] = 2
 	return {"options": options, "diagnostics": diagnostics}
+
+
+static func _type_matches(value: Variant, type_name: String) -> bool:
+	if type_name == "string":
+		return value is String
+	if type_name == "boolean":
+		return value is bool
+	return _number_matches(value, type_name)
+
+
+static func value_matches(value: Variant, rule: Dictionary) -> bool:
+	if not _type_matches(value, str(rule.type)):
+		return false
+	if rule.has("enum") and (not rule.enum is Array or value not in rule.enum):
+		return false
+	if rule.type in ["number", "integer"]:
+		return not (rule.type == "integer" and value is float and value >= 9223372036854775808.0) \
+			and value >= rule.get("minimum", -INF) and value <= rule.get("maximum", INF)
+	return true
 
 
 static func _number_matches(value: Variant, type_name: String) -> bool:

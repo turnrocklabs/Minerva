@@ -6,12 +6,14 @@ const ROWS := {"temperature": "Temperature", "max_tokens": "MaxTokens", "num_ctx
 var _provider: CoreProvider
 var _history: ChatHistory
 var _loading := false
+var _visible_options: Array[String] = []
+@onready var _scope: OptionButton = $Scope
 
 
 func _ready() -> void:
-	$Scope.add_item("This chat")
-	$Scope.add_item("Model defaults")
-	$Scope.item_selected.connect(func(_index): _load_values())
+	_scope.add_item("This chat")
+	_scope.add_item("Model defaults")
+	_scope.item_selected.connect(func(_index): _load_values())
 	$Clear.pressed.connect(_clear_layer)
 	for option in ROWS:
 		var row := get_node(ROWS[option])
@@ -19,25 +21,31 @@ func _ready() -> void:
 		row.get_node("Value").value_changed.connect(func(_value): _edit(option))
 
 
-func configure(provider: CoreProvider, history: ChatHistory = null) -> void:
+func configure(provider: CoreProvider, history: ChatHistory = null, fixed_scope: int = -1,
+		visible_options: Array[String] = []) -> void:
 	_provider = provider
 	_history = history
-	$Scope.set_item_disabled(0, history == null)
-	if history == null:
-		$Scope.select(1)
+	_visible_options = visible_options
+	_scope.visible = fixed_scope < 0
+	_scope.set_item_disabled(0, history == null)
+	if fixed_scope >= 0:
+		_scope.select(fixed_scope)
+	elif history == null:
+		_scope.select(1)
 	_load_values()
 
 
 func _load_values() -> void:
 	_loading = true
-	var model_layer: bool = $Scope.selected == 1
+	var model_layer: bool = _scope.selected == 1
 	var explicit := GenerationOptions.saved_for(_provider) if model_layer else _history.GenerationOverrides
 	var request := {} if model_layer else {GenerationOptions.CHAT_LAYER: explicit}
 	var resolved := GenerationOptions.for_provider(_provider, request)
 	$Error.text = "" if resolved.success else resolved.error_message
 	for option in ROWS:
 		var row := get_node(ROWS[option]) as HBoxContainer
-		row.visible = resolved.success and resolved.schema.has(option)
+		row.visible = resolved.success and resolved.schema.has(option) \
+			and (_visible_options.is_empty() or option in _visible_options)
 		if not row.visible:
 			continue
 		var rule: Dictionary = resolved.schema[option]
@@ -56,7 +64,7 @@ func _load_values() -> void:
 func _edit(option: String) -> void:
 	if _loading or _provider == null:
 		return
-	var model_layer: bool = $Scope.selected == 1
+	var model_layer: bool = _scope.selected == 1
 	var explicit := GenerationOptions.saved_for(_provider) if model_layer else _history.GenerationOverrides.duplicate(true)
 	var row := get_node(ROWS[option])
 	if row.get_node("Override").button_pressed:
@@ -73,7 +81,7 @@ func _edit(option: String) -> void:
 func _clear_layer() -> void:
 	if _loading or _provider == null:
 		return
-	var result := GenerationOptions.save_model(_provider, {}) if $Scope.selected == 1 else GenerationOptions.set_chat(_history, {})
+	var result := GenerationOptions.save_model(_provider, {}) if _scope.selected == 1 else GenerationOptions.set_chat(_history, {})
 	if not result.success:
 		$Error.text = result.error_message
 		return

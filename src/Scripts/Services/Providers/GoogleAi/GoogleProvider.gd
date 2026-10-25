@@ -122,6 +122,10 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}):
+	var reasoning_options := model_reasoning_params(additional_params)
+	if not reasoning_options.success:
+		return generation_options_failure(reasoning_options)
+	additional_params = reasoning_options.values
 	var request_body = {
 		"contents": prompt
 	}
@@ -452,6 +456,10 @@ func to_bot_response(data: Variant) -> BotResponse:
 ## Gemini 3 models think, so always offer the picker.
 func uses_reasoning_effort_picker() -> bool:
 	return true
+
+
+func reasoning_effort_levels() -> Array:
+	return ["off", "low", "medium", "high"]
 
 
 ## Map the picker's effort onto Gemini thinkingConfig. Merged at the top level of

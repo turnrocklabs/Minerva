@@ -17,7 +17,7 @@ var available_tools: Array[Dictionary] = []
 var tools_enabled: bool = false
 
 ## Catalog-discovered model options.
-var reasoning_effort: String = "medium"
+var reasoning_effort: String = ""
 var supported_reasoning_levels: Array = []
 var supports_reasoning_summaries: bool = true
 var default_reasoning_summary: String = "auto"
@@ -37,7 +37,6 @@ var apply_patch_tool_type: Variant = null
 var experimental_supported_tools: Array = []
 var supports_image_generation: bool = false
 var raw_model_info: Dictionary = {}
-var _restored_reasoning_effort: String = ""
 
 ## Shared auth instance (set from PreferencesPopup or singleton)
 static var auth: RefCounted = null
@@ -95,6 +94,10 @@ func format_tools_for_request() -> Array:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	var reasoning_options := model_reasoning_params(additional_params)
+	if not reasoning_options.success:
+		return generation_options_failure(reasoning_options)
+	additional_params = reasoning_options.values
 	var bot_response := BotResponse.new()
 	bot_response.provider = self
 
@@ -224,10 +227,9 @@ func generate_image(prompt: String, options: Dictionary = {}) -> BotResponse:
 
 func _build_reasoning_options() -> Dictionary:
 	var reasoning := {}
-	if not _is_reasoning_effort_supported(reasoning_effort):
-		reasoning_effort = _default_supported_reasoning_effort()
-	if not reasoning_effort.is_empty():
-		reasoning["effort"] = reasoning_effort
+	var effort := default_reasoning_effort()
+	if not effort.is_empty():
+		reasoning["effort"] = effort
 	# Request a human-readable reasoning summary whenever the model supports one
 	# and the chat hasn't turned it off. The raw chain-of-thought comes back
 	# encrypted (reasoning.encrypted_content); the summary is the only displayable
@@ -247,24 +249,6 @@ func _build_text_options() -> Dictionary:
 	return {"verbosity": str(default_verbosity)}
 
 
-func _is_reasoning_effort_supported(effort: String) -> bool:
-	if effort.is_empty() or supported_reasoning_levels.is_empty():
-		return true
-	for preset in supported_reasoning_levels:
-		if preset is Dictionary and str(preset.get("effort", "")) == effort:
-			return true
-	return false
-
-
-func _default_supported_reasoning_effort() -> String:
-	if supported_reasoning_levels.is_empty():
-		return ""
-	for preset in supported_reasoning_levels:
-		if preset is Dictionary:
-			return str(preset.get("effort", ""))
-	return ""
-
-
 func _valid_reasoning_summary(summary: String) -> String:
 	var normalized := summary.strip_edges().to_lower()
 	if normalized in ["concise", "detailed", "auto"]:
@@ -282,28 +266,17 @@ func reasoning_effort_levels() -> Array:
 	for preset: Variant in supported_reasoning_levels:
 		if preset is Dictionary and preset.has("effort"):
 			levels.append(str(preset["effort"]))
-	if levels.is_empty() and not _restored_reasoning_effort.is_empty():
-		levels.append(_restored_reasoning_effort)
 	return levels
-
-
-## Missing discovery metadata must not discard a saved chat's explicit choice.
-## Preserve only that choice; a new unknown model still has no advertised levels.
-func restore_reasoning_choice(value: String, legacy: bool) -> String:
-	_restored_reasoning_effort = ""
-	var levels := reasoning_effort_levels()
-	if legacy and value == "off":
-		# The old Off setting selected the first preset, or Low without metadata.
-		value = str(levels[0]) if not levels.is_empty() else "low"
-	if levels.is_empty() and not value.is_empty():
-		_restored_reasoning_effort = "none" if value == "off" else value
-	return value
 
 
 func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
 	var effort := level if enabled else "none"
 	if effort in reasoning_effort_levels():
 		params["reasoning"] = {"effort": effort}
+
+
+func default_reasoning_effort() -> String:
+	return reasoning_effort if reasoning_effort in reasoning_effort_levels() else ""
 
 
 ## Parse the SSE response from the ChatGPT backend

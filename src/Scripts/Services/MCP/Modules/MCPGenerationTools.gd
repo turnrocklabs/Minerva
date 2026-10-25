@@ -1,6 +1,6 @@
 class_name MCPGenerationTools
 extends MCPToolModule
-## Inspect and replace explicit Core generation layers using the shared resolver.
+## Inspect Core generation layers and per-model API reasoning with the shared resolver.
 
 
 func get_tool_names() -> Array[String]:
@@ -11,16 +11,16 @@ func register_tools() -> void:
 	var properties := {
 		"chat_id": {"type": "string", "description": "Chat to inspect/edit; mutually exclusive with model_spec"},
 		"model_spec": ModelResolver.selection_schema(),
-		"request_options": {"type": "object", "description": "Optional generation-only request overrides to preview"}}
+		"request_options": {"type": "object", "description": "Optional generation-only request overrides to preview, including advertised reasoning_effort and enable_thinking"}}
 	server._register_tool("minerva_get_generation_options",
-		"Inspect a Core chat model's supported generation schema, saved model/chat overrides, effective values and their sources. Precedence: defaults < model < chat < request.",
+		"Inspect a model's supported generation schema, saved overrides, effective values and sources. Core supports chat/model layers; API providers support per-model reasoning. Model reasoning preferences take precedence over replayed requests.",
 		{"type": "object", "properties": properties}, "models")
 	properties = properties.duplicate(true)
 	properties.erase("request_options")
 	properties["scope"] = {"type": "string", "enum": ["model", "chat"], "description": "Layer to replace; defaults to chat with chat_id, otherwise model"}
-	properties["options"] = {"type": "object", "description": "Replace the explicit layer. Empty {} clears to inherited values. Supported canonical keys: temperature, max_tokens, num_ctx, num_gpu; native aliases may be nested under options."}
+	properties["options"] = {"type": "object", "description": "Replace the explicit layer. Empty {} clears to inherited values. Canonical keys: temperature, max_tokens, num_ctx, num_gpu, reasoning_effort, enable_thinking. Only advertised names/values are accepted; native aliases may be nested under options. Reasoning preferences are per model."}
 	server._register_tool("minerva_set_generation_options",
-		"Persist Core generation overrides for one model or chat. Only advertised options are accepted; zero is preserved. Use minerva_get_generation_options first. This replaces the layer, so include values you want to keep.",
+		"Persist Core generation overrides or API model reasoning preferences. Only advertised options are accepted; zero is preserved. Use minerva_get_generation_options first. This replaces the layer, so include values you want to keep.",
 		{"type": "object", "properties": properties, "required": ["options"]}, "models")
 
 
