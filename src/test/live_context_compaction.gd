@@ -11,6 +11,7 @@ var usage: Dictionary = {}
 var jobs: Dictionary = {}
 var times: Dictionary = {}
 var summary_glm: bool = false
+var wire_metadata: Array[Dictionary] = []
 var prior_entries: Array[String] = []
 var compactions: Array[Dictionary] = []
 var saw_activity: bool = false
@@ -117,7 +118,8 @@ func _sample() -> Dictionary:
 				summary = summary or (entry != null and not entry.summary_text.is_empty() and entry.summary_text in note)
 		compactions.append({"at": Time.get_unix_time_from_system(), "input_after": _input_estimate(),
 			"ledger_id": id, "ledger_exists": singleton.ledger_manager.get_entry(id) != null,
-			"summary_present": summary, "ledger_link_present": linked, "summarizer_glm": summary_glm})
+			"summary_present": summary, "ledger_link_present": linked, "summarizer_glm": summary_glm,
+			"summary_source": str(entry.summary_source) if entry != null else ""})
 	var complete: bool = false
 	var reply: Dictionary = {}
 	var item_script = load("res://Scripts/Models/ChatHistoryItem.gd")
@@ -128,7 +130,7 @@ func _sample() -> Dictionary:
 			reply = {"error": not item.Error.is_empty(), "chars": item.Message.length(), "sha256": item.Message.sha256_text()}
 	return {"input_estimate": _input_estimate(), "output_reserve": 4000, "total_budget": _input_estimate() + 4000,
 		"complete": complete, "reply": reply, "usage": usage, "job_ids": jobs.keys(), "times": times,
-		"compactions": compactions, "large_context_dialog": dialog_seen}
+		"compactions": compactions, "large_context_dialog": dialog_seen, "wire_metadata": wire_metadata}
 
 func _process(_delta: float) -> void:
 	if history != null and Time.get_ticks_msec() - last_sample_ms >= 100:
@@ -185,6 +187,7 @@ func _command(command: Dictionary) -> void:
 		times = {"begin": Time.get_unix_time_from_system()}
 		saw_activity = false
 		summary_glm = false
+		wire_metadata.clear()
 		result = _sample()
 		result.input_estimate += ContextTokenEstimate.tokens(str(command.prompt))
 		result.total_budget = result.input_estimate + 4000
@@ -206,6 +209,23 @@ func _wire(message: Dictionary) -> void:
 		return
 	var params: Dictionary = message.get("params", {})
 	var body: Dictionary = params.get("result", {}) if params.get("result") is Dictionary else {}
+	var response: Dictionary = body.get("response", body) if body.get("response", body) is Dictionary else {}
+	var diagnostic_choices: Variant = response.get("choices")
+	var diagnostic_message: Dictionary = {}
+	if diagnostic_choices is Array and not diagnostic_choices.is_empty() and diagnostic_choices[0] is Dictionary:
+		var first_choice: Dictionary = diagnostic_choices[0]
+		var raw_message: Variant = first_choice.get("message")
+		if raw_message is Dictionary:
+			diagnostic_message = raw_message
+	var content: Variant = diagnostic_message.get("content")
+	wire_metadata.append({"topic": topic, "job_id": str(body.get("job_id", "")),
+		"jobs_at_receipt": jobs.size(), "has_choices": response.has("choices"),
+		"choices_length": diagnostic_choices.size() if diagnostic_choices is Array else -1,
+		"content_type": type_string(typeof(content)),
+		"content_stripped_length": content.strip_edges().length() if content is String else -1,
+		"has_reasoning_content": diagnostic_message.has("reasoning_content") or response.has("reasoning_content"),
+		"model_lower": str(response.get("model", "")).to_lower(),
+		"body_keys": body.keys(), "response_keys": response.keys()})
 	var code: String = str(params.get("code", params.get("error_code", body.get("error_code", ""))))
 	if code in ["BACKEND_UNAVAILABLE", "NO_NODES_AVAILABLE", "RESOURCE_UNKNOWN", "ASYNC_PEERS_UNCONFIGURED"]:
 		_write("stop", {"reason": "node_unavailable", "code": code})
@@ -222,7 +242,6 @@ func _wire(message: Dictionary) -> void:
 					times["first_answer"] = Time.get_unix_time_from_system()
 		if body.get("status", {}).get("state") in ["completed", "failed", "cancelled", "stalled", "abandoned", "interrupted"]:
 			times["terminal"] = Time.get_unix_time_from_system()
-	var response: Dictionary = body.get("response", body) if body.get("response", body) is Dictionary else {}
 	if topic == "model-chat/jobs/result" and jobs.size() == 1 and response.get("choices") is Array:
 		# The summary job completes before the main job is submitted. A main
 		# reply cannot stand in for a failed summary once both IDs are present.
