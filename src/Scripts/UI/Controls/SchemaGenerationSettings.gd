@@ -1,6 +1,7 @@
 class_name SchemaGenerationSettings
 extends VBoxContainer
 ## Native model profile presentation; all writes use GenerationOptions.
+signal settings_changed
 
 const ROW: PackedScene = preload("res://Scenes/controls/ModelGenerationRow.tscn")
 @onready var _basic: VBoxContainer = $Basic
@@ -46,7 +47,7 @@ func configure(provider: BaseProvider, reasoning: ModelReasoningSettings) -> voi
 		_expand.set_pressed_no_signal(false)
 		_advanced.hide()
 		for option: String in schema:
-			if option == "reasoning_effort":
+			if option in ["reasoning_effort", "max_tokens"]:
 				continue
 			var row := ROW.instantiate() as ModelGenerationRow
 			row.name = option
@@ -79,6 +80,7 @@ func _edit(option: String, value: Variant, explicit: bool) -> void:
 	var result := GenerationOptions.save_model(_provider, saved)
 	if result.success:
 		refresh()
+		settings_changed.emit()
 	else:
 		_error.text = str(result.error_message)
 
@@ -87,5 +89,6 @@ func _clear() -> void:
 	var result := GenerationOptions.save_model(_provider, {})
 	if result.success:
 		refresh()
+		settings_changed.emit()
 	else:
 		_error.text = str(result.error_message)

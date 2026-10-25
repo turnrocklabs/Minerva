@@ -218,6 +218,11 @@ func reasoning_schema() -> Dictionary:
 	return {"reasoning_effort": rule}
 
 
+## Zero means this provider publishes no per-model output maximum.
+func output_token_limit() -> int:
+	return 0
+
+
 ## Resolve the shared model layer before provider-native request construction.
 ## Only explicit, destination-supported reasoning choices reach native formatters.
 signal generation_options_notice(message: String)
@@ -237,6 +242,9 @@ func model_reasoning_params(request: Dictionary) -> Dictionary:
 	if not resolved.success:
 		return resolved
 	var params: Dictionary = request.duplicate(true)
+	var context: Dictionary = resolved.context
+	var maximum_output: int = resolved.maximum_output
+	params = GenerationOptions.output_request(params, context, maximum_output)
 	# Preserved provider-native controls belong to the old model too.
 	for field: String in ["reasoning_effort", "enable_thinking", "reasoning", "thinking"]:
 		params.erase(field)
@@ -249,6 +257,8 @@ func model_reasoning_params(request: Dictionary) -> Dictionary:
 	if values.has("reasoning_effort"):
 		var effort: String = str(values.reasoning_effort)
 		var native: Dictionary = {}
+		if params.has("max_tokens"):
+			native["max_tokens"] = params.max_tokens
 		apply_reasoning_options(native, effort, effort not in ["off", "none"])
 		if native.has("generationConfig") and params.get("generationConfig") is Dictionary:
 			var merged_config: Dictionary = params.generationConfig

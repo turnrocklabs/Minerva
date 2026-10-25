@@ -8,6 +8,7 @@ signal create_system_prompt_message(message)
 @onready var _model_generation_settings: CoreGenerationSettings = %ModelGenerationSettings
 @onready var _model_reasoning_settings: ModelReasoningSettings = %ModelReasoningSettings
 @onready var _schema_generation_settings: SchemaGenerationSettings = %SchemaGenerationSettings
+@onready var _context_settings: ModelContextSettings = %ModelContextSettings
 # Nano Banana Pro settings container (created dynamically)
 var _nbp_settings_container: VBoxContainer = null
 
@@ -163,7 +164,11 @@ func _ready() -> void:
 	tabs.set_tab_title(1, "This model")
 	var clear_model: Button = _model_generation_settings.get_node("Clear")
 	clear_model.pressed.connect(_model_reasoning_settings.refresh)
+	clear_model.pressed.connect(_context_settings.refresh)
 	_model_reasoning_settings.settings_changed.connect(_schema_generation_settings.refresh)
+	_model_reasoning_settings.settings_changed.connect(_context_settings.refresh)
+	_schema_generation_settings.settings_changed.connect(_context_settings.refresh)
+	_context_settings.settings_changed.connect(_schema_generation_settings.refresh)
 
 
 func _on_accept_button_pressed() -> void:
@@ -339,6 +344,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 		return
 
 	_selected_model_label.text = "Settings for %s (%s)" % [provider.display_name, provider.provider_name]
+	_context_settings.configure(provider)
 	var native_profile: bool = GenerationOptions.has_native_profile(provider)
 
 	# Temperature section visibility
@@ -381,7 +387,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	if provider is CoreProvider:
 		var core_provider := provider as CoreProvider
 		if current_chat_tab_ref != null:
-			_chat_generation_settings.configure(core_provider, current_chat_tab_ref, 0, ["temperature", "max_tokens"])
+			_chat_generation_settings.configure(core_provider, current_chat_tab_ref, 0, ["temperature"])
 		_model_generation_settings.configure(core_provider, null, 1, ["num_ctx", "num_gpu"])
 
 	# Reasoning options follow the current model capabilities.
@@ -552,7 +558,7 @@ func _create_model_chat_settings() -> void:
 
 	# Add header label
 	var header = Label.new()
-	header.text = "Model-Chat Settings:"
+	header.text = "Local Ollama memory"
 	header.add_theme_font_size_override("font_size", 14)
 	_model_chat_settings_container.add_child(header)
 
@@ -560,7 +566,7 @@ func _create_model_chat_settings() -> void:
 	var ctx_hbox = HBoxContainer.new()
 	ctx_hbox.name = "NumCtxHBox"
 	var ctx_label = Label.new()
-	ctx_label.text = "Context Window (num_ctx):"
+	ctx_label.text = "Ollama memory window:"
 	ctx_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ctx_label.tooltip_text = "Context window size in tokens. Higher = more memory but slower."
 	ctx_hbox.add_child(ctx_label)

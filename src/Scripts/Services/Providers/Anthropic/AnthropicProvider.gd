@@ -104,6 +104,11 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	if not reasoning_options.success:
 		return generation_options_failure(reasoning_options)
 	additional_params = reasoning_options.values
+	var thinking: Dictionary = additional_params.get("thinking", {})
+	var output_limit: int = additional_params.get("max_tokens", max_tokens)
+	if thinking.get("type") == "enabled" and output_limit <= 1024:
+		return generation_options_failure(GenerationOptions.failure("invalid_generation_option",
+			"Thinking requires max output tokens above 1,024. Raise the output limit or turn thinking off."))
 	var system_payload: Variant = system_prompt
 	if not system_prompt.is_empty():
 		system_payload = [{
@@ -459,6 +464,10 @@ func default_reasoning_effort() -> String:
 	return "off"
 
 
+func output_token_limit() -> int:
+	return max_tokens
+
+
 ## Map the picker's effort onto Anthropic extended thinking. budget_tokens must
 ## stay below max_tokens, so cap conservatively.
 func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
@@ -466,12 +475,13 @@ func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -
 		params["thinking"] = {"type": "disabled"}
 		return
 	var budget := 8192
+	var output_limit: int = params.get("max_tokens", max_tokens)
 	match level:
 		"low": budget = 2048
 		"medium": budget = 8192
 		"high": budget = 16384
-		"max": budget = max_tokens - 1
-	budget = mini(budget, max_tokens - 1)
+		"max": budget = output_limit - 1
+	budget = mini(budget, output_limit - 1)
 	params["thinking"] = {"type": "enabled", "budget_tokens": budget}
 
 

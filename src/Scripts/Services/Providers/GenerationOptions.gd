@@ -183,6 +183,74 @@ static func schema_for(provider: BaseProvider) -> Dictionary:
 	return offering.entry.generation_options if offering.success else {}
 
 
+static func _maximum_output(provider: BaseProvider, entry: Dictionary) -> int:
+	if provider is CoreProvider:
+		var options: Dictionary = entry.generation_options
+		var rule: Dictionary = options.get("max_tokens", {})
+		var maximum: Variant = rule.get("maximum")
+		if rule.get("supported", true) and (maximum is int or maximum is float):
+			var numeric: float = maximum
+			if is_finite(numeric) and numeric >= 1 and numeric < 9223372036854775808.0:
+				return int(numeric)
+		return 0
+	return provider.output_token_limit()
+
+
+## Older model-layer max_tokens/num_predict choices seed the new output limit.
+static func _context_layer(saved: Dictionary, maximum: int, entry: Dictionary) -> Dictionary:
+	var layer := saved.duplicate(true)
+	if maximum > 0 and not layer.has("max_output_tokens"):
+		var aliases: Variant = layer.get("options", {})
+		var native_options: Dictionary = aliases if aliases is Dictionary else {}
+		if native_options.has("num_predict"):
+			layer["max_output_tokens"] = native_options.num_predict
+		elif layer.has("max_tokens"):
+			layer["max_output_tokens"] = layer.max_tokens
+	var options: Dictionary = entry.generation_options
+	var rule: Dictionary = options.get("max_tokens", {})
+	var bound: float = rule.get("minimum", 1)
+	var minimum := maxi(1, floori(bound) + 1 if rule.get("exclusive_minimum", false) else ceili(bound))
+	return ModelContextOptions.resolve(layer, maximum, minimum)
+
+
+static func _engine_model(saved: Dictionary, maximum: int) -> Dictionary:
+	var engine := saved.duplicate(true)
+	for key: String in ModelContextOptions.KEYS:
+		engine.erase(key)
+	if maximum > 0:
+		engine.erase("max_tokens")
+		if engine.get("options") is Dictionary:
+			var aliases: Dictionary = engine.options
+			aliases.erase("num_predict")
+	return engine
+
+
+static func context_for(provider: BaseProvider) -> Dictionary:
+	var offering := _offering(provider)
+	if not offering.success:
+		return offering
+	var entry: Dictionary = offering.entry
+	return _context_layer(saved_for(provider), _maximum_output(provider, entry), entry)
+
+
+## Apply a ceiling, never transmit Minerva-only budgets or a default override.
+static func output_request(request: Dictionary, context: Dictionary, maximum: int) -> Dictionary:
+	var wire := request.duplicate(true)
+	for key: String in ModelContextOptions.KEYS:
+		wire.erase(key)
+	if maximum > 0:
+		var ceiling: int = context.max_output_tokens
+		if wire.has("max_tokens") and (wire.max_tokens is int or wire.max_tokens is float):
+			var requested: float = wire.max_tokens
+			wire["max_tokens"] = mini(int(requested), ceiling)
+		if ceiling < maximum:
+			var requested: int = wire.get("max_tokens", ceiling)
+			wire["max_tokens"] = mini(requested, ceiling)
+		elif wire.get("max_tokens") == maximum:
+			wire.erase("max_tokens")
+	return wire
+
+
 ## Cached advertised metadata is enough for migration, even while Core is offline.
 ## An undiscovered or ambiguous selection keeps its old fields until resolved.
 static func has_native_profile(provider: BaseProvider) -> bool:
@@ -227,11 +295,39 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 	var entry: Dictionary = offering.entry
 	var schema: Dictionary = entry.generation_options
 	var profile: Dictionary = entry.get("generation_profile", {})
+	var maximum := _maximum_output(provider, entry)
+	var saved := saved_for(provider)
+	var context := _context_layer(saved, maximum, entry)
+	if not context.success:
+		return context
 	var chat: Variant = request.get(CHAT_LAYER, {})
 	if not profile.is_empty():
 		chat = {}
-	var result := resolve(schema, saved_for(provider), chat, request, provider.display_name, profile)
+	elif maximum > 0 and chat is Dictionary:
+		var chat_options: Dictionary = chat
+		chat_options = chat_options.duplicate(true)
+		chat_options.erase("max_tokens") # Output limits now belong to the model layer.
+		chat = chat_options
+	var result := resolve(schema, _engine_model(saved, maximum), chat, request, provider.display_name, profile)
 	if result.success:
+		result["context"] = context.values
+		result["context_schema"] = context.schema
+		result["maximum_output"] = maximum
+		var model_options: Dictionary = result.model_options
+		var explicit_context: Dictionary = context.explicit
+		var context_values: Dictionary = context.values
+		model_options.merge(explicit_context, true)
+		var sources: Dictionary = result.sources
+		var payload: Dictionary = result.payload
+		if maximum > 0 and sources.get("max_tokens") == "default":
+			payload.erase("max_tokens")
+		payload = output_request(payload, context_values, maximum)
+		result["payload"] = payload
+		if maximum > 0 and provider is CoreProvider:
+			result.values["max_tokens"] = payload.get("max_tokens", context_values.max_output_tokens)
+			var output_limit: int = context_values.max_output_tokens
+			if output_limit < maximum:
+				sources["max_tokens"] = "model"
 		var notice: String = str(result.notice)
 		if not notice.is_empty():
 			var cleaned: Dictionary = result.model_options
@@ -251,9 +347,20 @@ static func save_model(provider: BaseProvider, raw: Variant) -> Dictionary:
 	var offering := _offering(provider)
 	if not offering.success:
 		return failure(offering.error_code, offering.error_message)
-	var normalized := normalize(offering.entry.generation_options, raw, false, true)
+	if not raw is Dictionary:
+		return failure("invalid_generation_options", "Generation options must be an object")
+	var layer: Dictionary = raw
+	var entry: Dictionary = offering.entry
+	var maximum := _maximum_output(provider, entry)
+	var context := _context_layer(layer, maximum, entry)
+	if not context.success:
+		return context
+	var normalized := normalize(offering.entry.generation_options, _engine_model(layer, maximum), false, true)
 	if not normalized.success:
 		return normalized
+	var values: Dictionary = normalized.values
+	var explicit_context: Dictionary = context.explicit
+	values.merge(explicit_context, true)
 	var key := provider.get_model_settings_key()
 	var config: ConfigFile = SingletonObject.config_file
 	var updated := ConfigFile.new()
@@ -261,13 +368,13 @@ static func save_model(provider: BaseProvider, raw: Variant) -> Dictionary:
 	if error != OK:
 		return failure("persistence_error", "Could not read model settings")
 	var modern: Dictionary = updated.get_value("Models", MODEL_SECTION, {}).duplicate(true)
-	modern[key] = normalized.values
+	modern[key] = values
 	updated.set_value("Models", MODEL_SECTION, modern)
 	error = updated.save(SingletonObject._config_file_name)
 	if error != OK:
 		return failure("persistence_error", "Could not save model settings: %s" % error_string(error))
 	config.set_value("Models", MODEL_SECTION, modern)
-	return {"success": true, "values": normalized.values}
+	return {"success": true, "values": values}
 
 
 static func request_from_history(history: ChatHistory, through_item: ChatHistoryItem = null) -> Dictionary:
@@ -329,6 +436,11 @@ static func public_request(provider: BaseProvider, raw: Variant) -> Dictionary:
 
 
 static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
+	if raw is Dictionary:
+		var layer: Dictionary = raw
+		for key: String in ModelContextOptions.KEYS:
+			if layer.has(key):
+				return failure("model_only_generation_option", "Context settings are saved per model")
 	if has_native_profile(history.provider):
 		return failure("model_only_generation_option", "Generation preferences for this model are saved per model")
 	if not history.provider is CoreProvider:

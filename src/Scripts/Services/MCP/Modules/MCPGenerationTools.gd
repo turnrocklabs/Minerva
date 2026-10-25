@@ -18,7 +18,7 @@ func register_tools() -> void:
 	properties = properties.duplicate(true)
 	properties.erase("request_options")
 	properties["scope"] = {"type": "string", "enum": ["model", "chat"], "description": "Layer to replace; native-profile models use model scope, including with chat_id. Other Core models default to chat with chat_id, otherwise model"}
-	properties["options"] = {"type": "object", "description": "Replace the explicit layer. Empty {} clears to inherited values. Canonical keys: temperature, top_p, top_k, min_p, presence_penalty, frequency_penalty, repetition_penalty, seed, max_tokens, num_ctx, num_gpu, reasoning_effort, enable_thinking. Only advertised names/values are accepted; native aliases may be nested under options. Native-profile settings and reasoning preferences are per model."}
+	properties["options"] = {"type": "object", "description": "Replace the explicit layer. Empty {} clears to inherited values. Model-only Context keys: context_window, auto_compact_at, max_output_tokens (when a maximum is published). Context budgets stay local; only a lowered output limit is sent. Other canonical keys: temperature, top_p, top_k, min_p, presence_penalty, frequency_penalty, repetition_penalty, seed, max_tokens, num_ctx, num_gpu, reasoning_effort, enable_thinking. Only advertised names/values are accepted; native aliases may be nested under options."}
 	server._register_tool("minerva_set_generation_options",
 		"Persist Core generation overrides or API model reasoning preferences. Only advertised options are accepted; zero is preserved. Use minerva_get_generation_options first. This replaces the layer, so include values you want to keep.",
 		{"type": "object", "properties": properties, "required": ["options"]}, "models")
@@ -76,6 +76,19 @@ func _handle_options(tool_name: String, args: Dictionary, provider: BaseProvider
 	if not resolved.success:
 		return {"success": true, "model_spec": ModelResolver.spec_for(provider), "schema": GenerationOptions.schema_for(provider),
 			"model_options": GenerationOptions.saved_for(provider), "chat_options": chat.duplicate(true), "effective_error": resolved}
-	return {"success": true, "model_spec": ModelResolver.spec_for(provider), "schema": resolved.schema,
+	var schema: Dictionary = resolved.schema
+	schema = schema.duplicate(true)
+	var context_schema: Dictionary = resolved.context_schema
+	schema.merge(context_schema, true)
+	var effective: Dictionary = resolved.values
+	effective = effective.duplicate(true)
+	var context: Dictionary = resolved.context
+	effective.merge(context, true)
+	var sources: Dictionary = resolved.sources
+	sources = sources.duplicate(true)
+	var model_options: Dictionary = resolved.model_options
+	for key: String in context:
+		sources[key] = "model" if model_options.has(key) else "default"
+	return {"success": true, "model_spec": ModelResolver.spec_for(provider), "schema": schema,
 		"model_options": GenerationOptions.saved_for(provider), "chat_options": chat.duplicate(true),
-		"effective_options": resolved.values, "sources": resolved.sources}
+		"effective_options": effective, "sources": sources}

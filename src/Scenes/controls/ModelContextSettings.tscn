@@ -1,0 +1,78 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/ModelContextSettings.gd" id="1_context"]
+
+[node name="ModelContextSettings" type="VBoxContainer"]
+theme_override_constants/separation = 8
+script = ExtResource("1_context")
+
+[node name="Separator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 2
+text = "Context"
+
+[node name="Window" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Window"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Context window"
+tooltip_text = "Minerva's conversation budget. This does not allocate model memory."
+
+[node name="Value" type="SpinBox" parent="Window"]
+layout_mode = 2
+min_value = 2.0
+max_value = 1000000.0
+value = 1000000.0
+
+[node name="Reset" type="Button" parent="Window"]
+layout_mode = 2
+text = "Reset"
+
+[node name="Compact" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Compact"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Auto-compact at"
+tooltip_text = "Automatically summarize earlier messages when the input estimate reaches this many tokens."
+
+[node name="Value" type="SpinBox" parent="Compact"]
+layout_mode = 2
+min_value = 1.0
+max_value = 999999.0
+value = 200000.0
+
+[node name="Reset" type="Button" parent="Compact"]
+layout_mode = 2
+text = "Reset"
+
+[node name="Output" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Output"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Max output tokens (per turn)"
+tooltip_text = "The model's published maximum is the default. Lower it to reserve less space for each reply."
+
+[node name="Value" type="SpinBox" parent="Output"]
+layout_mode = 2
+min_value = 1.0
+max_value = 1000000.0
+
+[node name="Reset" type="Button" parent="Output"]
+layout_mode = 2
+text = "Reset"
+
+[node name="Error" type="Label" parent="."]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Clear" type="Button" parent="."]
+layout_mode = 2
+text = "Reset Context"
