@@ -175,6 +175,13 @@ icon_24 = ExtResource("5_nnnyr")
 icon_48 = ExtResource("7_uuhs5")
 icon_68 = ExtResource("8_ppedq")
 
+[node name="PreviewButton" type="Button" parent="v/p/h/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "Preview this HTML in the embedded browser"
+text = "Preview"
+
 [node name="CopyButton" type="Button" parent="v/p/h/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2

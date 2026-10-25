@@ -16,6 +16,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_deactivate_skill",
 		"minerva_update_skill_instructions",
 		"minerva_speak",
+		"minerva_speak_to_file",
 		"minerva_speech_log",
 		"minerva_list_voices",
 		"minerva_list_audio_devices",
@@ -196,6 +197,15 @@ func register_tools() -> void:
 		}
 	, "chat")
 
+	server._register_tool("minerva_speak_to_file",
+		"Synthesize speech to a persistent WAV file without playing it. Returns an absolute path. The default is user://speech; an external directory must already be approved in the calling chat's AllowedDirectories.",
+		{"type": "object", "properties": {
+			"text": {"type": "string", "description": "Text to synthesize"},
+			"voice_id": {"type": "string", "description": "Voice ID (default: voice preferences)"},
+			"backend": {"type": "string", "description": "TTS backend (default: voice preferences)"},
+			"directory": {"type": "string", "description": "user:// folder or a previously approved write folder"}
+		}, "required": ["text"]}, "chat")
+
 	server._register_tool("minerva_list_voices",
 		"List available TTS voices from the voice-service. Use this to discover voice IDs for minerva_speak. Optionally filter by backend.",
 		{
@@ -226,6 +236,13 @@ func handle_with_context(tool_name: String, arguments: Dictionary, context: Exec
 		"minerva_speech_log":
 			return SingletonObject.speech_delivery.handle(arguments) if SingletonObject.speech_delivery != null else VoiceServiceClient.failure("speech_log_unavailable", "Speech log is unavailable.")
 		"minerva_speak": return await _speak(arguments)
+		"minerva_speak_to_file":
+			var approved: Array[String] = ["user://"]
+			var history: Variant = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
+			if history is ServiceHistory:
+				approved.append_array(history.AllowedDirectories)
+			return await _speak_to_file(arguments, SingletonObject.get_voice_config(),
+				SingletonObject.get_voice_client(), approved, context)
 		"minerva_list_voices": return await _list_voices(arguments)
 		"minerva_list_audio_devices":
 			var devices: PluginAudioDevices = SingletonObject.plugin_audio_devices
@@ -882,18 +899,25 @@ func _skill_update_instructions(arguments: Dictionary) -> Dictionary:
 
 #region Voice Handlers
 
-func _speak(arguments: Dictionary) -> Dictionary:
-	var text: String = arguments.get("text", "")
-	if text.is_empty():
-		return MCPToolUtils.error("text is required")
-
-	var cfg := SingletonObject.get_voice_config()
+func _speech_voice(arguments: Dictionary, cfg: VoiceConfig) -> Dictionary:
 	var voice_id: String = arguments.get("voice_id", "")
 	if voice_id.is_empty():
 		voice_id = cfg.voice_name if not cfg.voice_name.is_empty() else cfg.voice_id
 	var backend: String = arguments.get("backend", "")
 	if backend.is_empty():
 		backend = cfg.tts_backend
+	return {"voice_id": voice_id, "backend": backend}
+
+
+func _speak(arguments: Dictionary) -> Dictionary:
+	var text: String = arguments.get("text", "")
+	if text.is_empty():
+		return MCPToolUtils.error("text is required")
+
+	var cfg := SingletonObject.get_voice_config()
+	var selected: Dictionary = _speech_voice(arguments, cfg)
+	var voice_id: String = selected.voice_id
+	var backend: String = selected.backend
 
 	var chats: ChatPane = SingletonObject.Chats
 	if not is_instance_valid(chats):
@@ -931,6 +955,74 @@ func _speak(arguments: Dictionary) -> Dictionary:
 		return outcome
 	outcome.merge({"message": "Speech delivery: " + str(outcome.get("delivery", "speaking")), "text_length": text.length(), "voice_id": voice_id, "backend": backend})
 	return outcome
+
+
+func _speech_directory(directory: String, approved: Array[String]) -> Dictionary:
+	var target: Dictionary = PathResolver.resolve_canonical(directory)
+	if not target.ok:
+		return VoiceServiceClient.failure("invalid_directory", str(target.error))
+	var roots: Array[String] = []
+	for root: String in approved:
+		var resolved: Dictionary = PathResolver.resolve_canonical(root)
+		if resolved.ok:
+			roots.append(str(resolved.path))
+	if not CapabilityBroker.is_path_in_scope(str(target.path), roots):
+		return VoiceServiceClient.failure("directory_not_allowed", "Choose user:// or a folder already approved for writes in this chat.")
+	return {"success": true, "path": str(target.path)}
+
+
+func _speak_to_file(arguments: Dictionary, cfg: VoiceConfig, client: VoiceServiceClient,
+		approved: Array[String], context: ExecutionContext) -> Dictionary:
+	if not arguments.get("text") is String or arguments["text"].is_empty():
+		return VoiceServiceClient.failure("invalid_request", "text is required")
+	for name: String in ["voice_id", "backend", "directory"]:
+		if arguments.has(name) and not arguments[name] is String:
+			return VoiceServiceClient.failure("invalid_request", "%s must be a string" % name)
+	var directory: String = arguments.get("directory", "user://speech")
+	var permitted: Dictionary = _speech_directory(directory, approved)
+	if not permitted.success:
+		return permitted # No synthesis or directory/file creation on refusal.
+	var selected: Dictionary = _speech_voice(arguments, cfg)
+	var synthesized: Dictionary = await client.synthesize_result(arguments["text"], selected.voice_id, selected.backend)
+	if context.is_stopped():
+		return VoiceServiceClient.failure("cancelled", "Speech file request cancelled.")
+	if not synthesized.success:
+		return synthesized
+	var audio: PackedByteArray = synthesized.audio
+	var stream: AudioStreamWAV = VoiceServiceClient.decode_audio(audio)
+	if stream == null:
+		return VoiceServiceClient.failure("invalid_audio", "Synthesis audio could not be decoded.")
+	# Re-resolve after the network await so a changed link cannot reuse an old check.
+	permitted = _speech_directory(directory, approved)
+	if not permitted.success:
+		return permitted
+	var destination: String = str(permitted.path)
+	if DirAccess.make_dir_recursive_absolute(destination) != OK:
+		return VoiceServiceClient.failure("file_write_failed", "Speech directory could not be created.")
+	var now: Dictionary = Time.get_datetime_dict_from_system()
+	var stamp: String = "%04d%02d%02d-%02d%02d%02d" % [now.year, now.month, now.day, now.hour, now.minute, now.second]
+	var path: String = ProjectSettings.globalize_path(destination.path_join("%s-%s.wav" % [stamp, UUIDGen.v7().right(12)]))
+	if FileAccess.file_exists(path):
+		return VoiceServiceClient.failure("file_write_failed", "Speech filename already exists; retry the call.")
+	if audio.slice(0, 4).get_string_from_ascii() == "RIFF":
+		var output: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+		if output == null:
+			return VoiceServiceClient.failure("file_write_failed", "Speech WAV could not be opened for writing.")
+		output.store_buffer(audio)
+		output.flush()
+		var error: Error = output.get_error()
+		output.close()
+		if error != OK:
+			return VoiceServiceClient.failure("file_write_failed", "Speech WAV could not be written.")
+	elif stream.save_to_wav(path) != OK:
+		return VoiceServiceClient.failure("file_write_failed", "Speech PCM could not be saved as WAV.")
+	var written: FileAccess = FileAccess.open(path, FileAccess.READ)
+	if written == null:
+		return VoiceServiceClient.failure("file_write_failed", "Speech WAV size could not be read.")
+	var bytes: int = written.get_length()
+	written.close()
+	return {"success": true, "path": path, "bytes": bytes, "duration_s": stream.get_length(),
+		"voice_id": selected.voice_id, "backend": selected.backend}
 
 
 func _list_voices(arguments: Dictionary) -> Dictionary:
