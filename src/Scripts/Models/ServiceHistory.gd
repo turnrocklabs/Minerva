@@ -71,18 +71,9 @@ var AgenticSystemPrompt: String = "":
 var AgenticSystemPromptEnabled: bool = true:
 	set(value): SingletonObject.call_deferred("save_state", false); AgenticSystemPromptEnabled = value
 
-## Agent context management settings (0 = use defaults from ChatPane)
+## Tool result truncation (0 = use the default from ChatPane).
 var AgentMaxToolResultLength: int = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentMaxToolResultLength = value
-
-var AgentContextWarningThreshold: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); AgentContextWarningThreshold = value
-
-var AgentContextHardLimit: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); AgentContextHardLimit = value
-
-var AgentSummarizeThreshold: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); AgentSummarizeThreshold = value
 
 ## Whether agent mode is enabled for this chat
 var AgentModeEnabled: bool = false:
@@ -246,9 +237,6 @@ static var SERIALIZER_FIELDS = [
 	"AgenticSystemPrompt",
 	"AgenticSystemPromptEnabled",
 	"AgentMaxToolResultLength",
-	"AgentContextWarningThreshold",
-	"AgentContextHardLimit",
-	"AgentSummarizeThreshold",
 	"AgentModeEnabled",
 	"ReasoningSummary",
 	"IsAgentChat",
@@ -425,9 +413,6 @@ func Serialize() -> Dictionary:
 		"AgenticSystemPrompt": AgenticSystemPrompt,
 		"AgenticSystemPromptEnabled": AgenticSystemPromptEnabled,
 		"AgentMaxToolResultLength": AgentMaxToolResultLength,
-		"AgentContextWarningThreshold": AgentContextWarningThreshold,
-		"AgentContextHardLimit": AgentContextHardLimit,
-		"AgentSummarizeThreshold": AgentSummarizeThreshold,
 		"AgentModeEnabled": AgentModeEnabled,
 		"ReasoningSummary": ReasoningSummary,
 		"IsAgentChat": IsAgentChat,
@@ -548,12 +533,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgenticSystemPromptEnabled = data.get("AgenticSystemPromptEnabled", true)
 	if data.has("AgentMaxToolResultLength"):
 		history.AgentMaxToolResultLength = int(data.get("AgentMaxToolResultLength", 0))
-	if data.has("AgentContextWarningThreshold"):
-		history.AgentContextWarningThreshold = int(data.get("AgentContextWarningThreshold", 0))
-	if data.has("AgentContextHardLimit"):
-		history.AgentContextHardLimit = int(data.get("AgentContextHardLimit", 0))
-	if data.has("AgentSummarizeThreshold"):
-		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
+	# Retired per-chat context thresholds are intentionally ignored on load.
 	if data.has("AgentModeEnabled"):
 		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
 	# Retired per-chat ReasoningEffort is intentionally ignored (owner D4).

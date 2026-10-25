@@ -81,11 +81,8 @@ func load_current_chat_settings() -> void:
 		%AllowedDirsTextEdit.text = ""
 		%AgenticSystemPromptTextEdit.text = ""
 		%AgenticSystemPromptEnabledCheckButton.button_pressed = true
-		# Context limits (0 = use defaults)
+		# Tool result truncation (0 = use default)
 		%MaxToolResultSpinBox.value = 0
-		%ContextWarningSpinBox.value = 0
-		%ContextHardLimitSpinBox.value = 0
-		%SummarizeThresholdSpinBox.value = 0
 
 		# Image generation settings (global, not per-chat)
 		%MaxImageIterationsSpinBox.value = SingletonObject.max_image_iterations
@@ -143,11 +140,8 @@ func load_current_chat_settings() -> void:
 		%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
 	%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
-	# Load context limit settings
+	# Load tool result truncation
 	%MaxToolResultSpinBox.value = current_chat_tab_ref.AgentMaxToolResultLength
-	%ContextWarningSpinBox.value = current_chat_tab_ref.AgentContextWarningThreshold
-	%ContextHardLimitSpinBox.value = current_chat_tab_ref.AgentContextHardLimit
-	%SummarizeThresholdSpinBox.value = current_chat_tab_ref.AgentSummarizeThreshold
 
 	# Populate tool checkboxes
 	populate_tool_checkboxes()
@@ -254,11 +248,8 @@ func _on_about_to_popup() -> void:
 			%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
 		%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
-		# Load context limit settings
+		# Load tool result truncation
 		%MaxToolResultSpinBox.value = current_chat_tab_ref.AgentMaxToolResultLength
-		%ContextWarningSpinBox.value = current_chat_tab_ref.AgentContextWarningThreshold
-		%ContextHardLimitSpinBox.value = current_chat_tab_ref.AgentContextHardLimit
-		%SummarizeThresholdSpinBox.value = current_chat_tab_ref.AgentSummarizeThreshold
 
 		# Image generation settings (global, not per-chat)
 		%MaxImageIterationsSpinBox.value = SingletonObject.max_image_iterations
@@ -854,30 +845,6 @@ func _on_max_tool_result_spin_box_value_changed(value: float) -> void:
 	if current_chat_tab_ref:
 		current_chat_tab_ref.AgentMaxToolResultLength = int(value)
 		print("AgentMaxToolResultLength: " + str(current_chat_tab_ref.AgentMaxToolResultLength))
-	else:
-		print("no chats are open right now")
-
-
-func _on_context_warning_spin_box_value_changed(value: float) -> void:
-	if current_chat_tab_ref:
-		current_chat_tab_ref.AgentContextWarningThreshold = int(value)
-		print("AgentContextWarningThreshold: " + str(current_chat_tab_ref.AgentContextWarningThreshold))
-	else:
-		print("no chats are open right now")
-
-
-func _on_context_hard_limit_spin_box_value_changed(value: float) -> void:
-	if current_chat_tab_ref:
-		current_chat_tab_ref.AgentContextHardLimit = int(value)
-		print("AgentContextHardLimit: " + str(current_chat_tab_ref.AgentContextHardLimit))
-	else:
-		print("no chats are open right now")
-
-
-func _on_summarize_threshold_spin_box_value_changed(value: float) -> void:
-	if current_chat_tab_ref:
-		current_chat_tab_ref.AgentSummarizeThreshold = int(value)
-		print("AgentSummarizeThreshold: " + str(current_chat_tab_ref.AgentSummarizeThreshold))
 	else:
 		print("no chats are open right now")
 

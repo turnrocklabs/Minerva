@@ -4473,7 +4473,6 @@ var _tmm_dehydrate_spin: SpinBox
 var _tmm_max_summary_spin: SpinBox
 var _tmm_drop_refs_spin: SpinBox
 var _tmm_max_tool_schema_spin: SpinBox
-var _tmm_context_budget_spin: SpinBox
 var _tmm_max_index_spin: SpinBox
 
 func _create_agent_context_tab() -> void:
@@ -4539,12 +4538,11 @@ func _create_agent_context_tab() -> void:
 	_tmm_max_summary_spin = _tmm_make_spin_row.call("Max summary length (chars)", 2000, 500, 20000, 100)
 	_tmm_drop_refs_spin = _tmm_make_spin_row.call("Drop refs after N rounds (-1=never)", -1, -1, 100, 1)
 	_tmm_max_tool_schema_spin = _tmm_make_spin_row.call("Max active tool schemas (0=unlimited)", 0, 0, 50, 1)
-	_tmm_context_budget_spin = _tmm_make_spin_row.call("Context budget tokens (0=unlimited)", 0, 0, 500000, 1000)
 	_tmm_max_index_spin = _tmm_make_spin_row.call("Max recovery index entries", 50, 10, 500, 10)
 
 	var _tmm_spins: Array[SpinBox] = [
 		_tmm_dehydrate_spin, _tmm_max_summary_spin, _tmm_drop_refs_spin,
-		_tmm_max_tool_schema_spin, _tmm_context_budget_spin, _tmm_max_index_spin
+		_tmm_max_tool_schema_spin, _tmm_max_index_spin
 	]
 	_tmm_enabled_check.toggled.connect(func(on: bool) -> void:
 		for sp in _tmm_spins:
@@ -4801,11 +4799,10 @@ func _load_agent_context_summary_preferences() -> void:
 		_tmm_max_summary_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") != null else 2000)
 		_tmm_drop_refs_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") if SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") != null else -1)
 		_tmm_max_tool_schema_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") != null else 0)
-		_tmm_context_budget_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") if SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") != null else 0)
 		_tmm_max_index_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") != null else 50)
 		var tmm_spins_load: Array[SpinBox] = [
 			_tmm_dehydrate_spin, _tmm_max_summary_spin, _tmm_drop_refs_spin,
-			_tmm_max_tool_schema_spin, _tmm_context_budget_spin, _tmm_max_index_spin
+			_tmm_max_tool_schema_spin, _tmm_max_index_spin
 		]
 		for sp in tmm_spins_load:
 			sp.editable = tmm_enabled
@@ -4862,7 +4859,6 @@ func _save_agent_context_summary_preferences() -> void:
 		SingletonObject.save_to_config_file("ToolMemoryManager", "max_floating_summary_chars", int(_tmm_max_summary_spin.value))
 		SingletonObject.save_to_config_file("ToolMemoryManager", "drop_refs_after_n_rounds", int(_tmm_drop_refs_spin.value))
 		SingletonObject.save_to_config_file("ToolMemoryManager", "max_tool_schema_count", int(_tmm_max_tool_schema_spin.value))
-		SingletonObject.save_to_config_file("ToolMemoryManager", "context_budget_tokens", int(_tmm_context_budget_spin.value))
 		SingletonObject.save_to_config_file("ToolMemoryManager", "max_index_entries", int(_tmm_max_index_spin.value))
 	if _agent_debug_log_edit:
 		SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "debug_log_path", _agent_debug_log_edit.text.strip_edges())
@@ -4887,7 +4883,6 @@ func get_agent_context_summary_config() -> Dictionary:
 			"max_floating_summary_chars": int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") != null else 2000),
 			"drop_refs_after_n_rounds": int(SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") if SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") != null else -1),
 			"max_tool_schema_count": int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") != null else 0),
-			"context_budget_tokens": int(SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") if SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") != null else 0),
 			"max_index_entries": int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") != null else 50),
 		},
 	}

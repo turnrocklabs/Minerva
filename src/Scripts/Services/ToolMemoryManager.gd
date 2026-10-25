@@ -15,7 +15,9 @@ var dehydrate_after_n_rounds: int = 1
 var max_floating_summary_chars: int = 2000
 var drop_refs_after_n_rounds: int = -1
 var max_tool_schema_count: int = 0
-var context_budget_tokens: int = 0
+# Retired; kept only so legacy fixtures parse. Remove with the obsolete fixture.
+var context_budget_tokens: int:
+	get: return 0
 var max_index_entries: int = 50
 
 # --- Summary provider ---
@@ -175,7 +177,6 @@ func apply_config(config: Dictionary) -> void:
 	max_floating_summary_chars = config.get("max_floating_summary_chars", 2000)
 	drop_refs_after_n_rounds = config.get("drop_refs_after_n_rounds", -1)
 	max_tool_schema_count = config.get("max_tool_schema_count", 0)
-	context_budget_tokens = config.get("context_budget_tokens", 0)
 	max_index_entries = config.get("max_index_entries", 50)
 	summary_prompt = config.get("summary_prompt", "")
 	if config.has("summary_provider_factory"):
