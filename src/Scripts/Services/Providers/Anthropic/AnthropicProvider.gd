@@ -100,6 +100,10 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 # https://docs.anthropic.com/en/api/messages
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}):
+	var reasoning_options := model_reasoning_params(additional_params)
+	if not reasoning_options.success:
+		return generation_options_failure(reasoning_options)
+	additional_params = reasoning_options.values
 	var system_payload: Variant = system_prompt
 	if not system_prompt.is_empty():
 		system_payload = [{
@@ -447,6 +451,14 @@ func uses_reasoning_effort_picker() -> bool:
 	return true
 
 
+func reasoning_effort_levels() -> Array:
+	return ["off", "low", "medium", "high", "max"] if max_tokens > 1024 else ["off"]
+
+
+func default_reasoning_effort() -> String:
+	return "off"
+
+
 ## Map the picker's effort onto Anthropic extended thinking. budget_tokens must
 ## stay below max_tokens, so cap conservatively.
 func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
@@ -458,8 +470,8 @@ func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -
 		"low": budget = 2048
 		"medium": budget = 8192
 		"high": budget = 16384
-	if budget >= max_tokens:
-		budget = maxi(1024, int(max_tokens / 2.0))
+		"max": budget = max_tokens - 1
+	budget = mini(budget, max_tokens - 1)
 	params["thinking"] = {"type": "enabled", "budget_tokens": budget}
 
 

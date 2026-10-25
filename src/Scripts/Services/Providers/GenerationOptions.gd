@@ -107,13 +107,20 @@ static func serialize(values: Dictionary) -> Dictionary:
 	return payload
 
 
-static func schema_for(provider: CoreProvider) -> Dictionary:
-	var offering := CoreModelCatalog.resolve(provider.get_model_spec())
+static func _offering(provider: BaseProvider) -> Dictionary:
+	if provider is CoreProvider:
+		var core_provider := provider as CoreProvider
+		return CoreModelCatalog.resolve(core_provider.get_model_spec())
+	return {"success": true, "entry": {"generation_options": provider.reasoning_schema()}}
+
+
+static func schema_for(provider: BaseProvider) -> Dictionary:
+	var offering := _offering(provider)
 	return offering.entry.generation_options if offering.success else {}
 
 
 ## A modern map (including {}) is authoritative; old maps seed the first edit only.
-static func saved_for(provider: CoreProvider) -> Dictionary:
+static func saved_for(provider: BaseProvider) -> Dictionary:
 	var key := provider.get_model_settings_key()
 	var config: ConfigFile = SingletonObject.config_file
 	var modern: Dictionary = config.get_value("Models", MODEL_SECTION, {})
@@ -130,8 +137,8 @@ static func saved_for(provider: CoreProvider) -> Dictionary:
 	return legacy
 
 
-static func for_provider(provider: CoreProvider, request: Dictionary = {}) -> Dictionary:
-	var offering := CoreModelCatalog.resolve(provider.get_model_spec())
+static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Dictionary:
+	var offering := _offering(provider)
 	if not offering.success:
 		return failure(offering.error_code, offering.error_message)
 	var entry: Dictionary = offering.entry
@@ -145,8 +152,8 @@ static func for_provider(provider: CoreProvider, request: Dictionary = {}) -> Di
 
 
 ## Persist the replacement before applying it in memory. Empty values mean inherit.
-static func save_model(provider: CoreProvider, raw: Variant) -> Dictionary:
-	var offering := CoreModelCatalog.resolve(provider.get_model_spec())
+static func save_model(provider: BaseProvider, raw: Variant) -> Dictionary:
+	var offering := _offering(provider)
 	if not offering.success:
 		return failure(offering.error_code, offering.error_message)
 	var normalized := normalize(offering.entry.generation_options, raw)
@@ -210,11 +217,12 @@ static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
 	var checked := public_request(history.provider, raw)
 	if not checked.success:
 		return checked
-	if checked.values.has("reasoning_effort") or checked.values.has("enable_thinking"):
+	var values: Dictionary = checked.values
+	if values.has("reasoning_effort") or values.has("enable_thinking"):
 		return failure("model_only_generation_option", "Reasoning preferences are saved per model")
-	if checked.values.has("temperature"):
-		history.Temperature = checked.values.temperature
-	history.GenerationOverrides = checked.values.duplicate(true)
+	if values.has("temperature"):
+		history.Temperature = values.temperature
+	history.GenerationOverrides = values.duplicate(true)
 	return checked
 
 

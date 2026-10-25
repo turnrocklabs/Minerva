@@ -191,14 +191,54 @@ func extract_reasoning(_data: Variant, _bot_response: BotResponse) -> void:
 func apply_reasoning_options(_params: Dictionary, _level: String, _enabled: bool) -> void:
 	pass
 
-## Whether reasoning effort is chosen via the chat settings picker.
+## Whether this model exposes a reasoning preference.
 func uses_reasoning_effort_picker() -> bool:
 	return false
 
-## Coarse effort levels the picker offers; apply_reasoning_options maps them to
-## native request params. Default: low/medium/high.
+## Native level names, including an off value only when the provider supports it.
 func reasoning_effort_levels() -> Array:
-	return ["low", "medium", "high"]
+	return []
+
+
+## Empty means the remote provider owns an unspecified default.
+func default_reasoning_effort() -> String:
+	return ""
+
+
+func reasoning_schema() -> Dictionary:
+	if not uses_reasoning_effort_picker():
+		return {}
+	var levels := ReasoningSelection.ordered_levels(reasoning_effort_levels())
+	if levels.is_empty():
+		return {}
+	var rule := {"type": "string", "enum": levels}
+	var default_effort := default_reasoning_effort()
+	if default_effort in levels:
+		rule["default"] = default_effort
+	return {"reasoning_effort": rule}
+
+
+## Resolve the shared model layer before provider-native request construction.
+## Explicit request parameters retain their existing higher precedence.
+func model_reasoning_params(request: Dictionary) -> Dictionary:
+	var resolved := GenerationOptions.for_provider(self)
+	if not resolved.success:
+		return resolved
+	var params: Dictionary = {}
+	var values: Dictionary = resolved.values
+	if values.has("reasoning_effort"):
+		var effort: String = str(values.reasoning_effort)
+		apply_reasoning_options(params, effort, effort not in ["off", "none"])
+	params.merge(request, true)
+	return {"success": true, "values": params}
+
+
+func generation_options_failure(failure: Dictionary) -> BotResponse:
+	var response := BotResponse.new()
+	response.provider = self
+	response.error = str(failure.error_message)
+	response.set_meta("error_code", str(failure.error_code))
+	return response
 
 #endregion
 

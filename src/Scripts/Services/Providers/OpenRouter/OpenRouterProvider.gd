@@ -124,6 +124,10 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	var reasoning_options := model_reasoning_params(additional_params)
+	if not reasoning_options.success:
+		return generation_options_failure(reasoning_options)
+	additional_params = reasoning_options.values
 	# Build messages array - prepend system prompt if set
 	var messages: Array = []
 	if not system_prompt.is_empty() and supports_system_prompt:
@@ -390,6 +394,10 @@ func extract_reasoning(data: Variant, bot_response: BotResponse) -> void:
 ## reasoning-capable in their catalog config.
 func uses_reasoning_effort_picker() -> bool:
 	return is_reasoning_model
+
+
+func reasoning_effort_levels() -> Array:
+	return ["off", "low", "medium", "high"] if is_reasoning_model else []
 
 
 ## Map the picker's effort onto OpenRouter's unified `reasoning` request field.

@@ -1,6 +1,6 @@
 class_name ReasoningSelection
 extends RefCounted
-## Validate a saved chat override against the currently selected model.
+## Model reasoning choices and presentation order; no storage or scene access.
 
 const EFFORT_ORDER: Dictionary[String, int] = {"none": 0, "off": 0, "minimal": 1,
 	"low": 2, "medium": 3, "high": 4, "xhigh": 5, "max": 6}
@@ -26,3 +26,18 @@ static func validate(effort: String, levels: Array) -> String:
 
 static func reset_message(effort: String, model: String) -> String:
 	return "Reasoning effort '%s' is unavailable for %s; using Default." % [effort, model]
+
+
+## Only saved preferences reset on capability changes. Requests still refuse.
+static func reset_saved(schema: Dictionary, saved: Dictionary, model: String) -> Dictionary:
+	var values := saved.duplicate(true)
+	var notice := ""
+	for name: String in ["reasoning_effort", "enable_thinking"]:
+		if not values.has(name):
+			continue
+		var rule: Dictionary = schema.get(name, {})
+		if rule.is_empty() or not CoreModelDescriptor.value_matches(values[name], rule):
+			if notice.is_empty():
+				notice = reset_message(str(values[name]), model)
+			values.erase(name)
+	return {"values": values, "notice": notice}

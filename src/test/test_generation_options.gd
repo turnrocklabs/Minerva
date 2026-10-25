@@ -278,6 +278,7 @@ func _check_native_reasoning(gen: GDScript, core: Node, settings: Node) -> void:
 	check("reasoning preferences cannot become chat overrides", not gen.set_chat(history, {"reasoning_effort": "high"}).success and history.GenerationOverrides.is_empty())
 	var classic: Dictionary = provider.build_chat_payload([{"role": "user", "content": "fixture"}])
 	check("classic native body carries flat high effort", classic.success and classic.payload.get("reasoning_effort") == "high" and not classic.payload.has("chat_template_kwargs"))
+	check("saved Core model entry keeps exact serialized payload", classic.success and JSON.stringify(classic.payload) == '{"enable_thinking":true,"messages":[{"content":"fixture","role":"user"}],"reasoning_effort":"high"}')
 	if classic.success:
 		var input: Dictionary = provider._job_input(classic.payload, provider.model_name)
 		check("chat/v1 input carries the same flat high effort", input.get("reasoning_effort") == "high" and input.get("model") == "GLM-5.3-Flash" and input.get("stream") == false)
