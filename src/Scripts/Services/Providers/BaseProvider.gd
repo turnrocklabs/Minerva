@@ -219,17 +219,43 @@ func reasoning_schema() -> Dictionary:
 
 
 ## Resolve the shared model layer before provider-native request construction.
-## Explicit request parameters retain their existing higher precedence.
+## Only explicit, destination-supported reasoning choices reach native formatters.
+signal generation_options_notice(message: String)
+
+
+func notify_generation_options(message: String) -> void:
+	generation_options_notice.emit(message)
+
+
 func model_reasoning_params(request: Dictionary) -> Dictionary:
-	var resolved := GenerationOptions.for_provider(self)
+	request = GenerationOptions.reasoning_request(self, request)
+	var canonical: Dictionary = {}
+	for option_name: String in GenerationOptions.REASONING_KEYS:
+		if request.has(option_name):
+			canonical[option_name] = request[option_name]
+	var resolved := GenerationOptions.for_provider(self, canonical)
 	if not resolved.success:
 		return resolved
-	var params: Dictionary = {}
-	var values: Dictionary = resolved.values
+	var params: Dictionary = request.duplicate(true)
+	# Preserved provider-native controls belong to the old model too.
+	for field: String in ["reasoning_effort", "enable_thinking", "reasoning", "thinking"]:
+		params.erase(field)
+	if params.get("generationConfig") is Dictionary:
+		var request_config: Dictionary = params.generationConfig
+		request_config = request_config.duplicate(true)
+		request_config.erase("thinkingConfig")
+		params.generationConfig = request_config
+	var values: Dictionary = resolved.payload
 	if values.has("reasoning_effort"):
 		var effort: String = str(values.reasoning_effort)
-		apply_reasoning_options(params, effort, effort not in ["off", "none"])
-	params.merge(request, true)
+		var native: Dictionary = {}
+		apply_reasoning_options(native, effort, effort not in ["off", "none"])
+		if native.has("generationConfig") and params.get("generationConfig") is Dictionary:
+			var merged_config: Dictionary = params.generationConfig
+			var reasoning_config: Dictionary = native.generationConfig
+			merged_config.merge(reasoning_config, true)
+			native.generationConfig = merged_config
+		params.merge(native, true)
 	return {"success": true, "values": params}
 
 

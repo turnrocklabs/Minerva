@@ -4,6 +4,7 @@ extends RefCounted
 
 const CHAT_LAYER := "_chat_generation_options"
 const MODEL_SECTION := "GenerationOptions"
+const REASONING_KEYS: Array[String] = ["reasoning_effort", "enable_thinking"]
 const NATIVE := {"temperature": "temperature", "num_predict": "max_tokens", "num_ctx": "num_ctx", "num_gpu": "num_gpu"}
 const PROTOCOL := ["messages", "tools", "tool_choice", "stream", "format", "response_format", "system"]
 
@@ -46,12 +47,16 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 	return {"success": true, "values": values}
 
 
-static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {}, request: Variant = {}) -> Dictionary:
+static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {}, request: Variant = {}, model: String = "this model") -> Dictionary:
 	var checked := CoreModelDescriptor.validate_options(schema)
 	var diagnostics: Array = checked.diagnostics
 	if not diagnostics.is_empty():
 		return failure("invalid_model_descriptor", "; ".join(diagnostics))
 	var options: Dictionary = checked.options
+	var reset := {"values": saved, "notice": ""}
+	if saved is Dictionary:
+		var saved_values: Dictionary = saved
+		reset = ReasoningSelection.reset_saved(options, saved_values, model)
 	var values: Dictionary = {}
 	var sources: Dictionary = {}
 	for name: String in options:
@@ -59,7 +64,7 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 		if rule.has("default"):
 			values[name] = rule.default
 			sources[name] = "default"
-	var layers := {"model": saved, "chat": chat, "request": request}
+	var layers := {"model": reset.values, "chat": chat, "request": request}
 	for layer in layers:
 		var normalized := normalize(options, layers[layer], layer == "request")
 		if not normalized.success:
@@ -67,12 +72,19 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 			normalized["error_message"] = "%s generation options: %s" % [layer.capitalize(), normalized.error_message]
 			return normalized
 		for name in normalized.values:
+			if name in REASONING_KEYS and sources.get(name) == "model":
+				continue
 			values[name] = normalized.values[name]
 			sources[name] = layer
 	var inactive := _check_inactive(options, values, sources)
 	if not inactive.success:
 		return inactive
-	return {"success": true, "values": values, "sources": sources, "schema": options, "payload": serialize(values)}
+	var explicit: Dictionary = values.duplicate(true)
+	for name: String in REASONING_KEYS:
+		if sources.get(name) == "default":
+			explicit.erase(name)
+	return {"success": true, "values": values, "sources": sources, "schema": options,
+		"payload": serialize(explicit), "notice": reset.notice, "model_options": reset.values}
 
 
 static func _check_inactive(schema: Dictionary, values: Dictionary, sources: Dictionary = {}) -> Dictionary:
@@ -143,8 +155,16 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 		return failure(offering.error_code, offering.error_message)
 	var entry: Dictionary = offering.entry
 	var schema: Dictionary = entry.generation_options
-	var result := resolve(schema, saved_for(provider), request.get(CHAT_LAYER, {}), request)
+	var result := resolve(schema, saved_for(provider), request.get(CHAT_LAYER, {}), request, provider.display_name)
 	if result.success:
+		var notice: String = str(result.notice)
+		if not notice.is_empty():
+			var cleaned: Dictionary = result.model_options
+			var persisted := save_model(provider, cleaned)
+			if not persisted.success:
+				return persisted
+			provider.notify_generation_options(notice)
+			push_warning(notice)
 		for name in PROTOCOL:
 			if request.has(name):
 				result.payload[name] = request[name]
@@ -188,6 +208,7 @@ static func request_from_history(history: ChatHistory, through_item: ChatHistory
 
 ## Preserve the existing non-Core sampling behavior at one shared call boundary.
 static func chat_params(history: ChatHistory, provider: BaseProvider, request: Dictionary = {}) -> Dictionary:
+	request = reasoning_request(provider, request)
 	var params: Dictionary = {}
 	if provider is CoreProvider:
 		params = request.duplicate(true)
@@ -199,21 +220,37 @@ static func chat_params(history: ChatHistory, provider: BaseProvider, request: D
 	return params
 
 
+## Replayed request intent is checked against its destination; model choices win.
+static func reasoning_request(provider: BaseProvider, request: Dictionary) -> Dictionary:
+	var filtered := request.duplicate(true)
+	var schema := schema_for(provider)
+	var saved := saved_for(provider)
+	for name: String in REASONING_KEYS:
+		if not filtered.has(name):
+			continue
+		var rule: Dictionary = schema.get(name, {})
+		if saved.has(name) or rule.is_empty() or not CoreModelDescriptor.value_matches(filtered[name], rule):
+			filtered.erase(name)
+	if filtered.get("enable_thinking") == false:
+		filtered.erase("reasoning_effort")
+	return filtered
+
+
 static func failure(code: String, message: String) -> Dictionary:
 	return {"success": false, "error_code": code, "error": message, "error_message": message}
 
 
 ## Public APIs accept generation options only, never private layers or protocol data.
 static func public_request(provider: BaseProvider, raw: Variant) -> Dictionary:
-	if not provider is CoreProvider:
-		return failure("unsupported_generation_options", "Structured generation options require a Core chat model")
-	var offering := CoreModelCatalog.resolve(provider.get_model_spec())
+	var offering := _offering(provider)
 	if not offering.success:
 		return failure(offering.error_code, offering.error_message)
 	return normalize(offering.entry.generation_options, raw)
 
 
 static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
+	if not history.provider is CoreProvider:
+		return failure("model_only_generation_option", "API reasoning preferences are saved per model")
 	var checked := public_request(history.provider, raw)
 	if not checked.success:
 		return checked

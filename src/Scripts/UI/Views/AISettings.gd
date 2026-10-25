@@ -1,3 +1,4 @@
+class_name AISettingsWindow
 extends PersistentWindow
 
 signal create_system_prompt_message(message)
@@ -28,6 +29,20 @@ enum GPT_params {
 
 var current_chat_tab_ref: ChatHistory = null
 
+
+func _bind_history(history: ChatHistory) -> void:
+	if current_chat_tab_ref != null and current_chat_tab_ref != history \
+			and current_chat_tab_ref.settings_binding_changed.is_connected(_on_binding_changed):
+		current_chat_tab_ref.settings_binding_changed.disconnect(_on_binding_changed)
+	current_chat_tab_ref = history
+	if history != null and not history.settings_binding_changed.is_connected(_on_binding_changed):
+		history.settings_binding_changed.connect(_on_binding_changed)
+
+
+func _on_binding_changed() -> void:
+	if visible:
+		load_current_chat_settings()
+
 ## Flag to prevent saving when programmatically setting text fields
 var _loading_values: bool = false
 # The agentic prompt box's own placeholder, while it shows why Docket's
@@ -43,8 +58,8 @@ func load_current_chat_settings() -> void:
 	%ToolAccessLabel.text = "Tool Access:"
 
 	if SingletonObject.ChatList.is_empty():
+		_bind_history(null)
 		# No active chats - show defaults and still populate tools
-		current_chat_tab_ref = null
 		%SystemPromptTextEdit.text = ""
 		%SystemPromptEnabledCheckButton.button_pressed = true
 
@@ -84,7 +99,7 @@ func load_current_chat_settings() -> void:
 		return
 
 	var current_tab: int = SingletonObject.Chats.current_tab
-	current_chat_tab_ref = SingletonObject.ChatList[current_tab]
+	_bind_history(SingletonObject.ChatList[current_tab])
 
 	# Load system prompt if used, otherwise clear it
 	if current_chat_tab_ref.HasUsedSystemPrompt:
@@ -192,7 +207,7 @@ func _on_about_to_popup() -> void:
 	_loading_values = true
 	if SingletonObject.ChatList.size() > 0:
 		var current_tab: int = SingletonObject.Chats.current_tab
-		current_chat_tab_ref = SingletonObject.ChatList[current_tab]
+		_bind_history(SingletonObject.ChatList[current_tab])
 		if current_chat_tab_ref.HasUsedSystemPrompt:
 			var chat_item = SingletonObject.Chats.get_first_chat_item()
 			%SystemPromptTextEdit.text = chat_item.Message
@@ -352,12 +367,13 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	_update_model_chat_settings_visibility(is_model_chat, provider)
 	_chat_generation_settings.visible = provider is CoreProvider and current_chat_tab_ref != null
 	_model_generation_settings.visible = provider is CoreProvider
+	# Shared resolution resets retired preferences before the numeric editors load.
+	_model_reasoning_settings.configure(provider)
 	if provider is CoreProvider:
 		var core_provider := provider as CoreProvider
 		if current_chat_tab_ref != null:
 			_chat_generation_settings.configure(core_provider, current_chat_tab_ref, 0, ["temperature", "max_tokens"])
 		_model_generation_settings.configure(core_provider, null, 1, ["num_ctx", "num_gpu"])
-	_model_reasoning_settings.configure(provider)
 
 	# Reasoning options follow the current model capabilities.
 	_update_reasoning_summary_visibility(provider)
@@ -859,5 +875,5 @@ func _on_max_image_iterations_spin_box_value_changed(value: float) -> void:
 
 
 func _on_close_requested() -> void:
-	current_chat_tab_ref = null
+	_bind_history(null)
 	_on_cancel_button_pressed()

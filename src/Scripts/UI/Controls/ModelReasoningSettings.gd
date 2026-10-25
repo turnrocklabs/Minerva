@@ -35,22 +35,11 @@ func configure(provider: BaseProvider) -> void:
 	_loading = true
 	_schema = GenerationOptions.schema_for(provider)
 	var resolved := GenerationOptions.for_provider(provider)
-	if not resolved.success and resolved.error_code not in ["invalid_generation_option", "unsupported_generation_option"]:
-		_show_unavailable(str(resolved.error_message))
-		return
-	var saved := GenerationOptions.saved_for(provider)
-	var reset := ReasoningSelection.reset_saved(_schema, saved, provider.display_name)
-	if not str(reset.notice).is_empty():
-		_notice = str(reset.notice)
-		var cleaned: Dictionary = reset.values
-		var persisted := GenerationOptions.save_model(provider, cleaned)
-		if not persisted.success:
-			_show_unavailable(str(persisted.error_message))
-			return
-		resolved = GenerationOptions.for_provider(provider)
 	if not resolved.success:
 		_show_unavailable(str(resolved.error_message))
 		return
+	if not str(resolved.notice).is_empty():
+		_notice = str(resolved.notice)
 	var rule: Dictionary = _schema.get("reasoning_effort", {})
 	var advertised_levels: Array = rule.get("enum", [])
 	levels = ReasoningSelection.ordered_levels(advertised_levels)
@@ -101,7 +90,7 @@ func _show_unavailable(message: String) -> void:
 func _label(effort: String) -> String:
 	if effort.is_empty():
 		return "Provider default"
-	var label := "Off" if effort in ["off", "none"] else effort
+	var label := "Off" if effort == "off" else "None" if effort == "none" else effort
 	return label + (" (default)" if effort == default_effort else "")
 
 
@@ -121,7 +110,7 @@ func _on_effort_changed(value: float) -> void:
 		saved["enable_thinking"] = false
 	else:
 		saved["reasoning_effort"] = effort
-		if _schema.has("enable_thinking"):
+		if _thinking_off:
 			saved["enable_thinking"] = true
 	var result := GenerationOptions.save_model(_provider, saved)
 	_notice = ""

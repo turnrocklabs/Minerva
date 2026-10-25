@@ -1,6 +1,8 @@
 class_name ServiceHistory
 extends RefCounted
 
+signal settings_binding_changed()
+
 # Don't reorder, only add new entries
 enum ServiceType {
 	NONE,
@@ -184,7 +186,10 @@ var ConfiguredSkills: Array[String] = []:
 ## terminal-backed plugin provider for its whole life — the provider chooser is
 ## locked and never auto-falls-back (recovery is W3's relaunch affordance).
 var PassthroughMode: bool = false:
-	set(value): SingletonObject.call_deferred("save_state", false); PassthroughMode = value
+	set(value):
+		SingletonObject.call_deferred("save_state", false)
+		PassthroughMode = value
+		settings_binding_changed.emit()
 
 ## Terminal id the passthrough provider is bound to (empty until launch wires it).
 var BoundTerminalId: String = "":
@@ -218,6 +223,7 @@ var provider: BaseProvider:
 		provider = value
 		if is_instance_valid(provider):
 			provider.owner_history_id = HistoryId
+		settings_binding_changed.emit()
 
 static var SERIALIZER_FIELDS = [
 	"HistoryId",

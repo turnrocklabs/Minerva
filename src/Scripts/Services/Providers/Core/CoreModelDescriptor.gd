@@ -38,15 +38,16 @@ static func describe(service: Service, action: Action) -> Dictionary:
 	var checked := validate_options(metadata.generation_options)
 	var options: Dictionary = checked.options
 	var diagnostics: Array = checked.diagnostics
+	result.valid = diagnostics.is_empty()
 	if service.client_id == "model-chat" and metadata.has("generation_settings"):
 		var native := reasoning_options(metadata.generation_settings)
 		var native_options: Dictionary = native.options
 		var native_diagnostics: Array = native.diagnostics
-		options.merge(native_options, true)
+		if native_diagnostics.is_empty():
+			options.merge(native_options, true)
 		diagnostics.append_array(native_diagnostics)
 	result.generation_options = options
 	result.diagnostics = diagnostics
-	result.valid = diagnostics.is_empty()
 	return result
 
 

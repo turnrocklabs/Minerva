@@ -28,7 +28,7 @@ static func reset_message(effort: String, model: String) -> String:
 	return "Reasoning effort '%s' is unavailable for %s; using Default." % [effort, model]
 
 
-## Only saved preferences reset on capability changes. Requests still refuse.
+## Saved preferences reset on capability changes; request intent is validated separately.
 static func reset_saved(schema: Dictionary, saved: Dictionary, model: String) -> Dictionary:
 	var values := saved.duplicate(true)
 	var notice := ""

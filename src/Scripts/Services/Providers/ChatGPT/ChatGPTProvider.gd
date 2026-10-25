@@ -17,7 +17,7 @@ var available_tools: Array[Dictionary] = []
 var tools_enabled: bool = false
 
 ## Catalog-discovered model options.
-var reasoning_effort: String = "medium"
+var reasoning_effort: String = ""
 var supported_reasoning_levels: Array = []
 var supports_reasoning_summaries: bool = true
 var default_reasoning_summary: String = "auto"
@@ -227,10 +227,9 @@ func generate_image(prompt: String, options: Dictionary = {}) -> BotResponse:
 
 func _build_reasoning_options() -> Dictionary:
 	var reasoning := {}
-	if not _is_reasoning_effort_supported(reasoning_effort):
-		reasoning_effort = _default_supported_reasoning_effort()
-	if not reasoning_effort.is_empty():
-		reasoning["effort"] = reasoning_effort
+	var effort := default_reasoning_effort()
+	if not effort.is_empty():
+		reasoning["effort"] = effort
 	# Request a human-readable reasoning summary whenever the model supports one
 	# and the chat hasn't turned it off. The raw chain-of-thought comes back
 	# encrypted (reasoning.encrypted_content); the summary is the only displayable
@@ -248,24 +247,6 @@ func _build_text_options() -> Dictionary:
 	if not support_verbosity or default_verbosity == null:
 		return {}
 	return {"verbosity": str(default_verbosity)}
-
-
-func _is_reasoning_effort_supported(effort: String) -> bool:
-	if effort.is_empty() or supported_reasoning_levels.is_empty():
-		return true
-	for preset in supported_reasoning_levels:
-		if preset is Dictionary and str(preset.get("effort", "")) == effort:
-			return true
-	return false
-
-
-func _default_supported_reasoning_effort() -> String:
-	if supported_reasoning_levels.is_empty():
-		return ""
-	for preset in supported_reasoning_levels:
-		if preset is Dictionary:
-			return str(preset.get("effort", ""))
-	return ""
 
 
 func _valid_reasoning_summary(summary: String) -> String:
@@ -295,7 +276,7 @@ func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -
 
 
 func default_reasoning_effort() -> String:
-	return reasoning_effort if reasoning_effort in reasoning_effort_levels() else _default_supported_reasoning_effort()
+	return reasoning_effort if reasoning_effort in reasoning_effort_levels() else ""
 
 
 ## Parse the SSE response from the ChatGPT backend
