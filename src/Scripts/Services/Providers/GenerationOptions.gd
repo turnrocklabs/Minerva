@@ -9,7 +9,7 @@ const NATIVE := {"temperature": "temperature", "num_predict": "max_tokens", "num
 const PROTOCOL := ["messages", "tools", "tool_choice", "stream", "format", "response_format", "system"]
 
 
-static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = false) -> Dictionary:
+static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = false, allow_inactive: bool = false) -> Dictionary:
 	if not raw is Dictionary:
 		return failure("invalid_generation_options", "Generation options must be an object")
 	var values: Dictionary = {}
@@ -43,9 +43,10 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 			values[name] = int(value)
 		elif rule.type == "number":
 			values[name] = float(value)
-	var inactive := _check_inactive(schema, values)
-	if not inactive.success:
-		return inactive
+	if not allow_inactive:
+		var inactive := _check_inactive(schema, values)
+		if not inactive.success:
+			return inactive
 	return {"success": true, "values": values}
 
 
@@ -58,17 +59,29 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 	var options: Dictionary = checked.options
 	var reset := {"values": saved, "notice": ""}
 	if saved is Dictionary:
-		var saved_values: Dictionary = saved
+		var saved_source: Dictionary = saved
+		var saved_values: Dictionary = saved_source.duplicate(true)
+		# Old saved layers may use the supported native alias container. Fold
+		# it before testing capability changes, preserving same-layer precedence.
+		var aliases: Variant = saved_values.get("options")
+		if aliases is Dictionary:
+			saved_values.erase("options")
+			for native_name: Variant in aliases:
+				var name: String = NATIVE.get(native_name, "options." + str(native_name))
+				saved_values[name] = aliases[native_name]
 		reset = ReasoningSelection.reset_saved(options, saved_values, model)
 		# A newly published fixed setting cannot retain an old explicit override.
 		# Use the same visible reset path as retired reasoning choices.
 		var reset_values: Dictionary = reset.values
 		for name: Variant in reset_values.keys():
+			if name == "options":
+				continue # A malformed alias container still gets a validation error.
 			var rule: Dictionary = options.get(name, {})
-			if not rule.get("overridable", true):
+			if not options.has(name) or not rule.get("overridable", true):
 				reset_values.erase(name)
 				if str(reset.notice).is_empty():
-					reset.notice = "Saved %s is no longer overridable for %s. Using the model default." % [str(name), model]
+					var reason: String = "no longer supported" if not options.has(name) else "no longer overridable"
+					reset.notice = "Saved %s is %s for %s. Using the model default." % [str(name), reason, model]
 	var values: Dictionary = {}
 	var sources: Dictionary = {}
 	for name: String in options:
@@ -77,8 +90,8 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 			values[name] = rule.default
 			sources[name] = "default"
 	var layers := {"model": reset.values, "chat": chat, "request": request}
-	for layer in layers:
-		var normalized := normalize(options, layers[layer], layer == "request")
+	for layer: String in layers:
+		var normalized := normalize(options, layers[layer], layer == "request", layer == "model")
 		if not normalized.success:
 			normalized["layer"] = layer
 			normalized["error_message"] = "%s generation options: %s" % [layer.capitalize(), normalized.error_message]
@@ -137,7 +150,7 @@ static func _check_inactive(schema: Dictionary, values: Dictionary, sources: Dic
 			inactive = inactive and values.has(dependency) and values[dependency] == condition[dependency]
 		if not inactive:
 			continue
-		if sources.get(name) == "default":
+		if sources.get(name) in ["default", "model"]:
 			values.erase(name)
 			sources.erase(name)
 		else:
@@ -238,7 +251,7 @@ static func save_model(provider: BaseProvider, raw: Variant) -> Dictionary:
 	var offering := _offering(provider)
 	if not offering.success:
 		return failure(offering.error_code, offering.error_message)
-	var normalized := normalize(offering.entry.generation_options, raw)
+	var normalized := normalize(offering.entry.generation_options, raw, false, true)
 	if not normalized.success:
 		return normalized
 	var key := provider.get_model_settings_key()

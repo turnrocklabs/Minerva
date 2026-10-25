@@ -66,6 +66,7 @@ func run() -> void:
 	await check_reasoning()
 	await check_controls_and_requests()
 	await check_google_request_logging()
+	check_auth_failure_logging()
 	await check_delete_buttons()
 	await check_version_resolution()
 	print("Results: %d passed, %d failed" % [passed, failed])
@@ -171,6 +172,24 @@ func check_google_request_logging() -> void:
 	singleton.preferences_popup = previous_preferences
 	google.free()
 	preferences.free()
+
+
+func check_auth_failure_logging() -> void:
+	var auth = load("res://Scripts/Services/Providers/ChatGPT/ChatGPTAuth.gd").new()
+	var canary: String = "auth-response-canary-732"
+	var body := {"error": "invalid_grant", "error_description": canary, "access_token": canary, "refresh_token": canary}
+	var capture = load("res://test/helpers/log_capture.gd").new()
+	var completed: Array = []
+	auth.auth_completed.connect(func(success: bool, message: String) -> void: completed.assign([success, message]))
+	auth._auth_in_progress = true
+	OS.add_logger(capture)
+	auth._token_exchange_failed(400, JSON.stringify(body).to_utf8_buffer())
+	# An arbitrary string in the error field must not become a credential sink.
+	auth._token_exchange_failed(401, JSON.stringify({"error": canary}).to_utf8_buffer())
+	OS.remove_logger(capture)
+	var output: String = capture.combined()
+	check("auth exchange failures log only HTTP status and safe OAuth code", "HTTP 400 (invalid_grant)" in output and "HTTP 401 (unknown_error)" in output and not canary in output)
+	check("auth exchange failure still completes visibly without response data", completed == [false, "Token exchange failed (HTTP 401)."] and not auth._auth_in_progress)
 
 
 func check_controls_and_requests() -> void:

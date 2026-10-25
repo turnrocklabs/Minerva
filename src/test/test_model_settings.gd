@@ -195,15 +195,19 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	var thinking: CheckButton = model_editor.get_node("Basic/enable_thinking/Toggle")
 	var temperature: SpinBox = model_editor.get_node("Basic/temperature/Numeric/Value")
 	model_editor.get_node("Basic/temperature/Heading/Custom").button_pressed = true
+	check("Qwen Custom enables temperature without saving its default", temperature.editable and not gen.saved_for(qwen).has("temperature"))
+	if not temperature.editable:
+		return
 	temperature.value = 0.25
+	slider.value = 0
 	thinking.button_pressed = false
 	var off: Dictionary = qwen.build_chat_payload([])
-	check("Qwen Off disables thinking and the inactive effort editor", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort") and not slider.editable)
+	check("Qwen Off excludes effort while retaining the saved Low preference", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort") and not slider.editable and gen.saved_for(qwen).get("reasoning_effort") == "low")
+	check("inactive effort default is labelled inactive", "inactive" in control.get_node("Default").text and not "xhigh" in control.get_node("Default").text)
 	check("Qwen mode updates displayed defaults while keeping an explicit sampler", "Default: 0.7" in model_editor.get_node("Basic/temperature/Default").text and "Default: 0.8" in model_editor.get_node("Basic/top_p/Default").text and temperature.value == 0.25 and gen.saved_for(qwen).temperature == 0.25)
 	thinking.button_pressed = true
-	slider.value = 0
 	var low: Dictionary = qwen.build_chat_payload([])
-	check("Qwen effort re-enables thinking with the native value", low.success and low.payload.get("enable_thinking") == true and low.payload.get("reasoning_effort") == "low")
+	check("Qwen On restores Low without another effort edit", low.success and low.payload.get("enable_thinking") == true and low.payload.get("reasoning_effort") == "low" and slider.editable and slider.value == 0)
 	check("open gear saves only the rebound Qwen key", gen.saved_for(qwen).get("reasoning_effort") == "low" and not singleton.config_file.get_value("Models", "GenerationOptions", {}).get(glm_key, {}).has("reasoning_effort"))
 	next_history.Temperature = 0.3
 	history.Temperature = 0.8
@@ -262,18 +266,32 @@ func _check_native_fields(gen: GDScript, history: RefCounted, settings: Window) 
 	editor.get_node("ExpandAdvanced").button_pressed = true
 	check("Advanced expands through its real toggle", editor.get_node("Advanced").visible)
 	top_k.get_node("Heading/Custom").button_pressed = true
-	top_k.get_node("Numeric/Value").value = 20
+	var top_k_spin: SpinBox = top_k.get_node("Numeric/Value")
+	check("Custom enables top_k without submitting its unspecified default", top_k_spin.editable and not gen.saved_for(history.provider).has("top_k"))
+	if not top_k_spin.editable:
+		return false
+	top_k_spin.value = 20
 	var seed_row: Node = editor.get_node("Advanced/seed")
 	seed_row.get_node("Heading/Custom").button_pressed = true
-	seed_row.get_node("Numeric/Value").value = 42
+	var seed_spin: SpinBox = seed_row.get_node("Numeric/Value")
+	var unchosen: Dictionary = history.provider.build_chat_payload([])
+	check("Custom enables seed without sending an unchosen zero", seed_spin.editable and not gen.saved_for(history.provider).has("seed") and unchosen.success and not unchosen.payload.has("seed"))
+	if not seed_spin.editable:
+		return false
+	seed_spin.value = 42
 	check("top_k20 and seed42 persist under this model key", gen.saved_for(history.provider) == {"top_k": 20, "seed": 42} and history.GenerationOverrides.is_empty())
 	check("seed description and unspecified default stay visible", "reproducibility" in seed_row.tooltip_text and "Unspecified" in seed_row.get_node("Default").text)
 	var classic: Dictionary = history.provider.build_chat_payload([])
 	check("schema gear choices reach both native request builders", classic.success and classic.payload.get("top_k") == 20 and classic.payload.get("seed") == 42 and history.provider._job_input(classic.payload, history.provider.model_name).get("seed") == 42)
 	var repetition: Node = editor.get_node("Advanced/repetition_penalty")
 	repetition.get_node("Heading/Custom").button_pressed = true
+	var repetition_spin: SpinBox = repetition.get_node("Numeric/Value")
+	check("Custom seeds a valid exclusive value and enables editing without saving", repetition_spin.editable and repetition_spin.value > 0 and not gen.saved_for(history.provider).has("repetition_penalty") and editor.get_node("Error").text.is_empty())
+	if not repetition_spin.editable:
+		return false
+	repetition_spin.value = 0
 	check("exclusive zero is refused visibly without being saved", not editor.get_node("Error").text.is_empty() and not gen.saved_for(history.provider).has("repetition_penalty"))
-	repetition.get_node("Numeric/Value").value = 0.5
+	repetition_spin.value = 0.5
 	check("a valid fractional penalty saves and clears the error", gen.saved_for(history.provider).get("repetition_penalty") == 0.5 and editor.get_node("Error").text.is_empty())
 	repetition.get_node("Heading/Reset").pressed.emit()
 	seed_row.get_node("Heading/Reset").pressed.emit()

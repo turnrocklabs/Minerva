@@ -18,7 +18,7 @@ var _loading: bool = false
 
 
 func _ready() -> void:
-	_custom.toggled.connect(func(pressed: bool) -> void: _submit(pressed))
+	_custom.toggled.connect(_on_custom_toggled)
 	_reset.pressed.connect(func() -> void: _submit(false))
 	_slider.value_changed.connect(func(value: float) -> void:
 		_spin.set_value_no_signal(value)
@@ -58,12 +58,13 @@ func configure(option: String, rule: Dictionary, value: Variant, explicit: bool)
 			control.min_value = minimum
 			control.max_value = maximum
 			control.step = step_size
-		var displayed: float = minimum
+		var arrow_step: float = 1.0 if rule.type == "integer" else 0.01
+		var displayed: float = minf(minimum + arrow_step, maximum) if rule.get("exclusive_minimum", false) else minimum
 		if value is int or value is float:
 			displayed = value
 		_spin.set_value_no_signal(displayed)
 		_slider.set_value_no_signal(displayed)
-		_spin.custom_arrow_step = 1.0 if rule.type == "integer" else 0.01
+		_spin.custom_arrow_step = arrow_step
 		_spin.editable = writable and explicit
 		_slider.editable = writable and explicit
 	var inherited: Variant = rule.get("default")
@@ -74,6 +75,16 @@ func configure(option: String, rule: Dictionary, value: Variant, explicit: bool)
 	if rule.get("exclusive_minimum", false):
 		_default.text += " · Must be greater than %s" % str(rule.minimum)
 	_loading = false
+
+
+func _on_custom_toggled(pressed: bool) -> void:
+	if _loading:
+		return
+	_spin.editable = pressed and not _custom.disabled
+	_slider.editable = pressed and not _custom.disabled
+	_reset.disabled = not pressed or _custom.disabled
+	if not pressed:
+		_submit(false)
 
 
 func _submit(explicit: bool) -> void:

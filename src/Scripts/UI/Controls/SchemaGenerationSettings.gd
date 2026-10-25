@@ -76,9 +76,6 @@ func _edit(option: String, value: Variant, explicit: bool) -> void:
 		saved[option] = value
 	else:
 		saved.erase(option)
-	# Thinking's boolean owns Off for native profiles, rather than an effort stop.
-	if option == "enable_thinking" and explicit and value == false:
-		saved.erase("reasoning_effort")
 	var result := GenerationOptions.save_model(_provider, saved)
 	if result.success:
 		refresh()

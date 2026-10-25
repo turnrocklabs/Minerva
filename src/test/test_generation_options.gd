@@ -76,6 +76,11 @@ func _run() -> void:
 	var prepared: Dictionary = provider.build_chat_payload([{"role": "user", "content": "hello"}], gen.chat_params(history, provider))
 	check("new chat inherits descriptor temperature and stable legacy model prefs", prepared.payload.temperature == 0.7 and prepared.payload.options == {"num_ctx": 8192, "num_gpu": 0})
 	check("models without generation_settings send no reasoning keys", not prepared.payload.has("reasoning_effort") and not prepared.payload.has("enable_thinking"))
+	var legacy_saved: Dictionary = gen.set_chat(history, {"temperature": 0.3, "max_tokens": 32})
+	var legacy_params: Dictionary = gen.chat_params(history, provider)
+	var legacy_body: Dictionary = provider.build_chat_payload([], legacy_params)
+	check("non-native Ollama Core still sends its chat-layer sampling choices", legacy_saved.success and not gen.has_native_profile(provider) and legacy_params.get(gen.CHAT_LAYER) == {"temperature": 0.3, "max_tokens": 32} and legacy_body.success and legacy_body.payload.temperature == 0.3 and legacy_body.payload.max_tokens == 32)
+	gen.set_chat(history, {})
 	history.Temperature = 0
 	check("explicit agent/chat temperature records zero intent", history.GenerationOverrides.get("temperature") == 0)
 	var serialized: Dictionary = history.Serialize()
@@ -334,6 +339,8 @@ func _check_full_native_profile(gen: GDScript, glm: Node, qwen: Node) -> void:
 	check("GLM defaults are effective without becoming request overrides", inherited.success and inherited.mode == "thinking" and inherited.values.temperature == 1.0 and inherited.values.top_p == 0.95 and inherited.payload.is_empty())
 	check("null defaults remain unspecified and are not explicit values", schema.seed.has("default") and schema.seed.default == null and not inherited.values.has("seed") and not gen.public_request(glm, {"seed": null}).success)
 	check("exclusive minimum refuses zero and accepts a positive penalty", not gen.public_request(glm, {"repetition_penalty": 0}).success and gen.public_request(glm, {"repetition_penalty": 0.5}).success)
+	var exact_bounds: Dictionary = gen.public_request(glm, JSON.parse_string('{"temperature":2,"top_k":1000}'))
+	check("exact advertised temperature and top_k maxima are accepted", exact_bounds.success and exact_bounds.values.temperature == 2.0 and exact_bounds.values.top_k == 1000)
 	var maximum: Dictionary = gen.public_request(glm, JSON.parse_string('{"seed":4294967295}'))
 	check("JSON integer seed reaches its advertised maximum as an integer", maximum.success and maximum.values.seed is int and maximum.values.seed == 4294967295)
 	var rejected: bool = true
@@ -363,6 +370,12 @@ func _check_full_native_profile(gen: GDScript, glm: Node, qwen: Node) -> void:
 	singleton.config_file.set_value("Models", "GenerationOptions", stored)
 	var repaired: Dictionary = gen.for_provider(glm)
 	check("newly read-only saved choices reset visibly without losing valid samplers", repaired.success and "no longer overridable" in repaired.notice and repaired.payload == {"seed": 42} and gen.saved_for(glm) == {"seed": 42})
+	stored[glm.get_model_settings_key()] = {"num_ctx": 8192, "retired_sampler": 7, "seed": 42}
+	singleton.config_file.set_value("Models", "GenerationOptions", stored)
+	var retired: Dictionary = gen.for_provider(glm)
+	check("all unadvertised saved keys reset with notice while valid choices survive", retired.success and "no longer supported" in retired.notice and retired.payload == {"seed": 42} and gen.saved_for(glm) == {"seed": 42})
+	var retry: Dictionary = glm.build_chat_payload([])
+	check("retired saved fields cannot block subsequent sends or repeat notices", retry.success and retry.payload.get("seed") == 42 and not retry.payload.has("num_ctx") and gen.for_provider(glm).notice.is_empty())
 	check("full-profile fixture restores preceding model choices", gen.save_model(glm, original_glm).success and gen.save_model(qwen, original_qwen).success)
 
 

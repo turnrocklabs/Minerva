@@ -237,10 +237,7 @@ func _exchange_code(code: String, scene_tree: SceneTree) -> void:
 	var response_body: PackedByteArray = result[3]
 
 	if response_code < 200 or response_code > 299:
-		_auth_in_progress = false
-		var err_text := response_body.get_string_from_utf8()
-		print("[ChatGPTAuth] Token exchange failed: %d %s" % [response_code, err_text])
-		auth_completed.emit(false, "Token exchange failed (HTTP %d)." % response_code)
+		_token_exchange_failed(response_code, response_body)
 		return
 
 	var json = JSON.parse_string(response_body.get_string_from_utf8())
@@ -272,6 +269,26 @@ func _exchange_code(code: String, scene_tree: SceneTree) -> void:
 	auth_status_changed.emit(true)
 	auth_completed.emit(true, "")
 	print("[ChatGPTAuth] Authentication successful, account_id: %s" % account_id)
+
+
+func _token_exchange_failed(response_code: int, response_body: PackedByteArray) -> void:
+	_auth_in_progress = false
+	var error_code: String = "unknown_error"
+	var response: Variant = JSON.parse_string(response_body.get_string_from_utf8())
+	if response is Dictionary:
+		var response_data: Dictionary = response
+		var raw_code: Variant = response_data.get("error")
+		if raw_code is Dictionary:
+			var error_data: Dictionary = raw_code
+			raw_code = error_data.get("code")
+		# Error bodies are untrusted and may contain credentials even in an
+		# error field. Only standard OAuth error identifiers reach the log.
+		if raw_code is String and raw_code in ["invalid_request", "invalid_client", "invalid_grant",
+				"unauthorized_client", "unsupported_grant_type", "invalid_scope", "access_denied",
+				"server_error", "temporarily_unavailable"]:
+			error_code = raw_code
+	print("[ChatGPTAuth] Token exchange failed: HTTP %d (%s)" % [response_code, error_code])
+	auth_completed.emit(false, "Token exchange failed (HTTP %d)." % response_code)
 
 
 ## Refresh the access token if it's about to expire (within 5 minutes)
