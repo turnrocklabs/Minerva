@@ -1,0 +1,26 @@
+[
+  {
+    "tag": "docket-v0.3.0-rc.30.plugin.2",
+    "asset": "docket-0.3.0-rc.30.plugin.2-linux-x86_64.tar.gz",
+    "sha256": "fc04b46070911f4eed17f5e1200c41fd28a7cb5a28119e5848a678c00b0df863",
+    "source": "https://github.com/turnrocklabs/Minerva/releases/download/docket-v0.3.0-rc.30.plugin.2/docket-0.3.0-rc.30.plugin.2-linux-x86_64.tar.gz"
+  },
+  {
+    "tag": "voice-v0.1.4",
+    "asset": "voice-0.1.4-linux-x86_64.tar.gz",
+    "sha256": "48532985ec6a14ef4aac0d2980ee450102b8fb8965f01791cfb8eb4f104fe858",
+    "source": "https://github.com/turnrocklabs/Minerva/releases/download/voice-v0.1.4/voice-0.1.4-linux-x86_64.tar.gz"
+  },
+  {
+    "tag": "agent_relay-v0.3.2",
+    "asset": "agent_relay-0.3.2-linux-x86_64.tar.gz",
+    "sha256": "dd9c42169007e8b87300cf73443fe8d3198aaee6e3baba7e89d58613ffe684b6",
+    "source": "https://github.com/turnrocklabs/Minerva/releases/download/agent_relay-v0.3.2/agent_relay-0.3.2-linux-x86_64.tar.gz"
+  },
+  {
+    "tag": "sheets-v0.1.2",
+    "asset": "sheets-0.1.2-linux-x86_64.tar.gz",
+    "sha256": "ceefe9797acf73014885d6b05b50f68c03c9ceb7fb2d7183cf413378a33d900c",
+    "source": "https://github.com/imrans-lab/minerva-plugins/releases/download/sheets-v0.1.2/sheets-0.1.2-linux-x86_64.tar.gz"
+  }
+]
