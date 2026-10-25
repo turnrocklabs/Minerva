@@ -148,7 +148,7 @@ def exercise(private: Path, app: subprocess.Popen, deadline: float) -> int:
 
         def turn(prompt: str, kind: str) -> dict[str, Any]:
             nonlocal pending_eligible
-            before = observe('begin')
+            before = observe('begin', prompt=prompt)
             record = {'kind': kind, 'prompt_chars': len(prompt), 'input_before': before['input_estimate'], 'output_reserve': 4000,
                       'budget_before': before['total_budget'], 'mcp_send_at': time.time()}
             report['turns'].append(record)

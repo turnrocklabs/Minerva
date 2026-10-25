@@ -188,6 +188,8 @@ func _command(command: Dictionary) -> void:
 		saw_activity = false
 		summary_glm = false
 		result = _sample()
+		result.input_estimate += ContextTokenEstimate.tokens(str(command.prompt))
+		result.total_budget = result.input_estimate + 4000
 	elif command.action == "state":
 		result = _sample()
 	elif command.action == "local_safety":
