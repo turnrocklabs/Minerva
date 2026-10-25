@@ -54,6 +54,7 @@ func _run() -> void:
 	var saved_registry = so.plugin_chat_provider_registry
 	so.config_file = ConfigFile.new()
 	so._config_file_name = "/tmp/minerva-t5-options.cfg"
+	await _check_native_reasoning(gen, core, so)
 	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/model_chat_registration.json"))
 	var service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new(fixture.params)
 	core.services.assign([service])
@@ -73,6 +74,7 @@ func _run() -> void:
 	check("new chat scalar default does not manufacture an override", history.Temperature == 1 and history.GenerationOverrides.is_empty())
 	var prepared: Dictionary = provider.build_chat_payload([{"role": "user", "content": "hello"}], gen.chat_params(history, provider))
 	check("new chat inherits descriptor temperature and stable legacy model prefs", prepared.payload.temperature == 0.7 and prepared.payload.options == {"num_ctx": 8192, "num_gpu": 0})
+	check("models without generation_settings send no reasoning keys", not prepared.payload.has("reasoning_effort") and not prepared.payload.has("enable_thinking"))
 	history.Temperature = 0
 	check("explicit agent/chat temperature records zero intent", history.GenerationOverrides.get("temperature") == 0)
 	var serialized: Dictionary = history.Serialize()
@@ -251,3 +253,51 @@ func _run() -> void:
 	pane.free()
 	provider.free()
 	_completed = true
+
+
+func _check_native_reasoning(gen: GDScript, core: Node, settings: Node) -> void:
+	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/native_model_chat_registration.json"))
+	var service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new(fixture.params)
+	core.services.assign([service])
+	core.client._connected = true
+	core.registered = true
+	settings._enabled_providers[settings.API_PROVIDER.TURNROCK] = true
+	var provider = load("res://Scripts/Services/Providers/Core/CoreProvider.gd").new(service, service.actions[0])
+	provider.requires_chat_model = true
+	var schema: Dictionary = gen.schema_for(provider)
+	check("real-shaped GLM descriptor ingests native reasoning enum/default", schema.get("reasoning_effort", {}).get("enum") == ["low", "high", "max"] and schema.get("reasoning_effort", {}).get("default") == "high")
+	check("GLM cannot disable thinking", not gen.normalize(schema, {"enable_thinking": false}).success)
+	var saved: Dictionary = gen.save_model(provider, {"reasoning_effort": "high"})
+	var config := ConfigFile.new()
+	config.load(settings._config_file_name)
+	check("native effort persists under exact model key", saved.success and config.get_value("Models", "GenerationOptions", {}).get(provider.get_model_settings_key(), {}).get("reasoning_effort") == "high")
+	var module = load("res://Scripts/Services/MCP/Modules/MCPGenerationTools.gd").new()
+	var inspected: Dictionary = module.handle("minerva_get_generation_options", {"model_spec": provider.get_model_spec()})
+	check("MCP exposes native per-model reasoning schema and choice", inspected.success and inspected.model_options.get("reasoning_effort") == "high" and inspected.schema.get("reasoning_effort", {}).get("enum") == ["low", "high", "max"])
+	var history = load("res://Scripts/Models/ChatHistory.gd").new(provider, "native-model-only")
+	check("reasoning preferences cannot become chat overrides", not gen.set_chat(history, {"reasoning_effort": "high"}).success and history.GenerationOverrides.is_empty())
+	var classic: Dictionary = provider.build_chat_payload([{"role": "user", "content": "fixture"}])
+	check("classic native body carries flat high effort", classic.success and classic.payload.get("reasoning_effort") == "high" and not classic.payload.has("chat_template_kwargs"))
+	if classic.success:
+		var input: Dictionary = provider._job_input(classic.payload, provider.model_name)
+		check("chat/v1 input carries the same flat high effort", input.get("reasoning_effort") == "high" and input.get("model") == "GLM-5.3-Flash" and input.get("stream") == false)
+	var pending_before: int = core.client._pending_requests.size()
+	var refused = await provider.generate_content([], {"reasoning_effort": "medium"})
+	check("unsupported GLM medium is refused before any send", refused.get_meta("error_code", "") == "invalid_generation_option" and core.client._pending_requests.size() == pending_before)
+	check("boolean settings reject strings", not gen.normalize(schema, {"enable_thinking": "true"}).success)
+	var qwen = load("res://Scripts/Services/Providers/Core/CoreProvider.gd").new(service, service.actions[1])
+	qwen.requires_chat_model = true
+	var qwen_schema: Dictionary = gen.schema_for(qwen)
+	var selection = load("res://Scripts/Services/Providers/ReasoningSelection.gd")
+	check("Qwen advertised descending levels become low-to-most stops", selection.ordered_levels(qwen_schema.get("reasoning_effort", {}).get("enum", [])) == ["low", "medium", "xhigh"])
+	check("unknown effort names preserve advertised order", selection.ordered_levels(["future", "low"]) == ["future", "low"])
+	check("explicit effort while thinking disabled is refused", not gen.resolve(qwen_schema, {"reasoning_effort": "low", "enable_thinking": false}).success)
+	var off: Dictionary = gen.resolve(qwen_schema, {"enable_thinking": false})
+	check("thinking off omits inactive inherited effort", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort"))
+	var generic: Dictionary = service.actions[1].model_metadata.generation_settings.duplicate(true)
+	generic.parameters.reasoning_effort.supported = false
+	generic.parameters.enable_thinking.supported = false
+	var descriptor = load("res://Scripts/Services/Providers/Core/CoreModelDescriptor.gd")
+	check("native-generic unsupported reasoning controls stay absent", descriptor.reasoning_options(generic).options.is_empty())
+	provider.free()
+	qwen.free()

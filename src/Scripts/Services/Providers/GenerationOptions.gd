@@ -15,7 +15,7 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 	for name in raw:
 		if name == "options" or (allow_protocol and (name in PROTOCOL or name == CHAT_LAYER)):
 			continue
-		if not name in CoreModelDescriptor.LEGACY_OPTIONS:
+		if CoreModelDescriptor.option_type(str(name)).is_empty():
 			return failure("unsupported_generation_option", "Unsupported generation option: %s" % str(name).left(128))
 		values[name] = raw[name]
 	if raw.has("options"):
@@ -34,30 +34,34 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 		if not schema.has(name):
 			return failure("unsupported_generation_option", "This model does not support %s" % name)
 		var rule: Dictionary = schema[name]
-		if not CoreModelDescriptor._number_matches(value, rule.type) \
-				or (rule.type == "integer" and value is float and value >= 9223372036854775808.0) \
-				or value < rule.get("minimum", -INF) or value > rule.get("maximum", INF):
-			return failure("invalid_generation_option", "Invalid %s: expected a finite %s in the advertised range" % [name, rule.type])
+		if not CoreModelDescriptor.value_matches(value, rule):
+			return failure("invalid_generation_option", "Invalid %s: expected an advertised %s value" % [name, rule.type])
 		if rule.type == "integer":
 			values[name] = int(value)
-		else:
+		elif rule.type == "number":
 			values[name] = float(value)
+	var inactive := _check_inactive(schema, values)
+	if not inactive.success:
+		return inactive
 	return {"success": true, "values": values}
 
 
 static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {}, request: Variant = {}) -> Dictionary:
 	var checked := CoreModelDescriptor.validate_options(schema)
-	if not checked.diagnostics.is_empty():
-		return failure("invalid_model_descriptor", "; ".join(checked.diagnostics))
+	var diagnostics: Array = checked.diagnostics
+	if not diagnostics.is_empty():
+		return failure("invalid_model_descriptor", "; ".join(diagnostics))
+	var options: Dictionary = checked.options
 	var values: Dictionary = {}
 	var sources: Dictionary = {}
-	for name in checked.options:
-		if checked.options[name].has("default"):
-			values[name] = checked.options[name].default
+	for name: String in options:
+		var rule: Dictionary = options[name]
+		if rule.has("default"):
+			values[name] = rule.default
 			sources[name] = "default"
 	var layers := {"model": saved, "chat": chat, "request": request}
 	for layer in layers:
-		var normalized := normalize(checked.options, layers[layer], layer == "request")
+		var normalized := normalize(options, layers[layer], layer == "request")
 		if not normalized.success:
 			normalized["layer"] = layer
 			normalized["error_message"] = "%s generation options: %s" % [layer.capitalize(), normalized.error_message]
@@ -65,7 +69,29 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 		for name in normalized.values:
 			values[name] = normalized.values[name]
 			sources[name] = layer
-	return {"success": true, "values": values, "sources": sources, "schema": checked.options, "payload": serialize(values)}
+	var inactive := _check_inactive(options, values, sources)
+	if not inactive.success:
+		return inactive
+	return {"success": true, "values": values, "sources": sources, "schema": options, "payload": serialize(values)}
+
+
+static func _check_inactive(schema: Dictionary, values: Dictionary, sources: Dictionary = {}) -> Dictionary:
+	for name: String in values.keys():
+		var rule: Dictionary = schema[name]
+		var condition: Dictionary = rule.get("inactive_when", {})
+		if condition.is_empty():
+			continue
+		var inactive := true
+		for dependency: String in condition:
+			inactive = inactive and values.has(dependency) and values[dependency] == condition[dependency]
+		if not inactive:
+			continue
+		if sources.get(name) == "default":
+			values.erase(name)
+			sources.erase(name)
+		else:
+			return failure("invalid_generation_option", "%s is inactive for these generation settings" % name)
+	return {"success": true}
 
 
 static func serialize(values: Dictionary) -> Dictionary:
@@ -108,7 +134,9 @@ static func for_provider(provider: CoreProvider, request: Dictionary = {}) -> Di
 	var offering := CoreModelCatalog.resolve(provider.get_model_spec())
 	if not offering.success:
 		return failure(offering.error_code, offering.error_message)
-	var result := resolve(offering.entry.generation_options, saved_for(provider), request.get(CHAT_LAYER, {}), request)
+	var entry: Dictionary = offering.entry
+	var schema: Dictionary = entry.generation_options
+	var result := resolve(schema, saved_for(provider), request.get(CHAT_LAYER, {}), request)
 	if result.success:
 		for name in PROTOCOL:
 			if request.has(name):
@@ -182,6 +210,8 @@ static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
 	var checked := public_request(history.provider, raw)
 	if not checked.success:
 		return checked
+	if checked.values.has("reasoning_effort") or checked.values.has("enable_thinking"):
+		return failure("model_only_generation_option", "Reasoning preferences are saved per model")
 	if checked.values.has("temperature"):
 		history.Temperature = checked.values.temperature
 	history.GenerationOverrides = checked.values.duplicate(true)
