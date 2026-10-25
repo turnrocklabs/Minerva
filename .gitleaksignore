@@ -7,3 +7,5 @@
 cf1e0d626feeaabcbe8d620f4c7ba77efe726d9e:src/plugins/voice/tests/test_worker_contract.py:generic-api-key:276
 # Reviewed false positives: build-cache key id; Docket item id 01a124dd6963 (Astra c2831).
 182228b49ef02343d35c792f5da7f03b696ffe99:Docs/minerva.dct:generic-api-key:3191
+# Reviewed false positive: Zig toolchain Actions cache key inside the base64 T5 release-receipt attachment.
+bbd0f8b3686b20c0b8de6ec2cbefa767048c0918:Docs/minerva.dct:generic-api-key:24988
