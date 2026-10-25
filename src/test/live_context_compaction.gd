@@ -196,6 +196,7 @@ func _command(command: Dictionary) -> void:
 	elif command.action == "local_safety":
 		var local_script = load("res://Scripts/Services/Providers/LocalProvider.gd")
 		var provider = local_script.new()
+		add_child(provider)
 		result = {"default_num_ctx": provider.default_context, "effective_num_ctx": provider.get_effective_context()}
 		provider.BASE_URL = OS.get_environment("MINERVA_LIVE_LOCAL_URL")
 		await provider.generate_content([{"role": "user", "content": "hi"}])
@@ -249,7 +250,7 @@ func _wire(message: Dictionary) -> void:
 		if not choices.is_empty() and choices[0] is Dictionary:
 			var choice: Dictionary = choices[0]
 			var summary_message: Variant = choice.get("message")
-			summary_glm = str(response.get("model", "")).to_lower() == MODEL \
+			summary_glm = (str(response.get("model", "")).to_lower() == MODEL or str(response.get("model", "")).to_lower().begins_with(MODEL + "-")) \
 				and summary_message is Dictionary and summary_message.get("content") is String \
 				and not str(summary_message.content).strip_edges().is_empty()
 	if topic == "model-chat/jobs/result" and response.get("usage") is Dictionary:
