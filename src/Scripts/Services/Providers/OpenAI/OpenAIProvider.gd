@@ -427,7 +427,7 @@ static func create_from_config(config: Dictionary) -> OpenAIProvider:
 
 
 # ============================================================================
-# Model Variants - GPT-5.2 with different reasoning levels
+# Built-in models
 # ============================================================================
 
 ## Nano: Fast, cost-effective for simple queries
@@ -444,7 +444,7 @@ class Nano extends OpenAIProvider:
 		is_reasoning_model = true
 
 
-## Standard: Medium reasoning (default for daily tasks)
+## Standard: GPT-5.2; reasoning is selected in the model's settings.
 class Standard extends OpenAIProvider:
 	func _init():
 		super()
@@ -453,18 +453,5 @@ class Standard extends OpenAIProvider:
 		short_name = "G5"
 		reasoning_effort = ""
 		set_meta("legacy_reasoning_effort", "medium")
-		input_token_cost = 5.00   # $5 per million input tokens
-		output_token_cost = 15.00  # $15 per million output tokens
-
-
-## Deep: High reasoning for complex tasks requiring more thought
-class Deep extends OpenAIProvider:
-	func _init():
-		super()
-		model_name = "gpt-5.2"
-		display_name = "GPT-5.2 Deep"
-		short_name = "G5D"
-		reasoning_effort = ""
-		set_meta("legacy_reasoning_effort", "xhigh")
 		input_token_cost = 5.00   # $5 per million input tokens
 		output_token_cost = 15.00  # $15 per million output tokens

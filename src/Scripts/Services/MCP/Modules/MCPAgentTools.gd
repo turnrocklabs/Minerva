@@ -123,7 +123,7 @@ func _register_agent_tools() -> void:
 	, "agents")
 
 	server._register_tool("minerva_create_agent",
-		"Create a new agent definition in the registry. Returns the agent ID. Provider enum IDs: HUMAN=0, NEMOTRON_NANO=1, DEVSTRAL_SMALL=2, GPT_NANO=3, GPT_STANDARD=4, GPT_DEEP=5, GEMINI_FLASH=7, GEMINI_PRO=8, CLAUDE_HAIKU=10, CLAUDE_SONNET=11, CLAUDE_OPUS=12, TURNROCK=13, CLAUDE_CODE_SONNET=18, CLAUDE_CODE_OPUS=19. For TURNROCK provider, also set core_service_id and core_action_name. For OpenRouter models use their dynamic ID (>=1000).",
+		"Create a new agent definition in the registry. Returns the agent ID. Provider enum IDs: HUMAN=0, NEMOTRON_NANO=1, DEVSTRAL_SMALL=2, GPT_NANO=3, GPT_STANDARD=4, GEMINI_FLASH=7, GEMINI_PRO=8, CLAUDE_HAIKU=10, CLAUDE_SONNET=11, CLAUDE_OPUS=12, TURNROCK=13, CLAUDE_CODE_SONNET=18, CLAUDE_CODE_OPUS=19. For TURNROCK provider, also set core_service_id and core_action_name. For OpenRouter models use their dynamic ID (>=1000).",
 		{
 			"type": "object",
 			"properties": {

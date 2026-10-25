@@ -97,8 +97,14 @@ func check_saved_chats(manager) -> void:
 	check("retired variant still displays canonical model without duplicate", chooser.get_item_index_for_provider(legacy.provider) == 0 and chooser.item_count == 1)
 	chooser.free()
 	legacy.provider.free()
-	var deep = history_script.Deserialize({"Provider": singleton.API_MODEL_PROVIDERS.GPT_DEEP, "HistoryId": "deep-migration", "HistoryName": "Deep", "HistoryItemList": [], "ReasoningEffort": "high"})
+	var deep = history_script.Deserialize(JSON.parse_string(JSON.stringify({"Provider": 5, "HistoryId": "deep-migration", "HistoryName": "Deep", "HistoryItemList": [], "ReasoningEffort": "high"})))
 	check("old OpenAI chat effort is dropped too", not deep.Serialize().has("ReasoningEffort"))
+	check("retired Deep loads as GPT-5.2 with the same settings key", deep.provider.display_name == "GPT-5.2" and deep.provider.get_model_settings_key() == "gpt-5.2" and deep.Serialize().Provider == singleton.API_MODEL_PROVIDERS.GPT_STANDARD)
+	check("Deep migration leaves model preferences unchanged and provides a notice", singleton.config_file.encode_to_text() == config_before and not deep.model_migration_notice.is_empty())
+	var standard = history_script.Deserialize(JSON.parse_string(JSON.stringify(deep.Serialize())))
+	check("Deep migration converges after save and reopen", standard.provider.display_name == "GPT-5.2" and standard.model_migration_notice.is_empty() and standard.HistoryId == deep.HistoryId)
+	check("Deep is absent from both provider registries", not singleton.API_MODEL_PROVIDER_SCRIPTS.has(5) and not singleton.MODEL_TO_PROVIDER.has(5))
+	standard.provider.free()
 	deep.provider.free()
 	singleton._dynamic_provider_map[60000].manager = saved
 

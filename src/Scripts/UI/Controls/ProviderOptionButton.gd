@@ -563,6 +563,10 @@ func _load_saved_provider():
 	var provider_id = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
 	if provider_id == null:
 		return
+	if provider_id == SingletonObject.API_MODEL_PROVIDERS.GPT_DEEP:
+		provider_id = SingletonObject.API_MODEL_PROVIDERS.GPT_STANDARD
+		SingletonObject.save_to_config_file("Providers", "DefaultProviderId", SingletonObject.API_MODEL_PROVIDERS.GPT_STANDARD)
+		SingletonObject.save_to_config_file("Providers", "DefaultModelSpec", {"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.GPT_STANDARD})
 
 	# Migrate old OpenRouter enum IDs (14-17) to dynamic model IDs
 	if provider_id in _LEGACY_OR_IDS:

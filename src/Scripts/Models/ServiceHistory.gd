@@ -218,6 +218,8 @@ var termination_reason: String = ""
 var termination_message: String = ""
 
 var VBox: VBoxChat
+## Runtime-only notice for a saved model identity that was retired.
+var model_migration_notice: String = ""
 var provider: BaseProvider:
 	set(value):
 		provider = value
@@ -442,6 +444,9 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("Provider", 0))
+	var retired_deep: bool = provider_enum_index == SingletonObject.API_MODEL_PROVIDERS.GPT_DEEP
+	if retired_deep:
+		provider_enum_index = SingletonObject.API_MODEL_PROVIDERS.GPT_STANDARD
 	var provider_obj: BaseProvider
 	var core_spec: Dictionary = data.get("CoreModelSpec", {})
 	if service_type_value == ServiceType.CHAT and (not core_spec.is_empty() or provider_enum_index == SingletonObject.API_MODEL_PROVIDERS.TURNROCK):
@@ -473,6 +478,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 			history = ChatHistory.new(provider_obj, data.get("HistoryId"))
 
 	history.HistoryName = data.get("HistoryName")
+	if retired_deep:
+		history.model_migration_notice = "GPT-5.2 Deep was retired. This chat now uses GPT-5.2; choose reasoning in model settings."
 
 	for chi_data in data.get("HistoryItemList", []):
 		var chi = ChatHistoryItem.Deserialize(chi_data)

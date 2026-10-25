@@ -4000,6 +4000,8 @@ func render_history(chat_history: ChatHistory):
 			multi_slider_containers.set(item.MultiSliderContainerId, new_multi_slider_cont)
 			vboxChat.add_child(new_multi_slider_cont)
 
+	if not chat_history.model_migration_notice.is_empty():
+		vboxChat.add_program_message(chat_history.model_migration_notice)
 	call_deferred("_resume_core_jobs", chat_history)
 
 

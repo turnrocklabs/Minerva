@@ -93,9 +93,33 @@ func _run() -> void:
 	check("unsupported model hides slider and explains why", unsupported != null and not unsupported.get_node("Effort").visible and "does not offer" in unsupported.get_node("Message").text)
 	settings.hide()
 	await _check_native_slider(singleton, core, pane, settings)
+	_check_deep_migration(singleton, pane)
 	preferences.free()
 	print("Results: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
+func _check_deep_migration(singleton: Node, pane: Node) -> void:
+	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
+	var migrated = history_script.Deserialize(JSON.parse_string('{"Provider":5,"HistoryId":"retired-deep","HistoryName":"Deep","HistoryItemList":[]}'))
+	singleton.ChatList.append(migrated)
+	pane.render_history(migrated)
+	var notices: int = 0
+	for child: Node in migrated.VBox.get_children():
+		if child is Label and child.text == migrated.model_migration_notice:
+			notices += 1
+	check("reopened Deep chat renders one program notice outside its messages", migrated.provider.display_name == "GPT-5.2" and notices == 1 and migrated.HistoryItemList.is_empty())
+	var config_before: String = singleton.config_file.encode_to_text()
+	singleton._enabled_providers[singleton.API_PROVIDER.OPENAI] = true
+	var picker = pane._provider_option_button
+	picker._on_core_catalog_changed()
+	picker.switch_to_provider_set("default")
+	check("Deep is absent from the actual model picker", picker.get_item_index(5) == -1)
+	singleton.save_to_config_file("Providers", "DefaultProviderId", 5)
+	singleton.save_to_config_file("Providers", "DefaultModelSpec", {"kind": "builtin", "model_id": 5})
+	picker._load_saved_provider()
+	check("retired Deep default becomes GPT-5.2", picker.get_selected_id() == singleton.API_MODEL_PROVIDERS.GPT_STANDARD and singleton.get_config_file_value("Providers", "DefaultModelSpec") == {"kind": "builtin", "model_id": singleton.API_MODEL_PROVIDERS.GPT_STANDARD})
+	singleton.config_file.parse(config_before)
 
 
 func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Window) -> void:
