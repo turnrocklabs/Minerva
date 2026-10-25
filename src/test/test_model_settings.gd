@@ -208,7 +208,8 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	next_history.Temperature = 0.3
 	history.Temperature = 0.8
 	pane.current_tab = singleton.ChatList.find(history)
-	check("open gear tab change rebinds chat and model sections", settings.current_chat_tab_ref == history and "GLM" in label.text and control.levels == ["low", "high", "max"] and is_equal_approx(settings.get_node("%TempHSlider").value, 0.8))
+	check("open gear tab change rebinds the model and retires native chat samplers", settings.current_chat_tab_ref == history and "GLM" in label.text and control.levels == ["low", "high", "max"] and history.Temperature == 1 and history.GenerationOverrides.is_empty())
+	check("native This chat hides all sampler and generation controls", not settings.get_node("%CoreGenerationSettings").visible and not settings.get_node("%TemperatureHBoxContainer").visible and not settings.get_node("%TopPHBoxContainer").visible and not settings.get_node("%FrequencyBoxContainer").visible and not settings.get_node("%PresenceHBoxContainer").visible)
 	var plugin = load("res://Scripts/Services/Providers/PluginProvider.gd").new()
 	plugin.display_name = "Fixture terminal"
 	var previous = history.provider
@@ -233,6 +234,17 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	check("unknown provider default is an initial inheritance stop", inherited.success and control.default_effort.is_empty() and slider.value == 0 and control.get_node("Selection").text == "Provider default" and google.model_reasoning_params({}).values.is_empty())
 	check("provider-default fixture restores the preceding model preference", gen.save_model(google, prior_google).success and gen.saved_for(google) == prior_google)
 	google.free()
+	var api_chat = load("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd").create_from_config({"model_name": "gpt-4.1", "is_reasoning_model": false})
+	history.provider = api_chat
+	history.Temperature = 0.4
+	settings.load_current_chat_settings()
+	check("API chat keeps its per-chat sampler controls and values", settings.get_node("%TemperatureHBoxContainer").visible and settings.get_node("%TopPHBoxContainer").visible and settings.get_node("%FrequencyBoxContainer").visible and settings.get_node("%PresenceHBoxContainer").visible and is_equal_approx(settings.get_node("%TempHSlider").value, 0.4))
+	settings.get_node("%TempHSlider").value = 0.2
+	check("API sampler still edits only that chat", is_equal_approx(history.Temperature, 0.2))
+	var api_saved: Dictionary = history.Serialize()
+	check("API chat serialization retains its sampler fields", is_equal_approx(api_saved.Temperature, 0.2) and api_saved.has("TopP") and api_saved.has("FrequencyPenalty") and api_saved.has("PresencePenalty") and api_saved.has("GenerationOptions"))
+	history.provider = previous
+	api_chat.free()
 
 
 func _check_native_fields(gen: GDScript, history: RefCounted, settings: Window) -> bool:

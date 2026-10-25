@@ -170,6 +170,25 @@ static func schema_for(provider: BaseProvider) -> Dictionary:
 	return offering.entry.generation_options if offering.success else {}
 
 
+## Cached advertised metadata is enough for migration, even while Core is offline.
+## An undiscovered or ambiguous selection keeps its old fields until resolved.
+static func has_native_profile(provider: BaseProvider) -> bool:
+	if not provider is CoreProvider:
+		return false
+	var core_provider := provider as CoreProvider
+	var key := CoreModelCatalog.settings_key(core_provider.get_model_spec())
+	if key.is_empty():
+		return false
+	var matches: Array[Dictionary] = []
+	for entry: Dictionary in CoreModelCatalog.list_models(null, null, true):
+		if entry.settings_key == key:
+			matches.append(entry)
+	if matches.size() != 1:
+		return false
+	var profile: Dictionary = matches[0].get("generation_profile", {})
+	return not profile.is_empty()
+
+
 ## A modern map (including {}) is authoritative; old maps seed the first edit only.
 static func saved_for(provider: BaseProvider) -> Dictionary:
 	var key := provider.get_model_settings_key()
@@ -195,7 +214,10 @@ static func for_provider(provider: BaseProvider, request: Dictionary = {}) -> Di
 	var entry: Dictionary = offering.entry
 	var schema: Dictionary = entry.generation_options
 	var profile: Dictionary = entry.get("generation_profile", {})
-	var result := resolve(schema, saved_for(provider), request.get(CHAT_LAYER, {}), request, provider.display_name, profile)
+	var chat: Variant = request.get(CHAT_LAYER, {})
+	if not profile.is_empty():
+		chat = {}
+	var result := resolve(schema, saved_for(provider), chat, request, provider.display_name, profile)
 	if result.success:
 		var notice: String = str(result.notice)
 		if not notice.is_empty():
@@ -252,7 +274,8 @@ static func chat_params(history: ChatHistory, provider: BaseProvider, request: D
 	var params: Dictionary = {}
 	if provider is CoreProvider:
 		params = request.duplicate(true)
-		params[CHAT_LAYER] = history.GenerationOverrides.duplicate(true)
+		if not history.retire_chat_generation():
+			params[CHAT_LAYER] = history.GenerationOverrides.duplicate(true)
 	elif provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not provider is OpenAIImageProvider:
 		params = {"temperature": history.Temperature, "top_p": history.TopP,
 			"presence_penalty": history.PresencePenalty, "frequency_penalty": history.FrequencyPenalty}
@@ -293,6 +316,8 @@ static func public_request(provider: BaseProvider, raw: Variant) -> Dictionary:
 
 
 static func set_chat(history: ChatHistory, raw: Variant) -> Dictionary:
+	if has_native_profile(history.provider):
+		return failure("model_only_generation_option", "Generation preferences for this model are saved per model")
 	if not history.provider is CoreProvider:
 		return failure("model_only_generation_option", "API reasoning preferences are saved per model")
 	var checked := public_request(history.provider, raw)

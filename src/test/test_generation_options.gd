@@ -310,6 +310,7 @@ func _check_native_reasoning(gen: GDScript, core: Node, settings: Node) -> void:
 	var generic_profile: Dictionary = descriptor.profile_options(generic)
 	check("unsupported reasoning stays absent while native samplers remain", generic_profile.diagnostics.is_empty() and not generic_profile.options.has("reasoning_effort") and not generic_profile.options.has("enable_thinking") and generic_profile.options.has("top_k") and generic_profile.profile.parameters.enable_thinking.supported == false)
 	_check_full_native_profile(gen, provider, qwen)
+	_check_native_history(gen, provider, core)
 	var malformed: Dictionary = fixture.params.duplicate(true)
 	malformed.actions[0].generation_settings = {"version": 1, "parameters": {"reasoning_effort": "broken"}}
 	var bad_service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new(malformed)
@@ -363,3 +364,58 @@ func _check_full_native_profile(gen: GDScript, glm: Node, qwen: Node) -> void:
 	var repaired: Dictionary = gen.for_provider(glm)
 	check("newly read-only saved choices reset visibly without losing valid samplers", repaired.success and "no longer overridable" in repaired.notice and repaired.payload == {"seed": 42} and gen.saved_for(glm) == {"seed": 42})
 	check("full-profile fixture restores preceding model choices", gen.save_model(glm, original_glm).success and gen.save_model(qwen, original_qwen).success)
+
+
+func _check_native_history(gen: GDScript, glm: Node, core: Node) -> void:
+	var singleton = root.get_node("SingletonObject")
+	var history_script = load("res://Scripts/Models/ServiceHistory.gd")
+	var original: Dictionary = gen.saved_for(glm)
+	var advertised_name: String = glm.action.name
+	glm.action.name = ""
+	check("an invalid advertised identity cannot retire chat settings", not gen.has_native_profile(glm))
+	glm.action.name = advertised_name
+	var old := {"Provider": 0, "ServiceType": 1, "HistoryId": "native-legacy-options", "HistoryName": "Old GLM", "HistoryItemList": [],
+		"CoreModelSpec": glm.get_model_spec(), "Temperature": 0.1, "TopP": 0.2, "FrequencyPenalty": 1.25, "PresencePenalty": -0.5,
+		"GenerationOptions": {"temperature": 0.1, "top_p": 0.2, "max_tokens": 123}}
+	var history = history_script.Deserialize(JSON.parse_string(JSON.stringify(old)))
+	check("native project load drops every old chat sampler and override", history.Temperature == 1 and history.TopP == 1 and history.FrequencyPenalty == 0 and history.PresencePenalty == 0 and history.GenerationOverrides.is_empty())
+	var serialized: Dictionary = history.Serialize()
+	var absent := true
+	for field: String in ["Temperature", "TopP", "FrequencyPenalty", "PresencePenalty", "GenerationOptions"]:
+		absent = absent and not serialized.has(field)
+	check("native save omits retired chat generation fields", absent)
+	var reopened = history_script.Deserialize(JSON.parse_string(JSON.stringify(serialized)))
+	check("native save and reopen converge without chat overrides", reopened.Serialize() == serialized and reopened.GenerationOverrides.is_empty())
+	check("native migration fixture saves per-model samplers", gen.save_model(glm, {"top_k": 20, "seed": 42}).success)
+	var params: Dictionary = gen.chat_params(history, history.provider, {"seed": 7})
+	var classic: Dictionary = history.provider.build_chat_payload([], params)
+	check("old chat sends only model choices plus explicit request values", classic.success and classic.payload == {"messages": [], "top_k": 20, "seed": 7} and not params.has(gen.CHAT_LAYER))
+	check("old chat uses the same choices in chat-v1", history.provider._job_input(classic.payload, history.provider.model_name) == {"messages": [], "top_k": 20, "seed": 7, "model": "GLM-5.3-Flash", "stream": false})
+	var internal: Dictionary = gen.for_provider(glm, {gen.CHAT_LAYER: {"temperature": 0.1, "max_tokens": 123}})
+	check("native resolution cannot revive a private chat override", internal.success and internal.payload == {"top_k": 20, "seed": 42})
+	singleton.ChatList.append(history)
+	var module = load("res://Scripts/Services/MCP/Modules/MCPGenerationTools.gd").new()
+	var replaced: Dictionary = module.handle("minerva_set_generation_options", {"chat_id": history.HistoryId, "options": {"top_k": 37}})
+	check("MCP chat-id edits default to the native model layer", replaced.success and replaced.model_options == {"top_k": 37} and replaced.chat_options.is_empty())
+	var refused: Dictionary = module.handle("minerva_set_generation_options", {"chat_id": history.HistoryId, "scope": "chat", "options": {"temperature": 0.4}})
+	check("MCP refuses native chat scope clearly", refused.get("error_code") == "model_only_generation_option" and history.GenerationOverrides.is_empty())
+	singleton.ChatList.erase(history)
+	var services: Array = core.services.duplicate()
+	core.services.clear()
+	var undiscovered = history_script.Deserialize(JSON.parse_string(JSON.stringify(old)))
+	check("undiscovered Core identity retains legacy intent until metadata arrives", undiscovered.GenerationOverrides.get("temperature") == 0.1)
+	core.services.assign(services)
+	var connected: bool = core.client._connected
+	core.client._connected = false
+	check("cached profile retires legacy chat values even while Core is offline", undiscovered.retire_chat_generation() and undiscovered.GenerationOverrides.is_empty() and not undiscovered.Serialize().has("Temperature"))
+	core.client._connected = connected
+	core.services.clear()
+	var deferred = history_script.Deserialize(JSON.parse_string(JSON.stringify(old)))
+	core.services.assign(services)
+	var later: Dictionary = gen.chat_params(deferred, deferred.provider)
+	check("discovery before send retires deferred chat overrides", deferred.GenerationOverrides.is_empty() and deferred.Temperature == 1 and not later.has(gen.CHAT_LAYER))
+	history.provider.free()
+	reopened.provider.free()
+	undiscovered.provider.free()
+	deferred.provider.free()
+	check("native migration fixture restores preceding model choices", gen.save_model(glm, original).success)

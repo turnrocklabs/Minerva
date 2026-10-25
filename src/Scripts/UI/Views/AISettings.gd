@@ -101,6 +101,7 @@ func load_current_chat_settings() -> void:
 
 	var current_tab: int = SingletonObject.Chats.current_tab
 	_bind_history(SingletonObject.ChatList[current_tab])
+	current_chat_tab_ref.retire_chat_generation()
 
 	# Load system prompt if used, otherwise clear it
 	if current_chat_tab_ref.HasUsedSystemPrompt:
@@ -338,6 +339,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 		return
 
 	_selected_model_label.text = "Settings for %s (%s)" % [provider.display_name, provider.provider_name]
+	var native_profile: bool = GenerationOptions.has_native_profile(provider)
 
 	# Temperature section visibility
 	%TemperatureHBoxContainer.visible = provider.supports_temperature and not provider is CoreProvider
@@ -351,11 +353,11 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	%TempHSlider.max_value = provider.temperature_max
 
 	# Top P section visibility
-	%TopPHBoxContainer.visible = provider.supports_top_p
+	%TopPHBoxContainer.visible = provider.supports_top_p and not native_profile
 
 	# Frequency/Presence penalty visibility
-	%FrequencyBoxContainer.visible = provider.supports_frequency_penalty
-	%PresenceHBoxContainer.visible = provider.supports_presence_penalty
+	%FrequencyBoxContainer.visible = provider.supports_frequency_penalty and not native_profile
+	%PresenceHBoxContainer.visible = provider.supports_presence_penalty and not native_profile
 
 	# System prompt section visibility
 	%SystemPromptVBoxContainer.visible = provider.supports_system_prompt
@@ -367,7 +369,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	# Model-chat settings (context window)
 	var is_model_chat: bool = provider.get("supports_num_ctx") == true and not provider is CoreProvider
 	_update_model_chat_settings_visibility(is_model_chat, provider)
-	_chat_generation_settings.visible = provider is CoreProvider and current_chat_tab_ref != null
+	_chat_generation_settings.visible = provider is CoreProvider and current_chat_tab_ref != null and not native_profile
 	_model_generation_settings.visible = provider is CoreProvider
 	# Shared resolution resets retired preferences before the numeric editors load.
 	if _model_reasoning_settings.get_parent() != %ModelSettings:

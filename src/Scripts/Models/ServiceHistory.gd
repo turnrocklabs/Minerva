@@ -368,7 +368,26 @@ func to_prompt(predicate: Callable = Callable()) -> Array[Variant]:
 	return retVal
 
 ## Serialize creates a JSON representation of this instance.
+## Native-profile chats inherit model settings. Unknown Core identities wait for
+## discovery; UI/send/save call this again once the profile is advertised.
+func retire_chat_generation() -> bool:
+	if service_type != ServiceType.CHAT or not GenerationOptions.has_native_profile(provider):
+		return false
+	if Temperature != 1.0:
+		Temperature = 1.0
+	if TopP != 1.0:
+		TopP = 1.0
+	if FrequencyPenalty != 0.0:
+		FrequencyPenalty = 0.0
+	if PresencePenalty != 0.0:
+		PresencePenalty = 0.0
+	if not GenerationOverrides.is_empty():
+		GenerationOverrides = {}
+	return true
+
+
 func Serialize() -> Dictionary:
+	var model_generation: bool = retire_chat_generation()
 	var serialized_items: Array[Dictionary] = []
 
 	for chat_history_item: ChatHistoryItem in HistoryItemList:
@@ -436,6 +455,9 @@ func Serialize() -> Dictionary:
 		"PassthroughCommand": PassthroughCommand,
 		"PassthroughCwd": PassthroughCwd,
 	}
+	if model_generation:
+		for field: String in ["Temperature", "TopP", "FrequencyPenalty", "PresencePenalty", "GenerationOptions"]:
+			save_dict.erase(field)
 	return save_dict
 
 static func Deserialize(data: Dictionary) -> ServiceHistory:
@@ -501,6 +523,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.FrequencyPenalty = data.get("FrequencyPenalty")
 	if data.get("PresencePenalty"):
 		history.PresencePenalty = data.get("PresencePenalty")
+	history.retire_chat_generation()
 
 	# System prompt flags
 	if data.has("HasUsedSystemPrompt"):
