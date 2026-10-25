@@ -4,6 +4,7 @@
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_bfm0p"]
 
 [ext_resource type="PackedScene" path="res://Scenes/controls/CoreGenerationSettings.tscn" id="3_core_generation"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/ModelReasoningSettings.gd" id="4_reasoning"]
 
 [node name="AISettings" type="Window" unique_id=1767940973]
 oversampling_override = 1.0
@@ -452,6 +453,37 @@ theme_override_constants/separation = 10
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+
+[node name="ModelReasoningSettings" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+script = ExtResource("4_reasoning")
+
+[node name="Separator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+text = "Reasoning effort"
+
+[node name="Effort" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+step = 1.0
+tick_count = 3
+ticks_on_borders = true
+tooltip_text = "Reasoning effort for this model. Changes save immediately."
+
+[node name="Levels" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Selection" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+
+[node name="Message" type="Label" parent="MarginContainer/MainVBox/TabContainer/ThisModel/ModelSettings/ModelReasoningSettings"]
+layout_mode = 2
+autowrap_mode = 3
 
 [node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox" unique_id=195839022]
 layout_mode = 2

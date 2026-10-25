@@ -5,6 +5,7 @@ signal create_system_prompt_message(message)
 @onready var _selected_model_label: Label = %SelectedModelLabel
 @onready var _chat_generation_settings: CoreGenerationSettings = %CoreGenerationSettings
 @onready var _model_generation_settings: CoreGenerationSettings = %ModelGenerationSettings
+@onready var _model_reasoning_settings: ModelReasoningSettings = %ModelReasoningSettings
 # Nano Banana Pro settings container (created dynamically)
 var _nbp_settings_container: VBoxContainer = null
 
@@ -143,6 +144,8 @@ func _ready() -> void:
 	var tabs: TabContainer = $MarginContainer/MainVBox/TabContainer
 	tabs.set_tab_title(0, "This chat")
 	tabs.set_tab_title(1, "This model")
+	var clear_model: Button = _model_generation_settings.get_node("Clear")
+	clear_model.pressed.connect(_model_reasoning_settings.refresh)
 
 
 func _on_accept_button_pressed() -> void:
@@ -354,6 +357,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 		if current_chat_tab_ref != null:
 			_chat_generation_settings.configure(core_provider, current_chat_tab_ref, 0, ["temperature", "max_tokens"])
 		_model_generation_settings.configure(core_provider, null, 1, ["num_ctx", "num_gpu"])
+	_model_reasoning_settings.configure(provider)
 
 	# Reasoning options follow the current model capabilities.
 	_update_reasoning_summary_visibility(provider)

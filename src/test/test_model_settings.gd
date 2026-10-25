@@ -36,6 +36,9 @@ func _run() -> void:
 	root.add_child(main)
 	current_scene = main
 	await process_frame
+	# Discovery is fixture-owned: a closed real socket must not clear this
+	# advertised connection while the real scene advances through frames.
+	core.client.set_process(false)
 	core.services.assign([service])
 	core.client._connected = true
 	core.registered = true
@@ -76,7 +79,83 @@ func _run() -> void:
 		check("model fields persist under bound model settings key", saved.get("num_ctx") == 8192 and saved.get("num_gpu") == 0)
 		check("model fields create no chat overrides", history.GenerationOverrides.is_empty())
 	check("separate default-provider control removed", settings.find_child("ProviderOptionButton", true, false) == null)
+	var unsupported = settings.find_child("ModelReasoningSettings", true, false)
+	check("unsupported model hides slider and explains why", unsupported != null and not unsupported.get_node("Effort").visible and "does not offer" in unsupported.get_node("Message").text)
 	settings.hide()
+	await _check_native_slider(singleton, core, pane, settings)
 	preferences.free()
 	print("Results: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
+
+
+func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Window) -> void:
+	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/native_model_chat_registration.json"))
+	var service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new(fixture.params)
+	core.services.assign([service])
+	var picker = pane._provider_option_button
+	# The earlier chat scenario selects the internal chat service. Select the
+	# advertised model service through the same public chooser path as the UI.
+	picker.switch_to_provider_set_for_service(service)
+	var spec := {"kind": "core_action", "service_client_id": "model-chat", "service_name": "Model Chat Service", "action_name": "GLM-5.3-Flash"}
+	check("native GLM fixture is selectable", picker.select_provider_spec(spec))
+	picker.item_selected.emit(picker.selected)
+	var history = singleton.ChatList[pane.current_tab]
+	history.AgenticSystemPrompt = "Fixture prompt"
+	pane._on_btn_chat_settings_pressed()
+	await process_frame
+	var label: Label = settings.find_child("SelectedModelLabel", true, false)
+	check("native gear label names GLM", label != null and "GLM-5.3-Flash" in label.text)
+	var control = settings.find_child("ModelReasoningSettings", true, false)
+	check("model reasoning scene control exists", control != null)
+	if control == null:
+		return
+	var gen = load("res://Scripts/Services/Providers/GenerationOptions.gd")
+	var slider: HSlider = control.get_node("Effort")
+	if OS.get_environment("MINERVA_MODEL_REASONING_FALSIFIER") == "1":
+		var body: Dictionary = history.provider.build_chat_payload([])
+		check("FALSIFIER: reverted ingestion hides slider", not slider.visible and control.levels.is_empty())
+		check("FALSIFIER: reverted ingestion omits reasoning field", body.success and not body.payload.has("reasoning_effort"))
+		settings.hide()
+		return
+	check("GLM slider stops are native low/high/max with high default", control.levels == ["low", "high", "max"] and control.default_effort == "high" and slider.visible and slider.value == 1)
+	check("native default is marked", "high (default)" in control.get_node("Levels").text)
+	slider.value = 0
+	slider.value = 1
+	check("moving slider to high persists the model choice", gen.saved_for(history.provider).get("reasoning_effort") == "high")
+	var classic: Dictionary = history.provider.build_chat_payload([{"role": "user", "content": "fixture"}])
+	check("gear choice reaches classic native request", classic.success and classic.payload.get("reasoning_effort") == "high")
+	if classic.success:
+		var input: Dictionary = history.provider._job_input(classic.payload, history.provider.model_name)
+		check("gear choice reaches chat/v1 input", input.get("reasoning_effort") == "high" and input.get("model") == "GLM-5.3-Flash")
+	settings.hide()
+	pane._on_new_chat()
+	await process_frame
+	var next_history = singleton.ChatList.back()
+	check("new chat starts on GLM with model effort inherited", next_history.provider.model_name == "GLM-5.3-Flash" and gen.for_provider(next_history.provider).values.get("reasoning_effort") == "high")
+	next_history.AgenticSystemPrompt = "Fixture prompt"
+	# Simulate a preference saved before the advertised effort levels changed.
+	var stored: Dictionary = singleton.config_file.get_value("Models", "GenerationOptions", {}).duplicate(true)
+	stored[next_history.provider.get_model_settings_key()] = {"reasoning_effort": "retired-level"}
+	singleton.config_file.set_value("Models", "GenerationOptions", stored)
+	singleton.config_file.save(singleton._config_file_name)
+	pane._on_btn_chat_settings_pressed()
+	check("stale effort resets to model default with a visible notice", gen.for_provider(next_history.provider).values.get("reasoning_effort") == "high" and "unavailable" in control.get_node("Message").text and slider.value == 1)
+	slider.value = 2
+	var model_editor: Control = settings.find_child("ModelGenerationSettings", true, false)
+	model_editor.get_node("Clear").pressed.emit()
+	check("clearing model overrides refreshes reasoning to its default", gen.for_provider(next_history.provider).values.get("reasoning_effort") == "high" and slider.value == 1)
+	settings.hide()
+	var qwen = load("res://Scripts/Services/Providers/Core/CoreProvider.gd").new(service, service.actions[1])
+	control.configure(qwen)
+	check("Qwen slider orders native levels and marks its real default", control.levels == ["low", "medium", "xhigh"] and control.default_effort == "xhigh" and slider.value == 3)
+	slider.value = 0
+	var off: Dictionary = qwen.build_chat_payload([])
+	check("Qwen Off disables thinking without an inactive effort", off.success and off.payload.get("enable_thinking") == false and not off.payload.has("reasoning_effort"))
+	slider.value = 1
+	var low: Dictionary = qwen.build_chat_payload([])
+	check("Qwen effort re-enables thinking with the native value", low.success and low.payload.get("enable_thinking") == true and low.payload.get("reasoning_effort") == "low")
+	qwen.free()
+	var google = load("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd").new()
+	control.configure(google)
+	check("unknown provider default is an initial inheritance stop", control.default_effort.is_empty() and slider.value == 0 and control.get_node("Selection").text == "Provider default" and google.model_reasoning_params({}).values.is_empty())
+	google.free()
