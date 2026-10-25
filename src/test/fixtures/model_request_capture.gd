@@ -14,9 +14,11 @@ class Anthropic extends AnthropicProvider:
 
 class Google extends GoogleProvider:
 	var captured: Dictionary = {}
+	var captured_url: String = ""
 
 	func make_request(_url: String, _method: int, body: Variant = "", _headers: Array[String] = []) -> RequestResults:
 		captured = JSON.parse_string(str(body))
+		captured_url = _url
 		var response := RequestResults.new()
 		response.success = false
 		response.message = "Test transport completed"

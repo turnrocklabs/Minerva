@@ -65,6 +65,7 @@ func run() -> void:
 	check("repeated add is idempotent", empty.add_model({"model_name": "example"}) == added and empty.models.size() == 1)
 	await check_reasoning()
 	await check_controls_and_requests()
+	await check_google_request_logging()
 	await check_delete_buttons()
 	await check_version_resolution()
 	print("Results: %d passed, %d failed" % [passed, failed])
@@ -149,6 +150,27 @@ func check_reasoning() -> void:
 	check("GPT-5.1 preserves supported effort through request validation", previous.reasoning_effort_levels() == ["none", "low", "medium", "high"] and selection.validate("high", previous.reasoning_effort_levels()) == "high")
 	previous.free()
 	await process_frame
+
+
+func check_google_request_logging() -> void:
+	var singleton = root.get_node("SingletonObject")
+	var previous_preferences = singleton.preferences_popup
+	var preferences = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
+	var canary: String = "google-log-canary-184"
+	preferences.config_file.set_value("API KEYS", preferences.PROVIDERS[singleton.API_PROVIDER.GOOGLE], canary)
+	singleton.preferences_popup = preferences
+	var google = load("res://test/fixtures/model_request_capture.gd").Google.new()
+	var capture = load("res://test/helpers/log_capture.gd").new()
+	OS.add_logger(capture)
+	await google.generate_content([])
+	OS.remove_logger(capture)
+	var output: String = capture.combined()
+	check("Google request log retains the endpoint with a fixed key redaction", "Sending request to: https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=[REDACTED]" in output)
+	check("Google request stdout and stderr exclude the actual API key", not canary in output)
+	check("Google transport still receives the unchanged API key", google.captured_url == "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=" + canary)
+	singleton.preferences_popup = previous_preferences
+	google.free()
+	preferences.free()
 
 
 func check_controls_and_requests() -> void:

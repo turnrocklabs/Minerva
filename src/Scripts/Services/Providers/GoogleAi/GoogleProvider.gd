@@ -148,7 +148,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 	var body_stringified: String = JSON.stringify(request_body)
 
-	print("Sending request to: %s" % "%s/%s:generateContent?key=%s" % [BASE_URL, model_name, API_KEY])
+	print("Sending request to: %s/%s:generateContent?key=[REDACTED]" % [BASE_URL, model_name])
 
 	var response: RequestResults = await make_request(
 		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s" % [model_name, API_KEY],
