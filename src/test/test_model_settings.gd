@@ -190,6 +190,11 @@ func _check_native_slider(singleton: Node, core: Node, pane: Node, settings: Win
 	check("native none is labelled None and sends native none", control.get_node("Selection").text == "None" and api.model_reasoning_params({}).values.get("reasoning_effort") == "none")
 	api.free()
 	var google = load("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd").new()
+	# The full runner shares preferences across suites; this case owns an
+	# unchosen model preference and restores the preceding suite's choice.
+	var prior_google: Dictionary = gen.saved_for(google)
+	var inherited: Dictionary = gen.save_model(google, {})
 	control.configure(google)
-	check("unknown provider default is an initial inheritance stop", control.default_effort.is_empty() and slider.value == 0 and control.get_node("Selection").text == "Provider default" and google.model_reasoning_params({}).values.is_empty())
+	check("unknown provider default is an initial inheritance stop", inherited.success and control.default_effort.is_empty() and slider.value == 0 and control.get_node("Selection").text == "Provider default" and google.model_reasoning_params({}).values.is_empty())
+	check("provider-default fixture restores the preceding model preference", gen.save_model(google, prior_google).success and gen.saved_for(google) == prior_google)
 	google.free()
