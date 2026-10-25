@@ -699,6 +699,7 @@ func _compact_chat_locked(history: ChatHistory, keep_recent: int, turn_token: in
 	var summary_text := await _try_llm_summarize(history, conversation_text, summarize_end - summarize_start)
 	if turn_token >= 0 and _turn_stopped(history, turn_token):
 		return false
+	var summary_source: String = "model" if not summary_text.is_empty() else "fallback"
 	if summary_text.is_empty():
 		# Naive fallback
 		summary_text = """### Conversation Summary ###
@@ -726,6 +727,7 @@ Key points from earlier conversation:
 		ledger_entry.timestamp = Time.get_datetime_string_from_system(false)
 		ledger_entry.message_range = "messages %d-%d" % [summarize_start + 1, summarize_end]
 		ledger_entry.summary_text = summary_text
+		ledger_entry.summary_source = summary_source
 		for i in range(summarize_start, summarize_end):
 			var item: ChatHistoryItem = history.HistoryItemList[i]
 			ledger_entry.original_messages.append(item.ledger_original())
@@ -808,7 +810,10 @@ func _try_llm_summarize(history: ChatHistory, conversation_parts: PackedStringAr
 		history.provider, conversation_parts, msg_count, history.HistoryId)
 
 	if not result.get("ok", false):
-		print("[Compact] LLM summarization failed (%s), falling back to naive" % str(result.get("error", "")))
+		var reason: String = str(result.get("error_code", "failed"))
+		if reason.length() > 64 or not (reason.is_valid_identifier() or reason.is_valid_int()):
+			reason = "failed"
+		print("[Compact] Summary fallback: %s" % reason)
 		return ""
 
 	var summary_text := str(result.get("text", ""))
@@ -843,7 +848,7 @@ func _summarize_conversation_with_provider(provider: BaseProvider, conversation_
 		prompt_list.append(formatted)
 
 	if prompt_list.is_empty():
-		return {"ok": false, "text": "", "error": "prompt_format_failed"}
+		return {"ok": false, "text": "", "error": "prompt_format_failed", "error_code": "prompt_format_failed"}
 
 	var saved_tools: Array[Dictionary] = []
 	if "available_tools" in provider:
@@ -860,19 +865,29 @@ func _summarize_conversation_with_provider(provider: BaseProvider, conversation_
 
 	var previous_chat_id := provider.chat_id
 	provider.chat_id = cost_history_id
-	var bot_response: BotResponse = await provider.generate_content(prompt_list)
+	var request: Dictionary = {}
+	if provider is CoreProvider:
+		var core_provider: CoreProvider = provider
+		if core_provider.supports_async_chat():
+			# Use the normal job constructor/transport without persisting this
+			# side request as a main reply that would resume on project reopen.
+			var summary_item := ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.MODEL)
+			summary_item.provider = core_provider
+			request["_core_chat_job"] = core_provider.create_chat_job(summary_item, Callable(), Callable())
+	var bot_response: BotResponse = await provider.generate_content(prompt_list, request)
 	provider.chat_id = previous_chat_id
 	if provider.has_method("set_tools"):
 		provider.call("set_tools", saved_tools)
 	if bot_response == null:
-		return {"ok": false, "text": "", "error": "no_response", "usage": {"available": false}}
+		return {"ok": false, "text": "", "error": "no_response", "error_code": "no_response", "usage": {"available": false}}
 	var usage := {"available": true, "prompt_tokens": bot_response.prompt_tokens, "completion_tokens": bot_response.completion_tokens}
 	if SingletonObject.cost_tracker and not cost_history_id.is_empty():
 		SingletonObject.cost_tracker.record_chat_cost(bot_response, cost_history_id, "compaction_summary")
 	if not bot_response.error.is_empty():
-		return {"ok": false, "text": "", "error": bot_response.error, "usage": usage}
+		return {"ok": false, "text": "", "error": bot_response.error,
+			"error_code": str(bot_response.get_meta("error_code", "request_failed")), "usage": usage}
 	if bot_response.text.is_empty():
-		return {"ok": false, "text": "", "error": "empty_response_text", "usage": usage}
+		return {"ok": false, "text": "", "error": "empty_response_text", "error_code": "empty", "usage": usage}
 
 
 	return {"ok": true, "text": bot_response.text, "error": "", "usage": usage}

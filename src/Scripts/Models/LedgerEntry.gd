@@ -9,6 +9,7 @@ var chat_name: String = ""
 var timestamp: String = ""
 var message_range: String = ""  # e.g. "messages 1-24"
 var summary_text: String = ""
+var summary_source: String = ""  # model/fallback; unknown for older entries
 var original_messages: Array[Dictionary] = []  # Serialized ChatHistoryItems
 
 
@@ -34,6 +35,7 @@ func serialize() -> Dictionary:
 		"timestamp": timestamp,
 		"message_range": message_range,
 		"summary_text": summary_text,
+		"summary_source": summary_source,
 		"original_messages": original_messages,
 	}
 
@@ -45,6 +47,7 @@ static func deserialize(data: Dictionary) -> LedgerEntry:
 	entry.timestamp = data.get("timestamp", "")
 	entry.message_range = data.get("message_range", "")
 	entry.summary_text = data.get("summary_text", "")
+	entry.summary_source = data.get("summary_source", "")
 	var msgs = data.get("original_messages", [])
 	for m in msgs:
 		if m is Dictionary:
