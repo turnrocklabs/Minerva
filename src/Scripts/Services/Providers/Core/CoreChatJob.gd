@@ -3,7 +3,7 @@ extends RefCounted
 ## One chat job. Transport, registration, clock waits and persistence are injected.
 
 const TERMINAL: Array[String] = ["completed", "failed", "cancelled", "stalled", "abandoned", "interrupted"]
-const TRANSIENT: Array[String] = ["MODEL_STILL_LOADING", "BACKEND_BUSY", "RECONCILING", "ASYNC_PEERS_UNCONFIGURED", "BACKEND_UNAVAILABLE", "NO_NODES_AVAILABLE", "QUEUE_FULL", "RESOURCE_UNKNOWN", "BUSY"]
+const MAX_SUBMIT_ATTEMPTS: int = 12
 const CLASSIC: Array[String] = ["MODEL_NOT_PERMITTED", "ASYNC_UNAVAILABLE"]
 var pending_item: ChatHistoryItem
 var _ask: Callable
@@ -78,19 +78,24 @@ func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 		await _save(item) # The pending model item is attached to history before this call.
 		var body: Dictionary = {"schema_version": 1, "submission_id": submission_id,
 			"kind": "chat/v1", "input": input.duplicate(true)}
-		while not _cancelled:
+		var attempts: int = 0
+		while not _cancelled and attempts < MAX_SUBMIT_ATTEMPTS:
+			attempts += 1
 			var reply: Dictionary = await _request("submit", body)
 			if reply.get("success", false):
 				_job_id = str(reply.get("value", {}).get("job_id", ""))
 				if not _job_id.is_empty():
 					break
 			var code: String = str(reply.get("error_code", ""))
-			var refused: bool = reply.get("remote_error", false) and reply.get("not_started", true) != false and code not in ["RESULT_UNKNOWN", "SUBMISSION_IN_FLIGHT", "timeout", "TIMEOUT"]
-			if refused and code in CLASSIC:
+			var refused: bool = reply.get("remote_error", false) and reply.get("not_started", false) == true and code not in ["RESULT_UNKNOWN", "SUBMISSION_IN_FLIGHT", "timeout", "TIMEOUT"]
+			# These legacy codes are emitted before dispatch; an explicit unknown
+			# acceptance flag still forbids classic fallback.
+			var legacy_refusal: bool = reply.get("remote_error", false) and code in CLASSIC and not reply.get("not_started_provided", reply.has("not_started"))
+			if (refused or legacy_refusal) and code in CLASSIC:
 				item.PendingJob = {}
 				await _save(item)
 				return {"success": false, "classic_fallback": true}
-			if refused and (reply.get("retryable", false) or code in TRANSIENT):
+			if refused and reply.get("retryable", false) == true:
 				await _wait(5.0)
 				continue # Same body and submission ID after a definitive refusal.
 			if refused and code not in ["INVALID_JOB_REPLY", "core_error"]:
@@ -100,11 +105,19 @@ func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 			# Uncertain acceptance remains query-only until lookup proves absence.
 			var found: Dictionary = await _lookup(submission_id)
 			if found.get("found") is bool and found["found"] == false:
-				continue # Still in-session: retry the exact same body and ID.
+				await _wait(5.0)
+				continue # Authoritative absence permits the same bounded, idempotent retry.
 			_job_id = str(found.get("job_id", ""))
 			if _job_id.is_empty():
 				return found
 			break
+		if not _cancelled and _job_id.is_empty():
+			# The loop only retries a certified refusal or authoritative absence.
+			item.PendingJob = {}
+			await _save(item)
+			var exhausted: Dictionary = _failure("ADMISSION_RETRY_LIMIT")
+			exhausted["error_message"] = "The backend did not accept the request after %d attempts; retry the turn." % MAX_SUBMIT_ATTEMPTS
+			return exhausted
 	if _cancelled:
 		return _failure("cancelled")
 	if _job_id.is_empty():
