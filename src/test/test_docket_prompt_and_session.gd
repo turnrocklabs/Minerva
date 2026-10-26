@@ -82,6 +82,11 @@ var public_api = null
 var _next := 0
 func process_generation() -> int:
 	return generation
+func list_tools() -> Array:
+	var tools: Array = []
+	for name: String in RequiredPlugins.PLUGINS.docket.host_tools + RequiredPlugins.DOCKET_CAPABILITIES:
+		tools.append(MCPToolDefinition.from_dict({"name": name.trim_prefix("minerva_"), "inputSchema": {"type": "object"}}))
+	return tools
 func open_project(path: String) -> Dictionary:
 	if not open.has(path):
 		_next += 1
