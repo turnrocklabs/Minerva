@@ -557,10 +557,12 @@ func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refres
 		prepared_item = prepared.get("item")
 		history.remove_meta("context_prepared_append")
 	var system_prompt: String = _context_system_prompt(history)
+	var has_system_prompt: bool = "system_prompt" in history.provider
+	var saved_system_prompt: String = str(history.provider.get("system_prompt")) if has_system_prompt else ""
 	if not recovery_note.is_empty():
 		system_prompt += "\n\n" + recovery_note
-		if history.provider.supports_system_prompt:
-			history.provider.system_prompt = system_prompt
+		if has_system_prompt and history.provider.supports_system_prompt:
+			history.provider.set("system_prompt", system_prompt)
 		prompt = _build_history_list_with_system_prompt(history, history.provider, system_prompt, predicate, history.AgentModeEnabled)
 		if prepared_item != null:
 			var recovery_append: Variant = history.provider.Format(prepared_item)
@@ -570,6 +572,8 @@ func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refres
 	if status.warning or not status.ok:
 		var compacted := await compact_chat(history, 0, turn_token)
 		if _turn_stopped(history, turn_token):
+			if has_system_prompt and not recovery_note.is_empty():
+				history.provider.set("system_prompt", saved_system_prompt)
 			return []
 		if compacted:
 			prompt = _build_history_list_with_system_prompt(history, history.provider, system_prompt, predicate, history.AgentModeEnabled)
@@ -579,6 +583,8 @@ func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refres
 					prompt.append(formatted)
 	elif history.has_meta("compaction_no_progress"):
 		history.remove_meta("compaction_no_progress")
+	if has_system_prompt and not recovery_note.is_empty():
+		history.provider.set("system_prompt", saved_system_prompt)
 	return prompt
 
 
@@ -3293,6 +3299,19 @@ static func _execute_with_document_recovery(mcp_manager, unsupported_guard,
 ## @param user_history_item: The user's message, for emitting response_arrived at the end
 ## `turn_token`, when given, is the turn the tool calls belong to: a turn
 ## stopped while its continuation prompt is built sends nothing more.
+func _generate_agent_continuation(history: ChatHistory, prompt: Array[Variant], recovery_note: String) -> BotResponse:
+	var provider: BaseProvider = history.provider
+	var has_system_prompt: bool = "system_prompt" in provider
+	var saved_system_prompt: String = str(provider.get("system_prompt")) if has_system_prompt else ""
+	var override_system_prompt: bool = not recovery_note.is_empty() and has_system_prompt and provider.supports_system_prompt
+	if override_system_prompt:
+		provider.set("system_prompt", _context_system_prompt(history) + "\n\n" + recovery_note)
+	var response: BotResponse = await generate_content_from_provider(history, prompt, null, provider)
+	if override_system_prompt:
+		provider.set("system_prompt", saved_system_prompt)
+	return response
+
+
 func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
 					   accumulator_chi: ChatHistoryItem = null,
 					   user_history_item: ChatHistoryItem = null,
@@ -3525,7 +3544,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		model_chi.rendered_node.loading_append = true
 
 	# Get LLM's response to tool results
-	var continuation_response: BotResponse = await generate_content_from_provider(history, continuation_list)
+	var continuation_response: BotResponse = await _generate_agent_continuation(history, continuation_list, recovery_note)
 
 	if not continuation_response:
 		print("[Agent] ERROR: No continuation response received")
@@ -3544,7 +3563,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			await get_tree().create_timer(1.0).timeout
 			if turn_token >= 0 and _turn_stopped(history, turn_token):
 				return
-			continuation_response = await generate_content_from_provider(history, continuation_list)
+			continuation_response = await _generate_agent_continuation(history, continuation_list, recovery_note)
 			if continuation_response and not continuation_response.error:
 				# Retry succeeded — continue processing below
 				pass
@@ -3576,9 +3595,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	var unverified_notice := ""
 	var stale_source: String = history.tool_memory_manager.completion_recovery_note(history, completion_recovery_used)
 	if not continuation_response.has_tool_calls() and not stale_source.is_empty():
-		if not completion_recovery_used and current_round + 1 < max_rounds:
+		if not completion_recovery_used:
 			model_chi.OutputTokens += continuation_response.completion_tokens
-			await handle_tool_calls(history, [], current_round + 1, model_chi,
+			await handle_tool_calls(history, [], current_round, model_chi,
 				user_history_item, unsupported_guard, turn_token, true)
 			return
 		unverified_notice = "Unverified: no fresh artifact evidence was obtained after changes. Treat the following response as unverified."

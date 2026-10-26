@@ -138,7 +138,7 @@ func handle_recall(query: Dictionary) -> Dictionary:
 		# Retrieve mode — return full agent note content
 		var content := _get_agent_note_text(note_id)
 		if not content.is_empty():
-			return {"content": content, "note_id": note_id}
+			return {"content": content, "note_id": note_id, "evidence_provenance": "archive"}
 		return {"error": "note not found", "note_id": note_id}
 
 	# Search mode — filter and return index entries
@@ -370,11 +370,13 @@ func _build_knowledge_injection_text(history: ServiceHistory) -> String:
 static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: int) -> Dictionary:
 	var evidence := {"status": "none", "index": -1, "note_id": "", "tool": "", "call_id": ""}
 	var calls := {}
+	var unresolved: Dictionary = {}
 	for i in range(items.size()):
 		var item := items[i]
 		if item.Role == ChatHistoryItem.ChatRole.USER:
 			evidence = {"status": "none", "index": -1, "note_id": "", "tool": "", "call_id": ""}
 			calls.clear()
+			unresolved.clear()
 		if item.IsToolCall:
 			for tool_call: Dictionary in item.ToolCalls:
 				calls[str(tool_call.get("id", ""))] = tool_call.get("arguments", {})
@@ -389,6 +391,8 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 		var schema_refusal: bool = result.get("success", true) == false \
 			and str(result.get("error_code", "")) == "schema_mismatch"
 		if not item.ToolReadOnly and not schema_refusal and evidence.status != "none":
+			if evidence.has("hash") and evidence.get("complete", false) and evidence.status != "invalidated":
+				unresolved = evidence.duplicate(true)
 			evidence["status"] = "invalidated"
 			evidence["index"] = -1
 		if not parsed is Dictionary:
@@ -400,6 +404,8 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 			continue
 		if result.is_empty() or result.has("error") or result.get("success", true) == false:
 			continue
+		if result.get("evidence_provenance") == "archive":
+			continue  # Historical content cannot verify a live artifact.
 		var substantive := false
 		for key: String in ["data", "content", "text", "rows", "cells", "tables"]:
 			var payload: Variant = result.get(key)
@@ -424,12 +430,15 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 		var truncated: bool = result.get("truncated", false)
 		var text_truncated: bool = result.get("text_truncated", false)
 		var complete: bool = not truncated and not text_truncated
+		if complete:
+			unresolved.clear()
 		var fits: bool = char_limit > 0 and item.Message.length() <= char_limit and complete
 		evidence = {"status": "retained_snapshot" if fits else "retrieve_required",
 			"index": i if fits else -1, "note_id": item.ToolArtifactNoteId,
 			"tool": item.ToolName, "call_id": item.ToolCallId,
 			"source": locator, "chars": item.Message.length(),
 			"hash": _hash_projection_fragment(item.Message), "complete": complete}
+	evidence["unresolved_invalidation"] = unresolved
 	return evidence
 
 
@@ -438,13 +447,14 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 func completion_recovery_note(history: ServiceHistory, recovering: bool = false) -> String:
 	var evidence: Dictionary = select_result_evidence(history.HistoryItemList, max_evidence_chars)
 	var fresh: bool = evidence.has("hash") and evidence.get("complete", false) and evidence.get("status") != "invalidated"
-	var stale: bool = evidence.get("status") == "invalidated" and evidence.has("hash")
-	if not stale and not (recovering and not fresh):
+	var unresolved: Dictionary = evidence.get("unresolved_invalidation", {})
+	if unresolved.is_empty() and not (recovering and not fresh):
 		return ""
+	var source: Dictionary = unresolved if not unresolved.is_empty() else evidence
 	return ("Artifact verification from %s source=%s remains unresolved. "
 		+ "Read the current artifact again before reporting its contents. "
 		+ "An archived result or success receipt does not verify its current state.") % [
-		str(evidence.get("tool", "")), JSON.stringify(evidence.get("source", {})).left(240)]
+		str(source.get("tool", "")), JSON.stringify(source.get("source", {})).left(240)]
 
 
 func _build_tool_memory_projection_state(history: ServiceHistory, floating_summary_text: String, evidence: Dictionary = {}) -> Dictionary:
