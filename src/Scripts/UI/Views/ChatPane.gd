@@ -3597,12 +3597,13 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	if not continuation_response.has_tool_calls() and not stale_source.is_empty():
 		if not completion_recovery_used:
 			model_chi.OutputTokens += continuation_response.completion_tokens
+			var recovery_guard: MCPUnsupportedOperationGuard = unsupported_guard
 			await handle_tool_calls(history, [], current_round, model_chi,
-				user_history_item, unsupported_guard, turn_token, true)
+				user_history_item, recovery_guard, turn_token, true)
 			return
 		unverified_notice = "Unverified: no fresh artifact evidence was obtained after changes. Treat the following response as unverified."
 	# Process the continuation response
-	var continuation_chi = process_bot_response(continuation_response, history.provider)
+	var continuation_chi: ChatHistoryItem = process_bot_response(continuation_response, history.provider)
 	if not unverified_notice.is_empty():
 		continuation_chi.Message = unverified_notice + "\n\n" + continuation_chi.Message
 		continuation_chi.Error = unverified_notice

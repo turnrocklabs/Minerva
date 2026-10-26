@@ -651,7 +651,7 @@ func _get_agent_note(args: Dictionary) -> Dictionary:
 	if note_id.is_empty():
 		return MCPToolUtils.error("note_id is required")
 
-	var note = _resolve_agent_note(note_id)
+	var note: Note = _resolve_agent_note(note_id)
 	if not note or not (note is Note):
 		return MCPToolUtils.error("Agent note not found: %s" % note_id)
 	if not chat_id.is_empty() and not note.is_linked_to_chat(chat_id):
@@ -676,7 +676,7 @@ func _read_agent_note(args: Dictionary) -> Dictionary:
 	if note_id.is_empty():
 		return MCPToolUtils.error("note_id is required")
 
-	var note = _resolve_agent_note(note_id)
+	var note: Note = _resolve_agent_note(note_id)
 	if not note or not (note is Note):
 		return MCPToolUtils.error("Agent note not found: %s" % note_id)
 	if not chat_id.is_empty() and not note.is_linked_to_chat(chat_id):
