@@ -452,15 +452,28 @@ func _activate_dependencies(tool_deps: Array) -> Dictionary:
 	}
 
 
+## Readiness describes dependency admission; success still describes the skill
+## read/write operation so existing clients retain its established contract.
+static func _set_activation_readiness(result: Dictionary, activation: Dictionary) -> void:
+	var unavailable: Array = activation.get("unavailable_tools", [])
+	var skipped: Array = activation.get("skipped_tools", [])
+	result["ready"] = unavailable.is_empty() and skipped.is_empty()
+	result["readiness"] = "ready" if result.ready else "degraded"
+
+
 static func _activation_message(activation: Dictionary) -> String:
 	var activated: Array = activation.get("activated_tools", [])
 	var unavailable: Array = activation.get("unavailable_tools", [])
 	var skipped: Array = activation.get("skipped_tools", [])
-	var message := "%d tools activated and ready to use." % activated.size()
+	var message := "%d tools activated." % activated.size()
+	if unavailable.is_empty() and skipped.is_empty():
+		message += " All declared dependencies are ready."
+	else:
+		message += " Skill readiness is degraded; do not claim all required tools are ready."
 	if not unavailable.is_empty():
 		message += " %d could not fit the active tool budget." % unavailable.size()
 	if not skipped.is_empty():
-		message += " %d tool names were not found." % skipped.size()
+		message += " %d tool names were not found. Check installed plugin availability and the shipped skill/resource version; use minerva_tool_search to find current tools before execution." % skipped.size()
 	return message
 
 
@@ -514,6 +527,8 @@ func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 		"name": record.title,
 		"description": record.description,
 		"origin": "docket",
+		"ready": true,
+		"readiness": "ready",
 		"project": record.project,
 		"type": "skill",
 		"instructions": _compose_skill_instructions(record),
@@ -537,6 +552,7 @@ func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 		for key: String in activation:
 			if not (activation[key] as Array).is_empty():
 				result[key] = activation[key]
+		_set_activation_readiness(result, activation)
 		result["message"] = _activation_message(activation)
 
 	# Surface model-targeted insights/hints for this skill's domain
@@ -730,6 +746,7 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 			"activation_failures"]:
 		if not (activation[key] as Array).is_empty():
 			result[key] = activation[key]
+	_set_activation_readiness(result, activation)
 	result["message"] = "Skill created. " + _activation_message(activation)
 	if not transition_warning.is_empty():
 		result["warning"] = transition_warning
@@ -804,6 +821,8 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	if arguments.has("tool_deps"):
 		var tool_deps: Array = arguments.get("tool_deps", [])
 		var activation := _activate_dependencies(tool_deps)
+		_set_activation_readiness(result, activation)
+		result["message"] = _activation_message(activation)
 		for key: String in activation:
 			if not (activation[key] as Array).is_empty():
 				result[key] = activation[key]

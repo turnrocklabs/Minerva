@@ -5,7 +5,7 @@ extends Node
 ##
 ## Each time the plugin's process becomes ready (plugin_ready) the host
 ## declares Minerva's schema, installs or updates the shipped master at
-## user://master.dct (the plugin merges it and keeps a person's changes),
+## user://master.dct (shipped IDs replace same-ID edits; independent IDs stay),
 ## opens user://personal.dct if it exists, and reopens the projects of the
 ## last session in their order, never creating one. Until that is done every
 ## agent's and panel's Docket tool call waits (the plugin's tool guard);
@@ -61,8 +61,8 @@ var state := "inactive"
 ## What is wrong now, one line each: what setting up the process could not
 ## do, and what the last update of the session could not.
 var problems: Array[String] = []
-## Master items a person changed that an update left as they were, rather
-## than take the shipped version: one line each. Not a problem.
+## Master items that could not take the shipped version (such as incompatible
+## type pins): one line each. Independent local IDs are not offered for replacement.
 var notices: Array[String] = []
 ## The master's install or update report (MasterBootstrap's, with
 ## `project` and `capability_gaps`), from the last ready process.
@@ -1087,6 +1087,15 @@ func _prepare() -> void:
 		await _prepare_without_capabilities(connection, generation)
 		return
 
+	var catalog: Variant = await connection.call("list_tools")
+	if _stale(connection, generation):
+		return
+	var mode_problem := RequiredPlugins.docket_bootstrap_mode_problem(catalog if catalog is Array else [])
+	if not mode_problem.is_empty():
+		_setup_problems.append(mode_problem)
+		await _prepare_without_capabilities(connection, generation, mode_problem)
+		return
+
 	var schema = JSON.parse_string(FileAccess.get_file_as_string(SCHEMA_RES))
 	if not schema is Dictionary:
 		_fail("Minerva's Docket schema (%s) cannot be read" % SCHEMA_RES)
@@ -1108,7 +1117,8 @@ func _prepare() -> void:
 		_fail("Minerva's shipped master (%s) cannot be read" % MASTER_RES)
 		return
 	var bootstrapped: Dictionary = await _call(connection, "docket_project_bootstrap",
-		{"path": ProjectSettings.globalize_path(MASTER_USER), "content": Marshalls.raw_to_base64(shipped)})
+		{"path": ProjectSettings.globalize_path(MASTER_USER), "content": Marshalls.raw_to_base64(shipped),
+			"update_mode": RequiredPlugins.DOCKET_MASTER_UPDATE_MODE})
 	if _stale(connection, generation):
 		return
 	var bootstrap_error: String = str(bootstrapped.get("error", ""))
@@ -1116,10 +1126,16 @@ func _prepare() -> void:
 		_fail("the master could not be set up: %s" % bootstrap_error)
 		return
 	master_report = bootstrapped.value
+	if master_report.get("update_mode", "") != RequiredPlugins.DOCKET_MASTER_UPDATE_MODE:
+		master_report["master_update_status"] = "unconfirmed"
+		_fail("Docket did not confirm the requested shipped-master replacement mode; update outcome is unconfirmed")
+		return
+	master_report["master_update_status"] = "authoritative" if master_report.get("conflicts", []).is_empty() else "partial"
 	master_path = str(master_report.get("project", {}).get("path", ""))
 	for conflict in master_report.get("conflicts", []):
-		notices.append("master item %s kept as changed here, not updated as shipped (%s)"
-			% [conflict.get("id", ""), conflict.get("reason", "")])
+		var notice := "master item %s could not be updated as shipped (%s)" % [conflict.get("id", ""), conflict.get("reason", "")]
+		notices.append(notice)
+		_setup_problems.append(notice)
 	for gap in master_report.get("capability_gaps", []):
 		_setup_problems.append("master: %s" % str(gap))
 
@@ -1165,7 +1181,9 @@ func _prepare() -> void:
 
 # Missing capability verbs allow core reads of an existing master. No
 # declaration, bootstrap or vault operation is attempted against that catalog.
-func _prepare_without_capabilities(connection: Object, generation: int) -> void:
+func _prepare_without_capabilities(connection: Object, generation: int, reason: String = "") -> void:
+	if reason.is_empty():
+		reason = capability_problem()
 	var manager: Object = _plugin_manager
 	_session = PackedStringArray()
 	_session_error = ""
@@ -1186,7 +1204,9 @@ func _prepare_without_capabilities(connection: Object, generation: int) -> void:
 		manager.call("set_attached_host_status", why, ATTACHED_MASTER_CHOICES)
 		_fail(why)
 		return
-	master_report = {"attached": true, "schema_declarations": "skipped", "capability_gaps": [capability_problem()]}
+	master_report = {"attached": is_attached(), "schema_declarations": "skipped",
+		"master_update_status": "unsupported", "requested_update_mode": RequiredPlugins.DOCKET_MASTER_UPDATE_MODE,
+		"capability_gaps": [reason]}
 	personal_path = _attached_project_path(ProjectSettings.globalize_path(PERSONAL_USER))
 	_session = _open_paths()
 	_session.erase(master_path)

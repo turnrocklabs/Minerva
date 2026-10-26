@@ -10,11 +10,13 @@ var editor_button: Button
 var summarize_button: Button
 var notes_button: Button
 
-var chat_history  # ChatHistory
+var chat_history: ServiceHistory
 
 
 ## Setup must be called after instantiation
-func setup(history) -> void:
+func setup(history: ServiceHistory) -> void:
+	if chat_history and chat_history.agent_mode_changed.is_connected(_sync_agent_mode):
+		chat_history.agent_mode_changed.disconnect(_sync_agent_mode)
 	chat_history = history
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
@@ -31,7 +33,8 @@ func setup(history) -> void:
 	agent_mode_toggle = CheckButton.new()
 	agent_mode_toggle.text = "Agent"
 	agent_mode_toggle.tooltip_text = "Enable Agent Mode for this chat"
-	agent_mode_toggle.button_pressed = history.AgentModeEnabled
+	agent_mode_toggle.set_pressed_no_signal(history.AgentModeEnabled)
+	history.agent_mode_changed.connect(_sync_agent_mode)
 	var gears_icon = load("res://assets/icons/gear_icons/gears_icon_24_no_bg.png")
 	if gears_icon:
 		agent_mode_toggle.icon = gears_icon
@@ -95,6 +98,13 @@ func setup(history) -> void:
 		notes_button.icon = pencil_icon
 	notes_button.pressed.connect(_on_notes_button_pressed)
 	add_child(notes_button)
+
+
+## Model updates also arrive for background chats. Rendering must not dispatch
+## a user gesture or reconfigure another chat.
+func _sync_agent_mode(enabled: bool) -> void:
+	if is_instance_valid(agent_mode_toggle):
+		agent_mode_toggle.set_pressed_no_signal(enabled)
 
 
 ## Handle agent mode toggle

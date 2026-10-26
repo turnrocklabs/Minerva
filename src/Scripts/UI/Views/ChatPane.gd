@@ -3322,6 +3322,11 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# Use accumulator if provided, otherwise get the last MODEL item
 	var model_chi: ChatHistoryItem = accumulator_chi if accumulator_chi else _get_last_model_history_item(history)
 
+	if model_chi.DisplayMessage.is_empty():
+		model_chi.DisplayMessage = model_chi.Message
+	if model_chi.DisplayReasoning.is_empty():
+		model_chi.DisplayReasoning = model_chi.Reasoning.duplicate(true)
+
 	# Execute each tool call and collect results
 	# Batch-level dedup: identical tool+args within the same round reuse cached result
 	var _batch_cache: Dictionary = {}
@@ -3342,6 +3347,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		var tool_id: String = tool_call.get("id", "")
 		var tool_name: String = tool_call.get("name", "")
 		var tool_args: Dictionary = tool_call.get("arguments", {})
+		var tool_definition: MCPToolDefinition = mcp_manager.tool_registry.get(tool_name)
+		var read_only_hint: bool = tool_definition != null and tool_definition.annotations.get("readOnlyHint", false) == true
 		var live_document_identity := _live_document_identity(tool_name, tool_args)
 
 		print("[Agent] Executing tool: %s (id=%s)" % [tool_name, tool_id])
@@ -3385,6 +3392,10 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
 
+		if bool(result.get("already_existed", false)):
+			result = result.duplicate(true)
+			result["existing_resource_hint"] = "An existing resource was reused. Creation arguments are not proof that its contents were imported or replaced. Read its actual contents and schema before editing; use a unique name if a separate artifact was intended."
+
 		# Capture and store the filtered full result before truncation so later
 		# prompt projection can dehydrate older tool payloads safely.
 		var full_result_str := _filter_tool_result_text(JSON.stringify(result))
@@ -3424,6 +3435,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		tool_result_item.Message = result_str
 		tool_result_item.ToolSummary = _build_tool_summary(tool_name, result, artifact_note_id)
 		tool_result_item.ToolArtifactNoteId = artifact_note_id
+		tool_result_item.ToolReadOnly = read_only_hint
 		tool_result_item.provider = history.provider
 		tool_result_item.Visible = false  # Don't render separately - shown in parent message
 
@@ -3452,7 +3464,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				_add_unexecuted_tool_results(history, tool_calls.slice(i + 1),
 					"Stopped after a repeated non-retryable document operation")
 			var explanation := str(result.get("error_message", result.get("error", "")))
-			model_chi.Message += ("\n\n" if not model_chi.Message.is_empty() else "") + explanation
+			model_chi.DisplayMessage += ("\n\n" if not model_chi.DisplayMessage.is_empty() else "") + explanation
 			_terminate_turn(history, turn_token, "unsupported_operation_loop", explanation)
 			if is_instance_valid(model_chi.rendered_node):
 				model_chi.rendered_node.loading_append = false
@@ -3463,10 +3475,10 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# Add tool block marker to message for proper interleaving during render
 	# Format: {{TOOL_BLOCK:count}} where count is the number of tool executions for this round
 	var tool_count = tool_calls.size()
-	if not model_chi.Message.is_empty():
-		model_chi.Message += "\n\n{{TOOL_BLOCK:%d}}" % tool_count
+	if not model_chi.DisplayMessage.is_empty():
+		model_chi.DisplayMessage += "\n\n{{TOOL_BLOCK:%d}}" % tool_count
 	else:
-		model_chi.Message = "{{TOOL_BLOCK:%d}}" % tool_count
+		model_chi.DisplayMessage = "{{TOOL_BLOCK:%d}}" % tool_count
 
 	# Ensure tools are still enabled for continuation request (with filtering)
 	if history.provider.has_method("set_tools"):
@@ -3525,7 +3537,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			else:
 				var err_msg = continuation_response.error if continuation_response else "No response on retry"
 				print("[Agent] Retry also failed: %s" % err_msg)
-				model_chi.Message += "\n\n[Agent Error: %s (retry also failed)]" % err_msg
+				model_chi.DisplayMessage += "\n\n[Agent Error: %s (retry also failed)]" % err_msg
 				if is_instance_valid(model_chi.rendered_node):
 					model_chi.rendered_node.loading_append = false
 					model_chi.rendered_node.render()
@@ -3535,7 +3547,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				return
 		else:
 			# Non-retryable error
-			model_chi.Message += "\n\n[Agent Error: %s]" % continuation_response.error
+			model_chi.DisplayMessage += "\n\n[Agent Error: %s]" % continuation_response.error
 			if is_instance_valid(model_chi.rendered_node):
 				model_chi.rendered_node.loading_append = false
 				model_chi.rendered_node.render()
@@ -3552,15 +3564,15 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 	# Append continuation text to accumulator (if any)
 	if not continuation_chi.Message.is_empty():
-		if model_chi.Message.is_empty():
-			model_chi.Message = continuation_chi.Message
+		if model_chi.DisplayMessage.is_empty():
+			model_chi.DisplayMessage = continuation_chi.Message
 		else:
-			model_chi.Message += "\n\n" + continuation_chi.Message
+			model_chi.DisplayMessage += "\n\n" + continuation_chi.Message
 
 	# Accumulate this round's reasoning onto the accumulator so multi-round agent
 	# thinking all renders (otherwise only round 1's reasoning would show).
 	if not continuation_chi.Reasoning.is_empty():
-		model_chi.Reasoning.append_array(continuation_chi.Reasoning)
+		model_chi.DisplayReasoning.append_array(continuation_chi.Reasoning)
 
 	# Check if there are more tool calls
 	if continuation_response.has_tool_calls():
@@ -3617,9 +3629,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
 		# Voice mode: speak the final response via TTS (agentic mode)
-		# Use continuation_chi.Message (clean final text) not model_chi.Message
+		# Use continuation_chi.Message (clean final text) not model_chi.DisplayMessage
 		# (which has accumulated tool block markers from all rounds)
-		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.Message
+		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.DisplayMessage
 		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not _turn_stopped(history, turn_token) and not SingletonObject.is_cancelled(history.HistoryId):
 			var user_text := user_history_item.Message if user_history_item else ""
 			_voice_speak_response(final_text, user_text, model_chi.rendered_node, _turn_origin(history, turn_token))

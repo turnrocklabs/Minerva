@@ -427,7 +427,7 @@ func _setup_model_message():
 		# Ensure controls are enabled for error messages so user can copy/delete/etc
 		_toggle_controls(true)
 	else:
-		label.markdown_text = history_item.Message
+		label.markdown_text = history_item.get_display_message()
 		style.bg_color = bot_message_color
 	#await get_tree().process_frame
 
@@ -477,13 +477,14 @@ func _on_note_button_pressed():
 	else:
 		# Determine what text to add to notes
 		var note_text: String = ""
+		var display_text: String = history_item.get_display_message()
 
 		# Check for error message first
 		if history_item.Error and not history_item.Error.is_empty():
 			note_text = "Error: %s" % history_item.Error
-		# First try to use the Message field (for regular chat services)
-		elif history_item.Message and not history_item.Message.is_empty():
-			note_text = history_item.Message
+		# Export the same combined text shown in an agent-turn bubble.
+		elif not display_text.is_empty():
+			note_text = display_text
 		# If HcpData exists (for HCP Core services), serialize it to JSON
 		elif history_item.HcpData and not history_item.HcpData.is_empty():
 			note_text = JSON.stringify(history_item.HcpData, "\t")
@@ -770,8 +771,9 @@ func _on_unsplit_button_pressed() -> void:
 	clear_messages_holder(messages_holder)
 	
 	# Handle text messages if they exist
-	if history_item.Message:
-		split_and_display_text_messages(history_item.Message, messages_holder)
+	var display_text: String = history_item.get_display_message()
+	if not display_text.is_empty():
+		split_and_display_text_messages(display_text, messages_holder)
 	# Handle images if they exist
 	if history_item.Images:
 		split_and_display_images(history_item.Images, messages_holder)
@@ -842,7 +844,7 @@ func create_history_item_for_image(image) -> ChatHistoryItem:
 	return new_history_item
 
 func _on_extract_editor_button_pressed() -> void:
-	SingletonObject.editor_pane.update_current_text_tab("chat response" , history_item.Message)
+	SingletonObject.editor_pane.update_current_text_tab("chat response" , history_item.get_display_message())
 
 
 func _on_left_card_button_pressed() -> void:
@@ -955,11 +957,11 @@ func _on_message_text_edit_text_set() -> void:
 ## message_labels_container is cleared/rebuilt each render by _create_code_labels,
 ## so no live-update dictionary is needed here (unlike tool blocks).
 func _create_reasoning_blocks() -> void:
-	if history_item.Reasoning.is_empty():
+	if history_item.get_display_reasoning().is_empty():
 		return
 
 	var insert_index := 0
-	for segment in history_item.Reasoning:
+	for segment in history_item.get_display_reasoning():
 		var block = ReasoningBlockScript.create(segment)
 		message_labels_container.add_child(block)
 		# Move to the top, preserving relative order between segments

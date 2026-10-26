@@ -19,6 +19,9 @@ var max_tool_schema_count: int = 0
 var context_budget_tokens: int:
 	get: return 0
 var max_index_entries: int = 50
+## At most one complete result snapshot is retained beyond the recent rounds.
+## Zero disables evidence retention independently of the master switch.
+var max_evidence_chars: int = 8000
 
 # --- Summary provider ---
 var summary_prompt: String = ""
@@ -178,6 +181,7 @@ func apply_config(config: Dictionary) -> void:
 	drop_refs_after_n_rounds = config.get("drop_refs_after_n_rounds", -1)
 	max_tool_schema_count = config.get("max_tool_schema_count", 0)
 	max_index_entries = config.get("max_index_entries", 50)
+	max_evidence_chars = maxi(0, int(config.get("max_evidence_chars", 8000)))
 	summary_prompt = config.get("summary_prompt", "")
 	if config.has("summary_provider_factory"):
 		summary_provider_factory = config["summary_provider_factory"]
@@ -356,7 +360,70 @@ func _build_knowledge_injection_text(history: ServiceHistory) -> String:
 	return "\n\n".join(sections)
 
 
-func _build_tool_memory_projection_state(history: ServiceHistory, floating_summary_text: String) -> Dictionary:
+## A bounded exact-result snapshot, never a second prose summary. Any later
+## call with unknown effects invalidates it globally (including other-resource
+## calls): locator aliases cannot accidentally certify stale data. Explicit
+## readOnlyHint calls may follow it. A new user exchange resets it because
+## human/external edits between turns are not observable here. New substantive
+## results supersede old ones, even when too large to retain.
+static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: int) -> Dictionary:
+	var evidence := {"status": "none", "index": -1, "note_id": "", "tool": "", "call_id": ""}
+	var calls := {}
+	for i in range(items.size()):
+		var item := items[i]
+		if item.Role == ChatHistoryItem.ChatRole.USER:
+			evidence = {"status": "none", "index": -1, "note_id": "", "tool": "", "call_id": ""}
+			calls.clear()
+		if item.IsToolCall:
+			for call: Dictionary in item.ToolCalls:
+				calls[str(call.get("id", ""))] = call.get("arguments", {})
+		if item.Role != ChatHistoryItem.ChatRole.TOOL:
+			continue
+		var parsed: Variant = JSON.parse_string(item.Message)
+		var result: Dictionary = parsed if parsed is Dictionary else {}
+		# A refused argument schema executes nothing; other failures may have
+		# partial effects and cannot preserve a snapshot's freshness.
+		var schema_refusal: bool = result.get("success", true) == false \
+			and str(result.get("error_code", "")) == "schema_mismatch"
+		if not item.ToolReadOnly and not schema_refusal and evidence.status != "none":
+			evidence["status"] = "invalidated"
+			evidence["index"] = -1
+		if not parsed is Dictionary:
+			# A windowed/non-JSON result cannot be certified complete. Keep an
+			# exact archive pointer instead of reusing an older result.
+			evidence = {"status": "retrieve_required", "index": -1,
+				"note_id": item.ToolArtifactNoteId, "tool": item.ToolName,
+				"call_id": item.ToolCallId}
+			continue
+		if result.is_empty() or result.has("error") or result.get("success", true) == false:
+			continue
+		var substantive := false
+		for key: String in ["data", "content", "text", "rows", "cells", "tables"]:
+			var payload: Variant = result.get(key)
+			if (payload is String and not payload.is_empty()) \
+					or (payload is Array and not payload.is_empty()) \
+					or (payload is Dictionary and not payload.is_empty()):
+				substantive = true
+				break
+		if not substantive:
+			continue
+		var source: Dictionary = calls.get(item.ToolCallId, {})
+		var locator := {}
+		for key: String in ["document_id", "view_id", "editor_name", "path", "range"]:
+			if source.has(key):
+				locator[key] = source[key]
+		var complete: bool = not bool(result.get("truncated", false)) \
+			and not bool(result.get("text_truncated", false))
+		var fits: bool = char_limit > 0 and item.Message.length() <= char_limit and complete
+		evidence = {"status": "retained_snapshot" if fits else "retrieve_required",
+			"index": i if fits else -1, "note_id": item.ToolArtifactNoteId,
+			"tool": item.ToolName, "call_id": item.ToolCallId,
+			"source": locator, "chars": item.Message.length(),
+			"hash": _hash_projection_fragment(item.Message)}
+	return evidence
+
+
+func _build_tool_memory_projection_state(history: ServiceHistory, floating_summary_text: String, evidence: Dictionary = {}) -> Dictionary:
 	var latest_tool_idx := -1
 	var total_tool_results := 0
 	var first_user_message := ""
@@ -382,6 +449,7 @@ func _build_tool_memory_projection_state(history: ServiceHistory, floating_summa
 
 	var state := {
 		"version": 4,
+		"evidence": evidence,
 		"active": {
 			"task": first_user_message,
 			"latest_tool": latest_tool_name,
@@ -412,7 +480,8 @@ func _build_tool_memory_header_text(state: Dictionary) -> String:
 	var active: Dictionary = state.get("active", {})
 	var status: Dictionary = state.get("status", {})
 	var floating_summary_active := bool(status.get("floating_summary_active", false))
-	if not floating_summary_active:
+	var evidence: Dictionary = state.get("evidence", {})
+	if not floating_summary_active and evidence.get("status", "none") == "none":
 		return ""
 
 	var lines := PackedStringArray(["[tm v4]"])
@@ -428,6 +497,11 @@ func _build_tool_memory_header_text(state: Dictionary) -> String:
 	var latest_tool_note_id := str(active.get("latest_tool_note_id", ""))
 	if not latest_tool_note_id.is_empty():
 		lines.append("latest_note=%s" % latest_tool_note_id.left(8))
+	if evidence.get("status", "none") != "none":
+		lines.append("result_evidence=%s tool=%s call=%s note=%s" % [evidence.status,
+			evidence.get("tool", ""), evidence.get("call_id", ""), evidence.get("note_id", "")])
+		lines.append("source=%s" % JSON.stringify(evidence.get("source", {})).left(240))
+		lines.append("Evidence is an exact tool-result snapshot, not a live document guarantee. After edits or formatting, read the finished artifact again before reporting its contents or calculations. An invalidated snapshot or recalled archive is historical; retrieve oversized results in pages and re-read after mutations. Receipts and floating summaries are not proof of artifact contents.")
 	var archived_count := _recovery_index.size()
 	if archived_count > 0:
 		lines.append("archived=%d (use minerva_tool_memory_search to browse/retrieve)" % archived_count)
@@ -507,7 +581,9 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 	var projected: Array[ChatHistoryItem] = []
 	var knowledge_text := _build_knowledge_injection_text(history)
 	var floating_summary_text := _get_agent_note_text(history.AgentFloatingSummaryNoteId)
-	var projection_state := _build_tool_memory_projection_state(history, floating_summary_text)
+	var evidence := select_result_evidence(history.HistoryItemList, max_evidence_chars)
+	var evidence_idx := int(evidence.get("index", -1))
+	var projection_state := _build_tool_memory_projection_state(history, floating_summary_text, evidence)
 	var latest_tool_chain := _get_latest_tool_chain_state(history.HistoryItemList)
 	var latest_tool_idx := int(latest_tool_chain.get("latest_tool_idx", -1))
 	var retained_tool_result_indices: Dictionary = latest_tool_chain.get("retained_tool_result_indices", {})
@@ -557,6 +633,8 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 
 		if item.Role == ChatHistoryItem.ChatRole.TOOL and not retained_tool_result_indices.has(i):
 			var compact_message := _get_tool_projection_message(item, not floating_summary_text.is_empty())
+			if i == evidence_idx:
+				compact_message = "[Exact result snapshot: %s call=%s]\n%s" % [item.ToolName, item.ToolCallId, item.Message]
 			if not mutated:
 				prompt_item = item.duplicate_for_prompt()
 				mutated = true
@@ -592,6 +670,8 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 		prefix_parts.append(tool_memory_text)
 
 	_record_agent_context_telemetry(history, {
+		"result_evidence": evidence,
+		"result_evidence_limit_chars": max_evidence_chars,
 		"last_projection_items_dehydrated": dehydrated_items,
 		"last_projection_chars_removed": chars_removed,
 		"knowledge_items": history.AcquiredKnowledge.size(),
