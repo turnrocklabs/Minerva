@@ -1092,10 +1092,9 @@ func _prepare() -> void:
 		return
 	var catalog_tools: Array = catalog if catalog is Array else []
 	var mode_problem: String = RequiredPlugins.docket_bootstrap_mode_problem(catalog_tools)
-	if not mode_problem.is_empty():
-		_setup_problems.append(mode_problem)
-		await _prepare_without_capabilities(connection, generation, mode_problem)
-		return
+	var replacement_supported: bool = mode_problem.is_empty()
+	if not replacement_supported:
+		notices.append(mode_problem)
 
 	var schema = JSON.parse_string(FileAccess.get_file_as_string(SCHEMA_RES))
 	if not schema is Dictionary:
@@ -1117,9 +1116,11 @@ func _prepare() -> void:
 	if shipped.is_empty():
 		_fail("Minerva's shipped master (%s) cannot be read" % MASTER_RES)
 		return
-	var bootstrapped: Dictionary = await _call(connection, "docket_project_bootstrap",
-		{"path": ProjectSettings.globalize_path(MASTER_USER), "content": Marshalls.raw_to_base64(shipped),
-			"update_mode": RequiredPlugins.DOCKET_MASTER_UPDATE_MODE})
+	var bootstrap_arguments: Dictionary = {
+		"path": ProjectSettings.globalize_path(MASTER_USER), "content": Marshalls.raw_to_base64(shipped)}
+	if replacement_supported:
+		bootstrap_arguments["update_mode"] = RequiredPlugins.DOCKET_MASTER_UPDATE_MODE
+	var bootstrapped: Dictionary = await _call(connection, "docket_project_bootstrap", bootstrap_arguments)
 	if _stale(connection, generation):
 		return
 	var bootstrap_error: String = str(bootstrapped.get("error", ""))
@@ -1127,12 +1128,12 @@ func _prepare() -> void:
 		_fail("the master could not be set up: %s" % bootstrap_error)
 		return
 	master_report = bootstrapped.value
-	if master_report.get("update_mode", "") != RequiredPlugins.DOCKET_MASTER_UPDATE_MODE:
+	if replacement_supported and master_report.get("update_mode", "") != RequiredPlugins.DOCKET_MASTER_UPDATE_MODE:
 		master_report["master_update_status"] = "unconfirmed"
 		_fail("Docket did not confirm the requested shipped-master replacement mode; update outcome is unconfirmed")
 		return
 	var conflicts: Array = master_report.get("conflicts", [])
-	master_report["master_update_status"] = "authoritative" if conflicts.is_empty() else "partial"
+	master_report["master_update_status"] = ("authoritative" if conflicts.is_empty() else "partial") if replacement_supported else "unsupported"
 	master_path = str(master_report.get("project", {}).get("path", ""))
 	for conflict in master_report.get("conflicts", []):
 		var notice := "master item %s could not be updated as shipped (%s)" % [conflict.get("id", ""), conflict.get("reason", "")]
