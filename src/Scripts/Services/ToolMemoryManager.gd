@@ -181,7 +181,8 @@ func apply_config(config: Dictionary) -> void:
 	drop_refs_after_n_rounds = config.get("drop_refs_after_n_rounds", -1)
 	max_tool_schema_count = config.get("max_tool_schema_count", 0)
 	max_index_entries = config.get("max_index_entries", 50)
-	max_evidence_chars = maxi(0, int(config.get("max_evidence_chars", 8000)))
+	var evidence_limit: int = config.get("max_evidence_chars", 8000)
+	max_evidence_chars = maxi(0, evidence_limit)
 	summary_prompt = config.get("summary_prompt", "")
 	if config.has("summary_provider_factory"):
 		summary_provider_factory = config["summary_provider_factory"]
@@ -375,8 +376,8 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 			evidence = {"status": "none", "index": -1, "note_id": "", "tool": "", "call_id": ""}
 			calls.clear()
 		if item.IsToolCall:
-			for call: Dictionary in item.ToolCalls:
-				calls[str(call.get("id", ""))] = call.get("arguments", {})
+			for tool_call: Dictionary in item.ToolCalls:
+				calls[str(tool_call.get("id", ""))] = tool_call.get("arguments", {})
 		if item.Role != ChatHistoryItem.ChatRole.TOOL:
 			continue
 		var parsed: Variant = JSON.parse_string(item.Message)
@@ -400,10 +401,16 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 		var substantive := false
 		for key: String in ["data", "content", "text", "rows", "cells", "tables"]:
 			var payload: Variant = result.get(key)
-			if (payload is String and not payload.is_empty()) \
-					or (payload is Array and not payload.is_empty()) \
-					or (payload is Dictionary and not payload.is_empty()):
-				substantive = true
+			if payload is String:
+				var text: String = payload
+				substantive = not text.is_empty()
+			elif payload is Array:
+				var payload_array: Array = payload
+				substantive = not payload_array.is_empty()
+			elif payload is Dictionary:
+				var payload_object: Dictionary = payload
+				substantive = not payload_object.is_empty()
+			if substantive:
 				break
 		if not substantive:
 			continue
@@ -412,8 +419,9 @@ static func select_result_evidence(items: Array[ChatHistoryItem], char_limit: in
 		for key: String in ["document_id", "view_id", "editor_name", "path", "range"]:
 			if source.has(key):
 				locator[key] = source[key]
-		var complete: bool = not bool(result.get("truncated", false)) \
-			and not bool(result.get("text_truncated", false))
+		var truncated: bool = result.get("truncated", false)
+		var text_truncated: bool = result.get("text_truncated", false)
+		var complete: bool = not truncated and not text_truncated
 		var fits: bool = char_limit > 0 and item.Message.length() <= char_limit and complete
 		evidence = {"status": "retained_snapshot" if fits else "retrieve_required",
 			"index": i if fits else -1, "note_id": item.ToolArtifactNoteId,
@@ -582,7 +590,7 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 	var knowledge_text := _build_knowledge_injection_text(history)
 	var floating_summary_text := _get_agent_note_text(history.AgentFloatingSummaryNoteId)
 	var evidence := select_result_evidence(history.HistoryItemList, max_evidence_chars)
-	var evidence_idx := int(evidence.get("index", -1))
+	var evidence_idx: int = evidence.get("index", -1)
 	var projection_state := _build_tool_memory_projection_state(history, floating_summary_text, evidence)
 	var latest_tool_chain := _get_latest_tool_chain_state(history.HistoryItemList)
 	var latest_tool_idx := int(latest_tool_chain.get("latest_tool_idx", -1))

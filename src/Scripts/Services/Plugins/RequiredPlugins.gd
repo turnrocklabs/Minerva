@@ -165,16 +165,21 @@ static func docket_bootstrap_mode_problem(tools: Array) -> String:
 		var name := ""
 		var schema: Variant
 		if tool is Dictionary:
-			name = str(tool.get("name", ""))
-			schema = tool.get("inputSchema", tool.get("input_schema", {}))
+			var definition: Dictionary = tool
+			name = str(definition.get("name", ""))
+			schema = definition.get("inputSchema", definition.get("input_schema", {}))
 		elif tool is Object:
-			name = str(tool.get("name"))
-			schema = tool.call("native_input_schema") if tool.has_method("native_input_schema") else tool.get("input_schema")
+			var definition_object: Object = tool
+			name = str(definition_object.get("name"))
+			schema = definition_object.call("native_input_schema") if definition_object.has_method("native_input_schema") else definition_object.get("input_schema")
 		if name.trim_prefix("minerva_") != "docket_project_bootstrap":
 			continue
-		var properties: Variant = schema.get("properties", {}) if schema is Dictionary else {}
-		var mode: Variant = properties.get("update_mode", {}) if properties is Dictionary else {}
-		var modes: Variant = mode.get("enum", []) if mode is Dictionary else []
+		var schema_object: Dictionary = schema if schema is Dictionary else {}
+		var properties_value: Variant = schema_object.get("properties", {})
+		var properties: Dictionary = properties_value if properties_value is Dictionary else {}
+		var mode_value: Variant = properties.get("update_mode", {})
+		var mode: Dictionary = mode_value if mode_value is Dictionary else {}
+		var modes: Variant = mode.get("enum", [])
 		if modes is Array and DOCKET_MASTER_UPDATE_MODE in modes:
 			return ""
 		return "Docket does not advertise docket_project_bootstrap update_mode=%s; shipped master replacement is unsupported and was not attempted. Update Docket to apply Minerva's shipped records." % DOCKET_MASTER_UPDATE_MODE

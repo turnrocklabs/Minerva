@@ -3315,7 +3315,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		finish_with_signal.call()
 		return
 
-	var mcp_manager = SingletonObject.get_mcp_manager()
+	var mcp_manager: MCPManager = SingletonObject.get_mcp_manager()
 
 	print("[Agent] Round %d: Processing %d tool calls" % [current_round, tool_calls.size()])
 
@@ -3392,7 +3392,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
 
-		if bool(result.get("already_existed", false)):
+		var already_existed: bool = result.get("already_existed", false)
+		if already_existed:
 			result = result.duplicate(true)
 			result["existing_resource_hint"] = "An existing resource was reused. Creation arguments are not proof that its contents were imported or replaced. Read its actual contents and schema before editing; use a unique name if a separate artifact was intended."
 

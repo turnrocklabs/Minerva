@@ -51,12 +51,13 @@ static func validate(schema: Variant, value: Variant) -> Dictionary:
 ## Return the authoritative schema with an argument refusal when it fits a
 ## bounded recovery receipt. Never coerce values or weaken validation here.
 static func input_failure(schema: Variant, validation: Dictionary, message: String) -> Dictionary:
+	var validation_error: Dictionary = validation.get("error", {})
 	var result := {"success": false, "error": message,
-		"error_code": str(validation.get("error", {}).get("code", "invalid_arguments")),
+		"error_code": str(validation_error.get("code", "invalid_arguments")),
 		"retry_hint": "Correct the arguments against this tool's native input schema before retrying. A schema mismatch does not mean the tool is unavailable."}
 	if result.error_code != "schema_mismatch":
 		result.erase("retry_hint")
-		result["validation_error"] = str(validation.get("error", {}).get("message", "Input validation failed"))
+		result["validation_error"] = str(validation_error.get("message", "Input validation failed"))
 		return result
 	var encoded := JSON.stringify(schema)
 	if encoded.length() <= 6000:

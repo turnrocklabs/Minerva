@@ -1090,7 +1090,8 @@ func _prepare() -> void:
 	var catalog: Variant = await connection.call("list_tools")
 	if _stale(connection, generation):
 		return
-	var mode_problem := RequiredPlugins.docket_bootstrap_mode_problem(catalog if catalog is Array else [])
+	var catalog_tools: Array = catalog if catalog is Array else []
+	var mode_problem: String = RequiredPlugins.docket_bootstrap_mode_problem(catalog_tools)
 	if not mode_problem.is_empty():
 		_setup_problems.append(mode_problem)
 		await _prepare_without_capabilities(connection, generation, mode_problem)
@@ -1130,7 +1131,8 @@ func _prepare() -> void:
 		master_report["master_update_status"] = "unconfirmed"
 		_fail("Docket did not confirm the requested shipped-master replacement mode; update outcome is unconfirmed")
 		return
-	master_report["master_update_status"] = "authoritative" if master_report.get("conflicts", []).is_empty() else "partial"
+	var conflicts: Array = master_report.get("conflicts", [])
+	master_report["master_update_status"] = "authoritative" if conflicts.is_empty() else "partial"
 	master_path = str(master_report.get("project", {}).get("path", ""))
 	for conflict in master_report.get("conflicts", []):
 		var notice := "master item %s could not be updated as shipped (%s)" % [conflict.get("id", ""), conflict.get("reason", "")]
