@@ -9,6 +9,8 @@ static var SERIALIZER_FIELDS = [
 	"InjectedNotes",
 	"CompactionNotes",
 	"Message",
+	"DisplayMessage",
+	"DisplayReasoning",
 	"HcpStructure",
 	"HcpData",
 	"Images",
@@ -36,6 +38,7 @@ static var SERIALIZER_FIELDS = [
 	"ToolExecutions",
 	"ToolSummary",
 	"ToolArtifactNoteId",
+	"ToolReadOnly",
 	"RequestMetadata",
 	"Reasoning",
 	"PendingJob"
@@ -76,7 +79,26 @@ var HcpStructure: Dictionary:
 	set(value): _queue_save_state(); HcpStructure = value
 
 var Message: String:
-	set(value): _queue_save_state(); Message = value
+	set(value):
+		_queue_save_state()
+		Message = value
+		# A canonical text edit invalidates the previously combined UI view.
+		DisplayMessage = ""
+
+## Optional combined agent-turn presentation. Message and Reasoning remain
+## round-local for providers and chronological exports. Older archives fall
+## back to their existing Message/Reasoning without rewriting saved history.
+var DisplayMessage: String = "":
+	set(value): _queue_save_state(); DisplayMessage = value
+var DisplayReasoning: Array[Dictionary] = []:
+	set(value): _queue_save_state(); DisplayReasoning = value
+
+func get_display_message() -> String:
+	return DisplayMessage if not DisplayMessage.is_empty() else Message
+
+func get_display_reasoning() -> Array[Dictionary]:
+	return DisplayReasoning if not DisplayReasoning.is_empty() else Reasoning
+
 
 var Images: Array[Image]:
 	set(value): _queue_save_state(); Images = value
@@ -192,6 +214,11 @@ var ToolSummary: String = "":
 var ToolArtifactNoteId: String = "":
 	set(value): _queue_save_state(); ToolArtifactNoteId = value
 
+## Only an explicit MCP readOnlyHint preserves earlier result freshness.
+## Missing annotations in older histories conservatively mean unknown effects.
+var ToolReadOnly: bool = false:
+	set(value): _queue_save_state(); ToolReadOnly = value
+
 ## Request metadata for debugging - stored on USER messages to show what was sent
 ## Structure: {system_prompt: String, tools: Array, tool_count: int, message_count: int, model: String}
 var RequestMetadata: Dictionary = {}:
@@ -284,6 +311,8 @@ func Serialize() -> Dictionary:
 		"InjectedNotes": Marshalls.variant_to_base64(InjectedNotes),
 		"CompactionNotes": CompactionNotes,
 		"Message": Message,
+		"DisplayMessage": DisplayMessage,
+		"DisplayReasoning": DisplayReasoning,
 		"HcpData": HcpData,
 		"HcpStructure": HcpStructure,
 		"Order": Order,
@@ -314,6 +343,7 @@ func Serialize() -> Dictionary:
 		"IsToolCall": IsToolCall,
 		"ToolSummary": ToolSummary,
 		"ToolArtifactNoteId": ToolArtifactNoteId,
+		"ToolReadOnly": ToolReadOnly,
 		# Request metadata for debugging
 		"RequestMetadata": RequestMetadata
 	}
@@ -402,7 +432,13 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 					executions.assign(value)
 				value = executions
 
-			"Reasoning":
+			"ToolReadOnly":
+				value = value == true
+
+			"DisplayMessage":
+				value = value if value is String else ""
+
+			"Reasoning", "DisplayReasoning":
 				# Convert to typed array for backwards compatibility
 				# (old project files predate the Reasoning field → null)
 				var segments: Array[Dictionary] = []

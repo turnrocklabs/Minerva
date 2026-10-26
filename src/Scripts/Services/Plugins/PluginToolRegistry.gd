@@ -511,8 +511,8 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if not input_check.get("ok", false):
-		return ToolCallOutcome.failure("Plugin tool arguments do not match its native MCP schema",
-			str(input_check.get("error", {}).get("code", "invalid_arguments")))
+		return ToolCallOutcome.from_error(ToolSchemaRuntime.input_failure(input_schema,
+			input_check, "Plugin tool arguments do not match its native MCP schema"))
 	var refused: String
 	if write_binding.is_empty():
 		refused = await plugin_manager.check_backend_tool(plugin_id, dispatch_name, args, "agent")
@@ -763,9 +763,8 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 			plugin_id, tool_name, registered_entry, prepared):
 		return _terminal_failure(context, "Panel tool registration changed during input validation")
 	if not input_check.get("ok", false):
-		return ToolCallOutcome.failure(
-			"Plugin tool arguments do not match its native MCP schema",
-			str(input_check.get("error", {}).get("code", "invalid_arguments")))
+		return ToolCallOutcome.from_error(ToolSchemaRuntime.input_failure(input_schema,
+			input_check, "Plugin tool arguments do not match its native MCP schema"))
 	var application: Dictionary = await _dispatch_prepared_panel_tool(plugin_id,
 		tool_name, prepared.args, prepared.panel, prepared.editor_name, context)
 	if context.is_stopped():

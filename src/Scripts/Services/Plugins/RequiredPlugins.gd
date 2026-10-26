@@ -46,6 +46,7 @@ const PLUGINS := {
 }
 ## Optional to establish the HTTP connection, required for Minerva's schema,
 ## bootstrap and vault features. Older apps stay connected with a reason.
+const DOCKET_MASTER_UPDATE_MODE := "replace_shipped"
 const DOCKET_CAPABILITIES: Array[String] = [
 	"minerva_docket_schema_declare", "minerva_docket_project_bootstrap", "minerva_docket_vault_control",
 ]
@@ -149,7 +150,35 @@ static func docket_capabilities_missing(conn: Object) -> String:
 	for name in DOCKET_CAPABILITIES:
 		if not name in listed:
 			lacking.append(name.trim_prefix("minerva_"))
+	if lacking.is_empty():
+		var mode_problem := docket_bootstrap_mode_problem(tools)
+		if not mode_problem.is_empty():
+			return mode_problem
 	return "" if lacking.is_empty() else "Attached Docket lacks %s; Minerva schema, bootstrap, vault controls, policy observations, plugin pickup, session handover, project open/forget and session saving are unavailable." % ", ".join(lacking)
+
+
+## Inspect the advertised native schema, not a build/version guess. Old Docket
+## servers may ignore unknown parameters, so no replacement call is sent unless
+## the catalog explicitly promises this mode.
+static func docket_bootstrap_mode_problem(tools: Array) -> String:
+	for tool: Variant in tools:
+		var name := ""
+		var schema: Variant
+		if tool is Dictionary:
+			name = str(tool.get("name", ""))
+			schema = tool.get("inputSchema", tool.get("input_schema", {}))
+		elif tool is Object:
+			name = str(tool.get("name"))
+			schema = tool.call("native_input_schema") if tool.has_method("native_input_schema") else tool.get("input_schema")
+		if name.trim_prefix("minerva_") != "docket_project_bootstrap":
+			continue
+		var properties: Variant = schema.get("properties", {}) if schema is Dictionary else {}
+		var mode: Variant = properties.get("update_mode", {}) if properties is Dictionary else {}
+		var modes: Variant = mode.get("enum", []) if mode is Dictionary else []
+		if modes is Array and DOCKET_MASTER_UPDATE_MODE in modes:
+			return ""
+		return "Docket does not advertise docket_project_bootstrap update_mode=%s; shipped master replacement is unsupported and was not attempted. Update Docket to apply Minerva's shipped records." % DOCKET_MASTER_UPDATE_MODE
+	return "Docket does not advertise docket_project_bootstrap; shipped master replacement is unsupported and was not attempted."
 
 
 ## Why an installed release of a required plugin cannot run here, or "" when

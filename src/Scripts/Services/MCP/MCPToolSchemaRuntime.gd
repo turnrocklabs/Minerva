@@ -48,6 +48,24 @@ static func validate(schema: Variant, value: Variant) -> Dictionary:
 	return result
 
 
+## Return the authoritative schema with an argument refusal when it fits a
+## bounded recovery receipt. Never coerce values or weaken validation here.
+static func input_failure(schema: Variant, validation: Dictionary, message: String) -> Dictionary:
+	var result := {"success": false, "error": message,
+		"error_code": str(validation.get("error", {}).get("code", "invalid_arguments")),
+		"retry_hint": "Correct the arguments against this tool's native input schema before retrying. A schema mismatch does not mean the tool is unavailable."}
+	if result.error_code != "schema_mismatch":
+		result.erase("retry_hint")
+		result["validation_error"] = str(validation.get("error", {}).get("message", "Input validation failed"))
+		return result
+	var encoded := JSON.stringify(schema)
+	if encoded.length() <= 6000:
+		result["input_schema"] = schema
+	else:
+		result["retry_hint"] += " The schema exceeds this receipt's size limit; rediscover the exact tool with minerva_tool_search to inspect its parameters."
+	return result
+
+
 static func _compile(schema: Variant) -> Dictionary:
 	if _active >= MAX_ACTIVE:
 		return _failure("queue_full", "MCP schema validation queue is full")

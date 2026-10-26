@@ -2,6 +2,7 @@ class_name ServiceHistory
 extends RefCounted
 
 signal settings_binding_changed()
+signal agent_mode_changed(enabled: bool)
 
 # Don't reorder, only add new entries
 enum ServiceType {
@@ -77,7 +78,12 @@ var AgentMaxToolResultLength: int = 0:
 
 ## Whether agent mode is enabled for this chat
 var AgentModeEnabled: bool = false:
-	set(value): SingletonObject.call_deferred("save_state", false); AgentModeEnabled = value
+	set(value):
+		if AgentModeEnabled == value:
+			return
+		AgentModeEnabled = value
+		SingletonObject.call_deferred("save_state", false)
+		agent_mode_changed.emit(value)
 
 ## Whether to request a human-readable reasoning summary (ChatGPT). Default on.
 var ReasoningSummary: bool = true:
