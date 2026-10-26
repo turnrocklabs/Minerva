@@ -1117,6 +1117,7 @@ func _resume_core_jobs(history: ChatHistory) -> void:
 		var response: BotResponse = await _generate_core_job(history, history.provider, [], {}, item)
 		if _turn_stopped(history, token):
 			return
+		_note_turn_response(history, token, item, response)
 		item.Message = response.text
 		item.Error = response.error
 		item.Reasoning = response.reasoning
