@@ -13,6 +13,7 @@ var discovered: Array[String] = []
 var real_launcher := false
 var real_connection := false
 var capability_tools := false
+var replacement_mode: bool = false
 var prepare_error_tool := ""
 
 func _run_docket_launcher(_command: String, _args: PackedStringArray, _generation: int) -> Dictionary:
@@ -46,7 +47,10 @@ class Connection extends MCPServerConnection:
 			"docket_project_bootstrap":
 				var project := {"name":"Master", "path":arguments.path, "open_generation":"one"}
 				manager.fake_projects.append(project)
-				return {"project":project, "conflicts":[], "capability_gaps":[]}
+				var report: Dictionary = {"project":project, "conflicts":[], "capability_gaps":[]}
+				if arguments.has("update_mode"):
+					report["update_mode"] = arguments.update_mode
+				return report
 			"docket_project_list": return {"projects": manager.fake_projects.duplicate(true)}
 			"docket_project_add":
 				if manager.refuse_master: return {"error": "Fixture master unavailable"}
@@ -71,7 +75,10 @@ class Connection extends MCPServerConnection:
 			result.append(MCPToolDefinition.from_dict({"name": name.trim_prefix("minerva_"), "inputSchema": {"type": "object"}}))
 		if manager.capability_tools:
 			for name in RequiredPlugins.DOCKET_CAPABILITIES:
-				result.append(MCPToolDefinition.from_dict({"name":name.trim_prefix("minerva_"), "inputSchema":{"type":"object"}}))
+				var schema: Dictionary = {"type":"object"}
+				if manager.replacement_mode and name.trim_prefix("minerva_") == "docket_project_bootstrap":
+					schema["properties"] = {"update_mode":{"type":"string", "enum":["preserve_customizations", "replace_shipped"]}}
+				result.append(MCPToolDefinition.from_dict({"name":name.trim_prefix("minerva_"), "inputSchema":schema}))
 		return result
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:

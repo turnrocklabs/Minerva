@@ -106,15 +106,30 @@ func _run() -> void:
 		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_schema_declare")
 		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap")
 		and manager.get_panel_authority("docket") == null)
+	check("released catalog keeps the two-argument bootstrap and replacement-only status",
+		manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap"
+			and tool_call.arguments.size() == 2 and tool_call.arguments.has("path") and tool_call.arguments.has("content"))
+		and host.master_report.get("master_update_status") == "unsupported")
 	check("schema conflicts name the project and slug", host.notices.any(func(notice: String) -> bool: return "ordinary" in notice and "hint" in notice))
 	var session_window = load("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
 	root.add_child(session_window)
 	session_window.refresh()
 	check("schema conflicts are visible in the session window",
 		"ordinary: type hint" in session_window.get_node("%Status").text)
+	check("unsupported replacement has a visible update notice",
+		"Update Docket to apply Minerva's shipped records" in session_window.get_node("%Status").text)
 	session_window.free()
 	check("capable attachment permits public policy observations and pickup", await host.write_policy_observation("fixture", "fixture") == ""
 		and load("res://Scripts/Services/Plugins/PluginSeedingDocket.gd").new(host).unavailable().is_empty())
+	manager.stop_plugin("docket")
+	manager.replacement_mode = true
+	manager.tool_calls.clear()
+	await manager.start_plugin("docket")
+	check("advertised replacement mode is sent and confirmed", host.state == "ready"
+		and host.master_report.get("master_update_status") == "authoritative"
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap"
+			and tool_call.arguments.get("update_mode") == "replace_shipped"))
+	manager.replacement_mode = false
 	for error_tool: String in ["docket_schema_declare", "docket_project_bootstrap"]:
 		manager.stop_plugin("docket")
 		manager.prepare_error_tool = error_tool
