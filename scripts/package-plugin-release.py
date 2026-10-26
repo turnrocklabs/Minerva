@@ -261,6 +261,22 @@ def stop_docket_fixture(pid: int) -> None:
     raise SystemExit(f"Docket fixture PID {pid} did not stop")
 
 
+def _docket_startup_stderr(executable: Path, root: Path, env: dict[str, str]) -> str:
+    """Diagnose only the failed, empty-profile fixture; never accept this rerun."""
+    try:
+        result = subprocess.run(
+            [str(executable), "--quiet", "--quit-after", "120"], cwd=root, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+    except subprocess.TimeoutExpired as error:
+        stderr = error.stderr or ""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        return "isolated app startup timed out; stderr:\n" + stderr[-4000:]
+    except OSError as error:
+        return "isolated app startup could not run: " + str(error)[-4000:]
+    return f"isolated app startup exited {result.returncode}; stderr:\n" + result.stderr[-4000:]
+
+
 def probe_docket(root: Path, manifest: dict, release_lock: Path) -> None:
     """Probe the bundled launcher with a fresh profile, never an owner's server."""
     if manifest.get("tools") or manifest["backend"].get("args"):
@@ -304,6 +320,13 @@ def probe_docket(root: Path, manifest: dict, release_lock: Path) -> None:
             result = subprocess.run([str(command)], cwd=root, env=env,
                                     capture_output=True, text=True, timeout=PROBE_TIMEOUT_S + 5)
             if result.returncode:
+                # The launcher reports failures as JSON on stdout. This is a
+                # fresh CI profile with no user projects or vault requests.
+                print("Docket launcher status: " + result.stdout[-4000:], file=sys.stderr)
+                if "Docket registration failed: context deadline exceeded" in result.stdout:
+                    target = receipts[0].parent.name.removeprefix(pinned["tag"] + "-")
+                    executable = receipts[0].parent / pinned["platforms"][target]["entrypoint"]
+                    print(_docket_startup_stderr(executable, root, env), file=sys.stderr)
                 raise SystemExit(f"Docket launcher exited {result.returncode}: {result.stderr[-4000:]}")
             try:
                 return json.loads(result.stdout)
