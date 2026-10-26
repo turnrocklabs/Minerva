@@ -1270,7 +1270,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 5
+    timeout-minutes: 8
     needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-linux-push, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
@@ -1395,13 +1395,24 @@ jobs:
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 
-      - name: Install Linux Build Dependencies
+      # This job exports with prebuilt Godot. GTK, NSS and GBM are the same
+      # GDExtension runtime libraries used by tarball-smoke; no compiler or
+      # development headers are needed here.
+      - name: Install Linux Runtime Dependencies
+        id: install_runtime
+        continue-on-error: true
+        timeout-minutes: 2
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libx11-dev libxcursor-dev \
-            libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
-            libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm unzip \
-            libgtk-3-0
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends \
+            unzip libgtk-3-0 libnss3 libgbm1
+      - name: Retry Install Linux Runtime Dependencies
+        if: steps.install_runtime.outcome != 'success'
+        timeout-minutes: 2
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends \
+            unzip libgtk-3-0 libnss3 libgbm1
 
       - name: Install Godot
         run: |
