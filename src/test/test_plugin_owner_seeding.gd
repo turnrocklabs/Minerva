@@ -85,6 +85,11 @@ var create_defaults := {}
 var failing_tools := []
 func process_generation() -> int:
 	return generation
+func list_tools() -> Array:
+	var tools: Array = []
+	for name: String in RequiredPlugins.DOCKET_CAPABILITIES:
+		tools.append({"name": name.trim_prefix("minerva_"), "inputSchema": {"type": "object"}})
+	return tools
 func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 	reached[tool] = reached.get(tool, 0) + 1
 	var answer := _handle(tool, arguments)
