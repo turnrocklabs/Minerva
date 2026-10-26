@@ -107,8 +107,7 @@ func _run() -> void:
 		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap")
 		and manager.get_panel_authority("docket") == null)
 	check("released catalog keeps the two-argument bootstrap and replacement-only status",
-		manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap"
-			and tool_call.arguments.size() == 2 and tool_call.arguments.has("path") and tool_call.arguments.has("content"))
+		manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap" and tool_call.arguments.size() == 2 and tool_call.arguments.has("path") and tool_call.arguments.has("content"))
 		and host.master_report.get("master_update_status") == "unsupported")
 	check("schema conflicts name the project and slug", host.notices.any(func(notice: String) -> bool: return "ordinary" in notice and "hint" in notice))
 	var session_window = load("res://Scenes/windows/DocketSessionWindow.tscn").instantiate()
@@ -127,8 +126,7 @@ func _run() -> void:
 	await manager.start_plugin("docket")
 	check("advertised replacement mode is sent and confirmed", host.state == "ready"
 		and host.master_report.get("master_update_status") == "authoritative"
-		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap"
-			and tool_call.arguments.get("update_mode") == "replace_shipped"))
+		and manager.tool_calls.any(func(tool_call: Dictionary) -> bool: return tool_call.name == "docket_project_bootstrap" and tool_call.arguments.get("update_mode") == "replace_shipped"))
 	manager.replacement_mode = false
 	for error_tool: String in ["docket_schema_declare", "docket_project_bootstrap"]:
 		manager.stop_plugin("docket")
