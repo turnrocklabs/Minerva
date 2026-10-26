@@ -80,6 +80,8 @@ var unopenable := {}
 var listing_fails := false
 var public_api = null
 var _next := 0
+var prompt_reads: int = 0
+var prompt_gate_open: bool = true
 func process_generation() -> int:
 	return generation
 func list_tools() -> Array:
@@ -113,6 +115,9 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 					return {"success": true, "closed": arguments.name}
 			return {"success": false, "error": "Unknown project"}
 		"docket_query":
+			prompt_reads += 1
+			while not prompt_gate_open:
+				await Engine.get_main_loop().process_frame
 			for path in open:
 				if open[path].name == str(arguments.project):
 					return {"success": true, "items": prompts.get(path, []), "count": prompts.get(path, []).size()}
@@ -471,6 +476,43 @@ func _test_session() -> void:
 	var joined: Dictionary = await host.system_prompt("agentic-base")
 	check("F: a project opened by someone else joins the session and its prompt counts",
 		joined.get("prompt") == "NEW" and "/p/new.dct" in _saved_session(), "%s %s" % [joined, _saved_session()])
+	# Hold a real prompt query across a reconcile with either the same opening
+	# or a replacement descriptor, so an in-place fixture mutation cannot hide it.
+	for reopen: bool in [false, true]:
+		connection.prompt_gate_open = false
+		var reads_before: int = connection.prompt_reads
+		var pending: Dictionary = _prompt_attempt(host)
+		if not await _wait(func() -> bool: return connection.prompt_reads > reads_before):
+			check("F: overlapping prompt query starts", false)
+			return
+		host._reconciling = true
+		if reopen:
+			var reopened: Dictionary = connection.open[master_path].duplicate()
+			reopened.open_generation += "-changed"
+			connection.open[master_path] = reopened
+		connection.prompt_gate_open = true
+		await process_frame
+		if not reopen:
+			check("F: unchanged prompt openings wait for an in-progress reconcile", not pending.get("done", false))
+		host._reconciling = false
+		if not await _wait(func() -> bool: return pending.get("done", false)):
+			check("F: overlapping prompt read finishes after reconcile", false)
+			return
+		var response: Dictionary = pending.response
+		if reopen:
+			check("F: changed prompt opening still returns the visible safety error",
+				response.get("error") == "Docket's projects changed while the prompt was read; send again", str(response))
+		else:
+			check("F: coherent prompt succeeds after reconcile", response.get("prompt") == "NEW", str(response))
+
+
+func _prompt_attempt(host: Node) -> Dictionary:
+	var outcome: Dictionary = {}
+	var run: Callable = func() -> void:
+		outcome.response = await host.system_prompt("agentic-base")
+		outcome.done = true
+	run.call()
+	return outcome
 
 
 # -- Public vault: real host/helper/UI, explicitly fake public backend --------

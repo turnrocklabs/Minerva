@@ -41,6 +41,9 @@ const SCHEMA_RES := "res://Data/docket_schema.json"
 ## "paths": [...]}.
 const SESSION_PATH := "user://docket_host_session.json"
 const SESSION_VERSION := 1
+const PROMPT_SETTLE_TIMEOUT_MSEC: int = 5000
+const PROMPT_REVALIDATIONS: int = 3
+const PROMPT_SESSION_CHANGED_ERROR: String = "Docket's projects changed while the prompt was read; send again"
 ## Where the embedded Docket kept it; read (once, when there is no session
 ## file yet), never written, as it holds a person's other preferences too.
 const LEGACY_PREFS_PATH := "user://docket_prefs.json"
@@ -218,17 +221,18 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
 	var connection: Object = _connection
 	var generation := _generation
+	var settle_deadline: int = Time.get_ticks_msec() + PROMPT_SETTLE_TIMEOUT_MSEC
 	# The session brought up to date first (a project an agent or panel
 	# opened or closed, a person's change), so the projects whose prompts
 	# count are the current ones.
-	while _changing or _reconciling:
-		await get_tree().process_frame
+	if not await _prompt_session_idle(settle_deadline):
+		return {"error": PROMPT_SESSION_CHANGED_ERROR}
 	if _stale(connection, generation) or not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
 	_reconciled_ok = false
 	_reconcile()
-	while _reconciling:
-		await get_tree().process_frame
+	if not await _prompt_session_idle(settle_deadline):
+		return {"error": PROMPT_SESSION_CHANGED_ERROR}
 	if _stale(connection, generation) or not state in ["ready", "degraded"]:
 		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
 	if not _reconciled_ok:
@@ -260,17 +264,32 @@ func system_prompt(key: String, model_id: String = "") -> Dictionary:
 			var text := str(item.get("prompt_text", "")) if item is Dictionary else ""
 			if not item_key.is_empty() and not text.is_empty():
 				prompts[item_key] = text
-	# The projects read must still be the session's, each the same opening.
-	var listed := await _refresh(connection, generation)
-	if not listed.is_empty():
-		return {"error": listed}
-	if _changing or _reconciling or not _untracked_projects().is_empty() \
-			or _layer_openings([master_project()] + session_projects()) != _layer_openings(layers):
-		return {"error": "Docket's projects changed while the prompt was read; send again"}
-	for candidate in prompt_keys(key, model_id):
-		if prompts.has(candidate):
-			return {"prompt": prompts[candidate]}
-	return {"prompt": ""}
+	# A refresh can overlap reconciliation without changing any opening.
+	# Validate a settled listing, without making concurrent prompt reads exclusive.
+	for _validation: int in range(PROMPT_REVALIDATIONS):
+		if not await _prompt_session_idle(settle_deadline):
+			break
+		var listed: String = await _refresh(connection, generation)
+		if not listed.is_empty():
+			return {"error": listed}
+		if _changing or _reconciling:
+			continue
+		if not _untracked_projects().is_empty() \
+				or _layer_openings([master_project()] + session_projects()) != _layer_openings(layers):
+			return {"error": PROMPT_SESSION_CHANGED_ERROR}
+		for candidate in prompt_keys(key, model_id):
+			if prompts.has(candidate):
+				return {"prompt": prompts[candidate]}
+		return {"prompt": ""}
+	return {"error": PROMPT_SESSION_CHANGED_ERROR}
+
+
+func _prompt_session_idle(deadline_msec: int) -> bool:
+	while _changing or _reconciling:
+		if Time.get_ticks_msec() >= deadline_msec:
+			return false
+		await get_tree().process_frame
+	return true
 
 
 func pickup_pending() -> bool:
