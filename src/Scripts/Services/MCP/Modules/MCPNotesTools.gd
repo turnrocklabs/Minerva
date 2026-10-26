@@ -640,6 +640,11 @@ func _get_note(args: Dictionary) -> Dictionary:
 	return result
 
 
+func _note_evidence_provenance(note: Note) -> String:
+	var notes: NotesContainer = SingletonObject.agent_notes_container
+	return "archive" if notes != null and notes.find_note(note) >= 0 else "live"
+
+
 func _get_agent_note(args: Dictionary) -> Dictionary:
 	var note_id: String = args.get("note_id", "")
 	var chat_id: String = args.get("chat_id", "")
@@ -659,7 +664,7 @@ func _get_agent_note(args: Dictionary) -> Dictionary:
 		"title": note.title,
 		"content": content,
 		"chars": content.length(),
-		"evidence_provenance": "archive",
+		"evidence_provenance": _note_evidence_provenance(note),
 		"tab": _find_note_tab_name(SingletonObject.agent_notes_container, note.uuid),
 		"linked_chat_ids": note.linked_chat_ids,
 	}
@@ -690,7 +695,7 @@ func _read_agent_note(args: Dictionary) -> Dictionary:
 		"limit": limit,
 		"content": window,
 		"total_chars": content.length(),
-		"evidence_provenance": "archive",
+		"evidence_provenance": _note_evidence_provenance(note),
 		"remaining_chars": maxi(0, content.length() - (offset + window.length())),
 		"tab": _find_note_tab_name(SingletonObject.agent_notes_container, note.uuid),
 	}
