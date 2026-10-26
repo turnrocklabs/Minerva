@@ -545,7 +545,7 @@ func check_agent_context_limits(history: ChatHistory, prepared_prompt: Array = [
 
 ## Build fresh notes once, compact against the actual outgoing input, then
 ## rebuild from the same prepared notes. All sends still use the final hard gate.
-func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refresh_detached: bool, turn_token: int, predicate: Callable = Callable()) -> Array[Variant]:
+func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refresh_detached: bool, turn_token: int, predicate: Callable = Callable(), recovery_note: String = "") -> Array[Variant]:
 	var prompt := await create_prompt(append_item, refresh_detached, history.provider, predicate, history, turn_token)
 	if _turn_stopped(history, turn_token) or not _prompt_refusal(prompt).is_empty():
 		return prompt
@@ -556,13 +556,23 @@ func _prepare_context(history: ChatHistory, append_item: ChatHistoryItem, refres
 	if prepared.get("turn") == turn_token:
 		prepared_item = prepared.get("item")
 		history.remove_meta("context_prepared_append")
+	var system_prompt: String = _context_system_prompt(history)
+	if not recovery_note.is_empty():
+		system_prompt += "\n\n" + recovery_note
+		if history.provider.supports_system_prompt:
+			history.provider.system_prompt = system_prompt
+		prompt = _build_history_list_with_system_prompt(history, history.provider, system_prompt, predicate, history.AgentModeEnabled)
+		if prepared_item != null:
+			var recovery_append: Variant = history.provider.Format(prepared_item)
+			if recovery_append != null:
+				prompt.append(recovery_append)
 	var status := check_agent_context_limits(history, prompt)
 	if status.warning or not status.ok:
 		var compacted := await compact_chat(history, 0, turn_token)
 		if _turn_stopped(history, turn_token):
 			return []
 		if compacted:
-			prompt = _build_history_list_with_system_prompt(history, history.provider, _context_system_prompt(history), predicate, history.AgentModeEnabled)
+			prompt = _build_history_list_with_system_prompt(history, history.provider, system_prompt, predicate, history.AgentModeEnabled)
 			if prepared_item != null:
 				var formatted: Variant = history.provider.Format(prepared_item)
 				if formatted != null:
@@ -3286,7 +3296,8 @@ static func _execute_with_document_recovery(mcp_manager, unsupported_guard,
 func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
 					   accumulator_chi: ChatHistoryItem = null,
 					   user_history_item: ChatHistoryItem = null,
-					   unsupported_guard = null, turn_token: int = -1) -> void:
+					   unsupported_guard = null, turn_token: int = -1,
+					   completion_recovery_used: bool = false) -> void:
 	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
 	if unsupported_guard == null:
 		unsupported_guard = UnsupportedOperationGuard.new()
@@ -3476,10 +3487,11 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# Add tool block marker to message for proper interleaving during render
 	# Format: {{TOOL_BLOCK:count}} where count is the number of tool executions for this round
 	var tool_count = tool_calls.size()
-	if not model_chi.DisplayMessage.is_empty():
-		model_chi.DisplayMessage += "\n\n{{TOOL_BLOCK:%d}}" % tool_count
-	else:
-		model_chi.DisplayMessage = "{{TOOL_BLOCK:%d}}" % tool_count
+	if tool_count > 0:
+		if not model_chi.DisplayMessage.is_empty():
+			model_chi.DisplayMessage += "\n\n{{TOOL_BLOCK:%d}}" % tool_count
+		else:
+			model_chi.DisplayMessage = "{{TOOL_BLOCK:%d}}" % tool_count
 
 	# Ensure tools are still enabled for continuation request (with filtering)
 	if history.provider.has_method("set_tools"):
@@ -3499,7 +3511,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# NOTE: Use refresh_detached=false to use cached notes (created when tool enabled "Send to LLM")
 	# instead of calling the initializer again, which can cause issues with graphics composition
 	# Pass history explicitly to avoid current_tab race with concurrent sub-agent chats
-	var continuation_list := await _prepare_context(history, null, false, turn_token)
+	var recovery_note: String = history.tool_memory_manager.completion_recovery_note(history, true) if completion_recovery_used and tool_calls.is_empty() else ""
+	var continuation_list := await _prepare_context(history, null, false, turn_token, Callable(), recovery_note)
 	# A turn stopped while this prompt was built is over: nothing is sent or
 	# finished for it (its Stop did that).
 	if turn_token >= 0 and _turn_stopped(history, turn_token):
@@ -3512,7 +3525,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		model_chi.rendered_node.loading_append = true
 
 	# Get LLM's response to tool results
-	var continuation_response = await generate_content_from_provider(history, continuation_list)
+	var continuation_response: BotResponse = await generate_content_from_provider(history, continuation_list)
 
 	if not continuation_response:
 		print("[Agent] ERROR: No continuation response received")
@@ -3557,9 +3570,23 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			finish_with_signal.call()
 			return
 
+	# A tool-free answer cannot silently complete with explicitly stale evidence.
+	# Retry through this same loop once; empty calls execute nothing and invent no results.
+	_accumulate_cache_telemetry(continuation_response, history)
+	var unverified_notice := ""
+	var stale_source: String = history.tool_memory_manager.completion_recovery_note(history, completion_recovery_used)
+	if not continuation_response.has_tool_calls() and not stale_source.is_empty():
+		if not completion_recovery_used and current_round + 1 < max_rounds:
+			model_chi.OutputTokens += continuation_response.completion_tokens
+			await handle_tool_calls(history, [], current_round + 1, model_chi,
+				user_history_item, unsupported_guard, turn_token, true)
+			return
+		unverified_notice = "Unverified: no fresh artifact evidence was obtained after changes. Treat the following response as unverified."
 	# Process the continuation response
 	var continuation_chi = process_bot_response(continuation_response, history.provider)
-	_accumulate_cache_telemetry(continuation_response, history)
+	if not unverified_notice.is_empty():
+		continuation_chi.Message = unverified_notice + "\n\n" + continuation_chi.Message
+		continuation_chi.Error = unverified_notice
 
 	print("[Agent] Continuation has tool_calls: %s" % continuation_response.has_tool_calls())
 
@@ -3607,7 +3634,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		# Recursively handle more tool calls (keep same accumulator)
 		await handle_tool_calls(history, continuation_response.tool_calls, current_round + 1,
-							   model_chi, user_history_item, unsupported_guard, turn_token)
+								   model_chi, user_history_item, unsupported_guard, turn_token, completion_recovery_used)
 	else:
 		# No more tool calls, finalize the response
 		print("[Agent] Final response (no more tool calls)")
@@ -3615,6 +3642,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		# Add to history for API continuity (but hidden from UI)
 		history.HistoryItemList.append(continuation_chi)
+		if not unverified_notice.is_empty():
+			_note_turn_reply(history, turn_token, continuation_chi)
 
 		# Final update to accumulator
 		# NOTE: Do NOT clear IsToolCall - the accumulator must retain its tool_calls
@@ -3637,8 +3666,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			var user_text := user_history_item.Message if user_history_item else ""
 			_voice_speak_response(final_text, user_text, model_chi.rendered_node, _turn_origin(history, turn_token))
 
-		history.termination_reason = "completed"
-		history.termination_message = ""
+		_terminate_turn(history, turn_token, "completed" if unverified_notice.is_empty() else "error", unverified_notice)
 		finish_with_signal.call()
 
 
