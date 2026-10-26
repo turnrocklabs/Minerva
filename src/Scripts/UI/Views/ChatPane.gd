@@ -2579,9 +2579,11 @@ func _note_turn_reply(history: ServiceHistory, turn_token: int, reply: ChatHisto
 ## request that is retried, or whose turn was stopped, must not decide it.
 func _note_turn_response(history: ServiceHistory, turn_token: int, reply: ChatHistoryItem, bot_response: BotResponse) -> void:
 	_note_turn_reply(history, turn_token, reply if bot_response != null else null)
-	if bot_response != null and not str(bot_response.error).is_empty():
-		_note_turn_termination(history, turn_token,
-			"cancelled" if _is_cancelled_response(bot_response) else "error")
+	if bot_response == null:
+		_terminate_turn(history, turn_token, "error", "No response received")
+	elif not str(bot_response.error).is_empty():
+		_terminate_turn(history, turn_token,
+			"cancelled" if _is_cancelled_response(bot_response) else "error", str(bot_response.error))
 
 
 func _note_turn_termination(history: ServiceHistory, turn_token: int, reason: String) -> void:
@@ -2596,6 +2598,9 @@ func _terminate_turn(history: ServiceHistory, turn_token: int, reason: String, m
 	history.termination_reason = reason
 	history.termination_message = message
 	_note_turn_termination(history, turn_token, reason)
+	var report: ChatEventPayloads.TurnReport = _turn_report(history, turn_token)
+	if report != null and report.reply != null and reason in ChatEventPayloads.ERROR_TERMINATIONS:
+		report.reply.Error = message
 
 
 func _note_turn_outcome(history: ServiceHistory, turn_token: int, outcome: String) -> void:

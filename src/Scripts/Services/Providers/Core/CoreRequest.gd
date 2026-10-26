@@ -30,7 +30,8 @@ var _has_json := false
 var _has_binary := false
 var _remote_error := false
 var _retryable: bool = false
-var _not_started: bool = true
+var _not_started: bool = false
+var _not_started_provided: bool = false
 
 
 func _init(client_: Node) -> void:
@@ -98,8 +99,11 @@ func _on_message(data: Dictionary) -> void:
 	if data.get("cmd") == "error" or (body_error != null and not str(body_error).is_empty()):
 		_json = data
 		_remote_error = true
-		_retryable = params.get("retryable", body.get("retryable", false)) == true
-		_not_started = params.get("not_started", body.get("not_started", true)) != false
+		var retryable: Variant = params.get("retryable", body.get("retryable"))
+		_retryable = retryable is bool and retryable == true
+		var not_started: Variant = params.get("not_started", body.get("not_started"))
+		_not_started_provided = params.has("not_started") or body.has("not_started")
+		_not_started = not_started is bool and not_started == true
 		fail(str(params.get("code", params.get("error_code", body.get("code", body.get("error_code", "core_error"))))), str(params.get("error", body.get("error", "Core request failed."))))
 		return
 	_json = data
@@ -128,7 +132,7 @@ func _succeed(kind: String) -> void:
 
 
 func fail(code: String, message: String) -> void:
-	_finish({"success": false, "request_id": request_id, "error_code": code, "error_message": message, "json": _json, "remote_error": _remote_error, "retryable": _retryable, "not_started": _not_started})
+	_finish({"success": false, "request_id": request_id, "error_code": code, "error_message": message, "json": _json, "remote_error": _remote_error, "retryable": _retryable, "not_started": _not_started, "not_started_provided": _not_started_provided})
 
 
 func cancel() -> void:

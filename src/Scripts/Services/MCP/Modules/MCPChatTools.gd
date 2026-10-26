@@ -947,7 +947,7 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 	if chat_id.is_empty():
 		return MCPToolUtils.error("chat_id is required")
 
-	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
@@ -959,6 +959,8 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 		"success": true,
 		"chat_id": chat_id,
 		"name": history.HistoryName,
+		"termination_reason": history.termination_reason,
+		"termination_message": history.termination_message,
 		"messages": messages,
 		"count": messages.size(),
 	}
@@ -973,7 +975,7 @@ func _get_chat_messages(args: Dictionary) -> Dictionary:
 	if not (indices_raw is Array) or indices_raw.is_empty():
 		return MCPToolUtils.error("indices is required")
 
-	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
@@ -996,6 +998,8 @@ func _get_chat_messages(args: Dictionary) -> Dictionary:
 		"success": true,
 		"chat_id": chat_id,
 		"name": history.HistoryName,
+		"termination_reason": history.termination_reason,
+		"termination_message": history.termination_message,
 		"messages": messages,
 		"count": messages.size(),
 	}
