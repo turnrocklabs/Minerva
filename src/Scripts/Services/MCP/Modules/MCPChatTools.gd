@@ -1392,7 +1392,8 @@ func _get_ledger_entry(args: Dictionary) -> Dictionary:
 
 	return {
 		"success": true,
-		"entry": entry.serialize()
+		"entry": entry.serialize(),
+		"evidence_provenance": "archive",
 	}
 
 
