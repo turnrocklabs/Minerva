@@ -2786,8 +2786,24 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# Configure tool memory manager callables before prompt building
 	_configure_tool_memory_manager(history)
 
+	# Give immediate feedback while prompt reconciliation or compaction awaits.
+	# Keep this item out of HistoryItemList until create_prompt has added it once.
+	var user_msg_node: MessageMarkdown = history.VBox.add_history_item(user_history_item)
+	user_msg_node.first_time_message = true
+	history.VBox.ensure_node_is_visible(user_msg_node)
+	user_msg_node.render()
+	latest_usr_msg = user_msg_node
+	var dummy_item := ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+		ChatHistoryItem.ChatRole.MODEL, "")
+	dummy_item.provider = history.provider
+	var model_msg_node: Control = create_model_message_node(history, dummy_item)
+
 	var history_list := await _prepare_context(history, user_history_item, true, turn_token)
 	if _turn_stopped(history, turn_token):
+		if is_instance_valid(user_msg_node):
+			user_msg_node.queue_free()
+		if is_instance_valid(model_msg_node):
+			model_msg_node.queue_free()
 		_settle_box_send(history, send_id, "stopped")
 		return
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
@@ -2797,23 +2813,11 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	_settle_box_send(history, send_id, str(_dispatch_refusal(history.provider, history_list).get("code", "")))
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 
-	# Capture request metadata for debugging expandable block
+	# Capture request metadata for debugging expandable block, then update the
+	# existing early bubble with the notes and metadata from the prepared prompt.
 	user_history_item.RequestMetadata = _build_request_metadata(history, history_list, generation_options)
 	user_history_item.RequestMetadata["generation_options_request"] = generation_options.duplicate(true)
-
-	# rerender the message since we changed the history item
-	var user_msg_node: = history.VBox.add_history_item(user_history_item)
-	user_msg_node.first_time_message = true
-	history.VBox.ensure_node_is_visible(user_msg_node)
 	user_msg_node.render()
-	latest_usr_msg = user_msg_node
-	# Add empty history item, to show the loading state
-	var dummy_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
-										ChatHistoryItem.ChatRole.MODEL,
-										"")
-	dummy_item.provider = history.provider
-
-	var model_msg_node = create_model_message_node(history, dummy_item)
 
 	# W5 (chat-passthrough): for passthrough chats the generate is a zero-token
 	# plugin transport while the bound terminal's agent works. Relay the agent's
