@@ -40,6 +40,8 @@ def run() -> int:
     deadline = time.monotonic() + 1050
     session: dict[str, str] = {}
     port, call_id = 0, 0
+    repo = Path.cwd()
+    stage = 'assets'
     user = PRIVATE / 'xdg_data_home/godot/app_userdata/Minerva'
     registration = user.with_name('Docket') / 'instance.json'
 
@@ -101,7 +103,7 @@ def run() -> int:
         log_path = PRIVATE / f'app-{len(app_logs)}.log'
         app_logs.append(log_path)
         with log_path.open('w') as log:
-            app = subprocess.Popen(['godot', '--path', '/src/src', '--rendering-method', 'gl_compatibility'],
+            app = subprocess.Popen(['godot', '--path', str(repo / 'src'), '--rendering-method', 'gl_compatibility'],
                                    env=child_env, stdout=log, stderr=subprocess.STDOUT)
         ready = wait(lambda: read_json(PRIVATE / 'ready.json'))
         port, call_id, session = int(ready['port']), 1, {}
@@ -114,15 +116,16 @@ def run() -> int:
         for pin in pins:
             if hashlib.sha256((ASSETS / pin['asset']).read_bytes()).hexdigest() != pin['sha256']:
                 raise RuntimeError('Pinned archive mismatch')
+        stage = 'native_setup'
         with (PRIVATE / 'setup.log').open('w') as log:
             subprocess.run(['python3', '-B', 'scripts/container-build/dev-natives.py'], env=safe_env,
                            stdout=log, stderr=subprocess.STDOUT, check=True)
-            project = Path('/src/src/project.godot')
+            project = repo / 'src/project.godot'
             marker = 'WatcherRuntime="*res://Scripts/Services/Watcher/WatcherRuntime.gd"'
             original = project.read_text()
             if original.count(marker) != 1:
                 raise RuntimeError('Observer installation marker missing')
-            shutil.copyfile(INPUTS / 'tooling_observer.gd', '/src/src/test/live_tooling_observer.gd')
+            shutil.copyfile(INPUTS / 'tooling_observer.gd', repo / 'src/test/live_tooling_observer.gd')
             project.write_text(original.replace(marker, marker + '\nLiveToolingObserver="*res://test/live_tooling_observer.gd"'))
             for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME'):
                 directory = PRIVATE / key.lower()
@@ -173,10 +176,11 @@ def run() -> int:
             threading.Thread(target=server.serve_forever, daemon=True).start()
             child_env['MINERVA_REQUIRED_RELEASES_URL'] = base
             import_env = {k: v for k, v in child_env.items() if k not in ('MINERVA_TEST_USERNAME', 'MINERVA_TEST_PASSWORD')}
+            stage = 'imports'
             for _ in range(2):
-                subprocess.run(['godot', '--headless', '--path', '/src/src', '--import'], env=import_env,
+                subprocess.run(['godot', '--headless', '--path', str(repo / 'src'), '--import'], env=import_env,
                                stdout=log, stderr=subprocess.STDOUT, timeout=360, check=True)
-            parsed = subprocess.run(['godot', '--headless', '--path', '/src/src', '--check-only',
+            parsed = subprocess.run(['godot', '--headless', '--path', str(repo / 'src'), '--check-only',
                                      '--script', 'res://test/live_tooling_observer.gd'], env=import_env,
                                     stdout=log, stderr=subprocess.STDOUT, timeout=60, check=False)
             driver.update(observer_check_exit=parsed.returncode, observer_check_script_errors='SCRIPT ERROR:' in (PRIVATE / 'setup.log').read_text())
@@ -186,6 +190,7 @@ def run() -> int:
                                        env=safe_env, stdout=log, stderr=subprocess.STDOUT)
             child_env['DISPLAY'] = ':97'
             time.sleep(.3)
+            stage = 'launch_1'
             launch()
             check(docket()['version'] == '0.3.0-rc.30.plugin.2', 'initial_old_install')
             retire(app)
@@ -231,7 +236,8 @@ def run() -> int:
         return 1
     except (OSError, ValueError, KeyError, StopIteration, RuntimeError, subprocess.SubprocessError) as error:
         report.update(status='harness_or_prerequisite_failure', failure_type=type(error).__name__)
-        driver['failure_stage'] = 'tooling_live'
+        driver['failure_stage'] = stage
+        driver['failure_errno'] = error.errno if isinstance(error, OSError) else None
         return 90
     finally:
         retire(app)
