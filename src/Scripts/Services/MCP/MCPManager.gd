@@ -427,40 +427,15 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 
 		var cat_list: String = ", ".join(categories.keys()) if not categories.is_empty() else "various"
 
-		# Build tool_search with dynamic description
-		var search_desc := "This server has %d tools available (after filtering). Search to discover and activate. Categories: %s. Example: tool_search(query='edit file'). Activated tools can be called directly." % [all_filtered.size(), cat_list]
-		var search_schema: Dictionary
+		# The registered definition owns parameters and base discovery guidance.
+		var search_tool: MCPToolDefinition = tool_registry["minerva_tool_search"]
+		var search_schema: Dictionary = search_tool.to_anthropic_format() if format == "anthropic" else search_tool.to_openai_format()
+		var search_desc: String = "%s This chat has %d tools available after filtering. Categories: %s." % [search_tool.description, all_filtered.size(), cat_list]
 		if format == "anthropic":
-			search_schema = {
-				"name": "minerva_tool_search",
-				"description": search_desc,
-				"input_schema": {
-					"type": "object",
-					"properties": {
-						"query": {"type": "string", "description": "Keyword search or exact tool name"},
-						"category": {"type": "string", "description": "Filter by category: %s" % cat_list},
-						"limit": {"type": "integer", "description": "Max results (default 5)"},
-					},
-					"required": ["query"]
-				}
-			}
+			search_schema["description"] = search_desc
 		else:
-			search_schema = {
-				"type": "function",
-				"function": {
-					"name": "minerva_tool_search",
-					"description": search_desc,
-					"parameters": {
-						"type": "object",
-						"properties": {
-							"query": {"type": "string", "description": "Keyword search or exact tool name"},
-							"category": {"type": "string", "description": "Filter by category: %s" % cat_list},
-							"limit": {"type": "integer", "description": "Max results (default 5)"},
-						},
-						"required": ["query"]
-					}
-				}
-			}
+			var function_schema: Dictionary = search_schema["function"]
+			function_schema["description"] = search_desc
 
 		# Return tool_search + any already-activated tools from budget manager
 		var result: Array[Dictionary] = [search_schema]
