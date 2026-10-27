@@ -297,7 +297,7 @@ static func missing_ids(manager, every_file: bool = true) -> Array[String]:
 ## it since (_start_if_wanted).
 ## Returns the jobs queued or already pending, keyed by plugin id; nothing new
 ## is queued when the release listing cannot be read.
-static func ensure(manager) -> Dictionary:
+static func ensure(manager, startup_stops: Dictionary = {}) -> Dictionary:
 	if manager.install_queue == null:
 		return {}
 	var missing := missing_ids(manager)
@@ -305,9 +305,10 @@ static func ensure(manager) -> Dictionary:
 	if queued.size() == missing.size():
 		return queued
 	# A person who stops one of these meanwhile cancels its start below.
-	var stops := {}
+	var stops: Dictionary = startup_stops.duplicate()
 	for id in missing:
-		stops[id] = manager.person_stops(id)
+		if not stops.has(id):
+			stops[id] = manager.person_stops(id)
 	var entries := await fetch_entries(manager)
 	if manager.is_shutting_down():
 		return {}

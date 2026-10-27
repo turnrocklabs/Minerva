@@ -1891,9 +1891,9 @@ func docket_pickup_pending() -> bool:
 	return _required_pickup or (install_queue != null and install_queue.pending_for("docket") != null) \
 		or (def != null and (def.state == S_STARTING or (_launch_autostart and def.autostart)))
 
-func _ensure_required_plugins() -> void:
+func _ensure_required_plugins(startup_stops: Dictionary = {}) -> void:
 	_required_pickup = true
-	await RequiredPlugins.ensure(self)
+	await RequiredPlugins.ensure(self, startup_stops)
 	_required_pickup = false
 
 ## At launch: queue installs of missing required plugins (RequiredPlugins,
@@ -1916,10 +1916,10 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 	# Repairs share the staging lock. If Docket has an update, let its first
 	# start finish before queuing repairs; otherwise retain alongside pickup.
 	if docket_update == null:
-		_ensure_required_plugins()
+		_ensure_required_plugins(startup_stops)
 	await start_autostart_plugins(docket_update, startup_stops)
 	if docket_update != null:
-		_ensure_required_plugins()
+		_ensure_required_plugins(startup_stops)
 	_launch_autostart = false
 	if not _shutting_down:
 		await AutoUpdater.run(self, registry_url)
