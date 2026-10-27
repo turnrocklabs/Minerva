@@ -207,7 +207,7 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_get_chat_messages",
-		"Get full content for specific messages in a chat by 0-based index. Use minerva_get_chat_history first, then hydrate only the indices you need. Requires chat_id and indices. Recommended: fetch 5 or fewer messages at a time.",
+		"Get full content and request_metadata (including the tools sent) for specific messages in a chat by 0-based index. Use minerva_get_chat_history first, then hydrate only the indices you need. Requires chat_id and indices. Recommended: fetch 5 or fewer messages at a time.",
 		{
 			"type": "object",
 			"properties": {
@@ -931,6 +931,7 @@ func _serialize_chat_message_full(item: ChatHistoryItem, index: int) -> Dictiona
 		"index": index,
 		"role": _chat_role_name(item),
 		"content": item.Message,
+		"request_metadata": item.RequestMetadata.duplicate(true),
 	}
 	if item.IsToolCall and not item.ToolCalls.is_empty():
 		msg["tool_calls"] = item.ToolCalls.duplicate(true)
