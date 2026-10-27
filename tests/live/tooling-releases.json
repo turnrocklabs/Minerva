@@ -1,0 +1,106 @@
+{
+  "phase1": {
+    "turnrocklabs/Minerva": [
+      [
+        {
+          "tag_name": "docket-v0.3.0-rc.30.plugin.2",
+          "name": "docket-v0.3.0-rc.30.plugin.2",
+          "draft": false,
+          "prerelease": false,
+          "published_at": "2026-10-17T16:24:17Z",
+          "assets": [
+            {
+              "name": "docket-0.3.0-rc.30.plugin.2-linux-x86_64.tar.gz",
+              "browser_download_url": "LOCAL/docket-0.3.0-rc.30.plugin.2-linux-x86_64.tar.gz",
+              "size": 39896301,
+              "digest": "sha256:fc04b46070911f4eed17f5e1200c41fd28a7cb5a28119e5848a678c00b0df863"
+            },
+            {
+              "name": "docket-0.3.0-rc.30.plugin.2-linux-x86_64.tar.gz.sha256",
+              "browser_download_url": "LOCAL/docket-0.3.0-rc.30.plugin.2-linux-x86_64.tar.gz.sha256"
+            }
+          ]
+        },
+        {
+          "tag_name": "voice-v0.1.4",
+          "name": "voice-v0.1.4",
+          "draft": false,
+          "prerelease": false,
+          "published_at": "2026-10-16T15:15:17Z",
+          "assets": [
+            {
+              "name": "voice-0.1.4-linux-x86_64.tar.gz",
+              "browser_download_url": "LOCAL/voice-0.1.4-linux-x86_64.tar.gz",
+              "size": 201085483,
+              "digest": "sha256:48532985ec6a14ef4aac0d2980ee450102b8fb8965f01791cfb8eb4f104fe858"
+            },
+            {
+              "name": "voice-0.1.4-linux-x86_64.tar.gz.sha256",
+              "browser_download_url": "LOCAL/voice-0.1.4-linux-x86_64.tar.gz.sha256"
+            }
+          ]
+        },
+        {
+          "tag_name": "agent_relay-v0.3.2",
+          "name": "agent_relay-v0.3.2",
+          "draft": false,
+          "prerelease": false,
+          "published_at": "2026-10-16T15:06:35Z",
+          "assets": [
+            {
+              "name": "agent_relay-0.3.2-linux-x86_64.tar.gz",
+              "browser_download_url": "LOCAL/agent_relay-0.3.2-linux-x86_64.tar.gz",
+              "size": 1400741,
+              "digest": "sha256:dd9c42169007e8b87300cf73443fe8d3198aaee6e3baba7e89d58613ffe684b6"
+            },
+            {
+              "name": "agent_relay-0.3.2-linux-x86_64.tar.gz.sha256",
+              "browser_download_url": "LOCAL/agent_relay-0.3.2-linux-x86_64.tar.gz.sha256"
+            }
+          ]
+        }
+      ]
+    ],
+    "imrans-lab/minerva-plugins": [
+      [
+        {
+          "tag_name": "sheets-v0.1.2",
+          "name": "sheets-v0.1.2",
+          "draft": false,
+          "prerelease": false,
+          "published_at": "2026-10-19T14:34:11Z",
+          "assets": [
+            {
+              "name": "sheets-0.1.2-linux-x86_64.tar.gz",
+              "browser_download_url": "LOCAL/sheets-0.1.2-linux-x86_64.tar.gz",
+              "size": 2520380,
+              "digest": "sha256:ceefe9797acf73014885d6b05b50f68c03c9ceb7fb2d7183cf413378a33d900c"
+            },
+            {
+              "name": "sheets-0.1.2-linux-x86_64.tar.gz.sha256",
+              "browser_download_url": "LOCAL/sheets-0.1.2-linux-x86_64.tar.gz.sha256"
+            }
+          ]
+        }
+      ]
+    ]
+  },
+  "new_docket": {
+    "tag_name": "docket-v0.3.0-rc.32",
+    "name": "docket-v0.3.0-rc.32",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2026-10-26T23:29:16Z",
+    "assets": [
+      {
+        "name": "docket-0.3.0-rc.32-linux-x86_64.tar.gz",
+        "browser_download_url": "LOCAL/docket-0.3.0-rc.32-linux-x86_64.tar.gz",
+        "digest": "sha256:83a86b28f241e4c4ebb50c3191503ba51498bf94006b50e33713f4e54040bac6"
+      },
+      {
+        "name": "docket-0.3.0-rc.32-linux-x86_64.tar.gz.sha256",
+        "browser_download_url": "LOCAL/docket-0.3.0-rc.32-linux-x86_64.tar.gz.sha256"
+      }
+    ]
+  }
+}
