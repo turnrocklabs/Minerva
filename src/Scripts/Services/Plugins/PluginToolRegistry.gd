@@ -547,6 +547,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	var native_definition: Dictionary = registered_entry.get("mcp_definition", {})
 	var input_schema: Variant = native_definition.get("inputSchema",
 		registered_entry.get("input_schema", {}))
+	args = _normalize_integer_arguments(input_schema, args)
 	var input_check: Dictionary = await ToolSchemaRuntime.validate(input_schema, args)
 	if plugin_manager.get_connection(plugin_id) != conn:
 		return _terminal_failure(context, "Plugin connection changed during input validation")
@@ -789,6 +790,32 @@ func _panel_call_is_current(plugin_id: String, tool_name: String,
 	return "plugin_id" in panel and str(panel.get("plugin_id")) == plugin_id
 
 
+## Restore integer wire values lost when Godot parses JSON numbers as floats.
+static func _normalize_integer_arguments(schema: Variant, value: Variant) -> Variant:
+	if not schema is Dictionary:
+		return value
+	var definition: Dictionary = schema
+	if definition.get("type") == "integer" and value is float \
+			and is_finite(value) and floor(value) == value \
+			and value >= -9223372036854775808.0 and value < 9223372036854775808.0:
+		return int(value)
+	if value is Dictionary:
+		var source: Dictionary = value
+		var normalized: Dictionary = source.duplicate()
+		var properties: Dictionary = definition.get("properties", {})
+		for key: String in properties:
+			if normalized.has(key):
+				normalized[key] = _normalize_integer_arguments(properties[key], normalized[key])
+		return normalized
+	if value is Array:
+		var source: Array = value
+		var normalized: Array = source.duplicate()
+		for i: int in range(normalized.size()):
+			normalized[i] = _normalize_integer_arguments(definition.get("items", {}), normalized[i])
+		return normalized
+	return value
+
+
 func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dictionary,
 		context: ExecutionContext, registered_entry: Dictionary):
 	var prepared: Dictionary = _prepare_panel_call(plugin_id, tool_name, args)
@@ -797,6 +824,7 @@ func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dict
 	var native_definition: Dictionary = registered_entry.get("mcp_definition", {})
 	var input_schema: Variant = native_definition.get("inputSchema",
 		registered_entry.get("input_schema", {}))
+	prepared.args = _normalize_integer_arguments(input_schema, prepared.args)
 	var input_check: Dictionary = await ToolSchemaRuntime.validate(
 		input_schema, prepared.args)
 	if context.is_stopped():
