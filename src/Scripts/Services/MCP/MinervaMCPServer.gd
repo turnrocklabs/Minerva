@@ -684,14 +684,17 @@ func _register_tool_search() -> void:
 func _tool_search(arguments: Dictionary) -> Dictionary:
 	var query: String = str(arguments.get("query", "")).strip_edges()
 	var category: String = str(arguments.get("category", ""))
-	var activate: bool = bool(arguments.get("activate", true)) and not query.is_empty() and query != "*"
+	var requested_activation: bool = arguments.get("activate", true)
+	var activate: bool = requested_activation and not query.is_empty() and query != "*"
 	var limit: int = clampi(int(arguments.get("limit", 5 if activate else 500)), 1, 500)
 	var plugins: Array[Dictionary] = plugin_tool_registry.discovery_plugins() if plugin_tool_registry != null else []
 	var stopped_index: ToolSearchIndex = plugin_tool_registry.stopped_tool_index() if plugin_tool_registry != null else ToolSearchIndex.new()
 	var categories: Dictionary = tool_search_index.categories()
 	var stopped_categories: Dictionary = stopped_index.categories()
 	for key: String in stopped_categories:
-		categories[key] = int(categories.get(key, 0)) + int(stopped_categories[key])
+		var active_count: int = categories.get(key, 0)
+		var stopped_count: int = stopped_categories[key]
+		categories[key] = active_count + stopped_count
 	if not category.is_empty() and not categories.has(category):
 		return {"success": false, "error": "Unknown category '%s'" % category, "categories": categories}
 	var plugin_query: String = str(arguments.get("plugin", "")).strip_edges()

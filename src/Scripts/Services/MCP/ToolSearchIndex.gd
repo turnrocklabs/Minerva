@@ -60,7 +60,7 @@ func search(query: String, category: String = "", limit: int = 5, plugin_id: Str
 	var clean_query := query.strip_edges()
 	if clean_query.is_empty() or clean_query == "*":
 		var all_results: Array[Dictionary] = []
-		for name in _tool_meta:
+		for name: String in _tool_meta:
 			if not _matches(name, category, plugin_id):
 				continue
 			all_results.append(_format_result(name))
@@ -100,7 +100,7 @@ func search(query: String, category: String = "", limit: int = 5, plugin_id: Str
 	# Origin and functional category are independent, exact filters.
 	if not category.is_empty() or not plugin_id.is_empty():
 		var filtered: Dictionary = {}
-		for tool_name in scores:
+		for tool_name: String in scores:
 			if _matches(tool_name, category, plugin_id):
 				filtered[tool_name] = scores[tool_name]
 		scores = filtered
@@ -170,5 +170,6 @@ func categories() -> Dictionary:
 	for metadata: Dictionary in _tool_meta.values():
 		var category: String = metadata.tool_set
 		if not category.is_empty():
-			counts[category] = int(counts.get(category, 0)) + 1
+			var count: int = counts.get(category, 0)
+			counts[category] = count + 1
 	return counts

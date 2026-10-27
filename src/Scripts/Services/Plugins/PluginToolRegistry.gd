@@ -342,7 +342,8 @@ func tool_definition(tool_name: String) -> MCPToolDefinition:
 	var entry: Dictionary = find_tool(tool_name)
 	if entry.is_empty():
 		return null
-	var tool: MCPToolDefinition = MCPToolDefinition.from_dict(entry.get("mcp_definition", {}), "minerva")
+	var definition: Dictionary = entry.get("mcp_definition", {})
+	var tool: MCPToolDefinition = MCPToolDefinition.from_dict(definition, "minerva")
 	tool.tool_set = entry.get("tool_set", "")
 	tool.plugin_id = _plugin_by_tool.get(tool_name, "")
 	return tool

@@ -1976,7 +1976,8 @@ func _start_autostart_ids(ids: Array[String], stops: Dictionary) -> void:
 		if _shutting_down:
 			return
 		var definition: PluginDefinition = database.call("get_by_id", id)
-		if definition == null or not definition.autostart or person_stops(id) != int(stops.get(id, 0)):
+		var stop_baseline: int = stops.get(id, 0)
+		if definition == null or not definition.autostart or person_stops(id) != stop_baseline:
 			continue
 		if definition.state in [S_RUNNING, S_STARTING]:
 			continue
