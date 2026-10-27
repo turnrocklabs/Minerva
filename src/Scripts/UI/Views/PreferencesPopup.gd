@@ -1708,7 +1708,8 @@ func _create_tools_tab() -> void:
 
 	# --- Tool Sets Section ---
 	var ts_label := Label.new()
-	ts_label.text = "Tool Sets"
+	ts_label.text = "Default tool sets"
+	ts_label.tooltip_text = "Inherited by chats without an explicit selection or skill-defined tool sets."
 	ts_label.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(ts_label)
 
@@ -2210,85 +2211,61 @@ func _on_tool_idle_turns_changed(value: float) -> void:
 
 
 
-## Refresh tool set checkboxes from MinervaMCPServer
+## Preferences edit defaults only; per-chat overrides belong to the chat controls.
 func _refresh_tool_set_checks() -> void:
-	# Clear existing
 	for child in _tool_set_checks_container.get_children():
 		child.queue_free()
-
-	var mcp = SingletonObject.mcp_manager
-	if not mcp or not mcp.minerva_server:
-		var note := Label.new()
+	var manager: MCPManager = SingletonObject.mcp_manager
+	if manager == null:
+		var note: Label = Label.new()
 		note.text = "Tool sets not available (MCP not initialized)"
 		_tool_set_checks_container.add_child(note)
 		return
-
-	var minerva_server = mcp.minerva_server
-	var sets: Dictionary = {}
-	for tool_name in mcp.tool_registry:
-		var tool = mcp.tool_registry[tool_name]
-		if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
-			sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
-
-	if sets.is_empty():
-		var note := Label.new()
+	var counts: Dictionary = manager.get_tool_set_counts()
+	if counts.is_empty():
+		var note: Label = Label.new()
 		note.text = "No tool sets registered"
 		_tool_set_checks_container.add_child(note)
 		return
-
-	var all_enabled: bool = minerva_server._enabled_tool_sets.is_empty()
-
-	var tool_set_names := sets.keys()
-	tool_set_names.sort()
-	for tool_set_name in tool_set_names:
-		var check := CheckButton.new()
-		check.text = "%s (%d tools)" % [tool_set_name, sets[tool_set_name]]
-		check.button_pressed = all_enabled or (tool_set_name in minerva_server._enabled_tool_sets)
-		check.toggled.connect(_on_tool_set_check_toggled.bind(tool_set_name))
+	var enabled: Array[String] = manager.get_default_tool_sets()
+	var names: Array[String] = []
+	names.assign(counts.keys())
+	names.sort()
+	for name: String in names:
+		var check: CheckButton = CheckButton.new()
+		check.text = "%s (%d tools)" % [name, counts[name]]
+		check.button_pressed = enabled.is_empty() or name in enabled
+		check.toggled.connect(_on_tool_set_check_toggled.bind(name))
 		_tool_set_checks_container.add_child(check)
 
 
 func _on_tool_set_check_toggled(toggled_on: bool, tool_set_name: String) -> void:
-	var mcp = SingletonObject.mcp_manager
-	if not mcp or not mcp.minerva_server:
+	var manager: MCPManager = SingletonObject.mcp_manager
+	if manager == null:
 		return
-
-	var minerva_server = mcp.minerva_server
-
-	if minerva_server._enabled_tool_sets.is_empty():
-		# Currently all-enabled — build explicit list of all sets minus the unchecked one
-		var all_sets: Array = []
-		for tool_name in mcp.tool_registry:
-			var tool = mcp.tool_registry[tool_name]
-			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
-				if tool.tool_set not in all_sets:
-					all_sets.append(tool.tool_set)
-		if not toggled_on:
-			all_sets.erase(tool_set_name)
-		minerva_server._enabled_tool_sets = all_sets
-	else:
-		if toggled_on and tool_set_name not in minerva_server._enabled_tool_sets:
-			minerva_server._enabled_tool_sets.append(tool_set_name)
-		elif not toggled_on:
-			minerva_server._enabled_tool_sets.erase(tool_set_name)
-
-		# If all sets are now enabled, clear the filter
-		var all_sets: Array = []
-		for tool_name in mcp.tool_registry:
-			var tool = mcp.tool_registry[tool_name]
-			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
-				if tool.tool_set not in all_sets:
-					all_sets.append(tool.tool_set)
-		if minerva_server._enabled_tool_sets.size() >= all_sets.size():
-			minerva_server._enabled_tool_sets = []
-
-	# Persist to config
-	var config := MCPConfig.new()
-	config.load_config()
-	config.enabled_tool_groups = []
-	for s in minerva_server._enabled_tool_sets:
-		config.enabled_tool_groups.append(str(s))
-	config.save_config()
+	var settings: MCPConfig = MCPConfig.new()
+	settings.load_config()
+	var sets: Array[String] = settings.enabled_tool_groups.duplicate()
+	var counts: Dictionary = manager.get_tool_set_counts()
+	if sets.is_empty():
+		sets.assign(counts.keys())
+	if toggled_on and tool_set_name not in sets:
+		sets.erase("meta")
+		sets.append(tool_set_name)
+	elif not toggled_on:
+		sets.erase(tool_set_name)
+	var all_enabled: bool = true
+	for name: String in counts:
+		if name not in sets:
+			all_enabled = false
+			break
+	if all_enabled:
+		sets.clear()
+	elif sets.is_empty():
+		sets.append("meta")
+	settings.enabled_tool_groups = sets
+	settings.save_config()
+	manager.tools_refreshed.emit()
 
 
 ## Browse for server installation directory

@@ -35,9 +35,6 @@ const SERVER_NAME: String = "minerva"
 var _session_iterative_attempts: int = 0
 var _session_attempts_reset_time: int = 0
 
-## Tool sets filtering: empty = all sets enabled (backward compatible)
-var _enabled_tool_sets: Array = []
-
 ## Automatic tool management
 var tool_search_index: ToolSearchIndex = ToolSearchIndex.new()
 ## Fallback for internal callers without a chat; HTTP never activates tools.
@@ -72,14 +69,6 @@ const TOOL_MEMORY_HYDRATION_TOOLS := {
 func _init(manager = null, aliases: Dictionary[String, String] = LEGACY_TOOL_ALIASES) -> void:
 	_tool_aliases.assign(aliases)
 	mcp_manager = manager
-	# Load persisted tool set filter from config
-	var config := MCPConfig.new()
-	config.load_config()
-	if not config.enabled_tool_groups.is_empty():
-		_enabled_tool_sets = []
-		for g in config.enabled_tool_groups:
-			_enabled_tool_sets.append(g)
-
 	# Load auto tool management setting
 	if SingletonObject and SingletonObject.config_file:
 		auto_tool_management = SingletonObject.config_file.get_value("Tools", "auto_tool_management", false)

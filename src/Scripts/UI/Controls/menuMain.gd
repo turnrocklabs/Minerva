@@ -843,21 +843,22 @@ func _refresh_minerva_submenu() -> void:
 		minerva_submenu.add_child(ts_menu)
 		minerva_submenu.add_submenu_item("Tool Sets", ts_menu.name)
 
-		var all_enabled: bool = minerva_server._enabled_tool_sets.is_empty()
+		var tool_manager: MCPManager = mcp
+		var pane: ChatPane = SingletonObject.Chats
+		var history: ServiceHistory = pane.current_chat() if pane != null else null
+		var enabled: Array[String] = tool_manager._effective_tool_sets_for_history(history) if history != null else tool_manager.get_default_tool_sets()
+		var all_enabled: bool = enabled.is_empty()
 
 		# "All" toggle at the top
-		ts_menu.add_check_item("All", 50)
+		ts_menu.add_check_item("Use inherited sets", 50)
 		var all_idx = ts_menu.get_item_index(50)
-		ts_menu.set_item_checked(all_idx, all_enabled)
+		ts_menu.set_item_checked(all_idx, history != null and history.ToolSetOverride.is_empty())
+		ts_menu.set_item_disabled(all_idx, history == null)
 
 		ts_menu.add_separator()
 
 		# Gather tool sets with counts (excluding meta — always available)
-		var sets: Dictionary = {}
-		for tool_name in mcp.tool_registry:
-			var tool = mcp.tool_registry[tool_name]
-			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
-				sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
+		var sets: Dictionary = tool_manager.get_tool_set_counts()
 
 		# Sort set names for consistent ordering
 		var set_names: Array = sets.keys()
@@ -869,10 +870,11 @@ func _refresh_minerva_submenu() -> void:
 			var tool_set_name: String = set_names[i]
 			var count: int = sets[tool_set_name]
 			var item_id: int = 100 + i
-			var is_enabled: bool = all_enabled or (tool_set_name in minerva_server._enabled_tool_sets)
+			var is_enabled: bool = all_enabled or (tool_set_name in enabled)
 			ts_menu.add_check_item("%s (%d)" % [tool_set_name, count], item_id)
 			var item_idx = ts_menu.get_item_index(item_id)
 			ts_menu.set_item_checked(item_idx, is_enabled)
+			ts_menu.set_item_disabled(item_idx, history == null)
 
 
 ## Cached tool set names for mapping menu IDs back to set names
@@ -982,78 +984,40 @@ func _on_minerva_submenu_pressed(id: int) -> void:
 
 
 func _toggle_all_tool_sets() -> void:
-	var mcp = SingletonObject.mcp_manager
-	if not mcp or not mcp.minerva_server:
-		return
-	var server = mcp.minerva_server
-	if server._enabled_tool_sets.is_empty():
-		# Currently all enabled — there's nothing to disable to, so ignore
-		# (user should uncheck individual sets instead)
-		pass
-	else:
-		# Re-enable all
-		server._enabled_tool_sets = []
-		SingletonObject.create_toast_notification("All tool sets enabled", ToastNotification.Type.INFO)
+	var pane: ChatPane = SingletonObject.Chats
+	var history: ServiceHistory = pane.current_chat() if pane != null else null
+	if history != null:
+		history.ToolSetOverride = []
+		SingletonObject.create_toast_notification("Using inherited tool sets", ToastNotification.Type.INFO)
 
 
 func _toggle_tool_set(index: int) -> void:
-	var mcp = SingletonObject.mcp_manager
-	if not mcp or not mcp.minerva_server:
+	var manager: MCPManager = SingletonObject.mcp_manager
+	var pane: ChatPane = SingletonObject.Chats
+	var history: ServiceHistory = pane.current_chat() if pane != null else null
+	if manager == null or history == null or index < 0 or index >= _minerva_tool_set_names.size():
 		return
-	if index < 0 or index >= _minerva_tool_set_names.size():
-		return
-
-	var server = mcp.minerva_server
-	var tool_set_name: String = _minerva_tool_set_names[index]
-
-	if server._enabled_tool_sets.is_empty():
-		# Currently all enabled — populate with all sets minus the one being toggled off
-		var all_sets: Array = []
-		for tool_name in mcp.tool_registry:
-			var tool = mcp.tool_registry[tool_name]
-			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
-				if tool.tool_set not in all_sets:
-					all_sets.append(tool.tool_set)
-		all_sets.erase(tool_set_name)
-		server._enabled_tool_sets = all_sets
-		SingletonObject.create_toast_notification("Disabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
-	else:
-		# Toggle within the existing enabled list
-		if tool_set_name in server._enabled_tool_sets:
-			server._enabled_tool_sets.erase(tool_set_name)
-			SingletonObject.create_toast_notification("Disabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
-			# If nothing left enabled, re-enable all
-			if server._enabled_tool_sets.is_empty():
-				SingletonObject.create_toast_notification("All tool sets re-enabled", ToastNotification.Type.INFO)
-		else:
-			server._enabled_tool_sets.append(tool_set_name)
-			SingletonObject.create_toast_notification("Enabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
+	manager.toggle_tool_set(history, str(_minerva_tool_set_names[index]))
 
 
-## Update check marks in the tool sets submenu without rebuilding it
+## Menu marks reflect the current chat's effective eligibility.
 func _refresh_tool_set_checks() -> void:
-	var ts_menu: PopupMenu = minerva_submenu.get_node_or_null("ToolSetsSubmenu")
-	if not ts_menu:
+	var popup: PopupMenu = minerva_submenu.get_node_or_null("ToolSetsSubmenu")
+	var manager: MCPManager = SingletonObject.mcp_manager
+	var pane: ChatPane = SingletonObject.Chats
+	var history: ServiceHistory = pane.current_chat() if pane != null else null
+	if popup == null or manager == null:
 		return
-	var mcp = SingletonObject.mcp_manager
-	if not mcp or not mcp.minerva_server:
-		return
-	var server = mcp.minerva_server
-	var all_enabled: bool = server._enabled_tool_sets.is_empty()
-
-	# Update "All" checkbox
-	var all_idx = ts_menu.get_item_index(50)
-	if all_idx >= 0:
-		ts_menu.set_item_checked(all_idx, all_enabled)
-
-	# Update individual set checkboxes
-	for i in range(_minerva_tool_set_names.size()):
-		var tool_set_name: String = _minerva_tool_set_names[i]
-		var item_id: int = 100 + i
-		var item_idx = ts_menu.get_item_index(item_id)
-		if item_idx >= 0:
-			var is_enabled: bool = all_enabled or (tool_set_name in server._enabled_tool_sets)
-			ts_menu.set_item_checked(item_idx, is_enabled)
+	var enabled: Array[String] = manager._effective_tool_sets_for_history(history) if history != null else manager.get_default_tool_sets()
+	var inherit_index: int = popup.get_item_index(50)
+	if inherit_index >= 0:
+		popup.set_item_checked(inherit_index, history != null and history.ToolSetOverride.is_empty())
+		popup.set_item_disabled(inherit_index, history == null)
+	for index: int in range(_minerva_tool_set_names.size()):
+		var item_index: int = popup.get_item_index(100 + index)
+		if item_index >= 0:
+			popup.set_item_checked(item_index, enabled.is_empty() or _minerva_tool_set_names[index] in enabled)
+			popup.set_item_disabled(item_index, history == null)
 
 
 ## Legacy toggle functions — now delegate to generic _toggle_server_connection

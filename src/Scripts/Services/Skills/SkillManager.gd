@@ -11,7 +11,6 @@ var skills: Array[SkillDefinition] = []
 var active_skills: Array[String] = []
 
 ## Computed merged tool sets from all active profiles (empty = all enabled)
-var _enabled_tool_sets: Array[String] = []
 
 ## Tool names registered by active skill executables (for cleanup on deactivate)
 var _registered_skill_tools: Dictionary = {}  # skill_id -> tool_name
@@ -59,7 +58,6 @@ func _load_user_skills() -> void:
 	for skill_id in active_data:
 		active_skills.append(str(skill_id))
 
-	_recompute_tool_sets()
 
 
 ## Save user skills and active state to config
@@ -127,11 +125,6 @@ func activate_skill(id: String, mcp_manager = null) -> void:
 		return
 
 	active_skills.append(id)
-	_recompute_tool_sets()
-
-	# Warn if the resulting tool_sets exclude "chat" (the most critical tool set)
-	if not _enabled_tool_sets.is_empty() and "chat" not in _enabled_tool_sets:
-		push_warning("[SkillManager] Active profiles exclude 'chat' tool set — LLM may not be able to respond")
 
 	# Auto-connect required MCP servers (profiles)
 	if mcp_manager and not skill.required_servers.is_empty():
@@ -156,7 +149,6 @@ func deactivate_skill(id: String, mcp_manager = null) -> void:
 		return
 
 	active_skills.remove_at(idx)
-	_recompute_tool_sets()
 
 	# Unregister executable tool
 	if mcp_manager and _registered_skill_tools.has(id):
@@ -265,29 +257,6 @@ func execute_skill_tool(skill_id: String, args_str: String = "") -> Dictionary:
 		"output": stdout,
 		"executable": skill.executable_path,
 	}
-
-
-## Recompute merged tool sets from all active profiles.
-## If any active profile has empty tool_sets (= all), the result is empty (= all).
-func _recompute_tool_sets() -> void:
-	if active_skills.is_empty():
-		_enabled_tool_sets = []
-		return
-
-	var merged: Dictionary = {}
-	for skill_id in active_skills:
-		var skill := get_skill(skill_id)
-		if not skill or not skill.is_profile():
-			continue  # Skills don't affect tool_set filtering
-		if skill.tool_sets.is_empty():
-			_enabled_tool_sets = []
-			return
-		for ts in skill.tool_sets:
-			merged[ts] = true
-
-	_enabled_tool_sets = []
-	for key in merged:
-		_enabled_tool_sets.append(key)
 
 
 ## Get the effective tool sets for a given scope.

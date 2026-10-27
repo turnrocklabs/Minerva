@@ -14,7 +14,7 @@ class FixtureServer extends MinervaMCPServer:
 	var release_holds := false
 
 	func _init() -> void:
-		_enabled_tool_sets = []
+		pass
 
 	func execute_tool_for_http(tool_name: String, arguments: Dictionary,
 			_agent_id: String = "", context: MCPExecutionContext = null) -> Dictionary:

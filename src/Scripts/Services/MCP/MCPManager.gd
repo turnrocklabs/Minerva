@@ -479,6 +479,7 @@ func toggle_tool_set(history: ServiceHistory, set_name: String) -> void:
 	if set_name in sets:
 		sets.erase(set_name)
 	else:
+		sets.erase("meta")
 		sets.append(set_name)
 	# An empty override inherits; existing meta expresses no ordinary sets.
 	if sets.is_empty():
