@@ -824,10 +824,13 @@ func _wire_plugin_tools_to_mcp() -> void:
 	# When a plugin's tools are registered, add them to MCP tool_registry + search index
 	plugin_tool_registry.tools_registered.connect(
 		func(p_plugin_id: String, _tool_names: Array) -> void:
-			for entry in plugin_tool_registry.get_plugin_tools(p_plugin_id):
-				var tool_def: MCPToolDefinition = plugin_tool_registry.tool_definition(str(entry["name"]))
+			var registry: PluginToolRegistry = plugin_tool_registry
+			var manager: PluginManager = plugin_manager
+			var database: PluginDB = manager.get_db()
+			for entry: Dictionary in registry.get_plugin_tools(p_plugin_id):
+				var tool_def: MCPToolDefinition = registry.tool_definition(str(entry["name"]))
 				var membership: String = tool_def.tool_set
-				var definition: PluginDefinition = plugin_manager.get_db().get_by_id(p_plugin_id)
+				var definition: PluginDefinition = database.get_by_id(p_plugin_id)
 				mcp_manager.tool_registry[entry["name"]] = tool_def
 				minerva_server.tool_search_index.register_tool(
 					entry["name"], entry["description"],

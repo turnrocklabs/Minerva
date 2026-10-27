@@ -49,11 +49,12 @@ func _plugin_started(id: String) -> void:
 		spawned_versions.append(str(singleton.plugin_manager.get_plugin_status(id).get("version", "")))
 
 func _process(_delta: float) -> void:
-	if singleton == null or singleton.mcp_manager == null or singleton.mcp_manager.minerva_server == null:
+	if singleton == null or singleton.plugin_manager == null or singleton.mcp_manager == null or singleton.mcp_manager.minerva_server == null:
 		return
 	var schemas: Array[Dictionary] = singleton.mcp_manager.minerva_server.tool_budget_manager.get_active_schemas()
 	var active: Array[String] = []
 	for schema: Dictionary in schemas:
 		active.append(str(schema.get("name", "")))
 	active.sort()
-	_write("observed", {"active": active, "started_versions": spawned_versions})
+	_write("observed", {"active": active, "started_versions": spawned_versions,
+		"docket": singleton.plugin_manager.get_plugin_status("docket")})

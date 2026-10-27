@@ -132,13 +132,14 @@ func search(query: String, category: String = "", limit: int = 5, plugin_id: Str
 func get_all_tools_summary() -> Array[Dictionary]:
 	## Return compact list of all tools (names + descriptions, no schemas).
 	var result: Array[Dictionary] = []
-	for name in _tool_meta:
+	for name: String in _tool_meta:
+		var metadata: Dictionary = _tool_meta[name]
 		result.append({
 			"name": name,
-			"description": _tool_meta[name].description,
-			"tool_set": _tool_meta[name].tool_set,
-			"category": _tool_meta[name].tool_set,
-			"plugin_id": _tool_meta[name].plugin_id,
+			"description": metadata.description,
+			"tool_set": metadata.tool_set,
+			"category": metadata.tool_set,
+			"plugin_id": metadata.plugin_id,
 		})
 	return result
 
@@ -148,18 +149,20 @@ func get_tool_count() -> int:
 
 
 func _format_result(name: String) -> Dictionary:
+	var metadata: Dictionary = _tool_meta.get(name, {})
 	return {
 		"name": name,
-		"description": _tool_meta[name].description if _tool_meta.has(name) else "",
-		"category": _tool_meta[name].tool_set,
-		"plugin_id": _tool_meta[name].plugin_id,
+		"description": metadata.description if _tool_meta.has(name) else "",
+		"category": metadata.tool_set,
+		"plugin_id": metadata.plugin_id,
 		"schema": _tool_schemas.get(name, {}),
 	}
 
 
 func _matches(name: String, category: String, plugin_id: String) -> bool:
-	return _tool_meta.has(name) and (category.is_empty() or _tool_meta[name].tool_set == category) \
-		and (plugin_id.is_empty() or _tool_meta[name].plugin_id == plugin_id)
+	var metadata: Dictionary = _tool_meta.get(name, {})
+	return _tool_meta.has(name) and (category.is_empty() or metadata.tool_set == category) \
+		and (plugin_id.is_empty() or metadata.plugin_id == plugin_id)
 
 
 func categories() -> Dictionary:

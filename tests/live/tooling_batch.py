@@ -209,13 +209,8 @@ def run() -> int:
             registered_version = str(status.get('attached_version', '')).removeprefix('v').split('+')[0]
             check(status['version'] == '0.3.0-rc.32' and registered_version == '0.3.0-rc.32'
                   and observed['started_versions'] == ['0.3.0-rc.32'], 'docket_updated_before_spawn')
-            end_docket()
-            health_deadline = min(deadline, time.monotonic() + 7)  # 5s sweep + margin.
-            stopped_status = docket()
-            while (stopped_status.get('attached', True) or stopped_status.get('attach_refused', True)) and time.monotonic() < health_deadline:
-                time.sleep(.2)
-                stopped_status = docket()
-            check(not stopped_status.get('attached', True) and not stopped_status.get('attach_refused', True), 'docket_stop_clears_attachment')
+            # minerva:01a17c848bc9: HTTP policy reads need live Docket, so
+            # Stage B precedes the final shutdown/status observation.
             installed = tool('minerva_plugin_marketplace_install', url=base + '/assets/' + pins[-1]['asset'], auto_confirm_skills=True)
             while not installed.get('done') and time.monotonic() < deadline:
                 time.sleep(.2)
@@ -240,6 +235,13 @@ def run() -> int:
             tool('minerva_plugin_stop', id='codetools')
             stopped = tool('minerva_tool_search', plugin='Code Tools', activate=False)
             check(len(stopped.get('tools', [])) == 21 and all(t.get('running') is False for t in stopped['tools']), 'stopped_plugin_manifest_search')
+            end_docket()
+            health_deadline = min(deadline, time.monotonic() + 7)  # 5s sweep + margin.
+            stopped_status = wait(lambda: read_json(PRIVATE / 'observed.json'))['docket']
+            while (stopped_status.get('attached', True) or stopped_status.get('attach_refused', True)) and time.monotonic() < health_deadline:
+                time.sleep(.2)
+                stopped_status = wait(lambda: read_json(PRIVATE / 'observed.json'))['docket']
+            check(not stopped_status.get('attached', True) and not stopped_status.get('attach_refused', True), 'docket_stop_clears_attachment')
         report['status'] = 'green'
         return 0
     except GoalFailure:

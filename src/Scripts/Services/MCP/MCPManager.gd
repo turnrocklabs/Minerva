@@ -877,7 +877,7 @@ func _replace_server_tools(connection) -> void:
 func _register_server_tools(connection) -> void:
 	var blocked_count := 0
 	var collision_count := 0
-	for tool in connection.tools:
+	for tool: MCPToolDefinition in connection.tools:
 		# Block external servers from registering minerva_-prefixed tools
 		if connection.server_name != "minerva" and tool.name.begins_with("minerva_"):
 			push_warning("[MCP] Blocked external tool with reserved 'minerva_' prefix: %s (from %s)" % [

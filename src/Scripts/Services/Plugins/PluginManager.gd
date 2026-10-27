@@ -21,6 +21,9 @@ const InstallWorkers := preload("res://Scripts/Services/Plugins/PluginInstallWor
 ## How often (seconds) to poll running plugins for liveness.
 const HEALTH_CHECK_INTERVAL_SEC := 5.0
 
+## Completion of an autostart group; per-call provider maps remain its authority.
+signal _autostart_completed
+
 ## Number of crashes within the window that triggers CRASH_LOOP.
 const CRASH_LOOP_THRESHOLD := 3
 
@@ -1901,6 +1904,10 @@ func _ensure_required_plugins() -> void:
 ## marketplace updates and any remaining required-update opportunity.
 func start_plugins_at_launch(registry_url: String = "") -> void:
 	_launch_autostart = true
+	var startup_stops: Dictionary = {}
+	var database: Object = _db
+	for definition: PluginDefinition in database.call("get_all"):
+		startup_stops[definition.id] = person_stops(definition.id)
 	# Not awaited: autostart does not wait on the network. Source/editor runs
 	# need required plugins too; ensure never replaces a manifest-lane copy.
 	RequiredPlugins.move_legacy_relay_state()
@@ -1909,7 +1916,7 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 	await reconcile_recovered()
 	_ensure_required_plugins()
 	var startup_updates: Dictionary = await AutoUpdater.before_autostart(self)
-	await start_autostart_plugins(startup_updates)
+	await start_autostart_plugins(startup_updates, startup_stops)
 	_launch_autostart = false
 	if not _shutting_down:
 		await AutoUpdater.run(self, registry_url)
@@ -1917,7 +1924,7 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 
 ## Start all plugins whose autostart flag is true.
 ## Called by Minerva on boot.
-func start_autostart_plugins(startup_updates: Dictionary = {}) -> void:
+func start_autostart_plugins(startup_updates: Dictionary = {}, startup_stops: Dictionary = {}) -> void:
 	var database: Object = _db
 	var definitions: Array = database.call("get_autostart_plugins")
 	var planned := PluginDependencyContract.startup_order(definitions)
@@ -1929,40 +1936,69 @@ func start_autostart_plugins(startup_updates: Dictionary = {}) -> void:
 	SingletonObject.verbose_log("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
 	var ready: Array[String] = []
 	var deferred: Array[String] = []
-	var stops: Dictionary = {}
+	var stops: Dictionary = startup_stops.duplicate()
+	var providers: Dictionary = {}
 	for id: String in to_start:
 		var definition: PluginDefinition = database.call("get_by_id", id)
 		if definition == null:
 			continue
-		stops[id] = person_stops(id)
+		if not stops.has(id):
+			stops[id] = person_stops(id)
+		providers[id] = false
 		var update: StartupUpdateJob = startup_updates.get(id)
 		var waiting: bool = update != null and update.state != StartupUpdateJob.State.DONE
 		if waiting or definition.requires_plugins.any(func(requirement: Dictionary) -> bool: return str(requirement.id) in deferred):
 			deferred.append(id)
 		else:
 			ready.append(id)
-	# Unrelated plugins start now. Deferred providers and their dependents keep
-	# the same topological order, after each surviving update releases its lock.
-	await _start_autostart_ids(ready, {}, stops)
-	await _start_autostart_ids(deferred, startup_updates, stops)
+	await _start_autostart_ids(ready, stops, providers)
+	for id: String in deferred:
+		var update: StartupUpdateJob = startup_updates.get(id)
+		if update != null and update.state != StartupUpdateJob.State.DONE:
+			update.finished.connect(_resume_deferred_autostart.bind(deferred, startup_updates, stops, providers), CONNECT_ONE_SHOT)
+	# Subscribe before examining settled jobs: a fast update may have finished
+	# while unrelated plugins started. Each callback releases only its own branch.
+	_resume_deferred_autostart(deferred, startup_updates, stops, providers)
+	while not _shutting_down and not providers.values().all(func(done: bool) -> bool: return done):
+		await _autostart_completed
 
 
-func _start_autostart_ids(ids: Array[String], updates: Dictionary, stops: Dictionary) -> void:
+func _resume_deferred_autostart(deferred: Array[String], updates: Dictionary, stops: Dictionary, providers: Dictionary) -> void:
 	var database: Object = _db
-	for id: String in ids:
+	for id: String in deferred.duplicate():
+		if not deferred.has(id) or _shutting_down:
+			continue
 		var update: StartupUpdateJob = updates.get(id)
 		if update != null and update.state != StartupUpdateJob.State.DONE:
-			# No total-transfer deadline: a slow healthy archive must not be
-			# cancelled, nor can startup enter a registration transaction's lock.
-			await update.finished
+			continue
+		var definition: PluginDefinition = database.call("get_by_id", id)
+		if definition != null and definition.requires_plugins.any(func(requirement: Dictionary) -> bool:
+			return providers.has(requirement.id) and not providers[requirement.id]):
+			continue
+		# Claim before the start can yield; providers stays false until it settles,
+		# so another job's callback cannot start the same plugin or its consumers.
+		deferred.erase(id)
+		await _start_autostart_ids([id], stops, providers)
+	if providers.values().all(func(done: bool) -> bool: return done):
+		_autostart_completed.emit()
+
+
+func _start_autostart_ids(ids: Array[String], stops: Dictionary, providers: Dictionary) -> void:
+	var database: Object = _db
+	for id: String in ids:
 		if _shutting_down:
 			return
 		var definition: PluginDefinition = database.call("get_by_id", id)
 		if definition == null or not definition.autostart or person_stops(id) != int(stops.get(id, 0)):
+			providers[id] = true
 			continue
 		if definition.state in [S_RUNNING, S_STARTING]:
+			providers[id] = true
 			continue
+		# A queued update is never cancelled for elapsed transfer time. Its
+		# finished callback reaches here only after the transaction releases its lock.
 		var result := await start_plugin(id)
+		providers[id] = true
 		if result.get("disabled", false):
 			SingletonObject.verbose_log("[PluginManager] Autostart skipped for '%s': %s" % [id, result.error])
 		elif result.get("error"):

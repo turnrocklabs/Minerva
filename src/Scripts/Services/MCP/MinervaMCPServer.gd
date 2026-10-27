@@ -88,7 +88,9 @@ func _init(manager = null, aliases: Dictionary[String, String] = LEGACY_TOOL_ALI
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
 		# One schema owner for discovery and the initially active tool.
-		var search_tool: MCPToolDefinition = mcp_manager.tool_registry["minerva_tool_search"]
+		var registry_owner: Object = mcp_manager
+		var registered_tools: Dictionary = registry_owner.get("tool_registry")
+		var search_tool: MCPToolDefinition = registered_tools["minerva_tool_search"]
 		tool_budget_manager.activate_tool("minerva_tool_search", search_tool.to_anthropic_format())
 
 
