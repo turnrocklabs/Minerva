@@ -46,7 +46,7 @@ func register_tools() -> void:
 		},
 	}
 	server._register_tool("minerva_list_skills", list_desc, list_schema, "utility")
-	server.tool_budget_manager.activate_tool("minerva_list_skills", {"name": "minerva_list_skills", "description": list_desc, "input_schema": list_schema})
+	server.seed_tool_budget("minerva_list_skills")
 
 	var get_desc := "Get full skill details: step-by-step instructions, preconditions, and expected outcome. Use skill_id from minerva_list_skills, or search by title. Searches across all loaded docket projects."
 	var get_schema := {
@@ -67,7 +67,7 @@ func register_tools() -> void:
 		},
 	}
 	server._register_tool("minerva_get_skill", get_desc, get_schema, "utility")
-	server.tool_budget_manager.activate_tool("minerva_get_skill", {"name": "minerva_get_skill", "description": get_desc, "input_schema": get_schema})
+	server.seed_tool_budget("minerva_get_skill")
 
 	server._register_tool("minerva_activate_skill",
 		"Activate a skill globally. Active local skills inject their instructions into the system prompt and register any executable tools; a Docket skill is loaded as minerva_get_skill loads it (its instructions returned, its tools activated).",
@@ -426,7 +426,7 @@ func _matches_filters(entry: Dictionary, query_text: String, filter_tags: Array)
 	return true
 
 
-func _activate_dependencies(tool_deps: Array) -> Dictionary:
+func _activate_dependencies(tool_deps: Array, context: ExecutionContext = null) -> Dictionary:
 	var schemas: Array[Dictionary] = []
 	var skipped: Array[String] = []
 	for dep_name: Variant in tool_deps:
@@ -441,7 +441,9 @@ func _activate_dependencies(tool_deps: Array) -> Dictionary:
 		else:
 			schemas.append(schema)
 
-	var admission: Dictionary = server.tool_budget_manager.activate_group(schemas)
+	var admission: Dictionary = {"activated": [], "rejected": [], "evicted": []}
+	if context == null or context.origin != "http":
+		admission = server.get_context_tool_budget(context).activate_group(schemas)
 	var unavailable: Array[String] = []
 	for rejected: Dictionary in admission.get("rejected", []):
 		unavailable.append(str(rejected.get("name", "")))
@@ -550,7 +552,7 @@ func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var tool_deps: Array = record.tool_deps
 	if not tool_deps.is_empty():
 		result["tool_deps"] = tool_deps
-		var activation := _activate_dependencies(tool_deps)
+		var activation := _activate_dependencies(tool_deps, context)
 		for key: String in activation:
 			if not (activation[key] as Array).is_empty():
 				result[key] = activation[key]
@@ -734,7 +736,7 @@ func _skill_create(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	# Auto-activate declared tools in the caller's budget manager so the
 	# skill is immediately usable without a second minerva_activate_skill call.
 	var tool_deps: Array = arguments.get("tool_deps", [])
-	var activation := _activate_dependencies(tool_deps)
+	var activation := _activate_dependencies(tool_deps, context)
 
 	var result := {
 		"success": true,
@@ -822,7 +824,7 @@ func _skill_update(arguments: Dictionary, context: ExecutionContext) -> Dictiona
 	# expire naturally via tool_idle_turns.
 	if arguments.has("tool_deps"):
 		var tool_deps: Array = arguments.get("tool_deps", [])
-		var activation := _activate_dependencies(tool_deps)
+		var activation := _activate_dependencies(tool_deps, context)
 		_set_activation_readiness(result, activation)
 		result["message"] = _activation_message(activation)
 		for key: String in activation:
@@ -1115,15 +1117,17 @@ func _apply_skill_optimization(optimization: Dictionary,
 	var failures: Array[Dictionary] = []
 	# Tool budget knobs
 	if optimization.has("tool_budget"):
-		var budget_result: Dictionary = server.tool_budget_manager.set_budget(
-			int(optimization["tool_budget"]))
+		var budget_history: ServiceHistory = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
+		var budget_result: Dictionary = server.set_tool_budget(
+			int(optimization["tool_budget"]), budget_history)
 		if not budget_result.get("applied", false):
 			applied.erase("tool_budget")
 			var failure := budget_result.duplicate(true)
 			failure["setting"] = "tool_budget"
 			failures.append(failure)
 	if optimization.has("tool_idle_turns"):
-		server.tool_budget_manager.set_max_idle_turns(int(optimization["tool_idle_turns"]))
+		var idle_history: ServiceHistory = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
+		server.set_tool_idle_turns(int(optimization["tool_idle_turns"]), idle_history)
 
 	# Round-cap knob (W10): a skill can raise the per-message tool-call ROUND
 	# limit for its multi-step workflow without touching the global default.

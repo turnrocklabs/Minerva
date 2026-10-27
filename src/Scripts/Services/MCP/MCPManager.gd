@@ -288,7 +288,7 @@ func activate_tools_for_workflow(tool_names: Array[String], history = null) -> D
 	var admission := {"activated": directly_available, "rejected": []}
 	if not static_tool_mode and minerva_server != null \
 			and minerva_server.auto_tool_management:
-		admission = minerva_server.tool_budget_manager.activate_group(schemas)
+		admission = minerva_server.get_tool_budget(history).activate_group(schemas)
 	for rejected: Dictionary in admission.get("rejected", []):
 		unavailable.append(rejected)
 	return {"activated": admission.get("activated", []), "unavailable": unavailable,
@@ -413,7 +413,8 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 
 	# Auto tool management: return only tool_search with dynamic description
 	if minerva_server and minerva_server.auto_tool_management:
-		minerva_server.tool_budget_manager.advance_turn()
+		var budget: ToolBudgetManager = minerva_server.get_tool_budget(history)
+		budget.advance_turn()
 
 		# Collect categories from filtered tools for the dynamic description
 		var categories: Dictionary = {}
@@ -463,7 +464,7 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 
 		# Return tool_search + any already-activated tools from budget manager
 		var result: Array[Dictionary] = [search_schema]
-		for active_schema in minerva_server.tool_budget_manager.get_active_schemas():
+		for active_schema in budget.get_active_schemas():
 			var active_name: String = active_schema.get("name", "")
 			if active_name == "minerva_tool_search":
 				continue  # already added

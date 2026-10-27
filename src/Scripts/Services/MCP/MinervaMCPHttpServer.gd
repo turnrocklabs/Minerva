@@ -539,9 +539,7 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 func _catalog_snapshot() -> Dictionary:
 	var registry: Dictionary = _mcp_manager.tool_registry \
 		if _mcp_manager != null else {}
-	var enabled_sets: Array = _mcp_manager.minerva_server._enabled_tool_sets \
-		if _mcp_manager != null and _mcp_manager.minerva_server != null else []
-	return _export_catalog.snapshot(registry, enabled_sets)
+	return _export_catalog.snapshot(registry)
 
 
 func _open_subscription(conn, params: Dictionary, request_id: Variant) -> void:
@@ -630,19 +628,6 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 			or _mcp_manager.tool_registry.get(canonical_name) != dispatched_definition:
 		lease.release()
 		return
-
-	# Enforce tool set filtering
-	if _mcp_manager and _mcp_manager.minerva_server:
-		var enabled_sets: Array = _mcp_manager.minerva_server._enabled_tool_sets
-		if not enabled_sets.is_empty():
-			# Check if this tool's set is enabled
-			if _mcp_manager.tool_registry.has(canonical_name):
-				var tool_def = _mcp_manager.tool_registry[canonical_name]
-				if tool_def.tool_set != "meta" and tool_def.tool_set not in enabled_sets:
-					lease.release()
-					_send_jsonrpc_error(conn, request_id, -32602,
-						"Tool set '%s' is not enabled for this session. Use minerva_enable_tool_sets to enable it." % tool_def.tool_set)
-					return
 
 	# Execute the tool
 	if not _mcp_manager or not _mcp_manager.minerva_server:

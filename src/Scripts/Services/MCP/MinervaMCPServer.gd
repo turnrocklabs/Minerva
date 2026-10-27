@@ -40,7 +40,13 @@ var _enabled_tool_sets: Array = []
 
 ## Automatic tool management
 var tool_search_index: ToolSearchIndex = ToolSearchIndex.new()
+## Fallback for internal callers without a chat; HTTP never activates tools.
 var tool_budget_manager: ToolBudgetManager = ToolBudgetManager.new()
+var _tool_budget_defaults: Dictionary[String, int] = {
+	"budget": ToolBudgetManager.DEFAULT_BUDGET,
+	"idle_turns": ToolBudgetManager.DEFAULT_MAX_IDLE_TURNS,
+}
+var _tool_budget_seeds: Array[String] = []
 var auto_tool_management: bool = false  # toggled via preferences
 
 ## Policy engine — evaluates tool calls against Docket-sourced rules
@@ -78,20 +84,65 @@ func _init(manager = null, aliases: Dictionary[String, String] = LEGACY_TOOL_ALI
 	if SingletonObject and SingletonObject.config_file:
 		auto_tool_management = SingletonObject.config_file.get_value("Tools", "auto_tool_management", false)
 		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", ToolBudgetManager.DEFAULT_BUDGET)
-		tool_budget_manager.set_budget(budget)
+		set_tool_budget(budget)
 		var idle_turns: int = SingletonObject.config_file.get_value("Tools", "tool_max_idle_turns", ToolBudgetManager.DEFAULT_MAX_IDLE_TURNS)
-		tool_budget_manager.set_max_idle_turns(idle_turns)
+		set_tool_idle_turns(idle_turns)
 
 	if mcp_manager:
 		_init_modules()
 		_register_tool_search()
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
-		# One schema owner for discovery and the initially active tool.
+		seed_tool_budget("minerva_tool_search")
+		tool_budget_manager = _new_tool_budget()
+
+
+## Registration records names; every new chat gets its own seed schemas.
+func seed_tool_budget(tool_name: String) -> void:
+	if tool_name not in _tool_budget_seeds:
+		_tool_budget_seeds.append(tool_name)
+
+
+func _new_tool_budget() -> ToolBudgetManager:
+	var budget: ToolBudgetManager = ToolBudgetManager.new(_tool_budget_defaults["budget"])
+	budget.set_max_idle_turns(_tool_budget_defaults["idle_turns"])
+	if mcp_manager != null:
 		var registry_owner: Object = mcp_manager
 		var registered_tools: Dictionary = registry_owner.get("tool_registry")
-		var search_tool: MCPToolDefinition = registered_tools["minerva_tool_search"]
-		tool_budget_manager.activate_tool("minerva_tool_search", search_tool.to_anthropic_format())
+		for name: String in _tool_budget_seeds:
+			var tool: MCPToolDefinition = registered_tools.get(name)
+			if tool != null:
+				budget.activate_tool(name, tool.to_anthropic_format())
+	return budget
+
+
+## MCPManager also accepts non-chat history adapters; those retain the fallback.
+func get_tool_budget(history: Variant = null) -> ToolBudgetManager:
+	if history is ChatHistory:
+		var chat: ChatHistory = history
+		if chat.tool_budget_manager == null:
+			chat.tool_budget_manager = _new_tool_budget()
+		return chat.tool_budget_manager
+	return tool_budget_manager
+
+
+func get_context_tool_budget(context: ExecutionContext) -> ToolBudgetManager:
+	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(context.caller_chat_id) if context != null else null
+	return get_tool_budget(history)
+
+
+## A skill changes this chat and the defaults for future chats, not other chats.
+func set_tool_budget(value: int, history: ServiceHistory = null) -> Dictionary:
+	var budget: ToolBudgetManager = get_tool_budget(history)
+	var result: Dictionary = budget.set_budget(value)
+	if result.get("applied", false):
+		_tool_budget_defaults["budget"] = budget.get_budget()
+	return result
+
+
+func set_tool_idle_turns(value: int, history: ServiceHistory = null) -> void:
+	_tool_budget_defaults["idle_turns"] = value
+	get_tool_budget(history).set_max_idle_turns(value)
 
 
 #region Module Lifecycle
@@ -386,7 +437,8 @@ func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: 
 		injected_knowledge = knowledge.knowledge
 
 	# Track tool usage for LRU (blocked calls don't count)
-	tool_budget_manager.mark_used(tool_name)
+	var budget: ToolBudgetManager = get_context_tool_budget(context)
+	budget.mark_used(tool_name)
 
 	# Emit pre-execution signal for hook triggers (PreToolUse)
 	if arguments is Dictionary and SingletonObject.trigger_manager and not SingletonObject.trigger_manager.triggers.is_empty():
@@ -395,8 +447,8 @@ func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: 
 	# Coerce argument types to match declared schema (LLMs send arrays/objects as JSON strings)
 	if coerce_arguments and arguments is Dictionary:
 		var schema_for_coerce: Dictionary = {}
-		if tool_budget_manager.is_active(tool_name):
-			var tool_info := tool_budget_manager.try_call(tool_name)
+		if budget.is_active(tool_name):
+			var tool_info := budget.try_call(tool_name)
 			schema_for_coerce = tool_info.get("schema", {})
 		elif tool_search_index:
 			var search_hits: Array[Dictionary] = tool_search_index.search(tool_name, "", 1)
@@ -414,7 +466,7 @@ func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: 
 
 	# Tool search (always available, handled here to avoid module overhead)
 	if tool_name == "minerva_tool_search":
-		dispatch_result = _tool_search(arguments)
+		dispatch_result = _tool_search(arguments, context)
 		dispatched = true
 
 	# Tool memory search — retrieval from the calling chat's ToolMemoryManager recovery index
@@ -681,11 +733,12 @@ func _register_tool_search() -> void:
 		}, "required": []}, "meta")
 
 
-func _tool_search(arguments: Dictionary) -> Dictionary:
+func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	var query: String = str(arguments.get("query", "")).strip_edges()
 	var category: String = str(arguments.get("category", ""))
 	var requested_activation: bool = arguments.get("activate", true)
-	var activate: bool = requested_activation and not query.is_empty() and query != "*"
+	var activate: bool = requested_activation and not query.is_empty() and query != "*" \
+		and (context == null or context.origin != "http")
 	var limit: int = clampi(int(arguments.get("limit", 5 if activate else 500)), 1, 500)
 	var plugins: Array[Dictionary] = plugin_tool_registry.discovery_plugins() if plugin_tool_registry != null else []
 	var stopped_index: ToolSearchIndex = plugin_tool_registry.stopped_tool_index() if plugin_tool_registry != null else ToolSearchIndex.new()
@@ -764,7 +817,7 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 				requested_schemas.append(schema)
 		else:
 			also_available.append(name)
-	var admission := tool_budget_manager.activate_group(requested_schemas)
+	var admission: Dictionary = get_context_tool_budget(context).activate_group(requested_schemas)
 	activated.assign(admission.get("activated", []))
 	var unavailable: Array[String] = []
 	for rejected: Dictionary in admission.get("rejected", []):

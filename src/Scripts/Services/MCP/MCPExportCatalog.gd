@@ -11,7 +11,7 @@ func invalidate() -> void:
 	_dirty = true
 
 
-func snapshot(registry: Dictionary, enabled_sets: Array = []) -> Dictionary:
+func snapshot(registry: Dictionary) -> Dictionary:
 	if not _dirty:
 		return {"ok": true, "tools": _tools.duplicate(true), "revision": _revision}
 	var names: Array[String] = []
@@ -21,10 +21,6 @@ func snapshot(registry: Dictionary, enabled_sets: Array = []) -> Dictionary:
 		var definition = registry[key]
 		if definition == null or str(definition.get("server_name")) != "minerva":
 			continue
-		if not enabled_sets.is_empty():
-			var tool_set := str(definition.get("tool_set"))
-			if tool_set != "meta" and tool_set not in enabled_sets:
-				continue
 		names.append(key)
 	names.sort()
 	var candidate: Array[Dictionary] = []

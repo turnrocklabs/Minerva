@@ -3,6 +3,8 @@ extends ServiceHistory
 
 ## Centralized tool token lifecycle manager for this chat.
 var tool_memory_manager: ToolMemoryManager
+## Runtime-only activations belong to this chat, independently of other histories.
+var tool_budget_manager: ToolBudgetManager
 
 ## Initialize with a new HistoryId
 func _init(_provider, optional_historyId = null):
