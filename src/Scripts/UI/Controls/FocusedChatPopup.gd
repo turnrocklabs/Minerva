@@ -603,5 +603,15 @@ func _on_create_pressed() -> void:
 			refs.append(str(skill.ref))
 		config = {"skills": titles, "skill_refs": refs, "resolved_tools": tools,
 			"instructions": resolved.instructions}
+	# Creation resolves skills afresh; canonicalize that payload, not the preview.
+	var skill_module: MCPSkillTools = _skill_module()
+	var alias_server: MinervaMCPServer = skill_module.server if skill_module != null else null
+	var dependencies: Array[String] = config.resolved_tools
+	var canonical_tools: Array[String] = []
+	for dependency: String in dependencies:
+		var canonical: String = alias_server.canonical_tool_name(dependency) if alias_server != null else dependency
+		if canonical not in canonical_tools:
+			canonical_tools.append(canonical)
+	config.resolved_tools = canonical_tools
 	focused_chat_requested.emit(config)
 	hide()

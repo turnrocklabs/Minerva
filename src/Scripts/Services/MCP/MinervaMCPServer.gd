@@ -381,10 +381,11 @@ func resolve_tool_alias(tool_name: String) -> Dictionary:
 
 
 func tool_alias_names() -> Array[String]:
-	var aliases: Dictionary = _tool_aliases.duplicate()
-	aliases.merge(OP_ALIASES, true)
 	var names: Array[String] = []
-	names.assign(aliases.keys())
+	names.assign(_tool_aliases.keys())
+	for alias_name: String in OP_ALIASES:
+		if alias_name not in names:
+			names.append(alias_name)
 	return names
 
 
