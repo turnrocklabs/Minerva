@@ -180,10 +180,12 @@ def run() -> int:
             for _ in range(2):
                 subprocess.run(['godot', '--headless', '--path', str(repo / 'src'), '--import'], env=import_env,
                                stdout=log, stderr=subprocess.STDOUT, timeout=360, check=True)
-            parsed = subprocess.run(['godot', '--headless', '--path', str(repo / 'src'), '--check-only',
-                                     '--script', 'res://test/live_tooling_observer.gd'], env=import_env,
-                                    stdout=log, stderr=subprocess.STDOUT, timeout=60, check=False)
-            driver.update(observer_check_exit=parsed.returncode, observer_check_script_errors='SCRIPT ERROR:' in (PRIVATE / 'setup.log').read_text())
+            with (PRIVATE / 'observer-check.log').open('w') as check_log:
+                parsed = subprocess.run(['godot', '--headless', '--path', str(repo / 'src'), '--check-only',
+                                         '--script', 'res://test/live_tooling_observer.gd'], env=import_env,
+                                        stdout=check_log, stderr=subprocess.STDOUT, timeout=60, check=False)
+            check_text = (PRIVATE / 'observer-check.log').read_text()
+            driver.update(observer_check_exit=parsed.returncode, observer_check_script_errors='SCRIPT ERROR:' in check_text)
             if parsed.returncode or driver['observer_check_script_errors']:
                 raise RuntimeError('Observer syntax prerequisite failed')
             display = subprocess.Popen(['Xvfb', ':97', '-screen', '0', '1600x1000x24', '-nolisten', 'tcp'],
