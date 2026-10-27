@@ -48,6 +48,8 @@ static var SERIALIZER_FIELDS = [
 signal response_arrived(item: ChatHistoryItem)
 
 var _suppress_save_state: bool = false
+## Non-owning completion context; the chat owns its items.
+var _notification_history: WeakRef
 
 func _queue_save_state() -> void:
 	if not _suppress_save_state:
@@ -260,13 +262,20 @@ func _provider_updated():
 		self.ModelName = provider.model_name
 		self.ModelShortName = provider.short_name
 
+func notify_response(reply: ChatHistoryItem, history: ServiceHistory) -> void:
+	_notification_history = weakref(history)
+	response_arrived.emit(reply)
+
+
 func _on_response_arrived(item: ChatHistoryItem):
 	print("Response arrived for %s (%s)" % [self, item])
 	if rendered_node:
 		# Set the history_item again to trigger the setter
 		rendered_node.history_item = self
 
-	SingletonObject.play_chat_notification()
+	var history: ServiceHistory = _notification_history.get_ref() if _notification_history != null else null
+	if history == null or not history.CallerDriven:
+		SingletonObject.play_chat_notification()
 	
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)

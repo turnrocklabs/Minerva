@@ -1221,7 +1221,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		history.HistoryItemList.append(chi)
 
 		## Inform the user history item that the response has arrived
-		user_history_item.response_arrived.emit(chi)
+		user_history_item.notify_response(chi, history)
 
 		await get_tree().process_frame
 		history.VBox.ensure_node_is_visible(model_msg_node)
@@ -1229,7 +1229,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		model_msg_node.first_time_message = true
 
 		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
-		if chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId) and (turn_token < 0 or not _turn_stopped(history, turn_token)):
+		if not history.CallerDriven and chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId) and (turn_token < 0 or not _turn_stopped(history, turn_token)):
 			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node, speech_origin)
 	else:
 		model_msg_node.queue_free()
@@ -2118,7 +2118,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		history.HistoryItemList.erase(item)
 
 	# Create a fresh response item
-	var existing_response = ChatHistoryItem.new()
+	var existing_response: ChatHistoryItem = ChatHistoryItem.new()
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.provider = history.provider
 	history.HistoryItemList.append(existing_response)
@@ -2202,7 +2202,7 @@ func regenerate_response(chi: ChatHistoryItem):
 			existing_response.rendered_node.loading = false
 
 		# Emit response_arrived signal to trigger notification sound
-		chi.response_arrived.emit(existing_response)
+		chi.notify_response(existing_response, history)
 
 		for i in SingletonObject.notes_container.get_tab_count():
 			SingletonObject.notes_container.disable_notes(i)
@@ -2389,7 +2389,7 @@ func execute_hcp_chat(send_id: int = 0, origin: Dictionary = {}):
 		_emit_turn_completed(history, null, ChatEventPayloads.OUTCOME_CANCELLED, origin)
 		return
 
-	var chi = ChatHistoryItem.new()
+	var chi: ChatHistoryItem = ChatHistoryItem.new()
 	if bot_response != null:
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
@@ -2410,7 +2410,7 @@ func execute_hcp_chat(send_id: int = 0, origin: Dictionary = {}):
 		model_msg_node.history_item = chi
 
 		## Inform the user history item that the response has arrived
-		user_history_item.response_arrived.emit(chi)
+		user_history_item.notify_response(chi, history)
 		
 		await get_tree().process_frame
 		history.VBox.ensure_node_is_visible(model_msg_node)
@@ -3336,7 +3336,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		_finish_agent_mode()
 		# Emit response_arrived to trigger completion sound
 		if user_history_item and accumulator_chi:
-			user_history_item.response_arrived.emit(accumulator_chi)
+			user_history_item.notify_response(accumulator_chi, history)
 
 	if current_round >= max_rounds:
 		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
@@ -3692,7 +3692,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# Use continuation_chi.Message (clean final text) not model_chi.DisplayMessage
 		# (which has accumulated tool block markers from all rounds)
 		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.DisplayMessage
-		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not _turn_stopped(history, turn_token) and not SingletonObject.is_cancelled(history.HistoryId):
+		if not history.CallerDriven and not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not _turn_stopped(history, turn_token) and not SingletonObject.is_cancelled(history.HistoryId):
 			var user_text := user_history_item.Message if user_history_item else ""
 			_voice_speak_response(final_text, user_text, model_chi.rendered_node, _turn_origin(history, turn_token))
 
@@ -3891,7 +3891,7 @@ func create_message_new(inputs_idx: int) -> void:
 	run.mutex.unlock()
 	print("message from thread #%d: %s" % [inputs_idx, message])
 	var history: ChatHistory = run.history
-	var user_history_item = create_user_history_item(message)
+	var user_history_item: ChatHistoryItem = create_user_history_item(message)
 	
 	# Bind THIS prompt and THIS run into the handler. The prompt, because the
 	# response is paired with whatever the handler is handed, and the emissions
@@ -3921,7 +3921,7 @@ func create_message_new(inputs_idx: int) -> void:
 		run.mutex.unlock()
 		# Deferred for the same reason as the provider path below: the handler's
 		# node work belongs on the main thread, and this runs on a worker.
-		user_history_item.response_arrived.emit.call_deferred(human_answer)
+		user_history_item.notify_response.call_deferred(human_answer, history)
 		return
 
 	# make a chat request
@@ -3950,7 +3950,7 @@ func create_message_new(inputs_idx: int) -> void:
 	## because the handler adds and renders message nodes, refreshes controls
 	## and can start the next turn — main-thread work, and this function is a
 	## WorkerThreadPool task.
-	user_history_item.response_arrived.emit.call_deferred(chi)
+	user_history_item.notify_response.call_deferred(chi, history)
 
 
 func check_for_create_files(input: String) -> bool:

@@ -66,6 +66,7 @@ static func turn_completed(history: ServiceHistory, reply: ChatHistoryItem, outc
 	var send_id: int = origin.get("send_id", 0)
 	return {
 		"chat_id": str(history.HistoryId),
+		"caller_driven": history.CallerDriven,
 		"message_index": history.HistoryItemList.find(reply) if reply != null else -1,
 		"role": "assistant",
 		"text": text,

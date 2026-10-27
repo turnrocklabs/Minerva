@@ -457,6 +457,10 @@ func register_tools() -> void:
 
 
 func handle_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
+	if tool_name == "minerva_create_chat":
+		return _create_chat(arguments, context)
+	if tool_name == "minerva_send_message":
+		return _send_message(arguments, context)
 	if tool_name == "minerva_create_focused_chat":
 		return await _create_focused_chat(arguments, context)
 	return await handle(tool_name, arguments)
@@ -551,7 +555,7 @@ func _resolve_provider_from_model_spec(spec: Dictionary) -> Dictionary:
 	return ModelResolver.create(spec)
 
 
-func _create_chat(args: Dictionary) -> Dictionary:
+func _create_chat(args: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	var name_: String = args.get("name", "Agent Chat")
 
 	# Before creating, check if resource with same name exists
@@ -580,8 +584,9 @@ func _create_chat(args: Dictionary) -> Dictionary:
 
 	# Create new chat history
 	var ChatHistoryScript = load("res://Scripts/Models/ChatHistory.gd")
-	var history = ChatHistoryScript.new(provider_obj)
+	var history: ChatHistory = ChatHistoryScript.new(provider_obj)
 	history.HistoryName = name_
+	history.CallerDriven = context != null and context.origin == "http"
 	# Note: HistoryItemList is already initialized in the constructor
 
 	# Group membership (DCR 01a017494904). Set BEFORE render_history, which
@@ -704,7 +709,7 @@ func _create_focused_chat(args: Dictionary, context: ExecutionContext) -> Dictio
 		return MCPToolUtils.error("MCP manager not available")
 
 	# 3. Create the chat via the normal path (handles provider resolution)
-	var create_result := _create_chat(args)
+	var create_result := _create_chat(args, context)
 	if create_result.has("error") or not create_result.get("success", false):
 		return create_result
 
@@ -815,7 +820,7 @@ func _set_agent_mode(args: Dictionary) -> Dictionary:
 	return {"success": true, "agent_mode": enabled}
 
 
-func _send_message(args: Dictionary) -> Dictionary:
+func _send_message(args: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
 	var message: String = args.get("message", "")
 
@@ -825,7 +830,7 @@ func _send_message(args: Dictionary) -> Dictionary:
 	if message.is_empty():
 		return MCPToolUtils.error("message is required")
 
-	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
@@ -849,9 +854,13 @@ func _send_message(args: Dictionary) -> Dictionary:
 	# Shared submit path (tab switch, execute_regular_chat, deferred restore) —
 	# the same one minerva_terminal_notify uses, so both inherit the per-chat
 	# outgoing queue rather than each reimplementing the send.
+	var was_caller_driven: bool = history.CallerDriven
+	if context != null and context.origin == "http":
+		history.CallerDriven = true
 	var submitted: Dictionary = MCPToolUtils.submit_user_message(
 		history, message, generation_options)
 	if not submitted.get("success", false):
+		history.CallerDriven = was_caller_driven
 		return submitted
 
 	# A busy chat queues this message instead of starting a second, overlapping

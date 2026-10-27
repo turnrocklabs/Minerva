@@ -93,6 +93,10 @@ var ReasoningSummary: bool = true:
 var IsAgentChat: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); IsAgentChat = value
 
+## Chats created or driven by an external MCP caller default to quiet completion.
+var CallerDriven: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); CallerDriven = value
+
 ## The AgentDefinition.id that spawned this chat (empty if manual)
 var AgentDefinitionId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); AgentDefinitionId = value
@@ -246,6 +250,7 @@ static var SERIALIZER_FIELDS = [
 	"AgentModeEnabled",
 	"ReasoningSummary",
 	"IsAgentChat",
+	"CallerDriven",
 	"AgentDefinitionId",
 	"ActiveSkills",
 	"AcquiredKnowledge",
@@ -422,6 +427,7 @@ func Serialize() -> Dictionary:
 		"AgentModeEnabled": AgentModeEnabled,
 		"ReasoningSummary": ReasoningSummary,
 		"IsAgentChat": IsAgentChat,
+		"CallerDriven": CallerDriven,
 		"AgentDefinitionId": AgentDefinitionId,
 		"ActiveSkills": ActiveSkills,
 		"AcquiredKnowledge": AcquiredKnowledge,
@@ -547,6 +553,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.ReasoningSummary = bool(data.get("ReasoningSummary", true))
 	if data.has("IsAgentChat"):
 		history.IsAgentChat = data.get("IsAgentChat", false)
+	if data.has("CallerDriven"):
+		history.CallerDriven = data.get("CallerDriven", false)
 	if data.has("AgentDefinitionId"):
 		history.AgentDefinitionId = data.get("AgentDefinitionId", "")
 	if data.has("ActiveSkills"):
