@@ -431,9 +431,13 @@ func _activate_dependencies(tool_deps: Array, context: ExecutionContext = null) 
 	var budget_server: MinervaMCPServer = server
 	var schemas: Array[Dictionary] = []
 	var skipped: Array[String] = []
+	var resolved: Array[String] = []
 	for dep_name: Variant in tool_deps:
-		var name := str(dep_name)
-		var search_results: Array[Dictionary] = server.tool_search_index.search(name, "", 1)
+		var name: String = budget_server.canonical_tool_name(str(dep_name))
+		if name in resolved:
+			continue
+		resolved.append(name)
+		var search_results: Array[Dictionary] = budget_server.tool_search_index.search(name, "", 1)
 		if search_results.is_empty() or str(search_results[0].get("name", "")) != name:
 			skipped.append(name)
 			continue

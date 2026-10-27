@@ -11,6 +11,8 @@ const _MCPSessionToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPS
 const _MCPAgentSessionToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAgentSessionTools.gd")
 ## Host-owned legacy names; populated when canonical providers replace core tools.
 const LEGACY_TOOL_ALIASES: Dictionary[String, String] = {}
+## Operation aliases are invocation-only names; they never enter the catalog.
+const OP_ALIASES: Dictionary[String, Dictionary] = {}
 
 
 var _tool_aliases: Dictionary[String, String] = {}
@@ -360,7 +362,21 @@ func call_tool(tool_name: String, arguments: Dictionary, context: ExecutionConte
 
 ## Shared pure lookup for transport metadata and execution; aliases never chain.
 func canonical_tool_name(tool_name: String) -> String:
-	return _tool_aliases.get(tool_name, tool_name)
+	return resolve_tool_alias(tool_name).canonical
+
+
+func resolve_tool_alias(tool_name: String) -> Dictionary:
+	if OP_ALIASES.has(tool_name):
+		return OP_ALIASES[tool_name].duplicate(true)
+	return {"canonical": _tool_aliases.get(tool_name, tool_name), "inject": {}}
+
+
+func tool_alias_names() -> Array[String]:
+	var aliases: Dictionary = _tool_aliases.duplicate()
+	aliases.merge(OP_ALIASES, true)
+	var names: Array[String] = []
+	names.assign(aliases.keys())
+	return names
 
 
 ## Internal tool execution — routes to modules, plugins, or tool search
@@ -369,10 +385,13 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	# Resolve once, before policy, coercion and dispatch; aliases never chain.
 	if context == null:
 		context = ExecutionContext.create("module")
-	var canonical := canonical_tool_name(tool_name)
+	var resolution: Dictionary = resolve_tool_alias(tool_name)
+	var canonical: String = resolution.canonical
+	var resolved_arguments: Dictionary = arguments.duplicate(true)
+	resolved_arguments.merge(resolution.inject, true)
 	if canonical != tool_name:
 		print("[MinervaMCPServer] Alias %s -> %s" % [tool_name, canonical])
-	var result := await context.run(_execute_canonical_tool.bind(canonical, arguments, context, outcome_holder, coerce_arguments, write_binding))
+	var result := await context.run(_execute_canonical_tool.bind(canonical, resolved_arguments, context, outcome_holder, coerce_arguments, write_binding))
 	if canonical != tool_name:
 		result = result.duplicate()
 		result["alias_of"] = canonical

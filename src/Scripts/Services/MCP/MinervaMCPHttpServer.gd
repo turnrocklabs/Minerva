@@ -600,7 +600,11 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 	var canonical_name := tool_name
 	if _mcp_manager != null and _mcp_manager.minerva_server != null:
 		var canonical_server: MinervaMCPServer = _mcp_manager.minerva_server
-		canonical_name = canonical_server.canonical_tool_name(tool_name)
+		var resolution: Dictionary = canonical_server.resolve_tool_alias(tool_name)
+		canonical_name = resolution.canonical
+		var resolved_arguments: Dictionary = arguments.duplicate(true)
+		resolved_arguments.merge(resolution.inject, true)
+		arguments = resolved_arguments
 	var dispatched_definition = _mcp_manager.tool_registry.get(canonical_name) \
 		if _mcp_manager != null else null
 	if dispatched_definition == null:

@@ -708,6 +708,14 @@ func _create_focused_chat(args: Dictionary, context: ExecutionContext) -> Dictio
 	if not mcp:
 		return MCPToolUtils.error("MCP manager not available")
 
+	var alias_server: MinervaMCPServer = mcp.minerva_server
+	var canonical_tools: Array[String] = []
+	for dependency: String in resolved_tools:
+		var canonical: String = alias_server.canonical_tool_name(dependency) if alias_server != null else dependency
+		if canonical not in canonical_tools:
+			canonical_tools.append(canonical)
+	resolved_tools = canonical_tools
+
 	# 3. Create the chat via the normal path (handles provider resolution)
 	var create_result := _create_chat(args, context)
 	if create_result.has("error") or not create_result.get("success", false):

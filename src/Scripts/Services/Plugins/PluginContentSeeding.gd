@@ -487,8 +487,14 @@ static func available_tools(manager) -> Dictionary:
 	if typeof(SingletonObject) != TYPE_NIL and "mcp_manager" in SingletonObject \
 			and SingletonObject.mcp_manager != null \
 			and "tool_registry" in SingletonObject.mcp_manager:
-		for tool_name in (SingletonObject.mcp_manager.tool_registry as Dictionary):
+		var mcp: MCPManager = SingletonObject.mcp_manager
+		for tool_name: String in mcp.tool_registry:
 			available[tool_name] = true
+		var alias_server: MinervaMCPServer = mcp.minerva_server
+		if alias_server != null:
+			for alias_name: String in alias_server.tool_alias_names():
+				if available.has(alias_server.canonical_tool_name(alias_name)):
+					available[alias_name] = true
 	if manager.get_db() != null:
 		for def in manager.get_db().get_all():
 			for tool_entry in def.tools:

@@ -529,11 +529,16 @@ func _recompute_skill_tools() -> void:
 
 func _get_resolved_tools() -> Array[String]:
 	var tools: Array[String] = []
-	for tool_name in _skill_tools:
+	var module: MCPSkillTools = _skill_module()
+	var alias_server: MinervaMCPServer = module.server if module != null else null
+	var dependencies: Array[String] = []
+	dependencies.assign(_skill_tools.keys())
+	for tool_name: String in _extra_tools:
+		if _extra_tools[tool_name]:
+			dependencies.append(tool_name)
+	for dependency: String in dependencies:
+		var tool_name: String = alias_server.canonical_tool_name(dependency) if alias_server != null else dependency
 		if tool_name not in tools:
-			tools.append(tool_name)
-	for tool_name in _extra_tools:
-		if _extra_tools[tool_name] and tool_name not in tools:
 			tools.append(tool_name)
 	return tools
 
