@@ -402,6 +402,8 @@ func _skill_list(arguments: Dictionary) -> Dictionary:
 	# A filter that matches nothing gives the whole catalog.
 	if result.is_empty():
 		result = entries
+	for entry: Dictionary in result:
+		entry["description"] = str(entry.get("description", "")).strip_edges().get_slice("\n", 0).left(160)
 	if catalog.status != "ok":
 		return {"success": false, "incomplete": true, "skills": result, "count": result.size(),
 			"error": "Docket skills could not be listed: %s" % catalog.message}

@@ -23,6 +23,9 @@ var original_definition: Dictionary = {}
 ## Name of the server that provides this tool
 @export var server_name: String = ""
 
+## Origin assigned by PluginToolRegistry; native and external tools leave it empty.
+@export var plugin_id: String = ""
+
 ## Tool set this tool belongs to (e.g., "chat", "autocoder", "spreadsheet")
 ## Used for filtering tools by category. Empty string means uncategorized.
 @export var tool_set: String = ""

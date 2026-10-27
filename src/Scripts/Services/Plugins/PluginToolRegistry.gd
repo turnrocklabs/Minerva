@@ -337,6 +337,47 @@ func get_plugin_tools(plugin_id: String) -> Array:
 	return _tools_by_plugin.get(plugin_id, []).duplicate(true)
 
 
+## This registry is the sole writer of a tool's plugin provenance.
+func tool_definition(tool_name: String) -> MCPToolDefinition:
+	var entry: Dictionary = find_tool(tool_name)
+	if entry.is_empty():
+		return null
+	var tool: MCPToolDefinition = MCPToolDefinition.from_dict(entry.get("mcp_definition", {}), "minerva")
+	tool.tool_set = entry.get("tool_set", "")
+	tool.plugin_id = _plugin_by_tool.get(tool_name, "")
+	return tool
+
+
+## Discovery reads installed manifests; it never starts an unavailable plugin.
+func discovery_plugins() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if plugin_manager == null:
+		return result
+	var database: Object = plugin_manager.get_db()
+	var definitions: Array = database.call("get_all")
+	for definition: PluginDefinition in definitions:
+		result.append({"id": definition.id, "name": definition.name,
+			"running": definition.state == PluginDefinition.State.RUNNING,
+			"declared_tool_count": definition.tools.size(),
+			"registered_tool_count": get_plugin_tools(definition.id).size()})
+	return result
+
+
+func stopped_tool_index() -> ToolSearchIndex:
+	var index := ToolSearchIndex.new()
+	if plugin_manager == null:
+		return index
+	var database: Object = plugin_manager.get_db()
+	var definitions: Array = database.call("get_all")
+	for definition: PluginDefinition in definitions:
+		if definition.state == PluginDefinition.State.RUNNING:
+			continue
+		for entry: Dictionary in definition.tools:
+			index.register_tool(str(entry.get("name", "")), str(entry.get("description", "")), {},
+				str(entry.get("tool_set", "")), definition.id, definition.name)
+	return index
+
+
 ## Return all plugin tools across all plugins as a flat Array[Dictionary].
 func get_all_plugin_tools() -> Array:
 	var result: Array = []

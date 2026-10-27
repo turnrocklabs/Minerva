@@ -20,15 +20,15 @@ const STOP_WORDS: Array[String] = [
 ]
 
 
-func register_tool(name: String, description: String, schema: Dictionary, tool_set: String = "") -> void:
+func register_tool(name: String, description: String, schema: Dictionary, tool_set: String = "", plugin_id: String = "", plugin_name: String = "") -> void:
 	## Register a tool in the search index.
 	if _tool_meta.has(name):
 		unregister_tool(name)
-	_tool_meta[name] = {"description": description, "tool_set": tool_set}
+	_tool_meta[name] = {"description": description, "tool_set": tool_set, "plugin_id": plugin_id}
 	_tool_schemas[name] = schema
 
 	# Tokenize name and description into keywords
-	var text: String = name.replace("minerva_", "").replace("_", " ") + " " + description.to_lower()
+	var text: String = (name.replace("minerva_", "").replace("_", " ") + " " + description + " " + plugin_id + " " + plugin_name).to_lower().replace("\n", " ")
 	var words: PackedStringArray = text.split(" ", false)
 
 	for word in words:
@@ -52,7 +52,7 @@ func unregister_tool(name: String) -> void:
 			_keyword_index.erase(word)
 
 
-func search(query: String, category: String = "", limit: int = 5) -> Array[Dictionary]:
+func search(query: String, category: String = "", limit: int = 5, plugin_id: String = "") -> Array[Dictionary]:
 	## Search for tools matching the query. Returns array of {name, description, schema}.
 	## If query is empty or "*", returns all tools (optionally filtered by category).
 
@@ -61,8 +61,7 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 	if clean_query.is_empty() or clean_query == "*":
 		var all_results: Array[Dictionary] = []
 		for name in _tool_meta:
-			var ts: String = _tool_meta[name].tool_set
-			if not category.is_empty() and not ts.is_empty() and ts != category:
+			if not _matches(name, category, plugin_id):
 				continue
 			all_results.append(_format_result(name))
 			if all_results.size() >= limit:
@@ -70,12 +69,12 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 		return all_results
 
 	# Exact name match — highest priority
-	if _tool_schemas.has(query):
+	if _tool_schemas.has(query) and _matches(query, category, plugin_id):
 		return [_format_result(query)]
 
 	# Also try with minerva_ prefix
 	var prefixed: String = "minerva_" + query if not query.begins_with("minerva_") else query
-	if _tool_schemas.has(prefixed):
+	if _tool_schemas.has(prefixed) and _matches(prefixed, category, plugin_id):
 		return [_format_result(prefixed)]
 
 	# Keyword search
@@ -98,14 +97,12 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 				for tool_name in _keyword_index[indexed_word]:
 					scores[tool_name] = scores.get(tool_name, 0) + 1
 
-	# Filter by category if specified (tools with empty tool_set are universal — match any category)
-	if not category.is_empty():
+	# Origin and functional category are independent, exact filters.
+	if not category.is_empty() or not plugin_id.is_empty():
 		var filtered: Dictionary = {}
 		for tool_name in scores:
-			if _tool_meta.has(tool_name):
-				var ts: String = _tool_meta[tool_name].tool_set
-				if ts.is_empty() or ts == category:
-					filtered[tool_name] = scores[tool_name]
+			if _matches(tool_name, category, plugin_id):
+				filtered[tool_name] = scores[tool_name]
 		scores = filtered
 
 	# Sort by score descending
@@ -140,6 +137,8 @@ func get_all_tools_summary() -> Array[Dictionary]:
 			"name": name,
 			"description": _tool_meta[name].description,
 			"tool_set": _tool_meta[name].tool_set,
+			"category": _tool_meta[name].tool_set,
+			"plugin_id": _tool_meta[name].plugin_id,
 		})
 	return result
 
@@ -152,5 +151,21 @@ func _format_result(name: String) -> Dictionary:
 	return {
 		"name": name,
 		"description": _tool_meta[name].description if _tool_meta.has(name) else "",
+		"category": _tool_meta[name].tool_set,
+		"plugin_id": _tool_meta[name].plugin_id,
 		"schema": _tool_schemas.get(name, {}),
 	}
+
+
+func _matches(name: String, category: String, plugin_id: String) -> bool:
+	return _tool_meta.has(name) and (category.is_empty() or _tool_meta[name].tool_set == category) \
+		and (plugin_id.is_empty() or _tool_meta[name].plugin_id == plugin_id)
+
+
+func categories() -> Dictionary:
+	var counts: Dictionary = {}
+	for metadata: Dictionary in _tool_meta.values():
+		var category: String = metadata.tool_set
+		if not category.is_empty():
+			counts[category] = int(counts.get(category, 0)) + 1
+	return counts

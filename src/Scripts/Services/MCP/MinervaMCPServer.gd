@@ -26,6 +26,7 @@ var mcp_manager:
 ## Whether the minerva server is connected (enabled)
 var server_enabled: bool = false
 var plugin_admission: Callable = Callable()
+var plugin_tool_registry: PluginToolRegistry = null
 
 ## Server name for tool registration
 const SERVER_NAME: String = "minerva"
@@ -86,15 +87,9 @@ func _init(manager = null, aliases: Dictionary[String, String] = LEGACY_TOOL_ALI
 		_register_tool_search()
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
-		# Auto-activate tool_search in the budget manager
-		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools plus connected external MCP servers and installed plugins. Search to discover and activate them. Common categories: files, bash, terminal, chat, notes, spreadsheet, webview, graphics, video, agents, docket, costs. Docket tools: work tracking (create/query/transition items), knowledge (skills, hints, quality scoring), projects. Search 'docket skill' for skill discovery, 'docket' for all work tracking tools.", "input_schema": {
-			"type": "object", "properties": {
-				"query": {"type": "string", "description": "Keyword search or exact tool name"},
-				"category": {"type": "string", "description": "Filter by category (optional)"},
-				"limit": {"type": "integer", "description": "Max results (default 5)"},
-			}, "required": ["query"]
-		}}
-		tool_budget_manager.activate_tool("minerva_tool_search", search_schema)
+		# One schema owner for discovery and the initially active tool.
+		var search_tool: MCPToolDefinition = mcp_manager.tool_registry["minerva_tool_search"]
+		tool_budget_manager.activate_tool("minerva_tool_search", search_tool.to_anthropic_format())
 
 
 #region Module Lifecycle
@@ -666,12 +661,14 @@ func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dic
 
 func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
-		"This server has 170+ tools available, plus tools from installed plugins and connected external MCP servers. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), graphics, video, agents, automation, models, costs. Plugin-contributed categories and connected external servers (e.g., docket, nudge, cobrowser) are searchable by name. Example: tool_search(query='edit file') or tool_search(query='docket') or tool_search(query='webview panel').",
+		"Discover tools by keyword, exact name, functional category, or installed plugin id/display name. Empty query or '*' browses without activation; activate=false also browses any query. Results include short descriptions, categories and plugin_id. Unknown categories return the real vocabulary and counts. Stopped plugins expose their manifest tools with a start hint; start the plugin to use them. Keyword results activate up to limit tools unless browsing.",
 		{"type": "object", "properties": {
-			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'docket create', 'cost summary') or exact tool name (e.g., 'minerva_doc_edit')"},
-			"category": {"type": "string", "description": "Filter by a built-in or plugin-contributed category. External server names (e.g., docket, nudge) also work as categories."},
-			"limit": {"type": "integer", "description": "Max results (default 5)"},
-		}, "required": ["query"]}, "meta")
+			"query": {"type": "string", "description": "Optional keyword filter or exact tool name; empty or '*' lists tools."},
+			"category": {"type": "string", "description": "Exact functional category. An unknown value returns the available categories."},
+			"plugin": {"type": "string", "description": "Installed plugin id or display name, e.g. 'codetools' or 'Code Tools'."},
+			"activate": {"type": "boolean", "description": "False surveys tools without changing the active budget (default true for keyword queries)."},
+			"limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Max results: default 5 when activating, 500 when browsing."},
+		}, "required": []}, "meta")
 
 	_register_tool("minerva_tool_memory_search",
 		"Search or retrieve archived tool results from earlier in this conversation. Two modes: (1) Search: pass 'query' to filter by tool name or description, returns compact index entries. (2) Retrieve: pass 'note_id' to get full archived result content. Use when the floating summary lacks detail you need.",
@@ -683,33 +680,68 @@ func _register_tool_search() -> void:
 
 
 func _tool_search(arguments: Dictionary) -> Dictionary:
-	var query: String = arguments.get("query", "")
-	var category: String = arguments.get("category", "")
-	var limit: int = int(arguments.get("limit", 5))
-
-	# Search broadly — fetch all matches so we can show the full catalog
-	var raw_results: Array[Dictionary] = tool_search_index.search(query, category, 200)
-
-	# Filter results through connectivity and tool_set checks
+	var query: String = str(arguments.get("query", "")).strip_edges()
+	var category: String = str(arguments.get("category", ""))
+	var activate: bool = bool(arguments.get("activate", true)) and not query.is_empty() and query != "*"
+	var limit: int = clampi(int(arguments.get("limit", 5 if activate else 500)), 1, 500)
+	var plugins: Array[Dictionary] = plugin_tool_registry.discovery_plugins() if plugin_tool_registry != null else []
+	var stopped_index: ToolSearchIndex = plugin_tool_registry.stopped_tool_index() if plugin_tool_registry != null else ToolSearchIndex.new()
+	var categories: Dictionary = tool_search_index.categories()
+	var stopped_categories: Dictionary = stopped_index.categories()
+	for key: String in stopped_categories:
+		categories[key] = int(categories.get(key, 0)) + int(stopped_categories[key])
+	if not category.is_empty() and not categories.has(category):
+		return {"success": false, "error": "Unknown category '%s'" % category, "categories": categories}
+	var plugin_query: String = str(arguments.get("plugin", "")).strip_edges()
+	var plugin_id: String = ""
+	if not plugin_query.is_empty():
+		var matches: Array[Dictionary] = []
+		for plugin: Dictionary in plugins:
+			if plugin.id == plugin_query:
+				matches = [plugin]
+				break
+			if str(plugin.name).nocasecmp_to(plugin_query) == 0:
+				matches.append(plugin)
+		if matches.size() != 1:
+			return {"success": false, "error": "Plugin must match one installed id or display name", "plugins": plugins}
+		plugin_id = str(matches[0].id)
+	var raw_results: Array[Dictionary] = tool_search_index.search(query, category, 500, plugin_id)
 	var filtered: Array[Dictionary] = []
-	for result in raw_results:
-		var name: String = result.get("name", "")
+	for result: Dictionary in raw_results:
+		var name: String = result.name
 		if not _tool_memory_optimization_enabled() and TOOL_MEMORY_HYDRATION_TOOLS.has(name):
 			continue
 		if not mcp_manager or not mcp_manager.tool_registry.has(name):
 			continue
-		var tool = mcp_manager.tool_registry[name]
-		# Check connectivity (minerva tools are always local, only check external servers)
+		var tool: MCPToolDefinition = mcp_manager.tool_registry[name]
 		if tool.server_name != "minerva" and not mcp_manager.is_server_connected(tool.server_name):
 			continue
-		# Check tool_set filter — only applies to minerva-native tools.
 		if tool.server_name == "minerva" and not _enabled_tool_sets.is_empty():
 			if tool.tool_set != "" and tool.tool_set != "meta" and tool.tool_set not in _enabled_tool_sets:
 				continue
+		result["running"] = true
 		filtered.append(result)
-
-	if filtered.is_empty():
-		return {"success": true, "tools": [], "count": 0, "total_matches": 0, "message": "No tools found matching '%s'" % query}
+	var hints: Array[Dictionary] = []
+	var hinted: Dictionary = {}
+	for result: Dictionary in stopped_index.search(query, category, 500, plugin_id):
+		# Panel tools may remain registered while the backend is stopped.
+		if filtered.any(func(item: Dictionary) -> bool: return item.name == result.name):
+			continue
+		result["running"] = false
+		filtered.append(result)
+		var origin: String = result.plugin_id
+		if not hinted.has(origin):
+			for plugin: Dictionary in plugins:
+				if plugin.id == origin:
+					hints.append({"plugin_id": origin, "name": plugin.name, "message": "Installed but not running; start it to use these tools."})
+			hinted[origin] = true
+	var summaries: Array[Dictionary] = []
+	for result: Dictionary in filtered.slice(0, limit):
+		summaries.append({"name": result.name, "description": str(result.description).strip_edges().get_slice("\n", 0).left(200),
+			"category": result.category, "plugin_id": result.plugin_id, "running": result.running})
+	if not activate or filtered.is_empty():
+		return {"success": true, "tools": summaries, "count": summaries.size(), "total_matches": filtered.size(),
+			"activated": [], "hints": hints, "categories": categories}
 
 	# Top N are activated (full schema sent to API tools array).
 	# Chat result is minimal — schemas are already in the tools array where models read them.
@@ -745,6 +777,9 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	var result_dict: Dictionary = {
 		"success": true,
 		"activated": activated,
+		"tools": summaries,
+		"hints": hints,
+		"total_matches": filtered.size(),
 		"message": message,
 	}
 	if not unavailable.is_empty():

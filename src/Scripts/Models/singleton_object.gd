@@ -819,17 +819,15 @@ func _wire_plugin_tools_to_mcp() -> void:
 
 	var admission_server: MinervaMCPServer = minerva_server
 	admission_server.plugin_admission = _admit_plugin_tool
+	admission_server.plugin_tool_registry = plugin_tool_registry
 
 	# When a plugin's tools are registered, add them to MCP tool_registry + search index
 	plugin_tool_registry.tools_registered.connect(
 		func(p_plugin_id: String, _tool_names: Array) -> void:
 			for entry in plugin_tool_registry.get_plugin_tools(p_plugin_id):
-				var ToolDefinition = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
-				var tool_def = ToolDefinition.from_dict(entry.get("mcp_definition", {}), "minerva")
-				tool_def.server_name = "minerva"  # Must be "minerva" to pass discovery filters
-				var registered: Dictionary = entry
-				var membership: String = registered.get("tool_set", "")
-				tool_def.tool_set = membership
+				var tool_def: MCPToolDefinition = plugin_tool_registry.tool_definition(str(entry["name"]))
+				var membership: String = tool_def.tool_set
+				var definition: PluginDefinition = plugin_manager.get_db().get_by_id(p_plugin_id)
 				mcp_manager.tool_registry[entry["name"]] = tool_def
 				minerva_server.tool_search_index.register_tool(
 					entry["name"], entry["description"],
@@ -837,7 +835,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 						"name": entry["name"], "description": entry["description"],
 						"input_schema": entry["input_schema"]
 					},
-					membership if not membership.is_empty() else "plugin"
+					membership, tool_def.plugin_id, definition.name if definition != null else ""
 				)
 			# Invalidate the HTTP server's tools/list cache so external MCP clients
 			# (Claude Code, etc.) see schema changes from plugin install/reload.
@@ -856,7 +854,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 	)
 
 	# Register plugin management MCP tools (minerva_plugin_list, etc.)
-	# Empty tool_set = universal — appears in any category search
+	# Empty tool_set remains available, but belongs to no functional category.
 	for tool_def_dict in plugin_mcp_tools.get_tool_definitions():
 		var tool_def = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd").new()
 		tool_def.name = tool_def_dict["name"]

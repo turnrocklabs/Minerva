@@ -913,7 +913,7 @@ func _register_server_tools(connection) -> void:
 			var schema: Dictionary = tool.to_anthropic_format() if tool.has_method("to_anthropic_format") else {
 				"name": tool.name, "description": tool.description, "input_schema": tool.input_schema
 			}
-			minerva_server.tool_search_index.register_tool(tool.name, tool.description, schema, tool.tool_set)
+			minerva_server.tool_search_index.register_tool(tool.name, tool.description, schema, tool.tool_set, tool.plugin_id)
 
 	# Surface warnings to user via toast
 	if blocked_count > 0:

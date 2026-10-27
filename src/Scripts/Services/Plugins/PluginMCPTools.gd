@@ -466,6 +466,12 @@ func _handle_plugin_list(args: Dictionary) -> Dictionary:
 	# Get all plugins first
 	var all_plugins = plugin_manager.get_all_plugins()
 
+	var registry: PluginToolRegistry = _tool_registry
+	for status: Dictionary in all_plugins:
+		var definition: PluginDefinition = plugin_manager.get_db().get_by_id(str(status.id))
+		status["declared_tool_count"] = definition.tools.size() if definition != null else 0
+		status["registered_tool_count"] = registry.get_plugin_tools(str(status.id)).size() if registry != null else 0
+
 	# Apply status filter if provided
 	var status_filter = args.get("status", "")
 	var filtered_plugins = all_plugins
