@@ -207,7 +207,7 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_get_chat_messages",
-		"Get full content and request_metadata (including the tools sent) for specific messages in a chat by 0-based index. Use minerva_get_chat_history first, then hydrate only the indices you need. Requires chat_id and indices. Recommended: fetch 5 or fewer messages at a time.",
+		"Get full content and compact request_metadata (tool names and request settings) for specific messages in a chat by 0-based index. Set full_metadata=true for the full saved system prompt and tool schemas. Use minerva_get_chat_history first, then hydrate only the indices you need. Requires chat_id and indices. Recommended: fetch 5 or fewer messages at a time.",
 		{
 			"type": "object",
 			"properties": {
@@ -219,7 +219,8 @@ func register_tools() -> void:
 					"type": "array",
 					"items": {"type": "integer"},
 					"description": "Array of 0-based message indices to hydrate"
-				}
+				},
+				"full_metadata": {"type": "boolean", "description": "Include full request metadata; default false. The system prompt and tool schemas can be large."}
 			},
 			"required": ["chat_id", "indices"]
 		}
@@ -926,13 +927,14 @@ func _serialize_chat_message_metadata(item: ChatHistoryItem, index: int) -> Dict
 	return msg
 
 
-func _serialize_chat_message_full(item: ChatHistoryItem, index: int) -> Dictionary:
+func _serialize_chat_message_full(item: ChatHistoryItem, index: int, full_metadata: bool = false) -> Dictionary:
 	var msg: Dictionary = {
 		"index": index,
 		"role": _chat_role_name(item),
 		"content": item.Message,
-		"request_metadata": item.RequestMetadata.duplicate(true),
 	}
+	if not item.RequestMetadata.is_empty():
+		msg["request_metadata"] = item.RequestMetadata.duplicate(true) if full_metadata else _compact_request_metadata(item.RequestMetadata)
 	if item.IsToolCall and not item.ToolCalls.is_empty():
 		msg["tool_calls"] = item.ToolCalls.duplicate(true)
 		msg["tool_names"] = _tool_names_from_item(item)
@@ -940,6 +942,27 @@ func _serialize_chat_message_full(item: ChatHistoryItem, index: int) -> Dictiona
 		msg["tool_call_id"] = item.ToolCallId
 		msg["tool_name"] = item.ToolName
 	return msg
+
+
+static func _compact_request_metadata(source: Dictionary) -> Dictionary:
+	var metadata: Dictionary = {}
+	for key: String in source:
+		if key == "system_prompt":
+			continue
+		var value: Variant = source[key]
+		if value is bool or value is int or value is float or value is String:
+			metadata[key] = value
+	var tools: Array = source.get("tools", [])
+	var names: Array[String] = []
+	for tool: Dictionary in tools:
+		var function_schema: Dictionary = tool.get("function", {})
+		var name: String = tool.get("name", function_schema.get("name", ""))
+		if not name.is_empty():
+			names.append(name)
+	metadata["tool_names"] = names
+	metadata["tool_count"] = source.get("tool_count", tools.size())
+	metadata["system_prompt_chars"] = str(source.get("system_prompt", "")).length()
+	return metadata
 
 
 func _get_chat_history(args: Dictionary) -> Dictionary:
@@ -969,6 +992,7 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 
 func _get_chat_messages(args: Dictionary) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
+	var full_metadata: bool = args.get("full_metadata", false)
 	var indices_raw = args.get("indices", [])
 
 	if chat_id.is_empty():
@@ -993,7 +1017,7 @@ func _get_chat_messages(args: Dictionary) -> Dictionary:
 
 	var messages: Array = []
 	for msg_index in indices:
-		messages.append(_serialize_chat_message_full(history.HistoryItemList[msg_index], msg_index))
+		messages.append(_serialize_chat_message_full(history.HistoryItemList[msg_index], msg_index, full_metadata))
 
 	return {
 		"success": true,

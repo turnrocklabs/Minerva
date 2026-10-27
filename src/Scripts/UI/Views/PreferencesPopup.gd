@@ -2179,7 +2179,8 @@ func _on_auto_tool_toggled(enabled: bool) -> void:
 		if enabled:
 			mcp.minerva_server.get_tool_budget().reset()
 			for history: ServiceHistory in SingletonObject.ChatList:
-				mcp.minerva_server.get_tool_budget(history).reset()
+				if history is ChatHistory and history.tool_budget_manager != null:
+					history.tool_budget_manager.reset()
 
 
 func _on_tool_budget_changed(value: float) -> void:
@@ -2188,7 +2189,8 @@ func _on_tool_budget_changed(value: float) -> void:
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.set_tool_budget(int(value))
 		for history: ServiceHistory in SingletonObject.ChatList:
-			mcp.minerva_server.get_tool_budget(history).set_budget(int(value))
+			if history is ChatHistory and history.tool_budget_manager != null:
+				history.tool_budget_manager.set_budget(int(value))
 
 
 func _on_tool_idle_turns_changed(value: float) -> void:
@@ -2197,7 +2199,8 @@ func _on_tool_idle_turns_changed(value: float) -> void:
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.set_tool_idle_turns(int(value))
 		for history: ServiceHistory in SingletonObject.ChatList:
-			mcp.minerva_server.get_tool_budget(history).set_max_idle_turns(int(value))
+			if history is ChatHistory and history.tool_budget_manager != null:
+				history.tool_budget_manager.set_max_idle_turns(int(value))
 
 
 

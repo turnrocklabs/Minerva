@@ -420,7 +420,7 @@ func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: 
 			return context.stopped_result()
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
-			_activate_policy_tools(policy_result, context.caller_chat_id)
+			_activate_policy_tools(policy_result, context)
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, context.agent_id)
 			return policy_result
 		# Observation telemetry is best effort and never waits: written for an
@@ -968,7 +968,9 @@ func _write_observation_through(host, rule_id: String, text: String) -> void:
 ## (MCPManager.activate_tools_for_workflow). The result says what the agent
 ## still cannot call: knowledge_unavailable for minerva_docket_get when the
 ## rule names knowledge, and unavailable_tools ({name, reason}) otherwise.
-func _activate_policy_tools(policy_result: Dictionary, caller_chat_id: String) -> void:
+func _activate_policy_tools(policy_result: Dictionary, context: ExecutionContext) -> void:
+	if context.caller_chat_id.is_empty() or context.origin == "http":
+		return
 	var knowledge_ref: String = str(policy_result.get("knowledge_ref", ""))
 	var names: Array[String] = []
 	if not knowledge_ref.is_empty():
@@ -984,7 +986,7 @@ func _activate_policy_tools(policy_result: Dictionary, caller_chat_id: String) -
 		return
 
 	var activation: Dictionary = mcp_manager.activate_tools_for_workflow(
-		names, MCPToolUtils.find_chat_by_id(caller_chat_id))
+		names, MCPToolUtils.find_chat_by_id(context.caller_chat_id))
 	var unavailable: Array = []
 	for entry: Dictionary in activation.unavailable:
 		if entry.name == "minerva_docket_get" and not knowledge_ref.is_empty():
