@@ -12,7 +12,16 @@ const _MCPAgentSessionToolsScript := preload("res://Scripts/Services/MCP/Modules
 ## Host-owned legacy names; populated when canonical providers replace core tools.
 const LEGACY_TOOL_ALIASES: Dictionary[String, String] = {}
 ## Operation aliases are invocation-only names; they never enter the catalog.
-const OP_ALIASES: Dictionary[String, Dictionary] = {}
+const OP_ALIASES: Dictionary[String, Dictionary] = {
+	"minerva_docker_status": {"canonical": "minerva_container", "inject": {"op": "docker_status"}},
+	"minerva_container_list": {"canonical": "minerva_container", "inject": {"op": "list"}},
+	"minerva_container_status": {"canonical": "minerva_container", "inject": {"op": "status"}},
+	"minerva_container_build": {"canonical": "minerva_container", "inject": {"op": "build"}},
+	"minerva_container_start": {"canonical": "minerva_container", "inject": {"op": "start"}},
+	"minerva_container_stop": {"canonical": "minerva_container", "inject": {"op": "stop"}},
+	"minerva_container_remove": {"canonical": "minerva_container", "inject": {"op": "remove"}},
+	"minerva_container_add": {"canonical": "minerva_container", "inject": {"op": "add"}},
+}
 
 
 var _tool_aliases: Dictionary[String, String] = {}

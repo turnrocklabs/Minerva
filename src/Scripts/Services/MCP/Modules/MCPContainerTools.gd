@@ -1,163 +1,50 @@
 class_name MCPContainerTools
 extends MCPToolModule
 ## MCP tool module for Docker container management tools.
-## Handles listing, building, starting, stopping, adding, and removing containers.
 
 
 func get_tool_names() -> Array[String]:
-	return [
-		"minerva_container_list",
-		"minerva_container_status",
-		"minerva_container_build",
-		"minerva_container_start",
-		"minerva_container_stop",
-		"minerva_container_add",
-		"minerva_container_remove",
-		"minerva_docker_status",
-	]
+	return ["minerva_container"]
 
 
 func register_tools() -> void:
-	server._register_tool("minerva_docker_status",
-		"Check Docker availability, version, platform, runtime type, and GPU support.",
-		{
-			"type": "object",
-			"properties": {},
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_list",
-		"List all registered managed containers with their current state (stopped, building, running, error).",
-		{
-			"type": "object",
-			"properties": {},
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_status",
-		"Get detailed status of a specific container by name.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {
-					"type": "string",
-					"description": "Container name (e.g., 'minerva-voice-gateway')"
-				}
-			},
-			"required": ["name"]
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_build",
-		"Build a Docker image for a registered container from its Dockerfile. Non-blocking — returns immediately, poll with minerva_container_status to check progress.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {
-					"type": "string",
-					"description": "Container name (e.g., 'minerva-voice-gateway')"
-				}
-			},
-			"required": ["name"]
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_start",
-		"Start a registered container. Image must be built first.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {
-					"type": "string",
-					"description": "Container name (e.g., 'minerva-voice-gateway')"
-				}
-			},
-			"required": ["name"]
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_stop",
-		"Stop a running container.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {
-					"type": "string",
-					"description": "Container name (e.g., 'minerva-voice-gateway')"
-				}
-			},
-			"required": ["name"]
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_add",
-		"Add a custom container definition. Persists across restarts. Specify at minimum image_name and either dockerfile_path or an existing image.",
-		{
-			"type": "object",
-			"properties": {
-				"display_name": {
-					"type": "string",
-					"description": "Human-readable name (e.g., 'My Service')"
-				},
-				"image_name": {
-					"type": "string",
-					"description": "Docker image name (e.g., 'my-service')"
-				},
-				"dockerfile_path": {
-					"type": "string",
-					"description": "Absolute path to Dockerfile"
-				},
-				"build_context": {
-					"type": "string",
-					"description": "Build context directory (defaults to Dockerfile's directory)"
-				},
-				"host_port": {
-					"type": "integer",
-					"description": "Host port to map"
-				},
-				"container_port": {
-					"type": "integer",
-					"description": "Container port to map"
-				},
-				"health_endpoint": {
-					"type": "string",
-					"description": "Health check URL (e.g., 'http://localhost:8080/health')"
-				},
-				"gpu_optional": {
-					"type": "boolean",
-					"description": "Request GPU if available (default: false)"
-				}
-			},
-			"required": ["image_name"]
-		}
-	, "containers")
-
-	server._register_tool("minerva_container_remove",
-		"Remove a custom container definition (stops container and removes image). Cannot remove builtin containers.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {
-					"type": "string",
-					"description": "Container name to remove"
-				}
-			},
-			"required": ["name"]
-		}
-	, "containers")
+	var container_server: MinervaMCPServer = server
+	container_server._register_tool("minerva_container",
+		"Manage Docker containers with an operation.\n"
+		+ "docker_status: Docker availability, version and GPU support.\n"
+		+ "list: registered containers and states.\n"
+		+ "status: name, detailed state.\n"
+		+ "build: name, start image build; poll status.\n"
+		+ "start: name, start a built image.\n"
+		+ "stop: name, stop running container.\n"
+		+ "remove: name, stop and remove custom definition/image.\n"
+		+ "add: image_name; optional display_name, dockerfile_path, build_context, host_port, container_port, health_endpoint, gpu_optional.",
+		{"type": "object", "properties": {
+			"op": {"type": "string", "enum": ["docker_status", "list", "status", "build", "start", "stop", "remove", "add"]},
+			"name": {"type": "string", "description": "Registered container name"},
+			"image_name": {"type": "string", "description": "Docker image name for add"},
+			"display_name": {"type": "string"},
+			"dockerfile_path": {"type": "string", "description": "Absolute Dockerfile path"},
+			"build_context": {"type": "string", "description": "Defaults to Dockerfile directory"},
+			"host_port": {"type": "integer"},
+			"container_port": {"type": "integer"},
+			"health_endpoint": {"type": "string"},
+			"gpu_optional": {"type": "boolean"},
+		}, "required": ["op"]}, "containers")
 
 
-func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
-	match tool_name:
-		"minerva_docker_status": return _docker_status(arguments)
-		"minerva_container_list": return _container_list(arguments)
-		"minerva_container_status": return _container_status(arguments)
-		"minerva_container_build": return _container_build(arguments)
-		"minerva_container_start": return _container_start(arguments)
-		"minerva_container_stop": return _container_stop(arguments)
-		"minerva_container_add": return _container_add(arguments)
-		"minerva_container_remove": return _container_remove(arguments)
-	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
+func handle(_tool_name: String, arguments: Dictionary) -> Dictionary:
+	var operation: String = str(arguments.get("op", ""))
+	match operation:
+		"docker_status": return _docker_status(arguments)
+		"list": return _container_list(arguments)
+		"status": return _container_status(arguments)
+		"build": return _container_build(arguments)
+		"start": return _container_start(arguments)
+		"stop": return _container_stop(arguments)
+		"remove": return _container_remove(arguments)
+		"add": return _container_add(arguments)
+	return {"success": false, "error": "Unknown container op: %s" % operation, "error_code": "unknown_op"}
 
 
 func _docker_status(_arguments: Dictionary) -> Dictionary:
@@ -226,7 +113,7 @@ func _container_build(arguments: Dictionary) -> Dictionary:
 		if def.container_name == name:
 			var started: bool = manager.build_image(def)
 			if started:
-				return {"message": "Build started for %s. Poll with minerva_container_status to check progress." % name, "state": "building", "success": true}
+				return {"message": "Build started for %s. Poll with minerva_container op status to check progress." % name, "state": "building", "success": true}
 			else:
 				return {"error": "Failed to start build (may already be building)", "state": manager.get_state(def), "success": false}
 
@@ -246,7 +133,7 @@ func _container_start(arguments: Dictionary) -> Dictionary:
 	for def in definitions:
 		if def.container_name == name:
 			if not manager.is_image_built(def):
-				return MCPToolUtils.error("Image not built. Run minerva_container_build first.")
+				return MCPToolUtils.error("Image not built. Run minerva_container op build first.")
 			var ok: bool = manager.start_container(def)
 			if ok:
 				return {"message": "%s started" % name, "state": "running", "success": true}
