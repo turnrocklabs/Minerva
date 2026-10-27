@@ -850,7 +850,12 @@ func set_attached_host_status(notice: String, choices: Array = []) -> void:
 
 
 func _attached_stopped(id: String) -> void:
-	_ensure_runtime(id)["notice"] = "Docket stopped; press Start to reconnect"
+	var runtime: Dictionary = _ensure_runtime(id)
+	runtime["attached"] = false
+	runtime["attach_refused"] = false
+	runtime["registration"] = {}
+	runtime["attach_choices"] = []
+	runtime["notice"] = "Docket stopped; press Start to reconnect"
 	stop_plugin(id, true)
 
 
@@ -1890,9 +1895,8 @@ func _ensure_required_plugins() -> void:
 	_required_pickup = false
 
 ## At launch: queue installs of missing required plugins (RequiredPlugins,
-## alongside), start the autostart plugins, then queue the opted-in updates
-## (PluginAutoUpdater), so an update of a plugin that just started must start
-## again before it commits. Minerva does not wait on this.
+## alongside), give opted-in required updates a bounded pre-autostart window,
+## then start plugins and queue marketplace updates in their existing order.
 func start_plugins_at_launch(registry_url: String = "") -> void:
 	_launch_autostart = true
 	# Not awaited: autostart does not wait on the network. Source/editor runs
@@ -1902,10 +1906,11 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 	# loaded; their seeded skills and knowledge follow now.
 	await reconcile_recovered()
 	_ensure_required_plugins()
+	await AutoUpdater.before_autostart(self)
 	await start_autostart_plugins()
 	_launch_autostart = false
 	if not _shutting_down:
-		await AutoUpdater.run(self, registry_url)
+		await AutoUpdater.run(self, registry_url, AutoUpdater.Phase.MARKETPLACE)
 
 
 ## Start all plugins whose autostart flag is true.

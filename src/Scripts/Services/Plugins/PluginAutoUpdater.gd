@@ -7,21 +7,46 @@ extends RefCounted
 ## skills the user customised keep their version, and skills the update adds
 ## are not seeded). Each update's outcome is logged when it ends. Only
 ## marketplace-lane plugins are updated; a manifest-lane (developer) plugin is
-## never overwritten. Nothing is awaited by startup, and a registry or release
-## listing that cannot be read is logged and retried at the next start.
+## never overwritten. Required-plugin updates get a bounded window before
+## autostart; marketplace updates keep their asynchronous post-start order.
 ## The same per-plugin path handles manual clicks, which bypass only opt-in.
 ## `manager` uses Node with dynamic calls to avoid compiling its autoload dependencies into
 ## --script suites that load RequiredPlugins before autoload readiness.
 
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
+enum Phase { ALL, REQUIRED, MARKETPLACE }
+const STARTUP_WAIT_MSEC: int = 15000
+
+## Do not spawn an old required binary before its opted-in update. Listing
+## may outlive the window, so its deadline is checked again before queuing.
+static func before_autostart(manager: Node) -> void:
+	var deadline: int = Time.get_ticks_msec() + STARTUP_WAIT_MSEC
+	var progress: Dictionary = {"listing": true, "jobs": {}}
+	_prepare_required(manager, progress, deadline)
+	while not manager.call("is_shutting_down") and Time.get_ticks_msec() < deadline:
+		var jobs: Dictionary = progress.jobs
+		if not progress.listing and jobs.values().all(func(job: Job) -> bool: return job.state == Job.State.DONE):
+			return
+		await manager.get_tree().create_timer(0.05).timeout
+	var queue: Node = manager.get("install_queue")
+	for job: Job in progress.jobs.values():
+		if job.state != Job.State.DONE:
+			queue.call("cancel", job)
+	push_warning("[PluginAutoUpdater] Required-plugin startup update window ended; continuing autostart")
+
+
+static func _prepare_required(manager: Node, progress: Dictionary, deadline: int) -> void:
+	progress.jobs = await run(manager, "", Phase.REQUIRED, deadline)
+	progress.listing = false
 
 ## Queue an update for every opted-in plugin whose registry entry is newer
 ## than the installed version. Returns the jobs queued, keyed by plugin id.
-static func run(manager: Node, registry_url: String = "") -> Dictionary:
+static func run(manager: Node, registry_url: String = "", phase: Phase = Phase.ALL, deadline: int = 0) -> Dictionary:
 	var db: Object = manager.call("get_db")
 	var definitions: Array = db.call("get_all")
 	var candidates: Array = definitions.filter(func(def: PluginDefinition) -> bool:
-		return not _attached(manager, def.id) and wants_update(def, ""))
+		return (phase == Phase.ALL or RequiredPlugins.has(def.id) == (phase == Phase.REQUIRED)) \
+			and not _attached(manager, def.id) and wants_update(def, ""))
 	if candidates.is_empty() or manager.get("install_queue") == null:
 		return {}
 	var ids: Array[String] = []
@@ -30,6 +55,8 @@ static func run(manager: Node, registry_url: String = "") -> Dictionary:
 	var entries := await fetch_entries(manager, ids, registry_url)
 	var queued := {}
 	for id: String in ids:
+		if deadline > 0 and Time.get_ticks_msec() >= deadline:
+			break
 		var entry: Dictionary = entries.get(id, {})
 		var job := queue_update(manager, id, entry)
 		if job != null:
@@ -94,6 +121,14 @@ static func queue_update(manager: Node, id: String, entry: Dictionary, manual: b
 
 
 static func _attached(manager: Object, id: String) -> bool:
+	# Runtime flags are empty before autostart. The profile registration is
+	# authoritative even then, and a refused registration must stay exempt too.
+	if id == "docket":
+		var discovery: RefCounted = manager.get("endpoint_discovery")
+		if discovery != null:
+			var found: Dictionary = discovery.call("discover")
+			if found.get("attached", false) or found.has("error"):
+				return true
 	if manager.has_method("is_attached") and manager.call("is_attached", id):
 		return true
 	var status: Dictionary = manager.call("get_plugin_status", id) if manager.has_method("get_plugin_status") else {}

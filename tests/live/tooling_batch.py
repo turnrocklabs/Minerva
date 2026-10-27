@@ -205,7 +205,8 @@ def run() -> int:
             launch()
             status = docket()
             observed = wait(lambda: read_json(PRIVATE / 'observed.json'))
-            check(status['version'] == '0.3.0-rc.32' and status.get('attached_version') == '0.3.0-rc.32'
+            registered_version = str(status.get('attached_version', '')).removeprefix('v').split('+')[0]
+            check(status['version'] == '0.3.0-rc.32' and registered_version == '0.3.0-rc.32'
                   and observed['started_versions'] == ['0.3.0-rc.32'], 'docket_updated_before_spawn')
             end_docket()
             wait(lambda: not docket().get('attached', True) and not docket().get('attach_refused', True))
