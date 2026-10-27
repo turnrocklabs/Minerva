@@ -601,7 +601,7 @@ func initialize_plugins() -> void:
 	plugin_scene_panel_broker = ScenePanelBrokerClass.new(plugin_manager, plugin_policy, plugin_capability_broker, plugin_audit_log)
 
 	# MCP management tools (inject dependencies)
-	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log, plugin_event_broker)
+	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log, plugin_event_broker, dependency_tools)
 
 	# Wire PluginManager lifecycle signals to PluginToolRegistry
 	plugin_manager.plugin_started.connect(plugin_tool_registry.on_plugin_started)
