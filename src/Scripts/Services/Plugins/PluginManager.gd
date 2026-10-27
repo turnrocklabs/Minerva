@@ -13,6 +13,7 @@ extends Node
 # Constants
 # ---------------------------------------------------------------------------
 
+const StartupUpdateJob := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
 const AutoUpdater := preload("res://Scripts/Services/Plugins/PluginAutoUpdater.gd")
 const PendingUpgrade := preload("res://Scripts/Services/Plugins/PluginPendingUpgrade.gd")
 const InstallWorkers := preload("res://Scripts/Services/Plugins/PluginInstallWorkers.gd")
@@ -1895,8 +1896,9 @@ func _ensure_required_plugins() -> void:
 	_required_pickup = false
 
 ## At launch: queue installs of missing required plugins (RequiredPlugins,
-## alongside), give opted-in required updates a bounded pre-autostart window,
-## then start plugins and queue marketplace updates in their existing order.
+## alongside), bound required release discovery, and defer each updating plugin
+## until its job settles. Unrelated plugins start now; the post-start pass keeps
+## marketplace updates and any remaining required-update opportunity.
 func start_plugins_at_launch(registry_url: String = "") -> void:
 	_launch_autostart = true
 	# Not awaited: autostart does not wait on the network. Source/editor runs
@@ -1906,16 +1908,16 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 	# loaded; their seeded skills and knowledge follow now.
 	await reconcile_recovered()
 	_ensure_required_plugins()
-	await AutoUpdater.before_autostart(self)
-	await start_autostart_plugins()
+	var startup_updates: Dictionary = await AutoUpdater.before_autostart(self)
+	await start_autostart_plugins(startup_updates)
 	_launch_autostart = false
 	if not _shutting_down:
-		await AutoUpdater.run(self, registry_url, AutoUpdater.Phase.MARKETPLACE)
+		await AutoUpdater.run(self, registry_url)
 
 
 ## Start all plugins whose autostart flag is true.
 ## Called by Minerva on boot.
-func start_autostart_plugins() -> void:
+func start_autostart_plugins(startup_updates: Dictionary = {}) -> void:
 	var database: Object = _db
 	var definitions: Array = database.call("get_autostart_plugins")
 	var planned := PluginDependencyContract.startup_order(definitions)
@@ -1925,15 +1927,47 @@ func start_autostart_plugins() -> void:
 	var order: Array = planned.order
 	to_start.assign(order)
 	SingletonObject.verbose_log("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
+	var ready: Array[String] = []
+	var deferred: Array[String] = []
+	var stops: Dictionary = {}
 	for id: String in to_start:
+		var definition: PluginDefinition = database.call("get_by_id", id)
+		if definition == null:
+			continue
+		stops[id] = person_stops(id)
+		var update: StartupUpdateJob = startup_updates.get(id)
+		var waiting: bool = update != null and update.state != StartupUpdateJob.State.DONE
+		if waiting or definition.requires_plugins.any(func(requirement: Dictionary) -> bool: return str(requirement.id) in deferred):
+			deferred.append(id)
+		else:
+			ready.append(id)
+	# Unrelated plugins start now. Deferred providers and their dependents keep
+	# the same topological order, after each surviving update releases its lock.
+	await _start_autostart_ids(ready, {}, stops)
+	await _start_autostart_ids(deferred, startup_updates, stops)
+
+
+func _start_autostart_ids(ids: Array[String], updates: Dictionary, stops: Dictionary) -> void:
+	var database: Object = _db
+	for id: String in ids:
+		var update: StartupUpdateJob = updates.get(id)
+		if update != null and update.state != StartupUpdateJob.State.DONE:
+			# No total-transfer deadline: a slow healthy archive must not be
+			# cancelled, nor can startup enter a registration transaction's lock.
+			await update.finished
 		if _shutting_down:
-			SingletonObject.verbose_log("[PluginManager] Autostart aborted — shutting down")
 			return
+		var definition: PluginDefinition = database.call("get_by_id", id)
+		if definition == null or not definition.autostart or person_stops(id) != int(stops.get(id, 0)):
+			continue
+		if definition.state in [S_RUNNING, S_STARTING]:
+			continue
 		var result := await start_plugin(id)
 		if result.get("disabled", false):
 			SingletonObject.verbose_log("[PluginManager] Autostart skipped for '%s': %s" % [id, result.error])
 		elif result.get("error"):
 			push_error("[PluginManager] Autostart failed for '%s': %s" % [id, result.get("error")])
+
 
 
 ## Stop all running plugins.  Called by Minerva on exit.

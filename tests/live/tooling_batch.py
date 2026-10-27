@@ -205,15 +205,23 @@ def run() -> int:
             launch()
             status = docket()
             observed = wait(lambda: read_json(PRIVATE / 'observed.json'))
+            # Docket publishes vVERSION+gitsha; compare the release semver.
             registered_version = str(status.get('attached_version', '')).removeprefix('v').split('+')[0]
             check(status['version'] == '0.3.0-rc.32' and registered_version == '0.3.0-rc.32'
                   and observed['started_versions'] == ['0.3.0-rc.32'], 'docket_updated_before_spawn')
             end_docket()
-            wait(lambda: not docket().get('attached', True) and not docket().get('attach_refused', True))
-            check(True, 'docket_stop_clears_attachment')
+            health_deadline = min(deadline, time.monotonic() + 7)  # 5s sweep + margin.
+            stopped_status = docket()
+            while (stopped_status.get('attached', True) or stopped_status.get('attach_refused', True)) and time.monotonic() < health_deadline:
+                time.sleep(.2)
+                stopped_status = docket()
+            check(not stopped_status.get('attached', True) and not stopped_status.get('attach_refused', True), 'docket_stop_clears_attachment')
             installed = tool('minerva_plugin_marketplace_install', url=base + '/assets/' + pins[-1]['asset'], auto_confirm_skills=True)
-            while not installed.get('done'):
+            while not installed.get('done') and time.monotonic() < deadline:
+                time.sleep(.2)
                 installed = tool('minerva_plugin_marketplace_job', job_id=installed['job_id'])
+            if not installed.get('done'):
+                raise TimeoutError('Code Tools install deadline')
             if not installed.get('ok'):
                 raise RuntimeError('Code Tools install failed')
             plugins = tool('minerva_plugin_list')['plugins']

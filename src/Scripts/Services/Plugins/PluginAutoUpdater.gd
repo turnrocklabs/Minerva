@@ -7,32 +7,28 @@ extends RefCounted
 ## skills the user customised keep their version, and skills the update adds
 ## are not seeded). Each update's outcome is logged when it ends. Only
 ## marketplace-lane plugins are updated; a manifest-lane (developer) plugin is
-## never overwritten. Required-plugin updates get a bounded window before
-## autostart; marketplace updates keep their asynchronous post-start order.
+## never overwritten. Required release discovery is bounded before autostart;
+## queued jobs retain the downloader stall guard and transaction lifecycle.
 ## The same per-plugin path handles manual clicks, which bypass only opt-in.
 ## `manager` uses Node with dynamic calls to avoid compiling its autoload dependencies into
 ## --script suites that load RequiredPlugins before autoload readiness.
 
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
-enum Phase { ALL, REQUIRED, MARKETPLACE }
+enum Phase { ALL, REQUIRED }
 const STARTUP_WAIT_MSEC: int = 15000
 
-## Do not spawn an old required binary before its opted-in update. Listing
-## may outlive the window, so its deadline is checked again before queuing.
-static func before_autostart(manager: Node) -> void:
+## Bound only release discovery, not archive transfer or registration. Once
+## queued, each job settles under its downloader stall guard and transaction;
+## the manager defers only that plugin and its dependents, never cancels it.
+static func before_autostart(manager: Node) -> Dictionary:
 	var deadline: int = Time.get_ticks_msec() + STARTUP_WAIT_MSEC
 	var progress: Dictionary = {"listing": true, "jobs": {}}
 	_prepare_required(manager, progress, deadline)
-	while not manager.call("is_shutting_down") and Time.get_ticks_msec() < deadline:
-		var jobs: Dictionary = progress.jobs
-		if not progress.listing and jobs.values().all(func(job: Job) -> bool: return job.state == Job.State.DONE):
-			return
+	while progress.listing and not manager.call("is_shutting_down") and Time.get_ticks_msec() < deadline:
 		await manager.get_tree().create_timer(0.05).timeout
-	var queue: Node = manager.get("install_queue")
-	for job: Job in progress.jobs.values():
-		if job.state != Job.State.DONE:
-			queue.call("cancel", job)
-	push_warning("[PluginAutoUpdater] Required-plugin startup update window ended; continuing autostart")
+	if progress.listing:
+		push_warning("[PluginAutoUpdater] Required release discovery timed out; continuing autostart")
+	return progress.jobs
 
 
 static func _prepare_required(manager: Node, progress: Dictionary, deadline: int) -> void:
@@ -45,7 +41,7 @@ static func run(manager: Node, registry_url: String = "", phase: Phase = Phase.A
 	var db: Object = manager.call("get_db")
 	var definitions: Array = db.call("get_all")
 	var candidates: Array = definitions.filter(func(def: PluginDefinition) -> bool:
-		return (phase == Phase.ALL or RequiredPlugins.has(def.id) == (phase == Phase.REQUIRED)) \
+		return (phase == Phase.ALL or RequiredPlugins.has(def.id)) \
 			and not _attached(manager, def.id) and wants_update(def, ""))
 	if candidates.is_empty() or manager.get("install_queue") == null:
 		return {}
