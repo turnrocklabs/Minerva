@@ -563,7 +563,8 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		else {"canonical": tool_name, "inject": {}}
 	var canonical: String = resolution.canonical
 	var resolved_arguments: Dictionary = arguments.duplicate(true)
-	resolved_arguments.merge(resolution.inject, true)
+	var injected: Dictionary = resolution.inject
+	resolved_arguments.merge(injected, true)
 	var result: Dictionary = await context.run(_execute_tool_with_context.bind(canonical, resolved_arguments, context))
 	if canonical != tool_name:
 		result = result.duplicate()

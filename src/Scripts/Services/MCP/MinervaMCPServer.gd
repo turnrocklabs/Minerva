@@ -397,7 +397,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	var resolution: Dictionary = resolve_tool_alias(tool_name)
 	var canonical: String = resolution.canonical
 	var resolved_arguments: Dictionary = arguments.duplicate(true)
-	resolved_arguments.merge(resolution.inject, true)
+	var injected: Dictionary = resolution.inject
+	resolved_arguments.merge(injected, true)
 	if canonical != tool_name:
 		print("[MinervaMCPServer] Alias %s -> %s" % [tool_name, canonical])
 	var result := await context.run(_execute_canonical_tool.bind(canonical, resolved_arguments, context, outcome_holder, coerce_arguments, write_binding))
