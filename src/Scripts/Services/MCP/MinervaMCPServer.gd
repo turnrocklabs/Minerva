@@ -786,7 +786,8 @@ func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Di
 		if filtered.any(func(item: Dictionary) -> bool: return item.name == result.name):
 			continue
 		result["running"] = false
-		filtered.append(result)
+		if not activate:
+			filtered.append(result)
 		var origin: String = result.plugin_id
 		if not hinted.has(origin):
 			for plugin: Dictionary in plugins:
