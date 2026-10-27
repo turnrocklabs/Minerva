@@ -704,7 +704,7 @@ func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dic
 
 func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
-		"Discover tools by keyword, exact name, functional category, or installed plugin id/display name. Empty query or '*' browses without activation; activate=false also browses any query. Results include short descriptions, categories and plugin_id. Unknown categories return the real vocabulary and counts. Stopped plugins expose their manifest tools with a start hint; start the plugin to use them. Keyword results activate up to limit tools unless browsing.",
+		"Discover tools by keyword, exact name, functional category, or installed plugin id/display name. Empty query or '*' browses without activation; activate=false also browses any query. HTTP/external callers get listings only, without activation. Result descriptions are first sentences capped at 240 characters; full schemas arrive on activation. Results include categories and plugin_id. Unknown categories return the real vocabulary and counts. Stopped plugins expose their manifest tools with a start hint; start the plugin to use them. Keyword results activate up to limit tools unless browsing.",
 		{"type": "object", "properties": {
 			"query": {"type": "string", "description": "Optional keyword filter or exact tool name; empty or '*' lists tools."},
 			"category": {"type": "string", "description": "Exact functional category. An unknown value returns the available categories."},
@@ -720,6 +720,19 @@ func _register_tool_search() -> void:
 			"note_id": {"type": "string", "description": "Retrieve full content of a specific archived result by its note ID"},
 			"limit": {"type": "integer", "description": "Max results to return in search mode (default: 10)"},
 		}, "required": []}, "meta")
+
+
+static func _tool_description_summary(description: String) -> String:
+	var summary: String = description.replace("\n", " ").strip_edges()
+	var boundary: RegEx = RegEx.create_from_string("[.!?](?:\\s|$)")
+	var sentence: RegExMatch = boundary.search(summary)
+	if sentence != null:
+		summary = summary.left(sentence.get_start() + 1)
+	if summary.length() > 240:
+		var prefix: String = summary.left(239)
+		var word_end: int = prefix.rfind(" ")
+		summary = prefix.left(word_end).strip_edges() + "…" if word_end >= 0 else "…"
+	return summary
 
 
 func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
@@ -789,7 +802,7 @@ func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Di
 			hinted[origin] = true
 	var summaries: Array[Dictionary] = []
 	for result: Dictionary in filtered.slice(0, limit):
-		summaries.append({"name": result.name, "description": str(result.description).strip_edges().get_slice("\n", 0).left(200),
+		summaries.append({"name": result.name, "description": _tool_description_summary(str(result.description)),
 			"category": result.category, "plugin_id": result.plugin_id, "running": result.running})
 	if not activate or filtered.is_empty():
 		return {"success": true, "tools": summaries, "count": summaries.size(), "total_matches": filtered.size(),
