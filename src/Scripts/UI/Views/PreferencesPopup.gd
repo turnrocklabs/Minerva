@@ -2173,34 +2173,40 @@ func _on_python_env_selected(index: int) -> void:
 
 func _on_auto_tool_toggled(enabled: bool) -> void:
 	SingletonObject.save_to_config_file("Tools", "auto_tool_management", enabled)
-	var mcp = SingletonObject.get("mcp_manager")
+	var mcp: MCPManager = SingletonObject.get("mcp_manager")
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.auto_tool_management = enabled
 		if enabled:
 			mcp.minerva_server.get_tool_budget().reset()
 			for history: ServiceHistory in SingletonObject.ChatList:
-				if history is ChatHistory and history.tool_budget_manager != null:
-					history.tool_budget_manager.reset()
+				if history is ChatHistory:
+					var chat: ChatHistory = history
+					if chat.tool_budget_manager != null:
+						chat.tool_budget_manager.reset()
 
 
 func _on_tool_budget_changed(value: float) -> void:
 	SingletonObject.save_to_config_file("Tools", "tool_token_budget", int(value))
-	var mcp = SingletonObject.get("mcp_manager")
+	var mcp: MCPManager = SingletonObject.get("mcp_manager")
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.set_tool_budget(int(value))
 		for history: ServiceHistory in SingletonObject.ChatList:
-			if history is ChatHistory and history.tool_budget_manager != null:
-				history.tool_budget_manager.set_budget(int(value))
+			if history is ChatHistory:
+				var chat: ChatHistory = history
+				if chat.tool_budget_manager != null:
+					chat.tool_budget_manager.set_budget(int(value))
 
 
 func _on_tool_idle_turns_changed(value: float) -> void:
 	SingletonObject.save_to_config_file("Tools", "tool_max_idle_turns", int(value))
-	var mcp = SingletonObject.get("mcp_manager")
+	var mcp: MCPManager = SingletonObject.get("mcp_manager")
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.set_tool_idle_turns(int(value))
 		for history: ServiceHistory in SingletonObject.ChatList:
-			if history is ChatHistory and history.tool_budget_manager != null:
-				history.tool_budget_manager.set_max_idle_turns(int(value))
+			if history is ChatHistory:
+				var chat: ChatHistory = history
+				if chat.tool_budget_manager != null:
+					chat.tool_budget_manager.set_max_idle_turns(int(value))
 
 
 
