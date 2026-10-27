@@ -21,8 +21,6 @@ const InstallWorkers := preload("res://Scripts/Services/Plugins/PluginInstallWor
 ## How often (seconds) to poll running plugins for liveness.
 const HEALTH_CHECK_INTERVAL_SEC := 5.0
 
-## Completion of an autostart group; per-call provider maps remain its authority.
-signal _autostart_completed
 
 ## Number of crashes within the window that triggers CRASH_LOOP.
 const CRASH_LOOP_THRESHOLD := 3
@@ -1899,24 +1897,29 @@ func _ensure_required_plugins() -> void:
 	_required_pickup = false
 
 ## At launch: queue installs of missing required plugins (RequiredPlugins,
-## alongside), bound required release discovery, and defer each updating plugin
-## until its job settles. Unrelated plugins start now; the post-start pass keeps
-## marketplace updates and any remaining required-update opportunity.
+## alongside), bound Docket release discovery and await its update before its
+## launcher runs. Independent plugins start while it downloads. Other updates
+## retain their post-start transaction and restart behavior.
 func start_plugins_at_launch(registry_url: String = "") -> void:
 	_launch_autostart = true
 	var startup_stops: Dictionary = {}
 	var database: Object = _db
 	for definition: PluginDefinition in database.call("get_all"):
 		startup_stops[definition.id] = person_stops(definition.id)
-	# Not awaited: autostart does not wait on the network. Source/editor runs
-	# need required plugins too; ensure never replaces a manifest-lane copy.
+	# Source/editor runs need required plugins too; pickup never replaces a
+	# manifest-lane copy.
 	RequiredPlugins.move_legacy_relay_state()
 	# Installs a crash left half-done were rolled back before Docket was
 	# loaded; their seeded skills and knowledge follow now.
 	await reconcile_recovered()
-	_ensure_required_plugins()
-	var startup_updates: Dictionary = await AutoUpdater.before_autostart(self)
-	await start_autostart_plugins(startup_updates, startup_stops)
+	var docket_update: StartupUpdateJob = await AutoUpdater.before_autostart(self)
+	# Repairs share the staging lock. If Docket has an update, let its first
+	# start finish before queuing repairs; otherwise retain alongside pickup.
+	if docket_update == null:
+		_ensure_required_plugins()
+	await start_autostart_plugins(docket_update, startup_stops)
+	if docket_update != null:
+		_ensure_required_plugins()
 	_launch_autostart = false
 	if not _shutting_down:
 		await AutoUpdater.run(self, registry_url)
@@ -1924,81 +1927,60 @@ func start_plugins_at_launch(registry_url: String = "") -> void:
 
 ## Start all plugins whose autostart flag is true.
 ## Called by Minerva on boot.
-func start_autostart_plugins(startup_updates: Dictionary = {}, startup_stops: Dictionary = {}) -> void:
+func start_autostart_plugins(docket_update: StartupUpdateJob = null, startup_stops: Dictionary = {}) -> void:
 	var database: Object = _db
-	var definitions: Array = database.call("get_autostart_plugins")
-	var planned := PluginDependencyContract.startup_order(definitions)
-	for refused: String in planned.cycles:
-		push_error("[PluginManager] Autostart refused: " + str(database.call("dependency_issue", refused)))
-	var to_start: Array[String] = []
-	var order: Array = planned.order
-	to_start.assign(order)
-	SingletonObject.verbose_log("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
-	var ready: Array[String] = []
-	var deferred: Array[String] = []
+	var initial: Array[String] = _autostart_order()
 	var stops: Dictionary = startup_stops.duplicate()
-	var providers: Dictionary = {}
-	for id: String in to_start:
-		var definition: PluginDefinition = database.call("get_by_id", id)
-		if definition == null:
-			continue
+	for id: String in initial:
 		if not stops.has(id):
 			stops[id] = person_stops(id)
-		providers[id] = false
-		var update: StartupUpdateJob = startup_updates.get(id)
-		var waiting: bool = update != null and update.state != StartupUpdateJob.State.DONE
-		if waiting or definition.requires_plugins.any(func(requirement: Dictionary) -> bool: return str(requirement.id) in deferred):
-			deferred.append(id)
-		else:
-			ready.append(id)
-	await _start_autostart_ids(ready, stops, providers)
-	for id: String in deferred:
-		var update: StartupUpdateJob = startup_updates.get(id)
-		if update != null and update.state != StartupUpdateJob.State.DONE:
-			update.finished.connect(_resume_deferred_autostart.bind(deferred, startup_updates, stops, providers), CONNECT_ONE_SHOT)
-	# Subscribe before examining settled jobs: a fast update may have finished
-	# while unrelated plugins started. Each callback releases only its own branch.
-	_resume_deferred_autostart(deferred, startup_updates, stops, providers)
-	while not _shutting_down and not providers.values().all(func(done: bool) -> bool: return done):
-		await _autostart_completed
+	var started: Array[String] = []
+	if docket_update != null and docket_update.state != StartupUpdateJob.State.DONE:
+		var docket_branch: Array[String] = ["docket"]
+		for id: String in initial:
+			var definition: PluginDefinition = database.call("get_by_id", id)
+			if definition == null:
+				continue
+			if id == "docket" or definition.requires_plugins.any(func(requirement: Dictionary) -> bool: return str(requirement.id) in docket_branch):
+				if id not in docket_branch:
+					docket_branch.append(id)
+				continue
+			await _start_autostart_ids([id], stops)
+			started.append(id)
+		# Only the detached app needs this pre-start wait. Never cancel its
+		# healthy transfer or start while its registration transaction owns the lock.
+		if docket_update.state != StartupUpdateJob.State.DONE:
+			await docket_update.finished
+	# The new Docket manifest may declare new providers: derive order again
+	# after the update settles, rather than retain an old dependency plan.
+	for id: String in _autostart_order():
+		if id not in started:
+			await _start_autostart_ids([id], stops)
 
 
-func _resume_deferred_autostart(deferred: Array[String], updates: Dictionary, stops: Dictionary, providers: Dictionary) -> void:
+func _autostart_order() -> Array[String]:
 	var database: Object = _db
-	for id: String in deferred.duplicate():
-		if not deferred.has(id) or _shutting_down:
-			continue
-		var update: StartupUpdateJob = updates.get(id)
-		if update != null and update.state != StartupUpdateJob.State.DONE:
-			continue
-		var definition: PluginDefinition = database.call("get_by_id", id)
-		if definition != null and definition.requires_plugins.any(func(requirement: Dictionary) -> bool:
-			return providers.has(requirement.id) and not providers[requirement.id]):
-			continue
-		# Claim before the start can yield; providers stays false until it settles,
-		# so another job's callback cannot start the same plugin or its consumers.
-		deferred.erase(id)
-		await _start_autostart_ids([id], stops, providers)
-	if providers.values().all(func(done: bool) -> bool: return done):
-		_autostart_completed.emit()
+	var definitions: Array = database.call("get_autostart_plugins")
+	var planned: Dictionary = PluginDependencyContract.startup_order(definitions)
+	for refused: String in planned.cycles:
+		push_error("[PluginManager] Autostart refused: " + str(database.call("dependency_issue", refused)))
+	var order: Array[String] = []
+	var planned_order: Array = planned.order
+	order.assign(planned_order)
+	return order
 
 
-func _start_autostart_ids(ids: Array[String], stops: Dictionary, providers: Dictionary) -> void:
+func _start_autostart_ids(ids: Array[String], stops: Dictionary) -> void:
 	var database: Object = _db
 	for id: String in ids:
 		if _shutting_down:
 			return
 		var definition: PluginDefinition = database.call("get_by_id", id)
 		if definition == null or not definition.autostart or person_stops(id) != int(stops.get(id, 0)):
-			providers[id] = true
 			continue
 		if definition.state in [S_RUNNING, S_STARTING]:
-			providers[id] = true
 			continue
-		# A queued update is never cancelled for elapsed transfer time. Its
-		# finished callback reaches here only after the transaction releases its lock.
 		var result := await start_plugin(id)
-		providers[id] = true
 		if result.get("disabled", false):
 			SingletonObject.verbose_log("[PluginManager] Autostart skipped for '%s': %s" % [id, result.error])
 		elif result.get("error"):

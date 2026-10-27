@@ -14,25 +14,26 @@ extends RefCounted
 ## --script suites that load RequiredPlugins before autoload readiness.
 
 const Job := preload("res://Scripts/Services/Plugins/PluginInstallJob.gd")
-enum Phase { ALL, REQUIRED }
+enum Phase { ALL, DOCKET }
 const STARTUP_WAIT_MSEC: int = 15000
 
-## Bound only release discovery, not archive transfer or registration. Once
-## queued, each job settles under its downloader stall guard and transaction;
-## the manager defers only that plugin and its dependents, never cancels it.
-static func before_autostart(manager: Node) -> Dictionary:
+## Docket's detached app must update before its launcher can attach to the
+## old GUI. Other plugins keep their post-start updates. Bound discovery only;
+## the one queued job retains its download stall guard and transaction.
+static func before_autostart(manager: Node) -> Job:
 	var deadline: int = Time.get_ticks_msec() + STARTUP_WAIT_MSEC
 	var progress: Dictionary = {"listing": true, "jobs": {}}
-	_prepare_required(manager, progress, deadline)
+	_prepare_docket(manager, progress, deadline)
 	while progress.listing and not manager.call("is_shutting_down") and Time.get_ticks_msec() < deadline:
 		await manager.get_tree().create_timer(0.05).timeout
 	if progress.listing:
-		push_warning("[PluginAutoUpdater] Required release discovery timed out; continuing autostart")
-	return progress.jobs
+		push_warning("[PluginAutoUpdater] Docket release discovery timed out; continuing autostart")
+	var jobs: Dictionary = progress.jobs
+	return jobs.get("docket")
 
 
-static func _prepare_required(manager: Node, progress: Dictionary, deadline: int) -> void:
-	progress.jobs = await run(manager, "", Phase.REQUIRED, deadline)
+static func _prepare_docket(manager: Node, progress: Dictionary, deadline: int) -> void:
+	progress.jobs = await run(manager, "", Phase.DOCKET, deadline)
 	progress.listing = false
 
 ## Queue an update for every opted-in plugin whose registry entry is newer
@@ -41,7 +42,7 @@ static func run(manager: Node, registry_url: String = "", phase: Phase = Phase.A
 	var db: Object = manager.call("get_db")
 	var definitions: Array = db.call("get_all")
 	var candidates: Array = definitions.filter(func(def: PluginDefinition) -> bool:
-		return (phase == Phase.ALL or RequiredPlugins.has(def.id)) \
+		return (phase == Phase.ALL or def.id == "docket") \
 			and not _attached(manager, def.id) and wants_update(def, ""))
 	if candidates.is_empty() or manager.get("install_queue") == null:
 		return {}
@@ -69,7 +70,7 @@ static func fetch_entries(manager: Node, ids: Array[String], registry_url: Strin
 		entries = await _fetch_registry_entries(manager, registry_url)
 	# Required plugins are published as their own releases, not in the registry.
 	if ids.any(func(id: String) -> bool: return RequiredPlugins.has(id)):
-		entries.merge(await RequiredPlugins.fetch_entries(manager), true)
+		entries.merge(await RequiredPlugins.fetch_entries(manager, ids), true)
 	return {} if manager.call("is_shutting_down") else entries
 
 

@@ -225,10 +225,13 @@ static func entry_from_releases(releases: Array, plugin_id: String) -> Dictionar
 ## The newest release of each required plugin, as registry entries keyed by
 ## id (entry_from_releases), from each host-declared repository. A failed
 ## listing leaves other repositories and already-found entries available.
-static func fetch_entries(manager) -> Dictionary:
+## only_ids limits repository reads for a provider-specific startup check.
+static func fetch_entries(manager, only_ids: Array[String] = []) -> Dictionary:
 	# Only the host's catalog supplies repositories; dependencies cannot add one.
 	var groups := {}
 	for id: String in ids():
+		if not only_ids.is_empty() and id not in only_ids:
+			continue
 		var repo: String = repository(id)
 		var group: Array = groups.get(repo, [])
 		group.append(id)
