@@ -798,10 +798,11 @@ static func _normalize_integer_arguments(schema: Variant, value: Variant) -> Var
 	if not schema is Dictionary:
 		return value
 	var definition: Dictionary = schema
-	if definition.get("type") == "integer" and value is float \
-			and is_finite(value) and floor(value) == value \
-			and value >= -9223372036854775808.0 and value < 9223372036854775808.0:
-		return int(value)
+	if definition.get("type") == "integer" and value is float:
+		var number: float = value
+		if is_finite(number) and floor(number) == number \
+				and number >= -9223372036854775808.0 and number < 9223372036854775808.0:
+			return int(number)
 	if value is Dictionary:
 		var source: Dictionary = value
 		var normalized: Dictionary = source.duplicate()
