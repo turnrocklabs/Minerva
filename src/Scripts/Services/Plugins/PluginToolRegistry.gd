@@ -798,7 +798,15 @@ static func _normalize_integer_arguments(schema: Variant, value: Variant) -> Var
 	if not schema is Dictionary:
 		return value
 	var definition: Dictionary = schema
-	if definition.get("type") == "integer" and value is float:
+	var declared_type: Variant = definition.get("type", "")
+	var integer_type: bool = false
+	if declared_type is String:
+		var type_name: String = declared_type
+		integer_type = type_name == "integer"
+	elif declared_type is Array:
+		var types: Array = declared_type
+		integer_type = types.has("integer")
+	if integer_type and value is float:
 		var number: float = value
 		if is_finite(number) and floor(number) == number \
 				and number >= -9223372036854775808.0 and number < 9223372036854775808.0:
