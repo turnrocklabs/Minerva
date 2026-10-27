@@ -829,6 +829,8 @@ func _wire_plugin_tools_to_mcp() -> void:
 			var database: PluginDB = manager.get_db()
 			for entry: Dictionary in registry.get_plugin_tools(p_plugin_id):
 				var tool_def: MCPToolDefinition = registry.tool_definition(str(entry["name"]))
+				if tool_def.tool_set.is_empty():
+					tool_def.tool_set = p_plugin_id
 				var membership: String = tool_def.tool_set
 				var definition: PluginDefinition = database.get_by_id(p_plugin_id)
 				mcp_manager.tool_registry[entry["name"]] = tool_def
@@ -857,14 +859,13 @@ func _wire_plugin_tools_to_mcp() -> void:
 	)
 
 	# Register plugin management MCP tools (minerva_plugin_list, etc.)
-	# Empty tool_set remains available, but belongs to no functional category.
 	for tool_def_dict in plugin_mcp_tools.get_tool_definitions():
-		var tool_def = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd").new()
+		var tool_def: MCPToolDefinition = MCPToolDefinition.new()
 		tool_def.name = tool_def_dict["name"]
 		tool_def.description = tool_def_dict["description"]
 		tool_def.input_schema = tool_def_dict["input_schema"]
 		tool_def.server_name = "minerva"
-		tool_def.tool_set = ""
+		tool_def.tool_set = "plugins"
 		mcp_manager.tool_registry[tool_def_dict["name"]] = tool_def
 		minerva_server.tool_search_index.register_tool(
 			tool_def_dict["name"], tool_def_dict["description"],
@@ -872,7 +873,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 				"name": tool_def_dict["name"], "description": tool_def_dict["description"],
 				"input_schema": tool_def_dict["input_schema"]
 			},
-			""
+			tool_def.tool_set
 		)
 	if mcp_manager.http_server != null:
 		mcp_manager.http_server.invalidate_tools_catalog("plugin management tools registered")

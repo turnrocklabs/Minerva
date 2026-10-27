@@ -374,8 +374,11 @@ func stopped_tool_index() -> ToolSearchIndex:
 		if definition.state == PluginDefinition.State.RUNNING:
 			continue
 		for entry: Dictionary in definition.tools:
+			var membership: String = str(entry.get("tool_set", ""))
+			if membership.is_empty():
+				membership = definition.id
 			index.register_tool(str(entry.get("name", "")), str(entry.get("description", "")), {},
-				str(entry.get("tool_set", "")), definition.id, definition.name)
+				membership, definition.id, definition.name)
 	return index
 
 
