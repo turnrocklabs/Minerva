@@ -8,15 +8,12 @@ func get_tool_names() -> Array[String]:
 	return [
 		"minerva_create_text_editor",
 		"minerva_create_graphics_editor",
-		"minerva_get_editor_content",
-		"minerva_update_editor",
 		"minerva_editor_review_diff",
 		"minerva_editor_exit_review_diff",
 		"minerva_editor_next_change",
 		"minerva_editor_prev_change",
 		"minerva_editor_review_journal",
 		"minerva_editor_review_content",
-		"minerva_save_editor",
 		"minerva_close_editor",
 		"minerva_list_editors",
 		"minerva_rename_editor",
@@ -29,7 +26,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_create_text_editor",
-		"Create a new text/code editor tab. For path-backed editing prefer passing file_path here, then drive content via minerva_doc_read / minerva_doc_write / minerva_doc_edit / minerva_doc_save (path-canonical buffer). For unbacked scratchpads (no file_path), use minerva_update_editor / minerva_get_editor_content / minerva_save_editor — the editor_*-keyed scratchpad API.",
+		"Create a new text/code editor tab, optionally bound to file_path. Read and write with minerva_doc_read / minerva_doc_write using editor_name (scratchpad) or path (file-backed). Save with minerva_doc_save; pass path for save-as.",
 		{
 			"type": "object",
 			"properties": {
@@ -65,56 +62,6 @@ func register_tools() -> void:
 				}
 			},
 			"required": ["name"]
-		}
-	, "editor")
-
-	server._register_tool("minerva_get_editor_content",
-		"Read the in-memory text of an unbacked / scratchpad editor (no file_path). For path-backed editors prefer minerva_doc_read keyed on file_path. Returns the buffer's text when a file_path is associated; falls back to the editor's in-memory text otherwise.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "The name/title of the editor tab"
-				}
-			},
-			"required": ["editor_name"]
-		}
-	, "editor")
-
-	server._register_tool("minerva_update_editor",
-		"Set the in-memory text of an unbacked / scratchpad editor (no file_path). For path-backed editors prefer minerva_doc_write or minerva_doc_edit keyed on file_path. Disk is NOT modified — pair with minerva_save_editor (or for path-backed editors, minerva_doc_save) to flush.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "The name/title of the editor tab"
-				},
-				"content": {
-					"type": "string",
-					"description": "New content for the editor"
-				}
-			},
-			"required": ["editor_name", "content"]
-		}
-	, "editor")
-
-	server._register_tool("minerva_save_editor",
-		"Save an unbacked / scratchpad editor to disk — pass file_path to bind the tab to a location (\"save as\"). For path-backed editors prefer minerva_doc_save keyed on file_path. When the editor already has a file_path, this flushes the buffer to that path.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "The name/title of the editor tab"
-				},
-				"file_path": {
-					"type": "string",
-					"description": "Optional file path. If not specified, uses the associated file."
-				}
-			},
-			"required": ["editor_name"]
 		}
 	, "editor")
 
@@ -396,10 +343,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return await _create_text_editor(arguments)
 		"minerva_create_graphics_editor":
 			return _create_graphics_editor(arguments)
-		"minerva_get_editor_content":
-			return _get_editor_content(arguments)
-		"minerva_update_editor":
-			return _update_editor(arguments)
 		"minerva_editor_review_diff":
 			return _review_diff(arguments)
 		"minerva_editor_exit_review_diff":
@@ -412,8 +355,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _review_journal(arguments)
 		"minerva_editor_review_content":
 			return _review_content(arguments)
-		"minerva_save_editor":
-			return _save_editor(arguments)
 		"minerva_close_editor":
 			return _close_editor(arguments)
 		"minerva_list_editors":
@@ -510,83 +451,6 @@ func _create_graphics_editor(args: Dictionary) -> Dictionary:
 	}
 
 
-func _get_editor_content(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-
-	if editor_name.is_empty():
-		return MCPToolUtils.error("editor_name is required")
-
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	if not editor:
-		return MCPToolUtils.error("Editor not found: %s" % editor_name)
-
-	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorGDScript.Type.TEXT:
-		return MCPToolUtils.error("Not a text editor")
-
-	if not editor.code_edit:
-		return MCPToolUtils.error("Editor has no code_edit")
-
-	# Buffer-canonical: prefer the document registry's text when the editor has
-	# a file_path. Fall back to the editor's in-memory text for untitled buffers
-	# and for the migration window before Task 4 wires the editor to the registry.
-	var file_path: String = editor.file if "file" in editor else ""
-	if not file_path.is_empty():
-		var registry := DocumentRegistry.get_instance()
-		var br := registry.get_or_create_buffer(file_path)
-		if br.ok:
-			return {
-				"success": true,
-				"editor_name": editor_name,
-				"content": (br.buffer as DocumentBuffer).text,
-			}
-
-	return {
-		"success": true,
-		"editor_name": editor_name,
-		"content": editor.code_edit.text,
-	}
-
-
-func _update_editor(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var content: String = args.get("content", "")
-
-	if editor_name.is_empty():
-		return MCPToolUtils.error("editor_name is required")
-
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	if not editor:
-		return MCPToolUtils.error("Editor not found: %s" % editor_name)
-
-	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorGDScript.Type.TEXT:
-		return MCPToolUtils.error("Not a text editor")
-
-	if not editor.code_edit:
-		return MCPToolUtils.error("Editor has no code_edit")
-
-	# Buffer-canonical: write through the document registry when a file_path is
-	# associated. Mirror to editor.code_edit so the visible UI stays in sync
-	# during the migration window (Task 4 wires the editor to the registry).
-	var file_path: String = editor.file if "file" in editor else ""
-	if not file_path.is_empty():
-		var registry := DocumentRegistry.get_instance()
-		var br := registry.get_or_create_buffer(file_path)
-		if br.ok:
-			(br.buffer as DocumentBuffer).apply_edit(content)
-
-	editor.code_edit.text = content
-	# Setting `text =` does not emit text_changed; emit explicitly so downstream
-	# wiring (annotation revision bump, content_changed, etc.) sees the edit.
-	editor.code_edit.text_changed.emit()
-
-	return {
-		"success": true,
-		"message": "Editor content updated"
-	}
-
-
 func _review_diff(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 	var diff: String = args.get("diff", "")
@@ -677,45 +541,6 @@ func _open_review_widget(path: String, rows: Array, after_text: String) -> Dicti
 	widget.set_review_context(path, after_text)   # enables review comments → C<n>
 	widget.render_rows(rows)
 	return {"success": true, "editor_name": title, "rows": rows.size(), "changed": true}
-
-
-func _save_editor(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var file_path: String = args.get("file_path", "")
-
-	if editor_name.is_empty():
-		return MCPToolUtils.error("editor_name is required")
-
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	if not editor:
-		return MCPToolUtils.error("Editor not found: %s" % editor_name)
-
-	# Set file path if provided
-	if not file_path.is_empty():
-		editor.file = file_path
-
-	if editor.file.is_empty():
-		return MCPToolUtils.error("No file path specified")
-
-	# Buffer-canonical: mirror the editor's current visible text into the registry
-	# (until Task 4 wires the editor to attach directly), then flush via doc_save.
-	# This preserves "save what the user sees" while routing all writes through
-	# the registry layer.
-	var registry := DocumentRegistry.get_instance()
-	var br := registry.get_or_create_buffer(editor.file)
-	if br.ok and editor.code_edit:
-		(br.buffer as DocumentBuffer).apply_edit(editor.code_edit.text)
-		var save_r: Dictionary = (br.buffer as DocumentBuffer).save_to_disk()
-		if not save_r.ok:
-			return MCPToolUtils.error(save_r.error)
-	else:
-		# Fallback: editor.save() handles cases where registry can't allocate a buffer.
-		editor.save()
-
-	return {
-		"success": true,
-		"file_path": editor.file
-	}
 
 
 func _close_editor(args: Dictionary) -> Dictionary:

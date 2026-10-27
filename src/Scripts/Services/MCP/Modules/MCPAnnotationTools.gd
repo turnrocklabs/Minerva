@@ -450,7 +450,7 @@ func register_tools() -> void:
 		"Add a v2 annotation (kind=text, anchor=core/text.range) to a built-in text "
 		+ "editor tab, anchored to a flat character-offset range [start, end). The "
 		+ "annotation appears immediately in the live AnnotationHost; persistence to "
-		+ "the .annotations.json sidecar happens on the next minerva_save_editor or "
+		+ "the .annotations.json sidecar happens on the next minerva_doc_save (editor_name) or "
 		+ "user Ctrl+S. Use minerva_list_editors first to find editor_name. "
 		+ "Returns {ok, annotation_id, count}.",
 		{
