@@ -798,9 +798,9 @@ func get_available_tools(history: Variant = null) -> Array:
 func get_tools_for_openai(history: Variant = null) -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
 	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
-	for name: String in tool_registry:
-		if _tool_unavailable_reason(name, history, sets).is_empty():
-			var tool: MCPToolDefinition = tool_registry[name]
+	for tool_name: String in tool_registry:
+		if _tool_unavailable_reason(tool_name, history, sets).is_empty():
+			var tool: MCPToolDefinition = tool_registry[tool_name]
 			tools.append(tool.to_openai_format())
 	return tools
 
@@ -809,9 +809,9 @@ func get_tools_for_openai(history: Variant = null) -> Array[Dictionary]:
 func get_tools_for_anthropic(history: Variant = null) -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
 	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
-	for name: String in tool_registry:
-		if _tool_unavailable_reason(name, history, sets).is_empty():
-			var tool: MCPToolDefinition = tool_registry[name]
+	for tool_name: String in tool_registry:
+		if _tool_unavailable_reason(tool_name, history, sets).is_empty():
+			var tool: MCPToolDefinition = tool_registry[tool_name]
 			tools.append(tool.to_anthropic_format())
 	return tools
 

@@ -849,7 +849,7 @@ func _refresh_minerva_submenu() -> void:
 		var enabled: Array[String] = tool_manager._effective_tool_sets_for_history(history) if history != null else tool_manager.get_default_tool_sets()
 		var all_enabled: bool = enabled.is_empty()
 
-		# "All" toggle at the top
+		# Reset to inherited eligibility at the top
 		ts_menu.add_check_item("Use inherited sets", 50)
 		var all_idx = ts_menu.get_item_index(50)
 		ts_menu.set_item_checked(all_idx, history != null and history.ToolSetOverride.is_empty())
@@ -883,7 +883,7 @@ var _minerva_tool_set_names: Array = []
 
 func _on_tool_set_submenu_pressed(id: int) -> void:
 	match id:
-		50: _toggle_all_tool_sets()
+		50: _reset_tool_set_override()
 		_:
 			if id >= 100:
 				_toggle_tool_set(id - 100)
@@ -983,7 +983,7 @@ func _on_minerva_submenu_pressed(id: int) -> void:
 		11: _start_minerva_http_server()
 
 
-func _toggle_all_tool_sets() -> void:
+func _reset_tool_set_override() -> void:
 	var pane: ChatPane = SingletonObject.Chats
 	var history: ServiceHistory = pane.current_chat() if pane != null else null
 	if history != null:

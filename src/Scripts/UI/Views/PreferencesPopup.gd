@@ -2231,11 +2231,11 @@ func _refresh_tool_set_checks() -> void:
 	var names: Array[String] = []
 	names.assign(counts.keys())
 	names.sort()
-	for name: String in names:
+	for set_name: String in names:
 		var check: CheckButton = CheckButton.new()
-		check.text = "%s (%d tools)" % [name, counts[name]]
-		check.button_pressed = enabled.is_empty() or name in enabled
-		check.toggled.connect(_on_tool_set_check_toggled.bind(name))
+		check.text = "%s (%d tools)" % [set_name, counts[set_name]]
+		check.button_pressed = enabled.is_empty() or set_name in enabled
+		check.toggled.connect(_on_tool_set_check_toggled.bind(set_name))
 		_tool_set_checks_container.add_child(check)
 
 
@@ -2255,8 +2255,8 @@ func _on_tool_set_check_toggled(toggled_on: bool, tool_set_name: String) -> void
 	elif not toggled_on:
 		sets.erase(tool_set_name)
 	var all_enabled: bool = true
-	for name: String in counts:
-		if name not in sets:
+	for set_name: String in counts:
+		if set_name not in sets:
 			all_enabled = false
 			break
 	if all_enabled:

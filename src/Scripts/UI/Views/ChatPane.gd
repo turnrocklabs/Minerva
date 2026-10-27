@@ -4124,8 +4124,10 @@ func render_history(chat_history: ChatHistory):
 
 	# Create and setup ChatHeader at top of each tab
 	var ChatHeaderScript = load("res://Scripts/UI/Controls/ChatHeader.gd")
-	var header = ChatHeaderScript.new()
-	header.setup(chat_history)
+	var header: ChatHeader = ChatHeaderScript.new()
+	var tool_manager: MCPManager = SingletonObject.get_mcp_manager()
+	var skill_manager: SkillManager = SingletonObject.get_skill_manager()
+	header.setup(chat_history, tool_manager, skill_manager)
 	header.agent_mode_toggled.connect(_on_chat_header_agent_mode_toggled.bind(chat_history))
 	wrapper.add_child(header)
 

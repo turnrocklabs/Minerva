@@ -9,15 +9,21 @@ var agent_mode_toggle: CheckButton
 var editor_button: Button
 var summarize_button: Button
 var notes_button: Button
+var tool_sets_button: MenuButton
+var _tool_manager: MCPManager
+var _tool_set_names: Array[String] = []
 
 var chat_history: ServiceHistory
 
 
 ## Setup must be called after instantiation
-func setup(history: ServiceHistory) -> void:
+func setup(history: ServiceHistory, tool_manager: MCPManager = null, skills: SkillManager = null) -> void:
 	if chat_history and chat_history.agent_mode_changed.is_connected(_sync_agent_mode):
 		chat_history.agent_mode_changed.disconnect(_sync_agent_mode)
+	if chat_history and chat_history.tool_sets_changed.is_connected(_refresh_tool_set_chip):
+		chat_history.tool_sets_changed.disconnect(_refresh_tool_set_chip)
 	chat_history = history
+	_tool_manager = tool_manager
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
 
@@ -40,6 +46,21 @@ func setup(history: ServiceHistory) -> void:
 		agent_mode_toggle.icon = gears_icon
 	agent_mode_toggle.toggled.connect(_on_agent_mode_toggled)
 	add_child(agent_mode_toggle)
+
+	if _tool_manager != null:
+		tool_sets_button = MenuButton.new()
+		tool_sets_button.flat = true
+		var popup: PopupMenu = tool_sets_button.get_popup()
+		popup.hide_on_checkable_item_selection = false
+		popup.about_to_popup.connect(_populate_tool_sets)
+		popup.id_pressed.connect(_on_tool_set_pressed)
+		history.tool_sets_changed.connect(_refresh_tool_set_chip)
+		_tool_manager.tools_refreshed.connect(_refresh_tool_set_chip)
+		if skills != null:
+			skills.active_skills_changed.connect(_refresh_tool_set_chip)
+			skills.skills_changed.connect(_refresh_tool_set_chip)
+		add_child(tool_sets_button)
+		_refresh_tool_set_chip()
 
 	# Focused chat indicator (after agent toggle — visually to its right)
 	if history.StaticToolMode:
@@ -98,6 +119,42 @@ func setup(history: ServiceHistory) -> void:
 		notes_button.icon = pencil_icon
 	notes_button.pressed.connect(_on_notes_button_pressed)
 	add_child(notes_button)
+
+
+func _refresh_tool_set_chip() -> void:
+	if _tool_manager == null or not is_instance_valid(tool_sets_button):
+		return
+	var sets: Array[String] = _tool_manager._effective_tool_sets_for_history(chat_history)
+	var label: String = "all"
+	if sets.size() == 1 and sets[0] == "meta":
+		label = "meta only"
+	elif not sets.is_empty():
+		label = ", ".join(sets) if sets.size() <= 2 else "%d sets" % sets.size()
+	tool_sets_button.text = "Tools: %s" % label
+	tool_sets_button.tooltip_text = "Agent mode tool sets: %s. Use inherited sets to follow skills and preferences." % (", ".join(sets) if not sets.is_empty() else "all")
+	if tool_sets_button.get_popup().visible:
+		_populate_tool_sets()
+
+
+func _populate_tool_sets() -> void:
+	var popup: PopupMenu = tool_sets_button.get_popup()
+	popup.clear()
+	popup.add_check_item("Use inherited sets", 0)
+	popup.set_item_checked(0, chat_history.ToolSetOverride.is_empty())
+	popup.add_separator()
+	_tool_set_names.assign(_tool_manager.get_tool_set_counts().keys())
+	_tool_set_names.sort()
+	var enabled: Array[String] = _tool_manager._effective_tool_sets_for_history(chat_history)
+	for index: int in range(_tool_set_names.size()):
+		popup.add_check_item(_tool_set_names[index], 100 + index)
+		popup.set_item_checked(popup.get_item_index(100 + index), enabled.is_empty() or _tool_set_names[index] in enabled)
+
+
+func _on_tool_set_pressed(id: int) -> void:
+	if id == 0:
+		chat_history.ToolSetOverride = []
+	elif id >= 100 and id - 100 < _tool_set_names.size():
+		_tool_manager.toggle_tool_set(chat_history, _tool_set_names[id - 100])
 
 
 ## Model updates also arrive for background chats. Rendering must not dispatch

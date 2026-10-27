@@ -112,7 +112,7 @@ var ToolSetOverride: Array[String] = []:
 
 ## Active profile IDs for this chat (overrides agent/global profiles when non-empty)
 var ActiveSkills: Array[String] = []:
-	set(value): SingletonObject.call_deferred("save_state", false); ActiveSkills = value
+	set(value): SingletonObject.call_deferred("save_state", false); ActiveSkills = value; tool_sets_changed.emit()
 
 ## Chat-scoped knowledge acquired through knowledge tools.
 ## Each entry is a Dictionary with stable fields like id/type/title/content.
