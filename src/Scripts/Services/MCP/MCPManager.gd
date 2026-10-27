@@ -456,9 +456,42 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 	return all_filtered
 
 
-func _effective_tool_sets_for_history(history) -> Array[String]:
+func get_default_tool_sets() -> Array[String]:
+	var settings: MCPConfig = MCPConfig.new()
+	settings.load_config()
+	return settings.enabled_tool_groups.duplicate()
+
+
+func get_tool_set_counts() -> Dictionary:
+	var counts: Dictionary = {}
+	for tool: MCPToolDefinition in tool_registry.values():
+		if tool.server_name != "minerva" or tool.tool_set.is_empty() or tool.tool_set == "meta":
+			continue
+		var count: int = counts.get(tool.tool_set, 0)
+		counts[tool.tool_set] = count + 1
+	return counts
+
+
+func toggle_tool_set(history: ServiceHistory, set_name: String) -> void:
+	var sets: Array[String] = _effective_tool_sets_for_history(history).duplicate()
+	if sets.is_empty():
+		sets.assign(get_tool_set_counts().keys())
+	if set_name in sets:
+		sets.erase(set_name)
+	else:
+		sets.append(set_name)
+	# An empty override inherits; existing meta expresses no ordinary sets.
+	if sets.is_empty():
+		sets.append("meta")
+	history.ToolSetOverride = sets
+
+
+func _effective_tool_sets_for_history(history: Variant) -> Array[String]:
 	var effective_tool_sets: Array[String] = []
 	if history == null:
+		return effective_tool_sets
+	if "ToolSetOverride" in history and not history.ToolSetOverride.is_empty():
+		effective_tool_sets.assign(history.ToolSetOverride)
 		return effective_tool_sets
 	var skill_manager = SingletonObject.get_skill_manager()
 	if skill_manager:
@@ -471,7 +504,8 @@ func _effective_tool_sets_for_history(history) -> Array[String]:
 			if agent_def and not agent_def.skills.is_empty():
 				agent_skills = agent_def.skills
 		effective_tool_sets = skill_manager.get_effective_tool_sets(chat_skills, agent_skills)
-	return effective_tool_sets
+	# Empty overrides inherit the current default at evaluation time, never a snapshot.
+	return effective_tool_sets if not effective_tool_sets.is_empty() else get_default_tool_sets()
 
 
 func _tool_unavailable_reason(tool_name: String, history,
@@ -501,7 +535,7 @@ func _passes_tool_set_filter(tool, effective_tool_sets: Array[String]) -> bool:
 		return true
 	# If no filter active (empty = all), pass
 	if effective_tool_sets.is_empty():
-		return _is_tool_in_enabled_set(tool)
+		return true
 	# Check against effective profile tool_sets
 	return tool.tool_set in effective_tool_sets
 
@@ -738,28 +772,21 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 	return result
 
 
-## Check if a tool passes the current tool set filter.
-## Meta tools always pass. External (non-minerva) tools always pass.
-## For minerva tools: if _enabled_tool_sets is empty, all pass;
-## otherwise only tools whose tool_set is in the enabled list pass.
-func _is_tool_in_enabled_set(tool) -> bool:
-	if tool.server_name != "minerva":
-		return true
-	if tool.tool_set == "meta" or tool.tool_set.is_empty():
-		return true
-	if not minerva_server or minerva_server._enabled_tool_sets.is_empty():
-		return true
-	return tool.tool_set in minerva_server._enabled_tool_sets
+## Default-scoped callers pass no history; model requests pass their chat.
+func _is_tool_in_enabled_set(tool, history: Variant = null) -> bool:
+	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
+	return _passes_tool_set_filter(tool, sets)
 
 
 ## Get all available tools from all connected servers
-func get_available_tools() -> Array:
+func get_available_tools(history: Variant = null) -> Array:
 	var tools: Array = []
+	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
 		var server_name = tool.server_name
 		if server_name == "minerva":
-			if is_minerva_connected() and _is_tool_in_enabled_set(tool):
+			if is_minerva_connected() and _passes_tool_set_filter(tool, sets):
 				tools.append(tool)
 		elif is_server_connected(server_name):
 			tools.append(tool)
@@ -767,31 +794,24 @@ func get_available_tools() -> Array:
 
 
 ## Get tools formatted for LLM function calling (OpenAI format)
-func get_tools_for_openai() -> Array[Dictionary]:
+func get_tools_for_openai(history: Variant = null) -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
-	for tool_name in tool_registry:
-		var tool = tool_registry[tool_name]
-		var server_name = tool.server_name
-		var connected = (server_name == "minerva" and is_minerva_connected()) or is_server_connected(server_name)
-		if connected and _is_tool_in_enabled_set(tool):
+	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
+	for name: String in tool_registry:
+		if _tool_unavailable_reason(name, history, sets).is_empty():
+			var tool: MCPToolDefinition = tool_registry[name]
 			tools.append(tool.to_openai_format())
 	return tools
 
 
-## Get tools formatted for Claude/Anthropic
-func get_tools_for_anthropic() -> Array[Dictionary]:
+## Get tools formatted for Claude/Anthropic with the same chat eligibility.
+func get_tools_for_anthropic(history: Variant = null) -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
-	SingletonObject.verbose_log("[MCP] get_tools_for_anthropic() checking %d tools in registry..." % tool_registry.size())
-	for tool_name in tool_registry:
-		var tool = tool_registry[tool_name]
-		var server_name = tool.server_name
-		var is_minerva = server_name == "minerva"
-		var minerva_connected = is_minerva_connected() if is_minerva else false
-		var external_connected = is_server_connected(server_name) if not is_minerva else false
-		var connected = minerva_connected or external_connected
-		if connected and _is_tool_in_enabled_set(tool):
+	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
+	for name: String in tool_registry:
+		if _tool_unavailable_reason(name, history, sets).is_empty():
+			var tool: MCPToolDefinition = tool_registry[name]
 			tools.append(tool.to_anthropic_format())
-	SingletonObject.verbose_log("[MCP] get_tools_for_anthropic() returning %d tools (filtered from %d in registry)" % [tools.size(), tool_registry.size()])
 	return tools
 
 

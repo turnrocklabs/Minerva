@@ -39,7 +39,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 		return {"error": "no provider could be created for model %d" % agent_def.provider_enum_id}
 
 	# 2. Create ChatHistory
-	var history = ChatHistory.new(provider)
+	var history: ChatHistory = ChatHistory.new(provider)
 	history.HistoryName = "Agent: %s" % agent_def.name
 	history.AgentModeEnabled = true
 	history.AgenticSystemPrompt = agent_def.system_prompt
@@ -51,6 +51,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 	history.MaxToolCallRounds = agent_def.max_tool_call_rounds
 	history.IsAgentChat = true
 	history.AgentDefinitionId = agent_def.id
+	history.ToolSetOverride = agent_def.tool_sets.duplicate()
 
 	# 2b. Set active profiles from agent definition
 	if not agent_def.skills.is_empty():
@@ -60,7 +61,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 	if not agent_def.enabled_tools.is_empty():
 		var mcp = SingletonObject.get_mcp_manager()
 		if mcp:
-			var all_tools = mcp.get_available_tools()
+			var all_tools = mcp.get_available_tools(history)
 			var disabled: Array[String] = []
 			for tool_def in all_tools:
 				var tool_name: String = str(tool_def.name) if tool_def is MCPToolDefinition else str(tool_def)
@@ -75,7 +76,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 		var skill_instructions: String = resolved.get("instructions", "")
 		var mcp = SingletonObject.get_mcp_manager()
 		if mcp:
-			var all_tools = mcp.get_available_tools()
+			var all_tools = mcp.get_available_tools(history)
 			var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 			var disabled: Array[String] = []
 			for tool_def in all_tools:

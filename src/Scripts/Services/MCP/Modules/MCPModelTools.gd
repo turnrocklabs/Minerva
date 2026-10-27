@@ -249,7 +249,7 @@ func register_tools() -> void:
 
 	# Meta tools (tool set management)
 	server._register_tool("minerva_list_tool_sets",
-		"List all available tool sets with their tool counts and enabled status. Tool sets group related tools (e.g., 'autocoder', 'spreadsheet', 'chat'). Use this to discover what sets are available before enabling/disabling them.",
+		"List ordinary tool sets with their counts, this chat's effective sets and override, and the current defaults. No calling chat means an unfiltered external caller. Tool sets group related tools (e.g., 'autocoder', 'spreadsheet', 'chat'). Use this to discover what sets are available before enabling/disabling them.",
 		{
 			"type": "object",
 			"properties": {},
@@ -258,14 +258,14 @@ func register_tools() -> void:
 	, "meta")
 
 	server._register_tool("minerva_enable_tool_sets",
-		"Enable specific tool sets for this session. Only tools from enabled sets (plus meta tools) will be available. Pass an empty array to re-enable all sets.",
+		"Replace the calling chat's tool-set override for future requests. Meta and unscoped tools always pass. Pass an empty array to inherit skills and defaults. Requires a calling chat.",
 		{
 			"type": "object",
 			"properties": {
 				"sets": {
 					"type": "array",
 					"items": {"type": "string"},
-					"description": "List of tool set names to enable (e.g., ['autocoder', 'chat']). Pass empty array to enable all sets."
+					"description": "List of tool set names to enable (e.g., ['autocoder', 'chat']). Pass empty array to inherit skills and defaults."
 				}
 			},
 			"required": ["sets"]
@@ -273,7 +273,7 @@ func register_tools() -> void:
 	, "meta")
 
 	server._register_tool("minerva_disable_tool_sets",
-		"Disable specific tool sets for this session. Disabled sets' tools will not appear in tools/list and cannot be called.",
+		"Remove ordinary tool sets from the calling chat's effective sets for future requests. Meta and unscoped tools always pass; disabling the last ordinary set leaves meta only. Requires a calling chat.",
 		{
 			"type": "object",
 			"properties": {
@@ -325,6 +325,15 @@ func register_tools() -> void:
 			"required": []
 		}
 	, "utility")
+
+
+func handle_with_context(tool_name: String, arguments: Dictionary, context: MCPExecutionContext) -> Dictionary:
+	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
+	match tool_name:
+		"minerva_list_tool_sets": return _list_tool_sets(arguments, history)
+		"minerva_enable_tool_sets": return _enable_tool_sets(arguments, history)
+		"minerva_disable_tool_sets": return _disable_tool_sets(arguments, history)
+	return await handle(tool_name, arguments)
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
@@ -730,76 +739,52 @@ func _extend_budget(args: Dictionary) -> Dictionary:
 
 #region Meta Handlers
 
-func _list_tool_sets(_args: Dictionary) -> Dictionary:
-	var sets: Dictionary = {}
-	for tool_name in server.mcp_manager.tool_registry:
-		var tool = server.mcp_manager.tool_registry[tool_name]
-		if not tool.tool_set.is_empty():
-			sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
-
-	var enabled_info: Array = server._enabled_tool_sets.duplicate()
-	return {
-		"success": true,
-		"tool_sets": sets,
-		"enabled_sets": enabled_info,
-		"all_enabled": server._enabled_tool_sets.is_empty(),
-		"message": "All sets enabled" if server._enabled_tool_sets.is_empty() else "Filtered to: %s" % str(server._enabled_tool_sets)
-	}
+func _tool_set_manager() -> MCPManager:
+	var host: MinervaMCPServer = server
+	var manager: MCPManager = host.mcp_manager
+	return manager
 
 
-func _enable_tool_sets(args: Dictionary) -> Dictionary:
-	var sets: Array = args.get("sets", [])
-	if sets.is_empty():
-		# Empty array = enable all (clear filter)
-		server._enabled_tool_sets = []
-		_invalidate_public_catalog()
-		return {"success": true, "enabled_sets": [], "all_enabled": true, "message": "All tool sets enabled"}
-
-	server._enabled_tool_sets = sets.duplicate()
-	_invalidate_public_catalog()
-	return {
-		"success": true,
-		"enabled_sets": server._enabled_tool_sets.duplicate(),
-		"all_enabled": false,
-		"message": "Enabled tool sets: %s (meta tools always available)" % str(sets)
-	}
+func _list_tool_sets(_args: Dictionary, history: ServiceHistory = null) -> Dictionary:
+	var manager: MCPManager = _tool_set_manager()
+	var sets: Array[String] = manager._effective_tool_sets_for_history(history)
+	var override: Array[String] = []
+	if history != null:
+		override.assign(history.ToolSetOverride)
+	return {"success": true, "tool_sets": manager.get_tool_set_counts(),
+		"enabled_sets": sets, "all_enabled": sets.is_empty(),
+		"default_sets": manager.get_default_tool_sets(),
+		"override": override}
 
 
-func _disable_tool_sets(args: Dictionary) -> Dictionary:
-	var sets_to_disable: Array = args.get("sets", [])
-	if sets_to_disable.is_empty():
+func _enable_tool_sets(args: Dictionary, history: ServiceHistory = null) -> Dictionary:
+	if history == null:
+		return MCPToolUtils.error("calling chat required")
+	var sets: Array[String] = []
+	sets.assign(args.get("sets", []))
+	history.ToolSetOverride = sets
+	return _list_tool_sets({}, history)
+
+
+func _disable_tool_sets(args: Dictionary, history: ServiceHistory = null) -> Dictionary:
+	if history == null:
+		return MCPToolUtils.error("calling chat required")
+	var disabled: Array = args.get("sets", [])
+	if disabled.is_empty():
 		return MCPToolUtils.error("sets array required and must not be empty")
-
-	# If currently all-enabled, populate with all known sets minus the disabled ones
-	if server._enabled_tool_sets.is_empty():
-		var all_sets: Dictionary = {}
-		for tool_name in server.mcp_manager.tool_registry:
-			var tool = server.mcp_manager.tool_registry[tool_name]
-			if tool.server_name == server.SERVER_NAME and not tool.tool_set.is_empty() and tool.tool_set != "meta":
-				all_sets[tool.tool_set] = true
-		server._enabled_tool_sets = []
-		for set_name in all_sets:
-			if set_name not in sets_to_disable:
-				server._enabled_tool_sets.append(set_name)
-	else:
-		# Remove specified sets from enabled list
-		for set_name in sets_to_disable:
-			var idx = server._enabled_tool_sets.find(set_name)
-			if idx >= 0:
-				server._enabled_tool_sets.remove_at(idx)
-	_invalidate_public_catalog()
-
-	return {
-		"success": true,
-		"enabled_sets": server._enabled_tool_sets.duplicate(),
-		"disabled": sets_to_disable,
-		"message": "Disabled tool sets: %s" % str(sets_to_disable)
-	}
-
-
-func _invalidate_public_catalog() -> void:
-	if server.mcp_manager != null and server.mcp_manager.http_server != null:
-		server.mcp_manager.http_server.invalidate_tools_catalog("tool-set visibility changed")
+	var manager: MCPManager = _tool_set_manager()
+	var sets: Array[String] = manager._effective_tool_sets_for_history(history).duplicate()
+	if sets.is_empty():
+		sets.assign(manager.get_tool_set_counts().keys())
+	for name: String in sets.duplicate():
+		if name in disabled:
+			sets.erase(name)
+	if sets.is_empty():
+		sets.append("meta")
+	history.ToolSetOverride = sets
+	var result: Dictionary = _list_tool_sets({}, history)
+	result["disabled"] = disabled
+	return result
 
 #endregion
 

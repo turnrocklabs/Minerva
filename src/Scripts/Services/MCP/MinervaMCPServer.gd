@@ -734,6 +734,9 @@ func _register_tool_search() -> void:
 
 
 func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	var manager: MCPManager = mcp_manager
+	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(context.caller_chat_id) if context != null and context.origin != "http" else null
+	var effective_sets: Array[String] = manager._effective_tool_sets_for_history(history) if manager != null else []
 	var query: String = str(arguments.get("query", "")).strip_edges()
 	var category: String = str(arguments.get("category", ""))
 	var requested_activation: bool = arguments.get("activate", true)
@@ -774,9 +777,10 @@ func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Di
 		var tool: MCPToolDefinition = mcp_manager.tool_registry[name]
 		if tool.server_name != "minerva" and not mcp_manager.is_server_connected(tool.server_name):
 			continue
-		if tool.server_name == "minerva" and not _enabled_tool_sets.is_empty():
-			if tool.tool_set != "" and tool.tool_set != "meta" and tool.tool_set not in _enabled_tool_sets:
-				continue
+		if not manager._passes_tool_set_filter(tool, effective_sets):
+			continue
+		if history != null and name in history.DisabledTools:
+			continue
 		result["running"] = true
 		filtered.append(result)
 	var hints: Array[Dictionary] = []

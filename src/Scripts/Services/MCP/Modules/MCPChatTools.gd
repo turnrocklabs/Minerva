@@ -721,7 +721,7 @@ func _create_focused_chat(args: Dictionary, context: ExecutionContext) -> Dictio
 	# 4. Compute disabled set
 	var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 	var disabled: Array[String] = []
-	for tool_def in mcp.get_available_tools():
+	for tool_def in mcp.get_available_tools(history):
 		var tool_name: String = str(tool_def.name)
 		if tool_name not in resolved_tools or tool_name in discovery_tools:
 			disabled.append(tool_name)

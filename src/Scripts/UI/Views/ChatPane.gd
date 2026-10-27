@@ -1374,7 +1374,7 @@ func _on_focused_chat_create(config: Dictionary) -> void:
 	if mcp:
 		var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 		var disabled: Array[String] = []
-		for tool_def in mcp.get_available_tools():
+		for tool_def in mcp.get_available_tools(history):
 			var tool_name: String = str(tool_def.name)
 			if tool_name not in resolved_tools or tool_name in discovery_tools:
 				disabled.append(tool_name)
@@ -1756,7 +1756,7 @@ func _on_mcp_server_connected(server_name: String) -> void:
 		if not history.StaticToolMode or history.ConfiguredTools.is_empty():
 			continue
 		var disabled: Array[String] = []
-		for tool_def in mcp.get_available_tools():
+		for tool_def in mcp.get_available_tools(history):
 			var tool_name: String = str(tool_def.name)
 			if tool_name not in history.ConfiguredTools or tool_name in discovery_tools:
 				disabled.append(tool_name)
@@ -2059,7 +2059,7 @@ func _on_btn_inspect_pressed():
 	print("[Inspector] AgentModeEnabled=%s, has_set_tools=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools")])
 	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
 		var mcp = SingletonObject.get_mcp_manager()
-		var mcp_tools = mcp.get_tools_for_anthropic()
+		var mcp_tools = mcp.get_tools_for_anthropic(history)
 		print("[Inspector] Got %d tools from MCP" % mcp_tools.size())
 		if not mcp_tools.is_empty():
 			request_body["tools"] = mcp_tools
@@ -5747,7 +5747,7 @@ func _on_chat_header_agent_mode_toggled(toggled_on: bool, history: ChatHistory) 
 	if toggled_on:
 		# Initialize MCP manager if not already done
 		var mcp = SingletonObject.get_mcp_manager()
-		var tools = mcp.get_available_tools()
+		var tools = mcp.get_available_tools(history)
 		print("[Agent Mode] Enabled for '%s' with %d tools available" % [history.HistoryName, tools.size()])
 		if tools.is_empty():
 			push_warning("Agent Mode enabled but no MCP tools are available. Connect to MCP servers first.")

@@ -2,6 +2,8 @@ class_name ServiceHistory
 extends RefCounted
 
 signal settings_binding_changed()
+signal tool_sets_changed()
+
 signal agent_mode_changed(enabled: bool)
 
 # Don't reorder, only add new entries
@@ -100,6 +102,13 @@ var CallerDriven: bool = false:
 ## The AgentDefinition.id that spawned this chat (empty if manual)
 var AgentDefinitionId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); AgentDefinitionId = value
+
+## Empty inherits skill/default eligibility; non-empty is this chat's explicit sets.
+var ToolSetOverride: Array[String] = []:
+	set(value):
+		ToolSetOverride = value
+		SingletonObject.call_deferred("save_state", false)
+		tool_sets_changed.emit()
 
 ## Active profile IDs for this chat (overrides agent/global profiles when non-empty)
 var ActiveSkills: Array[String] = []:
@@ -251,6 +260,7 @@ static var SERIALIZER_FIELDS = [
 	"ReasoningSummary",
 	"IsAgentChat",
 	"CallerDriven",
+	"ToolSetOverride",
 	"AgentDefinitionId",
 	"ActiveSkills",
 	"AcquiredKnowledge",
@@ -428,6 +438,7 @@ func Serialize() -> Dictionary:
 		"ReasoningSummary": ReasoningSummary,
 		"IsAgentChat": IsAgentChat,
 		"CallerDriven": CallerDriven,
+		"ToolSetOverride": ToolSetOverride,
 		"AgentDefinitionId": AgentDefinitionId,
 		"ActiveSkills": ActiveSkills,
 		"AcquiredKnowledge": AcquiredKnowledge,
@@ -555,6 +566,10 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.IsAgentChat = data.get("IsAgentChat", false)
 	if data.has("CallerDriven"):
 		history.CallerDriven = data.get("CallerDriven", false)
+	if data.has("ToolSetOverride"):
+		var tool_sets: Array[String] = []
+		tool_sets.assign(data.get("ToolSetOverride", []))
+		history.ToolSetOverride = tool_sets
 	if data.has("AgentDefinitionId"):
 		history.AgentDefinitionId = data.get("AgentDefinitionId", "")
 	if data.has("ActiveSkills"):
