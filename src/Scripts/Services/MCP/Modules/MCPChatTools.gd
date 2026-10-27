@@ -704,7 +704,7 @@ func _create_focused_chat(args: Dictionary, context: ExecutionContext) -> Dictio
 	if resolved_tools.is_empty():
 		return MCPToolUtils.error("No tools resolved — provide skills or extra_tools")
 
-	var mcp = SingletonObject.get_mcp_manager()
+	var mcp: MCPManager = SingletonObject.get_mcp_manager()
 	if not mcp:
 		return MCPToolUtils.error("MCP manager not available")
 
@@ -721,7 +721,7 @@ func _create_focused_chat(args: Dictionary, context: ExecutionContext) -> Dictio
 	# 4. Compute disabled set
 	var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 	var disabled: Array[String] = []
-	for tool_def in mcp.get_available_tools(history):
+	for tool_def in mcp.tool_registry.values():
 		var tool_name: String = str(tool_def.name)
 		if tool_name not in resolved_tools or tool_name in discovery_tools:
 			disabled.append(tool_name)

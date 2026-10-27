@@ -59,9 +59,9 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 
 	# 3. Compute DisabledTools from enabled_tools allowlist
 	if not agent_def.enabled_tools.is_empty():
-		var mcp = SingletonObject.get_mcp_manager()
+		var mcp: MCPManager = SingletonObject.get_mcp_manager()
 		if mcp:
-			var all_tools = mcp.get_available_tools(history)
+			var all_tools: Array = mcp.tool_registry.values()
 			var disabled: Array[String] = []
 			for tool_def in all_tools:
 				var tool_name: String = str(tool_def.name) if tool_def is MCPToolDefinition else str(tool_def)
@@ -74,9 +74,9 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 		var resolved_tools: Array[String] = []
 		resolved_tools.assign(resolved.get("tools", []))
 		var skill_instructions: String = resolved.get("instructions", "")
-		var mcp = SingletonObject.get_mcp_manager()
+		var mcp: MCPManager = SingletonObject.get_mcp_manager()
 		if mcp:
-			var all_tools = mcp.get_available_tools(history)
+			var all_tools: Array = mcp.tool_registry.values()
 			var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 			var disabled: Array[String] = []
 			for tool_def in all_tools:

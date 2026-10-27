@@ -568,7 +568,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.CallerDriven = data.get("CallerDriven", false)
 	if data.has("ToolSetOverride"):
 		var tool_sets: Array[String] = []
-		tool_sets.assign(data.get("ToolSetOverride", []))
+		var saved_tool_sets: Array = data.get("ToolSetOverride", [])
+		tool_sets.assign(saved_tool_sets)
 		history.ToolSetOverride = tool_sets
 	if data.has("AgentDefinitionId"):
 		history.AgentDefinitionId = data.get("AgentDefinitionId", "")

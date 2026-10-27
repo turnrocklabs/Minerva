@@ -10,8 +10,6 @@ var skills: Array[SkillDefinition] = []
 ## Currently active entry IDs (global default)
 var active_skills: Array[String] = []
 
-## Computed merged tool sets from all active profiles (empty = all enabled)
-
 ## Tool names registered by active skill executables (for cleanup on deactivate)
 var _registered_skill_tools: Dictionary = {}  # skill_id -> tool_name
 
@@ -57,7 +55,6 @@ func _load_user_skills() -> void:
 	active_skills.clear()
 	for skill_id in active_data:
 		active_skills.append(str(skill_id))
-
 
 
 ## Save user skills and active state to config

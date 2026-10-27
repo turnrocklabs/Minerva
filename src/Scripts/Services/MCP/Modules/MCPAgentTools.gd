@@ -990,9 +990,9 @@ func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 
 	# 5b. Apply static tool mode if skills were provided
 	if static_tool_mode:
-		var mcp = SingletonObject.get_mcp_manager()
+		var mcp: MCPManager = SingletonObject.get_mcp_manager()
 		if mcp:
-			var all_tools = mcp.get_available_tools(history)
+			var all_tools: Array = mcp.tool_registry.values()
 			# Discovery tools are always suppressed in static mode
 			var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 			var disabled: Array[String] = []

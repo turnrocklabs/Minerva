@@ -1370,11 +1370,11 @@ func _on_focused_chat_create(config: Dictionary) -> void:
 	history.ConfiguredSkills = skill_names
 
 	# Compute DisabledTools: everything NOT in ConfiguredTools + discovery tools
-	var mcp = SingletonObject.get_mcp_manager()
+	var mcp: MCPManager = SingletonObject.get_mcp_manager()
 	if mcp:
 		var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 		var disabled: Array[String] = []
-		for tool_def in mcp.get_available_tools(history):
+		for tool_def in mcp.tool_registry.values():
 			var tool_name: String = str(tool_def.name)
 			if tool_name not in resolved_tools or tool_name in discovery_tools:
 				disabled.append(tool_name)
@@ -1748,7 +1748,7 @@ func _connect_mcp_signals() -> void:
 func _on_mcp_server_connected(server_name: String) -> void:
 	if server_name != "minerva":
 		return
-	var mcp = SingletonObject.get_mcp_manager()
+	var mcp: MCPManager = SingletonObject.get_mcp_manager()
 	if not mcp:
 		return
 	var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
@@ -1756,7 +1756,7 @@ func _on_mcp_server_connected(server_name: String) -> void:
 		if not history.StaticToolMode or history.ConfiguredTools.is_empty():
 			continue
 		var disabled: Array[String] = []
-		for tool_def in mcp.get_available_tools(history):
+		for tool_def in mcp.tool_registry.values():
 			var tool_name: String = str(tool_def.name)
 			if tool_name not in history.ConfiguredTools or tool_name in discovery_tools:
 				disabled.append(tool_name)

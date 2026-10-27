@@ -2231,11 +2231,11 @@ func _refresh_tool_set_checks() -> void:
 	var names: Array[String] = []
 	names.assign(counts.keys())
 	names.sort()
-	for set_name: String in names:
+	for tool_set_key: String in names:
 		var check: CheckButton = CheckButton.new()
-		check.text = "%s (%d tools)" % [set_name, counts[set_name]]
-		check.button_pressed = enabled.is_empty() or set_name in enabled
-		check.toggled.connect(_on_tool_set_check_toggled.bind(set_name))
+		check.text = "%s (%d tools)" % [tool_set_key, counts[tool_set_key]]
+		check.button_pressed = enabled.is_empty() or tool_set_key in enabled
+		check.toggled.connect(_on_tool_set_check_toggled.bind(tool_set_key))
 		_tool_set_checks_container.add_child(check)
 
 
@@ -2243,8 +2243,7 @@ func _on_tool_set_check_toggled(toggled_on: bool, tool_set_name: String) -> void
 	var manager: MCPManager = SingletonObject.mcp_manager
 	if manager == null:
 		return
-	var settings: MCPConfig = MCPConfig.new()
-	settings.load_config()
+	var settings: MCPConfig = manager.config
 	var sets: Array[String] = settings.enabled_tool_groups.duplicate()
 	var counts: Dictionary = manager.get_tool_set_counts()
 	if sets.is_empty():
@@ -2255,8 +2254,8 @@ func _on_tool_set_check_toggled(toggled_on: bool, tool_set_name: String) -> void
 	elif not toggled_on:
 		sets.erase(tool_set_name)
 	var all_enabled: bool = true
-	for set_name: String in counts:
-		if set_name not in sets:
+	for tool_set_key: String in counts:
+		if tool_set_key not in sets:
 			all_enabled = false
 			break
 	if all_enabled:

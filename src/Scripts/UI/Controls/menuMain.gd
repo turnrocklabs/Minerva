@@ -851,9 +851,15 @@ func _refresh_minerva_submenu() -> void:
 
 		# Reset to inherited eligibility at the top
 		ts_menu.add_check_item("Use inherited sets", 50)
-		var all_idx = ts_menu.get_item_index(50)
-		ts_menu.set_item_checked(all_idx, history != null and history.ToolSetOverride.is_empty())
+		var all_idx: int = ts_menu.get_item_index(50)
+		var inherits_sets: bool = history != null and history.ToolSetOverride.is_empty()
+		ts_menu.set_item_checked(all_idx, inherits_sets)
 		ts_menu.set_item_disabled(all_idx, history == null)
+		ts_menu.add_check_item("Meta only", 51)
+		var meta_index: int = ts_menu.get_item_index(51)
+		var meta_only: bool = enabled.size() == 1 and enabled[0] == "meta"
+		ts_menu.set_item_checked(meta_index, meta_only)
+		ts_menu.set_item_disabled(meta_index, true)
 
 		ts_menu.add_separator()
 
@@ -872,7 +878,7 @@ func _refresh_minerva_submenu() -> void:
 			var item_id: int = 100 + i
 			var is_enabled: bool = all_enabled or (tool_set_name in enabled)
 			ts_menu.add_check_item("%s (%d)" % [tool_set_name, count], item_id)
-			var item_idx = ts_menu.get_item_index(item_id)
+			var item_idx: int = ts_menu.get_item_index(item_id)
 			ts_menu.set_item_checked(item_idx, is_enabled)
 			ts_menu.set_item_disabled(item_idx, history == null)
 
@@ -1011,12 +1017,18 @@ func _refresh_tool_set_checks() -> void:
 	var enabled: Array[String] = manager._effective_tool_sets_for_history(history) if history != null else manager.get_default_tool_sets()
 	var inherit_index: int = popup.get_item_index(50)
 	if inherit_index >= 0:
-		popup.set_item_checked(inherit_index, history != null and history.ToolSetOverride.is_empty())
+		var inherits_sets: bool = history != null and history.ToolSetOverride.is_empty()
+		popup.set_item_checked(inherit_index, inherits_sets)
 		popup.set_item_disabled(inherit_index, history == null)
+	var meta_index: int = popup.get_item_index(51)
+	if meta_index >= 0:
+		var meta_only: bool = enabled.size() == 1 and enabled[0] == "meta"
+		popup.set_item_checked(meta_index, meta_only)
 	for index: int in range(_minerva_tool_set_names.size()):
 		var item_index: int = popup.get_item_index(100 + index)
 		if item_index >= 0:
-			popup.set_item_checked(item_index, enabled.is_empty() or _minerva_tool_set_names[index] in enabled)
+			var is_enabled: bool = enabled.is_empty() or _minerva_tool_set_names[index] in enabled
+			popup.set_item_checked(item_index, is_enabled)
 			popup.set_item_disabled(item_index, history == null)
 
 

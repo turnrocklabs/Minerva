@@ -761,7 +761,8 @@ func _enable_tool_sets(args: Dictionary, history: ServiceHistory = null) -> Dict
 	if history == null:
 		return MCPToolUtils.error("calling chat required")
 	var sets: Array[String] = []
-	sets.assign(args.get("sets", []))
+	var requested: Array = args.get("sets", [])
+	sets.assign(requested)
 	history.ToolSetOverride = sets
 	return _list_tool_sets({}, history)
 
@@ -773,15 +774,11 @@ func _disable_tool_sets(args: Dictionary, history: ServiceHistory = null) -> Dic
 	if disabled.is_empty():
 		return MCPToolUtils.error("sets array required and must not be empty")
 	var manager: MCPManager = _tool_set_manager()
-	var sets: Array[String] = manager._effective_tool_sets_for_history(history).duplicate()
-	if sets.is_empty():
-		sets.assign(manager.get_tool_set_counts().keys())
-	for name: String in sets.duplicate():
-		if name in disabled:
-			sets.erase(name)
-	if sets.is_empty():
-		sets.append("meta")
-	history.ToolSetOverride = sets
+	var ordinary_sets: Dictionary = manager.get_tool_set_counts()
+	for tool_set_key: String in disabled:
+		var current: Array[String] = manager._effective_tool_sets_for_history(history)
+		if ordinary_sets.has(tool_set_key) and (current.is_empty() or tool_set_key in current):
+			manager.toggle_tool_set(history, tool_set_key)
 	var result: Dictionary = _list_tool_sets({}, history)
 	result["disabled"] = disabled
 	return result

@@ -472,15 +472,15 @@ func get_tool_set_counts() -> Dictionary:
 	return counts
 
 
-func toggle_tool_set(history: ServiceHistory, set_name: String) -> void:
+func toggle_tool_set(history: ServiceHistory, tool_set_key: String) -> void:
 	var sets: Array[String] = _effective_tool_sets_for_history(history).duplicate()
 	if sets.is_empty():
 		sets.assign(get_tool_set_counts().keys())
-	if set_name in sets:
-		sets.erase(set_name)
+	if tool_set_key in sets:
+		sets.erase(tool_set_key)
 	else:
 		sets.erase("meta")
-		sets.append(set_name)
+		sets.append(tool_set_key)
 	# An empty override inherits; existing meta expresses no ordinary sets.
 	if sets.is_empty():
 		sets.append("meta")
@@ -492,7 +492,8 @@ func _effective_tool_sets_for_history(history: Variant) -> Array[String]:
 	if history == null:
 		return effective_tool_sets
 	if "ToolSetOverride" in history and not history.ToolSetOverride.is_empty():
-		effective_tool_sets.assign(history.ToolSetOverride)
+		var override: Array = history.ToolSetOverride
+		effective_tool_sets.assign(override)
 		return effective_tool_sets
 	var skill_manager = SingletonObject.get_skill_manager()
 	if skill_manager:
@@ -773,19 +774,13 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 	return result
 
 
-## Default-scoped callers pass no history; model requests pass their chat.
-func _is_tool_in_enabled_set(tool, history: Variant = null) -> bool:
-	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
-	return _passes_tool_set_filter(tool, sets)
-
-
 ## Get all available tools from all connected servers
 func get_available_tools(history: Variant = null) -> Array:
 	var tools: Array = []
 	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
 	for tool_name in tool_registry:
-		var tool = tool_registry[tool_name]
-		var server_name = tool.server_name
+		var tool: MCPToolDefinition = tool_registry[tool_name]
+		var server_name: String = tool.server_name
 		if server_name == "minerva":
 			if is_minerva_connected() and _passes_tool_set_filter(tool, sets):
 				tools.append(tool)
@@ -797,9 +792,10 @@ func get_available_tools(history: Variant = null) -> Array:
 ## Get tools formatted for LLM function calling (OpenAI format)
 func get_tools_for_openai(history: Variant = null) -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
+	var scoped_history: Object = history
 	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
 	for tool_name: String in tool_registry:
-		if _tool_unavailable_reason(tool_name, history, sets).is_empty():
+		if _tool_unavailable_reason(tool_name, scoped_history, sets).is_empty():
 			var tool: MCPToolDefinition = tool_registry[tool_name]
 			tools.append(tool.to_openai_format())
 	return tools
@@ -808,9 +804,10 @@ func get_tools_for_openai(history: Variant = null) -> Array[Dictionary]:
 ## Get tools formatted for Claude/Anthropic with the same chat eligibility.
 func get_tools_for_anthropic(history: Variant = null) -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
+	var scoped_history: Object = history
 	var sets: Array[String] = _effective_tool_sets_for_history(history) if history != null else get_default_tool_sets()
 	for tool_name: String in tool_registry:
-		if _tool_unavailable_reason(tool_name, history, sets).is_empty():
+		if _tool_unavailable_reason(tool_name, scoped_history, sets).is_empty():
 			var tool: MCPToolDefinition = tool_registry[tool_name]
 			tools.append(tool.to_anthropic_format())
 	return tools
