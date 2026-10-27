@@ -774,11 +774,16 @@ func _disable_tool_sets(args: Dictionary, history: ServiceHistory = null) -> Dic
 	if disabled.is_empty():
 		return MCPToolUtils.error("sets array required and must not be empty")
 	var manager: MCPManager = _tool_set_manager()
-	var ordinary_sets: Dictionary = manager.get_tool_set_counts()
-	for tool_set_key: String in disabled:
-		var current: Array[String] = manager._effective_tool_sets_for_history(history)
-		if ordinary_sets.has(tool_set_key) and (current.is_empty() or tool_set_key in current):
-			manager.toggle_tool_set(history, tool_set_key)
+	var sets: Array[String] = manager._effective_tool_sets_for_history(history).duplicate()
+	if sets.is_empty():
+		sets.assign(manager.get_tool_set_counts().keys())
+	# Remove selected sets even when their plugin is currently unregistered.
+	for tool_set_key: String in sets.duplicate():
+		if tool_set_key in disabled:
+			sets.erase(tool_set_key)
+	if sets.is_empty():
+		sets.append("meta")
+	history.ToolSetOverride = sets
 	var result: Dictionary = _list_tool_sets({}, history)
 	result["disabled"] = disabled
 	return result
