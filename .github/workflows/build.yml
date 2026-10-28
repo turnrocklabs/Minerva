@@ -238,7 +238,7 @@ jobs:
           src/bin/minerva-vt.dll
 
   build-windows-push:
-    timeout-minutes: 3
+    timeout-minutes: 6
     if: github.event_name == 'push'
     runs-on: windows-latest
     steps: *windows-native-steps
@@ -336,7 +336,7 @@ jobs:
           src/bin/libminerva-vt.so
 
   build-linux-push:
-    timeout-minutes: 3
+    timeout-minutes: 6
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps: *linux-native-steps
@@ -685,7 +685,7 @@ jobs:
           src/bin/libminerva-vt.dylib
 
   build-macos-push:
-    timeout-minutes: 3
+    timeout-minutes: 6
     if: github.event_name == 'push'
     runs-on: macos-15
     steps: *macos-native-steps
