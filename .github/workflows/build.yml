@@ -1111,7 +1111,7 @@ jobs:
           for target in macos-arm64 macos-amd64; do
             codesign --force --sign - "$MCP_ROOT/$target/minerva-json-schema-helper"
           done
-          codesign --force --deep --sign - Minerva.app
+          codesign --force --deep --preserve-metadata=entitlements --sign - Minerva.app
           codesign --verify --deep --strict Minerva.app
           echo "✓ .app signatures verified"
 
