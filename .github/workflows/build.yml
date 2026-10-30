@@ -707,6 +707,7 @@ jobs:
     runs-on: macos-15
     env:
       BLUETOOTH_USAGE: Minerva uses Bluetooth to pair your Smart Remote.
+      LOCAL_NETWORK_USAGE: Minerva plugins connect to devices on your local network, such as printers and instruments.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1184,6 +1185,11 @@ jobs:
           declared=$(plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$APP/Contents/Info.plist" || true)
           if [ "$declared" != "$BLUETOOTH_USAGE" ]; then
             echo "::error::Info.plist NSBluetoothAlwaysUsageDescription is '$declared', expected '$BLUETOOTH_USAGE'"
+            fail=1
+          fi
+          declared=$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP/Contents/Info.plist" || true)
+          if [ "$declared" != "$LOCAL_NETWORK_USAGE" ]; then
+            echo "::error::Info.plist NSLocalNetworkUsageDescription is '$declared', expected '$LOCAL_NETWORK_USAGE'"
             fail=1
           fi
           [ "$fail" -eq 0 ] || exit 1
