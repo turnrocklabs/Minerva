@@ -248,15 +248,26 @@ func stop_http_server() -> void:
 		_server_pid = -1
 
 
+## Whether this process can bind 127.0.0.1:`port` right now. Asked by
+## listening, not by connecting: on the macOS 15.8 runner image a connect to a
+## closed loopback port reports CONNECTED, so port_open cannot tell free from
+## busy there (bug 01a18c0a33c9).
+static func port_free(port: int) -> bool:
+	var server := TCPServer.new()
+	var err := server.listen(port, "127.0.0.1")
+	server.stop()
+	return err == OK
+
+
 # A random port in 30000-49000 where neither it nor the next one (some tests
-# serve a second fixture there) accepts connections yet. Checked, not
-# assumed: on Windows http.server binds with SO_REUSEADDR, which succeeds
-# over another process's listener, and that listener may then answer.
+# serve a second fixture there) is bound yet. Checked, not assumed: on
+# Windows http.server binds with SO_REUSEADDR, which succeeds over another
+# process's listener, and that listener may then answer.
 func random_high_port() -> int:
 	var port := 30000
 	for _i in 20:
 		port = randi_range(30000, 49000)
-		if not port_open(port) and not port_open(port + 1):
+		if port_free(port) and port_free(port + 1):
 			return port
 	print("  random_high_port: no free pair found; using busy port %d" % port)
 	return port
