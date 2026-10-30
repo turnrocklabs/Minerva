@@ -263,6 +263,7 @@ class Harness:
         self.backend.fixture('docket_project_add', path=str(seed), create=False)
         prompt = next(i for i in items if i.get('type') == 'prompt' and i.get('status') == 'active')
         self.backend.fixture('docket_update', project=name, id=prompt['id'], prompt_text=prompt['prompt_text'] + '\n' + SENTINEL)
+        self.backend.fixture('docket_flush', project=name)  # Settle canonical bytes before any fixture copy.
         read = self.backend.fixture('docket_get', project=name, id=prompt['id'], include=[])
         if SENTINEL not in read.get('prompt_text', ''):
             raise RuntimeError('Prompt fixture mutation missing')
@@ -288,9 +289,10 @@ class Harness:
         # Identical step at red/green: a healthy baseline is a recorded no-op.
         recovery: dict[str, Any] = {'scenario': 'a-recovery', 'kind': 'fixture_step', 'performed': False}
         self.report['launches'].append(recovery)
-        if observed['master_path'] != str(self.user / 'master.dct'):
-            recovery['performed'] = True
-            try:
+        sentinel_step: dict[str, Any] | None = None
+        try:
+            if observed['master_path'] != str(self.user / 'master.dct'):
+                recovery['performed'] = True
                 if any(p['name'] == 'master' for p in projects):
                     self.backend.fixture('docket_project_remove', name='master')
                 self.bootstrap()
@@ -299,32 +301,34 @@ class Harness:
                 recovery['attached'] = baseline['attached']
                 if 'error' in reconnect or baseline['master_path'] != str(self.user / 'master.dct') or baseline['attached'] is not True:
                     raise RuntimeError('Independent swap baseline unavailable')
-            except (OSError, ValueError, KeyError, RuntimeError, http.client.HTTPException) as error:
-                recovery.update(success=False, failure_type=type(error).__name__)
-                initial = self.driver['initial_product_errors']
-                if not (initial['bootstrap_collision'] and initial['clock'] == 'policy_unavailable'):
-                    raise
-                for assertion in ASSERTIONS[5:13]:
-                    self.check(assertion, lambda: False, not_run='collision_recovery_failed')
-                self.close()
-                return
-        else:
-            recovery['attached'] = observed['attached']
-        recovery['success'] = True
-        before_projects = self.backend.fixture('docket_project_list')['projects']
-        sentinel_step: dict[str, Any] = {'scenario': 'a-sentinel', 'kind': 'fixture_step', 'performed': False,
-                                        'projects_before': [{'name': p['name'], 'path': p['path']} for p in before_projects]}
-        self.report['launches'].append(sentinel_step)
-        if not any(p['name'] == 'minerva-seed' for p in before_projects):
-            sentinel_step['performed'] = True
-            renamed = self.private / 'sentinel-seed.dct'
-            copy_fixture(seed, renamed, 'minerva-seed')
-            self.backend.fixture('docket_project_add', path=str(renamed), create=False)
-        after_projects = self.backend.fixture('docket_project_list')['projects']
-        sentinel_step['projects_after'] = [{'name': p['name'], 'path': p['path']} for p in after_projects]
-        sentinel_read = self.backend.fixture('docket_get', project='minerva-seed', id=prompt['id'], include=[])
-        if SENTINEL not in sentinel_read.get('prompt_text', ''):
-            raise RuntimeError('Loaded seed sentinel is absent')
+            else:
+                recovery['attached'] = observed['attached']
+            recovery['success'] = True
+            before_projects = self.backend.fixture('docket_project_list')['projects']
+            sentinel_step = {'scenario': 'a-sentinel', 'kind': 'fixture_step', 'performed': False,
+                             'projects_before': [{'name': p['name'], 'path': p['path']} for p in before_projects]}
+            self.report['launches'].append(sentinel_step)
+            if not any(p['name'] == 'minerva-seed' for p in before_projects):
+                sentinel_step['performed'] = True
+                renamed = self.private / 'sentinel-seed.dct'
+                copy_fixture(seed, renamed, 'minerva-seed')
+                self.backend.fixture('docket_project_add', path=str(renamed), create=False)
+            after_projects = self.backend.fixture('docket_project_list')['projects']
+            sentinel_step['projects_after'] = [{'name': p['name'], 'path': p['path']} for p in after_projects]
+            sentinel_read = self.backend.fixture('docket_get', project='minerva-seed', id=prompt['id'], include=[])
+            if SENTINEL not in sentinel_read.get('prompt_text', ''):
+                raise RuntimeError('Loaded seed sentinel is absent')
+            sentinel_step['success'] = True
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, http.client.HTTPException) as error:
+            failed = sentinel_step if sentinel_step is not None else recovery
+            failed.update(success=False, failure_type=type(error).__name__)
+            initial = self.driver['initial_product_errors']
+            if not (initial['bootstrap_collision'] and initial['clock'] == 'policy_unavailable'):
+                raise
+            for assertion in ASSERTIONS[5:13]:
+                self.check(assertion, lambda: False, not_run='collision_recovery_failed')
+            self.close()
+            return
         observed = self.observe()
         composed = observed.get('prompt', {})
         self.check('seed_prompt_not_layered', lambda: bool(composed.get('prompt')) and 'error' not in composed and SENTINEL not in composed['prompt'])
@@ -332,8 +336,9 @@ class Harness:
         found = self.client.tool('minerva_get_skill', title=skill['title'])
         self.check('seed_skill_not_ambiguous', lambda: found.get('success') is True and found.get('id') == skill['id']
                    and found.get('origin') == 'docket' and found.get('project') == 'master')
+        prompt_text = composed.get('prompt') if isinstance(composed, dict) else None
         self.driver['initial_product_errors'].update(
-            sentinel_found=bool(composed.get('prompt')) and SENTINEL in composed['prompt'],
+            sentinel_found=isinstance(prompt_text, str) and bool(prompt_text) and SENTINEL in prompt_text,
             skill_error=found.get('code', found.get('error_code', '')))
         self.backend.fixture('docket_project_remove', name='master')
         legacy = self.private / 'legacy.dct'
@@ -354,6 +359,7 @@ class Harness:
         self.check('secret_set_refused', lambda: refused and secret.get('error_code') not in ('policy_unavailable', 'docket_not_ready')
                    and str(self.user / 'master.dct') in error_text)
         self.check('legacy_untouched', lambda: bool(secret) and refused
+                   and secret.get('error_code') not in ('policy_unavailable', 'docket_not_ready')
                    and hashlib.sha256(legacy.read_bytes()).digest() == hashlib.sha256(before).digest())
         self.backend.fixture('docket_project_remove', name='master')
         self.backend.fixture('docket_project_add', path=str(self.user / 'master.dct'), create=False)
@@ -503,7 +509,7 @@ def run() -> int:
                 raise RuntimeError('Assertion map incomplete')
             report['status'] = 'green' if all(c['passed'] for c in report['checks']) else 'red'
             return 0 if report['status'] == 'green' else 1
-    except (OSError, ValueError, KeyError, StopIteration, RuntimeError, http.client.HTTPException, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration, RuntimeError, http.client.HTTPException, subprocess.SubprocessError) as error:
         report['status'] = 'harness_or_prerequisite_failure'
         driver.update(failure_stage=stage, failure_type=type(error).__name__)
         return 90
