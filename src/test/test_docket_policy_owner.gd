@@ -2,7 +2,7 @@ extends "res://test/helpers/docket_owner_suite.gd"
 ## Headless test of the master policy as Minerva's governed calls meet it
 ## when the Docket plugin owns Minerva's projects: a policy blocks a call
 ## before it runs, a person's approval lets an agent retire it, a policy that
-## cannot be read refuses the call, no policy allows it, and a read overtaken
+## cannot be read permits it unenforced, no policy allows it, and a read overtaken
 ## by a newer one cannot allow what the newer one blocks. Then, with rules
 ## shaped like the shipped master's (a navigation blocked until a guide is
 ## read, a scope the read opens, a hint injected by short id): the knowledge a
@@ -119,7 +119,11 @@ extends RefCounted
 var tree: SceneTree = null
 var master := {"name": "master", "display_name": "Master", "path": "", "open_generation": "1"}
 var items := {}
+var extra_projects := []
 var query_fails := false
+func list_tools() -> Array:
+	return [{"name":"docket_project_bootstrap", "inputSchema":{"type":"object", "properties":{
+		"update_mode":{"type":"string", "enum":["replace_shipped"]}}}}]
 var queries := 0
 var held := {}
 ## Ids whose reads fail, and ids answered with another item's.
@@ -142,9 +146,9 @@ func call_tool(tool: String, arguments: Dictionary) -> Dictionary:
 			return {"version": arguments.version, "projects": []}
 		"docket_project_bootstrap":
 			master.path = str(arguments.path)
-			return {"status": "installed", "path": master.path, "project": master, "conflicts": [], "capability_gaps": []}
+			return {"status": "installed", "path": master.path, "project": master, "conflicts": [], "capability_gaps": [], "update_mode":arguments.get("update_mode", "")}
 		"docket_project_list":
-			return {"success": true, "projects": [master]}
+			return {"success": true, "projects": [master] + extra_projects}
 		"docket_query":
 			var number := queries
 			queries += 1
@@ -199,10 +203,13 @@ signal backend_tool_called(id: String, tool: String)
 var connection = null
 var guard := Callable()
 var running := true
+var user_stopped := false
+func person_stops(_id: String) -> int:
+	return 1 if user_stopped else 0
 func get_connection(_id: String):
 	return connection
 func get_plugin_status(_id: String) -> Dictionary:
-	return {"running": running}
+	return {"running": running, "state_name":"STOPPED" if user_stopped else "RUNNING"}
 func set_backend_tool_guard(_id: String, backend_guard: Callable) -> void:
 	guard = backend_guard
 """
@@ -338,6 +345,24 @@ func _test_policy_owner() -> void:
 	_connection = connection
 	_host = host
 
+	# The backend guard resolves defaults and checks a fresh opening before any write.
+	var own_master: Dictionary = connection.master.duplicate(true)
+	var expected: String = ProjectSettings.globalize_path("user://master.dct")
+	var default_secret := {"handle":"user/guard-test", "value":"x"}
+	var default_guard: String = await manager.guard.call("docket_secret_set", default_secret, "agent")
+	connection.extra_projects = [{"name":"foreign", "path":expected + ".foreign", "open_generation":"2"}]
+	var explicit_foreign: String = await manager.guard.call("docket_secret_set",
+		{"project":"foreign", "handle":"user/guard-test", "value":"x"}, "agent")
+	connection.master = own_master.duplicate(true)
+	connection.master.path = expected + ".foreign"
+	var swapped: String = await manager.guard.call("docket_secret_set",
+		{"project":"master", "handle":"user/guard-test", "value":"x"}, "agent")
+	connection.master = own_master
+	connection.extra_projects = []
+	check("secret guard defaults to own master and refuses foreign and newly swapped targets",
+		default_guard.is_empty() and default_secret.get("project") == "master"
+		and explicit_foreign.contains(expected) and swapped.contains(expected))
+
 	# A blocking master policy refuses the call before it runs.
 	var blocked := [0]
 	var on_blocked := func(_tool, _arguments, _result, _agent): blocked[0] += 1
@@ -391,30 +416,39 @@ func _test_policy_owner() -> void:
 	var startup: Dictionary = await _governed_call()
 	var server = _so.get_mcp_manager().minerva_server
 	var status: Dictionary = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
-	check("startup refuses immediately with observable retryability and no governed execution",
-		startup.get("error_code") == "docket_not_ready" and startup.get("retryable", false) \
-		and not _ran(startup) and status.get("error_code") == "docket_not_ready", str(startup))
+	check("startup allows ordinary calls without policy fields while readiness stays truthful",
+		_ran(startup) and status.get("error_code") == "docket_not_ready" and status.get("retryable", false), str(startup))
 	host.state = "unavailable"
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("RUNNING before plugin_ready remains retryable", status.get("retryable", false) and status.get("error_code") == "docket_not_ready", str(status))
 	manager.running = false
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("a stopped plugin remains non-retryable", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
+	check("an unavailable plugin does not block ordinary calls", _ran(await _governed_call()))
+	manager.user_stopped = true
+	var stopped: Dictionary = await _governed_call()
+	check("explicitly stopping Docket still refuses ordinary calls", not _ran(stopped)
+		and stopped.get("error_code") == "docket_stopped_by_user", str(stopped))
+	manager.user_stopped = false
 	manager.running = true
 	host.state = "failed"
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("failed setup remains non-retryable even with a running plugin", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
+	check("failed setup permits ordinary calls unenforced", _ran(await _governed_call()))
 	host.state = "ready"
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("the ungoverned readiness probe succeeds once Docket is ready", status.get("success", false), str(status))
 
-	# A policy that cannot be read refuses the call rather than allow it.
+	# A policy that cannot be read permits the ordinary call, with an internal indicator.
 	connection.query_fails = true
 	var unread := await _governed_call()
 	connection.query_fails = false
-	check("a policy read that fails refuses the call as policy_unavailable",
-		unread.get("allowed", true) == false and unread.get("error_code", "") == "policy_unavailable",
-		str(unread))
+	check("unreadable rules permit ordinary calls without policy fields",
+		_ran(unread) and not host.policy_unenforced_reason.is_empty()
+		and str(host.problems).contains("policy unenforced"), str(unread))
+	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
+	check("a successful policy refresh clears the internal indicator", status.get("success", false)
+		and host.policy_unenforced_reason.is_empty() and not str(host.problems).contains("policy unenforced"))
 
 	# A read overtaken by a newer one cannot allow what the newer one blocks:
 	# the first call's read (no policy) is held while a blocking policy

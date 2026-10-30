@@ -65,6 +65,7 @@ var state := "inactive"
 ## What is wrong now, one line each: what setting up the process could not
 ## do, and what the last update of the session could not.
 var problems: Array[String] = []
+var policy_unenforced_reason: String = ""
 ## Master items that could not take the shipped version (such as incompatible
 ## type pins): one line each. Independent local IDs are not offered for replacement.
 var notices: Array[String] = []
@@ -163,6 +164,22 @@ func session_projects() -> Array:
 ## The master's open descriptor, or {} when it is not open.
 func master_project() -> Dictionary:
 	return _descriptor_of(master_path) if not master_path.is_empty() else {}
+
+
+static func secrets_refusal() -> String:
+	return "secrets refused: the master project is not Minerva's own (expected %s)" % ProjectSettings.globalize_path(MASTER_USER)
+
+
+## Policy status is internal UI state; it never changes Docket's lifecycle.
+func set_policy_unenforced_reason(reason: String) -> void:
+	if policy_unenforced_reason == reason:
+		return
+	if not policy_unenforced_reason.is_empty():
+		problems.erase("policy unenforced: " + policy_unenforced_reason)
+	policy_unenforced_reason = reason
+	if not reason.is_empty():
+		problems.append("policy unenforced: " + reason)
+	state_changed.emit(state)
 
 
 ## Public vault control; no credential enters session persistence.
@@ -1063,7 +1080,7 @@ func _call(connection: Object, tool: String, arguments: Dictionary) -> Dictionar
 		# Once the request went out, no failure shows that nothing was changed:
 		# not a timeout or lost connection, not a reply that failed validation,
 		# not Docket's own error text (success false). All are `unconfirmed`.
-		return {"error": str(answered.get("error", answered.get("text", answered.get("error_message", "%s failed" % tool)))),
+		return {"error": str(answered.get("error", answered.get("text", answered.get("error_message", answered.get("message", "%s failed" % tool))))),
 			"unconfirmed": true}
 	return {"value": answered}
 
@@ -1162,6 +1179,12 @@ func _prepare() -> void:
 		return
 	var bootstrap_error: String = str(bootstrapped.get("error", ""))
 	if not bootstrap_error.is_empty():
+		await _refresh(connection, generation)
+		if _stale(connection, generation):
+			return
+		for project: Dictionary in projects:
+			if str(project.get("name", "")) == "master":
+				bootstrap_error += "; a project named master is open from %s" % str(project.get("path", ""))
 		_fail("the master could not be set up: %s" % bootstrap_error)
 		return
 	master_report = bootstrapped.value
@@ -1321,6 +1344,20 @@ func _guard(tool: String, arguments: Dictionary, caller: String = "agent", write
 
 func _guard_checks(tool: String, arguments: Dictionary, caller: String) -> String:
 	if is_attached() and tool == "docket_gui_open": return ""
+	if tool.begins_with("docket_secret_"):
+		var expected: String = ProjectSettings.globalize_path(MASTER_USER)
+		var refusal: String = secrets_refusal()
+		if not state in ["ready", "degraded"]:
+			return refusal
+		var listed: String = await _refresh(_connection, _generation)
+		var master: Dictionary = master_project()
+		if not listed.is_empty() or str(master.get("path", "")) != expected:
+			return refusal
+		var requested: String = str(arguments.get("project", ""))
+		var target: Dictionary = master if requested.is_empty() else _resolve(requested)
+		if str(target.get("path", "")) != expected:
+			return refusal
+		arguments["project"] = str(master.get("name", ""))
 	while state == "starting":
 		await state_changed
 	if state in ["inactive", "unavailable", "failed"]:
@@ -1451,6 +1488,8 @@ func _publish(more: Array = []) -> void:
 		now.append(str(problem))
 	if not master_path.is_empty() and master_project().is_empty():
 		now.append("the master project is not open")
+	if not policy_unenforced_reason.is_empty():
+		now.append("policy unenforced: " + policy_unenforced_reason)
 	var saved := _save_if_changed()
 	if not saved.is_empty():
 		now.append(saved)

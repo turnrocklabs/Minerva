@@ -81,10 +81,10 @@ static func _call(server: MinervaMCPServer, tool: String, arguments: Dictionary,
 		context: ExecutionContext) -> Dictionary:
 	var host: DocketHost = SingletonObject.docket_host
 	if host == null:
-		return {"error": "Docket is unavailable"}
+		return {"error": DocketHost.secrets_refusal()}
 	var target: Dictionary = await host.skill_target("")
 	if target.get("status", "") != "ok":
-		return {"error": target.get("message", "Docket master is unavailable")}
+		return {"error": DocketHost.secrets_refusal()}
 	if context.is_stopped():
 		return context.stopped_result()
 	arguments["project"] = str(target.project.name)

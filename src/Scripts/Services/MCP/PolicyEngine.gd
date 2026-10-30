@@ -10,8 +10,8 @@ extends RefCounted
 ##       print(result["error"])
 ##
 ## The master's policies are read through DocketHost for each admission. A
-## governed call is admitted only against rules that were read: when there is
-## no owner or the read fails, admit() refuses it.
+## governed call proceeds unenforced when its rules cannot be read, unless
+## the user explicitly stopped Docket. Policy queries still report availability.
 
 # ── Dependencies ───────────────────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ var _rules: Array[Dictionary] = []
 ## The plugin-read policy items the rules were compiled from (JSON), so
 ## unchanged items are not compiled again.
 var _compiled_from := ""
+var _reported_unavailable_reason := ""
 
 ## Plugin policy reads started, and the latest of them whose items were taken
 ## (refresh()): a read that finishes after a later one was taken is older
@@ -65,7 +66,7 @@ func reload() -> void:
 func refresh() -> String:
 	var host = _get_docket_host()
 	if host == null:
-		return "no Docket owns Minerva's projects"
+		return _report_availability(host, "no Docket owns Minerva's projects")
 	for attempt in READ_ATTEMPTS:
 		_reads_started += 1
 		var started := _reads_started
@@ -73,29 +74,44 @@ func refresh() -> String:
 		if read.get("changed", false) or started < _read_taken:
 			continue
 		if read.has("error"):
-			return str(read.error)
+			return _report_availability(host, str(read.error))
 		_read_taken = started
 		var fingerprint := JSON.stringify(read.items)
 		if fingerprint != _compiled_from:
 			_rules = _compile_all(read.items)
 			_compiled_from = fingerprint
-		return ""
-	return "Docket kept changing while the policies were read"
+		return _report_availability(host, "")
+	return _report_availability(host, "Docket kept changing while the policies were read")
+
+
+func _report_availability(host: Variant, reason: String) -> String:
+	if _reported_unavailable_reason != reason:
+		_reported_unavailable_reason = reason
+		print("[PolicyEngine] policy unenforced: %s" % reason if not reason.is_empty() else "[PolicyEngine] policy enforcement resumed")
+	if host is Object:
+		var owner: Object = host
+		if owner.has_method("set_policy_unenforced_reason"):
+			owner.call("set_policy_unenforced_reason", reason)
+	return reason
 
 
 ## The policy decision for a governed call, taken on the rules as they stand
-## now (see refresh()). When they could not be read, a refusal whose
-## error_code is "docket_not_ready" (retriable pickup/start) or
-## "policy_unavailable" and whose error says why; rules read
-## successfully with none among them allow the call.
+## now (see refresh()). Unreadable rules allow the call without enforcement;
+## explicitly stopping Docket retains its refusal. Availability queries use
+## unavailable_result instead of this admission decision.
 func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> Dictionary:
 	var why := await refresh()
 	if not why.is_empty():
-		return unavailable_result(why)
+		var host: Variant = _get_docket_host()
+		if host is Object:
+			var owner: Object = host
+			if owner.has_method("stopped_by_user") and bool(owner.call("stopped_by_user")):
+				return unavailable_result(why)
+		return {"allowed": true}
 	return evaluate(tool_name, arguments, caller_id)
 
 
-## A startup retry remains a refusal; policy is never skipped.
+## Explicit policy queries retain truthful availability and retry information.
 func unavailable_result(why: String) -> Dictionary:
 	var host = _get_docket_host()
 	if host != null and host.has_method("stopped_by_user") and host.stopped_by_user():
