@@ -63,14 +63,16 @@ class Client:
         self.sequence += 1
         return rpc(self.port, method, params, self.session, self.sequence)
 
-    def tool(self, name: str, **arguments: object) -> dict[str, Any]:
-        result = self.request('tools/call', {'name': name, 'arguments': arguments})
+    def tool(self, tool_name: str, **arguments: object) -> dict[str, Any]:
+        result = self.request('tools/call', {'name': tool_name, 'arguments': arguments})
         return result if isinstance(result, dict) else {'malformed_result': type(result).__name__}
 
-    def fixture(self, name: str, **arguments: object) -> dict[str, Any]:
-        result = self.tool(name, **arguments)
-        if 'error' in result or result.get('success') is False:
-            raise RuntimeError('Docket fixture refused: ' + name)
+    def fixture(self, tool_name: str, **arguments: object) -> dict[str, Any]:
+        result = self.tool(tool_name, **arguments)
+        code = result.get('code')
+        native_error = isinstance(code, (int, float)) and code < 0 and 'message' in result
+        if 'error' in result or result.get('success') is False or native_error:
+            raise RuntimeError('Docket fixture refused: ' + tool_name)
         return result
 
 
@@ -286,6 +288,23 @@ class Harness:
         self.driver['initial_product_errors'] = {'clock': call.get('error_code', ''),
                                                  'policy': reload.get('error_code', ''),
                                                  'bootstrap_collision': any('name already loaded' in p for p in observed['problems'])}
+        # Minerva currently flattens native bootstrap refusals. Ask the real
+        # Docket directly only in the proven name-collision preflight branch.
+        own_path = str(self.user / 'master.dct')
+        foreign_master = any(p['name'] == 'master' and p['path'] != own_path for p in projects)
+        own_loaded = any(p['path'] == own_path for p in projects)
+        collision_probe: dict[str, Any] = {'scenario': 'a-bootstrap-probe', 'kind': 'fixture_step', 'performed': False}
+        self.report['launches'].append(collision_probe)
+        if foreign_master and not own_loaded and seed_meta['project'] == 'master':
+            collision_probe['performed'] = True
+            native = self.backend.tool('docket_project_bootstrap', path=own_path,
+                                       content=base64.b64encode((self.repo / 'src/Data/master.dct').read_bytes()).decode(),
+                                       update_mode='replace_shipped')
+            message = native.get('message', '')
+            collision = (native.get('code') == -32602 and isinstance(message, str)
+                         and 'Bootstrap project name already loaded' in message and own_path in message)
+            collision_probe.update(collision=collision, error_text=message)
+            self.driver['initial_product_errors']['bootstrap_collision'] = collision
         # Identical step at red/green: a healthy baseline is a recorded no-op.
         recovery: dict[str, Any] = {'scenario': 'a-recovery', 'kind': 'fixture_step', 'performed': False}
         self.report['launches'].append(recovery)
