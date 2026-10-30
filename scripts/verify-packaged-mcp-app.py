@@ -210,35 +210,61 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
                   file=sys.stderr)
 
 
+def _private_docket_running(pid: int, root: Path) -> bool:
+    """Check identity before signalling, and distinguish exited Unix zombies."""
+    command = subprocess.run(["ps", "-p", str(pid), "-o", "stat=", "-o", "comm="],
+                             capture_output=True, text=True, encoding="utf-8", timeout=5, check=False)
+    if command.returncode == 1:
+        return False
+    fields = command.stdout.strip().split(maxsplit=1)
+    if command.returncode != 0 or len(fields) != 2:
+        raise RuntimeError("private Docket process identity is unavailable")
+    if fields[0].startswith("Z"):
+        return False
+    if sys.platform.startswith("linux"):
+        try:
+            executable = Path(f"/proc/{pid}/exe").resolve(strict=True)
+        except FileNotFoundError:
+            if not Path(f"/proc/{pid}").exists():
+                return False
+            raise
+    else:
+        executable = Path(fields[1]).resolve()
+    if (not executable.is_relative_to(root.resolve())
+            or executable.name.lower() not in ("docket", "docket.x86_64")):
+        raise RuntimeError("private Docket pid no longer names a Docket executable inside its disposable root")
+    return True
+
+
 def _stop_private_docket(root: Path) -> None:
-    """Retire only Docket registered in this disposable macOS profile."""
-    if sys.platform != "darwin":
+    """Retire only Docket registered in this disposable POSIX profile."""
+    if os.name != "posix":
         return
     for path in root.rglob("instance.json"):
         if path.parent.name != "Docket":
             continue
+        if not path.resolve().is_relative_to(root.resolve()):
+            raise RuntimeError("private Docket registration escapes its disposable root")
         record = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(record, dict) or not isinstance(record.get("profile"), str) or Path(record["profile"]).resolve() != path.parent.resolve():
             raise RuntimeError("private Docket registration does not match its profile")
         pid = record.get("pid")
         if type(pid) is not int or pid <= 1:
             raise RuntimeError("private Docket registration has invalid pid")
-        command = subprocess.run(["ps", "-p", str(pid), "-o", "comm="],
-                                 capture_output=True, text=True, encoding="utf-8", timeout=5, check=False)
-        if command.returncode == 1:
-            continue  # Already exited; no PID is signalled.
-        if command.returncode != 0 or not Path(command.stdout.strip()).name.lower().startswith("docket"):
-            raise RuntimeError("private Docket pid no longer names Docket")
+        if not _private_docket_running(pid, root):
+            continue
         try:
             os.kill(pid, signal.SIGTERM)
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
-                os.kill(pid, 0)
+                if not _private_docket_running(pid, root):
+                    break
                 time.sleep(0.05)
+            else:
+                raise RuntimeError("private Docket did not exit before profile cleanup")
         except ProcessLookupError:
-            print(f"exported native probe cleanup: private Docket pid={pid} exited")
-            continue
-        raise RuntimeError("private Docket did not exit before profile cleanup")
+            pass
+        print(f"exported native probe cleanup: private Docket pid={pid} exited")
 
 
 @dataclass
