@@ -224,7 +224,9 @@ func start_http_server(directory: String, port: int, timeout_sec: float = 15.0) 
 		if Time.get_ticks_msec() >= deadline:
 			break
 		await _tree.create_timer(0.2).timeout
-	print("  http.server: HTTP probe got result %d, status %d (expected 200/403/404)" % answer)
+	print("  http.server: HTTP probe on port %d got result %d, status %d (expected 200/403/404); server %s" % [
+		port, answer[0], answer[1],
+		"still running" if OS.is_process_running(_server_pid) else "exited"])
 	return false
 
 
@@ -259,14 +261,17 @@ static func port_free(port: int) -> bool:
 	return err == OK
 
 
-# A random port in 30000-49000 where neither it nor the next one (some tests
+# A random port in 10000-17999 where neither it nor the next one (some tests
 # serve a second fixture there) is bound yet. Checked, not assumed: on
 # Windows http.server binds with SO_REUSEADDR, which succeeds over another
-# process's listener, and that listener may then answer.
+# process's listener, and that listener may then answer. The band sits below
+# the fixed 18765 that test_marketplace_install_from_url serves on, which
+# answers on the macOS 15.8 runner image where 30000-49000 did not (bug
+# 01a18c0a33c9).
 func random_high_port() -> int:
-	var port := 30000
+	var port := 10000
 	for _i in 20:
-		port = randi_range(30000, 49000)
+		port = randi_range(10000, 17999)
 		if port_free(port) and port_free(port + 1):
 			return port
 	print("  random_high_port: no free pair found; using busy port %d" % port)
