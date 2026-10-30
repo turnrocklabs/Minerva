@@ -298,6 +298,8 @@ func _test_required_update_choices(port: int) -> void:
 			"fresh %s record defaults Auto-update on through ensure" % id)
 		if def == null:
 			return
+		if id == "docket" and not await _detach_docket_fixture():
+			return
 		await _pm.stop_plugin(id)
 		_pm.get_db().set_autostart(id, false)
 
@@ -341,6 +343,7 @@ func _test_required_update_choices(port: int) -> void:
 func _test_manual_update_button(port: int) -> void:
 	var ids: Array[String] = RequiredPlugins.ids()
 	var manual_jobs: Array[Object] = []
+	var docket_installed_version := ""
 	var feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var previous_enabled: bool = feature.is_enabled()
 	# This profile defaults Voice off. Enable only the detector fixture so a
@@ -350,6 +353,7 @@ func _test_manual_update_button(port: int) -> void:
 		_pm.get_db().set_auto_update(id, false)
 		_check(not (await _pm.start_plugin(id)).has("error"), "start installed %s before its manual upgrade" % id)
 		if id == "docket":
+			docket_installed_version = _pm.get_db().get_by_id(id).version
 			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
 			_docket_pid = record.get("pid", 0)
 			_docket_starts_before = FileAccess.get_file_as_string(_temp.path_join("docket-app/starts.txt"))
@@ -399,7 +403,7 @@ func _test_manual_update_button(port: int) -> void:
 			var pending_release: Dictionary = panel._update_entries.get(id, {})
 			_check(pending_release.get("version") == "9.9.12" and button.visible
 				and panel.find_children("*", "Label", true, false).any(func(label: Label) -> bool:
-					return label.is_visible_in_tree() and label.text.begins_with("Installed: 9.9.11; attached:")),
+					return label.is_visible_in_tree() and label.text.begins_with("Installed: %s; attached:" % docket_installed_version)),
 				"attached Docket keeps the discovered pending release separate from installed version")
 			var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
 			_check(record.get("pid", 0) == _docket_pid and _pm.endpoint_discovery.pid_alive.call(_docket_pid)
@@ -534,6 +538,24 @@ func _write_releases(port: int, plugin_ids: Array[String] = [RELAY], version: St
 		f.store_string(JSON.stringify(releases_by_repo[repo]))
 		f.close()
 	return true
+
+
+## Disconnecting Minerva leaves the external app alive. End the fixture via
+## its own lifecycle, then let the normal health sweep clear attachment state.
+func _detach_docket_fixture() -> bool:
+	var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
+	var pid := int(record.get("pid", 0))
+	var connection = _pm.get_connection("docket")
+	if pid > 0 and connection != null:
+		await connection.call_tool("fixture_shutdown", {})
+		await _until(func() -> bool: return not _pm.endpoint_discovery.pid_alive.call(pid), 5.0)
+		await _pm._run_health_checks()
+	var found: Dictionary = _pm.endpoint_discovery.discover()
+	var detached: bool = pid > 0 and not _pm.endpoint_discovery.pid_alive.call(pid) \
+		and not FileAccess.file_exists(_temp.path_join("docket-app/instance.json")) \
+		and not found.has("error") and not found.get("attached", false) and not _pm.is_attached("docket")
+	_check(detached, "owned Docket fixture exited and detached before managed update")
+	return detached
 
 
 func _until(ready: Callable, seconds: float = 60.0) -> void:
