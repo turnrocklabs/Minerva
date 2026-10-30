@@ -282,6 +282,7 @@ func _run() -> void:
 	var saved_host = _so.docket_host
 	await _test_policy_owner()
 	if _connection != null:
+		await _test_policy_indicator()
 		await _test_governed_knowledge()
 		await _test_skill_scopes()
 		await _test_recovery_tools()
@@ -479,6 +480,36 @@ func _call(tool: String, chat: String) -> Dictionary:
 func _rule(id: String, rule: Dictionary) -> Dictionary:
 	return {"id": id, "type": "policy", "status": "active", "title": "Rule %s" % id.right(4),
 		"description": "---policy-rule---\n%s\n---end-rule---" % JSON.stringify(rule)}
+
+
+# Exercise status rendering and real admission repeatedly during the same outage.
+func _test_policy_indicator() -> void:
+	var host = _make(HOST_SRC)
+	if host == null:
+		return
+	root.add_child(host)
+	host.state = "ready"
+	host.set_policy_unenforced_reason("temporary policy read failure")
+	host._publish()
+	var stayed_ready: bool = host.state == "ready"
+	host._fail("fixture outage")
+	var retained_marker: bool = str(host.problems).contains("policy unenforced")
+	host.set_policy_unenforced_reason("")
+	var notifications: Array[int] = [0]
+	host.state_changed.connect(func(_state: String) -> void: notifications[0] += 1)
+	var saved_host = _so.docket_host
+	_so.docket_host = host
+	var ran: bool = true
+	for _attempt: int in range(3):
+		ran = _ran(await _governed_call()) and ran
+	check("unchanged outages retain one stable reason and one indicator notification",
+		ran and notifications[0] == 1 and not host.policy_unenforced_reason.contains("policy unenforced")
+		and host.state == "failed", str(host.problems))
+	host.set_policy_unenforced_reason("")
+	check("policy status never degrades ready hosts or disappears from failed hosts",
+		stayed_ready and retained_marker and host.state == "failed" and host.problems == ["fixture outage"])
+	_so.docket_host = saved_host
+	_so.get_mcp_manager().minerva_server.policy_engine.reload()
 
 
 # Whether `result` refuses the call because rule `rule_id`'s knowledge `ref`

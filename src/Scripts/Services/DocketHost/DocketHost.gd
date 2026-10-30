@@ -88,6 +88,8 @@ var _connection: Object = null
 var _generation := -1
 # What setting up the current process could not do.
 var _setup_problems: Array[String] = []
+# Underlying host diagnostics; the informational policy marker is rendered separately.
+var _status_problems: Array[String] = []
 # Paths of ordinary projects to keep open, in order (the session), and the
 # session as last saved.
 var _session := PackedStringArray()
@@ -166,20 +168,24 @@ func master_project() -> Dictionary:
 	return _descriptor_of(master_path) if not master_path.is_empty() else {}
 
 
-static func secrets_refusal() -> String:
-	return "secrets refused: the master project is not Minerva's own (expected %s)" % ProjectSettings.globalize_path(MASTER_USER)
+static func secrets_refusal(detail: String = "") -> String:
+	var message: String = "secrets refused: the master project is not Minerva's own (expected %s)" % ProjectSettings.globalize_path(MASTER_USER)
+	return message if detail.is_empty() else message + ": " + detail
 
 
 ## Policy status is internal UI state; it never changes Docket's lifecycle.
 func set_policy_unenforced_reason(reason: String) -> void:
-	if policy_unenforced_reason == reason:
-		return
-	if not policy_unenforced_reason.is_empty():
-		problems.erase("policy unenforced: " + policy_unenforced_reason)
+	var changed: bool = policy_unenforced_reason != reason
 	policy_unenforced_reason = reason
-	if not reason.is_empty():
-		problems.append("policy unenforced: " + reason)
-	state_changed.emit(state)
+	_render_problems()
+	if changed:
+		state_changed.emit(state)
+
+
+func _render_problems() -> void:
+	problems = _status_problems.duplicate()
+	if not policy_unenforced_reason.is_empty():
+		problems.append("policy unenforced: " + policy_unenforced_reason)
 
 
 ## Public vault control; no credential enters session persistence.
@@ -347,7 +353,7 @@ func policy_items() -> Dictionary:
 	if not state in ["ready", "degraded"] and pickup_pending():
 		return {"error": "Docket is being installed/started — retry shortly"}
 	if not state in ["ready", "degraded"]:
-		return {"error": "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)}
+		return {"error": "Docket is unavailable: %s" % ("; ".join(_status_problems) if not _status_problems.is_empty() else state)}
 	var connection: Object = _connection
 	var generation := _generation
 	for gap in master_report.get("capability_gaps", []):
@@ -1096,6 +1102,7 @@ func _on_plugin_gone(id: String) -> void:
 		_connection = null
 		_generation = -1
 		projects = []
+		_seed_paths.clear()
 		_set_state("unavailable")
 
 
@@ -1128,12 +1135,14 @@ func _prepare() -> void:
 	_generation = generation
 	_setup_problems.clear()
 	_open_errors.clear()
-	problems.clear()
+	_status_problems.clear()
+	_render_problems()
 	notices.clear()
 	master_report = {}
 	master_path = ""
 	personal_path = ""
 	projects = []
+	_seed_paths.clear()
 	_set_state("starting")
 	var unavailable := capability_problem()
 	if not unavailable.is_empty():
@@ -1229,6 +1238,8 @@ func _prepare() -> void:
 			opened = await _open(connection, generation, path)
 			if _stale(connection, generation):
 				return
+		if str(opened.get("name", "")) == SEED_PROJECT:
+			continue
 		var kept := str(opened.get("path", path))
 		if kept != master_path and kept != personal_path and not kept in session:
 			session.append(kept)
@@ -1238,6 +1249,12 @@ func _prepare() -> void:
 		return
 	if not listed.is_empty():
 		_setup_problems.append(listed)
+	else:
+		var restored: PackedStringArray = PackedStringArray()
+		for path in _session:
+			if not path in _seed_paths:
+				restored.append(path)
+		_session = restored
 	_reconciled_paths = _open_paths()
 	_publish()
 
@@ -1282,11 +1299,14 @@ func _prepare_without_capabilities(connection: Object, generation: int, reason: 
 func _attached_project_path(wanted: String) -> String:
 	for project: Dictionary in projects:
 		var path := str(project.get("path", ""))
-		var same := path.simplify_path() == wanted.simplify_path()
-		if OS.get_name() == "Windows":
-			same = path.simplify_path().nocasecmp_to(wanted.simplify_path()) == 0
-		if same: return path
+		if _same_project_path(path, wanted): return path
 	return ""
+
+
+static func _same_project_path(left: String, right: String) -> bool:
+	if OS.get_name() == "Windows":
+		return left.simplify_path().nocasecmp_to(right.simplify_path()) == 0
+	return left.simplify_path() == right.simplify_path()
 
 
 # Opens the existing project at `path` (never creating it): its descriptor,
@@ -1344,6 +1364,8 @@ func _guard(tool: String, arguments: Dictionary, caller: String = "agent", write
 
 func _guard_checks(tool: String, arguments: Dictionary, caller: String) -> String:
 	if is_attached() and tool == "docket_gui_open": return ""
+	while state == "starting":
+		await state_changed
 	if tool.begins_with("docket_secret_"):
 		var expected: String = ProjectSettings.globalize_path(MASTER_USER)
 		var refusal: String = secrets_refusal()
@@ -1351,15 +1373,13 @@ func _guard_checks(tool: String, arguments: Dictionary, caller: String) -> Strin
 			return refusal
 		var listed: String = await _refresh(_connection, _generation)
 		var master: Dictionary = master_project()
-		if not listed.is_empty() or str(master.get("path", "")) != expected:
+		if not listed.is_empty() or not _same_project_path(str(master.get("path", "")), expected):
 			return refusal
 		var requested: String = str(arguments.get("project", ""))
 		var target: Dictionary = master if requested.is_empty() else _resolve(requested)
-		if str(target.get("path", "")) != expected:
+		if not _same_project_path(str(target.get("path", "")), expected):
 			return refusal
 		arguments["project"] = str(master.get("name", ""))
-	while state == "starting":
-		await state_changed
 	if state in ["inactive", "unavailable", "failed"]:
 		return "Docket is unavailable: %s" % ("; ".join(problems) if not problems.is_empty() else state)
 	if caller == "agent" and tool in PolicyApproval.TOOLS:
@@ -1488,13 +1508,12 @@ func _publish(more: Array = []) -> void:
 		now.append(str(problem))
 	if not master_path.is_empty() and master_project().is_empty():
 		now.append("the master project is not open")
-	if not policy_unenforced_reason.is_empty():
-		now.append("policy unenforced: " + policy_unenforced_reason)
 	var saved := _save_if_changed()
 	if not saved.is_empty():
 		now.append(saved)
-	problems = now
-	_set_state("degraded" if not problems.is_empty() else "ready")
+	_status_problems = now
+	_render_problems()
+	_set_state("degraded" if not _status_problems.is_empty() else "ready")
 	_vault_session.resume.call_deferred(self)
 
 
@@ -1534,7 +1553,8 @@ func _stale(connection: Object, generation: int) -> bool:
 
 func _fail(why: String) -> void:
 	_setup_problems.append(why)
-	problems = _setup_problems.duplicate()
+	_status_problems = _setup_problems.duplicate()
+	_render_problems()
 	push_error("[DocketHost] %s" % why)
 	_set_state("failed")
 
