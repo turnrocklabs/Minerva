@@ -105,7 +105,7 @@ func admit(tool_name: String, arguments: Dictionary, caller_id: String = "") -> 
 		var host: Variant = _get_docket_host()
 		if host is Object:
 			var owner: Object = host
-			if owner.has_method("stopped_by_user") and bool(owner.call("stopped_by_user")):
+			if owner.has_method("stopped_by_user") and owner.call("stopped_by_user") == true:
 				return unavailable_result(why)
 		return {"allowed": true}
 	return evaluate(tool_name, arguments, caller_id)
