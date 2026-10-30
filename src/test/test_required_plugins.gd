@@ -75,7 +75,9 @@ func _init() -> void:
 	await _test_repair_leaves_developer_copy()
 	await _test_first_install_keeps_old_choices()
 	await _test_required_plugin_is_kept()
-	await _test_required_update_choices(port)
+	if not await _test_required_update_choices(port):
+		_finish(1)
+		return
 	await _test_manual_update_button(port)
 	await _test_host_api_upgrade(port)
 	_finish(1 if _fail else 0)
@@ -266,25 +268,25 @@ func _test_required_plugin_is_kept() -> void:
 		"starting a missing required plugin names it and how to get it: %s" % [started])
 
 
-func _test_required_update_choices(port: int) -> void:
+func _test_required_update_choices(port: int) -> bool:
 	var plugin_ids: Array[String] = RequiredPlugins.ids()
 	# This case owns only records it creates in the suite's disposable profile.
 	for id: String in plugin_ids:
 		if _pm.get_db().has_plugin(id):
 			_check(false, "update-choice fixture requires a fresh %s record" % id)
-			return
+			return false
 	_update_choices_started = true
 	for id: String in plugin_ids:
 		if not _pack_required_plugin(id, "9.9.9"):
 			_check(false, "pack initial update-choice fixture for %s" % id)
-			return
+			return false
 	if not _write_releases(port, plugin_ids):
 		_check(false, "publish initial required-plugin fixtures")
-		return
+		return false
 	var registry := FileAccess.open(_temp.path_join("registry.json"), FileAccess.WRITE)
 	if registry == null:
 		_check(false, "write local update registry")
-		return
+		return false
 	registry.store_string(JSON.stringify({"registry_version": 2, "plugins": []}))
 	registry.close()
 	var queued: Dictionary = await RequiredPlugins.ensure(_pm)
@@ -297,9 +299,9 @@ func _test_required_update_choices(port: int) -> void:
 			and def != null and def.auto_update,
 			"fresh %s record defaults Auto-update on through ensure" % id)
 		if def == null:
-			return
+			return false
 		if id == "docket" and not await _detach_docket_fixture():
-			return
+			return false
 		await _pm.stop_plugin(id)
 		_pm.get_db().set_autostart(id, false)
 
@@ -322,10 +324,10 @@ func _test_required_update_choices(port: int) -> void:
 		for id: String in plugin_ids:
 			if not _pack_required_plugin(id, next_version):
 				_check(false, "pack newer update-choice fixture for %s" % id)
-				return
+				return false
 		if not _write_releases(port, plugin_ids, next_version):
 			_check(false, "publish newer required-plugin fixtures")
-			return
+			return false
 		var updates: Dictionary = await load("res://Scripts/Services/Plugins/PluginAutoUpdater.gd").run(
 			_pm, "http://127.0.0.1:%d/registry.json" % port)
 		for id: String in plugin_ids:
@@ -336,6 +338,7 @@ func _test_required_update_choices(port: int) -> void:
 			_check(def != null and def.auto_update == opted_in and updates.has(id) == opted_in
 				and def.version == (next_version if opted_in else "9.9.9"),
 				"update pass honors %s choice %s and only upgrades opted-in records" % [id, opted_in])
+	return true
 
 
 ## Real local releases, app manager/queue and actual panel button. Runtime
@@ -540,9 +543,21 @@ func _write_releases(port: int, plugin_ids: Array[String] = [RELAY], version: St
 	return true
 
 
-## Disconnecting Minerva leaves the external app alive. End the fixture via
-## its own lifecycle, then let the normal health sweep clear attachment state.
+func _docket_fixture_ready() -> bool:
+	var status: Dictionary = _pm.get_plugin_status("docket")
+	var found: Dictionary = _pm.endpoint_discovery.discover()
+	var connection = _pm.get_connection("docket")
+	return status.get("ready", false) and status.get("attached", false) \
+		and found.get("attached", false) and connection != null and connection.server_connected
+
+
+## Install-job DONE precedes the asynchronous required-plugin auto-start.
+## Wait for the expected live fixture before asking its lifecycle to end it.
 func _detach_docket_fixture() -> bool:
+	await _until(_docket_fixture_ready, 15.0)
+	if not _docket_fixture_ready():
+		_check(false, "owned Docket fixture auto-start reached ready/attached before shutdown")
+		return false
 	var record: Dictionary = _pm.endpoint_discovery.discover().get("record", {})
 	var pid := int(record.get("pid", 0))
 	var connection = _pm.get_connection("docket")
