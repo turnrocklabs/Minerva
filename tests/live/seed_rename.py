@@ -283,7 +283,8 @@ class Harness:
         reload = self.client.tool('minerva_policy_reload')
         self.check('policy_enforced', lambda: reload.get('success') is True and reload.get('rules_loaded', 0) > 0)
         meta, current = snapshot(self.user / 'master.dct')
-        self.check('fresh_install_meta', lambda: bool(meta) and meta.get('project') == 'master' and len(current) == len(items)
+        self.check('fresh_install_meta', lambda: bool(meta) and meta.get('project') == 'master' and bool(items)
+                   and {i['id'] for i in items}.issubset({i['id'] for i in current})
                    and all(meta.get(k) == seed_meta[k] for k in ('version', 'id_prefix')))
         self.driver['initial_product_errors'] = {'clock': call.get('error_code', ''),
                                                  'policy': reload.get('error_code', ''),
