@@ -211,12 +211,17 @@ func start_http_server(directory: String, port: int, timeout_sec: float = 15.0) 
 
 	# Stage 2: HTTP request returns 200/403/404 (proves the server is HTTP,
 	# not a leftover process from a different protocol), asked again until
-	# the timeout in case the first request lands before it serves.
-	var deadline := Time.get_ticks_msec() + int(timeout_sec * 1000)
+	# the deadline in case the first request lands before it serves. The
+	# deadline is at least a minute: on the macOS 15.8 runner image stage 1
+	# passes before Python has bound (a connect to a closed loopback port
+	# reports CONNECTED there), so this stage carries the whole wait.
+	var started := Time.get_ticks_msec()
+	var deadline := started + int(max(timeout_sec, 60.0) * 1000)
 	var answer := [HTTPRequest.RESULT_NO_RESPONSE, 0]
 	while true:
 		answer = await _http_probe(port)
 		if answer[1] in [200, 403, 404]:
+			print("  http.server: port %d answered after %.1fs" % [port, (Time.get_ticks_msec() - started) / 1000.0])
 			return true
 		if not OS.is_process_running(_server_pid):
 			print("  http.server: exited after opening port %d" % port)
@@ -227,6 +232,9 @@ func start_http_server(directory: String, port: int, timeout_sec: float = 15.0) 
 	print("  http.server: HTTP probe on port %d got result %d, status %d (expected 200/403/404); server %s" % [
 		port, answer[0], answer[1],
 		"still running" if OS.is_process_running(_server_pid) else "exited"])
+	var out := []
+	OS.execute("curl", ["-s", "-m", "5", "-o", "/dev/null", "-w", "%{http_code} %{errormsg}", "http://127.0.0.1:%d/" % port], out, true)
+	print("  http.server: curl says: %s" % " ".join(out).strip_edges())
 	return false
 
 
