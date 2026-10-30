@@ -17,6 +17,8 @@ var _job_id: String = ""
 var _after_seq: int = 0
 var _phase: String = ""
 var _last_poll_ms: int = -1
+var _submit_attempted: bool = false
+var _provider_failure: Dictionary = {}
 
 func _init(ask: Callable, online: Callable, pause: Callable, uuid: Callable,
 		persist: Callable, status: Callable, item: ChatHistoryItem) -> void:
@@ -30,10 +32,15 @@ func _init(ask: Callable, online: Callable, pause: Callable, uuid: Callable,
 
 func cancel() -> void:
 	_cancelled = true
-	if not _job_id.is_empty() and _online.call():
-		_ask.call("cancel", {"job_id": _job_id}) # Best effort; no new generation.
+	# run() retains ownership until the in-flight submit settles and its remote
+	# job is cancelled, including when registration must first reconnect.
 
 func _failure(code: String) -> Dictionary:
+	if code in TERMINAL and not _provider_failure.is_empty():
+		var message: String = str(_provider_failure.get("error_message",
+			_provider_failure.get("error", _provider_failure.get("code", code))))
+		return {"success": false, "error_code": _provider_failure.get("error_code", code),
+			"error_message": message, "provider_failure": _provider_failure.duplicate(true)}
 	return {"success": false, "error_code": code, "error_message": "Async chat: %s" % code}
 
 func _wait(seconds: float) -> void:
@@ -48,6 +55,8 @@ func _request(action: String, data: Dictionary) -> Dictionary:
 		return _failure("cancelled")
 	if action == "events":
 		_last_poll_ms = Time.get_ticks_msec()
+	elif action == "submit":
+		_submit_attempted = true
 	return await _ask.call(action, data)
 
 func _save(item: ChatHistoryItem) -> void:
@@ -70,6 +79,40 @@ func _lookup(submission_id: String) -> Dictionary:
 	return _failure("cancelled")
 
 func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
+	_submit_attempted = not item.PendingJob.is_empty()
+	var result: Dictionary = await _run(input, item, model)
+	if _cancelled:
+		await _cancel_remote(item)
+		return _failure("cancelled")
+	return result
+
+func _cancel_remote(item: ChatHistoryItem) -> void:
+	if not _submit_attempted:
+		return
+	var submission_id: String = str(item.PendingJob.get("submission_id", ""))
+	while not _job_id.is_empty() or not submission_id.is_empty():
+		while not _online.call():
+			await _pause.call(0.25)
+		# Do not use _request: cancellation stops inference polling, but must
+		# not stop this query-only reconciliation or send another submission.
+		var action: String = "lookup" if _job_id.is_empty() else "cancel"
+		var args: Dictionary = {"submission_id": submission_id} if _job_id.is_empty() else {"job_id": _job_id}
+		var reply: Dictionary = await _ask.call(action, args)
+		if reply.get("success", false):
+			var value: Dictionary = reply.get("value", {})
+			if action == "cancel" or (value.get("found") is bool and value.found == false):
+				item.PendingJob = {}
+				await _save(item)
+				return
+			_job_id = str(value.get("job_id", ""))
+		elif reply.get("remote_error", false) and (str(reply.get("error_code", "")) in ["SUBMISSION_EXPIRED", "RESULT_EXPIRED"] or (action == "cancel" and reply.get("error_code") == "NOT_FOUND")):
+			item.PendingJob = {}
+			await _save(item)
+			return
+		# SUBMISSION_IN_FLIGHT and transport uncertainty are not absence.
+		await _pause.call(5.0)
+
+func _run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 	var resumed: bool = not item.PendingJob.is_empty()
 	var submission_id: String = str(item.PendingJob.get("submission_id", "")) if resumed else str(_uuid.call())
 	if not resumed:
@@ -159,10 +202,13 @@ func _result(item: ChatHistoryItem, state: String) -> Dictionary:
 	while not _cancelled:
 		var reply: Dictionary = await _request("result", {"job_id": _job_id})
 		if reply.get("success", false):
+			var value: Dictionary = reply.get("value", {})
+			_accept_failure(value.get("status", {}))
 			item.PendingJob = {}
 			await _save(item)
-			return {"success": state == "completed", "value": reply.get("value", {}).get("response", {}),
-				"error_code": state, "error_message": "Async chat ended: %s" % state}
+			if state != "completed":
+				return _failure(state)
+			return {"success": true, "value": value.get("response", {})}
 		if reply.get("remote_error", false) and str(reply.get("error_code", "")) in ["RESULT_EXPIRED", "RESULT_UNAVAILABLE", "NOT_FOUND"]:
 			item.PendingJob = {}
 			await _save(item)
@@ -176,6 +222,7 @@ func _number(value: Variant) -> int:
 	return -1
 
 func _accept_page(page: Dictionary) -> void:
+	_accept_failure(page.get("status", {}))
 	# Gaps and lost rings need no text reconstruction: only observed channel
 	# metadata is shown, and the authoritative full text still comes from result.
 	for raw: Variant in page.get("events", []):
@@ -186,3 +233,15 @@ func _accept_page(page: Dictionary) -> void:
 		_after_seq = last
 	if _status.is_valid():
 		_status.call(_phase, _after_seq)
+
+func _accept_failure(status: Dictionary) -> void:
+	# Normal running snapshots serialize an absent kind_progress as null.
+	var progress: Variant = status.get("kind_progress")
+	if not progress is Dictionary:
+		return
+	var value: Variant = progress.get("value")
+	if not value is Dictionary:
+		return
+	var failure: Variant = value.get("failure")
+	if failure is Dictionary:
+		_provider_failure = failure.duplicate(true)

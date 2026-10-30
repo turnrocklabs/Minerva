@@ -2472,9 +2472,11 @@ func _transition_state(id: String, new_state: int) -> void:
 
 ## Disconnect and free a connection, leaving the runtime entry intact.
 func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
-	# Broker providers share this owner ID. Stop their async jobs and transport
-	# requests before dropping the connection that would receive their replies.
-	SingletonObject.stop_all_requests.emit("plugin/%s" % id)
+	# The global stop signal also reaches unrelated MCP connections. Cancel
+	# only the providers owned by this plugin before disconnecting its replies.
+	var broker: CapabilityBroker = _get_capability_broker()
+	if broker != null:
+		broker.cancel_plugin_chats(id)
 	var rt: Dictionary = _runtime.get(id, {})
 	rt["ready"] = false
 	rt.erase("tools_notice")

@@ -49,6 +49,14 @@ const _PluginScopeGrants := preload("res://Scripts/Services/Plugins/PluginScopeG
 signal plugin_chat_invoked(plugin_id: String, provider_name: String, model_name: String)
 signal plugin_chat_completed(plugin_id: String, provider_name: String, model_name: String, duration_ms: int, ok: bool, tokens_in: int, tokens_out: int, error: String)
 
+## Each request keeps its provider alive until generation/cancellation settles.
+var _active_plugin_chats: Dictionary[BaseProvider, String] = {}
+
+func cancel_plugin_chats(plugin_id: String) -> void:
+	for provider: BaseProvider in _active_plugin_chats.keys():
+		if _active_plugin_chats[provider] == plugin_id:
+			provider.cancel_active_resquests()
+
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
 
@@ -2373,7 +2381,9 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	plugin_chat_invoked.emit(plugin_id, actual_provider_name, actual_model_name)
 	var _chat_start_us: int = Time.get_ticks_msec()
 
+	_active_plugin_chats[provider] = plugin_id
 	var bot_response: BotResponse = await provider.generate_content(prompt, additional_params)
+	_active_plugin_chats.erase(provider)
 
 	var _chat_duration_ms: int = Time.get_ticks_msec() - _chat_start_us
 
@@ -2392,6 +2402,12 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 		plugin_chat_completed.emit(plugin_id, actual_provider_name, actual_model_name,
 			_chat_duration_ms, false, 0, 0, str(bot_response.error))
 		provider.queue_free()
+		if bot_response.has_meta("provider_failure"):
+			var failure: Dictionary = bot_response.get_meta("provider_failure").duplicate(true)
+			failure["success"] = false
+			failure["error_message"] = str(bot_response.error)
+			failure["plugin_id"] = plugin_id
+			return failure
 		if bot_response.has_meta("error_code"):
 			var refusal := GenerationOptions.failure(str(bot_response.get_meta("error_code")), str(bot_response.error))
 			refusal["plugin_id"] = plugin_id

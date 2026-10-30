@@ -8,6 +8,10 @@ static var _classic_models: Dictionary = {}
 func cancel_active_resquests() -> void:
 	for job: CoreChatJob in _active_chat_jobs.duplicate():
 		job.cancel()
+	if not _active_chat_jobs.is_empty():
+		# Let submit/lookup finish so cancellation can recover the accepted ID.
+		# The job also owns the cancel request and its reconnect reconciliation.
+		return
 	for request in _active_core_requests.duplicate():
 		request.cancel()
 	super.cancel_active_resquests()
@@ -219,6 +223,8 @@ func _job_response(result: Dictionary) -> BotResponse:
 	if not result.get("success", false):
 		response.error = str(result.get("error_message", "Async chat failed."))
 		response.set_meta("error_code", str(result.get("error_code", "async_job_failed")))
+		if result.get("provider_failure") is Dictionary:
+			response.set_meta("provider_failure", result.provider_failure)
 	SingletonObject.chat_completed.emit(response)
 	return response
 
