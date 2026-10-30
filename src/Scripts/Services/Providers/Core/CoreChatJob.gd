@@ -88,6 +88,8 @@ func run(input: Dictionary, item: ChatHistoryItem, model: String) -> Dictionary:
 
 func _cancel_remote(item: ChatHistoryItem) -> void:
 	if not _submit_attempted:
+		item.PendingJob = {}
+		await _save(item)
 		return
 	var submission_id: String = str(item.PendingJob.get("submission_id", ""))
 	while not _job_id.is_empty() or not submission_id.is_empty():
