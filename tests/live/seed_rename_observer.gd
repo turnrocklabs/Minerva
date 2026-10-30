@@ -61,7 +61,7 @@ func _serve(command: Dictionary, docket_host: DocketHost, plugin_manager: Plugin
 
 func _snapshot(docket_host: DocketHost) -> Dictionary:
 	var prompt: Dictionary = await docket_host.system_prompt("agentic-base")
-	return {"state": docket_host.state, "master_path": docket_host.master_path,
+	return {"attached": docket_host.is_attached(), "state": docket_host.state, "master_path": docket_host.master_path,
 		"expected_master_path": ProjectSettings.globalize_path("user://master.dct"),
 		"problems": docket_host.problems.duplicate(), "master_report": docket_host.master_report.duplicate(true),
 		"prompt": prompt, "chat_prompt_readable": not prompt.has("error") and not docket_host.master_project().is_empty()}

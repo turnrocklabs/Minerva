@@ -5,7 +5,8 @@ before the real GUI starts. No login/model turn: observe ChatPane's Docket
 prompt prerequisite instead. Fixtures and raw logs stay on job tmpfs. Vault
 metadata preservation remains covered by Docket's MasterBootstrapPlan tests.
 After launch A's collision observations, an explicit fixture repair establishes
-an own-master baseline so the independent swap/recovery checks can run at red.
+an own-master baseline and the sentinel under minerva-seed, so prompt/skill
+leakage and the independent swap/recovery checks can all run at red.
 It never changes a recorded observation or any product source behaviour.
 """
 from __future__ import annotations
@@ -15,6 +16,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -50,10 +52,11 @@ ASSERTIONS = (
 class Client:
     """All MCP payloads are dynamic external JSON, including refused tool results."""
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, initialize: bool = True) -> None:
         self.port, self.sequence = port, 0
         self.session: dict[str, str] = {}
-        self.request('initialize', {'protocolVersion': '2025-03-26', 'capabilities': {},
+        if initialize:
+            self.request('initialize', {'protocolVersion': '2025-03-26', 'capabilities': {},
                                    'clientInfo': {'name': 'seed-rename-e2e', 'version': '1'}})
 
     def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -61,13 +64,55 @@ class Client:
         return rpc(self.port, method, params, self.session, self.sequence)
 
     def tool(self, name: str, **arguments: object) -> dict[str, Any]:
-        return self.request('tools/call', {'name': name, 'arguments': arguments})
+        result = self.request('tools/call', {'name': name, 'arguments': arguments})
+        return result if isinstance(result, dict) else {'malformed_result': type(result).__name__}
 
     def fixture(self, name: str, **arguments: object) -> dict[str, Any]:
         result = self.tool(name, **arguments)
         if 'error' in result or result.get('success') is False:
             raise RuntimeError('Docket fixture refused: ' + name)
         return result
+
+
+def offline_client(port: int) -> tuple[Client | None, bool]:
+    """Recognize explicit authentication refusal before rpc() discards status.
+
+    Transport/protocol failures remain harness errors. A real auth refusal is a
+    recorded failed no-login check; it never silently enables a credential path.
+    """
+    client = Client(port, initialize=False)
+    for method, params in (
+        ('initialize', {'protocolVersion': '2025-03-26', 'capabilities': {},
+                        'clientInfo': {'name': 'seed-rename-e2e', 'version': '1'}}),
+        ('tools/list', {}),
+    ):
+        client.sequence += 1
+        connection = http.client.HTTPConnection('127.0.0.1', port, timeout=45)
+        try:
+            connection.request('POST', '/mcp', json.dumps({'jsonrpc': '2.0', 'id': client.sequence,
+                                'method': method, 'params': params}),
+                               {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', **client.session})
+            response = connection.getresponse()
+            raw = response.read()
+            if response.status in (401, 403):
+                return None, False
+            if response.status != 200:
+                raise RuntimeError('Offline MCP protocol failure')
+            payload = json.loads(raw)
+            error = payload.get('error')
+            if error:
+                if re.search(r'authenticat|unauthori[sz]ed|forbidden|log[ -]?in', json.dumps(error), re.IGNORECASE):
+                    return None, False
+                raise RuntimeError('Offline MCP RPC failure')
+            for key in ('MCP-Session-Id', 'MCP-Protocol-Version'):
+                if response.getheader(key):
+                    client.session[key] = response.getheader(key)
+            if method == 'tools/list':
+                tools = payload.get('result', {}).get('tools')
+                return client, isinstance(tools, list) and bool(tools)
+        finally:
+            connection.close()
+    raise RuntimeError('Offline MCP discovery incomplete')
 
 
 def snapshot(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -100,7 +145,7 @@ class Harness:
         self.logs: list[Path] = []
         self.private = PRIVATE
         self.sequence = 0
-        self.client: Client
+        self.client: Client | None = None
         self.backend: Client
         self.user = PRIVATE
 
@@ -148,7 +193,11 @@ class Harness:
         if record['pid'] != self.docket.pid or int(record['endpoint']['port']) != port:
             raise RuntimeError('Docket registration does not belong to this driver')
         self.backend = Client(port)
-        self.backend.fixture('docket_schema_declare', schema=json.loads((self.repo / 'src/Data/docket_schema.json').read_text()), version='seed-e2e')
+        # Fixture item APIs run before Minerva starts. Declare exactly the host's
+        # schema/version so prompt_text and skill fields have their real meanings.
+        schema = (self.repo / 'src/Data/docket_schema.json').read_bytes()
+        self.backend.fixture('docket_schema_declare', schema=json.loads(schema),
+                             version='minerva-' + hashlib.sha256(schema).hexdigest())
         self.child_env = env
 
     def launch(self) -> dict[str, Any]:
@@ -157,7 +206,12 @@ class Harness:
         ready = self.wait(lambda: read_json(self.private / 'ready.json'))
         if ready.get('attached') is not True:
             raise RuntimeError('Standalone Docket attach prerequisite failed')
-        self.client = Client(int(ready['port']))
+        self.client, answered = offline_client(int(ready['port']))
+        if self.private.name == 'a':
+            self.check('mcp_answers_without_login', lambda: answered)
+        if self.client is None or not answered:
+            self.driver['prerequisite'] = 'mcp_requires_login_or_catalog_missing'
+            self.skip_remaining(self.driver['prerequisite'])
         observed = self.observe()
         self.report['launches'].append({'scenario': self.private.name, 'attached': True,
                                        'state': observed['state'], 'problems': observed['problems']})
@@ -173,8 +227,21 @@ class Harness:
             return value['result'] if value and value.get('sequence') == self.sequence else None
         return self.wait(answer)
 
-    def check(self, assertion: str, passed: bool) -> None:
-        self.report['checks'].append({'assertion': assertion, 'passed': bool(passed)})
+    def check(self, assertion: str, evaluate: Callable[[], bool], not_run: str = '') -> None:
+        result: dict[str, Any] = {'assertion': assertion, 'passed': False}
+        try:
+            result['passed'] = bool(evaluate())
+        except (TypeError, ValueError, KeyError, AttributeError, IndexError) as error:
+            result['evaluation_error'] = type(error).__name__
+        if not_run:
+            result['not_run'] = not_run
+        self.report['checks'].append(result)
+
+    def skip_remaining(self, reason: str) -> None:
+        recorded = {c['assertion'] for c in self.report['checks']}
+        for assertion in ASSERTIONS:
+            if assertion not in recorded:
+                self.check(assertion, lambda: False, not_run=reason)
 
     def bootstrap(self) -> None:
         source = self.private / 'own-shipment.dct'
@@ -200,58 +267,99 @@ class Harness:
         if SENTINEL not in read.get('prompt_text', ''):
             raise RuntimeError('Prompt fixture mutation missing')
         observed = self.launch()
-        tools = self.client.request('tools/list', {}).get('tools', [])
-        self.check('mcp_answers_without_login', bool(tools))
-        self.check('master_attached', observed['master_path'] == str(self.user / 'master.dct') and not observed['problems']
+        if self.client is None or self.driver.get('prerequisite'):
+            self.close()
+            return
+        self.check('master_attached', lambda: observed['master_path'] == str(self.user / 'master.dct') and not observed['problems']
                    and observed['chat_prompt_readable'])
         projects = self.backend.fixture('docket_project_list')['projects']
-        self.check('both_projects_listed', any(p['name'] == 'master' and p['path'] == str(self.user / 'master.dct') for p in projects)
+        self.check('both_projects_listed', lambda: any(p['name'] == 'master' and p['path'] == str(self.user / 'master.dct') for p in projects)
                    and any(p['name'] == name and p['path'] == str(seed) for p in projects) and name != 'master')
         call = self.client.tool('minerva_clock')
-        self.check('governed_call_proceeds', call.get('success') is True and isinstance(call.get('unix_timestamp'), (int, float)))
+        self.check('governed_call_proceeds', lambda: call.get('success') is True and isinstance(call.get('unix_timestamp'), (int, float)))
         reload = self.client.tool('minerva_policy_reload')
-        self.check('policy_enforced', reload.get('success') is True and reload.get('rules_loaded', 0) > 0)
+        self.check('policy_enforced', lambda: reload.get('success') is True and reload.get('rules_loaded', 0) > 0)
         meta, current = snapshot(self.user / 'master.dct')
-        self.check('fresh_install_meta', bool(meta) and meta.get('project') == 'master' and len(current) == len(items)
+        self.check('fresh_install_meta', lambda: bool(meta) and meta.get('project') == 'master' and len(current) == len(items)
                    and all(meta.get(k) == seed_meta[k] for k in ('version', 'id_prefix')))
-        composed = observed['prompt']
-        self.check('seed_prompt_not_layered', bool(composed.get('prompt')) and 'error' not in composed and SENTINEL not in composed['prompt'])
+        self.driver['initial_product_errors'] = {'clock': call.get('error_code', ''),
+                                                 'policy': reload.get('error_code', ''),
+                                                 'bootstrap_collision': any('name already loaded' in p for p in observed['problems'])}
+        # Identical step at red/green: a healthy baseline is a recorded no-op.
+        recovery: dict[str, Any] = {'scenario': 'a-recovery', 'kind': 'fixture_step', 'performed': False}
+        self.report['launches'].append(recovery)
+        if observed['master_path'] != str(self.user / 'master.dct'):
+            recovery['performed'] = True
+            try:
+                if any(p['name'] == 'master' for p in projects):
+                    self.backend.fixture('docket_project_remove', name='master')
+                self.bootstrap()
+                reconnect = self.observe('reconnect')
+                baseline = self.observe()
+                recovery['attached'] = baseline['attached']
+                if 'error' in reconnect or baseline['master_path'] != str(self.user / 'master.dct') or baseline['attached'] is not True:
+                    raise RuntimeError('Independent swap baseline unavailable')
+            except (OSError, ValueError, KeyError, RuntimeError, http.client.HTTPException) as error:
+                recovery.update(success=False, failure_type=type(error).__name__)
+                initial = self.driver['initial_product_errors']
+                if not (initial['bootstrap_collision'] and initial['clock'] == 'policy_unavailable'):
+                    raise
+                for assertion in ASSERTIONS[5:13]:
+                    self.check(assertion, lambda: False, not_run='collision_recovery_failed')
+                self.close()
+                return
+        else:
+            recovery['attached'] = observed['attached']
+        recovery['success'] = True
+        before_projects = self.backend.fixture('docket_project_list')['projects']
+        sentinel_step: dict[str, Any] = {'scenario': 'a-sentinel', 'kind': 'fixture_step', 'performed': False,
+                                        'projects_before': [{'name': p['name'], 'path': p['path']} for p in before_projects]}
+        self.report['launches'].append(sentinel_step)
+        if not any(p['name'] == 'minerva-seed' for p in before_projects):
+            sentinel_step['performed'] = True
+            renamed = self.private / 'sentinel-seed.dct'
+            copy_fixture(seed, renamed, 'minerva-seed')
+            self.backend.fixture('docket_project_add', path=str(renamed), create=False)
+        after_projects = self.backend.fixture('docket_project_list')['projects']
+        sentinel_step['projects_after'] = [{'name': p['name'], 'path': p['path']} for p in after_projects]
+        sentinel_read = self.backend.fixture('docket_get', project='minerva-seed', id=prompt['id'], include=[])
+        if SENTINEL not in sentinel_read.get('prompt_text', ''):
+            raise RuntimeError('Loaded seed sentinel is absent')
+        observed = self.observe()
+        composed = observed.get('prompt', {})
+        self.check('seed_prompt_not_layered', lambda: bool(composed.get('prompt')) and 'error' not in composed and SENTINEL not in composed['prompt'])
         skill = next(i for i in items if i.get('type') == 'skill')
         found = self.client.tool('minerva_get_skill', title=skill['title'])
-        self.check('seed_skill_not_ambiguous', found.get('success') is True and found.get('id') == skill['id']
+        self.check('seed_skill_not_ambiguous', lambda: found.get('success') is True and found.get('id') == skill['id']
                    and found.get('origin') == 'docket' and found.get('project') == 'master')
-        self.driver['initial_product_errors'] = {'clock': call.get('error_code', ''), 'policy': reload.get('error_code', ''),
-                                                 'bootstrap_collision': any('name already loaded' in p for p in observed['problems'])}
-        # Establish an independent swap baseline even when the first bootstrap failed.
-        if any(p['name'] == 'master' for p in projects):
-            self.backend.fixture('docket_project_remove', name='master')
-        self.bootstrap()
-        reconnect = self.observe('reconnect')
-        if 'error' in reconnect:
-            raise RuntimeError('Owned Docket reconnect failed')
-        baseline = self.observe()
-        if baseline['master_path'] != str(self.user / 'master.dct'):
-            raise RuntimeError('Independent swap baseline has no own master')
-        self.driver['swap_baseline_reconnected'] = True
+        self.driver['initial_product_errors'].update(
+            sentinel_found=bool(composed.get('prompt')) and SENTINEL in composed['prompt'],
+            skill_error=found.get('code', found.get('error_code', '')))
         self.backend.fixture('docket_project_remove', name='master')
         legacy = self.private / 'legacy.dct'
         copy_fixture(self.repo / 'src/Data/master.dct', legacy, 'master')
         self.backend.fixture('docket_project_add', path=str(legacy), create=False)
         before = legacy.read_bytes()
         call = self.client.tool('minerva_clock')
-        self.check('unenforced_call_proceeds', call.get('success') is True and isinstance(call.get('unix_timestamp'), (int, float)))
-        self.check('unenforced_no_policy_fields', call.get('success') is True and not {'allowed', 'effect', 'policy'} & call.keys())
+        self.check('unenforced_call_proceeds', lambda: call.get('success') is True and isinstance(call.get('unix_timestamp'), (int, float)))
+        self.check('unenforced_no_policy_fields', lambda: call.get('success') is True and not {'allowed', 'effect', 'policy'} & call.keys())
+        degraded_policy = self.client.tool('minerva_policy_reload')
         observed = self.observe()
-        self.check('unenforced_indicator', marker(observed))
+        self.driver['swapped_product_error'] = call.get('error_code', '')
+        self.check('unenforced_indicator', lambda: marker(observed) and degraded_policy.get('success') is False
+                   and degraded_policy.get('error_code') == 'policy_unavailable')
         secret = self.client.tool('minerva_docket_secret_set', handle='user/e2e', value='x')
         refused = secret.get('success') is False or 'error' in secret or secret.get('allowed') is False
-        self.check('secret_set_refused', refused and str(self.user / 'master.dct') in json.dumps(secret))
-        self.check('legacy_untouched', legacy.read_bytes() == before)
+        error_text = str(secret.get('error', secret.get('error_message', '')))
+        self.check('secret_set_refused', lambda: refused and secret.get('error_code') not in ('policy_unavailable', 'docket_not_ready')
+                   and str(self.user / 'master.dct') in error_text)
+        self.check('legacy_untouched', lambda: bool(secret) and refused
+                   and hashlib.sha256(legacy.read_bytes()).digest() == hashlib.sha256(before).digest())
         self.backend.fixture('docket_project_remove', name='master')
         self.backend.fixture('docket_project_add', path=str(self.user / 'master.dct'), create=False)
         reload = self.client.tool('minerva_policy_reload')
         observed = self.observe()
-        self.check('enforcement_resumes', reload.get('success') is True and reload.get('rules_loaded', 0) > 0
+        self.check('enforcement_resumes', lambda: reload.get('success') is True and reload.get('rules_loaded', 0) > 0
                    and not marker(observed) and observed['master_path'] == str(self.user / 'master.dct'))
         self.close()
 
@@ -267,14 +375,16 @@ class Harness:
         self.backend.fixture('docket_project_remove', name='master')
         before, _ = snapshot(self.user / 'master.dct')
         observed = self.launch()
+        if self.client is None or self.driver.get('prerequisite'):
+            self.close()
+            return
         after, current = snapshot(self.user / 'master.dct')
         report = observed['master_report']
-        advanced = report.get('master_update_status') in ('authoritative', 'partial')
-        self.check('existing_user_meta_kept', after.get('project') == 'master' and bool(before.get('master_bootstrap_state'))
-                   and (after.get('master_bootstrap_state') == before['master_bootstrap_state'] or advanced))
+        self.check('existing_user_meta_kept', lambda: after.get('project') == 'master' and isinstance(before.get('master_bootstrap_state'), str) and bool(before['master_bootstrap_state'])
+                   and after.get('master_bootstrap_state') == before['master_bootstrap_state'])
         restored = next((i for i in current if i['id'] == skill['id']), {})
         preserved = next((i for i in current if i['id'] == own_id), {})
-        self.check('existing_user_items_kept', restored.get('description') == skill['description']
+        self.check('existing_user_items_kept', lambda: restored.get('description') == skill['description']
                    and USER_EDIT not in restored.get('description', '') and preserved.get('description') == USER_OWN
                    and report.get('master_update_status') == 'authoritative')
         self.close()
@@ -285,8 +395,11 @@ class Harness:
         copy_fixture(self.repo / 'src/Data/master.dct', legacy, 'master')
         self.backend.fixture('docket_project_add', path=str(legacy), create=False)
         observed = self.launch()
+        if self.client is None or self.driver.get('prerequisite'):
+            self.close()
+            return
         call = self.client.tool('minerva_clock')
-        self.check('legacy_starts_degraded', bool(observed['problems']) and any(str(legacy) in p for p in observed['problems'])
+        self.check('legacy_starts_degraded', lambda: bool(observed['problems']) and any(str(legacy) in p for p in observed['problems'])
                    and call.get('success') is True and isinstance(call.get('unix_timestamp'), (int, float)))
         self.close()
 
@@ -383,6 +496,9 @@ def run() -> int:
             for stage, operation in [('launch_a', lambda: harness.scenario_a(meta, items)),
                                      ('launch_b', lambda: harness.scenario_b(items)), ('launch_c', harness.scenario_c)]:
                 operation()
+                if driver.get('prerequisite'):
+                    report['status'] = 'harness_or_prerequisite_failure'
+                    return 90
             if {c['assertion'] for c in report['checks']} != set(ASSERTIONS) or len(report['checks']) != len(ASSERTIONS):
                 raise RuntimeError('Assertion map incomplete')
             report['status'] = 'green' if all(c['passed'] for c in report['checks']) else 'red'

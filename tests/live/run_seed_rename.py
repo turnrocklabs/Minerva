@@ -84,6 +84,10 @@ def launch(args: argparse.Namespace) -> int:
     product = driver.get('initial_product_errors', {})
     expected_red = (report.get('status') == 'red' and job['result'].get('exit_code') == 1
                     and product.get('bootstrap_collision') is True and product.get('clock') == 'policy_unavailable'
+                    and product.get('policy') == 'policy_unavailable'
+                    and product.get('sentinel_found') is True and product.get('skill_error') == 'ambiguous'
+                    and driver.get('swapped_product_error') == 'policy_unavailable'
+                    and not flags.get('seed_prompt_not_layered') and not flags.get('seed_skill_not_ambiguous')
                     and not flags.get('master_attached') and not flags.get('governed_call_proceeds')
                     and not flags.get('unenforced_call_proceeds'))
     matched = valid and (expected_red if args.expected == 'red' else report.get('status') == 'green' and all(flags.values()))
