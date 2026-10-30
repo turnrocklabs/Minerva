@@ -34,6 +34,7 @@ signal state_changed(state: String)
 const PLUGIN_ID := "docket"
 const ATTACHED_MASTER_CHOICES := ["Open master in docket.app", "Cancel"]
 const MASTER_RES := "res://Data/master.dct"
+const SEED_PROJECT := "minerva-seed"
 const MASTER_USER := "user://master.dct"
 const PERSONAL_USER := "user://personal.dct"
 const SCHEMA_RES := "res://Data/docket_schema.json"
@@ -110,6 +111,8 @@ var _session_changes := 0
 # Session path → why the last try to open it failed.
 var _open_errors := {}
 var _reconcile_again := false
+# Open seed paths are excluded from projects and from a previously saved session.
+var _seed_paths := PackedStringArray()
 # How many CHANGING_TOOLS calls by agents and panels have completed: a
 # policy or skill read that overlaps one is not trusted.
 var _changes := 0
@@ -1079,6 +1082,21 @@ func _on_plugin_gone(id: String) -> void:
 		_set_state("unavailable")
 
 
+## Only the shipment's first line changes; its project becomes the user master.
+static func master_shipment(source: PackedByteArray) -> PackedByteArray:
+	var newline: int = source.find(10)
+	if newline < 0:
+		return PackedByteArray()
+	var parsed: Variant = JSON.parse_string(source.slice(0, newline).get_string_from_utf8())
+	if not parsed is Dictionary:
+		return PackedByteArray()
+	var meta: Dictionary = parsed
+	meta["project"] = "master"
+	var rewritten: PackedByteArray = JSON.stringify(meta, "", false).to_utf8_buffer()
+	rewritten.append_array(source.slice(newline))
+	return rewritten
+
+
 # Sets up the plugin's current process once: schema, master, personal.dct
 # and Minerva's session, in that order, through the current public endpoint.
 func _prepare() -> void:
@@ -1131,7 +1149,7 @@ func _prepare() -> void:
 	for project: Dictionary in declared.value.get("projects", []):
 		for conflict: Dictionary in project.get("conflicts", []):
 			notices.append("%s: type %s kept unchanged (%s)" % [project.get("name", ""), conflict.get("slug", ""), conflict.get("reason", "")])
-	var shipped := FileAccess.get_file_as_bytes(MASTER_RES)
+	var shipped := master_shipment(FileAccess.get_file_as_bytes(MASTER_RES))
 	if shipped.is_empty():
 		_fail("Minerva's shipped master (%s) cannot be read" % MASTER_RES)
 		return
@@ -1268,7 +1286,14 @@ func _refresh(connection: Object, generation: int) -> String:
 		return "the Docket plugin's process changed"
 	if listed.has("error") or not listed.value.get("projects") is Array:
 		return "the open projects could not be listed: %s" % listed.get("error", "no list")
-	projects = listed.value.projects
+	projects = []
+	_seed_paths.clear()
+	var opened: Array = listed.value.projects
+	for project: Dictionary in opened:
+		if str(project.get("name", "")) == SEED_PROJECT:
+			_seed_paths.append(str(project.get("path", "")))
+		else:
+			projects.append(project)
 	_vault_session.observe(self)
 	return ""
 
@@ -1403,7 +1428,7 @@ func _reconcile() -> void:
 			_reconciled_paths = after
 			var session := PackedStringArray()
 			for path in _session:
-				if not (path in before and not path in after):
+				if not path in _seed_paths and not (path in before and not path in after):
 					session.append(path)
 			for path in after:
 				if path != master_path and path != personal_path and not path in session:

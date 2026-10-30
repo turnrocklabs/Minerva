@@ -28,7 +28,7 @@ func _run() -> void:
 	root.add_child(host)
 	host.start(manager)
 	var master_file := FileAccess.open("user://master.dct", FileAccess.WRITE)
-	master_file.store_buffer(FileAccess.get_file_as_bytes("res://Data/master.dct"))
+	master_file.store_buffer(host.master_shipment(FileAccess.get_file_as_bytes("res://Data/master.dct")))
 	master_file.close()
 	var result: Dictionary = await manager.start_plugin("docket")
 	if result.has("error"):

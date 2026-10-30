@@ -1,6 +1,6 @@
 ---
 name: author-minerva-skill
-description: Author or update skills shipped in src/Data/master.dct through a staged Docket project, then verify the three-way bootstrap merge in isolation.
+description: Author or update skills shipped in src/Data/master.dct through a staged Docket project, then verify the shipped-content bootstrap update in isolation.
 ---
 
 # Author a shipped Minerva skill
@@ -12,10 +12,11 @@ Read the repository instructions and tracked task before making changes.
 ## How delivery works
 
 Minerva's `DocketHost` sends the shipped master to the Docket plugin's
-`bootstrap_project`. Docket owns the three-way merge of the new shipment,
-the stored shipped baseline and the user's current content. Untouched copies
-update; customized copies are preserved and reported as conflicts. Seen IDs
-are retained in `ever_shipped`, so a user's deletion is not resurrected.
+`bootstrap_project`. Docket applies Minerva's `replace_shipped` mode: offered
+shipped IDs restore the shipped content, including edited copies; independent
+user items remain.
+Incompatible type pins are preserved and reported as conflicts. Seen IDs are
+retained in `ever_shipped`, so a user's deletion is not resurrected.
 Removing an ID from a shipment does not remove its existing user copy: fix
 bad shipped content forward. There is no shipped-hash invalidation step.
 
@@ -28,20 +29,21 @@ bad shipped content forward. There is no shipped-hash invalidation step.
    directory outside Git. Keep an untouched before-copy for the diff and tests.
    Do not use an experiment snapshot containing probe items.
 3. Call `docket_project_list`, then `docket_project_add(path=<staged file>,
-   create=false)`. The shipped file's project name is lowercase `master`;
-   uppercase `Master` is a different project. If `master` is already loaded
-   from another path, stop rather than mutating or closing that user's project.
-4. New item: `docket_create(project="master", type="skill", source="master",
+   create=false)`. The shipped file's project name is `minerva-seed`;
+   Minerva rewrites only its shipment meta to create the user's `master`. If
+   `minerva-seed` is already loaded from another path, stop rather than mutating
+   or closing that project.
+4. New item: `docket_create(project="minerva-seed", type="skill", source="master",
    title=..., description=..., preconditions=..., outcome=..., steps=...,
    tags=[...], tool_deps=[...])`. Use the returned ID; transition its draft
    lifecycle to `active` with `docket_transition`. Read the pinned lifecycle
    if the server differs. Existing item: `docket_get` then `docket_update`
    with the existing ID and revision; preserve its identity.
-5. Verify with `docket_get` and `docket_skill_list(project="master", ...)`.
+5. Verify with `docket_get` and `docket_skill_list(project="minerva-seed", ...)`.
    Required tool names must be real; use an empty dependency list when the
    skill is useful to terminal agents without tool activation. Do not guess
    optimization fields or copy unrelated profiles.
-6. Call `docket_flush(project="master")` before taking the authored snapshot:
+6. Call `docket_flush(project="minerva-seed")` before taking the authored snapshot:
    mutations may still be in its write-ahead sidecar. Inspect raw and semantic
    diffs against the untouched copy. Explain serializer normalization; stop
    for any unexplained existing-content change.
@@ -49,11 +51,12 @@ bad shipped content forward. There is no shipped-hash invalidation step.
    using the matching editor for Docket's project. Exercise the real
    `MasterBootstrapPlan`/`MasterBootstrapApply` or `bootstrap_project` path:
    fresh install, existing install, and an edited shipped-item install.
-   Require all intended active skills in `docket_skill_list`; require the
-   edited content to survive with a conflict report. Retain commands, revisions,
+   Require all intended active skills in `docket_skill_list`; require shipped
+   edits to be restored and independent user items to survive. Type conflicts
+   must remain visible. Retain commands, revisions,
    input hashes, merge reports and logs outside Git; inspect script errors as
    well as exit status. Do not start Godot against the live host Minerva tree.
-8. Close only the staged project with `docket_project_close(name="master")`;
+8. Close only the staged project with `docket_project_close(name="minerva-seed")`;
    this keeps its file. Copy the exact API-authored snapshot to
    `src/Data/master.dct`, review the final diff and stage that path explicitly.
    Commit with the task ID only when authorized. Scan the exact outgoing
