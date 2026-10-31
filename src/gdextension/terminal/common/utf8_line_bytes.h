@@ -10,6 +10,10 @@ class Utf8LineBytes {
 public:
     void append(const char *data, size_t size) { bytes.append(data, size); }
     size_t size() const { return bytes.size(); }
+    size_t front_line_size() const {
+        size_t end = bytes.find('\n', scanned);
+        return end == std::string::npos ? bytes.size() : end;
+    }
     void clear() { bytes.clear(); scanned = 0; }
     template<class Consumer> bool pop_line(Consumer consume, bool strip_cr = false) {
         const size_t end = bytes.find('\n', scanned);

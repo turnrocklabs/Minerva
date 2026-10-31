@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <string>
 #include <windows.h>
+#include "common/subprocess_io.h"
 
 namespace godot {
 
@@ -56,23 +57,23 @@ private:
     size_t _queued_output_bytes = 0;
     size_t _queued_stderr_bytes = 0;
     std::atomic<bool> _io_overflow{false};
+    std::atomic<bool> _stdout_failed{false};
+    std::atomic<int64_t> _generation{0};
+    SubProcessIO::Diagnostics _diagnostics;
     std::atomic<bool> _output_notification_pending{false};
     std::atomic<bool> _stderr_notification_pending{false};
-
-    static constexpr size_t MAX_QUEUED_LINES = 32;
-    static constexpr size_t MAX_QUEUED_BYTES = 40u * 1024u * 1024u;
-    static constexpr size_t MAX_QUEUED_WRITE_BYTES = 72u * 1024u * 1024u;
 
     int _poll_exit();
     int _stop(int grace_ms, const String &process_name);
     void _read_loop();
     void _stderr_read_loop();
-    void _trim_stderr(size_t incoming_bytes);
-    String _shutdown_stderr_tail();
+    void _queue_stderr(const std::string &line);
     void _write_loop();
-    void _record_overflow();
-    void _emit_output_ready();
-    void _emit_stderr_ready();
+    void _record_failure(const char *cause, const char *channel, int64_t observed = 0, int64_t limit = 0, int64_t os_error = 0, bool legacy_overflow = true);
+    void _emit_io_failure(int64_t generation, bool first, bool legacy_overflow);
+    void _emit_process_exited(int64_t generation, int exit_code);
+    void _emit_output_ready(int64_t generation);
+    void _emit_stderr_ready(int64_t generation);
 
 protected:
     static void _bind_methods();
@@ -105,6 +106,9 @@ public:
     /// Admit data to the bounded stdin writer without blocking the caller.
     bool write_data(const String &data);
     bool has_io_overflow() const { return _io_overflow; }
+
+    /// Process-lifetime causal metadata; raw stderr requires explicit opt-in.
+    Dictionary get_io_diagnostics(bool include_stderr = false);
 
     /// Check if subprocess is running
     bool is_running() {

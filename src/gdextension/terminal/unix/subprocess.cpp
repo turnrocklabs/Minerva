@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <sys/wait.h>
+#include <pthread.h>
 #include <spawn.h>
 #include <pwd.h>
 #include <cstring>
@@ -35,8 +36,11 @@ void SubProcess::_bind_methods()
     ClassDB::bind_method(D_METHOD("stop_gracefully", "grace_ms", "process_name"), &SubProcess::stop_gracefully, DEFVAL(10000), DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("write_data", "data"), &SubProcess::write_data);
     ClassDB::bind_method(D_METHOD("has_io_overflow"), &SubProcess::has_io_overflow);
-    ClassDB::bind_method(D_METHOD("_emit_output_ready"), &SubProcess::_emit_output_ready);
-    ClassDB::bind_method(D_METHOD("_emit_stderr_ready"), &SubProcess::_emit_stderr_ready);
+    ClassDB::bind_method(D_METHOD("get_io_diagnostics", "include_stderr"), &SubProcess::get_io_diagnostics, DEFVAL(false));
+    ClassDB::bind_method(D_METHOD("_emit_io_failure", "generation", "first", "legacy_overflow"), &SubProcess::_emit_io_failure);
+    ClassDB::bind_method(D_METHOD("_emit_process_exited", "generation", "exit_code"), &SubProcess::_emit_process_exited);
+    ClassDB::bind_method(D_METHOD("_emit_output_ready", "generation"), &SubProcess::_emit_output_ready);
+    ClassDB::bind_method(D_METHOD("_emit_stderr_ready", "generation"), &SubProcess::_emit_stderr_ready);
     ClassDB::bind_method(D_METHOD("is_running"), &SubProcess::is_running);
     ClassDB::bind_method(D_METHOD("has_output"), &SubProcess::has_output);
     ClassDB::bind_method(D_METHOD("read_line"), &SubProcess::read_line);
@@ -49,6 +53,7 @@ void SubProcess::_bind_methods()
     ADD_SIGNAL(MethodInfo("stderr_ready"));
     ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
     ADD_SIGNAL(MethodInfo("io_overflow"));
+    ADD_SIGNAL(MethodInfo("io_failed", PropertyInfo(Variant::INT, "generation")));
 }
 
 SubProcess::SubProcess()
@@ -210,6 +215,8 @@ bool SubProcess::start_with_env(const String &command, const PackedStringArray &
     int err_flags = fcntl(_stderr_fd, F_GETFL);
     fcntl(_stderr_fd, F_SETFL, err_flags | O_NONBLOCK);
 
+    _diagnostics.reset(++_generation);
+    _stdout_failed = false;
     _closing = false;
     _stdout_done = false;
     _stderr_done = false;
@@ -252,50 +259,71 @@ void SubProcess::_read_loop()
 {
     char buffer[4096];
     Utf8LineBuffer line_buffer;
-
+    bool eof = false;
     while (_running) {
-        ssize_t bytes_read = read(_stdout_fd, buffer, sizeof(buffer) - 1);
-
-        if (bytes_read > 0) {
-            if (_closing) { line_buffer.clear(); continue; }
-            line_buffer.append(buffer, bytes_read);
-            if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); _record_overflow(); }
-            String line;
-            while (line_buffer.pop_line(line)) {
-
-                bool queued = false;
-                {
-                    std::lock_guard<std::mutex> lock(_output_mutex);
-                    if (_closing) { line_buffer.clear(); break; }
-                    size_t bytes = static_cast<size_t>(line.utf8().length());
-                    if (_output_queue.size() >= MAX_QUEUED_LINES || _queued_output_bytes + bytes > MAX_QUEUED_BYTES) {
-                        _record_overflow();
-                    } else {
-                        _queued_output_bytes += bytes;
-                        _output_queue.push(line);
-                        queued = true;
-                    }
-                }
-                if (queued && !_output_notification_pending.exchange(true))
-                    call_deferred("_emit_output_ready");
-            }
-        } else if (bytes_read == 0) {
-            // EOF - process closed stdout
-            break;
-        } else if (bytes_read == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // No data available, sleep and retry
+        ssize_t bytes_read = read(_stdout_fd, buffer, sizeof(buffer));
+        if (bytes_read < 0) {
+            int error = errno;
+            if (error == EINTR || error == EAGAIN || error == EWOULDBLOCK) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            } else {
-                // Real error
-                break;
+                continue;
+            }
+            if (!_closing) {
+                _stdout_failed = true;
+                _record_failure("stdout_read_error", "stdout", 0, 0, error, false);
+            }
+            break;
+        }
+        if (bytes_read == 0) { eof = true; break; }
+        if (_closing || _stdout_failed) { line_buffer.clear(); continue; }
+        line_buffer.append(buffer, bytes_read);
+        {
+            std::lock_guard<std::mutex> lock(_output_mutex);
+            if (_closing) { line_buffer.clear(); continue; }
+            if (line_buffer.front_line_size() > SubProcessIO::STDOUT_LINE_BYTES) {
+                _stdout_failed = true;
+                _record_failure("stdout_line_bytes", "stdout", line_buffer.front_line_size(), SubProcessIO::STDOUT_LINE_BYTES);
+            } else if (_queued_output_bytes + line_buffer.size() > SubProcessIO::STDOUT_BYTES) {
+                _stdout_failed = true;
+                _record_failure("stdout_queue_bytes", "stdout", _queued_output_bytes + line_buffer.size(), SubProcessIO::STDOUT_BYTES);
             }
         }
+        String line;
+        while (!_stdout_failed && line_buffer.pop_line(line, false)) {
+            bool queued = false;
+            {
+                std::lock_guard<std::mutex> lock(_output_mutex);
+                if (_closing) { line_buffer.clear(); break; }
+                size_t bytes = static_cast<size_t>(line.utf8().length());
+                if (_output_queue.size() >= SubProcessIO::STDOUT_LINES) {
+                    _stdout_failed = true;
+                    _record_failure("stdout_queue_lines", "stdout", _output_queue.size() + 1, SubProcessIO::STDOUT_LINES);
+                } else if (_queued_output_bytes + bytes > SubProcessIO::STDOUT_BYTES) {
+                    _stdout_failed = true;
+                    _record_failure("stdout_queue_bytes", "stdout", _queued_output_bytes + bytes, SubProcessIO::STDOUT_BYTES);
+                } else {
+                    _queued_output_bytes += bytes;
+                    _output_queue.push(line);
+                    queued = true;
+                }
+            }
+            if (queued && !_output_notification_pending.exchange(true))
+                call_deferred("_emit_output_ready", _generation.load());
+        }
+        if (_stdout_failed) {
+            // Once protocol bytes were lost, neither a queued prefix nor a
+            // later suffix is a frame that callers may dispatch.
+            std::lock_guard<std::mutex> lock(_output_mutex);
+            while (!_output_queue.empty()) _output_queue.pop();
+            _queued_output_bytes = 0;
+            line_buffer.clear();
+        }
     }
-
     _poll_exit();
+    if (eof && !_closing) _record_failure("stdout_eof", "stdout", line_buffer.size(), 0, 0, false);
     _stdout_done = true;
 }
+
 
 int SubProcess::_poll_exit()
 {
@@ -308,12 +336,16 @@ int SubProcess::_poll_exit()
         if (waited == _child_pid) {
             _exit_code = WIFEXITED(status) ? WEXITSTATUS(status) :
                     (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : -1);
+            _diagnostics.exited(WIFSIGNALED(status) ? "signal" : "exit",
+                    WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+                    WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+            if (!_closing) _record_failure("process_exit", "process", _exit_code.load(), 0, 0, false);
             _child_pid = -1;
         } else if (waited < 0 && errno == ECHILD) {
             _child_pid = -1;
         }
     }
-    if (_exit_code >= 0) call_deferred("emit_signal", "process_exited", _exit_code.load());
+    if (_exit_code >= 0) call_deferred("_emit_process_exited", _generation.load(), _exit_code.load());
     return _exit_code;
 }
 
@@ -330,6 +362,8 @@ int SubProcess::stop_gracefully(int grace_ms, const String &process_name)
 int SubProcess::_stop(int grace_ms, const String &process_name)
 {
     if (!_running) return _exit_code;
+    _poll_exit();
+    _diagnostics.stopping();
     _closing = true;
     // Legacy stop still interrupts readers immediately; EOF shutdown leaves
     // them draining until the owned child exits or the deadline expires.
@@ -347,7 +381,7 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     if (grace_ms > 0 && _poll_exit() < 0) {
         const String reason = "stdin EOF grace expired after " + String::num_int64(grace_ms) + " ms; terminating owned child";
-        UtilityFunctions::push_warning("SubProcess [" + process_name + "]: " + reason + "\n" + _shutdown_stderr_tail());
+        UtilityFunctions::push_warning("SubProcess [" + process_name + "]: " + reason + " (stderr retained by the diagnostics owner)");
     }
     {
         // One reaper owns the PID through signaling; a stdout EOF must not
@@ -358,17 +392,20 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
             pid_t waited;
             do { waited = waitpid(_child_pid, &status, WNOHANG); } while (waited < 0 && errno == EINTR);
             if (waited == 0) {
-                kill(_child_pid, SIGTERM);
+                if (kill(_child_pid, SIGTERM) == 0) _diagnostics.stopping(true);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 do { waited = waitpid(_child_pid, &status, WNOHANG); } while (waited < 0 && errno == EINTR);
                 if (waited == 0) {
-                    kill(_child_pid, SIGKILL);
+                    if (kill(_child_pid, SIGKILL) == 0) _diagnostics.stopping(true);
                     do { waited = waitpid(_child_pid, &status, 0); } while (waited < 0 && errno == EINTR);
                 }
             }
             if (waited == _child_pid) {
                 _exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-                call_deferred("emit_signal", "process_exited", _exit_code.load());
+                _diagnostics.exited(WIFSIGNALED(status) ? "signal" : "exit",
+                        WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+                        WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+                call_deferred("_emit_process_exited", _generation.load(), _exit_code.load());
                 _child_pid = -1;
             } else if (waited < 0 && errno == ECHILD) {
                 _child_pid = -1;
@@ -396,15 +433,21 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
 
 bool SubProcess::write_data(const String &data)
 {
-    if (!_running || _closing || _stdin_fd < 0 || data.is_empty())
+    if (!_running || _closing || _io_overflow || _stdin_fd < 0 || data.is_empty())
         return false;
 
     CharString utf8 = data.utf8();
     std::string bytes(utf8.ptr(), static_cast<size_t>(utf8.length()));
     {
         std::lock_guard<std::mutex> lock(_write_mutex);
-        if (_write_queue.size() >= MAX_QUEUED_LINES || _queued_write_bytes + bytes.size() > MAX_QUEUED_WRITE_BYTES)
+        if (_write_queue.size() >= SubProcessIO::STDIN_LINES) {
+            _record_failure("stdin_queue_lines", "stdin", _write_queue.size() + 1, SubProcessIO::STDIN_LINES);
             return false;
+        }
+        if (_queued_write_bytes + bytes.size() > SubProcessIO::STDIN_BYTES) {
+            _record_failure("stdin_queue_bytes", "stdin", _queued_write_bytes + bytes.size(), SubProcessIO::STDIN_BYTES);
+            return false;
+        }
         _queued_write_bytes += bytes.size();
         _write_queue.push(std::move(bytes));
     }
@@ -414,6 +457,11 @@ bool SubProcess::write_data(const String &data)
 
 void SubProcess::_write_loop()
 {
+    // A closed peer stdin is a transport failure, never a signal to the host.
+    sigset_t blocked;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGPIPE);
+    pthread_sigmask(SIG_BLOCK, &blocked, nullptr);
     while (_running && !_closing) {
         std::string data;
         {
@@ -432,22 +480,27 @@ void SubProcess::_write_loop()
             else if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                 struct pollfd pfd {_stdin_fd, POLLOUT, 0};
                 poll(&pfd, 1, 50);
-            } else break;
+            } else {
+                int error = written < 0 ? errno : 0;
+                if (_running && !_closing)
+                    _record_failure(error == EPIPE ? "stdin_broken_pipe" : "stdin_write_error",
+                            "stdin", data.size() - sent, 0, error);
+                break;
+            }
         }
-        if (_running && !_closing && sent != data.size()) _record_overflow();
     }
 }
 
 bool SubProcess::has_output()
 {
     std::lock_guard<std::mutex> lock(_output_mutex);
-    return !_output_queue.empty();
+    return !_stdout_failed && !_output_queue.empty();
 }
 
 String SubProcess::read_line()
 {
     std::lock_guard<std::mutex> lock(_output_mutex);
-    if (_output_queue.empty())
+    if (_stdout_failed || _output_queue.empty())
         return String();
 
     String line = _output_queue.front();
@@ -460,6 +513,7 @@ String SubProcess::read_all()
 {
     std::lock_guard<std::mutex> lock(_output_mutex);
     String result;
+    if (_stdout_failed) return result;
     while (!_output_queue.empty()) {
         if (!result.is_empty())
             result += "\n";
@@ -470,88 +524,44 @@ String SubProcess::read_all()
     return result;
 }
 
-// Caller holds _stderr_mutex. Keep the newest bounded diagnostics on shutdown.
-void SubProcess::_trim_stderr(size_t incoming_bytes)
+// stderr always drops oldest, including while running and while closing.
+void SubProcess::_queue_stderr(const std::string &line)
 {
-    while (_closing && !_stderr_queue.empty() &&
-            (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + incoming_bytes > MAX_QUEUED_BYTES)) {
-        _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
-        _stderr_queue.pop();
+    {
+        std::lock_guard<std::mutex> lock(_stderr_mutex);
+        while (!_stderr_queue.empty() && (_stderr_queue.size() >= SubProcessIO::STDERR_LINES ||
+                _queued_stderr_bytes + line.size() > SubProcessIO::STDERR_BYTES)) {
+            size_t bytes = static_cast<size_t>(_stderr_queue.front().utf8().length());
+            _queued_stderr_bytes -= bytes;
+            _stderr_queue.pop();
+            _diagnostics.drop(bytes);
+        }
+        _queued_stderr_bytes += line.size();
+        _stderr_queue.push(String::utf8(line.data(), line.size()));
+        _diagnostics.remember(line);
     }
-}
-
-String SubProcess::_shutdown_stderr_tail()
-{
-    std::lock_guard<std::mutex> lock(_stderr_mutex);
-    auto lines = _stderr_queue;
-    String tail;
-    while (!lines.empty()) {
-        // At most 1024 Unicode codepoints, hence at most 4096 UTF-8 bytes.
-        tail = (tail + "\n" + lines.front().right(1024)).right(1024);
-        lines.pop();
-    }
-    return tail;
+    if (!_stderr_notification_pending.exchange(true)) call_deferred("_emit_stderr_ready", _generation.load());
 }
 
 void SubProcess::_stderr_read_loop()
 {
     char buffer[4096];
-    Utf8LineBuffer line_buffer;
-
+    SubProcessIO::StderrLines lines;
+    auto line = [this](const std::string &value) { _queue_stderr(value); };
+    auto loss = [this](size_t bytes, bool first) { _diagnostics.truncate(bytes, first); };
     while (_running) {
-        ssize_t bytes_read = read(_stderr_fd, buffer, sizeof(buffer) - 1);
-
-        if (bytes_read > 0) {
-            line_buffer.append(buffer, bytes_read);
-            if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); if (!_closing) _record_overflow(); }
-            String line;
-            while (line_buffer.pop_line(line)) {
-
-                bool queued = false;
-                {
-                    std::lock_guard<std::mutex> lock(_stderr_mutex);
-                    size_t bytes = static_cast<size_t>(line.utf8().length());
-                    _trim_stderr(bytes);
-                    if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
-                        if (!_closing) _record_overflow();
-                    } else {
-                        _queued_stderr_bytes += bytes;
-                        _stderr_queue.push(line);
-                        queued = true;
-                    }
-                }
-                if (queued && !_stderr_notification_pending.exchange(true))
-                    call_deferred("_emit_stderr_ready");
-            }
-        } else if (bytes_read == 0) {
-            // EOF
-            break;
-        } else if (bytes_read == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            } else {
-                break;
-            }
+        ssize_t bytes_read = read(_stderr_fd, buffer, sizeof(buffer));
+        if (bytes_read < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
         }
+        if (bytes_read <= 0) break;
+        lines.append(buffer, bytes_read, line, loss);
     }
-
-    // Flush any remaining partial line
-    String tail = line_buffer.take_tail();
-    if (!tail.is_empty()) {
-        std::lock_guard<std::mutex> lock(_stderr_mutex);
-        size_t bytes = static_cast<size_t>(tail.utf8().length());
-        _trim_stderr(bytes);
-        if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
-            if (!_closing) _record_overflow();
-        }
-        else {
-            _queued_stderr_bytes += bytes;
-            _stderr_queue.push(tail);
-            if (!_stderr_notification_pending.exchange(true)) call_deferred("_emit_stderr_ready");
-        }
-    }
+    if (lines.has_tail()) lines.finish(line, loss);
     _stderr_done = true;
 }
+
 
 bool SubProcess::has_stderr()
 {
@@ -571,20 +581,42 @@ String SubProcess::read_stderr_line()
     return line;
 }
 
-void SubProcess::_record_overflow()
+void SubProcess::_record_failure(const char *cause, const char *channel, int64_t observed,
+        int64_t limit, int64_t os_error, bool legacy_overflow)
 {
-    if (!_io_overflow.exchange(true))
-        call_deferred("emit_signal", "io_overflow");
+    const bool first = _diagnostics.fail(cause, channel, observed, limit, os_error);
+    const bool legacy = legacy_overflow && !_io_overflow.exchange(true);
+    if (first || legacy) call_deferred("_emit_io_failure", _generation.load(), first, legacy);
 }
 
-void SubProcess::_emit_output_ready()
+Dictionary SubProcess::get_io_diagnostics(bool include_stderr)
 {
+    _poll_exit();
+    return _diagnostics.snapshot(include_stderr);
+}
+
+void SubProcess::_emit_io_failure(int64_t generation, bool first, bool legacy_overflow)
+{
+    if (generation != _generation) return;
+    if (first) emit_signal("io_failed", generation);
+    if (legacy_overflow && generation == _generation) emit_signal("io_overflow");
+}
+
+void SubProcess::_emit_process_exited(int64_t generation, int exit_code)
+{
+    if (generation == _generation) emit_signal("process_exited", exit_code);
+}
+
+void SubProcess::_emit_output_ready(int64_t generation)
+{
+    if (generation != _generation) return;
     _output_notification_pending = false;
-    emit_signal("output_ready");
+    if (!_stdout_failed) emit_signal("output_ready");
 }
 
-void SubProcess::_emit_stderr_ready()
+void SubProcess::_emit_stderr_ready(int64_t generation)
 {
+    if (generation != _generation) return;
     _stderr_notification_pending = false;
     emit_signal("stderr_ready");
 }
