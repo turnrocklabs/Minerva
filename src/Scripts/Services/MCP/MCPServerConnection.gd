@@ -76,14 +76,7 @@ const MAX_DISCOVERED_TOOLS := 10000
 
 
 func _safe_peer_error_category(error_value: Variant) -> String:
-	if error_value is Dictionary:
-		var code: Variant = error_value.get("code")
-		if code is int:
-			return "peer error code %d" % code
-		if code is float and is_finite(code) and code == floor(code) \
-				and abs(code) <= 9007199254740991.0:
-			return "peer error code %d" % int(code)
-	return "peer error"
+	return Diagnostics.peer_error_category(error_value)
 
 ## WebSocket client for persistent connections
 var _websocket: WebSocketPeer = null
@@ -132,9 +125,7 @@ var plugin_id: String = ""
 
 ## Only explicitly opted-in plugins copy diagnostics: 10 lines/second, 1024 characters/line.
 var log_stderr: bool = false
-var _stderr_log_window_ms: int = 0
-var _stderr_log_count: int = 0
-var _stderr_suppressed: int = 0
+var _stderr_diagnostics := Diagnostics.new()
 
 ## Reference to PluginEventBroker for routing async events/state.
 var event_broker = null
@@ -1426,13 +1417,7 @@ func _conn_error(message: String) -> Dictionary:
 ## Convert a resolved value into the _stdio_request return contract: success ->
 ## the full JSON-RPC message (carries "result"); any error -> {"error": <string>}.
 func _stdio_finalize(resolved: Dictionary) -> Dictionary:
-	if not resolved.has("error"):
-		return resolved
-	var err = resolved["error"]
-	if err is Dictionary:
-		return {"error": str(err.get("message", "Unknown error")),
-			"rpc_error": err.duplicate(true)}
-	return {"error": str(err), "local_error": resolved.get("local_error", false)}
+	return Diagnostics.stdio_finalize(resolved)
 
 
 ## Handle a plugin-initiated minerva/capability request received mid-execution.
@@ -1721,21 +1706,9 @@ func _drain_stderr(expected_process = null) -> void:
 			and is_instance_valid(process) and process.has_stderr():
 		var line: String = process.read_stderr_line()
 		drained += 1
-		if not log_stderr:
-			continue
-		var now_ms := Time.get_ticks_msec()
-		if now_ms - _stderr_log_window_ms >= 1000:
-			_stderr_log_window_ms = now_ms
-			_stderr_log_count = 0
-			if _stderr_suppressed > 0:
-				print("[plugin:%s] %d lines suppressed" % [plugin_id, _stderr_suppressed])
-				_stderr_suppressed = 0
-				_stderr_log_count = 1
-		if _stderr_log_count < 10:
-			_stderr_log_count += 1
-			print("[plugin:%s] %s" % [plugin_id, line.substr(0, 1024).strip_escapes()])
-		else:
-			_stderr_suppressed += 1
+		for output: String in _stderr_diagnostics.stderr_log_lines(
+				line, Time.get_ticks_msec(), log_stderr, plugin_id):
+			print(output)
 
 
 func _matches_stdio_catalog_watch(message: Dictionary) -> bool:
