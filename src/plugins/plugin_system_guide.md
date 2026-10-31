@@ -119,6 +119,14 @@ minerva_plugin_reload(id: "my_plugin")   # Opt-in scene generation swap; otherwi
 - **auto_reload**: Watches files and restarts the backend for process or manifest changes. Cached `.gd`/`.tscn`/`.tres` changes require an application restart unless the plugin opts into `live_reload`, which uses a scene generation swap.
 - **Crash detection**: 3+ crashes in 60 seconds → CRASH_LOOP state (won't auto-restart)
 
+Scene generation validation and live swaps refuse explicit compile, resource,
+panel lifecycle, self-check, state preservation, wiring and selector failures.
+The host reports these through the plugin's existing status and notification
+path. It does not install a global script logger: arbitrary engine errors,
+including `push_error` or errors during `_ready`, remain in the normal Godot log
+but do not alone reject a generation. A panel can pass the explicit checks
+despite such an error. `_on_panel_self_check` remains optional.
+
 ## Discovery
 
 Once a plugin is running, its tools appear in `minerva_tool_search`:

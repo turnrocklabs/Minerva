@@ -2,31 +2,12 @@ class_name PluginLiveSwap
 extends Node
 ## Owns candidate lifetime and the two reusable script caches. Host registration
 ## is injected: preparation never gives a candidate a public broker identity.
+## Refusals use explicit compile/resource/lifecycle/state checks. Arbitrary
+## engine errors remain in Godot's normal log and do not alone refuse a swap.
+## Do not install a script logger: Godot's relay can outlive type teardown.
 
 const Store := preload("res://Scripts/Services/Plugins/PluginGenerationStore.gd")
 const Host := preload("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
-
-class PrepareLogger extends Logger:
-	var mutex := Mutex.new()
-	var events: Array[Dictionary] = []
-
-	func _log_error(function: String, file: String, line: int, code: String,
-			rationale: String, _editor_notify: bool, error_type: int,
-			_script_backtraces: Array[ScriptBacktrace]) -> void:
-		if error_type == 1: # Godot's warning category is not a fatal error.
-			return
-		mutex.lock()
-		if events.size() < 100:
-			events.append({"function": function, "file": file, "line": line,
-				"code": code, "message": rationale, "type": error_type,
-				"thread": OS.get_thread_caller_id()})
-		mutex.unlock()
-
-	func snapshot() -> Array[Dictionary]:
-		mutex.lock()
-		var result: Array[Dictionary] = events.duplicate(true)
-		mutex.unlock()
-		return result
 
 var store: PluginGenerationStore
 var record: Dictionary = {}
@@ -39,8 +20,8 @@ func configure(generation_store: PluginGenerationStore) -> void:
 	store = generation_store
 
 
-static func _failure(message: String) -> Dictionary:
-	return {"ok": false, "error": message}
+static func _failure(message: String, panel_name: String = "") -> Dictionary:
+	return {"ok": false, "error": message if panel_name.is_empty() else "Panel '%s': %s" % [panel_name, message]}
 
 
 ## Recompile dependencies before consumers at the inactive slot's fixed paths.
@@ -149,10 +130,11 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 	add_child(staging)
 	for entry: Dictionary in entries:
 		var old: Control = entry.root
+		var panel_name := str(entry.panel_definition.name)
 		var state: Variant = Host.invoke_capture_live_state(old)
 		if not state is Dictionary:
 			staging.free()
-			return _failure("Panel live-state capture must return a Dictionary")
+			return _failure("Live-state capture must return a Dictionary", panel_name)
 		var envelope := {"encoding": "godot-variant-hex-v1", "bytes": var_to_bytes(state).hex_encode()}
 		# A JSON boundary with a byte encoding preserves large integer values.
 		var decoded: Dictionary = JSON.parse_string(JSON.stringify(envelope))
@@ -162,27 +144,27 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 		var packed := ResourceLoader.load(scene_path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
 		if packed == null:
 			staging.free()
-			return _failure("Candidate scene failed to load: " + scene_path)
+			return _failure("Candidate scene failed to load: " + scene_path, panel_name)
 		var allowed := PackedStringArray()
 		for filename: String in definition.scripts:
 			allowed.append(store.slot_path(slot).path_join(filename))
 		if not Host._audit_packed_scene(packed, allowed):
 			staging.free()
-			return _failure("Candidate scene references undeclared scripts")
+			return _failure("Candidate scene references undeclared scripts", panel_name)
 		var instance := packed.instantiate()
 		if not instance is Control:
 			if instance != null:
 				instance.free()
 			staging.free()
-			return _failure("Candidate panel root must be a Control")
+			return _failure("Candidate panel root must be a Control", panel_name)
 		var panel: Control = instance
 		staging.add_child(panel)
 		if not Host.invoke_restore_live_state(panel, copied) or not Host.invoke_self_check(panel):
 			staging.free()
-			return _failure("Candidate import or self-check refused")
+			return _failure("Candidate import or self-check refused", panel_name)
 		if var_to_bytes(Host.invoke_capture_live_state(panel)) != var_to_bytes(state):
 			staging.free()
-			return _failure("Candidate did not preserve the complete transient state")
+			return _failure("Candidate did not preserve the complete transient state", panel_name)
 		candidates.append({"entry": entry, "root": panel, "expected": var_to_bytes(state),
 			"old": old, "visible": old.visible})
 	return {"ok": true, "candidates": candidates, "staging": staging}
@@ -192,7 +174,7 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 ## It must restore an old root without firing its loaded lifecycle again.
 ## retire(root) disconnects the old panel's plugin-owned signals on success.
 ## validate_prepared(slot) is synchronous and checks unopened panel definitions
-## under this preparation logger, using the slot that was just compiled.
+## using the slot that was just compiled. Its explicit result gates the swap.
 func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire: Callable, validate_prepared: Callable = Callable()) -> Dictionary:
 	if busy or store == null or not wire.is_valid() or not retire.is_valid():
 		return _failure("Scene reload is unavailable or already in progress")
@@ -202,61 +184,50 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		busy = false
 		return archived
 	var target := "B" if active_slot == "A" else "A"
-	var logger := PrepareLogger.new()
-	OS.add_logger(logger)
 	var prepared := _prepare(build, target, entries, validate_prepared)
 	var staged_root: Control = prepared.get("staging")
 	if prepared.get("ok", false):
 		await get_tree().process_frame
 		await get_tree().process_frame
 		for candidate: Dictionary in prepared.candidates:
+			var panel_name := str(candidate.entry.panel_definition.name)
 			if not _participant_alive(candidate):
-				prepared.ok = false
-				prepared.error = "A participating panel closed during preparation"
+				prepared.merge(_failure("A participating panel closed during preparation", panel_name), true)
 				break
 			var panel: Control = candidate.root
 			var old: Control = candidate.old
 			var expected: PackedByteArray = candidate.expected
 			if not Host.invoke_self_check(panel) \
 				or var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
-				prepared.ok = false
-				prepared.error = "Candidate deferred initialization changed state or failed self-check"
+				prepared.merge(_failure("Candidate deferred initialization changed state or failed self-check", panel_name), true)
 				break
 			# Old panels stayed editable during the waits. Capture their CURRENT
 			# state now, then give the candidate a separate decoded copy. Expected
 			# bytes are never supplied to a plugin or aliased to its dictionary.
 			var latest: Variant = Host.invoke_capture_live_state(old)
 			if not latest is Dictionary:
-				prepared.ok = false
-				prepared.error = "Current panel state could not be captured"
+				prepared.merge(_failure("Current panel state could not be captured", panel_name), true)
 				break
 			candidate.expected = var_to_bytes(latest)
 			expected = candidate.expected
 			if not Host.invoke_restore_live_state(panel, bytes_to_var(expected)) \
 				or not Host.invoke_self_check(panel) \
 				or var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
-				prepared.ok = false
-				prepared.error = "Candidate refused the latest panel state"
+				prepared.merge(_failure("Candidate refused the latest panel state", panel_name), true)
 				break
-	var errors := logger.snapshot()
-	if not errors.is_empty():
-		prepared.ok = false
-		prepared.error = str(prepared.get("error", "Candidate initialization reported errors")) + "; " + JSON.stringify(errors)
 	if not prepared.get("ok", false):
-		OS.remove_logger(logger)
 		if prepared.has("staging"):
 			staged_root.free()
 		busy = false
 		return prepared
 	var selector := store.prepare_selector(str(build.digest), record)
 	if not selector.get("ok", false):
-		OS.remove_logger(logger)
 		staged_root.free()
 		busy = false
 		return selector
 	# No awaits from the first public registration through publication/rollback.
 	var wired: Array[Dictionary] = []
-	var success := true
+	var wiring := {"ok": true}
 	for candidate: Dictionary in prepared.candidates:
 		var panel: Control = candidate.root
 		var entry: Dictionary = candidate.entry
@@ -272,16 +243,12 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		panel.visible = candidate.visible
 		if not wire.call(entry, panel, true) or not Host.invoke_restore_live_state(panel, bytes_to_var(expected)) \
 			or not Host.invoke_self_check(panel):
-			success = false
+			wiring = _failure("Candidate host wiring, state restore or self-check refused", str(entry.panel_definition.name))
 			break
 		if var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
-			success = false
+			wiring = _failure("Candidate host wiring changed transient state", str(entry.panel_definition.name))
 			break
-	OS.remove_logger(logger)
-	errors = logger.snapshot()
-	if not errors.is_empty():
-		success = false
-	var publication := store.publish_selector() if success else _failure("Candidate host wiring refused")
+	var publication := store.publish_selector() if wiring.ok else wiring
 	if not publication.get("ok", false):
 		for candidate: Dictionary in wired:
 			var old: Control = candidate.old

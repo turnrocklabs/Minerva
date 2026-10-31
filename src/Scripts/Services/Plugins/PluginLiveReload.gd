@@ -1,6 +1,8 @@
 extends Node
 ## Manager-owned integration for opt-in scene generations. Files/backend
 ## installation and scene activation remain two explicit durable operations.
+## Operation results flow through _result; engine errors remain in Godot's
+## normal log and are not collected as validation failures.
 
 const Store := preload("res://Scripts/Services/Plugins/PluginGenerationStore.gd")
 const Swap := preload("res://Scripts/Services/Plugins/PluginLiveSwap.gd")
@@ -115,14 +117,9 @@ func _panel_definitions(build: Dictionary) -> Dictionary:
 
 
 func _validate(build: Dictionary, machine: PluginLiveSwap, slot: String = "A") -> Dictionary:
-	var logger := Swap.PrepareLogger.new()
-	OS.add_logger(logger)
 	var reply := machine.compile_build(build, slot)
 	if reply.get("ok", false):
 		reply = _validate_prepared(slot, build, machine, PackedStringArray())
-	OS.remove_logger(logger)
-	if reply.get("ok", false) and not logger.snapshot().is_empty():
-		return {"ok": false, "error": "Generation validation reported errors"}
 	return reply
 
 
@@ -143,13 +140,7 @@ func _validate_prepared(slot: String, build: Dictionary, machine: PluginLiveSwap
 
 
 func _probe_panel(definition: Dictionary, machine: PluginLiveSwap, slot: String) -> Dictionary:
-	var logger := Swap.PrepareLogger.new()
-	OS.add_logger(logger)
 	var reply := _probe_control(definition, machine, slot)
-	OS.remove_logger(logger)
-	var errors := logger.snapshot()
-	if not errors.is_empty():
-		reply = {"ok": false, "error": str(reply.get("error", "Validation reported errors")) + "; " + JSON.stringify(errors)}
 	if not reply.get("ok", false):
 		reply.error = "Panel '%s': %s" % [definition.name, reply.get("error", "Validation refused")]
 	return reply
