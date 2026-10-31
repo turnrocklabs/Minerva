@@ -260,8 +260,18 @@ func check_http_liveness(timeout_sec: float = 2.0) -> bool:
 
 
 ## Disconnect from the server
-func disconnect_from_server() -> void:
-	SingletonObject.verbose_log("[MCP %s] Disconnecting..." % server_name)
+func disconnect_from_server() -> Dictionary:
+	# Retire before releasing ownership. Explicit cleanup gets one attempt;
+	# failed retirement keeps the same process available for later operator stop.
+	var process = _subprocess
+	if is_instance_valid(process):
+		var evidence := _stdio_owner(process).retire(10000, server_name, log_stderr)
+		if process != _subprocess:
+			return Diagnostics.process_changed(server_name)
+		if evidence.get("evidence_state") == "stale_generation":
+			return Diagnostics.process_changed(server_name)
+		if _stdio_owner(process).retained_ownership:
+			return _publish_stdio_failure(process, evidence, -1, "stop_failed")
 	server_connected = false
 	_tools_refresh_epoch += 1
 	_stop_tool_catalog_watch(true)
@@ -271,7 +281,6 @@ func disconnect_from_server() -> void:
 	if disconnected_http != null:
 		disconnected_http.disconnect_transport()
 	var disconnected_pending: Array = _pending.values()
-	var disconnected_process = _subprocess
 	_subprocess = null
 	var disconnected_websocket = _websocket
 	_websocket = null
@@ -279,24 +288,12 @@ func disconnect_from_server() -> void:
 	protocol_profile = Profile.new()
 	_completed_wire_results.clear()
 	disconnected.emit()
-
-	# Detach transport ownership before waking callers: a failed waiter may
-	# synchronously reconnect and must never join the process being retired.
 	_fail_pending_requests(disconnected_pending, "MCP server '%s' disconnected" % server_name)
-
 	if disconnected_websocket:
 		disconnected_websocket.close()
-	if disconnected_process:
-		SingletonObject.verbose_log("[MCP %s] Stopping subprocess..." % server_name)
-		# Native pipe readers keep draining while stdin EOF lets the server settle.
-		# This bounded synchronous wait also works while the scene tree is quitting.
-		var exit_code: int = disconnected_process.stop_gracefully(10000, server_name)
-		SingletonObject.verbose_log("[MCP %s] Subprocess exited: %d" % [server_name, exit_code])
-		# Note: We intentionally don't queue_free() here because during shutdown,
-		# the subprocess read thread may have pending deferred calls that would
-		# crash if the object is freed too soon.
-
-	SingletonObject.verbose_log("[MCP %s] Disconnected" % server_name)
+	# Keep retired native nodes until normal tree teardown: deferred native
+	# callbacks may still reference them, as in the existing shutdown contract.
+	return {"ok": true}
 
 
 ## Cancel all active HTTP requests (called when user presses stop)
@@ -1113,16 +1110,17 @@ func _connect_stdio() -> Error:
 	if connection_generation != _process_generation or connected_process != _subprocess:
 		return ERR_CANT_CONNECT
 	if init_result.get("error"):
-		if init_result.get("local_error", false):
-			last_failure_reason = str(init_result.error)
-		else:
-			last_failure_reason = ("Handshake rejected by peer (%s). "
-				+ "Check protocol compatibility.") % _safe_peer_error_category(init_result.get("error"))
-		push_error(last_failure_reason)
+		last_failure_reason = Diagnostics.handshake_failure(init_result)
 		var failed_process = _subprocess
-		_subprocess = null
-		failed_process.stop()
-		failed_process.queue_free()
+		var evidence := _stdio_owner(failed_process).retire(0, server_name, log_stderr)
+		if failed_process != _subprocess or evidence.get("evidence_state") == "stale_generation":
+			return ERR_BUSY
+		if _stdio_owner(failed_process).retained_ownership:
+			_publish_stdio_failure(failed_process, evidence, -1, "stop_failed")
+		else:
+			_subprocess = null
+			failed_process.queue_free()
+		push_error(last_failure_reason)
 		return ERR_CANT_CONNECT
 
 	SingletonObject.verbose_log("[MCP STDIO] Handshake successful!")
@@ -1238,7 +1236,7 @@ func _write_stdio_notification(message: Dictionary, generation: int) -> bool:
 		return false
 	if process.write_data(str(encoded.raw) + "\n"):
 		return true
-	_on_stdio_io_failure(process, -1, -1, "write_refused")
+	_on_stdio_write_refused(process)
 	return false
 
 
@@ -1308,8 +1306,10 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 			server_name, str(request.get("method", "")), typeof(request.get("id"))])
 		var dispatch_process = _subprocess
 		if not dispatch_process.write_data(request_json):
-			var failure := _on_stdio_io_failure(dispatch_process, -1, -1, "write_refused")
-			if not pending.done:
+			var failure := _on_stdio_write_refused(dispatch_process)
+			if failure.is_empty() and _stdio_matches(dispatch_process) and _stdio_owner(dispatch_process).closing():
+				pending.dispatched = false
+			elif not pending.done:
 				_resolve_pending(request_id, failure if not failure.is_empty() else
 					Diagnostics.process_changed(server_name), null, owned_generation)
 
@@ -1379,6 +1379,10 @@ func has_retained_stdio_process() -> bool:
 		and _stdio_process.process == _subprocess and _stdio_process.retained_ownership
 
 
+func stdio_retirement_failure() -> Dictionary:
+	return _stdio_failure.duplicate(true)
+
+
 ## Admission probes also reconcile a missed native signal. EOF settle keeps
 ## only local waiters; a changed native generation is never stopped or read.
 func _stdio_admission_failure() -> Dictionary:
@@ -1421,6 +1425,16 @@ func _on_stdio_process_exited(exit_code: int, expected_process = null, native_ge
 	return _on_stdio_io_failure(process, exit_code, native_generation, "process_ended")
 
 
+func _on_stdio_write_refused(process: Object) -> Dictionary:
+	if not _stdio_matches(process):
+		return {}
+	var owner := _stdio_owner(process)
+	var current := owner.snapshot()
+	if current.get("cause") == "stdout_eof" and not owner.terminal_ready(current, bool(process.call("is_running")), Time.get_ticks_msec()):
+		return {}
+	return _on_stdio_io_failure(process, -1, -1, "write_refused")
+
+
 func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1,
 		native_generation: int = -1, event: String = "io_failure") -> Dictionary:
 	var process = _subprocess
@@ -1429,10 +1443,17 @@ func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1,
 	var owner := _stdio_owner(process)
 	if owner.finalizing:
 		return {}
-	var overflowed: bool = process.has_method("has_io_overflow") and process.has_io_overflow()
 	var evidence := owner.finalize(log_stderr)
 	if process != _subprocess or evidence.get("evidence_state") == "stale_generation":
 		return {}
+	return _publish_stdio_failure(process, evidence, natural_exit_code, event)
+
+
+func _publish_stdio_failure(process: Object, evidence: Dictionary, natural_exit_code: int, event: String) -> Dictionary:
+	if process != _subprocess:
+		return {}
+	var owner := _stdio_owner(process)
+	var overflowed: bool = process.has_method("has_io_overflow") and process.call("has_io_overflow")
 	var failure := Diagnostics.stdio_failure(evidence, server_name, plugin_id, log_stderr, natural_exit_code, event)
 	var failed_pending: Array = _pending.values()
 	if not owner.retained_ownership:
@@ -1447,8 +1468,7 @@ func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1,
 		and evidence.get("exit_kind") == "exit" \
 		and not evidence.get("terminated_by_host", false) and not overflowed else -1
 	push_warning("[MCP STDIO] %s; details=%s" % [failure.error, JSON.stringify(failure.details)])
-	if not owner.retained_ownership:
-		disconnected.emit()
+	disconnected.emit()
 	_fail_pending_requests(failed_pending, str(failure.error), failure)
 	if not owner.retained_ownership and process is Node and is_instance_valid(process):
 		process.queue_free()
@@ -1549,7 +1569,7 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	if not _stdio_matches(origin_process) or not _stdio_owner(origin_process).can_write(Time.get_ticks_msec()):
 		return
 	if not origin_process.write_data(response_json):
-		_on_stdio_io_failure(origin_process, -1, -1, "write_refused")
+		_on_stdio_write_refused(origin_process)
 
 
 ## STDIO transport: Call a tool

@@ -196,3 +196,9 @@ static func stdio_failure(current: Dictionary, server_name: String, plugin_id: S
 		code = "subprocess_finalization_failed"
 	return {"error": "MCP server '%s': %s" % [server_name, reason], "local_error": true,
 		"error_code": code, "details": details}
+
+
+static func handshake_failure(result: Dictionary) -> String:
+	if result.get("local_error", false):
+		return str(result.error)
+	return "Handshake rejected by peer (%s). Check protocol compatibility." % peer_error_category(result.get("error"))

@@ -230,6 +230,7 @@ bool SubProcess::start_with_env(const String &command, const PackedStringArray &
 		std::lock_guard<std::mutex> lock(_write_mutex);
 		while (!_write_queue.empty()) _write_queue.pop();
 		_queued_write_bytes = 0;
+		_stdin_admission_closed = false;
 	}
 	{
 		std::lock_guard<std::mutex> lock(_output_mutex);
@@ -316,7 +317,14 @@ void SubProcess::_read_loop()
         }
     }
     _poll_exit();
-    if (eof && !_closing) _record_failure("stdout_eof", "stdout", line_buffer.size(), 0, 0, false);
+    if (eof) {
+        // Do not cancel earlier writes. Under this same lock, a new write is
+        // either admitted before EOF or refused after EOF and its cause exist.
+        // Lock order is write -> diagnostics, as for queue refusals below.
+        std::lock_guard<std::mutex> lock(_write_mutex);
+        _stdin_admission_closed = true;
+        if (!_closing) _record_failure("stdout_eof", "stdout", line_buffer.size(), 0, 0, false);
+    }
     _stdout_done = true;
 }
 
@@ -436,6 +444,7 @@ bool SubProcess::write_data(const String &data)
     std::string bytes(utf8.ptr(), static_cast<size_t>(utf8.length()));
     {
         std::lock_guard<std::mutex> lock(_write_mutex);
+        if (_stdin_admission_closed || !_running || _closing || _io_overflow) return false;
         if (_write_queue.size() >= SubProcessIO::STDIN_LINES) {
             _record_failure("stdin_queue_lines", "stdin", _write_queue.size() + 1, SubProcessIO::STDIN_LINES);
             return false;

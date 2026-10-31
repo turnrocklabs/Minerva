@@ -53,6 +53,8 @@ private:
     std::mutex _write_mutex;
     std::condition_variable _write_ready;
     std::queue<std::string> _write_queue;
+    // Protected by _write_mutex: EOF and new stdin admission linearize here.
+    bool _stdin_admission_closed = false;
     size_t _queued_write_bytes = 0;
     size_t _queued_output_bytes = 0;
     size_t _queued_stderr_bytes = 0;

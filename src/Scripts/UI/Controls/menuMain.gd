@@ -547,7 +547,10 @@ func _toggle_server_connection(server_name: String) -> void:
 	var display := MCPKnownServers.get_display_name(server_name)
 
 	if mcp.is_server_connected(server_name):
-		mcp.disconnect_server(server_name)
+		var retirement: Dictionary = mcp.disconnect_server(server_name)
+		if retirement.get("error"):
+			SingletonObject.create_toast_notification(str(retirement.error), ToastNotification.Type.ERROR)
+			return
 		SingletonObject.create_toast_notification("%s: Disconnected" % display, ToastNotification.Type.WARNING)
 	else:
 		SingletonObject.create_toast_notification("%s: Connecting..." % display, ToastNotification.Type.INFO)
@@ -565,7 +568,10 @@ func _remove_user_server(server_name: String) -> void:
 	if not mcp:
 		return
 
-	mcp.remove_server_at_runtime(server_name)
+	var retirement: Dictionary = mcp.remove_server_at_runtime(server_name)
+	if retirement.get("error"):
+		SingletonObject.create_toast_notification(str(retirement.error), ToastNotification.Type.ERROR)
+		return
 	SingletonObject.create_toast_notification(
 		"Removed server: %s" % server_name,
 		ToastNotification.Type.SUCCESS
@@ -1100,9 +1106,11 @@ func _reconnect_mcp_server(server_name: String) -> void:
 		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
 		return
 
-	# Disconnect first if connected (to force fresh connection)
-	if mcp.is_server_connected(server_name):
-		mcp.disconnect_server(server_name)
+	# Explicit reconnect must retire even an owner retained after failure.
+	var retirement: Dictionary = mcp.disconnect_server(server_name)
+	if retirement.get("error"):
+		SingletonObject.create_toast_notification(str(retirement.error), ToastNotification.Type.ERROR)
+		return
 
 	SingletonObject.create_toast_notification(
 		"%s: Connecting..." % server_name,
@@ -1799,8 +1807,11 @@ func _stop_server(server_name: String) -> void:
 
 	# Disconnect first if connected
 	var mcp = SingletonObject.mcp_manager
-	if mcp and mcp.is_server_connected(server_name):
-		mcp.disconnect_server(server_name)
+	if mcp:
+		var retirement: Dictionary = mcp.disconnect_server(server_name)
+		if retirement.get("error"):
+			SingletonObject.create_toast_notification(str(retirement.error), ToastNotification.Type.ERROR)
+			return
 
 	var err: Error = _server_runner.stop_server(server_name)
 	if err == OK:

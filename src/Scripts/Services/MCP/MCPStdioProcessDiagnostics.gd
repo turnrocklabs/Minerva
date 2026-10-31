@@ -81,19 +81,37 @@ func finalize(include_stderr: bool) -> Dictionary:
 	if native_generation >= 0 and process.has_method("finalize_io"):
 		var value: Variant = process.call("finalize_io", native_generation, include_stderr)
 		if value is Dictionary and value.has("evidence_state"):
-			if value.get("evidence_state") == "stale_generation" or value.get("generation", -1) != native_generation:
-				finalizing = false
-				return {"evidence_state": "stale_generation"}
-			if value.evidence_state not in ["complete", "cutoff"]:
-				return _retain_incomplete(value)
-			return value
-	# Older extensions/fakes have no final-evidence contract. Reuse their stop
-	# when available, and mark capability loss instead of inventing native facts.
+			return _retirement_result(value)
 	if process.has_method("stop"):
 		process.call("stop")
-	var unavailable := snapshot(include_stderr)
-	if not process.has_method("is_running") or process.call("is_running"):
-		return _retain_incomplete(unavailable)
+	return _retirement_result(snapshot(include_stderr))
+
+
+## Explicit cleanup may make one fresh graceful attempt, including after a
+## retained failure. A nonfinal graceful result never triggers a second stop.
+func retire(grace_ms: int, process_name: String, include_stderr: bool) -> Dictionary:
+	if not matches(process):
+		return {"evidence_state": "stale_generation"}
+	finalizing = true
+	if process.has_method("stop_gracefully"):
+		process.call("stop_gracefully", grace_ms, process_name)
+	elif process.has_method("stop"):
+		process.call("stop")
+	return _retirement_result(snapshot(include_stderr))
+
+
+func _retirement_result(current: Dictionary) -> Dictionary:
+	if current.get("evidence_state") == "stale_generation" or \
+			(native_generation >= 0 and current.has("generation") and current.generation != native_generation):
+		finalizing = false
+		return {"evidence_state": "stale_generation"}
+	if current.get("evidence_state") in ["complete", "cutoff"]:
+		retained_ownership = false
+		return current
+	if current.get("evidence_state") == "provisional" or not process.has_method("is_running") or process.call("is_running"):
+		return _retain_incomplete(current)
+	retained_ownership = false
+	var unavailable: Dictionary = current.duplicate(true)
 	unavailable.erase("stderr_tail")
 	unavailable["evidence_state"] = "unavailable"
 	unavailable["diagnostics_unavailable"] = "native_finalization_unavailable"

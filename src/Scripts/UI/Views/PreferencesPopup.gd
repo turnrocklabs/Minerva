@@ -1957,7 +1957,10 @@ func _on_server_connect_toggle(server_name: String, btn: Button, status_label: L
 	if not mcp:
 		return
 	if mcp.is_server_connected(server_name):
-		mcp.disconnect_server(server_name)
+		var retirement: Dictionary = mcp.disconnect_server(server_name)
+		if retirement.get("error"):
+			_refresh_server_status_label(server_name)
+			return
 		btn.text = "Connect"
 	else:
 		status_label.text = ServerDiagnostics.status_text(
@@ -2010,7 +2013,10 @@ func _on_server_remove(server_name: String) -> void:
 	var mcp = SingletonObject.mcp_manager
 	if not mcp:
 		return
-	mcp.remove_server_at_runtime(server_name)
+	var retirement: Dictionary = mcp.remove_server_at_runtime(server_name)
+	if retirement.get("error"):
+		SingletonObject.create_toast_notification(str(retirement.error), ToastNotification.Type.ERROR)
+		return
 	_load_tools_settings()
 
 

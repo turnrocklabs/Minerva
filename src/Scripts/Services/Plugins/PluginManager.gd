@@ -756,6 +756,10 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
+	var retained := get_connection(id)
+	if retained != null and retained.has_retained_stdio_process():
+		_transition_state(id, S_ERROR)
+		return retained.stdio_retirement_failure()
 	var db: Object = _db
 	var definition: PluginDefinition = db.call("get_by_id", id)
 	if definition != null and not definition.requires_plugins.is_empty():
@@ -876,7 +880,9 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 	if def.state in [S_RUNNING, S_CRASH_LOOP] \
 			or (def.state == S_STARTING and not _owns_docket_start(docket_start)):
 		return {"error": "Docket is already active or in a crash loop"}
-	_cleanup_connection("docket", false)
+	var cleanup := _cleanup_connection("docket", false)
+	if cleanup.get("error"):
+		return cleanup
 	var rt := _ensure_runtime("docket")
 	rt["attached"] = true
 	rt["attach_refused"] = false
@@ -998,7 +1004,9 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	RequiredPlugins.prepare_launch(def)
 
 	# Clean up any leftover connection from a previous run.
-	_cleanup_connection(id, false)
+	var cleanup := _cleanup_connection(id, false)
+	if cleanup.get("error"):
+		return cleanup
 
 	_transition_state(id, S_STARTING)
 
@@ -1113,9 +1121,12 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		if failure_reason.is_empty():
 			failure_reason = "Subprocess failed to start: %s" % error_string(err)
 		push_error("[PluginManager] Failed to start plugin '%s': %s" % [id, failure_reason])
-		_cleanup_connection(id)
+		var failed_cleanup := _cleanup_connection(id)
 		_transition_state(id, S_ERROR)
-		return {"error": failure_reason}
+		if failed_cleanup.get("error"):
+			return failed_cleanup
+		var native_failure := conn.stdio_retirement_failure()
+		return native_failure if not native_failure.is_empty() else {"error": failure_reason}
 
 	_transition_state(id, S_RUNNING)
 
@@ -1336,7 +1347,7 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 
 	var rt := _ensure_runtime(id)
 	if rt.get("stopping", false):
-		return {"ok": true}  # Re-entrant call during async stop — ignore.
+		return {"error_code": "plugin_stop_in_progress", "error": "Plugin stop is already in progress"}
 	rt["stopping"] = true
 
 	# Cancel any pending hot-reload debounce to prevent stale restart
@@ -1345,7 +1356,11 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 
 	SingletonObject.verbose_log("[PluginManager] Stopping plugin '%s'..." % id)
 
-	_cleanup_connection(id)
+	var cleanup := _cleanup_connection(id, true, true)
+	if cleanup.get("error"):
+		rt["stopping"] = false
+		_transition_state(id, S_ERROR)
+		return cleanup
 	_transition_state(id, S_STOPPED)
 	rt["stopping"] = false
 	rt["start_time"] = 0.0
@@ -1365,7 +1380,7 @@ func restart_plugin(id: String) -> Dictionary:
 
 	var stop_result := stop_plugin(id)
 	if stop_result.get("error"):
-		return {"error": "Restart failed during stop: %s" % stop_result.get("error")}
+		return stop_result
 
 	# Small yield so the subprocess OS handle is fully released before we
 	# respawn — not strictly necessary but avoids port/pipe races.
@@ -2039,6 +2054,8 @@ func _run_health_checks() -> void:
 		var rt: Dictionary = _runtime.get(def.id, {})
 		var conn: MCPServerConnection = rt.get("connection", null)
 		if conn != null and conn.has_retained_stdio_process():
+			rt["ready"] = false
+			_transition_state(def.id, S_ERROR)
 			continue
 		if is_attached(def.id):
 			if rt.get("health_pending", false): continue
@@ -2408,6 +2425,12 @@ func _on_plugin_disconnected(id: String) -> void:
 	if def == null:
 		return
 
+	var retained := get_connection(id)
+	if retained != null and retained.has_retained_stdio_process():
+		_ensure_runtime(id)["ready"] = false
+		_transition_state(id, S_ERROR)
+		return
+
 	# If we are already stopping or the state is already STOPPED/ERROR/CRASH_LOOP
 	# this signal is expected — ignore it.
 	var rt: Dictionary = _runtime.get(id, {})
@@ -2439,6 +2462,8 @@ func _handle_unexpected_exit(id: String) -> void:
 		return
 	var conn := get_connection(id)
 	if conn != null and conn.has_retained_stdio_process():
+		rt["ready"] = false
+		_transition_state(id, S_ERROR)
 		return
 	# Health checks must observe the same exit status as the transport backstop.
 	if conn != null and is_instance_valid(conn._subprocess) and not conn._subprocess.is_running():
@@ -2446,8 +2471,11 @@ func _handle_unexpected_exit(id: String) -> void:
 		return
 	rt["stopping"] = true
 
-	_cleanup_connection(id)
+	var cleanup := _cleanup_connection(id)
 	rt["stopping"] = false
+	if cleanup.get("error"):
+		_transition_state(id, S_ERROR)
+		return
 	rt["start_time"] = 0.0
 
 	plugin_crashed.emit(id)
@@ -2475,7 +2503,7 @@ func _transition_state(id: String, new_state: int) -> void:
 
 
 ## Disconnect and free a connection, leaving the runtime entry intact.
-func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
+func _cleanup_connection(id: String, cancel_launcher: bool = true, retry_retained: bool = false) -> Dictionary:
 	# The global stop signal also reaches unrelated MCP connections. Cancel
 	# only the providers owned by this plugin before disconnecting its replies.
 	var broker: CapabilityBroker = _get_capability_broker()
@@ -2490,7 +2518,10 @@ func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 		rt["start_pending"] = false
 	var conn: MCPServerConnection = rt.get("connection", null)
 	if conn == null:
-		return
+		return {"ok": true}
+	if conn.has_retained_stdio_process() and not retry_retained:
+		_transition_state(id, S_ERROR)
+		return conn.stdio_retirement_failure()
 
 	# Detach signal before disconnecting to avoid re-entrant crash handling.
 	if conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
@@ -2498,12 +2529,20 @@ func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 
 	# Cancel HTTP initialize even before it connects; a crashed stdio handshake
 	# must finish through its exit path without waking its start here.
+	var result: Dictionary = {"ok": true}
 	if conn.transport == MCPServerConnection.TransportType.HTTP \
 			or conn.server_connected or is_instance_valid(conn._subprocess):
-		conn.disconnect_from_server()
+		result = conn.disconnect_from_server()
+	if result.get("error"):
+		if not conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
+			conn.disconnected.connect(_on_plugin_disconnected.bind(id))
+		_transition_state(id, S_ERROR)
+		return result
 	rt["panel_authority"] = null
 
 	rt["connection"] = null
+
+	return {"ok": true}
 
 
 ## Delete a directory and all its contents recursively.
