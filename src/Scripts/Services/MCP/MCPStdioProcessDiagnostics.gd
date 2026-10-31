@@ -3,6 +3,8 @@ extends RefCounted
 ## Host-side lifetime of one native process's diagnostic evidence. Native owns
 ## causes, queues and reap; this adapter owns generation matching and EOF settle.
 
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
+const Deadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 const EOF_SETTLE_MS := 250
 var process: Object
 var native_generation: int = -1
@@ -70,3 +72,23 @@ func finalize(include_stderr: bool) -> Dictionary:
 	unavailable["evidence_state"] = "unavailable"
 	unavailable["diagnostics_unavailable"] = "native_finalization_unavailable"
 	return unavailable
+
+
+## One in-flight STDIO request. `resolved` fires exactly once — see
+## the connection's _resolve_pending. tool_name / created_ms back timeout messages and
+## pending-request introspection.
+class PendingRequest extends RefCounted:
+	var done := false
+	var result: Dictionary = {}
+	signal resolved(result: Dictionary)
+	var tool_name: String = ""
+	var created_ms: int = 0
+	var capture_wire := false
+	var dispatched := false
+	var request_id: Variant
+	var generation := 0
+	var context: ExecutionContext = null
+	var deadline_timeout_sec := 0.0
+	var deadline_error: Dictionary = {}
+	var deadline: Deadline
+	var deadline_callback: Callable

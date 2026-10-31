@@ -21,6 +21,7 @@ const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadli
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 const Diagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
 const StdioProcessDiagnostics = preload("res://Scripts/Services/MCP/MCPStdioProcessDiagnostics.gd")
+const _PendingRequest = StdioProcessDiagnostics.PendingRequest
 const CatalogWatch = preload("res://Scripts/Services/MCP/MCPToolCatalogWatch.gd")
 
 signal connected()
@@ -1636,28 +1637,7 @@ func _call_tool_stdio_outcome_op(tool_name: String, arguments: Dictionary,
 
 
 func _normalize_mcp_tool_result(result) -> Dictionary:
-	# MCP tools/call wraps plugin payloads as {content: [{type: "text", text: "..."}]}.
-	# Return the parsed payload so callers see the tool's actual result.
-	if result is Dictionary and result.has("content"):
-		var content_raw = result.get("content", [])
-		if content_raw is String:
-			return {"text": content_raw, "success": true}
-		if content_raw is Array and content_raw.size() > 0 and content_raw[0] is Dictionary:
-			var content: Array = content_raw
-			var content_item: Dictionary = content[0]
-			if content_item.get("type") == "text":
-				var text_content: String = content_item.get("text", "{}")
-				var inner_json := JSON.new()
-				var inner_err := inner_json.parse(text_content)
-				if inner_err == OK and inner_json.data is Dictionary:
-					return inner_json.data
-				if inner_err == OK:
-					return {"result": inner_json.data, "success": true}
-				return {"text": text_content, "success": true}
-	if result is Dictionary:
-		return result
-	return {"result": result, "success": true}
-
+	return ToolResultAdapter.normalize_legacy_result(result)
 
 # ---------------------------------------------------------------------------
 # STDIO stdout reader + dispatcher
@@ -1961,23 +1941,3 @@ func _handle_async_plugin_state(msg: Dictionary) -> void:
 		event_broker.handle_plugin_state(plugin_id, state)
 	else:
 		push_warning("[MCP STDIO Async] No event_broker set — dropping state from plugin '%s'" % plugin_id)
-
-
-## One in-flight STDIO request. `resolved` fires exactly once — see
-## _resolve_pending. tool_name / created_ms back the timeout messages and
-## pending-request introspection.
-class _PendingRequest extends RefCounted:
-	var done := false
-	var result: Dictionary = {}
-	signal resolved(result: Dictionary)
-	var tool_name: String = ""
-	var created_ms: int = 0
-	var capture_wire := false
-	var dispatched := false
-	var request_id: Variant
-	var generation := 0
-	var context: ExecutionContext = null
-	var deadline_timeout_sec := 0.0
-	var deadline_error: Dictionary = {}
-	var deadline
-	var deadline_callback: Callable

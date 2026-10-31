@@ -76,3 +76,27 @@ static func normalize_application_error(value: Dictionary) -> Dictionary:
 static func _finish(outcome: MCPToolCallOutcome, value: Dictionary) -> MCPToolCallOutcome:
 	outcome.application = normalize_application_error(value)
 	return outcome
+
+
+static func normalize_legacy_result(result: Variant) -> Dictionary:
+	# MCP tools/call wraps plugin payloads as {content: [{type: "text", text: "..."}]}.
+	# Return the parsed payload so callers see the tool's actual result.
+	if result is Dictionary and result.has("content"):
+		var content_raw: Variant = result.get("content", [])
+		if content_raw is String:
+			return {"text": content_raw, "success": true}
+		if content_raw is Array and content_raw.size() > 0 and content_raw[0] is Dictionary:
+			var content: Array = content_raw
+			var content_item: Dictionary = content[0]
+			if content_item.get("type") == "text":
+				var text_content: String = content_item.get("text", "{}")
+				var inner_json := JSON.new()
+				var inner_err := inner_json.parse(text_content)
+				if inner_err == OK and inner_json.data is Dictionary:
+					return inner_json.data
+				if inner_err == OK:
+					return {"result": inner_json.data, "success": true}
+				return {"text": text_content, "success": true}
+	if result is Dictionary:
+		return result
+	return {"result": result, "success": true}
