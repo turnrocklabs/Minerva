@@ -133,7 +133,7 @@ func save_data(data_abs: String) -> bool:
 ## install_lock_failed (the lock file cannot be used at all), plugin_db_stale
 ## (another Minerva changed the plugin database since this one read it), or
 ## recovery_pending.
-func enter(staging_root: String, db, op, tree: SceneTree) -> Dictionary:
+func enter(staging_root: String, db, op, tree: SceneTree, owner = null, manager_backed: bool = false) -> Dictionary:
 	_staging_lock = ClassDB.instantiate("ProcessFileLock")
 	var lock_path := staging_root.path_join(STAGING_LOCK)
 	var status: int = _staging_lock.try_lock_status(lock_path)
@@ -150,7 +150,7 @@ func enter(staging_root: String, db, op, tree: SceneTree) -> Dictionary:
 	if db != null and db.has_method("is_stale") and db.is_stale():
 		leave()
 		return {"ok": false, "error": "plugin_db_stale", "detail": {}}
-	var pending := _resolve_pending(staging_root, db)
+	var pending := _resolve_pending(staging_root, db, owner, manager_backed)
 	if not pending.is_empty():
 		leave()
 	return pending
@@ -246,7 +246,10 @@ static func recover_all(staging_root: String, db) -> Array:
 ## check the live operations for `plugin_id`: this process's own (a rollback
 ## that failed earlier) is retried; another live process's cannot be touched,
 ## so the install waits. Returns {} or recovery_pending.
-func _resolve_pending(staging_root: String, db) -> Dictionary:
+func _resolve_pending(staging_root: String, db, owner = null, manager_backed: bool = false) -> Dictionary:
+	var retirement := _retirement_status(owner, manager_backed)
+	if retirement.has("error"):
+		return retirement
 	for problem in recover_all(staging_root, db):
 		if problem.id == plugin_id:
 			return _pending(problem)
@@ -265,6 +268,21 @@ func _resolve_pending(staging_root: String, db) -> Dictionary:
 			return _pending(problem)
 		_remove_tree(dir)
 	return {}
+
+
+## Manager-backed recovery must consult the live owner while holding the lock.
+func _retirement_status(owner, manager_backed: bool) -> Dictionary:
+	if not manager_backed:
+		return {"ok": true}
+	if not is_instance_valid(owner) or not owner.has_method("plugin_retirement_status"):
+		return {"error_code": "subprocess_retirement_unverified", "error": "Cannot verify subprocess retirement for '%s'" % plugin_id}
+	var status: Variant = owner.call("plugin_retirement_status", plugin_id)
+	if status is Dictionary:
+		if status.get("error") is String and not status.error.is_empty():
+			return status
+		if not status.has("error") and status.get("ok") is bool and status.ok:
+			return status
+	return {"error_code": "subprocess_retirement_unverified", "error": "Cannot verify subprocess retirement for '%s'" % plugin_id}
 
 
 ## Start removing `plugin_id`: take the staging lock, so no install replaces
@@ -413,8 +431,8 @@ static func has_unfinished(staging_root: String, plugin_id: String) -> bool:
 
 ## With the staging lock held (try_enter), undo what is unfinished for
 ## `plugin_id` (see _resolve_pending). Returns {} or recovery_pending.
-func recover_unfinished(staging_root: String, db) -> Dictionary:
-	return _resolve_pending(staging_root, db)
+func recover_unfinished(staging_root: String, db, owner = null, manager_backed: bool = false) -> Dictionary:
+	return _resolve_pending(staging_root, db, owner, manager_backed)
 
 
 ## Make this process the owner of this operation, which another process may

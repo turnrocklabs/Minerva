@@ -44,8 +44,10 @@ static func start(manager, plugin_id: String, start_now: Callable) -> Dictionary
 		if _db_stale(db):
 			probe.leave()
 			return {"error": STALE_DB % plugin_id}
-		var unresolved: Dictionary = probe.recover_unfinished(staging_root, db)
+		var unresolved: Dictionary = probe.recover_unfinished(staging_root, db, manager, true)
 		probe.leave()
+		if unresolved.has("error") and unresolved.get("error") != "recovery_pending":
+			return unresolved
 		await manager.reconcile_recovered()
 		if not unresolved.is_empty():
 			return {"error": "Plugin '%s' has an unfinished update that could not be undone yet: %s" % [
@@ -95,7 +97,14 @@ static func start(manager, plugin_id: String, start_now: Callable) -> Dictionary
 		failure = "started, but its update could not be recorded as done in %s" % txn.op_dir
 	else:
 		failure = "did not start (%s)" % started.error
-	manager.stop_plugin(plugin_id)
+	var stopped: Dictionary = manager.stop_plugin(plugin_id)
+	if stopped.has("error"):
+		txn.leave()
+		return stopped
+	var retirement: Dictionary = manager.plugin_retirement_status(plugin_id)
+	if retirement.has("error"):
+		txn.leave()
+		return retirement
 	var final_abs := ProjectSettings.globalize_path("user://plugins").path_join(plugin_id)
 	var rollback: Dictionary = txn.roll_back(final_abs, db, txn.db_before)
 	txn.leave()

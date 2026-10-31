@@ -290,7 +290,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if installer != null and installer.has_method("can_replace_plugin_files"):
 		var replace_check: Dictionary = installer.can_replace_plugin_files(plugin_id)
 		if replace_check.has("error"):
-			return _err("restart_required", replace_check)
+			return replace_check if replace_check.has("error_code") else _err("restart_required", replace_check)
 
 	# --- 4. Ask the user everything registration will need, while nothing
 	# has been replaced and cancelling is still free ---
@@ -320,7 +320,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 		if op.cancelled:
 			return _err("cancelled", {})
 		await get_tree().process_frame
-	var entered: Dictionary = await txn.enter(ProjectSettings.globalize_path(STAGING_DIR), db, op, get_tree())
+	var entered: Dictionary = await txn.enter(ProjectSettings.globalize_path(STAGING_DIR), db, op, get_tree(), installer, installer != null and installer != db)
 	if not entered.is_empty():
 		return entered
 	# Entering may have undone other installs; their Docket content follows.
@@ -364,7 +364,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if replacement_owner != null and replacement_owner.has_method("can_replace_plugin_files"):
 		var replacement: Dictionary = replacement_owner.call("can_replace_plugin_files", plugin_id)
 		if replacement.has("error"):
-			return _err("restart_required", replacement)
+			return replacement if replacement.has("error_code") else _err("restart_required", replacement)
 	_ensure_dir(PLUGINS_DIR)
 	txn.had_previous = DirAccess.dir_exists_absolute(final_abs)
 	if not txn.publish(PluginInstallTransaction.PHASE_REPLACING):
@@ -376,14 +376,14 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	var verify_start: bool = txn.had_previous and op.start_after_install and installer != null \
 		and installer.has_method("start_plugin")
 	if verify_start and not txn.save_data(PluginInstallTransaction.data_directory(plugin_id)):
-		return _failed_replace(_err("data_backup_failed", {"id": plugin_id}), txn, final_abs, db, previous_def)
+		return _failed_replace(_err("data_backup_failed", {"id": plugin_id}), txn, final_abs, db, previous_def, installer)
 	if txn.had_previous:
 		var aside_err := DirAccess.rename_absolute(final_abs, op.staging_dir.path_join(PluginInstallTransaction.PREVIOUS))
 		if aside_err != OK:
-			return _failed_replace(_err("install_move_failed", {"godot_err": aside_err}), txn, final_abs, db, previous_def)
+			return _failed_replace(_err("install_move_failed", {"godot_err": aside_err}), txn, final_abs, db, previous_def, installer)
 	var move_err := DirAccess.rename_absolute(extract_abs, final_abs)
 	if move_err != OK:
-		return _failed_replace(_err("install_move_failed", {"godot_err": move_err}), txn, final_abs, db, previous_def)
+		return _failed_replace(_err("install_move_failed", {"godot_err": move_err}), txn, final_abs, db, previous_def, installer)
 
 	# Make the binary executable (extracted files lose +x bit on some
 	# filesystems / Windows). manifest.backend.entrypoint is relative to
@@ -402,7 +402,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if registered.get("ok", false) and db != null and not db.save():
 		registered = _err("register_not_saved", {"id": plugin_id})
 	if not registered.get("ok", false):
-		return _failed_replace(registered, txn, final_abs, db, previous_def)
+		return _failed_replace(registered, txn, final_abs, db, previous_def, installer)
 	# --- 7. An upgrade of a plugin that was running starts BEFORE it
 	# commits (its data was saved in step 5): a new version that fails to
 	# start, or is cancelled while starting, goes back to the working copy's
@@ -412,7 +412,7 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	if verify_start:
 		var started := await _start_before_commit(installer, plugin_id, op)
 		if not started.get("ok", false):
-			return _failed_replace(started, txn, final_abs, db, previous_def)
+			return _failed_replace(started, txn, final_abs, db, previous_def, installer)
 		registered["started"] = true
 	# An update of a plugin the user had stopped is not started to test it.
 	# Its working copy is kept (pending_first_start) until the new version's
@@ -427,8 +427,11 @@ func _install(tarball_url: String, installer, auto_confirm_skills: bool,
 	var phase := PluginInstallTransaction.PHASE_PENDING if awaits_first_start else PluginInstallTransaction.PHASE_COMMITTED
 	if not txn.publish(phase):
 		if registered.started:
-			installer.stop_plugin(plugin_id)  # it runs on the files being rolled back
-		return _failed_replace(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db, previous_def)
+			var stopped: Dictionary = installer.stop_plugin(plugin_id)  # it runs on the files being rolled back
+			if stopped.has("error"):
+				stopped["keep_operation"] = true
+				return _failed_replace(stopped, txn, final_abs, db, previous_def, installer)
+		return _failed_replace(_err("staging_failed", {"dir": op.staging_dir}), txn, final_abs, db, previous_def, installer)
 	if not awaits_first_start and not PluginInstallTransaction.mark_committed(op.staging_dir):
 		# Its Docket journal would read as a rollback once the directory went;
 		# kept, the next launch's recovery records the commit (recover_all).
@@ -457,7 +460,12 @@ func _start_before_commit(installer, plugin_id: String, op: PluginInstallOperati
 	op.enter(PluginInstallOperation.STAGE_START)
 	var started: Dictionary = await installer.start_plugin(plugin_id, true)
 	if op.cancelled or started.has("error"):
-		installer.stop_plugin(plugin_id)
+		var stopped: Dictionary = installer.stop_plugin(plugin_id)
+		if stopped.has("error"):
+			stopped["keep_operation"] = true
+			return stopped
+		if started.has("error_code"):
+			return started
 		if op.cancelled:
 			return _err("cancelled", {"while": "starting"})
 		return _err("start_failed", {"id": plugin_id, "reason": str(started.error)})
@@ -471,7 +479,13 @@ static func rollback_complete(rollback: Dictionary) -> bool:
 
 
 ## `failure` plus what rolling the replacement back restored.
-func _failed_replace(failure: Dictionary, txn, final_abs: String, db, previous_def) -> Dictionary:
+func _failed_replace(failure: Dictionary, txn, final_abs: String, db, previous_def, installer) -> Dictionary:
+	if failure.get("keep_operation", false):
+		return failure
+	var retirement: Dictionary = txn._retirement_status(installer, installer != null and installer != db)
+	if retirement.has("error"):
+		retirement["keep_operation"] = true
+		return retirement
 	failure["rollback"] = txn.roll_back(final_abs, db, previous_def)
 	return failure
 

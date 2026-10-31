@@ -729,6 +729,9 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
 	if _db.is_stale():
 		return {"error": "Another Minerva changed the plugin list; restart Minerva before removing '%s'" % id}
+	var retirement := plugin_retirement_status(id)
+	if retirement.has("error"):
+		return retirement
 	var removal: Dictionary = Transaction.begin_removal(staging_root, id)
 	if removal.has("error"):
 		return {"error": removal.error}
@@ -736,7 +739,7 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 		var stop_result := stop_plugin(id)
 		if stop_result.get("error"):
 			Transaction.end_removal(staging_root, id, removal, false)
-			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
+			return stop_result
 	var removed: bool = _db.remove(id)
 	Transaction.end_removal(staging_root, id, removal, removed)
 	if not removed:
@@ -1148,6 +1151,9 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# backend discovery then supersedes them via the registry's purge-and-emit
 	# path.
 	var discovery_issue := await _discover_backend_tools(id, conn)
+	var retirement := plugin_retirement_status(id)
+	if retirement.has("error"):
+		return retirement
 	if not _owns_runtime_connection(id, conn):
 		return {"error": "Plugin '%s' start was cancelled" % id}
 	if not discovery_issue.is_empty():
@@ -1156,13 +1162,18 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		# Untyped: a check that stops on a script error yields null, which must
 		# refuse the start rather than pass as "no issue".
 		var checked = await RequiredPlugins.host_tools_missing(def, conn, tool_registry.get_panel_tool_entries(def.id) if tool_registry != null else [], false)
+		retirement = plugin_retirement_status(id)
+		if retirement.has("error"):
+			return retirement
 		if not _owns_runtime_connection(id, conn):
 			return {"error": "Plugin '%s' start was cancelled" % id}
 		var contract_issue: String = checked if checked is String \
 			else "%s %s's tool check failed; it was stopped." % [RequiredPlugins.display_name(id), def.version]
 		if not contract_issue.is_empty():
 			push_error("[PluginManager] %s" % contract_issue)
-			stop_plugin(id)
+			var stopped := stop_plugin(id)
+			if stopped.has("error"):
+				return stopped
 			_transition_state(id, S_ERROR)
 			return {"error": contract_issue}
 
@@ -1342,7 +1353,7 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 	if by_person:
 		_person_stops[id] = person_stops(id) + 1
 
-	if def.state == S_STOPPED:
+	if def.state == S_STOPPED and not plugin_retirement_status(id).has("error"):
 		return {"ok": true}  # Already stopped, idempotent.
 
 	var rt := _ensure_runtime(id)
@@ -2267,8 +2278,22 @@ func _surface_plugin_message(reason: String) -> void:
 		SingletonObject.call("create_toast_notification", reason, 1, false)
 
 
+## The connection is the authority on whether its child remains owned.
+func plugin_retirement_status(id: String) -> Dictionary:
+	var conn := get_connection(id)
+	if conn != null and conn.has_retained_stdio_process():
+		var failure := conn.stdio_retirement_failure()
+		if not failure.has("error"):
+			return {"error_code": "subprocess_retirement_unverified", "error": "Plugin '%s' still owns an unretired subprocess" % id}
+		return failure
+	return {"ok": true}
+
+
 ## Marketplace calls this before replacing an installed directory.
 func can_replace_plugin_files(id: String) -> Dictionary:
+	var retirement := plugin_retirement_status(id)
+	if retirement.has("error"):
+		return retirement
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"ok": true}
