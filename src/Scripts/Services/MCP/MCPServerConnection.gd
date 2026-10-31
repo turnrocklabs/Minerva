@@ -1353,25 +1353,12 @@ func _resolve_pending(request_id: Variant, result: Dictionary, wire_value = null
 
 
 func _arm_pending_deadline(pending: _PendingRequest) -> void:
-	if pending.done or not _pending.has(Protocol.request_id_key(pending.request_id)):
-		return
-	pending.deadline = MonotonicDeadline.new()
-	pending.deadline_callback = _resolve_pending.bind(pending.request_id,
-		pending.deadline_error, null, pending.generation)
-	pending.deadline.expired.connect(pending.deadline_callback)
-	if not pending.deadline.start(float(pending.deadline_timeout_sec)):
-		_resolve_pending(pending.request_id,
-			_conn_error("MCP request deadline is unavailable"), null, pending.generation)
+	if not pending.done and _pending.has(Protocol.request_id_key(pending.request_id)):
+		pending.arm_deadline(_resolve_pending, _conn_error("MCP request deadline is unavailable"))
 
 
 func _cancel_pending_deadline(pending: _PendingRequest) -> void:
-	if pending.deadline != null:
-		pending.deadline.cancel()
-		if pending.deadline_callback.is_valid() \
-				and pending.deadline.expired.is_connected(pending.deadline_callback):
-			pending.deadline.expired.disconnect(pending.deadline_callback)
-	pending.deadline = null
-	pending.deadline_callback = Callable()
+	pending.cancel_deadline()
 
 
 func _stdio_owner(process: Object) -> StdioProcessDiagnostics:

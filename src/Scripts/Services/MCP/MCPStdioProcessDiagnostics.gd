@@ -128,3 +128,19 @@ class PendingRequest extends RefCounted:
 	var deadline_error: Dictionary = {}
 	var deadline: Deadline
 	var deadline_callback: Callable
+
+
+	func arm_deadline(resolve: Callable, unavailable: Dictionary) -> void:
+		deadline = Deadline.new()
+		deadline_callback = resolve.bind(request_id, deadline_error, null, generation)
+		deadline.expired.connect(deadline_callback)
+		if not deadline.start(float(deadline_timeout_sec)):
+			resolve.call(request_id, unavailable, null, generation)
+
+	func cancel_deadline() -> void:
+		if deadline != null:
+			deadline.cancel()
+			if deadline_callback.is_valid() and deadline.expired.is_connected(deadline_callback):
+				deadline.expired.disconnect(deadline_callback)
+		deadline = null
+		deadline_callback = Callable()
