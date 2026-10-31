@@ -130,7 +130,8 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 	add_child(staging)
 	for entry: Dictionary in entries:
 		var old: Control = entry.root
-		var panel_name := str(entry.panel_definition.name)
+		var definition: Dictionary = entry.panel_definition
+		var panel_name := str(definition.get("name", definition.entry_scene))
 		var state: Variant = Host.invoke_capture_live_state(old)
 		if not state is Dictionary:
 			staging.free()
@@ -139,7 +140,6 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 		# A JSON boundary with a byte encoding preserves large integer values.
 		var decoded: Dictionary = JSON.parse_string(JSON.stringify(envelope))
 		var copied: Variant = bytes_to_var(str(decoded.bytes).hex_decode())
-		var definition: Dictionary = entry.panel_definition
 		var scene_path := store.slot_path(slot).path_join(str(definition.entry_scene))
 		var packed := ResourceLoader.load(scene_path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
 		if packed == null:
@@ -166,7 +166,7 @@ func _prepare(build: Dictionary, slot: String, entries: Array[Dictionary], valid
 			staging.free()
 			return _failure("Candidate did not preserve the complete transient state", panel_name)
 		candidates.append({"entry": entry, "root": panel, "expected": var_to_bytes(state),
-			"old": old, "visible": old.visible})
+			"old": old, "visible": old.visible, "panel_name": panel_name})
 	return {"ok": true, "candidates": candidates, "staging": staging}
 
 
@@ -190,7 +190,7 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		await get_tree().process_frame
 		await get_tree().process_frame
 		for candidate: Dictionary in prepared.candidates:
-			var panel_name := str(candidate.entry.panel_definition.name)
+			var panel_name: String = candidate.panel_name
 			if not _participant_alive(candidate):
 				prepared.merge(_failure("A participating panel closed during preparation", panel_name), true)
 				break
@@ -243,10 +243,10 @@ func swap(build: Dictionary, entries: Array[Dictionary], wire: Callable, retire:
 		panel.visible = candidate.visible
 		if not wire.call(entry, panel, true) or not Host.invoke_restore_live_state(panel, bytes_to_var(expected)) \
 			or not Host.invoke_self_check(panel):
-			wiring = _failure("Candidate host wiring, state restore or self-check refused", str(entry.panel_definition.name))
+			wiring = _failure("Candidate host wiring, state restore or self-check refused", candidate.panel_name)
 			break
 		if var_to_bytes(Host.invoke_capture_live_state(panel)) != expected:
-			wiring = _failure("Candidate host wiring changed transient state", str(entry.panel_definition.name))
+			wiring = _failure("Candidate host wiring changed transient state", candidate.panel_name)
 			break
 	var publication := store.publish_selector() if wiring.ok else wiring
 	if not publication.get("ok", false):

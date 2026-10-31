@@ -66,8 +66,9 @@ func _result(plugin_id: String, reply: Dictionary, installed: bool = false) -> D
 	if not reply.get("ok", false):
 		push_warning("[PluginLiveReload] " + message)
 		if _notify.is_valid():
-			_notify.call(message)
+			_notify.call("Plugin '%s': %s" % [plugin_id, message])
 	_manager.emit_signal("plugin_status_changed", plugin_id)
+	reply["plugin_id"] = plugin_id
 	reply["message"] = message
 	return reply
 
