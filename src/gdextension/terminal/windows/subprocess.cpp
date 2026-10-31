@@ -146,6 +146,7 @@ void SubProcess::_bind_methods()
     ClassDB::bind_method(D_METHOD("write_data", "data"), &SubProcess::write_data);
     ClassDB::bind_method(D_METHOD("has_io_overflow"), &SubProcess::has_io_overflow);
     ClassDB::bind_method(D_METHOD("get_io_diagnostics", "include_stderr"), &SubProcess::get_io_diagnostics, DEFVAL(false));
+    ClassDB::bind_method(D_METHOD("finalize_io", "generation", "include_stderr"), &SubProcess::finalize_io, DEFVAL(false));
     ClassDB::bind_method(D_METHOD("_emit_io_failure", "generation", "first", "legacy_overflow"), &SubProcess::_emit_io_failure);
     ClassDB::bind_method(D_METHOD("_emit_process_exited", "generation", "exit_code"), &SubProcess::_emit_process_exited);
     ClassDB::bind_method(D_METHOD("_emit_output_ready", "generation"), &SubProcess::_emit_output_ready);
@@ -376,9 +377,8 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
     _poll_exit();
     _diagnostics.stopping();
     _closing = true;
-    // Legacy stop still interrupts readers immediately; EOF shutdown leaves
-    // them draining until the owned child exits or the deadline expires.
-    if (grace_ms == 0) _running = false;
+    // Keep the existing readers draining through child retirement, even for
+    // immediate stop. Terminal evidence is finalized only after their join.
     _write_ready.notify_all();
     if (_write_thread.joinable()) {
         HANDLE writer = static_cast<HANDLE>(_write_thread.native_handle());
@@ -406,8 +406,8 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
         }
         _poll_exit();
     }
-    if (grace_ms > 0) {
-        const auto drain_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    {
+        const auto drain_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(SubProcessIO::READER_DRAIN_MS);
         while ((!_stdout_done || !_stderr_done) && std::chrono::steady_clock::now() < drain_deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -423,6 +423,7 @@ int SubProcess::_stop(int grace_ms, const String &process_name)
     close_handle(_stdout_rd);
     close_handle(_stderr_rd);
     close_handle(_child_process);
+    _diagnostics.finish();
     return _exit_code;
 }
 
@@ -450,38 +451,33 @@ void SubProcess::_read_loop()
         if (bytes_read == 0) { eof = true; break; }
         if (_closing || _stdout_failed) { line_buffer.clear(); continue; }
         line_buffer.append(buffer, bytes_read);
-        {
-            std::lock_guard<std::mutex> lock(_output_mutex);
-            if (_closing) { line_buffer.clear(); continue; }
-            if (line_buffer.front_line_size() > SubProcessIO::STDOUT_LINE_BYTES) {
-                _stdout_failed = true;
-                _record_failure("stdout_line_bytes", "stdout", line_buffer.front_line_size(), SubProcessIO::STDOUT_LINE_BYTES);
-            } else if (_queued_output_bytes + line_buffer.size() > SubProcessIO::STDOUT_BYTES) {
-                _stdout_failed = true;
-                _record_failure("stdout_queue_bytes", "stdout", _queued_output_bytes + line_buffer.size(), SubProcessIO::STDOUT_BYTES);
-            }
-        }
         String line;
-        while (!_stdout_failed && line_buffer.pop_line(line, true)) {
+        size_t bytes = 0;
+        while (!_stdout_failed && line_buffer.pop_line(line, true, &bytes)) {
             bool queued = false;
             {
                 std::lock_guard<std::mutex> lock(_output_mutex);
                 if (_closing) { line_buffer.clear(); break; }
-                size_t bytes = static_cast<size_t>(line.utf8().length());
-                if (_output_queue.size() >= SubProcessIO::STDOUT_LINES) {
+                auto refused = SubProcessIO::stdout_admission(bytes, _output_queue.size(), _queued_output_bytes);
+                if (refused.cause) {
                     _stdout_failed = true;
-                    _record_failure("stdout_queue_lines", "stdout", _output_queue.size() + 1, SubProcessIO::STDOUT_LINES);
-                } else if (_queued_output_bytes + bytes > SubProcessIO::STDOUT_BYTES) {
-                    _stdout_failed = true;
-                    _record_failure("stdout_queue_bytes", "stdout", _queued_output_bytes + bytes, SubProcessIO::STDOUT_BYTES);
+                    _record_failure(refused.cause, "stdout", refused.observed, refused.limit);
                 } else {
                     _queued_output_bytes += bytes;
-                    _output_queue.push(line);
+                    _output_queue.push({line, bytes});
                     queued = true;
                 }
             }
             if (queued && !_output_notification_pending.exchange(true))
                 call_deferred("_emit_output_ready", _generation.load());
+        }
+        {
+            std::lock_guard<std::mutex> lock(_output_mutex);
+            auto refused = SubProcessIO::stdout_pending(line_buffer.pending_payload_size(true), _queued_output_bytes);
+            if (!_closing && !_stdout_failed && refused.cause) {
+                _stdout_failed = true;
+                _record_failure(refused.cause, "stdout", refused.observed, refused.limit);
+            }
         }
         if (_stdout_failed) {
             // Once protocol bytes were lost, neither a queued prefix nor a
@@ -506,15 +502,14 @@ void SubProcess::_queue_stderr(const std::string &line)
 {
     {
         std::lock_guard<std::mutex> lock(_stderr_mutex);
-        while (!_stderr_queue.empty() && (_stderr_queue.size() >= SubProcessIO::STDERR_LINES ||
-                _queued_stderr_bytes + line.size() > SubProcessIO::STDERR_BYTES)) {
-            size_t bytes = static_cast<size_t>(_stderr_queue.front().utf8().length());
+        while (SubProcessIO::stderr_needs_eviction(_stderr_queue.size(), _queued_stderr_bytes, line.size())) {
+            size_t bytes = _stderr_queue.front().bytes;
             _queued_stderr_bytes -= bytes;
             _stderr_queue.pop();
             _diagnostics.drop(bytes);
         }
         _queued_stderr_bytes += line.size();
-        _stderr_queue.push(String::utf8(line.data(), line.size()));
+        _stderr_queue.push({String::utf8(line.data(), line.size()), line.size()});
         _diagnostics.remember(line);
     }
     if (!_stderr_notification_pending.exchange(true)) call_deferred("_emit_stderr_ready", _generation.load());
@@ -524,14 +519,21 @@ void SubProcess::_stderr_read_loop()
 {
     char buffer[4096];
     SubProcessIO::StderrLines lines;
+    bool eof = false;
     auto line = [this](const std::string &value) { _queue_stderr(value); };
     auto loss = [this](size_t bytes, bool first) { _diagnostics.truncate(bytes, first); };
     while (_running) {
         DWORD bytes_read = 0;
-        if (!ReadFile(_stderr_rd, buffer, sizeof(buffer), &bytes_read, nullptr) || bytes_read == 0) break;
+        BOOL ok = ReadFile(_stderr_rd, buffer, sizeof(buffer), &bytes_read, nullptr);
+        if (!ok || bytes_read == 0) {
+            DWORD error = ok ? 0 : GetLastError();
+            eof = ok || error == ERROR_BROKEN_PIPE || error == ERROR_HANDLE_EOF;
+            break;
+        }
         lines.append(buffer, bytes_read, line, loss);
     }
     if (lines.has_tail()) lines.finish(line, loss);
+    _diagnostics.stderr_finished(eof);
     _stderr_done = true;
 }
 
@@ -603,9 +605,9 @@ String SubProcess::read_line()
     if (_stdout_failed || _output_queue.empty())
         return String();
 
-    String line = _output_queue.front();
+    String line = _output_queue.front().text;
+    _queued_output_bytes -= _output_queue.front().bytes;
     _output_queue.pop();
-    _queued_output_bytes -= static_cast<size_t>(line.utf8().length());
     return line;
 }
 
@@ -617,8 +619,8 @@ String SubProcess::read_all()
     while (!_output_queue.empty()) {
         if (!result.is_empty())
             result += "\n";
-        result += _output_queue.front();
-        _queued_output_bytes -= static_cast<size_t>(_output_queue.front().utf8().length());
+        result += _output_queue.front().text;
+        _queued_output_bytes -= _output_queue.front().bytes;
         _output_queue.pop();
     }
     return result;
@@ -636,9 +638,9 @@ String SubProcess::read_stderr_line()
     if (_stderr_queue.empty())
         return String();
 
-    String line = _stderr_queue.front();
+    String line = _stderr_queue.front().text;
+    _queued_stderr_bytes -= _stderr_queue.front().bytes;
     _stderr_queue.pop();
-    _queued_stderr_bytes -= static_cast<size_t>(line.utf8().length());
     return line;
 }
 
@@ -653,6 +655,18 @@ void SubProcess::_record_failure(const char *cause, const char *channel, int64_t
 Dictionary SubProcess::get_io_diagnostics(bool include_stderr)
 {
     _poll_exit();
+    return _diagnostics.snapshot(include_stderr);
+}
+
+Dictionary SubProcess::finalize_io(int64_t generation, bool include_stderr)
+{
+    if (generation != _generation) {
+        Dictionary stale;
+        stale["generation"] = _generation.load();
+        stale["evidence_state"] = "stale_generation";
+        return stale;
+    }
+    _stop(0, String());
     return _diagnostics.snapshot(include_stderr);
 }
 
@@ -689,8 +703,8 @@ String SubProcess::read_all_stderr()
     while (!_stderr_queue.empty()) {
         if (!result.is_empty())
             result += "\n";
-        result += _stderr_queue.front();
-        _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
+        result += _stderr_queue.front().text;
+        _queued_stderr_bytes -= _stderr_queue.front().bytes;
         _stderr_queue.pop();
     }
     return result;

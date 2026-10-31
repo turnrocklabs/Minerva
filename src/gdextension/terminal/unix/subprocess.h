@@ -36,10 +36,10 @@ private:
     std::thread _write_thread;
 
     std::mutex _output_mutex;
-    std::queue<String> _output_queue;
+    std::queue<SubProcessIO::QueuedLine> _output_queue;
 
     std::mutex _stderr_mutex;
-    std::queue<String> _stderr_queue;
+    std::queue<SubProcessIO::QueuedLine> _stderr_queue;
 
     std::mutex _write_mutex;
     std::condition_variable _write_ready;
@@ -100,6 +100,10 @@ public:
 
     /// Process-lifetime causal metadata; raw stderr requires explicit opt-in.
     Dictionary get_io_diagnostics(bool include_stderr = false);
+
+    /// Final terminal evidence after bounded stop/reap/reader drain. Refuses a
+    /// stale generation without stopping or disclosing a replacement process.
+    Dictionary finalize_io(int64_t generation, bool include_stderr = false);
 
     /// Check if subprocess is running
     bool is_running() {

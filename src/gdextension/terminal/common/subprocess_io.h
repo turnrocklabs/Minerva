@@ -10,8 +10,8 @@
 #include <string>
 
 // One policy for both native pipe backends. stdout is a protocol; stderr is
-// lossy diagnostics. Queued line byte counts exclude newline delimiters;
-// stdout's total also includes the as-yet-unparsed bytes of the current read.
+// lossy diagnostics. Payload byte counts exclude LF and the Windows CR in
+// CRLF; retain the same byte count alongside the decoded queued value.
 namespace SubProcessIO {
 constexpr size_t STDOUT_LINES = 256;
 constexpr size_t STDOUT_BYTES = 40u * 1024u * 1024u;
@@ -24,6 +24,25 @@ constexpr size_t STDERR_LINE_BYTES = 8u * 1024u;
 constexpr size_t HISTORY_LINES = 32;
 constexpr size_t HISTORY_LINE_BYTES = 1024;
 constexpr size_t HISTORY_BYTES = 8u * 1024u;
+constexpr int READER_DRAIN_MS = 100;
+
+struct QueuedLine { godot::String text; size_t bytes; };
+struct Refusal { const char *cause = nullptr; size_t observed = 0, limit = 0; };
+
+inline Refusal stdout_admission(size_t bytes, size_t queued_lines, size_t queued_bytes) {
+    if (bytes > STDOUT_LINE_BYTES) return {"stdout_line_bytes", bytes, STDOUT_LINE_BYTES};
+    if (queued_lines >= STDOUT_LINES) return {"stdout_queue_lines", queued_lines + 1, STDOUT_LINES};
+    if (queued_bytes + bytes > STDOUT_BYTES) return {"stdout_queue_bytes", queued_bytes + bytes, STDOUT_BYTES};
+    return {};
+}
+inline Refusal stdout_pending(size_t bytes, size_t queued_bytes) {
+    if (bytes > STDOUT_LINE_BYTES) return {"stdout_line_bytes", bytes, STDOUT_LINE_BYTES};
+    if (queued_bytes + bytes > STDOUT_BYTES) return {"stdout_queue_bytes", queued_bytes + bytes, STDOUT_BYTES};
+    return {};
+}
+inline bool stderr_needs_eviction(size_t lines, size_t bytes, size_t incoming) {
+    return lines > 0 && (lines >= STDERR_LINES || bytes + incoming > STDERR_BYTES);
+}
 
 // Repair malformed peer bytes without asking Godot's decoder to log them.
 // A partial codepoint at a truncation/EOF boundary is discarded, never decoded.
@@ -88,12 +107,19 @@ public:
 // generation is scoped to a SubProcess instance and increments on each start.
 // stderr_tail is absent unless the disclosure owner explicitly opts in;
 // tail_omitted otherwise explains why only loss counts are disclosed.
+// Terminal signals/snapshots are provisional: the stderr reader may be behind.
+// The consumer must finalize_io(expected_generation, include_stderr) BEFORE
+// publishing one terminal outcome. It uses existing stop/reap, then allows up
+// to READER_DRAIN_MS for EOF before interrupting and joining existing readers.
+// evidence_state becomes complete only if stderr actually reached EOF; cutoff
+// means bounded evidence may omit remaining bytes (e.g. inherited open pipes).
 class Diagnostics {
     std::mutex mutex;
     int64_t generation = 0;
     std::string cause, channel, exit_kind = "unknown";
     int64_t observed = 0, limit = 0, os_error = 0, exit_code = -1, exit_signal = 0;
     bool stop_requested = false, terminated_by_host = false;
+    bool finalized = false, stderr_eof = false;
     uint64_t dropped_lines = 0, dropped_bytes = 0, truncated_lines = 0, truncated_bytes = 0;
     std::deque<std::string> history;
     size_t history_bytes = 0;
@@ -103,6 +129,7 @@ public:
         generation = value; cause.clear(); channel.clear(); exit_kind = "unknown";
         observed = limit = os_error = exit_signal = 0; exit_code = -1;
         stop_requested = terminated_by_host = false;
+        finalized = stderr_eof = false;
         dropped_lines = dropped_bytes = truncated_lines = truncated_bytes = 0;
         history.clear(); history_bytes = 0;
     }
@@ -119,6 +146,14 @@ public:
     void stopping(bool terminated = false) {
         std::lock_guard<std::mutex> lock(mutex);
         stop_requested = true; terminated_by_host = terminated_by_host || terminated;
+    }
+    void stderr_finished(bool eof) {
+        std::lock_guard<std::mutex> lock(mutex);
+        stderr_eof = eof;
+    }
+    void finish() {
+        std::lock_guard<std::mutex> lock(mutex);
+        finalized = true;
     }
     void drop(size_t bytes) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -148,6 +183,8 @@ public:
         result["exit_kind"] = godot::String::utf8(exit_kind.c_str());
         result["exit_code"] = exit_code; result["exit_signal"] = exit_signal;
         result["stop_requested"] = stop_requested; result["terminated_by_host"] = terminated_by_host;
+        result["stderr_eof"] = stderr_eof;
+        result["evidence_state"] = finalized ? (stderr_eof ? "complete" : "cutoff") : "provisional";
         result["stderr_dropped_lines"] = static_cast<int64_t>(dropped_lines);
         result["stderr_dropped_bytes"] = static_cast<int64_t>(dropped_bytes);
         result["stderr_truncated_lines"] = static_cast<int64_t>(truncated_lines);
