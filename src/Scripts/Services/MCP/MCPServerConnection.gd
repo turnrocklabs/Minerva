@@ -1000,6 +1000,9 @@ func has_tool(tool_name: String) -> bool:
 
 ## STDIO transport: Connect by spawning subprocess and performing MCP handshake
 func _connect_stdio() -> Error:
+	if has_retained_stdio_process():
+		last_failure_reason = str(_stdio_failure.get("error", "Subprocess ownership retained"))
+		return ERR_BUSY
 	last_stdio_exit_code = -1
 	_stdio_failure = {}
 	_stdio_process = null
@@ -1382,6 +1385,13 @@ func _stdio_matches(process: Object, native_generation: int = -1) -> bool:
 		and _stdio_owner(process).matches(process, native_generation)
 
 
+## Automatic exit handling must retain this owner; explicit disconnect/stop
+## remains the operator's cleanup path after an incomplete native retirement.
+func has_retained_stdio_process() -> bool:
+	return is_instance_valid(_subprocess) and _stdio_process != null \
+		and _stdio_process.process == _subprocess and _stdio_process.retained_ownership
+
+
 ## Admission probes also reconcile a missed native signal. EOF settle keeps
 ## only local waiters; a changed native generation is never stopped or read.
 func _stdio_admission_failure() -> Dictionary:
@@ -1390,6 +1400,10 @@ func _stdio_admission_failure() -> Dictionary:
 	if not _stdio_matches(_subprocess):
 		return Diagnostics.process_changed(server_name)
 	var owner := _stdio_owner(_subprocess)
+	if owner.retained_ownership:
+		return _stdio_failure.duplicate(true)
+	if owner.terminal_draining:
+		return {}
 	if owner.terminal_ready(owner.snapshot(), _subprocess.is_running(), Time.get_ticks_msec()):
 		var failure := _on_stdio_process_exited(-1, _subprocess, owner.native_generation)
 		return failure if not failure.is_empty() else Diagnostics.process_changed(server_name)
@@ -1410,8 +1424,13 @@ func _on_stdio_process_exited(exit_code: int, expected_process = null, native_ge
 		return {}
 	if _stdio_owner(process).finalizing:
 		return {}
+	var owner := _stdio_owner(process)
+	if owner.terminal_draining:
+		return {}
+	owner.terminal_draining = true
 	if not (process.has_method("has_io_overflow") and process.has_io_overflow()):
 		_drain_stdout(process, true)
+	owner.terminal_draining = false
 	return _on_stdio_io_failure(process, exit_code, native_generation, "process_ended")
 
 
@@ -1429,7 +1448,8 @@ func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1,
 		return {}
 	var failure := Diagnostics.stdio_failure(evidence, server_name, plugin_id, log_stderr, natural_exit_code, event)
 	var failed_pending: Array = _pending.values()
-	_subprocess = null
+	if not owner.retained_ownership:
+		_subprocess = null
 	server_connected = false
 	_process_generation += 1
 	protocol_profile = Profile.new()
@@ -1440,9 +1460,10 @@ func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1,
 		and evidence.get("exit_kind") == "exit" \
 		and not evidence.get("terminated_by_host", false) and not overflowed else -1
 	push_warning("[MCP STDIO] %s; details=%s" % [failure.error, JSON.stringify(failure.details)])
-	disconnected.emit()
+	if not owner.retained_ownership:
+		disconnected.emit()
 	_fail_pending_requests(failed_pending, str(failure.error), failure)
-	if process is Node and is_instance_valid(process):
+	if not owner.retained_ownership and process is Node and is_instance_valid(process):
 		process.queue_free()
 	return failure
 
@@ -1486,6 +1507,8 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 		push_warning("[MCP STDIO] Ignoring proprietary capability request outside the legacy profile")
 		return
 	var origin_process = _subprocess
+	if not _stdio_matches(origin_process) or not _stdio_owner(origin_process).can_write(Time.get_ticks_msec()):
+		return
 	var cap_id = msg.get("id", null)
 	var params: Dictionary = msg.get("params", {})
 	var capability: String = str(params.get("capability", ""))
@@ -1536,7 +1559,7 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	var response_json: String = encoded_response.raw + "\n"
 	SingletonObject.verbose_log("[MCP STDIO] Writing capability result server=%s id_type=%d" % [
 		server_name, typeof(cap_id)])
-	if not _stdio_matches(origin_process) or _stdio_owner(origin_process).closing():
+	if not _stdio_matches(origin_process) or not _stdio_owner(origin_process).can_write(Time.get_ticks_msec()):
 		return
 	if not origin_process.write_data(response_json):
 		_on_stdio_io_failure(origin_process, -1, -1, "write_refused")
@@ -1644,8 +1667,8 @@ func _normalize_mcp_tool_result(result) -> Dictionary:
 # ---------------------------------------------------------------------------
 
 ## The single always-live stdout reader. Connected to the subprocess's
-## output_ready signal and also called by the backstop timer. Drains every
-## available line and dispatches it: plugin-initiated messages (capability
+## output_ready signal and also called by the backstop timer. Drains a bounded
+## turn and yields before more work: plugin-initiated messages (capability
 ## requests, event/state/notify) go to their handlers; a JSON-RPC response —
 ## an "id" with no "method" — is routed to its waiter via _resolve_pending.
 func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
@@ -1653,10 +1676,15 @@ func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
 	if (expected_process != null and expected_process != process) or not _stdio_matches(process) \
 			or (not allow_exited and not process.is_running()):
 		return
+	var owner := _stdio_owner(process)
+	if owner.finalizing or (owner.stdout_continuation_pending and not allow_exited):
+		return
+	var remaining := owner.STDOUT_TERMINAL_LINES if allow_exited else owner.STDOUT_LINES_PER_TURN
 
 	# Re-guard each iteration: a dispatched message (or engine-exit teardown)
 	# can free _subprocess mid-drain, after which has_output() would deref null.
-	while _stdio_matches(process) and process.has_output():
+	while remaining > 0 and _stdio_matches(process) and process.has_output():
+		remaining -= 1
 		var line: String = process.read_line()
 		if line.is_empty():
 			continue
@@ -1720,6 +1748,23 @@ func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
 		else:
 			push_warning("[MCP %s] Discarding frame with neither method nor id from plugin '%s'"
 					% [server_name, plugin_id])
+	if not allow_exited and _stdio_matches(process) \
+			and (remaining < owner.STDOUT_LINES_PER_TURN or process.has_output()):
+		_continue_stdout(process, owner)
+
+
+func _continue_stdout(process: Object, owner: StdioProcessDiagnostics) -> void:
+	if owner.stdout_continuation_pending:
+		return
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	owner.stdout_continuation_pending = true
+	var generation := _process_generation
+	await tree.process_frame
+	owner.stdout_continuation_pending = false
+	if generation == _process_generation and _stdio_matches(process, owner.native_generation):
+		_drain_stdout(process)
 
 
 ## Drain worker diagnostics continuously so a chatty but healthy MCP server
@@ -1732,8 +1777,10 @@ func _drain_stderr(expected_process = null) -> void:
 	var process = _subprocess
 	if (expected_process != null and expected_process != process) or not _stdio_matches(process):
 		return
+	if _stdio_owner(process).finalizing:
+		return
 
-	# Match one native queue's line capacity per callback so a continuously
+	# Limit diagnostic lines per callback so a continuously
 	# refilling peer cannot monopolize the main thread. Ready notifications and
 	# the backstop schedule subsequent bounded drains.
 	var drained := 0
@@ -1882,6 +1929,8 @@ func _backstop_tick(expected_process = null) -> void:
 	if not _stdio_matches(process):
 		return
 	var owner := _stdio_owner(process)
+	if owner.finalizing:
+		return
 	if owner.terminal_ready(owner.snapshot(), process.is_running(), Time.get_ticks_msec()):
 		_on_stdio_process_exited(-1, process, owner.native_generation)
 		return
@@ -1893,7 +1942,7 @@ func _backstop_tick(expected_process = null) -> void:
 	_drain_stderr(process)
 	if process != _subprocess or not is_instance_valid(process):
 		return
-	Engine.get_main_loop().create_timer(0.25).timeout.connect(_backstop_tick.bind(process))
+	Engine.get_main_loop().create_timer(owner.backstop_delay(Time.get_ticks_msec())).timeout.connect(_backstop_tick.bind(process))
 
 
 func _handle_async_plugin_event(msg: Dictionary) -> void:

@@ -2038,6 +2038,8 @@ func _run_health_checks() -> void:
 		if db.call("get_by_id", def.id) != def or def.state != S_RUNNING: continue
 		var rt: Dictionary = _runtime.get(def.id, {})
 		var conn: MCPServerConnection = rt.get("connection", null)
+		if conn != null and conn.has_retained_stdio_process():
+			continue
 		if is_attached(def.id):
 			if rt.get("health_pending", false): continue
 			var registration: Dictionary = rt.get("registration", {})
@@ -2436,6 +2438,8 @@ func _handle_unexpected_exit(id: String) -> void:
 	if rt.get("stopping", false):
 		return
 	var conn := get_connection(id)
+	if conn != null and conn.has_retained_stdio_process():
+		return
 	# Health checks must observe the same exit status as the transport backstop.
 	if conn != null and is_instance_valid(conn._subprocess) and not conn._subprocess.is_running():
 		conn._on_stdio_process_exited(-1, conn._subprocess)

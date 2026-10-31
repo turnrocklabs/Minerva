@@ -13,7 +13,7 @@ var _loss_logged: Array[int] = []
 const IO_FIELDS: Array[String] = ["generation", "cause", "channel", "observed", "limit",
 	"os_error", "exit_kind", "exit_code", "exit_signal", "stop_requested", "terminated_by_host",
 	"stderr_dropped_lines", "stderr_dropped_bytes", "stderr_truncated_lines", "stderr_truncated_bytes",
-	"stderr_eof", "evidence_state", "diagnostics_unavailable"]
+	"stderr_eof", "evidence_state", "diagnostics_unavailable", "finalization_error", "process_retained"]
 const LOSS_FIELDS: Array[String] = ["stderr_dropped_lines", "stderr_dropped_bytes",
 	"stderr_truncated_lines", "stderr_truncated_bytes"]
 
@@ -149,6 +149,8 @@ static func stdio_failure(current: Dictionary, server_name: String, plugin_id: S
 	details["observed_event"] = event
 	if not include_stderr:
 		details["tail_omitted"] = "stderr_logging_disabled"
+	elif current.get("evidence_state") not in ["complete", "cutoff"]:
+		details["tail_omitted"] = "finalization_incomplete"
 	elif current.get("stderr_tail") is PackedStringArray or current.get("stderr_tail") is Array:
 		var tail: Array[String] = []
 		var remaining := 8 * 1024
@@ -189,5 +191,8 @@ static func stdio_failure(current: Dictionary, server_name: String, plugin_id: S
 			reason = "transport failed (%s); native cause unavailable" % event
 	if current.get("evidence_state") == "unavailable":
 		reason += "; rebuild the native extension for finalized diagnostics"
+	elif current.get("evidence_state") == "finalization_failed":
+		reason += "; finalization failed; subprocess ownership retained"
+		code = "subprocess_finalization_failed"
 	return {"error": "MCP server '%s': %s" % [server_name, reason], "local_error": true,
 		"error_code": code, "details": details}
