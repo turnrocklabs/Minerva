@@ -135,7 +135,9 @@ def main() -> int:
                 remaining[key] -= 1
             else:
                 unexpected.append(header.replace("SCRIPT ERROR:", "Child diagnostic:"))
-    expected = {"compile": 3, "scene_parse": 3, "scene_load": 3, "scene_bind": 3, "missing_node": 6}
+    # missing_node: the first panel's self-check refuses, so the second panel is
+    # never instantiated (one engine "Node not found" line per cycle).
+    expected = {"compile": 3, "scene_parse": 3, "scene_load": 3, "scene_bind": 3, "missing_node": 3}
     summary = re.search(r"Plugin live swap: ([1-9][0-9]*) checks, 0 failures", raw)
     ok = baseline.returncode == 0 and "BASELINE_DONE" in baseline.stdout
     ok = ok and result.returncode == 0 and faults == Counter(expected) and not unexpected and summary is not None

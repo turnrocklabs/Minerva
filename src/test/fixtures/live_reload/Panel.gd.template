@@ -38,5 +38,7 @@ func _mutate() -> void:
 	document.view.scroll = -1.0
 
 
+# Marker is required. The host does not reject engine errors from _ready, so
+# the panel declares this invariant through its own self-check.
 func _on_panel_self_check() -> bool:
-	return FAULT != "self-check"
+	return FAULT != "self-check" and marker != null

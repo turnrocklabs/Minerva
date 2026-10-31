@@ -125,7 +125,7 @@ func _run() -> void:
 			fault = injected
 			var result: Dictionary = await swapper.swap(make_build(version, injected), entries, wire, retire)
 			check(injected + " refuses visibly", not result.ok and not str(result.get("error", "")).is_empty())
-			var causes := {"compile": "failed to compile", "scene": "dependency failed to load", "import": "complete transient state", "missing-node": "Marker", "self-check": "self-check refused", "alias": "deferred initialization", "rename": "Cannot publish generation selector"}
+			var causes := {"compile": "failed to compile", "scene": "dependency failed to load", "import": "complete transient state", "missing-node": "self-check refused", "self-check": "self-check refused", "alias": "deferred initialization", "rename": "Cannot publish generation selector"}
 			check(injected + " has its intended refusal cause", str(result.get("error", "")).contains(causes[injected]))
 			for index: int in entries.size():
 				check(injected + " keeps same old panel " + str(index), entries[index].root.get_instance_id() == ids[index])
