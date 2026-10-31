@@ -133,7 +133,7 @@ func save_data(data_abs: String) -> bool:
 ## install_lock_failed (the lock file cannot be used at all), plugin_db_stale
 ## (another Minerva changed the plugin database since this one read it), or
 ## recovery_pending.
-func enter(staging_root: String, db, op, tree: SceneTree, owner = null, manager_backed: bool = false) -> Dictionary:
+func enter(staging_root: String, db, op, tree: SceneTree, owner: Object = null, manager_backed: bool = false) -> Dictionary:
 	_staging_lock = ClassDB.instantiate("ProcessFileLock")
 	var lock_path := staging_root.path_join(STAGING_LOCK)
 	var status: int = _staging_lock.try_lock_status(lock_path)
@@ -246,7 +246,7 @@ static func recover_all(staging_root: String, db) -> Array:
 ## check the live operations for `plugin_id`: this process's own (a rollback
 ## that failed earlier) is retried; another live process's cannot be touched,
 ## so the install waits. Returns {} or recovery_pending.
-func _resolve_pending(staging_root: String, db, owner = null, manager_backed: bool = false) -> Dictionary:
+func _resolve_pending(staging_root: String, db, owner: Object = null, manager_backed: bool = false) -> Dictionary:
 	var retirement := _retirement_status(owner, manager_backed)
 	if retirement.has("error"):
 		return retirement
@@ -271,7 +271,7 @@ func _resolve_pending(staging_root: String, db, owner = null, manager_backed: bo
 
 
 ## Manager-backed recovery must consult the live owner while holding the lock.
-func _retirement_status(owner, manager_backed: bool) -> Dictionary:
+func _retirement_status(owner: Object, manager_backed: bool) -> Dictionary:
 	if not manager_backed:
 		return {"ok": true}
 	if not is_instance_valid(owner) or not owner.has_method("plugin_retirement_status"):
@@ -431,7 +431,7 @@ static func has_unfinished(staging_root: String, plugin_id: String) -> bool:
 
 ## With the staging lock held (try_enter), undo what is unfinished for
 ## `plugin_id` (see _resolve_pending). Returns {} or recovery_pending.
-func recover_unfinished(staging_root: String, db, owner = null, manager_backed: bool = false) -> Dictionary:
+func recover_unfinished(staging_root: String, db, owner: Object = null, manager_backed: bool = false) -> Dictionary:
 	return _resolve_pending(staging_root, db, owner, manager_backed)
 
 

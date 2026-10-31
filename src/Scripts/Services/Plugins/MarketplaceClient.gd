@@ -479,7 +479,7 @@ static func rollback_complete(rollback: Dictionary) -> bool:
 
 
 ## `failure` plus what rolling the replacement back restored.
-func _failed_replace(failure: Dictionary, txn, final_abs: String, db, previous_def, installer) -> Dictionary:
+func _failed_replace(failure: Dictionary, txn, final_abs: String, db, previous_def, installer: Object) -> Dictionary:
 	if failure.get("keep_operation", false):
 		return failure
 	var retirement: Dictionary = txn._retirement_status(installer, installer != null and installer != db)
