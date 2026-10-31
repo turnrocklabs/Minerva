@@ -20,6 +20,7 @@ const HttpHeaders = preload("res://Scripts/Services/MCP/MCPHttpHeaders.gd")
 const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 const Diagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
+const StdioProcessDiagnostics = preload("res://Scripts/Services/MCP/MCPStdioProcessDiagnostics.gd")
 const CatalogWatch = preload("res://Scripts/Services/MCP/MCPToolCatalogWatch.gd")
 
 signal connected()
@@ -83,6 +84,8 @@ var _websocket: WebSocketPeer = null
 
 ## SubProcess for STDIO transport (type not specified - GDExtension may not be loaded)
 var _subprocess = null
+var _stdio_process: StdioProcessDiagnostics
+var _stdio_failure: Dictionary = {}
 
 ## In-flight STDIO requests, keyed by MCPProtocol's typed JSON-RPC identity.
 ## String "7" and integer 7 therefore remain separate. Each value is a
@@ -175,8 +178,11 @@ func process_generation() -> int:
 ## or {error, rpc_error | local_error}), and an error when the process
 ## changed while it was outstanding.
 func request_method(method: String, params: Dictionary, timeout_sec: float = 120.0) -> Dictionary:
-	if transport != TransportType.STDIO or _subprocess == null or not _subprocess.is_running():
+	if transport != TransportType.STDIO:
 		return _conn_error("STDIO transport not connected")
+	var admission := _stdio_admission_failure()
+	if not admission.is_empty():
+		return admission
 	for mcp_prefix in ["tools/", "resources/", "prompts/", "notifications/", "completion/", "logging/"]:
 		if method.begins_with(mcp_prefix):
 			return _conn_error("%s is an MCP method" % method)
@@ -994,6 +1000,8 @@ func has_tool(tool_name: String) -> bool:
 ## STDIO transport: Connect by spawning subprocess and performing MCP handshake
 func _connect_stdio() -> Error:
 	last_stdio_exit_code = -1
+	_stdio_failure = {}
+	_stdio_process = null
 	SingletonObject.verbose_log("[MCP STDIO] Connecting server=%s" % server_name)
 	var startup_deadline_ms := Time.get_ticks_msec() + int(stdio_startup_budget_sec * 1000.0)
 
@@ -1059,14 +1067,18 @@ func _connect_stdio() -> Error:
 	# Attach readers as soon as the child starts. A worker may write diagnostics
 	# during startup, before it is ready for the protocol handshake.
 	var connected_process = created_process
+	_stdio_process = StdioProcessDiagnostics.new(connected_process)
 	if connected_process.has_signal("output_ready"):
 		connected_process.output_ready.connect(_drain_stdout.bind(connected_process))
 	if connected_process.has_signal("stderr_ready"):
 		connected_process.stderr_ready.connect(_drain_stderr.bind(connected_process))
-	if connected_process.has_signal("io_overflow"):
+	if connected_process.has_signal("io_failed"):
+		connected_process.io_failed.connect(_on_stdio_io_failed.bind(connected_process))
+	elif connected_process.has_signal("io_overflow"):
 		connected_process.io_overflow.connect(_on_stdio_io_failure.bind(connected_process))
 	if connected_process.has_signal("process_exited"):
-		connected_process.process_exited.connect(_on_stdio_process_exited.bind(connected_process))
+		connected_process.process_exited.connect(_on_stdio_process_exited.bind(
+			connected_process, _stdio_process.native_generation))
 
 	# Give the child a short unscaled startup turn within the shared deadline.
 	var startup_delay := minf(0.1, _remaining_startup_seconds(startup_deadline_ms))
@@ -1078,9 +1090,7 @@ func _connect_stdio() -> Error:
 		return ERR_CANT_CONNECT
 
 	if not created_process.is_running():
-		push_error("MCP server subprocess exited immediately")
-		_subprocess.queue_free()
-		_subprocess = null
+		_on_stdio_process_exited(-1, created_process)
 		return ERR_CANT_CONNECT
 
 	# Connect the single always-live stdout reader. Every line the plugin emits
@@ -1216,14 +1226,15 @@ func _stdio_method_request(method: String, params: Dictionary) -> Dictionary:
 
 func _write_stdio_notification(message: Dictionary, generation: int) -> bool:
 	var process = _subprocess
-	if process == null or generation != _process_generation or not process.is_running():
+	if generation != _process_generation or not _stdio_admission_failure().is_empty() \
+			or _stdio_owner(process).closing():
 		return false
 	var encoded := JsonSerialization.encode(message)
 	if not encoded.get("ok", false):
 		return false
 	if process.write_data(str(encoded.raw) + "\n"):
 		return true
-	_on_stdio_io_failure(process)
+	_on_stdio_io_failure(process, -1, -1, "write_refused")
 	return false
 
 
@@ -1250,8 +1261,9 @@ func _next_request_id() -> String:
 ## on a real response or a connection loss). tool_name, when given, is woven
 ## into timeout/error messages for debuggability.
 func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: String = "", context: ExecutionContext = null, generation: int = -1) -> Dictionary:
-	if not _subprocess or not _subprocess.is_running():
-		return _conn_error("MCP server '%s' is not running" % server_name)
+	var admission := _stdio_admission_failure()
+	if not admission.is_empty():
+		return context.fail(admission, "connection_error") if context != null else admission
 
 	if context == null:
 		context = ExecutionContext.create("connection")
@@ -1264,13 +1276,17 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	var owned_generation: int = _process_generation if generation < 0 else generation
 	if owned_generation != _process_generation:
 		return _conn_error("MCP process changed before request dispatch")
-	var serialized := JsonSerialization.encode(request)
+	# During EOF settle this is a local waiter only: no payload encoding/copy or
+	# native admission. Existing cancellation, deadline and first-wins handling apply.
+	var write_allowed := not _stdio_owner(_subprocess).closing()
+	var serialized := JsonSerialization.encode(request) if write_allowed else {"ok": true}
 	if not serialized.ok:
 		return _conn_error(serialized.error.message)
 	var pending := _PendingRequest.new()
 	pending.tool_name = tool_name
 	pending.created_ms = Time.get_ticks_msec()
 	pending.capture_wire = true
+	pending.dispatched = write_allowed
 	pending.request_id = request_id
 	pending.generation = owned_generation
 	pending.context = context
@@ -1282,16 +1298,16 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	if context != null:
 		context.lifetime.cancelled.connect(on_cancel)
 
-	var request_json: String = serialized.raw + "\n"
-	SingletonObject.verbose_log("[MCP %s] Sending method=%s id_type=%d" % [
-		server_name, str(request.get("method", "")), typeof(request.get("id"))])
-
-	if not _subprocess.write_data(request_json):
-		_pending.erase(request_key)
-		if context != null and context.lifetime.cancelled.is_connected(on_cancel):
-			context.lifetime.cancelled.disconnect(on_cancel)
-		_on_stdio_io_failure()
-		return _conn_error("failed to write request to MCP server '%s'" % server_name)
+	if write_allowed:
+		var request_json: String = serialized.raw + "\n"
+		SingletonObject.verbose_log("[MCP %s] Sending method=%s id_type=%d" % [
+			server_name, str(request.get("method", "")), typeof(request.get("id"))])
+		var dispatch_process = _subprocess
+		if not dispatch_process.write_data(request_json):
+			var failure := _on_stdio_io_failure(dispatch_process, -1, -1, "write_refused")
+			if not pending.done:
+				_resolve_pending(request_id, failure if not failure.is_empty() else
+					Diagnostics.process_changed(server_name), null, owned_generation)
 
 	if timeout_sec > 0.0 and not pending.done:
 		var label: String = tool_name if tool_name != "" else ("id " + str(request_id))
@@ -1354,39 +1370,80 @@ func _cancel_pending_deadline(pending: _PendingRequest) -> void:
 	pending.deadline_callback = Callable()
 
 
-func _on_stdio_process_exited(exit_code: int, expected_process = null) -> void:
+func _stdio_owner(process: Object) -> StdioProcessDiagnostics:
+	if _stdio_process == null or _stdio_process.process != process:
+		_stdio_process = StdioProcessDiagnostics.new(process)
+	return _stdio_process
+
+
+func _stdio_matches(process: Object, native_generation: int = -1) -> bool:
+	return process == _subprocess and is_instance_valid(process) \
+		and _stdio_owner(process).matches(process, native_generation)
+
+
+## Admission probes also reconcile a missed native signal. EOF settle keeps
+## only local waiters; a changed native generation is never stopped or read.
+func _stdio_admission_failure() -> Dictionary:
+	if _subprocess == null:
+		return _stdio_failure.duplicate(true) if not _stdio_failure.is_empty() else _conn_error("STDIO transport not connected")
+	if not _stdio_matches(_subprocess):
+		return Diagnostics.process_changed(server_name)
+	var owner := _stdio_owner(_subprocess)
+	if owner.terminal_ready(owner.snapshot(), _subprocess.is_running(), Time.get_ticks_msec()):
+		var failure := _on_stdio_process_exited(-1, _subprocess, owner.native_generation)
+		return failure if not failure.is_empty() else Diagnostics.process_changed(server_name)
+	return {}
+
+
+func _on_stdio_io_failed(native_generation: int, expected_process: Object) -> void:
+	if not _stdio_matches(expected_process, native_generation):
+		return
+	var owner := _stdio_owner(expected_process)
+	if owner.terminal_ready(owner.snapshot(), bool(expected_process.call("is_running")), Time.get_ticks_msec()):
+		_on_stdio_process_exited(-1, expected_process, native_generation)
+
+
+func _on_stdio_process_exited(exit_code: int, expected_process = null, native_generation: int = -1) -> Dictionary:
 	var process = _subprocess
-	if process == null or (expected_process != null and expected_process != process):
-		return
-	if process.has_method("has_io_overflow") and process.has_io_overflow():
-		_on_stdio_io_failure(process)
-		return
-	_drain_stdout(process, true)
-	_drain_stderr(process)
-	if process != _subprocess:
-		return
-	if exit_code < 0 and process.has_method("stop_gracefully"):
-		exit_code = process.stop_gracefully(0, server_name)
-	_on_stdio_io_failure(process, exit_code)
+	if (expected_process != null and expected_process != process) or not _stdio_matches(process, native_generation):
+		return {}
+	if _stdio_owner(process).finalizing:
+		return {}
+	if not (process.has_method("has_io_overflow") and process.has_io_overflow()):
+		_drain_stdout(process, true)
+	return _on_stdio_io_failure(process, exit_code, native_generation, "process_ended")
 
 
-func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1) -> void:
-	if _subprocess == null or (expected_process != null and expected_process != _subprocess):
-		return
-	var failed_process = _subprocess
+func _on_stdio_io_failure(expected_process = null, natural_exit_code: int = -1,
+		native_generation: int = -1, event: String = "io_failure") -> Dictionary:
+	var process = _subprocess
+	if (expected_process != null and expected_process != process) or not _stdio_matches(process, native_generation):
+		return {}
+	var owner := _stdio_owner(process)
+	if owner.finalizing:
+		return {}
+	var overflowed: bool = process.has_method("has_io_overflow") and process.has_io_overflow()
+	var evidence := owner.finalize(log_stderr)
+	if process != _subprocess or evidence.get("evidence_state") == "stale_generation":
+		return {}
+	var failure := Diagnostics.stdio_failure(evidence, server_name, plugin_id, log_stderr, natural_exit_code, event)
 	var failed_pending: Array = _pending.values()
 	_subprocess = null
 	server_connected = false
 	_process_generation += 1
 	protocol_profile = Profile.new()
 	_completed_wire_results.clear()
-	last_stdio_exit_code = natural_exit_code
+	_stdio_failure = failure.duplicate(true)
+	last_failure_reason = str(failure.error)
+	last_stdio_exit_code = int(evidence.get("exit_code", -1)) if evidence.get("cause") in ["process_exit", "stdout_eof"] \
+		and evidence.get("exit_kind") == "exit" \
+		and not evidence.get("terminated_by_host", false) and not overflowed else -1
+	push_warning("[MCP STDIO] %s; details=%s" % [failure.error, JSON.stringify(failure.details)])
 	disconnected.emit()
-	_fail_pending_requests(failed_pending,
-		"MCP server '%s' exceeded a subprocess I/O bound or lost its input pipe" % server_name)
-	failed_process.stop()
-	if failed_process is Node and is_instance_valid(failed_process):
-		failed_process.queue_free()
+	_fail_pending_requests(failed_pending, str(failure.error), failure)
+	if process is Node and is_instance_valid(process):
+		process.queue_free()
+	return failure
 
 
 ## Fail every outstanding request — used on disconnect / subprocess exit so no
@@ -1396,8 +1453,8 @@ func _fail_all_pending(reason: String) -> void:
 	_fail_pending_requests(pending_requests, reason)
 
 
-func _fail_pending_requests(pending_requests: Array, reason: String) -> void:
-	var err := _conn_error(reason)
+func _fail_pending_requests(pending_requests: Array, reason: String, failure: Dictionary = {}) -> void:
+	var err := _conn_error(reason) if failure.is_empty() else failure
 	for pending_value: Variant in pending_requests:
 		var pending: _PendingRequest = pending_value
 		_resolve_pending(pending.request_id, err, null, pending.generation)
@@ -1442,7 +1499,7 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 		_legacy_parent_generation = _process_generation
 		var parent_key: String = Protocol.request_id_key(params.parent_request_id)
 		var parent: _PendingRequest = _pending.get(parent_key)
-		if parent == null or parent.context == null or parent.generation != _process_generation:
+		if parent == null or not parent.dispatched or parent.context == null or parent.generation != _process_generation:
 			parent_error = {"success": false, "error_code": "parent_request_unknown",
 				"error_message": "Parent request is unknown or no longer outstanding."}
 		else:
@@ -1473,17 +1530,15 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	}
 	var encoded_response := JsonSerialization.encode(response)
 	if not encoded_response.get("ok", false):
-		push_warning("[MCP STDIO] Capability result contains unsupported JSON values")
-		_on_stdio_io_failure(origin_process)
+		_on_stdio_io_failure(origin_process, -1, -1, "encoding_refused")
 		return
 	var response_json: String = encoded_response.raw + "\n"
 	SingletonObject.verbose_log("[MCP STDIO] Writing capability result server=%s id_type=%d" % [
 		server_name, typeof(cap_id)])
-	if origin_process == null or origin_process != _subprocess:
+	if not _stdio_matches(origin_process) or _stdio_owner(origin_process).closing():
 		return
 	if not origin_process.write_data(response_json):
-		push_warning("[MCP STDIO] Failed to write capability result back to plugin '%s'" % plugin_id)
-		_on_stdio_io_failure()
+		_on_stdio_io_failure(origin_process, -1, -1, "write_refused")
 
 
 ## STDIO transport: Call a tool
@@ -1502,8 +1557,9 @@ func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
 
 func _call_tool_stdio_outcome_op(tool_name: String, arguments: Dictionary,
 		timeout_sec: float = 120.0, context: ExecutionContext = null) -> ToolCallOutcome:
-	if not _subprocess or not _subprocess.is_running():
-		return ToolCallOutcome.failure("STDIO transport not connected")
+	var admission := _stdio_admission_failure()
+	if not admission.is_empty():
+		return ToolCallOutcome.from_error(admission)
 	if protocol_profile.era == Profile.Era.MODERN_2026_07_28 \
 			and not protocol_profile.supports("tools"):
 		return ToolCallOutcome.failure("Modern MCP server does not advertise the tools capability")
@@ -1614,13 +1670,13 @@ func _normalize_mcp_tool_result(result) -> Dictionary:
 ## an "id" with no "method" — is routed to its waiter via _resolve_pending.
 func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
 	var process = _subprocess
-	if process == null or (expected_process != null and expected_process != process) \
+	if (expected_process != null and expected_process != process) or not _stdio_matches(process) \
 			or (not allow_exited and not process.is_running()):
 		return
 
 	# Re-guard each iteration: a dispatched message (or engine-exit teardown)
 	# can free _subprocess mid-drain, after which has_output() would deref null.
-	while process == _subprocess and is_instance_valid(process) and process.has_output():
+	while _stdio_matches(process) and process.has_output():
 		var line: String = process.read_line()
 		if line.is_empty():
 			continue
@@ -1694,8 +1750,7 @@ func _drain_stdout(expected_process = null, allow_exited: bool = false) -> void:
 ## identity prevents a deferred signal from draining a replacement process.
 func _drain_stderr(expected_process = null) -> void:
 	var process = _subprocess
-	if process == null or (expected_process != null and expected_process != process) \
-			or not is_instance_valid(process):
+	if (expected_process != null and expected_process != process) or not _stdio_matches(process):
 		return
 
 	# Match one native queue's line capacity per callback so a continuously
@@ -1709,6 +1764,11 @@ func _drain_stderr(expected_process = null) -> void:
 		for output: String in _stderr_diagnostics.stderr_log_lines(
 				line, Time.get_ticks_msec(), log_stderr, plugin_id):
 			print(output)
+	if _stdio_matches(process):
+		var summary := _stderr_diagnostics.stderr_loss_summary(
+			_stdio_owner(process).snapshot(), _process_generation, Time.get_ticks_msec(), server_name)
+		if not summary.is_empty():
+			print(summary)
 
 
 func _matches_stdio_catalog_watch(message: Dictionary) -> bool:
@@ -1782,7 +1842,7 @@ func _route_stdio_response(raw_line: String, message: Dictionary, generation: in
 	if not _pending.has(request_key):
 		return
 	var pending: _PendingRequest = _pending[request_key]
-	if pending.generation != generation:
+	if pending.generation != generation or not pending.dispatched:
 		return
 	var shape_error := Protocol.validate_response(message, pending.request_id)
 	if not shape_error.is_empty():
@@ -1839,8 +1899,11 @@ func _backstop_tick(expected_process = null) -> void:
 	if not _subprocess or (expected_process != null and expected_process != _subprocess):
 		return
 	var process = _subprocess
-	if not process.is_running():
-		_on_stdio_process_exited(-1, process)
+	if not _stdio_matches(process):
+		return
+	var owner := _stdio_owner(process)
+	if owner.terminal_ready(owner.snapshot(), process.is_running(), Time.get_ticks_msec()):
+		_on_stdio_process_exited(-1, process, owner.native_generation)
 		return
 	_drain_stdout(process)
 	# Dispatching stdout can synchronously disconnect or replace the process.
@@ -1910,6 +1973,7 @@ class _PendingRequest extends RefCounted:
 	var tool_name: String = ""
 	var created_ms: int = 0
 	var capture_wire := false
+	var dispatched := false
 	var request_id: Variant
 	var generation := 0
 	var context: ExecutionContext = null
