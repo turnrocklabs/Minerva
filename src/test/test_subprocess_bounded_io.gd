@@ -74,8 +74,10 @@ func _run() -> void:
 	var notifications := {"ready": 0, "overflow": 0}
 	process.output_ready.connect(func(): notifications.ready += 1)
 	process.io_overflow.connect(func(): notifications.overflow += 1)
+	# 512 = 2x SubProcessIO::STDOUT_LINES (256, common/subprocess_io.h), so the
+	# burst always exceeds the native stdout line cap.
 	check("same native owner restarts after interrupted write", process.start(python,
-		PackedStringArray(["-c", "import sys; [print(i) for i in range(100)]; sys.stdout.flush()"])))
+		PackedStringArray(["-c", "import sys; [print(i) for i in range(512)]; sys.stdout.flush()"])))
 	var until := Time.get_ticks_msec() + 3000
 	while notifications.overflow == 0 and Time.get_ticks_msec() < until:
 		await create_timer(0.01).timeout
