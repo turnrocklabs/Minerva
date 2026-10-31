@@ -150,7 +150,7 @@ static func stdio_failure(current: Dictionary, server_name: String, plugin_id: S
 	if not include_stderr:
 		details["tail_omitted"] = "stderr_logging_disabled"
 	elif current.get("stderr_tail") is PackedStringArray or current.get("stderr_tail") is Array:
-		var tail := PackedStringArray()
+		var tail: Array[String] = []
 		var remaining := 8 * 1024
 		for value: Variant in current.stderr_tail:
 			if tail.size() >= 32 or remaining <= 0:
