@@ -32,8 +32,8 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 ##   which the reader routes back by JSON-RPC id.  The plugin's tool call
 ##   resumes only after the capability response is written back to its stdin and
 ##   it sends its tools/call result.  This is single-threaded cooperative
-##   re-entrancy — no two capability requests from the same plugin can overlap
-##   because the plugin blocks waiting for each response before sending the next.
+##   re-entrancy. A plugin may keep servicing tools while a capability request is
+##   pending; capability responses are correlated by their JSON-RPC IDs.
 
 ## JsonPointer — preloaded to avoid class_name scope issues when CapabilityBroker
 ## is loaded in isolation (e.g. headless tests). JsonPatch.gd uses the same pattern.
@@ -48,6 +48,14 @@ const _PluginScopeGrants := preload("res://Scripts/Services/Plugins/PluginScopeG
 ## plugin_id since one broker serves all plugins.
 signal plugin_chat_invoked(plugin_id: String, provider_name: String, model_name: String)
 signal plugin_chat_completed(plugin_id: String, provider_name: String, model_name: String, duration_ms: int, ok: bool, tokens_in: int, tokens_out: int, error: String)
+
+## Each request keeps its provider alive until generation/cancellation settles.
+var _active_plugin_chats: Dictionary[BaseProvider, String] = {}
+
+func cancel_plugin_chats(plugin_id: String) -> void:
+	for provider: BaseProvider in _active_plugin_chats.keys():
+		if _active_plugin_chats[provider] == plugin_id:
+			provider.cancel_active_resquests()
 
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
@@ -2358,6 +2366,14 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	var chat_id_key: String = "plugin/%s" % plugin_id
 	provider.chat_id = chat_id_key
 	provider.owner_history_id = chat_id_key
+	if provider is CoreProvider:
+		var core_provider: CoreProvider = provider
+		if core_provider.supports_async_chat():
+			# Plugin jobs use the same cold-load/reconnect transport as chat, but
+			# are not saved as resumable replies in a user's chat history.
+			var pending_item := ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.MODEL)
+			pending_item.provider = core_provider
+			additional_params["_core_chat_job"] = core_provider.create_chat_job(pending_item, Callable(), Callable())
 
 	# --- 8. Generate content -------------------------------------------------
 	print("[CapabilityBroker] Plugin '%s' invoking host.providers.chat (model=%s, provider=%s)" % [
@@ -2365,7 +2381,9 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	plugin_chat_invoked.emit(plugin_id, actual_provider_name, actual_model_name)
 	var _chat_start_us: int = Time.get_ticks_msec()
 
+	_active_plugin_chats[provider] = plugin_id
 	var bot_response: BotResponse = await provider.generate_content(prompt, additional_params)
+	_active_plugin_chats.erase(provider)
 
 	var _chat_duration_ms: int = Time.get_ticks_msec() - _chat_start_us
 
@@ -2384,6 +2402,12 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 		plugin_chat_completed.emit(plugin_id, actual_provider_name, actual_model_name,
 			_chat_duration_ms, false, 0, 0, str(bot_response.error))
 		provider.queue_free()
+		if bot_response.has_meta("provider_failure"):
+			var failure: Dictionary = bot_response.get_meta("provider_failure").duplicate(true)
+			failure["success"] = false
+			failure["error_message"] = str(bot_response.error)
+			failure["plugin_id"] = plugin_id
+			return failure
 		if bot_response.has_meta("error_code"):
 			var refusal := GenerationOptions.failure(str(bot_response.get_meta("error_code")), str(bot_response.error))
 			refusal["plugin_id"] = plugin_id

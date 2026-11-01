@@ -729,6 +729,9 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
 	if _db.is_stale():
 		return {"error": "Another Minerva changed the plugin list; restart Minerva before removing '%s'" % id}
+	var retirement := plugin_retirement_status(id)
+	if retirement.has("error"):
+		return retirement
 	var removal: Dictionary = Transaction.begin_removal(staging_root, id)
 	if removal.has("error"):
 		return {"error": removal.error}
@@ -736,7 +739,7 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 		var stop_result := stop_plugin(id)
 		if stop_result.get("error"):
 			Transaction.end_removal(staging_root, id, removal, false)
-			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
+			return stop_result
 	var removed: bool = _db.remove(id)
 	Transaction.end_removal(staging_root, id, removal, removed)
 	if not removed:
@@ -756,6 +759,10 @@ func _remove_record(id: String, def, Transaction, staging_root: String) -> Dicti
 ## undone first (PluginPendingUpgrade). `in_transaction` is only for the
 ## install that is replacing the plugin and holds the staging lock.
 func start_plugin(id: String, in_transaction: bool = false) -> Dictionary:
+	var retained := get_connection(id)
+	if retained != null and retained.has_retained_stdio_process():
+		_transition_state(id, S_ERROR)
+		return retained.stdio_retirement_failure()
 	var db: Object = _db
 	var definition: PluginDefinition = db.call("get_by_id", id)
 	if definition != null and not definition.requires_plugins.is_empty():
@@ -876,7 +883,9 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 	if def.state in [S_RUNNING, S_CRASH_LOOP] \
 			or (def.state == S_STARTING and not _owns_docket_start(docket_start)):
 		return {"error": "Docket is already active or in a crash loop"}
-	_cleanup_connection("docket", false)
+	var cleanup := _cleanup_connection("docket", false)
+	if cleanup.get("error"):
+		return cleanup
 	var rt := _ensure_runtime("docket")
 	rt["attached"] = true
 	rt["attach_refused"] = false
@@ -998,7 +1007,9 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	RequiredPlugins.prepare_launch(def)
 
 	# Clean up any leftover connection from a previous run.
-	_cleanup_connection(id, false)
+	var cleanup := _cleanup_connection(id, false)
+	if cleanup.get("error"):
+		return cleanup
 
 	_transition_state(id, S_STARTING)
 
@@ -1113,9 +1124,12 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		if failure_reason.is_empty():
 			failure_reason = "Subprocess failed to start: %s" % error_string(err)
 		push_error("[PluginManager] Failed to start plugin '%s': %s" % [id, failure_reason])
-		_cleanup_connection(id)
+		var failed_cleanup := _cleanup_connection(id)
 		_transition_state(id, S_ERROR)
-		return {"error": failure_reason}
+		if failed_cleanup.get("error"):
+			return failed_cleanup
+		var native_failure := conn.stdio_retirement_failure()
+		return native_failure if not native_failure.is_empty() else {"error": failure_reason}
 
 	_transition_state(id, S_RUNNING)
 
@@ -1137,6 +1151,9 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# backend discovery then supersedes them via the registry's purge-and-emit
 	# path.
 	var discovery_issue := await _discover_backend_tools(id, conn)
+	var retirement := plugin_retirement_status(id)
+	if retirement.has("error"):
+		return retirement
 	if not _owns_runtime_connection(id, conn):
 		return {"error": "Plugin '%s' start was cancelled" % id}
 	if not discovery_issue.is_empty():
@@ -1145,13 +1162,18 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 		# Untyped: a check that stops on a script error yields null, which must
 		# refuse the start rather than pass as "no issue".
 		var checked = await RequiredPlugins.host_tools_missing(def, conn, tool_registry.get_panel_tool_entries(def.id) if tool_registry != null else [], false)
+		retirement = plugin_retirement_status(id)
+		if retirement.has("error"):
+			return retirement
 		if not _owns_runtime_connection(id, conn):
 			return {"error": "Plugin '%s' start was cancelled" % id}
 		var contract_issue: String = checked if checked is String \
 			else "%s %s's tool check failed; it was stopped." % [RequiredPlugins.display_name(id), def.version]
 		if not contract_issue.is_empty():
 			push_error("[PluginManager] %s" % contract_issue)
-			stop_plugin(id)
+			var stopped := stop_plugin(id)
+			if stopped.has("error"):
+				return stopped
 			_transition_state(id, S_ERROR)
 			return {"error": contract_issue}
 
@@ -1331,12 +1353,12 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 	if by_person:
 		_person_stops[id] = person_stops(id) + 1
 
-	if def.state == S_STOPPED:
+	if def.state == S_STOPPED and not plugin_retirement_status(id).has("error"):
 		return {"ok": true}  # Already stopped, idempotent.
 
 	var rt := _ensure_runtime(id)
 	if rt.get("stopping", false):
-		return {"ok": true}  # Re-entrant call during async stop — ignore.
+		return {"error_code": "plugin_stop_in_progress", "error": "Plugin stop is already in progress"}
 	rt["stopping"] = true
 
 	# Cancel any pending hot-reload debounce to prevent stale restart
@@ -1345,7 +1367,11 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 
 	SingletonObject.verbose_log("[PluginManager] Stopping plugin '%s'..." % id)
 
-	_cleanup_connection(id)
+	var cleanup := _cleanup_connection(id, true, true)
+	if cleanup.get("error"):
+		rt["stopping"] = false
+		_transition_state(id, S_ERROR)
+		return cleanup
 	_transition_state(id, S_STOPPED)
 	rt["stopping"] = false
 	rt["start_time"] = 0.0
@@ -1365,7 +1391,7 @@ func restart_plugin(id: String) -> Dictionary:
 
 	var stop_result := stop_plugin(id)
 	if stop_result.get("error"):
-		return {"error": "Restart failed during stop: %s" % stop_result.get("error")}
+		return stop_result
 
 	# Small yield so the subprocess OS handle is fully released before we
 	# respawn — not strictly necessary but avoids port/pipe races.
@@ -2038,6 +2064,10 @@ func _run_health_checks() -> void:
 		if db.call("get_by_id", def.id) != def or def.state != S_RUNNING: continue
 		var rt: Dictionary = _runtime.get(def.id, {})
 		var conn: MCPServerConnection = rt.get("connection", null)
+		if conn != null and conn.has_retained_stdio_process():
+			rt["ready"] = false
+			_transition_state(def.id, S_ERROR)
+			continue
 		if is_attached(def.id):
 			if rt.get("health_pending", false): continue
 			var registration: Dictionary = rt.get("registration", {})
@@ -2248,8 +2278,22 @@ func _surface_plugin_message(reason: String) -> void:
 		SingletonObject.call("create_toast_notification", reason, 1, false)
 
 
+## The connection is the authority on whether its child remains owned.
+func plugin_retirement_status(id: String) -> Dictionary:
+	var conn := get_connection(id)
+	if conn != null and conn.has_retained_stdio_process():
+		var failure := conn.stdio_retirement_failure()
+		if not failure.has("error"):
+			return {"error_code": "subprocess_retirement_unverified", "error": "Plugin '%s' still owns an unretired subprocess" % id}
+		return failure
+	return {"ok": true}
+
+
 ## Marketplace calls this before replacing an installed directory.
 func can_replace_plugin_files(id: String) -> Dictionary:
+	var retirement := plugin_retirement_status(id)
+	if retirement.has("error"):
+		return retirement
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"ok": true}
@@ -2406,6 +2450,12 @@ func _on_plugin_disconnected(id: String) -> void:
 	if def == null:
 		return
 
+	var retained := get_connection(id)
+	if retained != null and retained.has_retained_stdio_process():
+		_ensure_runtime(id)["ready"] = false
+		_transition_state(id, S_ERROR)
+		return
+
 	# If we are already stopping or the state is already STOPPED/ERROR/CRASH_LOOP
 	# this signal is expected — ignore it.
 	var rt: Dictionary = _runtime.get(id, {})
@@ -2436,14 +2486,21 @@ func _handle_unexpected_exit(id: String) -> void:
 	if rt.get("stopping", false):
 		return
 	var conn := get_connection(id)
+	if conn != null and conn.has_retained_stdio_process():
+		rt["ready"] = false
+		_transition_state(id, S_ERROR)
+		return
 	# Health checks must observe the same exit status as the transport backstop.
 	if conn != null and is_instance_valid(conn._subprocess) and not conn._subprocess.is_running():
 		conn._on_stdio_process_exited(-1, conn._subprocess)
 		return
 	rt["stopping"] = true
 
-	_cleanup_connection(id)
+	var cleanup := _cleanup_connection(id)
 	rt["stopping"] = false
+	if cleanup.get("error"):
+		_transition_state(id, S_ERROR)
+		return
 	rt["start_time"] = 0.0
 
 	plugin_crashed.emit(id)
@@ -2471,7 +2528,12 @@ func _transition_state(id: String, new_state: int) -> void:
 
 
 ## Disconnect and free a connection, leaving the runtime entry intact.
-func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
+func _cleanup_connection(id: String, cancel_launcher: bool = true, retry_retained: bool = false) -> Dictionary:
+	# The global stop signal also reaches unrelated MCP connections. Cancel
+	# only the providers owned by this plugin before disconnecting its replies.
+	var broker: CapabilityBroker = _get_capability_broker()
+	if broker != null:
+		broker.cancel_plugin_chats(id)
 	var rt: Dictionary = _runtime.get(id, {})
 	rt["ready"] = false
 	rt.erase("tools_notice")
@@ -2481,7 +2543,10 @@ func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 		rt["start_pending"] = false
 	var conn: MCPServerConnection = rt.get("connection", null)
 	if conn == null:
-		return
+		return {"ok": true}
+	if conn.has_retained_stdio_process() and not retry_retained:
+		_transition_state(id, S_ERROR)
+		return conn.stdio_retirement_failure()
 
 	# Detach signal before disconnecting to avoid re-entrant crash handling.
 	if conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
@@ -2489,12 +2554,20 @@ func _cleanup_connection(id: String, cancel_launcher: bool = true) -> void:
 
 	# Cancel HTTP initialize even before it connects; a crashed stdio handshake
 	# must finish through its exit path without waking its start here.
+	var result: Dictionary = {"ok": true}
 	if conn.transport == MCPServerConnection.TransportType.HTTP \
 			or conn.server_connected or is_instance_valid(conn._subprocess):
-		conn.disconnect_from_server()
+		result = conn.disconnect_from_server()
+	if result.get("error"):
+		if not conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
+			conn.disconnected.connect(_on_plugin_disconnected.bind(id))
+		_transition_state(id, S_ERROR)
+		return result
 	rt["panel_authority"] = null
 
 	rt["connection"] = null
+
+	return {"ok": true}
 
 
 ## Delete a directory and all its contents recursively.

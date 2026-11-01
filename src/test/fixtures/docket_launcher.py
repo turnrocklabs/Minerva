@@ -38,6 +38,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        if method == "tools/call" and request.get("params", {}).get("name") == "fixture_shutdown":
+            self.wfile.flush()
+            self.server.shutdown()
 
 
 def profile_is_inside_root(profile_text: str, root_text: str, path_class: type[PurePath]) -> bool:
@@ -60,7 +63,11 @@ def main() -> int:
                   "endpoint": {"host": "127.0.0.1", "port": server.server_port},
                   "profile": str(profile), "started_at": "fixture"}
         (profile / "instance.json").write_text(json.dumps(record))
-        server.serve_forever()
+        try:
+            server.serve_forever()
+        finally:
+            server.server_close()
+            (profile / "instance.json").unlink()
         return 0
     with (profile / "starts.txt").open("a") as count:
         count.write("start\n")

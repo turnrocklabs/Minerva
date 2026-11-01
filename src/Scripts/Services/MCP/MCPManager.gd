@@ -77,8 +77,7 @@ func connect_server(server_name: String) -> Error:
 		return ERR_DOES_NOT_EXIST
 
 	if servers.has(server_name):
-		# Already connected
-		return OK
+		return OK if servers[server_name].server_connected else ERR_BUSY
 	if _connecting_servers.has(server_name):
 		return ERR_BUSY
 
@@ -119,7 +118,8 @@ func connect_server(server_name: String) -> Error:
 		connection.disconnect_from_server()
 		return ERR_BUSY
 	if err != OK:
-		_connecting_servers.erase(server_name)
+		if not connection.has_retained_stdio_process():
+			_connecting_servers.erase(server_name)
 		var msg := "Failed to connect to %s: %s" % [server_name, error_string(err)]
 		var failure_reason: String = connection.last_failure_reason
 		if failure_reason.is_empty():
@@ -137,9 +137,10 @@ func connect_server(server_name: String) -> Error:
 		connection.disconnect_from_server()
 		return ERR_BUSY
 	if refresh_err is int and refresh_err != OK:
-		_connecting_servers.erase(server_name)
 		push_warning("[MCP] Tool refresh failed for %s, rolling back connection" % server_name)
-		connection.disconnect_from_server()
+		var retirement := disconnect_server(server_name)
+		if retirement.get("error"):
+			return ERR_CANT_ACQUIRE_RESOURCE
 		var msg := "%s connected but tool discovery failed — disconnected" % server_name
 		var discovery_reason: String = connection.last_failure_reason
 		if discovery_reason.is_empty():
@@ -169,11 +170,23 @@ func connect_server(server_name: String) -> Error:
 
 
 ## Disconnect from a server
-func disconnect_server(server_name: String) -> void:
+func disconnect_server(server_name: String) -> Dictionary:
 	var connection = servers.get(server_name, _connecting_servers.get(server_name))
 	if connection == null:
-		return
-	_connecting_servers.erase(server_name)
+		return {"ok": true}
+	var callback := _on_server_disconnected.bind(server_name, connection)
+	if connection.disconnected.is_connected(callback):
+		connection.disconnected.disconnect(callback)
+	var retirement: Dictionary = connection.disconnect_from_server()
+	if retirement.get("error"):
+		connection.disconnected.connect(callback)
+		var prior: Dictionary = _connection_diagnostics.get(server_name, {})
+		_record_connection_failure(server_name, str(prior.get("transport", "")), str(retirement.error),
+			int(prior.get("attempt", -1)), str(prior.get("config_key", "")))
+		server_error.emit(server_name, str(retirement.error))
+		return retirement
+	if _connecting_servers.get(server_name) == connection:
+		_connecting_servers.erase(server_name)
 	if servers.get(server_name) == connection:
 		servers.erase(server_name)
 	var previous: Dictionary = _connection_diagnostics.get(server_name, {})
@@ -181,8 +194,8 @@ func disconnect_server(server_name: String) -> void:
 		"transport": previous.get("transport", ""), "failure": "",
 		"config_key": previous.get("config_key", "")}
 	_unregister_server_tools(server_name, connection)
-	connection.disconnect_from_server()
 	server_disconnected.emit(server_name)
+	return {"ok": true}
 
 
 func get_server_diagnostic(server_name: String, transport: String = "") -> Dictionary:
@@ -354,7 +367,9 @@ func add_server_at_runtime(server_config, connect_now: bool = true) -> Error:
 	# Warn about duplicate name (existing config will be overwritten)
 	if config.get_server(server_config.name):
 		push_warning("[MCP] Overwriting existing server config: %s" % server_config.name)
-		disconnect_server(server_config.name)
+		var retirement := disconnect_server(server_config.name)
+		if retirement.get("error"):
+			return ERR_BUSY
 		_connection_diagnostics.erase(server_config.name)
 
 	config.set_server(server_config)
@@ -370,20 +385,24 @@ func add_server_at_runtime(server_config, connect_now: bool = true) -> Error:
 
 
 ## Remove a server at runtime — disconnects, removes from config, saves
-func remove_server_at_runtime(server_name: String) -> void:
+func remove_server_at_runtime(server_name: String) -> Dictionary:
 	var server_config = config.get_server(server_name)
 	if not server_config:
-		return
+		return {"ok": true}
 
 	# Don't allow removing known/builtin servers
 	if server_config.origin in ["known", "builtin"]:
 		push_warning("[MCP] Cannot remove %s server: %s" % [server_config.origin, server_name])
-		return
+		return {"error": "Built-in server cannot be removed"}
 
-	disconnect_server(server_name)
+	var retirement := disconnect_server(server_name)
+	if retirement.get("error"):
+		return retirement
 	_connection_diagnostics.erase(server_name)
 	config.remove_server(server_name)
 	config.save_config()
+
+	return {"ok": true}
 
 
 ## Get tools filtered for a specific chat history.
@@ -944,6 +963,13 @@ func _unregister_server_tools(server_name: String, expected_connection = null) -
 
 ## Signal handlers
 func _on_server_disconnected(server_name: String, connection) -> void:
+	if connection.has_retained_stdio_process():
+		if servers.get(server_name) == connection or _connecting_servers.get(server_name) == connection:
+			var prior: Dictionary = _connection_diagnostics.get(server_name, {})
+			_record_connection_failure(server_name, str(prior.get("transport", "")), connection.last_failure_reason,
+				int(prior.get("attempt", -1)), str(prior.get("config_key", "")))
+			server_error.emit(server_name, connection.last_failure_reason)
+		return
 	if _connecting_servers.get(server_name) == connection:
 		_connecting_servers.erase(server_name)
 		var pending: Dictionary = _connection_diagnostics.get(server_name, {})
