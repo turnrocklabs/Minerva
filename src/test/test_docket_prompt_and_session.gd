@@ -648,7 +648,8 @@ func _test_vault() -> void:
 		and host._vault_session._password.is_empty())
 	await form.refresh()
 	check("G: ambient refresh preserves a specific password refusal",
-		form.get_node("%VaultStatusLabel").text == "Vault unlock refused; check the existing vault password.")
+		form._message.text == "Vault unlock refused; check the existing vault password."
+		and form.get_node("%VaultStatusLabel").text.begins_with("Vault: locked"))
 	authority.initialized = false
 	form.refresh()
 	check("G: absent master selects Create mode", await _wait(func() -> bool: return form._mode == "create") and form._confirm.get_parent().visible)
