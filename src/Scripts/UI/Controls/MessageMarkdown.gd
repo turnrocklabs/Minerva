@@ -419,7 +419,7 @@ func _setup_model_message():
 	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
 
-	if history_item.HcpData:
+	if history_item.HcpData and history_item.HcpStructure:
 		set_dynamic_data(history_item.HcpStructure, history_item.HcpData)
 	elif history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error

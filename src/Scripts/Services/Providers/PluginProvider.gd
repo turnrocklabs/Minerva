@@ -334,6 +334,30 @@ func _apply_result_to_bot(result: Dictionary, bot: BotResponse) -> void:
 	# JSON ints arrive as floats; int() coerces both.
 	bot.prompt_tokens = int(result.get("prompt_tokens", 0))
 	bot.completion_tokens = int(result.get("completion_tokens", 0))
+	if kind in ["answer", "question", "error"] and result.get("activity") is Array:
+		var activity: Array = result["activity"] as Array
+		var entries: Array[Dictionary] = []
+		for value: Variant in activity:
+			if not value is Dictionary:
+				continue
+			var source: Dictionary = value as Dictionary
+			var entry: Dictionary = {}
+			var valid: bool = true
+			for field: String in ["kind", "label", "status", "detail", "path"]:
+				if field in ["detail", "path"] and not source.has(field):
+					continue
+				var raw_text: Variant = source.get(field)
+				if not raw_text is String:
+					valid = false
+					break
+				var text: String = raw_text as String
+				if field in ["kind", "label", "status"] and text.strip_edges().is_empty():
+					valid = false
+					break
+				entry[field] = text
+			if valid:
+				entries.append(entry)
+		bot.hcp_data["activity"] = entries
 
 	match kind:
 		"answer":
