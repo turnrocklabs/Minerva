@@ -8,7 +8,7 @@ func set_activity(entries: Array, reply_id: String) -> void:
 	for value: Variant in entries:
 		if not value is Dictionary:
 			continue
-		var entry: Dictionary = value as Dictionary
+		var entry: Dictionary = value
 		var row: VBoxContainer = template.duplicate() as VBoxContainer
 		row.unique_name_in_owner = false
 		var kind: Label = row.get_node("Summary/Kind") as Label

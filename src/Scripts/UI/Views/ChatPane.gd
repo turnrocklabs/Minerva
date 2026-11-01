@@ -1167,12 +1167,15 @@ func _resume_core_jobs(history: ChatHistory) -> void:
 func _copy_plugin_reply_metadata(bot_response: BotResponse, item: ChatHistoryItem) -> void:
 	for field: String in ["passthrough_question_options", "activity"]:
 		if bot_response.hcp_data.has(field):
-			var entries: Array = bot_response.hcp_data[field] as Array
+			var raw_entries: Variant = bot_response.hcp_data[field]
+			if not raw_entries is Array:
+				continue
+			var entries: Array = raw_entries
 			item.HcpData[field] = entries.duplicate(true)
 
 
 func process_bot_response(bot_response: BotResponse, _history_provider: BaseProvider) -> ChatHistoryItem:
-	var chi = ChatHistoryItem.new()
+	var chi: ChatHistoryItem = ChatHistoryItem.new()
 
 	if bot_response != null:
 		chi.Id = bot_response.id
@@ -2163,7 +2166,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	if existing_response.rendered_node:
 		existing_response.rendered_node.loading = true
 
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, existing_response)
+	var bot_response: BotResponse = await generate_content_from_provider(history, history_list, null, null, existing_response)
 
 	# if there was an error with the request
 	if not bot_response:
@@ -2842,7 +2845,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	var _pt_status: PassthroughTurnStatusScript = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, dummy_item)
+	var bot_response: BotResponse = await generate_content_from_provider(history, history_list, null, null, dummy_item)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
 	# Stop invalidates the turn and frees its loading message. A late response
 	# must not pass that freed node into the relay or write into a newer turn.
@@ -3767,7 +3770,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		dummy_item.provider = history.provider
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
-		var bot_response = await generate_content_from_provider(history, history_list)
+		var bot_response: BotResponse = await generate_content_from_provider(history, history_list)
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		var turn_reply: ChatHistoryItem = chi
@@ -3942,7 +3945,7 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	
 	
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response: BotResponse = await generate_content_from_provider(history, history_list)
 	
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
@@ -4125,15 +4128,18 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 
 
 func _add_plugin_activity_card(item: ChatHistoryItem, reply_node: Control) -> void:
-	var activity: Variant = item.HcpData.get("activity", [])
-	if not activity is Array or activity.is_empty():
+	var raw_activity: Variant = item.HcpData.get("activity", [])
+	if not raw_activity is Array:
+		return
+	var activity: Array = raw_activity
+	if activity.is_empty():
 		return
 	var message: MessageMarkdown = reply_node as MessageMarkdown
 	if message == null:
 		return
 	var card: PluginChatActivityCardScript = PluginChatActivityCardScene.instantiate() as PluginChatActivityCardScript
 	message.v_box_container.add_child(card)
-	card.set_activity(activity as Array, str(item.get_instance_id()))
+	card.set_activity(activity, str(item.get_instance_id()))
 
 
 func render_history(chat_history: ChatHistory):

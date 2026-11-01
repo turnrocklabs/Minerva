@@ -335,12 +335,12 @@ func _apply_result_to_bot(result: Dictionary, bot: BotResponse) -> void:
 	bot.prompt_tokens = int(result.get("prompt_tokens", 0))
 	bot.completion_tokens = int(result.get("completion_tokens", 0))
 	if kind in ["answer", "question", "error"] and result.get("activity") is Array:
-		var activity: Array = result["activity"] as Array
+		var activity: Array = result["activity"]
 		var entries: Array[Dictionary] = []
 		for value: Variant in activity:
 			if not value is Dictionary:
 				continue
-			var source: Dictionary = value as Dictionary
+			var source: Dictionary = value
 			var entry: Dictionary = {}
 			var valid: bool = true
 			for field: String in ["kind", "label", "status", "detail", "path"]:
@@ -350,7 +350,7 @@ func _apply_result_to_bot(result: Dictionary, bot: BotResponse) -> void:
 				if not raw_text is String:
 					valid = false
 					break
-				var text: String = raw_text as String
+				var text: String = raw_text
 				if field in ["kind", "label", "status"] and text.strip_edges().is_empty():
 					valid = false
 					break
