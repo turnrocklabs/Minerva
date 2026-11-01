@@ -79,6 +79,23 @@ Set `MINERVA_CEF_INPUT_TRACE=1` before launching the diagnostic build to enable
 text, including in the password field, and close the diagnostic session before
 using real credentials.
 
+DOM `console.info` records use CEF's existing stderr logging; they are not
+connected to Godot's `console_message` signal. Godot's user log alone is not a
+complete trace. After the owner closes Minerva, launch the installed diagnostic
+build from Terminal and capture stdout and stderr together (adjust the app path
+if installed elsewhere):
+
+```sh
+mkdir -p "$HOME/Library/Logs/MinervaCefTrace"
+MINERVA_CEF_INPUT_TRACE=1 /Applications/Minerva.app/Contents/MacOS/Minerva \
+  > "$HOME/Library/Logs/MinervaCefTrace/session.log" 2>&1
+```
+
+Confirm `stage=dom_ready` appears in that file before interpreting a missing DOM
+input event. Return only the `[MinervaCefTrace]` records and reproduction outcomes,
+not the complete application log. The actual capture must be verified on the
+diagnostic build; source logging configuration is not a trace receipt.
+
 The trace records host main/sub-viewport focus-owner classes and container
 focus, native texture/proxy routing, proxy editing and IME state, CEF event
 kind, pressed/released state, modifier flags and a paste-chord classification.
