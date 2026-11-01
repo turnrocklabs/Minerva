@@ -21,6 +21,7 @@ var _document_generation := 0
 var _document_plugin_id := ""
 var _document_panel_name := ""
 var _pending_ipc: Dictionary = {}
+static var _input_trace_sequence: int = 0
 
 
 func _ready() -> void:
@@ -30,10 +31,66 @@ func _ready() -> void:
 	clip_contents = true
 	_apply_editor_style()
 	_build_ui()
+	set_process_input(_input_trace_enabled())
+	if _input_trace_enabled():
+		get_viewport().gui_focus_changed.connect(_trace_main_focus_changed)
 	SingletonObject.theme_changed.connect(func(_t): _apply_editor_style())
 	# Reapply HiDPI oversampling whenever the pane is resized (also fires when
 	# the UI scale changes, since that reflows control sizes).
 	resized.connect(_apply_oversampling)
+
+
+func _input(event: InputEvent) -> void:
+	if not _input_trace_enabled() or _svc == null or _sv == null or not is_visible_in_tree():
+		return
+	if event is InputEventKey:
+		_trace_key_route(event)
+	elif event is InputEventMouseButton:
+		_trace_route("host_mouse_down" if event.pressed else "host_mouse_up")
+
+
+func _trace_main_focus_changed(_control: Control) -> void:
+	_trace_route("main_focus_changed")
+
+
+func _trace_sub_focus_changed(_control: Control) -> void:
+	_trace_route("sub_focus_changed")
+
+
+func _trace_route(stage: String) -> void:
+	if not _input_trace_enabled() or _sv == null or _svc == null or _cef == null:
+		return
+	var main_focus: Control = get_viewport().gui_get_focus_owner()
+	var sub_focus: Control = _sv.gui_get_focus_owner()
+	var main_class: String = main_focus.get_class() if main_focus != null else "none"
+	var sub_class: String = sub_focus.get_class() if sub_focus != null else "none"
+	_input_trace_sequence += 1
+	print("[MinervaCefTrace] stream=host seq=%d stage=%s editor=%s instance=%d main_focus=%s container_focus=%s sub_focus=%s" % [
+		_input_trace_sequence, stage, editor_id, _cef.get_instance_id(),
+		main_class, _svc.has_focus(), sub_class])
+
+
+func _input_trace_enabled() -> bool:
+	return OS.get_environment("MINERVA_CEF_INPUT_TRACE") == "1"
+
+
+func _trace_key_route(event: InputEventKey) -> void:
+	var main_focus: Control = get_viewport().gui_get_focus_owner()
+	var sub_focus: Control = _sv.gui_get_focus_owner()
+	var main_class: String = main_focus.get_class() if main_focus != null else "none"
+	var sub_class: String = sub_focus.get_class() if sub_focus != null else "none"
+	var kind: String = "other"
+	match event.keycode:
+		KEY_CTRL: kind = "control"
+		KEY_META: kind = "command"
+		KEY_SHIFT: kind = "shift"
+		KEY_ALT: kind = "alt"
+	var paste: bool = event.keycode == KEY_V and (event.ctrl_pressed or event.meta_pressed)
+	_input_trace_sequence += 1
+	print("[MinervaCefTrace] stream=host seq=%d stage=host_key editor=%s main_focus=%s container_focus=%s sub_focus=%s kind=%s down=%s echo=%s ctrl=%s cmd=%s shift=%s alt=%s paste=%s" % [
+		_input_trace_sequence, editor_id, main_class, _svc.has_focus(), sub_class, kind, event.pressed,
+		event.echo, event.ctrl_pressed, event.meta_pressed, event.shift_pressed,
+		event.alt_pressed, paste])
 
 
 func _exit_tree() -> void:
@@ -141,6 +198,8 @@ func set_html(source: String) -> void:
 	# SubViewport only when the cursor is over the container.
 	var svc := SubViewportContainer.new()
 	svc.stretch = true
+	# Focus remains in the SubViewport; a main-viewport grab would blur CEF.
+	svc.focus_mode = Control.FOCUS_NONE
 	svc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	svc.size_flags_horizontal = SIZE_EXPAND_FILL
 	svc.size_flags_vertical = SIZE_EXPAND_FILL
@@ -163,7 +222,19 @@ func set_html(source: String) -> void:
 
 	_cef = cef
 	_svc = svc
+	if _input_trace_enabled():
+		cef.console_message.connect(_trace_console_message)
+		cef.focus_entered.connect(_trace_route.bind("texture_focus_enter"))
+		cef.focus_exited.connect(_trace_route.bind("texture_focus_exit"))
+		svc.focus_entered.connect(_trace_route.bind("container_focus_enter"))
+		svc.focus_exited.connect(_trace_route.bind("container_focus_exit"))
+		sv.gui_focus_changed.connect(_trace_sub_focus_changed)
 	add_child(svc)
+	if _input_trace_enabled():
+		for child: Node in cef.get_children():
+			if child is LineEdit:
+				child.focus_entered.connect(_trace_route.bind("proxy_focus_enter"))
+				child.focus_exited.connect(_trace_route.bind("proxy_focus_exit"))
 	_apply_oversampling()
 	content_changed.emit()
 
@@ -233,9 +304,66 @@ func _show_fallback(message: String) -> void:
 
 
 func _inject_bridge(source: String) -> String:
-	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js()
+	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js() + _input_trace_js()
 	return source.insert(15, bridge_js) \
 		if source.left(15).to_lower() == "<!doctype html>" else bridge_js + source
+
+
+func _trace_console_message(_level: int, message: String, _source: String, _line: int) -> void:
+	if not _input_trace_enabled():
+		return
+	var parts: PackedStringArray = message.split(" ", false)
+	if parts.size() != 5 or parts[0] != "[MinervaCefTrace]":
+		return
+	if parts[1] not in ["stage=dom_ready", "stage=dom_focusin", "stage=dom_focusout", "stage=dom_input"]:
+		return
+	if parts[2] not in ["kind=password", "kind=text", "kind=other"]:
+		return
+	if not parts[3].begins_with("input_count="):
+		return
+	var count_text: String = parts[3].trim_prefix("input_count=")
+	if count_text.length() > 9 or not count_text.is_valid_int():
+		return
+	var count: int = count_text.to_int()
+	if count < 0 or parts[4] not in ["document_focus=true", "document_focus=false"]:
+		return
+	_input_trace_sequence += 1
+	print("[MinervaCefTrace] stream=host seq=%d editor=%s %s %s input_count=%d %s" % [
+		_input_trace_sequence, editor_id, parts[1], parts[2], count, parts[4]])
+
+
+## Opt-in counts only: neither input data nor clipboard/field values cross the console.
+func _input_trace_js() -> String:
+	if not _input_trace_enabled():
+		return ""
+	return """
+<script>
+(function() {
+	let count = 0;
+	function kind(target) {
+		if (target instanceof HTMLInputElement) {
+			return target.type === 'password' ? 'password' : target.type === 'text' ? 'text' : 'other';
+		}
+		return target instanceof HTMLTextAreaElement ? 'text' : 'other';
+	}
+	function record(stage, target) {
+		console.info('[MinervaCefTrace] stage=' + stage + ' kind=' + kind(target) +
+			' input_count=' + count + ' document_focus=' + document.hasFocus());
+	}
+	record('dom_ready', null);
+	document.addEventListener('focusin', function(event) {
+		record('dom_focusin', event.target);
+	}, true);
+	document.addEventListener('focusout', function(event) {
+		record('dom_focusout', event.target);
+	}, true);
+	document.addEventListener('input', function(event) {
+		count += 1;
+		record('dom_input', event.target);
+	}, true);
+})();
+</script>
+"""
 
 
 ## Inject `window.__MINERVA_PANEL` so a plugin html panel can learn its own

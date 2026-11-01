@@ -1456,6 +1456,8 @@ func _resolve(project_name: String) -> Dictionary:
 
 
 func _on_backend_tool_called(id: String, tool: String) -> void:
+	if id == PLUGIN_ID and tool == "docket_vault_control":
+		vault_changed.emit()
 	if id == PLUGIN_ID and tool in CHANGING_TOOLS:
 		_changes += 1
 	if id == PLUGIN_ID and tool in PROJECT_TOOLS and state in ["ready", "degraded"]:

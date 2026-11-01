@@ -2,7 +2,7 @@
 # Refuse stale engines; this successful producer is the build-time dependency.
 set -euo pipefail
 producer="${CEF_PRODUCER_RUN:?CEF producer run is required}"
-source_sha=6da588fd617c8e52a64a8fc444fa295c327426bf
+source_sha=bdbf96ac656ec96279111f08f725a2c43b42aca6
 git fetch --no-recurse-submodules --no-tags origin "$source_sha"
 for path in vendor/godot_cef patches/godot_cef scripts/build-godot-cef.sh src/addons/godot_cef; do
   expected="$(git rev-parse "$source_sha:$path")"
