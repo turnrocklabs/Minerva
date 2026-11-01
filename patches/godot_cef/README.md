@@ -79,9 +79,10 @@ Set `MINERVA_CEF_INPUT_TRACE=1` before launching the diagnostic build to enable
 text, including in the password field, and close the diagnostic session before
 using real credentials.
 
-DOM `console.info` records use CEF's existing stderr logging; they are not
-connected to Godot's `console_message` signal. Godot's user log alone is not a
-complete trace. After the owner closes Minerva, launch the installed diagnostic
+With 0007, DOM `console.info` records reach Godot through CEF's `console_message`
+signal and a sink that accepts only fixed diagnostic fields. Run 1 captured no
+DOM records through CEF stderr, so stderr alone is not a verified DOM sink.
+After the owner closes Minerva, launch the installed diagnostic
 build from Terminal under macOS `script` (adjust the app path if installed
 elsewhere). Its pseudo-terminal keeps Godot stdout line-buffered alongside CEF
 stderr; redirecting both streams directly to a file can buffer stdout and reorder
@@ -130,3 +131,43 @@ installation, verify Ctrl-Cmd-F, Globe-F, Cmd-M and Cmd-Q with two HTML panels
 open, plus startup/open-panel and shutdown observations. These native checks,
 producer/compiler/Clippy evidence, matching-host Godot analyzer/GATE-W and
 Windows/Linux CI build/smoke remain pending; a source review is not acceptance.
+
+## 0007-focus-reentry-input-trace.patch
+
+Applies after 0001–0006 at the same exact upstream gitlink. The owner reproduced
+a hang after repeated field switches on `manual-build-20261101-093016`: keys
+still reached CEF, but IME was inactive and no text appeared. A native-control
+click restored panel input. The focus coupling is the current hypothesis; its
+runtime impact is not established by source inspection.
+
+The host's `SubViewportContainer` uses `FOCUS_NONE` so a panel click does not
+grab main-viewport focus and clear the SubViewport's focus first. The native IME
+regrab branch restores CEF host focus after focusing the proxy, matching the
+existing activation path. Keyboard routing still needs owner verification.
+There is no modifier reconciliation, lifecycle-pin change or IME redesign.
+
+The same off-by-default `MINERVA_CEF_INPUT_TRACE=1` flag adds mouse press/release
+records with receiver/event identity, a marker at CEF's mouse-send call, texture
+focus notifications and the `set_focus` value, proxy/container focus signals,
+main/SubViewport focus-owner classes, and IME enable/application/branch records.
+The hidden lifecycle-pin texture has no browser; its input records are not
+evidence of duplicate CEF sends. Native and host sequence numbers belong to
+separately labeled streams. The pseudo-terminal captures their observed
+interleaving; those counters do not define one shared total order.
+
+DOM ready, focusin, focusout and input records include a fixed field-type bucket,
+input count and `document.hasFocus()`. The console sink discards arbitrary page
+messages and source paths, validates the fixed fields and re-emits only those
+fields. No coordinates, key characters, field values or clipboard data are
+recorded. A mouse-send marker proves that call site was reached, not DOM receipt.
+Require `stage=dom_ready` on each traced panel before interpreting absent DOM
+records. The capture, suffix stripping and raw-log deletion instructions above
+still apply.
+
+Acceptance on the next diagnostic build: repeat E1–E4 (blank page then field,
+native control then field, field A to B, and re-click field A), then at least
+five alternating field switches with text appearing each time; click out and
+back in without a native-control recovery click; confirm typing with the
+container at `FOCUS_NONE`; and confirm no `set_focus(false)` before the press on
+an in-panel click. Preserve first-paste-exactly-once behavior and the 0006 abort
+guard. Native build/analyzer checks and these owner observations remain pending.
