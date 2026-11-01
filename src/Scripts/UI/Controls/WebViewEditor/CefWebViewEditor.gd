@@ -30,10 +30,40 @@ func _ready() -> void:
 	clip_contents = true
 	_apply_editor_style()
 	_build_ui()
+	set_process_input(_input_trace_enabled())
 	SingletonObject.theme_changed.connect(func(_t): _apply_editor_style())
 	# Reapply HiDPI oversampling whenever the pane is resized (also fires when
 	# the UI scale changes, since that reflows control sizes).
 	resized.connect(_apply_oversampling)
+
+
+func _input(event: InputEvent) -> void:
+	if not _input_trace_enabled() or not event is InputEventKey \
+			or _svc == null or _sv == null or not is_visible_in_tree():
+		return
+	_trace_key_route(event)
+
+
+func _input_trace_enabled() -> bool:
+	return OS.get_environment("MINERVA_CEF_INPUT_TRACE") == "1"
+
+
+func _trace_key_route(event: InputEventKey) -> void:
+	var main_focus: Control = get_viewport().gui_get_focus_owner()
+	var sub_focus: Control = _sv.gui_get_focus_owner()
+	var main_class: String = main_focus.get_class() if main_focus != null else "none"
+	var sub_class: String = sub_focus.get_class() if sub_focus != null else "none"
+	var kind: String = "other"
+	match event.keycode:
+		KEY_CTRL: kind = "control"
+		KEY_META: kind = "command"
+		KEY_SHIFT: kind = "shift"
+		KEY_ALT: kind = "alt"
+	var paste: bool = event.keycode == KEY_V and (event.ctrl_pressed or event.meta_pressed)
+	print("[MinervaCefTrace] stage=host_key editor=%s main_focus=%s container_focus=%s sub_focus=%s kind=%s down=%s echo=%s ctrl=%s cmd=%s shift=%s alt=%s paste=%s" % [
+		editor_id, main_class, _svc.has_focus(), sub_class, kind, event.pressed,
+		event.echo, event.ctrl_pressed, event.meta_pressed, event.shift_pressed,
+		event.alt_pressed, paste])
 
 
 func _exit_tree() -> void:
@@ -233,9 +263,36 @@ func _show_fallback(message: String) -> void:
 
 
 func _inject_bridge(source: String) -> String:
-	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js()
+	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js() + _input_trace_js()
 	return source.insert(15, bridge_js) \
 		if source.left(15).to_lower() == "<!doctype html>" else bridge_js + source
+
+
+## Opt-in counts only: neither input data nor clipboard/field values cross the console.
+func _input_trace_js() -> String:
+	if not _input_trace_enabled():
+		return ""
+	return """
+<script>
+(function() {
+	let count = 0;
+	function kind(target) {
+		if (target instanceof HTMLInputElement) {
+			return target.type === 'password' ? 'password' : target.type === 'text' ? 'text' : 'other';
+		}
+		return target instanceof HTMLTextAreaElement ? 'text' : 'other';
+	}
+	console.info('[MinervaCefTrace] stage=dom_ready input_count=0');
+	document.addEventListener('focusin', function(event) {
+		console.info('[MinervaCefTrace] stage=dom_focus kind=' + kind(event.target) + ' input_count=' + count);
+	}, true);
+	document.addEventListener('input', function(event) {
+		count += 1;
+		console.info('[MinervaCefTrace] stage=dom_input kind=' + kind(event.target) + ' input_count=' + count);
+	}, true);
+})();
+</script>
+"""
 
 
 ## Inject `window.__MINERVA_PANEL` so a plugin html panel can learn its own

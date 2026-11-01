@@ -1,0 +1,230 @@
+diff --git a/crates/gdcef/src/cef_texture/ime.rs b/crates/gdcef/src/cef_texture/ime.rs
+index 22105ff..7d61c18 100644
+--- a/crates/gdcef/src/cef_texture/ime.rs
++++ b/crates/gdcef/src/cef_texture/ime.rs
+@@ -13,6 +13,27 @@ use crate::input;
+ use crate::utils::get_display_scale_factor;
+ 
+ impl CefTexture {
++    pub(super) fn trace_ime_state(&self, stage: &str) {
++        if !crate::input_trace::enabled() {
++            return;
++        }
++        let editing = self
++            .ime_proxy
++            .as_ref()
++            .is_some_and(|proxy| proxy.is_editing());
++        let focused = self
++            .ime_proxy
++            .as_ref()
++            .is_some_and(|proxy| proxy.has_focus());
++        godot::global::godot_print!(
++            "[MinervaCefTrace] stage={} ime_active={} proxy_editing={} proxy_focus={}",
++            stage,
++            self.ime_active,
++            editing,
++            focused
++        );
++    }
++
+     /// Creates a hidden LineEdit to act as an IME input proxy.
+     pub(super) fn create_ime_proxy(&mut self) {
+         let mut line_edit = LineEdit::new_alloc();
+@@ -23,6 +44,11 @@ impl CefTexture {
+         let callable_changed = self.base().callable("on_ime_proxy_text_changed");
+         line_edit.connect("text_changed", &callable_changed);
+ 
++        if crate::input_trace::enabled() {
++            let callable_input = self.base().callable("_trace_ime_proxy_input");
++            line_edit.connect("gui_input", &callable_input);
++        }
++
+         let callable_focus_exited = self.base().callable("on_ime_proxy_focus_exited");
+         line_edit.connect("focus_exited", &callable_focus_exited);
+ 
+@@ -70,6 +96,8 @@ impl CefTexture {
+             return;
+         };
+ 
++        self.trace_ime_state("proxy_text_changed");
++        crate::input_trace::event("proxy_text_changed");
+         input::ime_commit_text(&host, &new_text.to_string());
+ 
+         if let Some(proxy) = self.ime_proxy.as_mut() {
+diff --git a/crates/gdcef/src/cef_texture/mod.rs b/crates/gdcef/src/cef_texture/mod.rs
+index 35bdf55..8235b79 100644
+--- a/crates/gdcef/src/cef_texture/mod.rs
++++ b/crates/gdcef/src/cef_texture/mod.rs
+@@ -97,7 +97,8 @@ impl ITextureRect for CefTexture {
+             background_color: Color::from_rgba(0.0, 0.0, 0.0, 0.0),
+             popup_policy: crate::browser::popup_policy::BLOCK,
+             initial_document_lock: std::sync::Arc::new(std::sync::Mutex::new(
+-                crate::webrender::InitialDocumentState::default())),
++                crate::webrender::InitialDocumentState::default(),
++            )),
+             ime_position: Vector2i::new(0, 0),
+             texture2d_helper,
+             last_size: Vector2::ZERO,
+@@ -297,6 +298,9 @@ impl CefTexture {
+         self.update_texture();
+ 
+         if self.with_app(|app| app.state.is_some()) {
++            // AppKit can re-enter Godot while CEF pumps native events. gdext's
++            // base guard makes this instance re-bindable until the pump returns.
++            let _base = self.base_mut();
+             do_message_loop_work();
+         }
+ 
+@@ -365,6 +369,10 @@ impl CefTexture {
+                 .bind()
+                 .forward_magnify_gesture_event(magnify_gesture);
+         } else if let Ok(key_event) = event.try_cast::<InputEventKey>() {
++            if crate::input_trace::enabled() {
++                self.trace_ime_state("texture_input");
++                crate::input_trace::key("texture_input", "received", &key_event);
++            }
+             self.texture2d_helper
+                 .bind()
+                 .forward_key_event(key_event, self.ime_active);
+@@ -375,12 +383,16 @@ impl CefTexture {
+     #[func]
+     pub fn lock_initial_document(&mut self, expected_url: GString, cleanup_path: GString) -> bool {
+         let cleanup = std::path::PathBuf::from(cleanup_path.to_string());
+-        if expected_url.is_empty() || !cleanup.is_absolute() || !cleanup.is_file()
++        if expected_url.is_empty()
++            || !cleanup.is_absolute()
++            || !cleanup.is_file()
+             || self.with_app(|app| app.state.is_some())
+         {
+             return false;
+         }
+-        let Ok(mut lock) = self.initial_document_lock.lock() else { return false; };
++        let Ok(mut lock) = self.initial_document_lock.lock() else {
++            return false;
++        };
+         if !lock.expected_url.is_empty() {
+             return false;
+         }
+@@ -862,6 +874,16 @@ impl CefTexture {
+         self.with_app(cookie_ops::flush_cookies)
+     }
+ 
++    #[func]
++    fn _trace_ime_proxy_input(&self, event: Gd<InputEvent>) {
++        if crate::input_trace::enabled()
++            && let Ok(key) = event.try_cast::<InputEventKey>()
++        {
++            self.trace_ime_state("proxy_gui_input");
++            crate::input_trace::key("proxy_gui_input", "received", &key);
++        }
++    }
++
+     /// Called when the IME proxy LineEdit text changes during composition.
+     #[func]
+     fn on_ime_proxy_text_changed(&mut self, new_text: GString) {
+diff --git a/crates/gdcef/src/input/mod.rs b/crates/gdcef/src/input/mod.rs
+index b91171c..8953108 100644
+--- a/crates/gdcef/src/input/mod.rs
++++ b/crates/gdcef/src/input/mod.rs
+@@ -357,6 +357,7 @@ pub fn handle_key_event(
+             false
+         });
+         if handled {
++            crate::input_trace::key("cef_shortcut", "suppressed", event);
+             return;
+         }
+     }
+@@ -395,6 +396,11 @@ pub fn handle_key_event(
+             focus_on_editable_field: focus_on_editable_field as _,
+             ..Default::default()
+         };
++        crate::input_trace::key(
++            "cef_send",
++            if is_echo { "keydown" } else { "rawkeydown" },
++            event,
++        );
+         host.send_key_event(Some(&key_event));
+ 
+         // Send a CHAR event for printable characters AND control characters that need it
+@@ -415,6 +421,7 @@ pub fn handle_key_event(
+                 focus_on_editable_field: focus_on_editable_field as _,
+                 ..Default::default()
+             };
++            crate::input_trace::key("cef_send", "char", event);
+             host.send_key_event(Some(&char_event));
+         }
+     } else {
+@@ -433,6 +440,7 @@ pub fn handle_key_event(
+                 focus_on_editable_field: focus_on_editable_field as _,
+                 ..Default::default()
+             };
++            crate::input_trace::key("cef_send", "keyup", event);
+             host.send_key_event(Some(&key_event));
+         }
+     }
+diff --git a/crates/gdcef/src/input_trace.rs b/crates/gdcef/src/input_trace.rs
+new file mode 100644
+index 0000000..a35e445
+--- /dev/null
++++ b/crates/gdcef/src/input_trace.rs
+@@ -0,0 +1,48 @@
++//! Opt-in input-path evidence. Never log key codes, text, field values or clipboard data.
++use godot::classes::InputEventKey;
++use godot::global::Key;
++use godot::prelude::*;
++use std::sync::atomic::{AtomicU64, Ordering};
++
++static EVENTS: AtomicU64 = AtomicU64::new(0);
++
++pub(crate) fn enabled() -> bool {
++    std::env::var("MINERVA_CEF_INPUT_TRACE").as_deref() == Ok("1")
++}
++
++pub(crate) fn event(stage: &str) {
++    if enabled() {
++        let sequence = EVENTS.fetch_add(1, Ordering::Relaxed);
++        godot::global::godot_print!("[MinervaCefTrace] seq={} stage={}", sequence, stage);
++    }
++}
++
++pub(crate) fn key(stage: &str, cef_type: &str, event: &Gd<InputEventKey>) {
++    if !enabled() {
++        return;
++    }
++    let kind = match event.get_keycode() {
++        Key::CTRL => "control",
++        Key::META => "command",
++        Key::SHIFT => "shift",
++        Key::ALT => "alt",
++        _ => "other",
++    };
++    let paste =
++        event.get_keycode() == Key::V && (event.is_ctrl_pressed() || event.is_meta_pressed());
++    let sequence = EVENTS.fetch_add(1, Ordering::Relaxed);
++    godot::global::godot_print!(
++        "[MinervaCefTrace] seq={} stage={} cef_type={} kind={} down={} echo={} ctrl={} cmd={} shift={} alt={} paste={}",
++        sequence,
++        stage,
++        cef_type,
++        kind,
++        event.is_pressed(),
++        event.is_echo(),
++        event.is_ctrl_pressed(),
++        event.is_meta_pressed(),
++        event.is_shift_pressed(),
++        event.is_alt_pressed(),
++        paste
++    );
++}
+diff --git a/crates/gdcef/src/lib.rs b/crates/gdcef/src/lib.rs
+index 06e5181..6ae6a2a 100644
+--- a/crates/gdcef/src/lib.rs
++++ b/crates/gdcef/src/lib.rs
+@@ -11,6 +11,7 @@ mod drag;
+ mod error;
+ mod godot_protocol;
+ mod input;
++mod input_trace;
+ mod ipc_data;
+ mod render;
+ mod settings;

@@ -43,3 +43,66 @@ main-frame replacement and popups synchronously, and redact raw IPC bodies
 from inspector diagnostics so document capabilities cannot enter logs. The
 lock owns the exact immutable backing file and removes only that file and its
 empty directory after `OnBeforeClose`; its drop path covers creation failure.
+
+## 0006-pump-reentrancy-input-trace.patch
+
+Applies after 0001–0005 to the exact upstream gitlink
+`179d86bfc322df1df409239f331a256418d01c1a` (gdext 0.4.5). The `v1.13.0`
+tag is not a substitute for that gitlink.
+
+`CefTexture::on_process` holds a `self.base_mut()` guard only while pumping
+CEF. The guard temporarily makes the Rust instance re-bindable for nested
+Godot notifications; no Rust fields or helper bindings are held inside that
+scope. AppKit menu actions may still run during the pump. This change removes
+the observed binding conflict; it does not disable shortcuts or claim universal
+FFI re-entrancy safety.
+
+Pump/binding inventory:
+
+- **on_process:** the Minerva-reachable pump now uses the scoped base guard.
+- **CefTexture2D frame hook:** unchanged. Minerva creates `CefTexture`, whose
+  helper is shut down and has its frame hook disconnected at construction.
+  Direct `CefTexture2D` consumers are outside this observed abort repair.
+- **0004 finalize_cef drain:** unchanged. It runs at extension teardown without
+  a `CefTexture` instance binding, with the existing bounded browser-close drain
+  and finalizing guard. Browser shutdown guarantees are retained.
+- **_deferred_create_browser:** unchanged. It has no explicit message-loop pump,
+  but holds the texture/helper bindings over synchronous browser creation.
+  Native startup/open-panel behavior remains an unverified pre-existing
+  boundary. A demonstrated creation callback failure needs a separate
+  disposition; this patch does not claim that boundary is proven safe.
+
+### Opt-in input trace
+
+Set `MINERVA_CEF_INPUT_TRACE=1` before launching the diagnostic build to enable
+`[MinervaCefTrace]` records. It is off by default. Use only synthetic non-secret
+text, including in the password field, and close the diagnostic session before
+using real credentials.
+
+The trace records host main/sub-viewport focus-owner classes and container
+focus, native texture/proxy routing, proxy editing and IME state, CEF event
+kind, pressed/released state, modifier flags and a paste-chord classification.
+`control`/`command`/`shift`/`alt` categories distinguish modifier down/up pairs;
+all other keys are called `other`. Native sequence numbers order the forwarding
+and proxy events. DOM records classify password/plain/other inputs and count
+input events. They never record field values, characters, raw key codes,
+scan codes, Unicode values, clipboard data, field names/IDs, document
+capabilities or IPC payloads. Native and host code read key codes internally
+only to classify fixed categories; DOM instrumentation never reads field
+values or clipboard data. No paste or modifier-state behavior is changed.
+
+Owner trace: focus a plain field, paste synthetic text with Cmd+V, then type
+plain letters; repeat in a password field and compare chat paste. Correlate
+`host_key`, `texture_input`, `proxy_gui_input`, `cef_shortcut`, `cef_send`,
+`proxy_text_changed` and `dom_input` records. Missing input routes, a proxy with
+editing=false, suppressed paste with no proxy commit, or Command/Control flags
+remaining on later non-modifier events distinguish the current hypotheses.
+Return the evidence before choosing any paste fix. Preserve the existing
+first-paste-exactly-once regression.
+
+The owner reproduced the unpatched abort with one Ctrl-Cmd-F keypress
+(report `Minerva-2026-11-01-004024.ips`). After the producer build and owner
+installation, verify Ctrl-Cmd-F, Globe-F, Cmd-M and Cmd-Q with two HTML panels
+open, plus startup/open-panel and shutdown observations. These native checks,
+producer/compiler/Clippy evidence, matching-host Godot analyzer/GATE-W and
+Windows/Linux CI build/smoke remain pending; a source review is not acceptance.
