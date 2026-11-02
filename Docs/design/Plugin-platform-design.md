@@ -229,9 +229,10 @@ pair above; non-plugin webviews retain their existing behaviour.
 The plugin backend owns the journal. A ribbon click calls its MCP tool
 `panel.undo` or `panel.redo` with `{"panel_name": "<manifest panel name>"}`.
 Return `{"applied": true}` when a step changed the journal, or
-`{"applied": false}` for empty history. The host serializes clicks per panel,
-waits up to five seconds and logs malformed replies, errors and timeouts without
-a toast. `undo: true` authorizes these host-originated requests; they do not need
+`{"applied": false}` for empty history. The host queues clicks in order per panel,
+waits up to five seconds per request and logs malformed replies, errors and timeouts
+without a toast. Errors, timeouts and reload/close discard queued requests.
+`undo: true` authorizes these host-originated requests; they do not need
 entries in the page's `ui.ipc_messages` allowlist. Both backend tools must exist.
 
 After an applied step, the initiating page receives the plugin event

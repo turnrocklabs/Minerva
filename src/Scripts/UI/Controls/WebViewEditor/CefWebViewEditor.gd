@@ -23,6 +23,7 @@ var _document_panel_name := ""
 var _pending_ipc: Dictionary = {}
 var _history_broker: PluginWebviewBroker = null
 var _history_context: MCPExecutionContext = null
+var _history_requests: Array[bool] = []
 
 
 func configure_plugin_panel(owner: String, panel_name: String, broker: PluginWebviewBroker) -> void:
@@ -39,7 +40,19 @@ func supports_undo() -> bool:
 
 ## One ribbon operation per panel at a time; the backend owns its history journal.
 func request_history(redo: bool) -> void:
-	if plugin_id.is_empty() or not supports_undo() or _history_context != null:
+	if plugin_id.is_empty() or not supports_undo():
+		return
+	_history_requests.append(redo)
+	if _history_context != null:
+		return
+	while not _history_requests.is_empty():
+		var next_redo: bool = _history_requests.pop_front()
+		await _apply_history(next_redo)
+
+
+func _apply_history(redo: bool) -> void:
+	if not supports_undo():
+		_history_requests.clear()
 		return
 	var generation: int = _document_generation
 	var context := MCPExecutionContext.create("panel-history", "", "", 5.0)
@@ -48,18 +61,22 @@ func request_history(redo: bool) -> void:
 		plugin_id, plugin_panel_name, redo, context)
 	_history_context = null
 	if context.is_stopped() or generation != _document_generation or not is_inside_tree():
+		_history_requests.clear()
 		if context.is_stopped():
 			push_warning("[PluginWebview] Panel history request stopped: %s" % context.lifetime.reason)
 		return
 	if reply.get("success", false) != true:
+		_history_requests.clear()
 		push_warning("[PluginWebview] Panel history request failed: %s" % reply)
 		return
 	var result: Variant = reply.get("result", {})
 	if not result is Dictionary:
+		_history_requests.clear()
 		push_warning("[PluginWebview] Panel history reply requires {applied: bool}")
 		return
 	var application: Dictionary = result
 	if not application.get("applied") is bool:
+		_history_requests.clear()
 		push_warning("[PluginWebview] Panel history reply requires {applied: bool}")
 		return
 	if application.get("applied") == true:
@@ -85,6 +102,7 @@ func _exit_tree() -> void:
 
 func _revoke_document() -> void:
 	_document_generation += 1
+	_history_requests.clear()
 	if _history_context != null:
 		_history_context.cancel()
 	for entry: Dictionary in _pending_ipc.values():
