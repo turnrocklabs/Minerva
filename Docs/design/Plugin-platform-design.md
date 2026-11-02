@@ -219,6 +219,27 @@ func _on_panel_undo_request() -> bool
 func _on_panel_redo_request() -> bool
 ```
 
+#### HTML panel history
+
+An HTML panel opts into the ribbon Undo/Redo pair with `"undo": true` in its
+typed `ui.panels[]` entry (boolean, default `false`). Legacy string panels and
+HTML panels without this opt-in hide both buttons. Scene panels keep the hook
+pair above; non-plugin webviews retain their existing behaviour.
+
+The plugin backend owns the journal. A ribbon click calls its MCP tool
+`panel.undo` or `panel.redo` with `{"panel_name": "<manifest panel name>"}`.
+Return `{"applied": true}` when a step changed the journal, or
+`{"applied": false}` for empty history. The host serializes clicks per panel,
+waits up to five seconds and logs malformed replies, errors and timeouts without
+a toast. `undo: true` authorizes these host-originated requests; they do not need
+entries in the page's `ui.ipc_messages` allowlist. Both backend tools must exist.
+
+After an applied step, the initiating page receives the plugin event
+`panel.history_changed` with `{"panel_name": "<manifest panel name>"}` through
+`window.minerva.onPluginEvent`; it should re-read backend state and render it.
+A reload or close cancels the pending request and suppresses stale events.
+Keyboard shortcut routing is unchanged by this contract.
+
 ### 5.2 `ctx` shape
 
 ```gdscript

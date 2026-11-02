@@ -1082,6 +1082,11 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 		if entry.is_empty():
 			entry = ("ui/%s.html") % panel_name
 		result["entry"] = entry
+		# Backend-owned history is opt-in for HTML panels only.
+		var undo_raw: Variant = panel.get("undo", false)
+		if not undo_raw is bool:
+			return {"error": "panel_undo_not_bool", "detail": {"name": panel_name}}
+		result["undo"] = undo_raw
 
 	# --- file_extensions (optional) ---
 	var file_exts_raw: Variant = panel.get("file_extensions", null)

@@ -2197,6 +2197,10 @@ func undo_action():
 			# The hosted panel owns its history; a reverted step is a content change.
 			if PluginScenePanelHost.invoke_undo(plugin_scene_root):
 				_plugin_scene_modified = true
+		Type.WEBVIEW:
+			var panel: CefWebViewEditor = webview_editor
+			if panel != null:
+				panel.request_history(false)
 
 
 func redo_action():
@@ -2210,16 +2214,21 @@ func redo_action():
 		Type.PLUGIN_SCENE:
 			if PluginScenePanelHost.invoke_redo(plugin_scene_root):
 				_plugin_scene_modified = true
+		Type.WEBVIEW:
+			var panel: CefWebViewEditor = webview_editor
+			if panel != null:
+				panel.request_history(true)
 
 
-## Whether the ribbon shows its Undo/Redo buttons for this tab. Only a
-## PLUGIN_SCENE tab is gated — live iff the hosted panel declares the undo hook
-## pair (PluginScenePanelHost.supports_undo); every other type keeps the
-## buttons exactly as it always has.
+## Scene panels declare both history hooks; HTML panels opt in via the manifest.
+## Other editor types retain their existing ribbon behaviour.
 func supports_undo() -> bool:
-	if type != Type.PLUGIN_SCENE:
-		return true
-	return PluginScenePanelHost.supports_undo(plugin_scene_root)
+	if type == Type.PLUGIN_SCENE:
+		return PluginScenePanelHost.supports_undo(plugin_scene_root)
+	if type == Type.WEBVIEW:
+		var panel: CefWebViewEditor = webview_editor
+		return panel != null and panel.supports_undo()
+	return true
 
 
 func clear_text():

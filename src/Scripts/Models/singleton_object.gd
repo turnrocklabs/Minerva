@@ -1089,7 +1089,7 @@ func _open_plugin_panel_for_editor_item(plugin_id: String, panel_name: String, t
 	if plugin_webview_broker:
 		plugin_webview_broker.register_plugin_panel(plugin_id, panel_name)
 
-	editor_pane.add_plugin_panel_editor(plugin_id, panel_name, html, tab_title)
+	editor_pane.add_plugin_panel_editor(plugin_id, panel_name, html, tab_title, plugin_webview_broker)
 
 #endregion Plugins
 

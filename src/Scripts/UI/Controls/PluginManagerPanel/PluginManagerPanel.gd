@@ -1530,7 +1530,7 @@ func _on_open_panel_pressed() -> void:
 		SingletonObject.plugin_webview_broker.register_plugin_panel(_selected_plugin_id, panel_name)
 
 	var tab_title: String = def.name + " Panel"
-	editor_pane.add_plugin_panel_editor(_selected_plugin_id, panel_name, html, tab_title)
+	editor_pane.add_plugin_panel_editor(_selected_plugin_id, panel_name, html, tab_title, SingletonObject.plugin_webview_broker)
 	_show_status("Opened panel for %s" % _selected_plugin_id)
 
 
