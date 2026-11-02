@@ -152,6 +152,8 @@ import time
 
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
+# Explicit sibling paths also support isolated (-I) launches of the shipped kit.
+sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "container-build"))
 import build as container_build  # noqa: E402  the builder image and native cache
 import readiness  # noqa: E402  profiles and the read-only probe
