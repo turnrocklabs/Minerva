@@ -26,8 +26,8 @@ var _history_context: MCPExecutionContext = null
 var _history_requests: Array[bool] = []
 
 
-func configure_plugin_panel(owner: String, panel_name: String, broker: PluginWebviewBroker) -> void:
-	plugin_id = owner
+func configure_plugin_panel(owner_plugin_id: String, panel_name: String, broker: PluginWebviewBroker) -> void:
+	plugin_id = owner_plugin_id
 	plugin_panel_name = panel_name
 	_history_broker = broker
 
