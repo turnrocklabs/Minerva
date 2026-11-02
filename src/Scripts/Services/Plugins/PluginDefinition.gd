@@ -1087,6 +1087,10 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 		if not undo_raw is bool:
 			return {"error": "panel_undo_not_bool", "detail": {"name": panel_name}}
 		result["undo"] = undo_raw
+		var dialogs_raw: Variant = panel.get("file_dialogs", false)
+		if not dialogs_raw is bool:
+			return {"error": "panel_file_dialogs_not_bool", "detail": {"name": panel_name}}
+		result["file_dialogs"] = dialogs_raw
 
 	# --- file_extensions (optional) ---
 	var file_exts_raw: Variant = panel.get("file_extensions", null)

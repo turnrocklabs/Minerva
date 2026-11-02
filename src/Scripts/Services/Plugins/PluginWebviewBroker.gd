@@ -32,6 +32,7 @@ extends RefCounted
 const EVENT_IPC_ALLOWED   := "ipc_allowed"
 const EVENT_IPC_DENIED    := "ipc_denied"
 const EVENT_IPC_DISPATCHED := "ipc_dispatched"
+const FOLDER_PICKER_MESSAGE := "minerva.pickFolder"
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,7 @@ var audit_log: PluginAuditLog = null
 
 ## panel_name -> plugin_id   (populated by register_plugin_panel)
 var _panel_registry: Dictionary = {}
+var _folder_dialog_open := false
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +138,10 @@ func get_panel_owner(panel_name: String) -> String:
 ## independently of the page's ui.ipc_messages allowlist and name-only registry.
 ## The host supplies both IDs; different plugins may declare the same panel name.
 func supports_panel_undo(plugin_id: String, panel_name: String) -> bool:
+	return _html_panel_enabled(plugin_id, panel_name, "undo")
+
+
+func _html_panel_enabled(plugin_id: String, panel_name: String, option: String) -> bool:
 	if plugin_manager == null or plugin_id.is_empty() or panel_name.is_empty():
 		return false
 	var db: PluginDB = plugin_manager.get_db()
@@ -144,8 +150,67 @@ func supports_panel_undo(plugin_id: String, panel_name: String) -> bool:
 		return false
 	for panel: Dictionary in definition.ui_panels:
 		if panel.get("name", "") == panel_name:
-			return panel.get("kind", "html") == "html" and panel.get("undo", false) == true
+			return panel.get("kind", "html") == "html" and panel.get(option, false) == true
 	return false
+
+
+## Panel-only native dialog route. Returning a path never changes file grants.
+func pick_folder(plugin_id: String, panel_name: String, options: Dictionary,
+		context: MCPExecutionContext, parent_window_id: int) -> Dictionary:
+	if not _html_panel_enabled(plugin_id, panel_name, "file_dialogs"):
+		_audit(plugin_id, EVENT_IPC_DENIED, {"panel_name": panel_name,
+			"message_type": FOLDER_PICKER_MESSAGE, "reason": "panel_not_opted_in"})
+		return PluginErrors.permission_denied(plugin_id, "HTML panel has not opted into file_dialogs")
+	_audit(plugin_id, EVENT_IPC_ALLOWED, {"panel_name": panel_name, "message_type": FOLDER_PICKER_MESSAGE})
+	var result: Dictionary = await context.run(_show_folder_dialog.bind(
+		plugin_id, panel_name, options, context, parent_window_id))
+	_audit(plugin_id, EVENT_IPC_DISPATCHED, {"panel_name": panel_name,
+		"message_type": FOLDER_PICKER_MESSAGE, "success": result.get("success", false)})
+	return PluginPayloadLimits.bound_reply(result, plugin_id)
+
+
+func _show_folder_dialog(plugin_id: String, panel_name: String, options: Dictionary,
+		context: MCPExecutionContext, parent_window_id: int) -> Dictionary:
+	for key: String in options:
+		if key not in ["title", "start_dir"] or not options[key] is String:
+			return PluginErrors.schema_validation_failed(plugin_id, "pickFolder accepts only title and start_dir strings")
+	var title: String = options.get("title", "Choose folder")
+	var start_dir: String = options.get("start_dir", "")
+	if title.contains("\u0000") or start_dir.contains("\u0000") \
+			or (not start_dir.is_empty() and (not start_dir.is_absolute_path() \
+			or start_dir.begins_with("res://") or start_dir.begins_with("user://"))):
+		return PluginErrors.schema_validation_failed(plugin_id, "start_dir must be an absolute filesystem path")
+	if OS.get_name() == "macOS" and (start_dir == "/home" or start_dir.begins_with("/home/")):
+		return PluginErrors.schema_validation_failed(plugin_id, "/home paths are unavailable on this host")
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG_FILE):
+		return {"success": false, "error_code": "dialog_unavailable",
+			"error_message": "Native folder dialogs are unavailable in this UI session"}
+	if _folder_dialog_open:
+		return {"success": false, "error_code": "dialog_busy",
+			"error_message": "Close the existing native folder dialog before opening another"}
+	var completion := MCPExecutionContext.Completion.new()
+	var selected := func(accepted: bool, paths: PackedStringArray, _filter: int) -> void:
+		_folder_dialog_open = false
+		if context.is_stopped():
+			completion.finish(context.stopped_result())
+		elif not _html_panel_enabled(plugin_id, panel_name, "file_dialogs"):
+			completion.finish(PluginErrors.permission_denied(plugin_id, "Panel dialog opt-in changed"))
+		elif not accepted:
+			completion.finish(PluginErrors.success({"cancelled": true}))
+		elif paths.size() != 1 or not paths[0].is_absolute_path():
+			completion.finish(PluginErrors.schema_validation_failed(plugin_id, "Native folder dialog returned no absolute path"))
+		else:
+			completion.finish(PluginErrors.success({"path": paths[0]}))
+	_folder_dialog_open = true
+	var error: Error = DisplayServer.file_dialog_show(title, start_dir, "", false,
+		DisplayServer.FILE_DIALOG_MODE_OPEN_DIR, PackedStringArray(), selected, parent_window_id)
+	if error != OK:
+		_folder_dialog_open = false
+		return {"success": false, "error_code": "dialog_unavailable",
+			"error_message": "Cannot open native folder dialog: %s" % error_string(error)}
+	if not completion.done:
+		await completion.finished
+	return completion.result
 
 
 func request_panel_history(plugin_id: String, panel_name: String, redo: bool,

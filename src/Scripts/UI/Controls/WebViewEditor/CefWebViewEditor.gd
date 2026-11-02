@@ -22,7 +22,7 @@ var _document_plugin_id := ""
 var _document_panel_name := ""
 var _pending_ipc: Dictionary = {}
 static var _input_trace_sequence: int = 0
-var _history_broker: PluginWebviewBroker = null
+var _panel_broker: PluginWebviewBroker = null
 var _history_context: MCPExecutionContext = null
 var _history_requests: Array[bool] = []
 
@@ -30,13 +30,13 @@ var _history_requests: Array[bool] = []
 func configure_plugin_panel(owner_plugin_id: String, panel_name: String, broker: PluginWebviewBroker) -> void:
 	plugin_id = owner_plugin_id
 	plugin_panel_name = panel_name
-	_history_broker = broker
+	_panel_broker = broker
 
 
 func supports_undo() -> bool:
 	if plugin_id.is_empty():
 		return true
-	return _history_broker != null and _history_broker.supports_panel_undo(plugin_id, plugin_panel_name)
+	return _panel_broker != null and _panel_broker.supports_panel_undo(plugin_id, plugin_panel_name)
 
 
 ## One ribbon operation per panel at a time; the backend owns its history journal.
@@ -58,7 +58,7 @@ func _apply_history(redo: bool) -> void:
 	var generation: int = _document_generation
 	var context := MCPExecutionContext.create("panel-history", "", "", 5.0)
 	_history_context = context
-	var reply: Dictionary = await _history_broker.request_panel_history(
+	var reply: Dictionary = await _panel_broker.request_panel_history(
 		plugin_id, plugin_panel_name, redo, context)
 	_history_context = null
 	if context.is_stopped() or generation != _document_generation or not is_inside_tree():
@@ -484,10 +484,16 @@ func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
 	var data: Dictionary = wire.parsed
 	if data.get("capability") != _document.capability:
 		return
-	var ipc_id = data.get("id", "")
+	var ipc_id_value: Variant = data.get("id", "")
+	if not ipc_id_value is String:
+		return
+	var ipc_id: String = ipc_id_value
 	var message_value: Variant = data.get("type")
 	var payload_value: Variant = data.get("payload", {})
-	if not message_value is String or not payload_value is Dictionary:
+	if not message_value is String:
+		return
+	if not payload_value is Dictionary:
+		_send_ipc_reply(ipc_id, {"success": false, "error_message": "IPC payload must be an object"}, generation)
 		return
 	var message_type: String = message_value
 	var payload: Dictionary = payload_value
@@ -500,10 +506,12 @@ func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
 		return
 
 
-	if message_type == "minerva.call" or not _document_panel_name.is_empty():
+	if message_type == "minerva.call" or message_type == PluginWebviewBroker.FOLDER_PICKER_MESSAGE \
+			or not _document_panel_name.is_empty():
 		if _pending_ipc.has(ipc_id):
 			return
-		var context = _begin_ipc(ipc_id, generation)
+		var timeout_seconds := 0.0 if message_type == PluginWebviewBroker.FOLDER_PICKER_MESSAGE else 15.0
+		var context: MCPExecutionContext = _begin_ipc(ipc_id, generation, timeout_seconds)
 		if context == null:
 			_send_ipc_reply(ipc_id, {"success": false,
 				"error_message": "Bridge request admission rejected"}, generation)
@@ -516,19 +524,27 @@ func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
 		print("[CefWebViewEditor:%s] Non-plugin IPC type=%s" % [editor_id, message_type])
 
 
-func _begin_ipc(ipc_id, generation: int):
-	if not ipc_id is String or ipc_id.is_empty() or _pending_ipc.has(ipc_id) \
+func _begin_ipc(ipc_id: String, generation: int, timeout_seconds: float = 15.0) -> MCPExecutionContext:
+	if ipc_id.is_empty() or _pending_ipc.has(ipc_id) \
 			or _pending_ipc.size() >= 128:
 		return null
-	var context = load("res://Scripts/Services/MCP/MCPExecutionContext.gd").create(
-		"webview", "", "", 15.0)
+	var context := MCPExecutionContext.create(
+		"webview", "", "", timeout_seconds)
 	_pending_ipc[ipc_id] = {"generation": generation, "context": context}
 	return context
 
 
-func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary,
-		generation: int, context) -> void:
-	var broker = _get_webview_broker()
+func _handle_plugin_ipc(ipc_id: String, message_type: String, payload: Dictionary,
+		generation: int, context: MCPExecutionContext) -> void:
+	if message_type == PluginWebviewBroker.FOLDER_PICKER_MESSAGE:
+		if _panel_broker == null:
+			_send_ipc_reply(ipc_id, {"success": false, "error_message": "Plugin panel required"}, generation)
+			return
+		var folder_result: Dictionary = await _panel_broker.pick_folder(_document_plugin_id,
+			_document_panel_name, payload, context, get_window().get_window_id())
+		_send_ipc_reply(ipc_id, folder_result, generation)
+		return
+	var broker: PluginWebviewBroker = _get_webview_broker()
 	if broker == null:
 		_send_ipc_reply(ipc_id, {"success": false, "error_message": "Webview broker not available"})
 		return
@@ -538,7 +554,7 @@ func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary,
 	_send_ipc_reply(ipc_id, result, generation)
 
 
-func _handle_minerva_call(ipc_id, payload: Dictionary, generation: int, context) -> void:
+func _handle_minerva_call(ipc_id: String, payload: Dictionary, generation: int, context: MCPExecutionContext) -> void:
 	var tool: Variant = payload.get("tool")
 	var arguments: Variant = payload.get("arguments", {})
 	if not tool is String or tool.is_empty() or not arguments is Dictionary:
@@ -568,7 +584,7 @@ func _handle_minerva_call(ipc_id, payload: Dictionary, generation: int, context)
 		"error_code": result.get("error_code", "")}, generation)
 
 
-func _send_ipc_reply(ipc_id, result: Dictionary, generation: int = -1) -> void:
+func _send_ipc_reply(ipc_id: String, result: Dictionary, generation: int = -1) -> void:
 	if generation < 0:
 		generation = _document_generation
 	var pending: Dictionary = _pending_ipc.get(ipc_id, {})
@@ -606,10 +622,14 @@ func _defer_eval(script: String, generation: int = -1) -> void:
 	).call_deferred()
 
 
-func _get_webview_broker():
-	var singleton = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
-	if singleton and singleton.get("plugin_webview_broker"):
-		return singleton.plugin_webview_broker
+func _get_webview_broker() -> PluginWebviewBroker:
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		return null
+	var singleton: Node = tree.root.get_node_or_null("SingletonObject")
+	if singleton != null:
+		var broker: PluginWebviewBroker = singleton.get("plugin_webview_broker")
+		return broker
 	return null
 
 
