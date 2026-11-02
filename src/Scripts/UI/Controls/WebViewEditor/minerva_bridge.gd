@@ -30,7 +30,8 @@ const BRIDGE_JS: String = """
 			return Promise.reject(error);
 		}
 		return new Promise(function(resolve, reject) {
-			const timer = setTimeout(function() {
+			// A native dialog is user-paced, including minutes spent creating folders.
+			const timer = type === 'minerva.pickFolder' ? null : setTimeout(function() {
 				pending.delete(id); reject(new Error('bridge_timeout'));
 			}, TIMEOUT_MS);
 			pending.set(id, {resolve, reject, timer});
@@ -43,6 +44,12 @@ const BRIDGE_JS: String = """
 		// Call any MCP tool: minerva.call('minerva_get_note', {note_id: 'note-id'})
 		call: function(toolName, args) {
 			return request('minerva.call', {tool: toolName, arguments: args || {}});
+		},
+		pickFolder: function(options) {
+			if (options && (typeof options !== 'object' || Array.isArray(options))) {
+				return Promise.reject(new Error('pickFolder options must be an object'));
+			}
+			return request('minerva.pickFolder', options || {});
 		},
 
 		// Convenience: create a note

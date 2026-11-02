@@ -241,6 +241,28 @@ After an applied step, the initiating page receives the plugin event
 A reload or close cancels the pending request and suppresses stale events.
 Keyboard shortcut routing is unchanged by this contract.
 
+#### HTML native folder picker
+
+An HTML panel declares `"file_dialogs": true` (boolean, default `false`) to use
+`await window.minerva.pickFolder({title: "Choose folder", start_dir: "/absolute/path"})`.
+Both options are optional strings; `start_dir` must be an absolute filesystem path
+when supplied. This panel-only bridge route is authorized by the manifest opt-in,
+without a separate `ui.ipc_messages` entry. A backend or non-plugin webview cannot
+open this dialog through the API.
+
+The host uses `DisplayServer.file_dialog_show` in native directory mode, preserving
+the platform's folder creation controls (including New Folder on macOS). It returns
+`{path: "<selected absolute path>"}` only to the requesting document, or
+`{cancelled: true}`. This does not change plugin filesystem permissions or grants.
+The OS may ignore the requested initial directory or title.
+
+Dialog requests have no elapsed-time timeout in either the JS bridge or host:
+leaving a dialog open for two minutes still permits selection. Other bridge calls
+retain their 15-second timeout and the 128-request pending limit still applies.
+Only one native folder dialog is admitted at a time. Closing/reloading the panel
+cancels its request and suppresses stale replies; close the native dialog before
+requesting another. Unsupported UI sessions and native API errors reject the Promise.
+
 ### 5.2 `ctx` shape
 
 ```gdscript
