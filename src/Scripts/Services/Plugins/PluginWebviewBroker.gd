@@ -133,9 +133,10 @@ func get_panel_owner(panel_name: String) -> String:
 
 
 ## Host ribbon requests are authorized by this panel's explicit manifest opt-in,
-## independently of the page's ui.ipc_messages allowlist.
+## independently of the page's ui.ipc_messages allowlist and name-only registry.
+## The host supplies both IDs; different plugins may declare the same panel name.
 func supports_panel_undo(plugin_id: String, panel_name: String) -> bool:
-	if plugin_manager == null or get_panel_owner(panel_name) != plugin_id:
+	if plugin_manager == null or plugin_id.is_empty() or panel_name.is_empty():
 		return false
 	var db: PluginDB = plugin_manager.get_db()
 	var definition: PluginDefinition = db.get_by_id(plugin_id) if db != null else null
