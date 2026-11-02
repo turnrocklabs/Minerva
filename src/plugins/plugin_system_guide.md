@@ -714,6 +714,7 @@ entries, and `PluginDependencyContract.parse`; it excludes nested `settings[]`,
 | `ui.panels[].kind` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].layout_hint` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].multi_window` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].undo` | manifest_field | HTML-only opt-in for backend history; [host contract](../../Docs/design/Plugin-platform-design.md#html-panel-history). |
 | `ui.panels[].name` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].native_save_extensions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].render_mode` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |

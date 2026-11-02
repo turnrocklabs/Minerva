@@ -132,6 +132,37 @@ func get_panel_owner(panel_name: String) -> String:
 	return _panel_registry.get(panel_name, "")
 
 
+## Host ribbon requests are authorized by this panel's explicit manifest opt-in,
+## independently of the page's ui.ipc_messages allowlist and name-only registry.
+## The host supplies both IDs; different plugins may declare the same panel name.
+func supports_panel_undo(plugin_id: String, panel_name: String) -> bool:
+	if plugin_manager == null or plugin_id.is_empty() or panel_name.is_empty():
+		return false
+	var db: PluginDB = plugin_manager.get_db()
+	var definition: PluginDefinition = db.get_by_id(plugin_id) if db != null else null
+	if definition == null:
+		return false
+	for panel: Dictionary in definition.ui_panels:
+		if panel.get("name", "") == panel_name:
+			return panel.get("kind", "html") == "html" and panel.get("undo", false) == true
+	return false
+
+
+func request_panel_history(plugin_id: String, panel_name: String, redo: bool,
+		context: MCPExecutionContext) -> Dictionary:
+	if not supports_panel_undo(plugin_id, panel_name):
+		return PluginErrors.permission_denied(plugin_id, "Panel has not opted into backend history")
+	var channel := "panel.redo" if redo else "panel.undo"
+	_audit(plugin_id, EVENT_IPC_ALLOWED, {"panel_name": panel_name, "message_type": channel})
+	var result: Dictionary = await context.run(_dispatch_to_plugin_backend.bind(
+		plugin_id, channel, {"panel_name": panel_name}, context))
+	if not supports_panel_undo(plugin_id, panel_name):
+		return PluginErrors.permission_denied(plugin_id, "Panel ownership or history opt-in changed")
+	_audit(plugin_id, EVENT_IPC_DISPATCHED, {"panel_name": panel_name,
+		"message_type": channel, "success": result.get("success", false)})
+	return result
+
+
 # ---------------------------------------------------------------------------
 # Primary IPC entry point
 # ---------------------------------------------------------------------------
