@@ -3,7 +3,7 @@ extends RefCounted
 ## Single source of truth for host-owned, user/LLM-editable settings.
 ##
 ## Two scope families:
-##   "core"        — built-in settings groups defined in CORE_SCHEMAS.
+##   "core", "core:cef" — built-in settings groups defined in CORE_SCHEMAS.
 ##   "plugin:<id>" — declared in a plugin manifest's `settings` array.
 ##
 ## Every consumer (Preferences UI, MCP preference tools, host.settings capability)
@@ -13,6 +13,7 @@ extends RefCounted
 
 const DEFAULT_SUMMARIZATION_MODEL := "gpt-5.4-mini"
 const DEFAULT_SUMMARIZATION_PROMPT := "Summarize this conversation. Preserve: key decisions, facts learned, action items, important code snippets, and any unresolved questions. Be concise but complete."
+const CefDebugSettingsScript := preload("res://Scripts/Services/Plugins/CefDebugSettings.gd")
 
 ## Built-in settings groups. Each scope maps to a config-file section and a field
 ## list using the same schema shape as a plugin manifest's `settings` array.
@@ -46,6 +47,7 @@ const CORE_SCHEMAS := {
 			},
 		],
 	},
+	CefDebugSettingsScript.SCOPE: CefDebugSettingsScript.SCHEMA,
 }
 
 var _plugin_db = null  # PluginDB

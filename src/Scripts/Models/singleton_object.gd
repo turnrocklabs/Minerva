@@ -1539,6 +1539,7 @@ func _ready():
 	# builds still use the retain count to avoid an unsupported process reinit.
 	# Tracked under DCR 019dac8d.
 	if ClassDB.class_exists("CefTexture"):
+		CefDebugSettings.configure(_config_file_name)
 		if OS.get_name() == "Windows":
 			# CEF's admin de-elevation relaunches the host executable, leaving two
 			# Minervas alive. Keep the user's chosen privilege; never elevate it.

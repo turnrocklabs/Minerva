@@ -487,16 +487,25 @@ live-data comparison. Follow its `warning_receipt` path for the gate's
 `passed`/`failed` status and warning regressions. `live-before.json` and
 `live-after.json` hold metadata-only listings of the real account's Godot data;
 `live-changed.json` lists all changes and `live-diff.json` classifies them.
-Created or removed entries, mode or size changes, and other metadata changes
-(such as changed symlink targets) make the helper fail. Only an mtime-only change
-to an existing regular file is a warning. Directory and symlink changes retain
-their strict failure behavior. A nonzero gate result always fails the helper.
+The separate live Docket application owns `app_userdata/Docket/`. Changes to
+ordinary entries in that namespace (including its root directory metadata and
+created/removed files or directories) are ambient warnings in `docket_warnings`,
+with every change retained in the raw listings and diff. This classification
+requires a real Docket directory and rejects symlinks in either snapshot along
+the path; symlink creation/removal/target changes remain hard failures.
+Elsewhere, created or removed entries, mode or size changes, and other metadata
+changes make the helper fail. Only an mtime-only change to an existing regular
+file is a warning. Directory changes outside Docket retain their strict failure
+behavior. A nonzero gate result always fails the helper.
 
 The receipt preserves `live_listing_unchanged` even for warning-only differences,
 records the gate child's `returncode` separately from `wrapper_returncode`, and
 reports exact-name `pgrep` results for Minerva before and after the run. **Quit
 Minerva for a clean listing.** A running app can update its own cache timestamps;
 the process report and metadata diff are evidence, not proof of attribution.
+Quit the live Docket app as well for a clean listing of its namespace. During
+any GATE-W run, post "GATE-W running" before launch and "GATE-W done" after its
+receipt is written, so peers can hold their Docket acknowledgments and posts.
 
 The approved ffmpeg **release-as-debug stand-in excludes native-load coverage**.
 A warning-gate pass does not validate native loads. Keep import/editor logs and
