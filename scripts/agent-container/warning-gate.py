@@ -17,6 +17,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -156,20 +158,55 @@ def regressions(base, head, changed, refactor):
     return risen
 
 
-def run_gate(args):
+def godot_environment(godot: str, job_root: Path) -> tuple[str, dict[str, str]]:
+    """Isolate editor data before launching either import or the LSP editor."""
+    executable = shutil.which(godot)
+    if executable is None:
+        raise ValueError(f"Godot executable not found: {godot}")
+    binary = Path(executable).resolve()
+    portable = any((binary.parent / name).is_file() for name in ("._sc_", "_sc_"))
+    env = dict(os.environ)
+    env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
+    live = (Path.home() / "Library/Application Support/Godot").resolve()
+    if sys.platform == "darwin":
+        # Portable editor settings do not redirect a project's user:// on macOS.
+        # HOME must isolate both imports and the language-server editor process.
+        home = (job_root / "godot-home").resolve()
+        user_data = (home / "Library/Application Support/Godot").resolve()
+        if user_data == live or live in user_data.parents:
+            raise ValueError("scratch HOME resolves user:// into the live macOS Godot data directory")
+        home.mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(home)
+    xdg = (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"),
+           ("XDG_CACHE_HOME", "cache"), ("XDG_STATE_HOME", "state"),
+           ("XDG_RUNTIME_DIR", "runtime"))
+    if portable:
+        data = (binary.parent / "editor_data").resolve()
+        if data == live or live in data.parents:
+            raise ValueError("Godot editor_data resolves into the live macOS Godot data directory")
+        # Self-contained Godot owns editor_data beside the binary. XDG paths do
+        # not isolate it and must not suggest otherwise, even if inherited.
+        for key, _ in xdg:
+            env.pop(key, None)
+    elif sys.platform == "darwin":
+        raise ValueError("macOS GATE-W requires ._sc_ beside the scratch Godot binary; "
+                         "the default editor data directory is live")
+    else:
+        for key, subdir in xdg:
+            path = job_root / "xdg" / subdir
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            env[key] = str(path)
+    return str(binary), env
+
+
+def run_gate(args: argparse.Namespace) -> int:
     host = Path.cwd().resolve()
-    if not (host / "src/project.godot").is_file() or not os.environ.get("MINERVA_JOB_ID") or host.parent != JOB_ROOT:
+    job_root = args.job_root.resolve()
+    if not (host / "src/project.godot").is_file() or not os.environ.get("MINERVA_JOB_ID") or host.parent != job_root:
         raise SystemExit("run only from a Minerva checkout in an isolated agent.py planned job")
     logs = host / "gate-evidence"
     logs.mkdir(exist_ok=True)
     env = dict(os.environ)
-    env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
-    for key, subdir in (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"),
-                        ("XDG_CACHE_HOME", "cache"), ("XDG_STATE_HOME", "state"),
-                        ("XDG_RUNTIME_DIR", "runtime")):
-        path = JOB_ROOT / "xdg" / subdir
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        env[key] = str(path)
     receipt = {"schema": "minerva/warning-gate-v1", "job": os.environ["MINERVA_JOB_ID"],
                "head": git(host, "rev-parse", "HEAD"), "refactor": args.refactor, "status": "failed"}
 
@@ -186,7 +223,12 @@ def run_gate(args):
 
     def prepare_and_scan(root, prefix, port):
         started = time.monotonic()
-        step(f"{prefix}natives", ["python3", "-B", "scripts/container-build/dev-natives.py"], root, 900)
+        natives = shlex.split(args.natives_cmd) if args.natives_cmd is not None else [
+            sys.executable if sys.platform == "darwin" else "python3",
+            "-B", "scripts/container-build/dev-natives.py"]
+        if not natives:
+            raise ValueError("--natives-cmd must name a command")
+        step(f"{prefix}natives", natives, root, 900)
         step(f"{prefix}import", [args.godot, "--headless", "--path", "src", "--import"], root, 900)
         enable_typing_warnings(root)
         found, files = scan(root, args.godot, env, logs / f"{prefix}editor.log", port)
@@ -196,10 +238,11 @@ def run_gate(args):
         return found
 
     try:
+        args.godot, env = godot_environment(args.godot, job_root)
         receipt["base"] = git(host, "rev-parse", "--verify", f"{args.base}^{{commit}}")
         changed = set(git(host, "diff", "--name-only", "--no-renames", receipt["base"], "HEAD", "--", "src").splitlines())
         head = prepare_and_scan(host, "head-", 47123)
-        baseline = JOB_ROOT / f"warning-base-{receipt['base'][:12]}" / "Minerva"
+        baseline = job_root / f"warning-base-{receipt['base'][:12]}" / "Minerva"
         subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", str(host), str(baseline)], check=True)
         subprocess.run(["git", "-C", str(baseline), "checkout", "-q", "--detach", receipt["base"]], check=True)
         base = prepare_and_scan(baseline, "base-", 47124)
@@ -222,13 +265,18 @@ def run_gate(args):
     return 0 if receipt["status"] == "passed" else 1
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", required=True, help="commit before the batch")
     parser.add_argument("--godot", default="godot")
+    parser.add_argument("--job-root", type=Path, default=JOB_ROOT,
+                        help="isolated job parent (default /tmp/job; symlinks resolved)")
+    parser.add_argument("--natives-cmd",
+                        help="native staging command, split as argv without a shell; runs in each clone")
     parser.add_argument("--refactor", action="store_true",
                         help="compare the changed files by per-code totals (R5 refactor commits)")
-    return run_gate(parser.parse_args())
+    args = parser.parse_args()
+    return run_gate(args)
 
 
 if __name__ == "__main__":
