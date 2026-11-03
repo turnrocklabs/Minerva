@@ -33,7 +33,7 @@ on:
 # Single source of truth for the Godot version — every job that installs Godot
 # reads these. Keep in sync with the project's config/features in project.godot.
 env:
-  CEF_PRODUCER_RUN: 41345006391
+  CEF_PRODUCER_RUN: 41710864064
   GODOT_VERSION: "4.6.2"
   GODOT_RELEASE: "stable"
 
