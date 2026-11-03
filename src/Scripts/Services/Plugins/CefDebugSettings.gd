@@ -42,11 +42,7 @@ static func configure(config_path: String) -> void:
 	if not (value is int or value is float):
 		push_warning("[CEF] Remote debugging opt-in ignored: port must be a whole number 1024–65535")
 		return
-	var number: float
-	if value is float:
-		number = value as float
-	else:
-		number = value as int
+	var number: float = value
 	if not is_finite(number) or number != floor(number) or number < 1024 or number > 65535:
 		push_warning("[CEF] Remote debugging opt-in ignored: port must be a whole number 1024–65535")
 		return
