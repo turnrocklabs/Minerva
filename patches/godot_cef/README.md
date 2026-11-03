@@ -171,3 +171,27 @@ back in without a native-control recovery click; confirm typing with the
 container at `FOCUS_NONE`; and confirm no `set_focus(false)` before the press on
 an in-panel click. Preserve first-paste-exactly-once behavior and the 0006 abort
 guard. Native build/analyzer checks and these owner observations remain pending.
+
+## Host preference for release-build remote debugging
+
+Preferences > Advanced > CEF remote debugging exposes the startup-only
+`core:cef` settings `cef_remote_debugging` (false by default) and
+`cef_remote_debugging_port` (9222 by default). They persist under `[CEF]` in
+`user://config_file.cfg`. Restart Minerva after changing them. This does not
+change gdcef's existing debug/editor policy or require a native rebuild.
+
+When enabled with an integer port from 1024 through 65535, the host adds the
+remote-debugging port to the existing custom CEF switches
+before the lifecycle pin initializes CEF. The websocket origin allowlist is the
+exact `http://127.0.0.1:<port>`, never `*`. Other custom switches are preserved;
+conflicting debugging port/address/origin entries are replaced only when this
+preference is enabled. The startup log reports the requested local endpoint.
+An invalid port leaves the opt-in unapplied and logs why. With the preference
+off or absent, custom switches and the native policy are untouched.
+
+The Chromium runtime binds loopback, with an IPv6 loopback fallback if its
+IPv4 listen fails; no address switch is added. Both loopback addresses are allowed; wildcard
+binding is not.
+Release acceptance must inspect the actual listener and query `/json/list`
+after restart on the CI-built release. Source review and headless GATE-W do
+not prove endpoint availability or browser-panel automation.
