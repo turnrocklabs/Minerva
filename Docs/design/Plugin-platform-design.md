@@ -265,6 +265,24 @@ as cancelled and releases admission immediately. Late native callbacks from that
 request cannot clear or reply to a newer request. Unsupported UI sessions and
 native API errors reject the Promise.
 
+For non-live-reload plugins installed through the manifest/dev lane,
+`minerva_plugin_reload` validates `data_directory/manifest.json`, commits the
+new definition to the plugin database, and restarts the backend. Invalid JSON,
+identity/API/definition validation failures, or a failed database save preserve
+the old definition and leave its backend alone. Install choices and grants are
+retained; refreshing does not grant capabilities or seed Docket content.
+The saved definition records that legacy grant migration is no longer needed,
+so later backend or app restarts cannot grant newly refreshed capabilities.
+Pending folder and history requests are cancelled when a new definition commits.
+Reopen existing HTML panels after reload to refresh their document and ribbon
+state. Host authorization checks use the current panel definition on each call.
+Opt-in `live_reload` scene plugins keep their existing generation-swap route;
+their stored manifest refresh is outside this dev-refresh path. Marketplace
+reload behavior is unchanged. A successful reload reports `manifest_refreshed`
+and `panels_need_reopen` for the ordinary manifest/dev path. If backend startup
+fails after a valid definition commits, that definition remains saved and the
+reload returns the startup error with `manifest_refreshed: true`.
+
 ### 5.2 `ctx` shape
 
 ```gdscript

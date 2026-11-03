@@ -79,6 +79,13 @@ class PendingFolderDialog extends RefCounted:
 var _folder_dialog: PendingFolderDialog = null
 var _folder_dialog_sequence: int = 0
 
+class PendingPanelHistory extends RefCounted:
+	var plugin_id: String
+	var panel_name: String
+	var context: MCPExecutionContext
+
+var _panel_history_requests: Dictionary = {}
+
 
 # ---------------------------------------------------------------------------
 # Constructor
@@ -94,6 +101,8 @@ func _init(
 	plugin_policy     = p_plugin_policy
 	capability_broker = p_capability_broker
 	audit_log         = p_audit_log
+	if plugin_manager != null:
+		plugin_manager.plugin_definition_changed.connect(_cancel_panel_requests)
 
 
 # ---------------------------------------------------------------------------
@@ -110,15 +119,13 @@ func register_plugin_panel(plugin_id: String, panel_name: String) -> void:
 	if _panel_registry.has(panel_name):
 		var existing: String = _panel_registry[panel_name]
 		if existing != plugin_id:
+			_cancel_panel_requests(existing, panel_name)
 			push_warning(
 				"[PluginWebviewBroker] Panel '%s' was owned by '%s', re-assigning to '%s'" % [
 					panel_name, existing, plugin_id
 				]
 			)
 
-	if _folder_dialog != null and _folder_dialog.panel_name == panel_name \
-			and _folder_dialog.plugin_id != plugin_id:
-		_cancel_folder_dialog(_folder_dialog.id)
 	_panel_registry[panel_name] = plugin_id
 	print("[PluginWebviewBroker] Registered panel '%s' -> plugin '%s'" % [panel_name, plugin_id])
 
@@ -126,8 +133,7 @@ func register_plugin_panel(plugin_id: String, panel_name: String) -> void:
 ## Unregister all panels belonging to a plugin.
 ## Call this when a plugin is stopped or uninstalled.
 func unregister_plugin_panels(plugin_id: String) -> void:
-	if _folder_dialog != null and _folder_dialog.plugin_id == plugin_id:
-		_cancel_folder_dialog(_folder_dialog.id)
+	_cancel_panel_requests(plugin_id)
 	var to_remove: Array[String] = []
 	for panel_name in _panel_registry.keys():
 		if _panel_registry[panel_name] == plugin_id:
@@ -293,13 +299,31 @@ func request_panel_history(plugin_id: String, panel_name: String, redo: bool,
 		return PluginErrors.permission_denied(plugin_id, "Panel has not opted into backend history")
 	var channel := "panel.redo" if redo else "panel.undo"
 	_audit(plugin_id, EVENT_IPC_ALLOWED, {"panel_name": panel_name, "message_type": channel})
+	var pending: PendingPanelHistory = PendingPanelHistory.new()
+	pending.plugin_id = plugin_id
+	pending.panel_name = panel_name
+	pending.context = context
+	_panel_history_requests[context.call_id] = pending
 	var result: Dictionary = await context.run(_dispatch_to_plugin_backend.bind(
 		plugin_id, channel, {"panel_name": panel_name}, context))
+	_panel_history_requests.erase(context.call_id)
 	if not supports_panel_undo(plugin_id, panel_name):
 		return PluginErrors.permission_denied(plugin_id, "Panel ownership or history opt-in changed")
 	_audit(plugin_id, EVENT_IPC_DISPATCHED, {"panel_name": panel_name,
 		"message_type": channel, "success": result.get("success", false)})
 	return result
+
+
+func _cancel_panel_requests(plugin_id: String, panel_name: String = "") -> void:
+	if _folder_dialog != null and _folder_dialog.plugin_id == plugin_id \
+			and (panel_name.is_empty() or _folder_dialog.panel_name == panel_name):
+		_cancel_folder_dialog(_folder_dialog.id)
+	# Cancellation resumes awaiters, so iterate a snapshot of request owners.
+	var requests: Array = _panel_history_requests.values()
+	for pending: PendingPanelHistory in requests:
+		if pending.plugin_id == plugin_id \
+				and (panel_name.is_empty() or pending.panel_name == panel_name):
+			pending.context.cancel()
 
 
 # ---------------------------------------------------------------------------

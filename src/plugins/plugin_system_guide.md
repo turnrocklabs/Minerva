@@ -112,7 +112,7 @@ This registers the plugin in Minerva's database. The plugin directory stays wher
 minerva_plugin_start(id: "my_plugin")    # Launch process, MCP handshake
 minerva_plugin_stop(id: "my_plugin")     # Graceful shutdown
 minerva_plugin_restart(id: "my_plugin")  # Stop + start (process misbehaving)
-minerva_plugin_reload(id: "my_plugin")   # Opt-in scene generation swap; otherwise process restart
+minerva_plugin_reload(id: "my_plugin")   # Scene swap; ordinary dev manifest refresh + restart
 ```
 
 - **autostart**: Set via Plugin Manager UI or DB — starts the plugin on Minerva launch
@@ -588,7 +588,7 @@ it declares `"host.terminal.list"`, `"host.terminal.read"`, `"host.terminal.writ
 | `minerva_plugin_start` | Launch plugin process |
 | `minerva_plugin_stop` | Graceful shutdown |
 | `minerva_plugin_restart` | Stop + start (misbehaving process) |
-| `minerva_plugin_reload` | Stop + start (code changed) |
+| `minerva_plugin_reload` | Opt-in scene swap; ordinary dev manifest validation/save + restart (reopen HTML panels); marketplace restart |
 | `minerva_plugin_inspect` | Full manifest, capabilities, audit log |
 | `minerva_plugin_state` | Latest pushed state snapshot |
 

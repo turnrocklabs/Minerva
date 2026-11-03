@@ -197,6 +197,11 @@ var auto_update: bool = false
 ## "restart when source files change" (hot reload during development).
 var auto_reload: bool = false
 
+## Host-owned decision: a dev refresh must never re-run legacy grant migration,
+## including on later starts when a zero-capability install has no grant entry.
+## Loaded from plugins.json only, never from manifest.json.
+var skip_legacy_auto_grants: bool = false
+
 ## Editor items this plugin contributes to the "New -> Item" creation flow.
 ## Each entry: {id: String, name: String, panel: String}
 var editor_items: Array[Dictionary] = []
@@ -472,6 +477,8 @@ func to_dict() -> Dictionary:
 		"auto_reload": auto_reload,
 		"auto_update": auto_update,
 	}
+	if skip_legacy_auto_grants:
+		result["skip_legacy_auto_grants"] = true
 	if not panel_authority.is_empty():
 		result["panel_authority"] = panel_authority.duplicate()
 	if not skills.is_empty():
@@ -520,6 +527,7 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
 	def.auto_update = bool(d.get("auto_update", false))
+	def.skip_legacy_auto_grants = bool(d.get("skip_legacy_auto_grants", false))
 	for cn in d.get("class_names", []):
 		def.class_names.append(str(cn))
 	# editor_items, events, capabilities, state_schema, project_file, and
