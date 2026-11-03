@@ -151,7 +151,7 @@ into `build-extensions.sh` — build it only if you need the PDF capability.
 Minerva carries local patches against vendored dependencies.
 - `patches/godot_cef/*.patch` — applied by `build-godot-cef.sh`.
   That separate script has its own checkout/reset behavior; preserve local CEF
-  work before running it. See `patches/godot_cef/README.md` for the rationale.
+  work before running it. See `patches/README-godot_cef.md` for the rationale.
 - `src/native/json_schema_helper/jsoncons-integral-multiple-of.patch` — verified
   and applied by the schema helper builder to the generated jsoncons tree.
 
