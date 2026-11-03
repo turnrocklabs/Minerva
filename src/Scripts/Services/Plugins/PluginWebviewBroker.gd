@@ -211,17 +211,20 @@ func _show_folder_dialog(plugin_id: String, panel_name: String, options: Diction
 			"error_message": "Native folder dialogs are unavailable in this UI session"}
 	if context.is_stopped():
 		return PluginErrors.success({"cancelled": true})
-	# Reconcile a stopped request even if its cancellation signal was missed.
+	# Newest wins even when the previous native dialog never called back.
+	# Complete its panel as cancelled; late callbacks cannot match the new id.
 	var previous: PendingFolderDialog = _folder_dialog
-	if previous != null and previous.context.is_stopped():
+	if previous != null:
 		_cancel_folder_dialog(previous.id)
-	if _folder_dialog != null:
-		return {"success": false, "error_code": "dialog_busy",
-			"error_message": "Close the existing native folder dialog before opening another"}
 	var main_loop: MainLoop = Engine.get_main_loop()
 	if not main_loop is SceneTree:
 		return {"success": false, "error_code": "dialog_unavailable",
 			"error_message": "Native folder dialogs need an active UI session"}
+	# file_dialog_show expects a registered Godot WindowID, not an OS handle.
+	# Reject detached/retired windows before allocating a pending request.
+	if not DisplayServer.get_window_list().has(parent_window_id):
+		return {"success": false, "error_code": "dialog_unavailable",
+			"error_message": "Cannot open native folder dialog: its parent window is unavailable. Reopen the panel and try again."}
 	var tree: SceneTree = main_loop
 	_folder_dialog_sequence += 1
 	var pending: PendingFolderDialog = PendingFolderDialog.new()
@@ -232,7 +235,9 @@ func _show_folder_dialog(plugin_id: String, panel_name: String, options: Diction
 	pending.on_cancel = _cancel_folder_dialog.bind(pending.id)
 	_folder_dialog = pending
 	context.lifetime.cancelled.connect(pending.on_cancel)
-	# Normal panel requests have no deadline. Preserve an explicit caller deadline.
+	# No normal picker timeout: a later request always cancels and replaces this
+	# slot, including an alive owner whose native dialog never calls back.
+	# Preserve an explicit caller deadline.
 	if context.lifetime.deadline_ms > 0:
 		pending.deadline_timer = tree.create_timer(context.remaining_seconds(0.0))
 		pending.on_deadline = _expire_folder_dialog.bind(pending.id)
