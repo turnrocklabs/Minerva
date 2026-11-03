@@ -112,12 +112,20 @@ This registers the plugin in Minerva's database. The plugin directory stays wher
 minerva_plugin_start(id: "my_plugin")    # Launch process, MCP handshake
 minerva_plugin_stop(id: "my_plugin")     # Graceful shutdown
 minerva_plugin_restart(id: "my_plugin")  # Stop + start (process misbehaving)
-minerva_plugin_reload(id: "my_plugin")   # Opt-in scene generation swap; otherwise process restart
+minerva_plugin_reload(id: "my_plugin")   # Scene swap; ordinary dev manifest refresh + restart
 ```
 
 - **autostart**: Set via Plugin Manager UI or DB — starts the plugin on Minerva launch
 - **auto_reload**: Watches files and restarts the backend for process or manifest changes. Cached `.gd`/`.tscn`/`.tres` changes require an application restart unless the plugin opts into `live_reload`, which uses a scene generation swap.
 - **Crash detection**: 3+ crashes in 60 seconds → CRASH_LOOP state (won't auto-restart)
+
+Scene generation validation and live swaps refuse explicit compile, resource,
+panel lifecycle, self-check, state preservation, wiring and selector failures.
+The host reports these through the plugin's existing status and notification
+path. It does not install a global script logger: arbitrary engine errors,
+including `push_error` or errors during `_ready`, remain in the normal Godot log
+but do not alone reject a generation. A panel can pass the explicit checks
+despite such an error. `_on_panel_self_check` remains optional.
 
 ## Discovery
 
@@ -580,7 +588,7 @@ it declares `"host.terminal.list"`, `"host.terminal.read"`, `"host.terminal.writ
 | `minerva_plugin_start` | Launch plugin process |
 | `minerva_plugin_stop` | Graceful shutdown |
 | `minerva_plugin_restart` | Stop + start (misbehaving process) |
-| `minerva_plugin_reload` | Stop + start (code changed) |
+| `minerva_plugin_reload` | Opt-in scene swap; ordinary dev manifest validation/save + restart (reopen HTML panels); marketplace restart |
 | `minerva_plugin_inspect` | Full manifest, capabilities, audit log |
 | `minerva_plugin_state` | Latest pushed state snapshot |
 
@@ -706,6 +714,8 @@ entries, and `PluginDependencyContract.parse`; it excludes nested `settings[]`,
 | `ui.panels[].kind` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].layout_hint` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].multi_window` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
+| `ui.panels[].undo` | manifest_field | HTML-only opt-in for backend history; [host contract](../../Docs/design/Plugin-platform-design.md#html-panel-history). |
+| `ui.panels[].file_dialogs` | manifest_field | HTML-only native folder picker opt-in; [host contract](../../Docs/design/Plugin-platform-design.md#html-native-folder-picker). |
 | `ui.panels[].name` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].native_save_extensions` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |
 | `ui.panels[].render_mode` | manifest_field | [guide](https://github.com/imrans-lab/minerva-plugins/blob/main/docs/PLUGIN_DEVELOPER_GUIDE.md#32-field-reference) |

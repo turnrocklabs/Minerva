@@ -33,9 +33,9 @@ class Connection extends MCPServerConnection:
 			return ERR_CANT_CONNECT
 		server_connected = true
 		return OK
-	func disconnect_from_server() -> void:
+	func disconnect_from_server() -> Dictionary:
 		manager.disconnects += 1
-		super.disconnect_from_server()
+		return super.disconnect_from_server()
 	func check_http_liveness(_timeout_sec: float = 2.0) -> bool:
 		if manager.delay_health: await Signal(manager, "health_release")
 		return manager.http_alive

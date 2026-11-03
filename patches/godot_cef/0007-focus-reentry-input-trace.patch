@@ -1,0 +1,220 @@
+diff --git a/crates/gdcef/src/cef_texture/ime.rs b/crates/gdcef/src/cef_texture/ime.rs
+--- a/crates/gdcef/src/cef_texture/ime.rs
++++ b/crates/gdcef/src/cef_texture/ime.rs
+@@ -26,8 +26,22 @@
+             .as_ref()
+             .is_some_and(|proxy| proxy.has_focus());
+         godot::global::godot_print!(
+-            "[MinervaCefTrace] stage={} ime_active={} proxy_editing={} proxy_focus={}",
++            "[MinervaCefTrace] stream=native seq={} stage={} instance={:?} helper={:?} has_host={} set_focus={} sub_focus={} ime_active={} proxy_editing={} proxy_focus={}",
++            crate::input_trace::next_sequence(),
+             stage,
++            self.base().instance_id(),
++            self.texture2d_helper.instance_id(),
++            self.with_app(|app| app.host().is_some()),
++            match stage {
++                "host_focus_true" => "true",
++                "host_focus_false" => "false",
++                _ => "unchanged",
++            },
++            self.base()
++                .get_viewport()
++                .and_then(|v| v.gui_get_focus_owner())
++                .map(|focus| focus.get_class().to_string())
++                .unwrap_or_else(|| "none".into()),
+             self.ime_active,
+             editing,
+             focused
+@@ -117,6 +131,7 @@
+ 
+     pub(super) fn check_ime_focus_after_exit_impl(&mut self) {
+         if !self.ime_active {
++            self.trace_ime_state("ime_check_noop");
+             return;
+         }
+ 
+@@ -126,11 +141,16 @@
+             let self_control = self.base().clone().upcast::<Control>();
+ 
+             if focused == self_control {
++                self.trace_ime_state("ime_regrab");
+                 self.ime_focus_regrab_pending = true;
+                 self.base_mut().release_focus();
+                 if let Some(proxy) = self.ime_proxy.as_mut() {
+                     proxy.grab_focus();
+                 }
++                if let Some(host) = self.with_app(|app| app.host()) {
++                    self.trace_ime_state("host_focus_true");
++                    host.set_focus(true as _);
++                }
+                 self.ime_focus_regrab_pending = false;
+                 return;
+             }
+@@ -142,8 +162,10 @@
+     /// Activates IME by focusing the hidden LineEdit proxy.
+     pub(super) fn activate_ime(&mut self) {
+         if self.ime_active {
+-            return;
+-        }
++            self.trace_ime_state("ime_activate_noop");
++            return;
++        }
++        self.trace_ime_state("ime_activate");
+ 
+         self.base_mut().release_focus();
+ 
+@@ -153,6 +175,7 @@
+         }
+ 
+         if let Some(host) = self.with_app(|app| app.host()) {
++            self.trace_ime_state("host_focus_true");
+             host.set_focus(true as _);
+         }
+ 
+@@ -162,8 +185,10 @@
+     /// Deactivates IME and commits any pending text.
+     pub(super) fn deactivate_ime(&mut self) {
+         if !self.ime_active {
+-            return;
+-        }
++            self.trace_ime_state("ime_deactivate_noop");
++            return;
++        }
++        self.trace_ime_state("ime_deactivate");
+ 
+         // Clear the proxy
+         if let Some(proxy) = self.ime_proxy.as_mut() {
+diff --git a/crates/gdcef/src/cef_texture/mod.rs b/crates/gdcef/src/cef_texture/mod.rs
+--- a/crates/gdcef/src/cef_texture/mod.rs
++++ b/crates/gdcef/src/cef_texture/mod.rs
+@@ -135,11 +135,13 @@
+             }
+             ControlNotification::FOCUS_ENTER => {
+                 if let Some(host) = self.with_app(|app| app.host()) {
++                    self.trace_ime_state("host_focus_true");
+                     host.set_focus(true as _);
+                 }
+             }
+             ControlNotification::FOCUS_EXIT => {
+                 if let Some(host) = self.with_app(|app| app.host()) {
++                    self.trace_ime_state("host_focus_false");
+                     host.set_focus(false as _);
+                 }
+             }
+@@ -325,6 +327,14 @@
+         let device_scale = self.get_device_scale_factor();
+ 
+         if let Ok(mut mouse_button) = event.clone().try_cast::<InputEventMouseButton>() {
++            if crate::input_trace::enabled() {
++                self.trace_ime_state("texture_mouse");
++                crate::input_trace::mouse(
++                    "texture_mouse",
++                    &format!("{:?}", self.base().instance_id()),
++                    &mouse_button,
++                );
++            }
+             let local_position = self.event_position_to_local(mouse_button.get_position());
+             mouse_button.set_position(local_position);
+             self.texture2d_helper.bind().forward_mouse_button_event(
+diff --git a/crates/gdcef/src/cef_texture/signals.rs b/crates/gdcef/src/cef_texture/signals.rs
+--- a/crates/gdcef/src/cef_texture/signals.rs
++++ b/crates/gdcef/src/cef_texture/signals.rs
+@@ -409,12 +409,27 @@
+     }
+ 
+     fn process_ime_enable_events(&mut self, events: &VecDeque<bool>) {
++        if crate::input_trace::enabled() {
++            for (index, enable) in events.iter().enumerate() {
++                let selected = index + 1 == events.len();
++                godot::global::godot_print!(
++                    "[MinervaCefTrace] stream=native seq={} stage=ime_enable instance={:?} enable={} selected={} applied={}",
++                    crate::input_trace::next_sequence(),
++                    self.base().instance_id(),
++                    enable,
++                    selected,
++                    selected && *enable != self.ime_active
++                );
++            }
++        }
+         // Take the last event (latest wins)
+         if let Some(&enable) = events.back() {
+             if enable && !self.ime_active {
+                 self.activate_ime();
+             } else if !enable && self.ime_active {
+                 self.deactivate_ime();
++            } else {
++                self.trace_ime_state("ime_enable_noop");
+             }
+         }
+     }
+diff --git a/crates/gdcef/src/input/mod.rs b/crates/gdcef/src/input/mod.rs
+--- a/crates/gdcef/src/input/mod.rs
++++ b/crates/gdcef/src/input/mod.rs
+@@ -139,6 +139,7 @@
+             };
+             let mouse_up = !event.is_pressed();
+             let click_count = if event.is_double_click() { 2 } else { 1 };
++            crate::input_trace::mouse("cef_mouse_send", "host", event);
+             host.send_mouse_click_event(
+                 Some(&mouse_event),
+                 button_type,
+diff --git a/crates/gdcef/src/input_trace.rs b/crates/gdcef/src/input_trace.rs
+--- a/crates/gdcef/src/input_trace.rs
++++ b/crates/gdcef/src/input_trace.rs
+@@ -6,13 +6,17 @@
+ 
+ static EVENTS: AtomicU64 = AtomicU64::new(0);
+ 
++pub(crate) fn next_sequence() -> u64 {
++    EVENTS.fetch_add(1, Ordering::Relaxed)
++}
++
+ pub(crate) fn enabled() -> bool {
+     std::env::var("MINERVA_CEF_INPUT_TRACE").as_deref() == Ok("1")
+ }
+ 
+ pub(crate) fn event(stage: &str) {
+     if enabled() {
+-        let sequence = EVENTS.fetch_add(1, Ordering::Relaxed);
++        let sequence = next_sequence();
+         godot::global::godot_print!("[MinervaCefTrace] seq={} stage={}", sequence, stage);
+     }
+ }
+@@ -30,7 +34,7 @@
+     };
+     let paste =
+         event.get_keycode() == Key::V && (event.is_ctrl_pressed() || event.is_meta_pressed());
+-    let sequence = EVENTS.fetch_add(1, Ordering::Relaxed);
++    let sequence = next_sequence();
+     godot::global::godot_print!(
+         "[MinervaCefTrace] seq={} stage={} cef_type={} kind={} down={} echo={} ctrl={} cmd={} shift={} alt={} paste={}",
+         sequence,
+@@ -46,3 +50,28 @@
+         paste
+     );
+ }
++
++pub(crate) fn mouse(
++    stage: &str,
++    receiver: &str,
++    event: &Gd<godot::classes::InputEventMouseButton>,
++) {
++    if !enabled() {
++        return;
++    }
++    let kind = match event.get_button_index() {
++        godot::global::MouseButton::LEFT => "left",
++        godot::global::MouseButton::RIGHT => "right",
++        godot::global::MouseButton::MIDDLE => "middle",
++        _ => "other",
++    };
++    godot::global::godot_print!(
++        "[MinervaCefTrace] stream=native seq={} stage={} receiver={} event={:?} kind={} down={}",
++        next_sequence(),
++        stage,
++        receiver,
++        event.instance_id(),
++        kind,
++        event.is_pressed()
++    );
++}

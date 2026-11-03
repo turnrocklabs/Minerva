@@ -23,8 +23,8 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 
 
 ## Hide the ribbon's Undo/Redo pair while the current tab says it has no undo
-## (Editor.supports_undo — false only for a plugin-scene tab whose panel
-## declares no undo hooks). Runs on every tab select/close/add and on a plugin
+## (Editor.supports_undo — opted-in HTML panels or scene panels with both hooks).
+## Runs on every tab select/close/add and on a plugin
 ## reload, all of which arrive through enable_editor_action_buttons.
 func _update_undo_redo_visibility() -> void:
 	if editor_pane == null or editor_pane.Tabs == null:

@@ -1,5 +1,12 @@
 # Agent containers
 
+The host launcher supports Python 3.9+ with only the standard library. Minerva
+runs the shipped `agent-kit/agent-container/agent.py` with `python3` on PATH
+(the macOS Command Line Tools Python is supported); the kit explicitly resolves
+its sibling modules and also runs with `python3 -I`. Listing is read-only and
+can report saved sessions even when Docker is absent. Starting containers still
+requires the existing Docker setup.
+
 `agent.py` launches one harness (Claude Code or Codex) per session in a
 hardened dev container; see its docstring for `create`, `start`, `attach`,
 `stop`, `status`, `info`, `readiness`, `list` and where session state lives.

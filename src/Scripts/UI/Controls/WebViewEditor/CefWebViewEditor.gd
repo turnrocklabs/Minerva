@@ -21,6 +21,67 @@ var _document_generation := 0
 var _document_plugin_id := ""
 var _document_panel_name := ""
 var _pending_ipc: Dictionary = {}
+static var _input_trace_sequence: int = 0
+var _panel_broker: PluginWebviewBroker = null
+var _history_context: MCPExecutionContext = null
+var _history_requests: Array[bool] = []
+
+
+func configure_plugin_panel(owner_plugin_id: String, panel_name: String, broker: PluginWebviewBroker) -> void:
+	plugin_id = owner_plugin_id
+	plugin_panel_name = panel_name
+	_panel_broker = broker
+
+
+func supports_undo() -> bool:
+	if plugin_id.is_empty():
+		return true
+	return _panel_broker != null and _panel_broker.supports_panel_undo(plugin_id, plugin_panel_name)
+
+
+## One ribbon operation per panel at a time; the backend owns its history journal.
+func request_history(redo: bool) -> void:
+	if plugin_id.is_empty() or not supports_undo():
+		return
+	_history_requests.append(redo)
+	if _history_context != null:
+		return
+	while not _history_requests.is_empty():
+		var next_redo: bool = _history_requests.pop_front()
+		await _apply_history(next_redo)
+
+
+func _apply_history(redo: bool) -> void:
+	if not supports_undo():
+		_history_requests.clear()
+		return
+	var generation: int = _document_generation
+	var context := MCPExecutionContext.create("panel-history", "", "", 5.0)
+	_history_context = context
+	var reply: Dictionary = await _panel_broker.request_panel_history(
+		plugin_id, plugin_panel_name, redo, context)
+	_history_context = null
+	if context.is_stopped() or generation != _document_generation or not is_inside_tree():
+		_history_requests.clear()
+		if context.is_stopped():
+			push_warning("[PluginWebview] Panel history request stopped: %s" % context.lifetime.reason)
+		return
+	if reply.get("success", false) != true:
+		_history_requests.clear()
+		push_warning("[PluginWebview] Panel history request failed: %s" % reply)
+		return
+	var result: Variant = reply.get("result", {})
+	if not result is Dictionary:
+		_history_requests.clear()
+		push_warning("[PluginWebview] Panel history reply requires {applied: bool}")
+		return
+	var application: Dictionary = result
+	if not application.get("applied") is bool:
+		_history_requests.clear()
+		push_warning("[PluginWebview] Panel history reply requires {applied: bool}")
+		return
+	if application.get("applied") == true:
+		push_plugin_event("panel.history_changed", {"panel_name": plugin_panel_name})
 
 
 func _ready() -> void:
@@ -30,10 +91,66 @@ func _ready() -> void:
 	clip_contents = true
 	_apply_editor_style()
 	_build_ui()
+	set_process_input(_input_trace_enabled())
+	if _input_trace_enabled():
+		get_viewport().gui_focus_changed.connect(_trace_main_focus_changed)
 	SingletonObject.theme_changed.connect(func(_t): _apply_editor_style())
 	# Reapply HiDPI oversampling whenever the pane is resized (also fires when
 	# the UI scale changes, since that reflows control sizes).
 	resized.connect(_apply_oversampling)
+
+
+func _input(event: InputEvent) -> void:
+	if not _input_trace_enabled() or _svc == null or _sv == null or not is_visible_in_tree():
+		return
+	if event is InputEventKey:
+		_trace_key_route(event)
+	elif event is InputEventMouseButton:
+		_trace_route("host_mouse_down" if event.pressed else "host_mouse_up")
+
+
+func _trace_main_focus_changed(_control: Control) -> void:
+	_trace_route("main_focus_changed")
+
+
+func _trace_sub_focus_changed(_control: Control) -> void:
+	_trace_route("sub_focus_changed")
+
+
+func _trace_route(stage: String) -> void:
+	if not _input_trace_enabled() or _sv == null or _svc == null or _cef == null:
+		return
+	var main_focus: Control = get_viewport().gui_get_focus_owner()
+	var sub_focus: Control = _sv.gui_get_focus_owner()
+	var main_class: String = main_focus.get_class() if main_focus != null else "none"
+	var sub_class: String = sub_focus.get_class() if sub_focus != null else "none"
+	_input_trace_sequence += 1
+	print("[MinervaCefTrace] stream=host seq=%d stage=%s editor=%s instance=%d main_focus=%s container_focus=%s sub_focus=%s" % [
+		_input_trace_sequence, stage, editor_id, _cef.get_instance_id(),
+		main_class, _svc.has_focus(), sub_class])
+
+
+func _input_trace_enabled() -> bool:
+	return OS.get_environment("MINERVA_CEF_INPUT_TRACE") == "1"
+
+
+func _trace_key_route(event: InputEventKey) -> void:
+	var main_focus: Control = get_viewport().gui_get_focus_owner()
+	var sub_focus: Control = _sv.gui_get_focus_owner()
+	var main_class: String = main_focus.get_class() if main_focus != null else "none"
+	var sub_class: String = sub_focus.get_class() if sub_focus != null else "none"
+	var kind: String = "other"
+	match event.keycode:
+		KEY_CTRL: kind = "control"
+		KEY_META: kind = "command"
+		KEY_SHIFT: kind = "shift"
+		KEY_ALT: kind = "alt"
+	var paste: bool = event.keycode == KEY_V and (event.ctrl_pressed or event.meta_pressed)
+	_input_trace_sequence += 1
+	print("[MinervaCefTrace] stream=host seq=%d stage=host_key editor=%s main_focus=%s container_focus=%s sub_focus=%s kind=%s down=%s echo=%s ctrl=%s cmd=%s shift=%s alt=%s paste=%s" % [
+		_input_trace_sequence, editor_id, main_class, _svc.has_focus(), sub_class, kind, event.pressed,
+		event.echo, event.ctrl_pressed, event.meta_pressed, event.shift_pressed,
+		event.alt_pressed, paste])
 
 
 func _exit_tree() -> void:
@@ -42,6 +159,9 @@ func _exit_tree() -> void:
 
 func _revoke_document() -> void:
 	_document_generation += 1
+	_history_requests.clear()
+	if _history_context != null:
+		_history_context.cancel()
 	for entry: Dictionary in _pending_ipc.values():
 		entry.context.cancel()
 	_pending_ipc.clear()
@@ -141,6 +261,8 @@ func set_html(source: String) -> void:
 	# SubViewport only when the cursor is over the container.
 	var svc := SubViewportContainer.new()
 	svc.stretch = true
+	# Focus remains in the SubViewport; a main-viewport grab would blur CEF.
+	svc.focus_mode = Control.FOCUS_NONE
 	svc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	svc.size_flags_horizontal = SIZE_EXPAND_FILL
 	svc.size_flags_vertical = SIZE_EXPAND_FILL
@@ -163,7 +285,19 @@ func set_html(source: String) -> void:
 
 	_cef = cef
 	_svc = svc
+	if _input_trace_enabled():
+		cef.console_message.connect(_trace_console_message)
+		cef.focus_entered.connect(_trace_route.bind("texture_focus_enter"))
+		cef.focus_exited.connect(_trace_route.bind("texture_focus_exit"))
+		svc.focus_entered.connect(_trace_route.bind("container_focus_enter"))
+		svc.focus_exited.connect(_trace_route.bind("container_focus_exit"))
+		sv.gui_focus_changed.connect(_trace_sub_focus_changed)
 	add_child(svc)
+	if _input_trace_enabled():
+		for child: Node in cef.get_children():
+			if child is LineEdit:
+				child.focus_entered.connect(_trace_route.bind("proxy_focus_enter"))
+				child.focus_exited.connect(_trace_route.bind("proxy_focus_exit"))
 	_apply_oversampling()
 	content_changed.emit()
 
@@ -233,9 +367,66 @@ func _show_fallback(message: String) -> void:
 
 
 func _inject_bridge(source: String) -> String:
-	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js()
+	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js() + _input_trace_js()
 	return source.insert(15, bridge_js) \
 		if source.left(15).to_lower() == "<!doctype html>" else bridge_js + source
+
+
+func _trace_console_message(_level: int, message: String, _source: String, _line: int) -> void:
+	if not _input_trace_enabled():
+		return
+	var parts: PackedStringArray = message.split(" ", false)
+	if parts.size() != 5 or parts[0] != "[MinervaCefTrace]":
+		return
+	if parts[1] not in ["stage=dom_ready", "stage=dom_focusin", "stage=dom_focusout", "stage=dom_input"]:
+		return
+	if parts[2] not in ["kind=password", "kind=text", "kind=other"]:
+		return
+	if not parts[3].begins_with("input_count="):
+		return
+	var count_text: String = parts[3].trim_prefix("input_count=")
+	if count_text.length() > 9 or not count_text.is_valid_int():
+		return
+	var count: int = count_text.to_int()
+	if count < 0 or parts[4] not in ["document_focus=true", "document_focus=false"]:
+		return
+	_input_trace_sequence += 1
+	print("[MinervaCefTrace] stream=host seq=%d editor=%s %s %s input_count=%d %s" % [
+		_input_trace_sequence, editor_id, parts[1], parts[2], count, parts[4]])
+
+
+## Opt-in counts only: neither input data nor clipboard/field values cross the console.
+func _input_trace_js() -> String:
+	if not _input_trace_enabled():
+		return ""
+	return """
+<script>
+(function() {
+	let count = 0;
+	function kind(target) {
+		if (target instanceof HTMLInputElement) {
+			return target.type === 'password' ? 'password' : target.type === 'text' ? 'text' : 'other';
+		}
+		return target instanceof HTMLTextAreaElement ? 'text' : 'other';
+	}
+	function record(stage, target) {
+		console.info('[MinervaCefTrace] stage=' + stage + ' kind=' + kind(target) +
+			' input_count=' + count + ' document_focus=' + document.hasFocus());
+	}
+	record('dom_ready', null);
+	document.addEventListener('focusin', function(event) {
+		record('dom_focusin', event.target);
+	}, true);
+	document.addEventListener('focusout', function(event) {
+		record('dom_focusout', event.target);
+	}, true);
+	document.addEventListener('input', function(event) {
+		count += 1;
+		record('dom_input', event.target);
+	}, true);
+})();
+</script>
+"""
 
 
 ## Inject `window.__MINERVA_PANEL` so a plugin html panel can learn its own
@@ -293,10 +484,16 @@ func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
 	var data: Dictionary = wire.parsed
 	if data.get("capability") != _document.capability:
 		return
-	var ipc_id = data.get("id", "")
+	var ipc_id_value: Variant = data.get("id", "")
+	if not ipc_id_value is String:
+		return
+	var ipc_id: String = ipc_id_value
 	var message_value: Variant = data.get("type")
 	var payload_value: Variant = data.get("payload", {})
-	if not message_value is String or not payload_value is Dictionary:
+	if not message_value is String:
+		return
+	if not payload_value is Dictionary:
+		_send_ipc_reply(ipc_id, {"success": false, "error_message": "IPC payload must be an object"}, generation)
 		return
 	var message_type: String = message_value
 	var payload: Dictionary = payload_value
@@ -309,10 +506,12 @@ func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
 		return
 
 
-	if message_type == "minerva.call" or not _document_panel_name.is_empty():
+	if message_type == "minerva.call" or message_type == PluginWebviewBroker.FOLDER_PICKER_MESSAGE \
+			or not _document_panel_name.is_empty():
 		if _pending_ipc.has(ipc_id):
 			return
-		var context = _begin_ipc(ipc_id, generation)
+		var timeout_seconds := 0.0 if message_type == PluginWebviewBroker.FOLDER_PICKER_MESSAGE else 15.0
+		var context: MCPExecutionContext = _begin_ipc(ipc_id, generation, timeout_seconds)
 		if context == null:
 			_send_ipc_reply(ipc_id, {"success": false,
 				"error_message": "Bridge request admission rejected"}, generation)
@@ -325,19 +524,27 @@ func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
 		print("[CefWebViewEditor:%s] Non-plugin IPC type=%s" % [editor_id, message_type])
 
 
-func _begin_ipc(ipc_id, generation: int):
-	if not ipc_id is String or ipc_id.is_empty() or _pending_ipc.has(ipc_id) \
+func _begin_ipc(ipc_id: String, generation: int, timeout_seconds: float = 15.0) -> MCPExecutionContext:
+	if ipc_id.is_empty() or _pending_ipc.has(ipc_id) \
 			or _pending_ipc.size() >= 128:
 		return null
-	var context = load("res://Scripts/Services/MCP/MCPExecutionContext.gd").create(
-		"webview", "", "", 15.0)
+	var context := MCPExecutionContext.create(
+		"webview", "", "", timeout_seconds)
 	_pending_ipc[ipc_id] = {"generation": generation, "context": context}
 	return context
 
 
-func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary,
-		generation: int, context) -> void:
-	var broker = _get_webview_broker()
+func _handle_plugin_ipc(ipc_id: String, message_type: String, payload: Dictionary,
+		generation: int, context: MCPExecutionContext) -> void:
+	if message_type == PluginWebviewBroker.FOLDER_PICKER_MESSAGE:
+		if _panel_broker == null:
+			_send_ipc_reply(ipc_id, {"success": false, "error_message": "Plugin panel required"}, generation)
+			return
+		var folder_result: Dictionary = await _panel_broker.pick_folder(_document_plugin_id,
+			_document_panel_name, payload, context, get_window().get_window_id())
+		_send_ipc_reply(ipc_id, folder_result, generation)
+		return
+	var broker: PluginWebviewBroker = _get_webview_broker()
 	if broker == null:
 		_send_ipc_reply(ipc_id, {"success": false, "error_message": "Webview broker not available"})
 		return
@@ -347,7 +554,7 @@ func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary,
 	_send_ipc_reply(ipc_id, result, generation)
 
 
-func _handle_minerva_call(ipc_id, payload: Dictionary, generation: int, context) -> void:
+func _handle_minerva_call(ipc_id: String, payload: Dictionary, generation: int, context: MCPExecutionContext) -> void:
 	var tool: Variant = payload.get("tool")
 	var arguments: Variant = payload.get("arguments", {})
 	if not tool is String or tool.is_empty() or not arguments is Dictionary:
@@ -377,7 +584,7 @@ func _handle_minerva_call(ipc_id, payload: Dictionary, generation: int, context)
 		"error_code": result.get("error_code", "")}, generation)
 
 
-func _send_ipc_reply(ipc_id, result: Dictionary, generation: int = -1) -> void:
+func _send_ipc_reply(ipc_id: String, result: Dictionary, generation: int = -1) -> void:
 	if generation < 0:
 		generation = _document_generation
 	var pending: Dictionary = _pending_ipc.get(ipc_id, {})
@@ -415,10 +622,14 @@ func _defer_eval(script: String, generation: int = -1) -> void:
 	).call_deferred()
 
 
-func _get_webview_broker():
-	var singleton = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
-	if singleton and singleton.get("plugin_webview_broker"):
-		return singleton.plugin_webview_broker
+func _get_webview_broker() -> PluginWebviewBroker:
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		return null
+	var singleton: Node = tree.root.get_node_or_null("SingletonObject")
+	if singleton != null:
+		var broker: PluginWebviewBroker = singleton.get("plugin_webview_broker")
+		return broker
 	return null
 
 

@@ -13,6 +13,8 @@ const UnsupportedOperationGuard = preload(
 # W4 (chat-passthrough): reused AS-IS — the card is self-contained (zero
 # autocoder coupling); ChatPane only hosts it and maps label → keystroke.
 const PassthroughQuestionCardScene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamQuestionCard.tscn")
+const PluginChatActivityCardScene = preload("res://Scenes/PluginChatActivityCard.tscn")
+const PluginChatActivityCardScript = preload("res://Scripts/UI/Controls/PluginChatActivityCard.gd")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -1162,8 +1164,18 @@ func _resume_core_jobs(history: ChatHistory) -> void:
 		_release_chat_turn(history, token)
 
 
-func process_bot_response(bot_response, _history_provider: BaseProvider) -> ChatHistoryItem:
-	var chi = ChatHistoryItem.new()
+func _copy_plugin_reply_metadata(bot_response: BotResponse, item: ChatHistoryItem) -> void:
+	for field: String in ["passthrough_question_options", "activity"]:
+		if bot_response.hcp_data.has(field):
+			var raw_entries: Variant = bot_response.hcp_data[field]
+			if not raw_entries is Array:
+				continue
+			var entries: Array = raw_entries
+			item.HcpData[field] = entries.duplicate(true)
+
+
+func process_bot_response(bot_response: BotResponse, _history_provider: BaseProvider) -> ChatHistoryItem:
+	var chi: ChatHistoryItem = ChatHistoryItem.new()
 
 	if bot_response != null:
 		chi.Id = bot_response.id
@@ -1173,6 +1185,7 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
 		chi.OutputTokens = bot_response.completion_tokens
+		_copy_plugin_reply_metadata(bot_response, chi)
 		if bot_response.has_reasoning():
 			chi.Reasoning = bot_response.reasoning
 		# Transient raw reasoning for same-model replay in the agent tool loop.
@@ -1219,6 +1232,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		# Change the history item and the message node will update itself
 		model_msg_node.history_item = chi
 		history.HistoryItemList.append(chi)
+		_add_plugin_activity_card(chi, model_msg_node)
 
 		## Inform the user history item that the response has arrived
 		user_history_item.notify_response(chi, history)
@@ -2152,7 +2166,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	if existing_response.rendered_node:
 		existing_response.rendered_node.loading = true
 
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, existing_response)
+	var bot_response: BotResponse = await generate_content_from_provider(history, history_list, null, null, existing_response)
 
 	# if there was an error with the request
 	if not bot_response:
@@ -2173,6 +2187,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
 	existing_response.OutputTokens = bot_response.completion_tokens
+	_copy_plugin_reply_metadata(bot_response, existing_response)
 	if bot_response.image:
 		existing_response.Images = ([bot_response.image] as Array[Image])
 
@@ -2191,6 +2206,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		if is_instance_valid(existing_response.rendered_node):
 			existing_response.rendered_node.render()
 			existing_response.rendered_node.loading = false
+			_add_plugin_activity_card(existing_response, existing_response.rendered_node)
 
 		# Reuse the same tool call handling as execute_regular_chat
 		await handle_tool_calls(history, bot_response.tool_calls, 0, existing_response, chi, null, turn_token)
@@ -2200,6 +2216,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		if is_instance_valid(existing_response.rendered_node):
 			existing_response.rendered_node.render()
 			existing_response.rendered_node.loading = false
+			_add_plugin_activity_card(existing_response, existing_response.rendered_node)
 
 		# Emit response_arrived signal to trigger notification sound
 		chi.notify_response(existing_response, history)
@@ -2828,7 +2845,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	var _pt_status: PassthroughTurnStatusScript = _passthrough_begin_relay(history, model_msg_node, dummy_item)
 
 	print("[ChatPane] About to call generate_content_from_provider...")
-	var bot_response = await generate_content_from_provider(history, history_list, null, null, dummy_item)
+	var bot_response: BotResponse = await generate_content_from_provider(history, history_list, null, null, dummy_item)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
 	# Stop invalidates the turn and frees its loading message. A late response
 	# must not pass that freed node into the relay or write into a newer turn.
@@ -2847,11 +2864,6 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	var turn_response: BotResponse = bot_response
 	_note_turn_response(history, turn_token, turn_reply, turn_response)
 	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
-
-	# W5: carry passthrough question options (W1 contract) onto the finalized CHI
-	# so W4 can render cards on the NEXT round. Nothing here renders cards.
-	if bot_response != null and bot_response.hcp_data.has("passthrough_question_options"):
-		chi.HcpData = {"passthrough_question_options": bot_response.hcp_data["passthrough_question_options"]}
 
 	# W8 round 4 (owner request): preserve the flying text. The agent ERASES its
 	# busy/preview output at turn end, so the relay's tail frames are the only
@@ -3758,7 +3770,7 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 		dummy_item.provider = history.provider
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
-		var bot_response = await generate_content_from_provider(history, history_list)
+		var bot_response: BotResponse = await generate_content_from_provider(history, history_list)
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		var turn_reply: ChatHistoryItem = chi
@@ -3879,6 +3891,7 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
 		usr_msg_node.render()
 		run.usr_messages_container.add_child(usr_msg_node)
 		run.mdl_messages_container.add_child(mdl_msg_node)
+		_add_plugin_activity_card(bot_response, mdl_msg_node)
 
 
 func create_message_new(inputs_idx: int) -> void:
@@ -3932,7 +3945,7 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	
 	
-	var bot_response = await generate_content_from_provider(history, history_list)
+	var bot_response: BotResponse = await generate_content_from_provider(history, history_list)
 	
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
@@ -4114,6 +4127,21 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 				previous_item.rendered_node.render()
 
 
+func _add_plugin_activity_card(item: ChatHistoryItem, reply_node: Control) -> void:
+	var raw_activity: Variant = item.HcpData.get("activity", [])
+	if not raw_activity is Array:
+		return
+	var activity: Array = raw_activity
+	if activity.is_empty():
+		return
+	var message: MessageMarkdown = reply_node as MessageMarkdown
+	if message == null:
+		return
+	var card: PluginChatActivityCardScript = PluginChatActivityCardScene.instantiate() as PluginChatActivityCardScript
+	message.v_box_container.add_child(card)
+	card.set_activity(activity, str(item.get_instance_id()))
+
+
 func render_history(chat_history: ChatHistory):
 
 	# Create wrapper VBoxContainer to hold header and scroll container
@@ -4197,6 +4225,8 @@ func render_history(chat_history: ChatHistory):
 			slider_containers.set(item.SliderContainerId, slider)
 			multi_slider_containers.set(item.MultiSliderContainerId, new_multi_slider_cont)
 			vboxChat.add_child(new_multi_slider_cont)
+		if is_instance_valid(item.rendered_node):
+			_add_plugin_activity_card(item, item.rendered_node)
 
 	if not chat_history.model_migration_notice.is_empty():
 		vboxChat.add_program_message(chat_history.model_migration_notice)

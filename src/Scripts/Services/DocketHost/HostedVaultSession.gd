@@ -79,7 +79,7 @@ func _control(host: Node, connection: Object, action: String, fields: Dictionary
 
 func details(host: Node) -> Dictionary:
 	observe(host)
-	var unavailable := {"mode":"unavailable", "message":message, "hint":"", "busy":_busy}
+	var unavailable := {"mode":"unavailable", "message":message if _busy else "Vault: unavailable.", "hint":"", "busy":_busy}
 	var binding: Dictionary = host._vault_binding()
 	if _busy or binding.is_empty(): return unavailable
 	var epoch := _epoch
@@ -90,9 +90,13 @@ func details(host: Node) -> Dictionary:
 	if not _current(host, binding, epoch): return unavailable
 	var descriptor := _descriptor(answer)
 	if descriptor.is_empty() or descriptor.path != host.master_path or descriptor.open_generation != host.master_project().get("open_generation", ""): return unavailable
-	var display_message := message
-	if descriptor.initialized and message in ["Vault: unavailable.", "Vault: unavailable (session password retained)."]:
-		display_message = "Vault: locked — unlock an existing vault for this session only."
+	if not answer.value.get("unlocked") is bool: return unavailable
+	var unlocked: bool = answer.value.unlocked
+	# A retained password proves a past unlock, not the current opening's state.
+	# Keep this observation separate from the identity used by resume/unlock.
+	var display_message := "Vault: unlocked." if unlocked else "Vault: locked — unlock an existing vault for this session only."
+	if not unlocked and not _password.is_empty():
+		display_message = "Vault: locked (session password retained)."
 	return {"mode":"unlock" if descriptor.initialized else "create", "hint":descriptor.hint,
 		"message":display_message if descriptor.initialized else "Vault: not created.", "busy":false}
 

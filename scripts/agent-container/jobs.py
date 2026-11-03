@@ -88,7 +88,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import ModuleType
-from typing import NotRequired, TypedDict
+from typing import Optional, TypedDict
 
 import job_io
 
@@ -105,19 +105,23 @@ class EgressRecord(TypedDict):
     targets: list[str]
 
 
-class JobNetworkRecord(TypedDict):
+class _JobNetworkRequired(TypedDict):
     id: str
     container: str
     limits: JobLimits
-    egress: NotRequired[EgressRecord]
-    env_from: NotRequired[list[str]]
-    network: NotRequired[str]
+
+
+# Inheritance keeps required/optional key metadata intact on host Python 3.9.
+class JobNetworkRecord(_JobNetworkRequired, total=False):
+    egress: EgressRecord
+    env_from: list[str]
+    network: str
 
 
 @dataclass
 class PrivateLaunch:
-    directory: Path | None = None
-    lock_fd: int | None = None
+    directory: Optional[Path] = None
+    lock_fd: Optional[int] = None
     interrupted: int = 0
 
     def arm(self, host: ModuleType, directory: Path) -> None:
@@ -275,7 +279,7 @@ def env_from(host, pairs):
     return env
 
 
-def inherited_from(host: ModuleType, names: list[str] | None, explicit: dict[str, str]) -> dict[str, str]:
+def inherited_from(host: ModuleType, names: Optional[list[str]], explicit: dict[str, str]) -> dict[str, str]:
     inherited = {}
     for name in names or []:
         if not ENV_NAME.fullmatch(name) or name.startswith(RESERVED_ENV) \
@@ -369,7 +373,7 @@ def private_lifecycle(host: ModuleType, name: str, inherited: dict[str, str],
 
 
 def wait_private_output(host: ModuleType, name: str, job_id: str, inherited: dict[str, str],
-                         launch: PrivateLaunch | None = None) -> None:
+                         launch: Optional[PrivateLaunch] = None) -> None:
     # Keep values only in this original process, never in a receipt or helper file.
     while True:
         if launch is not None:
@@ -449,7 +453,7 @@ def siblings_from(host, record, primary, pairs):
 
 
 def run_job(host, name, rev, command, env_pairs, artifact_paths, cpus, memory, seconds, folder,
-            sibling_pairs=None, network: str = "none", env_names: list[str] | None = None):
+            sibling_pairs=None, network: str = "none", env_names: Optional[list[str]] = None):
     host.check_layout()
     record = host.load_record(name)
     if record is None:
@@ -587,7 +591,7 @@ def start_egress(host: ModuleType, name: str, job: JobNetworkRecord,
 
 
 def stop_egress(host: ModuleType, directory: Path, job: JobNetworkRecord,
-                inherited: dict[str, str] | None = None) -> None:
+                inherited: Optional[dict[str, str]] = None) -> None:
     if job.get("egress"):
         sidecar = {**job, "container": job["egress"]["container"]}
         if owned(host, sidecar):
@@ -722,7 +726,7 @@ def owned(host, job):
     return probe.returncode == 0 and probe.stdout.strip() == job["id"]
 
 
-def stop_owned(host, directory, job, mark, inherited: dict[str, str] | None = None):
+def stop_owned(host, directory, job, mark, inherited: Optional[dict[str, str]] = None):
     """Record `mark` on the job, then stop its container if it is ours."""
     job[mark] = time.time()
     host.write_json(directory / "job.json", job)
@@ -733,7 +737,7 @@ def stop_owned(host, directory, job, mark, inherited: dict[str, str] | None = No
         stop_egress(host, directory, job, inherited)
 
 
-def reconcile(host, name, job_id, inherited: dict[str, str] | None = None):
+def reconcile(host, name, job_id, inherited: Optional[dict[str, str]] = None):
     """The job's current answer, finishing it (result.json) once its
     container is gone. Holds the session's jobs lock."""
     with host.session_lock(name, "jobs.lock"):
@@ -786,7 +790,7 @@ def job_ids(host, name):
 # ── commands ─────────────────────────────────────────────────────────────
 
 def finalize_job(host: ModuleType, name: str, job_id: str,
-                  env_names: list[str] | None) -> dict[str, object]:
+                  env_names: Optional[list[str]]) -> dict[str, object]:
     """Re-enter a lost private launch with its original environment values.
 
     Receipts use the launcher's existing dynamic JSON response contract.

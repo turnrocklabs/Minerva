@@ -527,7 +527,7 @@ var plugin_tool_registry = null  # PluginToolRegistry
 var plugin_capability_broker = null  # CapabilityBroker
 var plugin_mcp_tools = null  # PluginMCPTools
 var plugin_event_broker = null  # PluginEventBroker
-var plugin_webview_broker = null  # PluginWebviewBroker
+var plugin_webview_broker: PluginWebviewBroker = null
 var plugin_scene_panel_broker = null  # PluginScenePanelBroker
 var plugin_chat_provider_registry = null  # PluginChatProviderRegistry (chat-passthrough W1)
 var plugin_settings_store = null  # PluginSettingsStore
@@ -1089,7 +1089,7 @@ func _open_plugin_panel_for_editor_item(plugin_id: String, panel_name: String, t
 	if plugin_webview_broker:
 		plugin_webview_broker.register_plugin_panel(plugin_id, panel_name)
 
-	editor_pane.add_plugin_panel_editor(plugin_id, panel_name, html, tab_title)
+	editor_pane.add_plugin_panel_editor(plugin_id, panel_name, html, tab_title, plugin_webview_broker)
 
 #endregion Plugins
 

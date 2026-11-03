@@ -378,7 +378,7 @@ func _get_plugin_restart_tool_def() -> Dictionary:
 func _get_plugin_reload_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_reload",
-		"description": "Load changed plugin code. Opt-in live_reload scene plugins swap their panels while preserving unsaved state; other plugins restart their backend. Use minerva_plugin_restart to restart an opt-in plugin's backend process.",
+		"description": "Load changed plugin code. Opt-in live_reload scene plugins swap their panels while preserving unsaved state. Other manifest-lane plugins validate and save manifest.json before restarting; reopen their HTML panels after reload. Marketplace plugins restart their backend. Use minerva_plugin_restart for a backend-only restart.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -678,23 +678,27 @@ func _handle_plugin_reload(args: Dictionary) -> Dictionary:
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 	if plugin_manager.supports_scene_live_reload(str(id)):
-		var reply: Dictionary = await plugin_manager.reload_scene_plugin(str(id))
-		reply["success"] = reply.get("ok", false)
-		reply["status"] = plugin_manager.get_plugin_status(str(id))
-		return reply
+		var scene_reply: Dictionary = await plugin_manager.reload_scene_plugin(str(id))
+		scene_reply["success"] = scene_reply.get("ok", false)
+		scene_reply["status"] = plugin_manager.get_plugin_status(str(id))
+		return scene_reply
 
-	# Reload == restart, but semantically signals "code was changed".
-	# Returns status after restart so the caller can confirm the new process is up.
-	var result = await plugin_manager.restart_plugin(id)
+	# Ordinary dev reload refreshes the stored manifest before restarting.
+	var result: Dictionary = await plugin_manager.reload_plugin(id)
 	if result.has("error"):
 		return result
 
-	var status = plugin_manager.get_plugin_status(id)
-	return {
+	var status: Dictionary = plugin_manager.get_plugin_status(id)
+	var reply: Dictionary = {
 		"success": true,
 		"message": "Plugin '%s' reloaded successfully." % id,
 		"status": status,
 	}
+	if result.get("manifest_refreshed", false):
+		reply["manifest_refreshed"] = true
+		reply["panels_need_reopen"] = true
+		reply["message"] = "Plugin '%s' manifest refreshed and backend restarted. Reopen its HTML panels to apply UI changes." % id
+	return reply
 
 
 func _handle_plugin_revert(args: Dictionary) -> Dictionary:

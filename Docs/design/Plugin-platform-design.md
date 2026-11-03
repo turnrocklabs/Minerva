@@ -219,6 +219,70 @@ func _on_panel_undo_request() -> bool
 func _on_panel_redo_request() -> bool
 ```
 
+#### HTML panel history
+
+An HTML panel opts into the ribbon Undo/Redo pair with `"undo": true` in its
+typed `ui.panels[]` entry (boolean, default `false`). Legacy string panels and
+HTML panels without this opt-in hide both buttons. Scene panels keep the hook
+pair above; non-plugin webviews retain their existing behaviour.
+
+The plugin backend owns the journal. A ribbon click calls its MCP tool
+`panel.undo` or `panel.redo` with `{"panel_name": "<manifest panel name>"}`.
+Return `{"applied": true}` when a step changed the journal, or
+`{"applied": false}` for empty history. The host queues clicks in order per panel,
+waits up to five seconds per request and logs malformed replies, errors and timeouts
+without a toast. Errors, timeouts and reload/close discard queued requests.
+`undo: true` authorizes these host-originated requests; they do not need
+entries in the page's `ui.ipc_messages` allowlist. Both backend tools must exist.
+
+After an applied step, the initiating page receives the plugin event
+`panel.history_changed` with `{"panel_name": "<manifest panel name>"}` through
+`window.minerva.onPluginEvent`; it should re-read backend state and render it.
+A reload or close cancels the pending request and suppresses stale events.
+Keyboard shortcut routing is unchanged by this contract.
+
+#### HTML native folder picker
+
+An HTML panel declares `"file_dialogs": true` (boolean, default `false`) to use
+`await window.minerva.pickFolder({title: "Choose folder", start_dir: "/absolute/path"})`.
+Both options are optional strings; `start_dir` must be an absolute filesystem path
+when supplied. This panel-only bridge route is authorized by the manifest opt-in,
+without a separate `ui.ipc_messages` entry. A backend or non-plugin webview cannot
+open this dialog through the API.
+
+The host uses `DisplayServer.file_dialog_show` in native directory mode, preserving
+the platform's folder creation controls (including New Folder on macOS). It returns
+`{path: "<selected absolute path>"}` only to the requesting document, or
+`{cancelled: true}`. This does not change plugin filesystem permissions or grants.
+The OS may ignore the requested initial directory or title.
+
+Dialog requests have no elapsed-time timeout in either the JS bridge or host:
+leaving a dialog open for two minutes still permits selection. Other bridge calls
+retain their 15-second timeout and the 128-request pending limit still applies.
+Only one active native folder request is admitted at a time. Closing/reloading
+the panel, stopping its context, or unregistering its plugin completes the request
+as cancelled and releases admission immediately. Late native callbacks from that
+request cannot clear or reply to a newer request. Unsupported UI sessions and
+native API errors reject the Promise.
+
+For non-live-reload plugins installed through the manifest/dev lane,
+`minerva_plugin_reload` validates `data_directory/manifest.json`, commits the
+new definition to the plugin database, and restarts the backend. Invalid JSON,
+identity/API/definition validation failures, or a failed database save preserve
+the old definition and leave its backend alone. Install choices and grants are
+retained; refreshing does not grant capabilities or seed Docket content.
+The saved definition records that legacy grant migration is no longer needed,
+so later backend or app restarts cannot grant newly refreshed capabilities.
+Pending folder and history requests are cancelled when a new definition commits.
+Reopen existing HTML panels after reload to refresh their document and ribbon
+state. Host authorization checks use the current panel definition on each call.
+Opt-in `live_reload` scene plugins keep their existing generation-swap route;
+their stored manifest refresh is outside this dev-refresh path. Marketplace
+reload behavior is unchanged. A successful reload reports `manifest_refreshed`
+and `panels_need_reopen` for the ordinary manifest/dev path. If backend startup
+fails after a valid definition commits, that definition remains saved and the
+reload returns the startup error with `manifest_refreshed: true`.
+
 ### 5.2 `ctx` shape
 
 ```gdscript

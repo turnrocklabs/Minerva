@@ -376,13 +376,14 @@ func preview_html(html: String, title: String, source: Object,
 		show_editor.call()
 	return {"success": true, "editor_id": preview.webview_editor.editor_id}
 
-func add_plugin_panel_editor(plugin_id: String, panel_name: String, panel_html: String, tab_title: String = "") -> Editor:
+func add_plugin_panel_editor(plugin_id: String, panel_name: String, panel_html: String, tab_title: String = "", broker: PluginWebviewBroker = null) -> Editor:
 	var title := tab_title if not tab_title.is_empty() else panel_name
 	var editor := add(Editor.Type.WEBVIEW, null, title, null, true)
 	if editor and editor.webview_editor:
-		editor.webview_editor.plugin_id = plugin_id
-		editor.webview_editor.plugin_panel_name = panel_name
-		editor.webview_editor.set_html(panel_html)
+		var panel: CefWebViewEditor = editor.webview_editor
+		panel.configure_plugin_panel(plugin_id, panel_name, broker)
+		panel.set_html(panel_html)
+		editor.undo_capability_changed.emit()
 	return editor
 
 func add_plugin_manager_editor() -> Editor:

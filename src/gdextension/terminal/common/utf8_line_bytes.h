@@ -10,6 +10,11 @@ class Utf8LineBytes {
 public:
     void append(const char *data, size_t size) { bytes.append(data, size); }
     size_t size() const { return bytes.size(); }
+    // Call after complete lines are popped: O(1), without rescanning a large
+    // unfinished frame. Windows may hold one CR awaiting its LF delimiter.
+    size_t pending_payload_size(bool strip_cr) const {
+        return bytes.size() - (strip_cr && !bytes.empty() && bytes.back() == '\r' ? 1 : 0);
+    }
     void clear() { bytes.clear(); scanned = 0; }
     template<class Consumer> bool pop_line(Consumer consume, bool strip_cr = false) {
         const size_t end = bytes.find('\n', scanned);
