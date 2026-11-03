@@ -1,5 +1,12 @@
-extends PanelContainer
+extends ToolCallBlock
 ## Completed plugin activity; the scene owns layout, the reply owns its data.
+
+func _update_display() -> void:
+	status_label.text = "Activity"
+	tool_name_label.hide()
+	arguments_section.hide()
+	result_section.hide()
+
 
 func set_activity(entries: Array, reply_id: String) -> void:
 	set_meta("reply_id", reply_id)

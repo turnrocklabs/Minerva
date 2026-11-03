@@ -1242,9 +1242,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
 
-		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
-		if not history.CallerDriven and chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId) and (turn_token < 0 or not _turn_stopped(history, turn_token)):
-			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node, speech_origin)
+		_speak_chat_reply(history, chi, user_history_item.Message, model_msg_node, turn_token, speech_origin)
 	else:
 		model_msg_node.queue_free()
 
@@ -2091,7 +2089,7 @@ func _on_btn_inspect_pressed():
 
 ## Takes a chat history item and regenerates the prompt for it.
 ## Regenerates response will be placed in next
-func regenerate_response(chi: ChatHistoryItem):
+func regenerate_response(chi: ChatHistoryItem) -> void:
 	
 	if chi.Role != ChatHistoryItem.ChatRole.USER:
 		push_warning("Tried to regenerate response for history item %s who's Role is not user" % chi)
@@ -2173,6 +2171,9 @@ func regenerate_response(chi: ChatHistoryItem):
 		_release_chat_turn(history, turn_token)
 		return
 
+	if _turn_stopped(history, turn_token):
+		return
+
 	if history.AgentModeEnabled and str(bot_response.error).is_empty() and not bot_response.has_tool_calls():
 		history.termination_reason = "completed"
 		history.termination_message = ""
@@ -2220,6 +2221,8 @@ func regenerate_response(chi: ChatHistoryItem):
 
 		# Emit response_arrived signal to trigger notification sound
 		chi.notify_response(existing_response, history)
+		_speak_chat_reply(history, existing_response, chi.Message,
+			existing_response.rendered_node, turn_token, _turn_origin(history, turn_token))
 
 		for i in SingletonObject.notes_container.get_tab_count():
 			SingletonObject.notes_container.disable_notes(i)
@@ -2517,6 +2520,9 @@ func _begin_chat_turn(history: ChatHistory, origin: Dictionary = {}) -> int:
 		return -1
 	history.request_turn_token += 1
 	history.is_request_active = true
+	# Every admitted turn, including Retry, owns a fresh termination record.
+	history.termination_reason = ""
+	history.termination_message = ""
 	var report := ChatEventPayloads.TurnReport.new(history.request_turn_token)
 	report.origin = origin.duplicate(true)
 	_turn_reports[history.HistoryId] = report
@@ -2758,10 +2764,6 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
 	var turn_token: int = _begin_chat_turn(history, origin)
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
-
-	# Reset termination tracking for this new turn
-	history.termination_reason = ""
-	history.termination_message = ""
 
 	var user_history_item: ChatHistoryItem = create_user_history_item(text)
 	user_history_item.provider = history.provider
@@ -5902,6 +5904,16 @@ func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_second
 		if is_instance_valid(label):
 			label.queue_free()
 	, CONNECT_ONE_SHOT)
+
+## Ordinary sends and Retry share speech admission; provider identity is irrelevant.
+func _speak_chat_reply(history: ChatHistory, reply: ChatHistoryItem, user_text: String,
+		reply_node: Control, turn_token: int, origin: Dictionary) -> void:
+	if history.CallerDriven or reply == null or not reply.Error.is_empty() or reply.Message.is_empty():
+		return
+	if SingletonObject.is_cancelled(history.HistoryId) or (turn_token >= 0 and _turn_stopped(history, turn_token)):
+		return
+	_voice_speak_response(reply.Message, user_text, reply_node, origin)
+
 
 func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null, origin: Dictionary = {}) -> void:
 	if _voice_tearing_down:

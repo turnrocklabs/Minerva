@@ -112,6 +112,12 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, _pr
 ## network path are replaced. create_prompt keeps its await, because the window
 ## a regeneration used to start a second turn in is exactly that await.
 var regen_calls: Array[String] = []
+var regen_response: BotResponse = null
+var spoken_replies: Array[Dictionary] = []
+
+# Observe the existing speech boundary without calling a voice service.
+func _voice_speak_response(response_text: String, user_text: String = "", _msg_node: Control = null, origin: Dictionary = {}) -> void:
+	spoken_replies.append({"response": response_text, "user": user_text, "origin": origin})
 
 func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null, _turn_token: int = -1) -> Array[Variant]:
 	await get_tree().process_frame
@@ -119,7 +125,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, _pending_item: ChatHistoryItem = null) -> Variant:
 	regen_calls.append("regen")
-	return null
+	return regen_response
 """
 
 ## Pane that keeps the REAL execute_regular_chat and replaces only its two
@@ -909,6 +915,57 @@ func _test_regenerate_waits_for_the_active_turn() -> void:
 	check("I6: regenerating an idle chat runs", pane.regen_calls.size() == 1,
 		str(pane.regen_calls))
 	check("I7: and releases its own turn", not chat.is_request_active)
+
+	# These scripts need runtime load because their autoload context is unavailable
+	# when the --script runner compiles this suite. Retry and its render are real.
+	var retry_response = load("res://Scripts/Models/BotResponse.gd").new()
+	retry_response.text = "pineapple"
+	retry_response.complete = true
+	retry_response.hcp_data = {"activity": [{"kind": "command_execution", "label": "Read fixture", "status": "completed", "detail": "fixture output"}]}
+	pane.regen_response = retry_response
+	chat.termination_reason = "error"
+	chat.termination_message = "previous registration refusal"
+	pane.regenerate_response(chi)
+	check("I8: Retry clears the previous termination before its first await",
+		chat.termination_reason.is_empty() and chat.termination_message.is_empty())
+	for _i in range(20):
+		await process_frame
+	check("I9: successful non-agent Retry leaves no stale failure",
+		not chat.is_request_active and chat.termination_reason.is_empty()
+		and chat.termination_message.is_empty() and chat.HistoryItemList.back().Message == "pineapple")
+	check("I10: plugin-provider Retry reaches the ordinary speech boundary once",
+		pane.spoken_replies.size() == 1 and pane.spoken_replies[0].response == "pineapple"
+		and pane.spoken_replies[0].user == chi.Message)
+
+	var cards: Array[Node] = get_nodes_in_group("plugin_chat_activity")
+	check("I11: Retry renders its activity card", cards.size() == 1)
+	if cards.size() == 1:
+		var card: Node = cards[0]
+		var content: Control = card.get_node("%ContentContainer")
+		var expand: Button = card.get_node("%ExpandButton")
+		await create_timer(0.1).timeout
+		check("I12: activity starts collapsed like tool calls", not content.visible)
+		expand.pressed.emit()
+		await create_timer(0.6).timeout
+		check("I13: tool-call expansion reveals activity details", content.visible
+			and card.get_node("%Rows").get_child_count() == 2)
+		expand.pressed.emit()
+		await create_timer(0.6).timeout
+		check("I14: the same collapse control hides activity again", not content.visible)
+
+	chat.CallerDriven = true
+	pane.regenerate_response(chi)
+	for _i in range(20):
+		await process_frame
+	check("I15: caller-driven Retry remains silent", pane.spoken_replies.size() == 1)
+	chat.CallerDriven = false
+	retry_response.error = "second refusal"
+	pane.regenerate_response(chi)
+	for _i in range(20):
+		await process_frame
+	check("I16: failed Retry retains its new error and stays silent",
+		chat.termination_reason == "error" and chat.termination_message == "second refusal"
+		and pane.spoken_replies.size() == 1)
 
 	_teardown(pane, [chat])
 
