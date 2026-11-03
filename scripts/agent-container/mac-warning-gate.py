@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,39 @@ class ListingEntry(TypedDict):
     size: int
     mtime_ns: int
     link: str | None
+
+
+class LiveChanges(TypedDict):
+    created: list[str]
+    removed: list[str]
+    metadata_failures: list[str]
+    mtime_warnings: list[str]
+
+
+def live_changes(before: dict[str, ListingEntry], after: dict[str, ListingEntry]) -> LiveChanges:
+    """Only an existing regular file's mtime alone is a nonfatal change."""
+    failures = []
+    warnings = []
+    for key in sorted(before.keys() & after.keys()):
+        old, new = before[key], after[key]
+        if old == new:
+            continue
+        fields = {field for field in old.keys() | new.keys() if old.get(field) != new.get(field)}
+        if fields == {"mtime_ns"} and stat.S_ISREG(old["mode"]):
+            warnings.append(key)
+        else:
+            failures.append(key)
+    return {"created": sorted(after.keys() - before.keys()),
+            "removed": sorted(before.keys() - after.keys()),
+            "metadata_failures": failures, "mtime_warnings": warnings}
+
+
+def minerva_processes() -> list[int]:
+    result = subprocess.run(["pgrep", "-x", "Minerva"], check=False, capture_output=True, text=True, timeout=5)
+    if result.returncode == 1:
+        return []
+    result.check_returncode()
+    return [int(pid) for pid in result.stdout.split()]
 
 
 def gate_module() -> ModuleType:
@@ -165,6 +199,7 @@ def run(args: argparse.Namespace, staging: Path) -> int:
     command = [sys.executable, "-B", str(gate_script),
                "--base", base, "--godot", binary, "--job-root", str(job), "--natives-cmd", natives_cmd]
     live = gate.live_godot_data()
+    running_before = minerva_processes()
     before = listing(live)
     save(output / "live-before.json", before)
     started = time.monotonic()
@@ -181,14 +216,25 @@ def run(args: argparse.Namespace, staging: Path) -> int:
             # Retire only descendants in this disposable job's process group.
             stop_group(process)
     after = listing(live)
+    running_after = minerva_processes()
     save(output / "live-after.json", after)
     changed = sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
     save(output / "live-changed.json", changed)
+    changes = live_changes(before, after)
+    save(output / "live-diff.json", changes)
+    hard_failure = bool(changes["created"] or changes["removed"] or changes["metadata_failures"])
+    wrapper_code = code if code else int(hard_failure)
+    if changes["mtime_warnings"]:
+        print(f"WARNING: {len(changes['mtime_warnings'])} existing file(s) changed mtime only; "
+              "quit Minerva for a clean listing", flush=True)
     result = {
         "schema": SCHEMA, "head": head, "base": base, "staging_root": str(staging),
         "command": command, "returncode": code, "timeout_s": TIMEOUT, "timed_out": timed_out,
         "elapsed_s": round(time.monotonic() - started, 1), "home": env["HOME"],
         "live_listing_unchanged": not changed, "live_changed_count": len(changed),
+        "live_changes": changes, "wrapper_returncode": wrapper_code,
+        "minerva_running_before": bool(running_before), "minerva_running_after": bool(running_after),
+        "minerva_pids_before": running_before, "minerva_pids_after": running_after,
         "native_load_coverage": False,
         "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "warning_gate_sha256": hashlib.sha256(gate_script.read_bytes()).hexdigest(),
@@ -196,7 +242,7 @@ def run(args: argparse.Namespace, staging: Path) -> int:
     }
     save(output / "mac-receipt.json", result)
     print(json.dumps(result, indent=2), flush=True)
-    return code if code else int(bool(changed))
+    return wrapper_code
 
 
 def main() -> int:

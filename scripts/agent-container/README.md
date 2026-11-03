@@ -486,9 +486,17 @@ and kill of its remaining children. Read `run.log` for progress and
 live-data comparison. Follow its `warning_receipt` path for the gate's
 `passed`/`failed` status and warning regressions. `live-before.json` and
 `live-after.json` hold metadata-only listings of the real account's Godot data;
-`live-changed.json` lists changes. A nonzero gate result or any listing change
-makes the helper fail. Listing changes require investigation; they do not by
-themselves attribute a write to the job rather than a concurrently running app.
+`live-changed.json` lists all changes and `live-diff.json` classifies them.
+Created or removed entries, mode or size changes, and other metadata changes
+(such as changed symlink targets) make the helper fail. Only an mtime-only change
+to an existing regular file is a warning. Directory and symlink changes retain
+their strict failure behavior. A nonzero gate result always fails the helper.
+
+The receipt preserves `live_listing_unchanged` even for warning-only differences,
+records the gate child's `returncode` separately from `wrapper_returncode`, and
+reports exact-name `pgrep` results for Minerva before and after the run. **Quit
+Minerva for a clean listing.** A running app can update its own cache timestamps;
+the process report and metadata diff are evidence, not proof of attribution.
 
 The approved ffmpeg **release-as-debug stand-in excludes native-load coverage**.
 A warning-gate pass does not validate native loads. Keep import/editor logs and
