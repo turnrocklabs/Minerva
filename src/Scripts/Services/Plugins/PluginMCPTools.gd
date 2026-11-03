@@ -678,10 +678,10 @@ func _handle_plugin_reload(args: Dictionary) -> Dictionary:
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 	if plugin_manager.supports_scene_live_reload(str(id)):
-		var reply: Dictionary = await plugin_manager.reload_scene_plugin(str(id))
-		reply["success"] = reply.get("ok", false)
-		reply["status"] = plugin_manager.get_plugin_status(str(id))
-		return reply
+		var scene_reply: Dictionary = await plugin_manager.reload_scene_plugin(str(id))
+		scene_reply["success"] = scene_reply.get("ok", false)
+		scene_reply["status"] = plugin_manager.get_plugin_status(str(id))
+		return scene_reply
 
 	# Ordinary dev reload refreshes the stored manifest before restarting.
 	var result: Dictionary = await plugin_manager.reload_plugin(id)

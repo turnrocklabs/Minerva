@@ -527,7 +527,7 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
 	def.auto_update = bool(d.get("auto_update", false))
-	def.skip_legacy_auto_grants = bool(d.get("skip_legacy_auto_grants", false))
+	def.skip_legacy_auto_grants = d.get("skip_legacy_auto_grants", false) == true
 	for cn in d.get("class_names", []):
 		def.class_names.append(str(cn))
 	# editor_items, events, capabilities, state_schema, project_file, and
