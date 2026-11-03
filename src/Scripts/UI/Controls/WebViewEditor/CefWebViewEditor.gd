@@ -540,8 +540,11 @@ func _handle_plugin_ipc(ipc_id: String, message_type: String, payload: Dictionar
 		if _panel_broker == null:
 			_send_ipc_reply(ipc_id, {"success": false, "error_message": "Plugin panel required"}, generation)
 			return
+		var parent_window: Window = get_window()
+		var parent_window_id: int = parent_window.get_window_id() \
+			if is_instance_valid(parent_window) else DisplayServer.INVALID_WINDOW_ID
 		var folder_result: Dictionary = await _panel_broker.pick_folder(_document_plugin_id,
-			_document_panel_name, payload, context, get_window().get_window_id())
+			_document_panel_name, payload, context, parent_window_id)
 		_send_ipc_reply(ipc_id, folder_result, generation)
 		return
 	var broker: PluginWebviewBroker = _get_webview_broker()
