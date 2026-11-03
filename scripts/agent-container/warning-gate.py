@@ -24,6 +24,9 @@ import subprocess
 import sys
 import time
 
+if sys.platform == "darwin":
+    import pwd
+
 sys.dont_write_bytecode = True
 JOB_ROOT = Path("/tmp/job")
 # Off by default in Godot; the pilot's G3 typing rule needs them reported.
@@ -158,33 +161,64 @@ def regressions(base, head, changed, refactor):
     return risen
 
 
+def live_godot_data() -> Path:
+    """The real account home must not be confused with an inherited scratch HOME."""
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir) if sys.platform == "darwin" else Path.home()
+    return (home / "Library/Application Support/Godot").resolve()
+
+
+def refuse_live_data(path: Path) -> None:
+    live = live_godot_data()
+    resolved = path.resolve()
+    if resolved == live or live in resolved.parents:
+        raise ValueError(f"Godot data path resolves into the real account's live data: {path}")
+
+
+def check_user_data(root: Path, env: dict[str, str]) -> None:
+    if sys.platform != "darwin":
+        return
+    _, section, application = (root / "src/project.godot").read_text().partition("[application]")
+    application = application.split("\n[", 1)[0]
+    # These jobs scan Minerva, whose default data path is known. Fail closed
+    # rather than guessing paths if a revision changes its project identity.
+    if (not section or not re.search(r'^config/name="Minerva"$', application, re.MULTILINE)
+            or re.search(r'^config/(?:name\.|use_custom_user_dir|custom_user_dir_name)', application, re.MULTILINE)):
+        raise ValueError("Mac GATE-W requires Minerva's standard project user-data configuration")
+    data = Path(env["HOME"]) / "Library/Application Support/Godot/app_userdata/Minerva"
+    refuse_live_data(data)
+
+
 def godot_environment(godot: str, job_root: Path) -> tuple[str, dict[str, str]]:
     """Isolate editor data before launching either import or the LSP editor."""
     executable = shutil.which(godot)
     if executable is None:
         raise ValueError(f"Godot executable not found: {godot}")
     binary = Path(executable).resolve()
-    portable = any((binary.parent / name).is_file() for name in ("._sc_", "_sc_"))
+    editor_root = binary.parent
+    marker_roots = [editor_root]
+    if sys.platform == "darwin" and editor_root.name == "MacOS" and editor_root.parent.name == "Contents":
+        # Godot 4.6.2 EditorPaths relocates data outside the .app even when
+        # the self-contained marker was found beside the inner executable.
+        editor_root = editor_root.parent.parent.parent
+        marker_roots.append(editor_root)
+    portable = any((root / name).is_file() for root in marker_roots for name in ("._sc_", "_sc_"))
     env = dict(os.environ)
     env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
-    live = (Path.home() / "Library/Application Support/Godot").resolve()
     if sys.platform == "darwin":
         # Portable editor settings do not redirect a project's user:// on macOS.
         # HOME must isolate both imports and the language-server editor process.
         home = (job_root / "godot-home").resolve()
         user_data = (home / "Library/Application Support/Godot").resolve()
-        if user_data == live or live in user_data.parents:
-            raise ValueError("scratch HOME resolves user:// into the live macOS Godot data directory")
+        refuse_live_data(user_data)
         home.mkdir(parents=True, exist_ok=True)
         env["HOME"] = str(home)
     xdg = (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"),
            ("XDG_CACHE_HOME", "cache"), ("XDG_STATE_HOME", "state"),
            ("XDG_RUNTIME_DIR", "runtime"))
     if portable:
-        data = (binary.parent / "editor_data").resolve()
-        if data == live or live in data.parents:
-            raise ValueError("Godot editor_data resolves into the live macOS Godot data directory")
-        # Self-contained Godot owns editor_data beside the binary. XDG paths do
+        data = editor_root / "editor_data"
+        refuse_live_data(data)
+        # Self-contained Godot owns editor_data at editor_root. XDG paths do
         # not isolate it and must not suggest otherwise, even if inherited.
         for key, _ in xdg:
             env.pop(key, None)
@@ -223,6 +257,7 @@ def run_gate(args: argparse.Namespace) -> int:
 
     def prepare_and_scan(root, prefix, port):
         started = time.monotonic()
+        check_user_data(root, env)
         natives = shlex.split(args.natives_cmd) if args.natives_cmd is not None else [
             sys.executable if sys.platform == "darwin" else "python3",
             "-B", "scripts/container-build/dev-natives.py"]

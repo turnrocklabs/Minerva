@@ -413,7 +413,9 @@ root and the checkout path are resolved, so `/tmp` and `/private/tmp` agree.
 Set `MINERVA_JOB_ID` to identify the job. Never use the live Minerva checkout.
 
 The macOS editor must be a scratch, self-contained Godot installation with a
-`._sc_` (or `_sc_`) file beside its executable. Its `editor_data` directory must
+`._sc_` (or `_sc_`) file beside its executable (or outside its `.app` bundle).
+For a `.app` editor, Godot places `editor_data` outside the bundle, even when
+the marker is beside the inner executable. That actual directory must
 resolve outside `~/Library/Application Support/Godot`. The gate refuses a Mac
 editor without that marker, and removes inherited XDG paths for a self-contained
 editor instead of relying on them for isolation. Ordinary Linux editor jobs
@@ -421,8 +423,12 @@ retain their existing isolated XDG directories.
 
 Self-contained mode redirects editor data, but does not redirect project
 `user://` on macOS. Every Godot child also receives `HOME=<job-root>/godot-home`.
-The gate resolves that directory and the resulting Godot user-data path and
-refuses either path if it would reach the real user's Godot data directory.
+The gate resolves that directory and each revision's full
+`Godot/app_userdata/Minerva` path, including any symlinks below `Godot`, and
+refuses either path if it would reach the real account's Godot data directory.
+The real account home comes from macOS account information, independent of an
+inherited `HOME`. Mac jobs refuse nonstandard project-name or custom user-data
+settings rather than guessing where they write.
 
 If native staging differs from the Linux build recipe, pass `--natives-cmd`
 with an existing staging command. It runs separately in each revision's clone,
