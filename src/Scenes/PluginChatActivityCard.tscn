@@ -1,54 +1,55 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PluginChatActivityCard.gd" id="1_card"]
 
-[node name="PluginChatActivityCard" type="PanelContainer" groups=["plugin_chat_activity"]]
+[ext_resource type="PackedScene" path="res://Scenes/ToolCallBlock.tscn" id="2_block"]
+
+[node name="PluginChatActivityCard" groups=["plugin_chat_activity"] instance=ExtResource("2_block")]
 size_flags_horizontal = 3
 script = ExtResource("1_card")
 
-[node name="Margin" type="MarginContainer" parent="."]
+[node name="ActionButtons" parent="VBox/Header" index="2"]
+visible = false
+
+[node name="Margin" type="MarginContainer" parent="VBox/ContentContainer/ContentVBox"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 8
 
-[node name="Rows" type="VBoxContainer" parent="Margin"]
+[node name="Rows" type="VBoxContainer" parent="VBox/ContentContainer/ContentVBox/Margin"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="Margin/Rows"]
-layout_mode = 2
-text = "Activity"
-
-[node name="EntryTemplate" type="VBoxContainer" parent="Margin/Rows"]
+[node name="EntryTemplate" type="VBoxContainer" parent="VBox/ContentContainer/ContentVBox/Margin/Rows"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="Summary" type="HBoxContainer" parent="Margin/Rows/EntryTemplate"]
+[node name="Summary" type="HBoxContainer" parent="VBox/ContentContainer/ContentVBox/Margin/Rows/EntryTemplate"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Kind" type="Label" parent="Margin/Rows/EntryTemplate/Summary"]
+[node name="Kind" type="Label" parent="VBox/ContentContainer/ContentVBox/Margin/Rows/EntryTemplate/Summary"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 
-[node name="Label" type="Label" parent="Margin/Rows/EntryTemplate/Summary"]
+[node name="Label" type="Label" parent="VBox/ContentContainer/ContentVBox/Margin/Rows/EntryTemplate/Summary"]
 layout_mode = 2
 size_flags_horizontal = 3
 autowrap_mode = 3
 
-[node name="Status" type="Label" parent="Margin/Rows/EntryTemplate/Summary"]
+[node name="Status" type="Label" parent="VBox/ContentContainer/ContentVBox/Margin/Rows/EntryTemplate/Summary"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 
-[node name="Detail" type="Label" parent="Margin/Rows/EntryTemplate"]
+[node name="Detail" type="Label" parent="VBox/ContentContainer/ContentVBox/Margin/Rows/EntryTemplate"]
 layout_mode = 2
 autowrap_mode = 3
 
-[node name="Path" type="Label" parent="Margin/Rows/EntryTemplate"]
+[node name="Path" type="Label" parent="VBox/ContentContainer/ContentVBox/Margin/Rows/EntryTemplate"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 autowrap_mode = 3
