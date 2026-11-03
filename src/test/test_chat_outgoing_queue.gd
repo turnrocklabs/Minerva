@@ -112,6 +112,10 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, _pr
 ## network path are replaced. create_prompt keeps its await, because the window
 ## a regeneration used to start a second turn in is exactly that await.
 var regen_calls: Array[String] = []
+## Non-empty: the regeneration request succeeds with this text instead of failing.
+var regen_reply: String = ""
+## Replies that reached speech; the real voice stack needs the booted scene.
+var spoken: PackedStringArray = PackedStringArray()
 
 func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null, _turn_token: int = -1) -> Array[Variant]:
 	await get_tree().process_frame
@@ -119,7 +123,14 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null, _pending_item: ChatHistoryItem = null) -> Variant:
 	regen_calls.append("regen")
-	return null
+	if regen_reply.is_empty():
+		return null
+	var reply: BotResponse = BotResponse.new()
+	reply.text = regen_reply
+	return reply
+
+func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null, origin: Dictionary = {}) -> void:
+	spoken.append(response_text)
 """
 
 ## Pane that keeps the REAL execute_regular_chat and replaces only its two
@@ -323,6 +334,7 @@ func _run() -> void:
 	await _test_a_late_parallel_response_releases_its_own_chat()
 	await _test_a_cancelled_runs_leftovers_do_not_pair_with_the_new_run()
 	await _test_regenerate_waits_for_the_active_turn()
+	await _test_a_successful_retry_clears_the_error_and_reaches_speech()
 	await _test_a_promoted_message_is_sent_past_the_last_user_guard()
 	await _test_a_promoted_sequential_message_is_sent_past_the_guard()
 	await _test_a_human_parallel_worker_ends_its_share_of_the_run()
@@ -910,6 +922,41 @@ func _test_regenerate_waits_for_the_active_turn() -> void:
 		str(pane.regen_calls))
 	check("I7: and releases its own turn", not chat.is_request_active)
 
+	_teardown(pane, [chat])
+
+
+## A failed send leaves an "error" termination record on the chat. A Retry that
+## then succeeded kept that record, so the chat still read as errored, and its
+## reply never reached speech. The failure is seeded as the record a failed send
+## leaves (the harness owns the provider call); regenerate_response is REAL.
+func _test_a_successful_retry_clears_the_error_and_reaches_speech() -> void:
+	var chat: RefCounted = _make_history("Retry")
+	var pane: Node = _make_pane([chat])
+	var history_provider: Node = load(PLUGIN_PROVIDER_PATH).new()
+	pane.add_child(history_provider)
+	chat.provider = history_provider
+	pane.current_tab = _so.ChatList.find(chat)
+	var item_script: Resource = load(CHAT_HISTORY_ITEM_PATH)
+	var chi: RefCounted = item_script.new()
+	chi.Role = item_script.ChatRole.USER
+	chi.Message = "retry me"
+	chat.HistoryItemList.append(chi)
+	chi.rendered_node = chat.VBox.add_history_item(chi)
+	chat.termination_reason = "error"
+	chat.termination_message = "provider unavailable"
+	pane.regen_reply = "retried answer"
+
+	pane.regenerate_response(chi)
+	for _i in range(10):
+		await process_frame
+	var reason: String = chat.termination_reason
+	var message: String = chat.termination_message
+	check("I8: the Retry runs to a reply and releases its turn",
+		pane.regen_calls.size() == 1 and not chat.is_request_active, str(pane.regen_calls))
+	check("I9: a successful Retry clears the stale error record",
+		reason.is_empty() and message.is_empty(), "%s / %s" % [reason, message])
+	check("I10: and hands its reply to the speech hook ordinary sends use",
+		str(pane.spoken) == str(PackedStringArray(["retried answer"])), str(pane.spoken))
 	_teardown(pane, [chat])
 
 #endregion
