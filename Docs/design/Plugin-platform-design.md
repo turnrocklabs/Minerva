@@ -259,9 +259,11 @@ The OS may ignore the requested initial directory or title.
 Dialog requests have no elapsed-time timeout in either the JS bridge or host:
 leaving a dialog open for two minutes still permits selection. Other bridge calls
 retain their 15-second timeout and the 128-request pending limit still applies.
-Only one native folder dialog is admitted at a time. Closing/reloading the panel
-cancels its request and suppresses stale replies; close the native dialog before
-requesting another. Unsupported UI sessions and native API errors reject the Promise.
+Only one active native folder request is admitted at a time. Closing/reloading
+the panel, stopping its context, or unregistering its plugin completes the request
+as cancelled and releases admission immediately. Late native callbacks from that
+request cannot clear or reply to a newer request. Unsupported UI sessions and
+native API errors reject the Promise.
 
 ### 5.2 `ctx` shape
 
