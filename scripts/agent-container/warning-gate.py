@@ -13,6 +13,7 @@ per-code totals instead, so moved or renamed code keeps its warnings.
 """
 import argparse
 from collections import Counter
+import configparser
 import json
 import os
 from pathlib import Path
@@ -177,12 +178,38 @@ def refuse_live_data(path: Path) -> None:
 def check_user_data(root: Path, env: dict[str, str]) -> None:
     if sys.platform != "darwin":
         return
-    _, section, application = (root / "src/project.godot").read_text().partition("[application]")
-    application = application.split("\n[", 1)[0]
+    application = []
+    in_application = False
+    seen_application = False
+    for line in (root / "src/project.godot").read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            header = re.fullmatch(r"\[([a-z_]+)\]\s*(?:;.*)?", stripped)
+            if header is None:
+                raise ValueError("Mac GATE-W cannot determine project data from this section syntax")
+            in_application = header[1] == "application"
+            if in_application:
+                if seen_application:
+                    raise ValueError("Mac GATE-W refuses repeated application sections")
+                seen_application = True
+        elif in_application:
+            # Godot ignores leading whitespace on assignments; do not let the
+            # INI parser reinterpret an indented key as a value continuation.
+            application.append(stripped)
+    parser = configparser.RawConfigParser(strict=True, delimiters=("=",),
+                                         inline_comment_prefixes=(";",))
+    parser.optionxform = str
+    try:
+        parser.read_string("[application]\n" + "\n".join(application))
+    except configparser.Error as error:
+        raise ValueError(f"Mac GATE-W refuses ambiguous application settings: {error}") from error
+    settings = dict(parser.items("application"))
     # These jobs scan Minerva, whose default data path is known. Fail closed
-    # rather than guessing paths if a revision changes its project identity.
-    if (not section or not re.search(r'^config/name="Minerva"$', application, re.MULTILINE)
-            or re.search(r'^config/(?:name\.|use_custom_user_dir|custom_user_dir_name)', application, re.MULTILINE)):
+    # rather than guessing if identity, key syntax or custom data settings differ.
+    if (not seen_application or settings.get("config/name") != '"Minerva"'
+            or any(not re.fullmatch(r"[a-zA-Z0-9_/.-]+", key) for key in settings)
+            or any(key.startswith(("config/name.", "config/use_custom_user_dir",
+                                   "config/custom_user_dir_name")) for key in settings)):
         raise ValueError("Mac GATE-W requires Minerva's standard project user-data configuration")
     data = Path(env["HOME"]) / "Library/Application Support/Godot/app_userdata/Minerva"
     refuse_live_data(data)
