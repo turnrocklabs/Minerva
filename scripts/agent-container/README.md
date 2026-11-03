@@ -413,7 +413,7 @@ root and the checkout path are resolved, so `/tmp` and `/private/tmp` agree.
 Set `MINERVA_JOB_ID` to identify the job. Never use the live Minerva checkout.
 
 The macOS editor must be a scratch, self-contained Godot installation with a
-`._sc_` (or `_sc_`) file beside its executable (or outside its `.app` bundle).
+`_sc_` file beside its executable (or outside its `.app` bundle).
 For a `.app` editor, Godot places `editor_data` outside the bundle, even when
 the marker is beside the inner executable. That actual directory must
 resolve outside `~/Library/Application Support/Godot`. The gate refuses a Mac
@@ -429,6 +429,8 @@ refuses either path if it would reach the real account's Godot data directory.
 The real account home comes from macOS account information, independent of an
 inherited `HOME`. Mac jobs refuse nonstandard project-name or custom user-data
 settings rather than guessing where they write.
+Godot also accepts `._sc_`, but copies may strip `._*` as AppleDouble files;
+the durable runner requires `_sc_` so the marker survives staging.
 
 If native staging differs from the Linux build recipe, pass `--natives-cmd`
 with an existing staging command. It runs separately in each revision's clone,
@@ -438,6 +440,73 @@ The default on macOS uses the gate's Python interpreter for `dev-natives.py`.
 Confirm the scratch editor and macOS natives are staged before launching a job;
 bound the whole job with a process-group timeout (20 minutes for the Mac dry run).
 The same `gate-evidence/` logs and receipt are produced on either platform.
+
+#### Durable Mac runner
+
+`mac-warning-gate.py` commits the staging and timeout procedure above. It uses
+the sibling `warning-gate.py` for isolation checks and warning comparison,
+creates fresh clones, stages natives for each revision, and runs Godot with a
+scratch `HOME`. It never uses the source checkout as the Godot project.
+
+The owner/orchestrator must first approve the run and provide a staged root.
+Keep this root in a durable location outside a disposable job. Set
+`MINERVA_GATEW_MAC_ROOT` (or pass `--staging-root`) to the directory containing:
+
+```text
+godot/Godot.app/Contents/MacOS/Godot       # approved editor
+godot/_sc_                              # or _sc_ beside the inner executable
+natives/terminal-macos/                  # terminal debug/release frameworks + VT dylib
+natives/sqlite-dl/x/bin/                  # macOS sqlite debug/release frameworks
+natives/macos-build/x/Minerva.app/Contents/Frameworks/
+    Godot CEF.framework
+    Godot CEF.app
+    libgdffmpeg.macos.template_release.framework
+    libavcodec.dylib, libavfilter.dylib, libavformat.dylib,
+    libavutil.dylib, libswresample.dylib, libswscale.dylib
+```
+
+Use Python 3.10+ and full commit IDs. For example, with the configured staging
+root already approved:
+
+```bash
+python3 scripts/agent-container/mac-warning-gate.py run \
+  --head HEAD_SHA --base BASE_SHA --output /path/to/new-scratch-job
+```
+
+Omit `--output` to create a new temporary evidence/job directory. An explicit
+output must be new and outside the source checkout and real Godot data directory.
+`--repo` selects the source repository (default: this checkout). No downloads,
+builds or installs are performed by this helper. The `stage` subcommand is the
+native-copy command used internally for both clones and refuses existing outputs.
+All job files remain for diagnosis; there is no automatic deletion.
+
+The gate process group has a 20-minute timeout, followed by bounded termination
+and kill of its remaining children. Read `run.log` for progress and
+`mac-receipt.json` for the revisions, staging path, return code, timeout and
+live-data comparison. Follow its `warning_receipt` path for the gate's
+`passed`/`failed` status and warning regressions. `live-before.json` and
+`live-after.json` hold metadata-only listings of the real account's Godot data;
+`live-changed.json` lists all changes and `live-diff.json` classifies them.
+Created or removed entries, mode or size changes, and other metadata changes
+(such as changed symlink targets) make the helper fail. Only an mtime-only change
+to an existing regular file is a warning. Directory and symlink changes retain
+their strict failure behavior. A nonzero gate result always fails the helper.
+
+The receipt preserves `live_listing_unchanged` even for warning-only differences,
+records the gate child's `returncode` separately from `wrapper_returncode`, and
+reports exact-name `pgrep` results for Minerva before and after the run. **Quit
+Minerva for a clean listing.** A running app can update its own cache timestamps;
+the process report and metadata diff are evidence, not proof of attribution.
+
+The approved ffmpeg **release-as-debug stand-in excludes native-load coverage**.
+A warning-gate pass does not validate native loads. Keep import/editor logs and
+report native-load errors separately; do not install replacement dependencies
+or silently reinterpret them as clean runtime evidence.
+
+Every writer brief should name its pre-freeze visual/diagnostic evidence:
+panel batches run the scanner panel render helper and attach the PNGs; GDScript
+batches run this Mac gate before freezing **once the owner confirms standing
+approval**. Until then, a previous scoped run does not authorize another run.
 
 ### Four Docket owner scenarios
 
