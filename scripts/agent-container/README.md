@@ -404,6 +404,41 @@ per-code totals instead, so moved or renamed code keeps its warnings. About
 150 s per run; `gate-evidence/warning-receipt.json` holds the scans and any
 regressions. The revision must exist in the session clone.
 
+#### macOS scratch jobs
+
+Use Python **3.10 or newer** for the gate and the default native staging helper.
+The Linux container defaults above are unchanged. On macOS, use an isolated
+checkout directly inside a scratch job root and pass `--job-root`; both that
+root and the checkout path are resolved, so `/tmp` and `/private/tmp` agree.
+Set `MINERVA_JOB_ID` to identify the job. Never use the live Minerva checkout.
+
+The macOS editor must be a scratch, self-contained Godot installation with a
+`._sc_` (or `_sc_`) file beside its executable (or outside its `.app` bundle).
+For a `.app` editor, Godot places `editor_data` outside the bundle, even when
+the marker is beside the inner executable. That actual directory must
+resolve outside `~/Library/Application Support/Godot`. The gate refuses a Mac
+editor without that marker, and removes inherited XDG paths for a self-contained
+editor instead of relying on them for isolation. Ordinary Linux editor jobs
+retain their existing isolated XDG directories.
+
+Self-contained mode redirects editor data, but does not redirect project
+`user://` on macOS. Every Godot child also receives `HOME=<job-root>/godot-home`.
+The gate resolves that directory and each revision's full
+`Godot/app_userdata/Minerva` path, including any symlinks below `Godot`, and
+refuses either path if it would reach the real account's Godot data directory.
+The real account home comes from macOS account information, independent of an
+inherited `HOME`. Mac jobs refuse nonstandard project-name or custom user-data
+settings rather than guessing where they write.
+
+If native staging differs from the Linux build recipe, pass `--natives-cmd`
+with an existing staging command. It runs separately in each revision's clone,
+with that clone as the working directory, before import. It is parsed as argv,
+not through a shell: put compound staging logic in the staging command itself.
+The default on macOS uses the gate's Python interpreter for `dev-natives.py`.
+Confirm the scratch editor and macOS natives are staged before launching a job;
+bound the whole job with a process-group timeout (20 minutes for the Mac dry run).
+The same `gate-evidence/` logs and receipt are produced on either platform.
+
 ### Four Docket owner scenarios
 
 `ripout-owner-oracles.py` is an independent scenario runner for the policy,

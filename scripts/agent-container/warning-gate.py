@@ -13,14 +13,20 @@ per-code totals instead, so moved or renamed code keeps its warnings.
 """
 import argparse
 from collections import Counter
+import configparser
 import json
 import os
 from pathlib import Path
 import re
+import shlex
+import shutil
 import socket
 import subprocess
 import sys
 import time
+
+if sys.platform == "darwin":
+    import pwd
 
 sys.dont_write_bytecode = True
 JOB_ROOT = Path("/tmp/job")
@@ -156,20 +162,112 @@ def regressions(base, head, changed, refactor):
     return risen
 
 
-def run_gate(args):
+def live_godot_data() -> Path:
+    """The real account home must not be confused with an inherited scratch HOME."""
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir) if sys.platform == "darwin" else Path.home()
+    return (home / "Library/Application Support/Godot").resolve()
+
+
+def refuse_live_data(path: Path) -> None:
+    live = live_godot_data()
+    resolved = path.resolve()
+    if resolved == live or live in resolved.parents:
+        raise ValueError(f"Godot data path resolves into the real account's live data: {path}")
+
+
+def check_user_data(root: Path, env: dict[str, str]) -> None:
+    if sys.platform != "darwin":
+        return
+    application = []
+    in_application = False
+    seen_application = False
+    for line in (root / "src/project.godot").read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            header = re.fullmatch(r"\[([a-z_]+)\]\s*(?:;.*)?", stripped)
+            if header is None:
+                raise ValueError("Mac GATE-W cannot determine project data from this section syntax")
+            in_application = header[1] == "application"
+            if in_application:
+                if seen_application:
+                    raise ValueError("Mac GATE-W refuses repeated application sections")
+                seen_application = True
+        elif in_application:
+            # Godot ignores leading whitespace on assignments; do not let the
+            # INI parser reinterpret an indented key as a value continuation.
+            application.append(stripped)
+    parser = configparser.RawConfigParser(strict=True, delimiters=("=",), comment_prefixes=(";",),
+                                         inline_comment_prefixes=(";",))
+    parser.optionxform = str
+    try:
+        parser.read_string("[application]\n" + "\n".join(application))
+    except configparser.Error as error:
+        raise ValueError(f"Mac GATE-W refuses ambiguous application settings: {error}") from error
+    settings = dict(parser.items("application"))
+    # These jobs scan Minerva, whose default data path is known. Fail closed
+    # rather than guessing if identity, key syntax or custom data settings differ.
+    if (not seen_application or settings.get("config/name") != '"Minerva"'
+            or any(not re.fullmatch(r"[a-zA-Z0-9_/.-]+", key) for key in settings)
+            or any(key.startswith(("config/name.", "config/use_custom_user_dir",
+                                   "config/custom_user_dir_name")) for key in settings)):
+        raise ValueError("Mac GATE-W requires Minerva's standard project user-data configuration")
+    data = Path(env["HOME"]) / "Library/Application Support/Godot/app_userdata/Minerva"
+    refuse_live_data(data)
+
+
+def godot_environment(godot: str, job_root: Path) -> tuple[str, dict[str, str]]:
+    """Isolate editor data before launching either import or the LSP editor."""
+    executable = shutil.which(godot)
+    if executable is None:
+        raise ValueError(f"Godot executable not found: {godot}")
+    binary = Path(executable).resolve()
+    editor_root = binary.parent
+    marker_roots = [editor_root]
+    if sys.platform == "darwin" and editor_root.name == "MacOS" and editor_root.parent.name == "Contents":
+        # Godot 4.6.2 EditorPaths relocates data outside the .app even when
+        # the self-contained marker was found beside the inner executable.
+        editor_root = editor_root.parent.parent.parent
+        marker_roots.append(editor_root)
+    portable = any((root / name).is_file() for root in marker_roots for name in ("._sc_", "_sc_"))
+    env = dict(os.environ)
+    env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
+    if sys.platform == "darwin":
+        # Portable editor settings do not redirect a project's user:// on macOS.
+        # HOME must isolate both imports and the language-server editor process.
+        home = (job_root / "godot-home").resolve()
+        user_data = (home / "Library/Application Support/Godot").resolve()
+        refuse_live_data(user_data)
+        home.mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(home)
+    xdg = (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"),
+           ("XDG_CACHE_HOME", "cache"), ("XDG_STATE_HOME", "state"),
+           ("XDG_RUNTIME_DIR", "runtime"))
+    if portable:
+        data = editor_root / "editor_data"
+        refuse_live_data(data)
+        # Self-contained Godot owns editor_data at editor_root. XDG paths do
+        # not isolate it and must not suggest otherwise, even if inherited.
+        for key, _ in xdg:
+            env.pop(key, None)
+    elif sys.platform == "darwin":
+        raise ValueError("macOS GATE-W requires ._sc_ beside the scratch Godot binary; "
+                         "the default editor data directory is live")
+    else:
+        for key, subdir in xdg:
+            path = job_root / "xdg" / subdir
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            env[key] = str(path)
+    return str(binary), env
+
+
+def run_gate(args: argparse.Namespace) -> int:
     host = Path.cwd().resolve()
-    if not (host / "src/project.godot").is_file() or not os.environ.get("MINERVA_JOB_ID") or host.parent != JOB_ROOT:
+    job_root = args.job_root.resolve()
+    if not (host / "src/project.godot").is_file() or not os.environ.get("MINERVA_JOB_ID") or host.parent != job_root:
         raise SystemExit("run only from a Minerva checkout in an isolated agent.py planned job")
     logs = host / "gate-evidence"
     logs.mkdir(exist_ok=True)
     env = dict(os.environ)
-    env["MINERVA_REQUIRED_RELEASES_URL"] = "http://127.0.0.1:9"
-    for key, subdir in (("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"),
-                        ("XDG_CACHE_HOME", "cache"), ("XDG_STATE_HOME", "state"),
-                        ("XDG_RUNTIME_DIR", "runtime")):
-        path = JOB_ROOT / "xdg" / subdir
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        env[key] = str(path)
     receipt = {"schema": "minerva/warning-gate-v1", "job": os.environ["MINERVA_JOB_ID"],
                "head": git(host, "rev-parse", "HEAD"), "refactor": args.refactor, "status": "failed"}
 
@@ -186,7 +284,13 @@ def run_gate(args):
 
     def prepare_and_scan(root, prefix, port):
         started = time.monotonic()
-        step(f"{prefix}natives", ["python3", "-B", "scripts/container-build/dev-natives.py"], root, 900)
+        check_user_data(root, env)
+        natives = shlex.split(args.natives_cmd) if args.natives_cmd is not None else [
+            sys.executable if sys.platform == "darwin" else "python3",
+            "-B", "scripts/container-build/dev-natives.py"]
+        if not natives:
+            raise ValueError("--natives-cmd must name a command")
+        step(f"{prefix}natives", natives, root, 900)
         step(f"{prefix}import", [args.godot, "--headless", "--path", "src", "--import"], root, 900)
         enable_typing_warnings(root)
         found, files = scan(root, args.godot, env, logs / f"{prefix}editor.log", port)
@@ -196,10 +300,11 @@ def run_gate(args):
         return found
 
     try:
+        args.godot, env = godot_environment(args.godot, job_root)
         receipt["base"] = git(host, "rev-parse", "--verify", f"{args.base}^{{commit}}")
         changed = set(git(host, "diff", "--name-only", "--no-renames", receipt["base"], "HEAD", "--", "src").splitlines())
         head = prepare_and_scan(host, "head-", 47123)
-        baseline = JOB_ROOT / f"warning-base-{receipt['base'][:12]}" / "Minerva"
+        baseline = job_root / f"warning-base-{receipt['base'][:12]}" / "Minerva"
         subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", str(host), str(baseline)], check=True)
         subprocess.run(["git", "-C", str(baseline), "checkout", "-q", "--detach", receipt["base"]], check=True)
         base = prepare_and_scan(baseline, "base-", 47124)
@@ -222,13 +327,18 @@ def run_gate(args):
     return 0 if receipt["status"] == "passed" else 1
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", required=True, help="commit before the batch")
     parser.add_argument("--godot", default="godot")
+    parser.add_argument("--job-root", type=Path, default=JOB_ROOT,
+                        help="isolated job parent (default /tmp/job; symlinks resolved)")
+    parser.add_argument("--natives-cmd",
+                        help="native staging command, split as argv without a shell; runs in each clone")
     parser.add_argument("--refactor", action="store_true",
                         help="compare the changed files by per-code totals (R5 refactor commits)")
-    return run_gate(parser.parse_args())
+    args = parser.parse_args()
+    return run_gate(args)
 
 
 if __name__ == "__main__":
