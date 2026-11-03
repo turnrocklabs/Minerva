@@ -196,7 +196,7 @@ def check_user_data(root: Path, env: dict[str, str]) -> None:
             # Godot ignores leading whitespace on assignments; do not let the
             # INI parser reinterpret an indented key as a value continuation.
             application.append(stripped)
-    parser = configparser.RawConfigParser(strict=True, delimiters=("=",),
+    parser = configparser.RawConfigParser(strict=True, delimiters=("=",), comment_prefixes=(";",),
                                          inline_comment_prefixes=(";",))
     parser.optionxform = str
     try:
