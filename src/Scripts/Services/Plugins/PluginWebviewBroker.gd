@@ -245,6 +245,7 @@ func _show_folder_dialog(plugin_id: String, panel_name: String, options: Diction
 	var selected: Callable = _folder_selected.bind(pending.id)
 	var error: Error = DisplayServer.file_dialog_show(title, start_dir, "", false,
 		DisplayServer.FILE_DIALOG_MODE_OPEN_DIR, PackedStringArray(), selected, parent_window_id)
+	print("[PluginWebviewBroker] Native folder dialog window_id=%d return=%d" % [parent_window_id, error])
 	if error != OK:
 		_finish_folder_dialog(pending.id, {"success": false, "error_code": "dialog_unavailable",
 			"error_message": "Cannot open native folder dialog: %s" % error_string(error)})
