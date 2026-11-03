@@ -2117,6 +2117,8 @@ func regenerate_response(chi: ChatHistoryItem) -> void:
 		push_warning("Tried to regenerate response while chat %s is mid-request" % history.HistoryId)
 		return
 	var turn_token: int = _begin_chat_turn(history)
+	history.termination_reason = ""
+	history.termination_message = ""
 
 	var index = history.HistoryItemList.find(chi)
 
@@ -2172,6 +2174,7 @@ func regenerate_response(chi: ChatHistoryItem) -> void:
 		return
 
 	if _turn_stopped(history, turn_token):
+		_drop_item(history, existing_response)
 		return
 
 	if history.AgentModeEnabled and str(bot_response.error).is_empty() and not bot_response.has_tool_calls():
@@ -2520,9 +2523,6 @@ func _begin_chat_turn(history: ChatHistory, origin: Dictionary = {}) -> int:
 		return -1
 	history.request_turn_token += 1
 	history.is_request_active = true
-	# Every admitted turn, including Retry, owns a fresh termination record.
-	history.termination_reason = ""
-	history.termination_message = ""
 	var report := ChatEventPayloads.TurnReport.new(history.request_turn_token)
 	report.origin = origin.duplicate(true)
 	_turn_reports[history.HistoryId] = report
@@ -2764,6 +2764,10 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
 	var turn_token: int = _begin_chat_turn(history, origin)
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
+
+	# Reset termination tracking for this new turn
+	history.termination_reason = ""
+	history.termination_message = ""
 
 	var user_history_item: ChatHistoryItem = create_user_history_item(text)
 	user_history_item.provider = history.provider
@@ -5908,7 +5912,7 @@ func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_second
 ## Ordinary sends and Retry share speech admission; provider identity is irrelevant.
 func _speak_chat_reply(history: ChatHistory, reply: ChatHistoryItem, user_text: String,
 		reply_node: Control, turn_token: int, origin: Dictionary) -> void:
-	if history.CallerDriven or reply == null or not reply.Error.is_empty() or reply.Message.is_empty():
+	if history.CallerDriven or reply == null or reply.Message.is_empty():
 		return
 	if SingletonObject.is_cancelled(history.HistoryId) or (turn_token >= 0 and _turn_stopped(history, turn_token)):
 		return
