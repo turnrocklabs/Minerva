@@ -18,7 +18,7 @@ import time
 import uuid
 from pathlib import Path
 from types import ModuleType
-from typing import TypedDict
+from typing import NoReturn, TypedDict
 
 TIMEOUT = 1200
 SCHEMA = "minerva/mac-warning-gate-v1"
@@ -88,8 +88,11 @@ def stage(staging: Path, job: Path) -> int:
 
 def listing(root: Path) -> dict[str, ListingEntry]:
     """Metadata-only before/after evidence; do not read live file contents."""
+    def fail(error: OSError) -> NoReturn:
+        raise error
+
     result: dict[str, ListingEntry] = {}
-    for folder, dirs, files in os.walk(root, followlinks=False):
+    for folder, dirs, files in os.walk(root, followlinks=False, onerror=fail):
         for name in dirs + files:
             path = Path(folder) / name
             stat = path.lstat()
