@@ -66,7 +66,25 @@ var audit_log: PluginAuditLog = null
 
 ## panel_name -> plugin_id   (populated by register_plugin_panel)
 var _panel_registry: Dictionary = {}
-var _folder_dialog_open := false
+class PendingFolderDialog extends RefCounted:
+	var id: int
+	var plugin_id: String
+	var panel_name: String
+	var context: MCPExecutionContext
+	var completion: MCPExecutionContext.Completion = MCPExecutionContext.Completion.new()
+	var on_cancel: Callable
+	var deadline_timer: SceneTreeTimer = null
+	var on_deadline: Callable
+
+var _folder_dialog: PendingFolderDialog = null
+var _folder_dialog_sequence: int = 0
+
+class PendingPanelHistory extends RefCounted:
+	var plugin_id: String
+	var panel_name: String
+	var context: MCPExecutionContext
+
+var _panel_history_requests: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +101,8 @@ func _init(
 	plugin_policy     = p_plugin_policy
 	capability_broker = p_capability_broker
 	audit_log         = p_audit_log
+	if plugin_manager != null:
+		plugin_manager.plugin_definition_changed.connect(_cancel_panel_requests)
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +119,7 @@ func register_plugin_panel(plugin_id: String, panel_name: String) -> void:
 	if _panel_registry.has(panel_name):
 		var existing: String = _panel_registry[panel_name]
 		if existing != plugin_id:
+			_cancel_panel_requests(existing, panel_name)
 			push_warning(
 				"[PluginWebviewBroker] Panel '%s' was owned by '%s', re-assigning to '%s'" % [
 					panel_name, existing, plugin_id
@@ -112,6 +133,7 @@ func register_plugin_panel(plugin_id: String, panel_name: String) -> void:
 ## Unregister all panels belonging to a plugin.
 ## Call this when a plugin is stopped or uninstalled.
 func unregister_plugin_panels(plugin_id: String) -> void:
+	_cancel_panel_requests(plugin_id)
 	var to_remove: Array[String] = []
 	for panel_name in _panel_registry.keys():
 		if _panel_registry[panel_name] == plugin_id:
@@ -162,8 +184,10 @@ func pick_folder(plugin_id: String, panel_name: String, options: Dictionary,
 			"message_type": FOLDER_PICKER_MESSAGE, "reason": "panel_not_opted_in"})
 		return PluginErrors.permission_denied(plugin_id, "HTML panel has not opted into file_dialogs")
 	_audit(plugin_id, EVENT_IPC_ALLOWED, {"panel_name": panel_name, "message_type": FOLDER_PICKER_MESSAGE})
-	var result: Dictionary = await context.run(_show_folder_dialog.bind(
-		plugin_id, panel_name, options, context, parent_window_id))
+	# This route owns cancellation: a retired native picker completes as cancelled,
+	# rather than context.run() racing it with a generic stopped-call error.
+	var result: Dictionary = await _show_folder_dialog(
+		plugin_id, panel_name, options, context, parent_window_id)
 	_audit(plugin_id, EVENT_IPC_DISPATCHED, {"panel_name": panel_name,
 		"message_type": FOLDER_PICKER_MESSAGE, "success": result.get("success", false)})
 	return PluginPayloadLimits.bound_reply(result, plugin_id)
@@ -185,32 +209,88 @@ func _show_folder_dialog(plugin_id: String, panel_name: String, options: Diction
 	if not DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG_FILE):
 		return {"success": false, "error_code": "dialog_unavailable",
 			"error_message": "Native folder dialogs are unavailable in this UI session"}
-	if _folder_dialog_open:
+	if context.is_stopped():
+		return PluginErrors.success({"cancelled": true})
+	# Reconcile a stopped request even if its cancellation signal was missed.
+	var previous: PendingFolderDialog = _folder_dialog
+	if previous != null and previous.context.is_stopped():
+		_cancel_folder_dialog(previous.id)
+	if _folder_dialog != null:
 		return {"success": false, "error_code": "dialog_busy",
 			"error_message": "Close the existing native folder dialog before opening another"}
-	var completion := MCPExecutionContext.Completion.new()
-	var selected := func(accepted: bool, paths: PackedStringArray, _filter: int) -> void:
-		_folder_dialog_open = false
-		if context.is_stopped():
-			completion.finish(context.stopped_result())
-		elif not _html_panel_enabled(plugin_id, panel_name, "file_dialogs"):
-			completion.finish(PluginErrors.permission_denied(plugin_id, "Panel dialog opt-in changed"))
-		elif not accepted:
-			completion.finish(PluginErrors.success({"cancelled": true}))
-		elif paths.size() != 1 or not paths[0].is_absolute_path():
-			completion.finish(PluginErrors.schema_validation_failed(plugin_id, "Native folder dialog returned no absolute path"))
-		else:
-			completion.finish(PluginErrors.success({"path": paths[0]}))
-	_folder_dialog_open = true
+	var main_loop: MainLoop = Engine.get_main_loop()
+	if not main_loop is SceneTree:
+		return {"success": false, "error_code": "dialog_unavailable",
+			"error_message": "Native folder dialogs need an active UI session"}
+	var tree: SceneTree = main_loop
+	_folder_dialog_sequence += 1
+	var pending: PendingFolderDialog = PendingFolderDialog.new()
+	pending.id = _folder_dialog_sequence
+	pending.plugin_id = plugin_id
+	pending.panel_name = panel_name
+	pending.context = context
+	pending.on_cancel = _cancel_folder_dialog.bind(pending.id)
+	_folder_dialog = pending
+	context.lifetime.cancelled.connect(pending.on_cancel)
+	# Normal panel requests have no deadline. Preserve an explicit caller deadline.
+	if context.lifetime.deadline_ms > 0:
+		pending.deadline_timer = tree.create_timer(context.remaining_seconds(0.0))
+		pending.on_deadline = _expire_folder_dialog.bind(pending.id)
+		pending.deadline_timer.timeout.connect(pending.on_deadline)
+	var selected: Callable = _folder_selected.bind(pending.id)
 	var error: Error = DisplayServer.file_dialog_show(title, start_dir, "", false,
 		DisplayServer.FILE_DIALOG_MODE_OPEN_DIR, PackedStringArray(), selected, parent_window_id)
 	if error != OK:
-		_folder_dialog_open = false
-		return {"success": false, "error_code": "dialog_unavailable",
-			"error_message": "Cannot open native folder dialog: %s" % error_string(error)}
-	if not completion.done:
-		await completion.finished
-	return completion.result
+		_finish_folder_dialog(pending.id, {"success": false, "error_code": "dialog_unavailable",
+			"error_message": "Cannot open native folder dialog: %s" % error_string(error)})
+	if not pending.completion.done:
+		await pending.completion.finished
+	return pending.completion.result
+
+
+func _folder_selected(accepted: bool, paths: PackedStringArray, _filter: int,
+		request_id: int) -> void:
+	var pending: PendingFolderDialog = _folder_dialog
+	if pending == null or pending.id != request_id:
+		return # A retired dialog must not clear or reply to a newer request.
+	var result: Dictionary
+	if pending.context.is_stopped():
+		result = PluginErrors.success({"cancelled": true})
+	elif not _html_panel_enabled(pending.plugin_id, pending.panel_name, "file_dialogs"):
+		result = PluginErrors.permission_denied(pending.plugin_id, "Panel dialog opt-in changed")
+	elif not accepted:
+		result = PluginErrors.success({"cancelled": true})
+	elif paths.size() != 1 or not paths[0].is_absolute_path():
+		result = PluginErrors.schema_validation_failed(pending.plugin_id, "Native folder dialog returned no absolute path")
+	else:
+		result = PluginErrors.success({"path": paths[0]})
+	_finish_folder_dialog(request_id, result)
+
+
+func _cancel_folder_dialog(request_id: int) -> void:
+	_finish_folder_dialog(request_id, PluginErrors.success({"cancelled": true}))
+
+
+func _expire_folder_dialog(request_id: int) -> void:
+	var pending: PendingFolderDialog = _folder_dialog
+	if pending != null and pending.id == request_id:
+		pending.context.lifetime.stop("deadline_exceeded")
+
+
+func _finish_folder_dialog(request_id: int, result: Dictionary) -> void:
+	var pending: PendingFolderDialog = _folder_dialog
+	if pending == null or pending.id != request_id:
+		return
+	# Clear ownership before waking awaiters; completion can start another picker.
+	_folder_dialog = null
+	if pending.context.lifetime.cancelled.is_connected(pending.on_cancel):
+		pending.context.lifetime.cancelled.disconnect(pending.on_cancel)
+	if pending.deadline_timer != null \
+			and pending.deadline_timer.timeout.is_connected(pending.on_deadline):
+		pending.deadline_timer.timeout.disconnect(pending.on_deadline)
+	pending.on_cancel = Callable()
+	pending.on_deadline = Callable()
+	pending.completion.finish(result)
 
 
 func request_panel_history(plugin_id: String, panel_name: String, redo: bool,
@@ -219,13 +299,31 @@ func request_panel_history(plugin_id: String, panel_name: String, redo: bool,
 		return PluginErrors.permission_denied(plugin_id, "Panel has not opted into backend history")
 	var channel := "panel.redo" if redo else "panel.undo"
 	_audit(plugin_id, EVENT_IPC_ALLOWED, {"panel_name": panel_name, "message_type": channel})
+	var pending: PendingPanelHistory = PendingPanelHistory.new()
+	pending.plugin_id = plugin_id
+	pending.panel_name = panel_name
+	pending.context = context
+	_panel_history_requests[context.call_id] = pending
 	var result: Dictionary = await context.run(_dispatch_to_plugin_backend.bind(
 		plugin_id, channel, {"panel_name": panel_name}, context))
+	_panel_history_requests.erase(context.call_id)
 	if not supports_panel_undo(plugin_id, panel_name):
 		return PluginErrors.permission_denied(plugin_id, "Panel ownership or history opt-in changed")
 	_audit(plugin_id, EVENT_IPC_DISPATCHED, {"panel_name": panel_name,
 		"message_type": channel, "success": result.get("success", false)})
 	return result
+
+
+func _cancel_panel_requests(plugin_id: String, panel_name: String = "") -> void:
+	if _folder_dialog != null and _folder_dialog.plugin_id == plugin_id \
+			and (panel_name.is_empty() or _folder_dialog.panel_name == panel_name):
+		_cancel_folder_dialog(_folder_dialog.id)
+	# Cancellation resumes awaiters, so iterate a snapshot of request owners.
+	var requests: Array = _panel_history_requests.values()
+	for pending: PendingPanelHistory in requests:
+		if pending.plugin_id == plugin_id \
+				and (panel_name.is_empty() or pending.panel_name == panel_name):
+			pending.context.cancel()
 
 
 # ---------------------------------------------------------------------------

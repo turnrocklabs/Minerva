@@ -71,39 +71,10 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 		push_warning("[PluginDB] Plugin '%s' is already installed — use update_definition() to replace it" % def.id)
 		return null
 
-	if _refuse_dependency_cycle(def):
-		return null
-
-	# --- class_name validation (design §6.2) ---
-	# Scan all panel scripts for class_name declarations.
-	def.scan_class_names()
-
-	# Build the cross-plugin registry view (exclude this plugin — it's not installed yet).
-	var other_names := _build_class_name_map(def.id)
-
-	# Fetch or lazily build the core class_names index.
-	# NOTE: method is `get_all`, not `get`, because GDScript's resolver picks
-	# `Object.get(name)` (one-arg) over a class's static `get()` (zero-arg),
-	# producing a parse-time "Too few arguments" error.  See _core_class_names.gd.
-	var CoreCN = load("res://Scripts/Services/Plugins/_core_class_names.gd")
-	var core_names: Array = CoreCN.get_all() if CoreCN != null else []
-
-	var cn_error: Dictionary = def.validate_class_names(other_names, core_names)
-	if not cn_error.is_empty():
-		_last_install_error = cn_error
-		push_error(("[PluginDB] class_name validation failed for '%s': %s — %s") %
-			[def.id, str(cn_error.get("error", "")), str(cn_error.get("detail", {}))])
-		return null
-
-	# --- Capability validation (DCR-1 grandchild 019dc5d4f6877ae5be60ea02e51dcd38) ---
-	# Each declared capability requires specific panel hooks and/or manifest channels.
-	# Failing here surfaces silent participation gaps at install time rather than at
-	# project save/load.
-	var cap_error: Dictionary = def.validate_capabilities()
-	if not cap_error.is_empty():
-		_last_install_error = cap_error
-		push_error(("[PluginDB] capability validation failed for '%s': %s — %s") %
-			[def.id, str(cap_error.get("error", "")), str(cap_error.get("detail", {}))])
+	var registration_error: Dictionary = _registration_error(def)
+	if not registration_error.is_empty():
+		_last_install_error = registration_error
+		push_error("[PluginDB] Definition validation failed for '%s': %s" % [def.id, registration_error])
 		return null
 
 	# Register this plugin's class_names into the in-process registry.
@@ -202,12 +173,69 @@ func update_definition(def: PluginDefinition) -> bool:
 	# Preserve runtime state across updates
 	var previous: PluginDefinition = _plugins[def.id]
 	def.state = previous.state
+	def.skip_legacy_auto_grants = previous.skip_legacy_auto_grants
 	_plugins[def.id] = def
 	if not _save():
 		_plugins[def.id] = previous
 		return false
 	plugins_changed.emit()
 	return true
+
+
+## Refresh a path-referenced dev manifest without replacing a valid definition
+## on parse, identity, validation or persistence failure. No grants are changed.
+func refresh_manifest(plugin_id: String) -> Dictionary:
+	var previous: PluginDefinition = get_by_id(plugin_id)
+	if previous == null:
+		return {"error": "Plugin '%s' not found" % plugin_id}
+	if previous.install_lane != PluginDefinition.LANE_MANIFEST:
+		return {"error": "Only manifest-lane plugins refresh their on-disk manifest"}
+	if is_stale():
+		return {"error": "plugin_db_stale", "detail": {"path": DB_PATH}}
+	var manifest_path: String = previous.data_directory.path_join("manifest.json")
+	var replacement: PluginDefinition = PluginDefinition.from_manifest(
+		manifest_path, PluginDefinition.LANE_MANIFEST)
+	if replacement == null:
+		return {"error": "Failed to read a valid plugin manifest: %s" % manifest_path}
+	if replacement.id != plugin_id:
+		return {"error": "Manifest ID '%s' does not match installed plugin '%s'" % [replacement.id, plugin_id]}
+	var api_error: String = replacement.host_api_error()
+	if not api_error.is_empty():
+		return {"error": api_error}
+	var registration_error: Dictionary = _registration_error(replacement)
+	if not registration_error.is_empty():
+		return registration_error
+	# These are install/user choices, not manifest defaults.
+	replacement.autostart = previous.autostart
+	replacement.auto_reload = previous.auto_reload
+	replacement.auto_update = previous.auto_update
+	replacement.state = previous.state
+	replacement.skip_legacy_auto_grants = true
+	_plugins[plugin_id] = replacement
+	_unregister_class_names(plugin_id)
+	_register_class_names(replacement)
+	if not _save():
+		_plugins[plugin_id] = previous
+		_unregister_class_names(plugin_id)
+		_register_class_names(previous)
+		return {"error": "plugin_db_stale" if is_stale() else "plugin_db_not_saved",
+			"detail": {"path": DB_PATH}}
+	plugins_changed.emit()
+	return {"ok": true, "id": plugin_id}
+
+
+## Install and dev reload share the same dependency/class/capability rules.
+func _registration_error(def: PluginDefinition) -> Dictionary:
+	var cycle: String = dependency_issue(def.id, def)
+	if not cycle.is_empty():
+		return {"error_code": "plugin_dependency_cycle", "error": cycle}
+	def.scan_class_names()
+	var other_names: Dictionary = _build_class_name_map(def.id)
+	var core_names: Array[String] = CoreClassNames.get_all()
+	var class_error: Dictionary = def.validate_class_names(other_names, core_names)
+	if not class_error.is_empty():
+		return class_error
+	return def.validate_capabilities()
 
 
 ## Write the database now. Returns whether it reached disk; a marketplace

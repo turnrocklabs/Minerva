@@ -259,9 +259,29 @@ The OS may ignore the requested initial directory or title.
 Dialog requests have no elapsed-time timeout in either the JS bridge or host:
 leaving a dialog open for two minutes still permits selection. Other bridge calls
 retain their 15-second timeout and the 128-request pending limit still applies.
-Only one native folder dialog is admitted at a time. Closing/reloading the panel
-cancels its request and suppresses stale replies; close the native dialog before
-requesting another. Unsupported UI sessions and native API errors reject the Promise.
+Only one active native folder request is admitted at a time. Closing/reloading
+the panel, stopping its context, or unregistering its plugin completes the request
+as cancelled and releases admission immediately. Late native callbacks from that
+request cannot clear or reply to a newer request. Unsupported UI sessions and
+native API errors reject the Promise.
+
+For non-live-reload plugins installed through the manifest/dev lane,
+`minerva_plugin_reload` validates `data_directory/manifest.json`, commits the
+new definition to the plugin database, and restarts the backend. Invalid JSON,
+identity/API/definition validation failures, or a failed database save preserve
+the old definition and leave its backend alone. Install choices and grants are
+retained; refreshing does not grant capabilities or seed Docket content.
+The saved definition records that legacy grant migration is no longer needed,
+so later backend or app restarts cannot grant newly refreshed capabilities.
+Pending folder and history requests are cancelled when a new definition commits.
+Reopen existing HTML panels after reload to refresh their document and ribbon
+state. Host authorization checks use the current panel definition on each call.
+Opt-in `live_reload` scene plugins keep their existing generation-swap route;
+their stored manifest refresh is outside this dev-refresh path. Marketplace
+reload behavior is unchanged. A successful reload reports `manifest_refreshed`
+and `panels_need_reopen` for the ordinary manifest/dev path. If backend startup
+fails after a valid definition commits, that definition remains saved and the
+reload returns the startup error with `manifest_refreshed: true`.
 
 ### 5.2 `ctx` shape
 

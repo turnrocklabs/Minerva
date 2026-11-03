@@ -79,6 +79,8 @@ signal plugin_ready(id: String)
 ## ended, answered or not (so it may have changed something there).
 signal backend_tool_called(id: String, tool: String)
 signal plugin_stopped(id: String)
+## A validated dev manifest was committed; retire calls using the old contract.
+signal plugin_definition_changed(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
 signal plugin_status_changed(id: String)
@@ -121,6 +123,7 @@ signal plugin_build_step_finished(id: String, step_index: int, step_count: int, 
 
 var _db = null  # PluginDB — initialized in _ready to avoid parse-order issues
 var tool_registry: PluginToolRegistry = null
+var _manifest_reloads: Dictionary = {}
 
 ## id -> runtime Dictionary (see comment above)
 var _runtime: Dictionary = {}
@@ -1001,7 +1004,8 @@ func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
 	# if the policy has no entry at all for this plugin (not even an empty list),
 	# treat as "freshly installed" and auto-grant declared caps. An empty list
 	# means the user explicitly revoked everything — leave it alone.
-	if _policy_ref != null and not _policy_ref._grants.has(def.id):
+	if _policy_ref != null and not _policy_ref._grants.has(def.id) \
+			and not def.skip_legacy_auto_grants:
 		_auto_grant_declared_capabilities(def)
 
 	RequiredPlugins.prepare_launch(def)
@@ -1381,8 +1385,40 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 	return {"ok": true}
 
 
-## Stop and then start a plugin.
-## Returns {"ok": true} or {"error": "..."}.
+## Refresh ordinary dev manifests before restart. Existing scene-generation
+## and marketplace routes retain their reload behavior.
+func reload_plugin(id: String) -> Dictionary:
+	var database: PluginDB = _db
+	var definition: PluginDefinition = database.get_by_id(id)
+	if definition == null:
+		return {"error": "Plugin '%s' not found" % id}
+	# Preserve opt-in generation swaps and marketplace lifecycle behavior.
+	if supports_scene_live_reload(id):
+		return await reload_scene_plugin(id)
+	if definition.install_lane != PluginDefinition.LANE_MANIFEST:
+		return await restart_plugin(id)
+	if _manifest_reloads.has(id):
+		return {"error": "Manifest reload is already in progress for '%s'" % id}
+	var runtime: Dictionary = _runtime.get(id, {})
+	if definition.state in [S_STARTING, S_BUILDING] or runtime.get("stopping", false) \
+			or is_content_busy(id):
+		return {"error": "Plugin '%s' is starting, building or changing content; retry reload when it finishes" % id}
+	_manifest_reloads[id] = true
+	var refreshed: Dictionary = database.refresh_manifest(id)
+	if refreshed.has("error"):
+		_manifest_reloads.erase(id)
+		return refreshed
+	# Retire calls authorized against the previous panel contract before restart.
+	plugin_definition_changed.emit(id)
+	_register_manifest_tools(id)
+	var result: Dictionary = await restart_plugin(id)
+	_manifest_reloads.erase(id)
+	result["manifest_refreshed"] = true
+	result["panels_need_reopen"] = true
+	return result
+
+
+## Stop and then start only; reload_plugin additionally refreshes dev manifests.
 func restart_plugin(id: String) -> Dictionary:
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
