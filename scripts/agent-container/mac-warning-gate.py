@@ -37,24 +37,54 @@ class LiveChanges(TypedDict):
     removed: list[str]
     metadata_failures: list[str]
     mtime_warnings: list[str]
+    docket_warnings: list[str]
+
+
+def docket_owned(key: str, before: dict[str, ListingEntry], after: dict[str, ListingEntry]) -> bool:
+    """The live Docket namespace is ambient, but never follow or exempt symlinks."""
+    parts = key.split("/")
+    if parts[:2] != ["app_userdata", "Docket"] or any(part in ("", ".", "..") for part in parts):
+        return False
+    roots = [snapshot.get("app_userdata/Docket") for snapshot in (before, after)]
+    if not any(roots) or any(entry is not None and not stat.S_ISDIR(entry["mode"]) for entry in roots):
+        return False
+    for length in range(1, len(parts) + 1):
+        ancestor = "/".join(parts[:length])
+        for snapshot in (before, after):
+            entry = snapshot.get(ancestor)
+            if entry is not None and (stat.S_ISLNK(entry["mode"]) or entry["link"] is not None):
+                return False
+    return True
 
 
 def live_changes(before: dict[str, ListingEntry], after: dict[str, ListingEntry]) -> LiveChanges:
-    """Only an existing regular file's mtime alone is a nonfatal change."""
+    """Keep raw changes visible; Docket-owned entries and file mtimes only warn."""
+    created = []
+    removed = []
     failures = []
     warnings = []
-    for key in sorted(before.keys() & after.keys()):
-        old, new = before[key], after[key]
+    docket_warnings = []
+    for key in sorted(before.keys() | after.keys()):
+        old, new = before.get(key), after.get(key)
         if old == new:
+            continue
+        if docket_owned(key, before, after):
+            docket_warnings.append(key)
+            continue
+        if old is None:
+            created.append(key)
+            continue
+        if new is None:
+            removed.append(key)
             continue
         fields = {field for field in old.keys() | new.keys() if old.get(field) != new.get(field)}
         if fields == {"mtime_ns"} and stat.S_ISREG(old["mode"]):
             warnings.append(key)
         else:
             failures.append(key)
-    return {"created": sorted(after.keys() - before.keys()),
-            "removed": sorted(before.keys() - after.keys()),
-            "metadata_failures": failures, "mtime_warnings": warnings}
+    return {"created": created, "removed": removed,
+            "metadata_failures": failures, "mtime_warnings": warnings,
+            "docket_warnings": docket_warnings}
 
 
 def minerva_processes() -> list[int]:
@@ -227,6 +257,9 @@ def run(args: argparse.Namespace, staging: Path) -> int:
     if changes["mtime_warnings"]:
         print(f"WARNING: {len(changes['mtime_warnings'])} existing file(s) changed mtime only; "
               "quit Minerva for a clean listing", flush=True)
+    if changes["docket_warnings"]:
+        print(f"WARNING: {len(changes['docket_warnings'])} Docket-owned entry change(s) treated as ambient; "
+              "quit Docket for a clean listing", flush=True)
     result = {
         "schema": SCHEMA, "head": head, "base": base, "staging_root": str(staging),
         "command": command, "returncode": code, "timeout_s": TIMEOUT, "timed_out": timed_out,
