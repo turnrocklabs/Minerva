@@ -1,0 +1,56 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/T3SessionLaunchForm.gd" id="1"]
+
+[node name="T3SessionLaunchForm" type="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+script = ExtResource("1")
+
+[node name="WorkspaceLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Workspace (saved project folder):"
+
+[node name="Workspace" type="LineEdit" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+editable = false
+
+[node name="Harness" type="Label" parent="."]
+layout_mode = 2
+text = "Harness: Codex"
+
+[node name="ModelLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Model:"
+
+[node name="Model" type="OptionButton" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="EffortLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Reasoning effort:"
+
+[node name="Effort" type="OptionButton" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="RuntimeMode" type="Label" parent="."]
+layout_mode = 2
+text = "Runtime mode: approval-required"
+
+[node name="Notice" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="Result" type="TextEdit" parent="."]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 110)
+layout_mode = 2
+editable = false
+wrap_mode = 1
+
+[connection signal="item_selected" from="Model" to="." method="_on_model_selected"]

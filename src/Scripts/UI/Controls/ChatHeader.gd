@@ -13,6 +13,8 @@ var tool_sets_button: MenuButton
 var _tool_manager: MCPManager
 var _tool_set_names: Array[String] = []
 
+var _passthrough_label: Label
+
 var chat_history: ServiceHistory
 
 
@@ -22,6 +24,8 @@ func setup(history: ServiceHistory, tool_manager: MCPManager = null, skills: Ski
 		chat_history.agent_mode_changed.disconnect(_sync_agent_mode)
 	if chat_history and chat_history.tool_sets_changed.is_connected(_refresh_tool_set_chip):
 		chat_history.tool_sets_changed.disconnect(_refresh_tool_set_chip)
+	if chat_history and chat_history.settings_binding_changed.is_connected(_sync_passthrough_badge):
+		chat_history.settings_binding_changed.disconnect(_sync_passthrough_badge)
 	chat_history = history
 	_tool_manager = tool_manager
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -76,11 +80,12 @@ func setup(history: ServiceHistory, tool_manager: MCPManager = null, skills: Ski
 	# Passthrough chat indicator (chat-passthrough W2) — provider is contractually
 	# bound to a terminal-backed plugin entry for the chat's life.
 	if history.PassthroughMode:
-		var passthrough_label = Label.new()
-		passthrough_label.text = "[Passthrough: %s]" % history.PassthroughName
-		passthrough_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.6))
-		passthrough_label.tooltip_text = "Passthrough chat — provider is fixed for this chat's life"
-		add_child(passthrough_label)
+		_passthrough_label = Label.new()
+		_sync_passthrough_badge()
+		history.settings_binding_changed.connect(_sync_passthrough_badge)
+		_passthrough_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.6))
+		_passthrough_label.tooltip_text = "Passthrough chat — provider is fixed for this chat's life"
+		add_child(_passthrough_label)
 
 	# Spacer
 	var spacer = Control.new()
@@ -119,6 +124,11 @@ func setup(history: ServiceHistory, tool_manager: MCPManager = null, skills: Ski
 		notes_button.icon = pencil_icon
 	notes_button.pressed.connect(_on_notes_button_pressed)
 	add_child(notes_button)
+
+
+func _sync_passthrough_badge() -> void:
+	if is_instance_valid(_passthrough_label):
+		_passthrough_label.text = "[Passthrough: %s]" % chat_history.PassthroughName
 
 
 func _refresh_tool_set_chip() -> void:

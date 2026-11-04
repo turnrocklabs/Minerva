@@ -43,7 +43,7 @@ var _focused_chat_popup: FocusedChatPopup = null
 
 ## Passthrough launch dialog (chat-passthrough W3 — replaced W2's placeholder
 ## picker; lazy-instantiated by the horizontal-arrows top-bar button)
-var _passthrough_launch_dialog: Window = null
+var _passthrough_launch_dialog: PassthroughLaunchDialog = null
 ## De-dupe ledger for agent-exit messages: "history_id|terminal_id" → true once
 ## the exit message for that (chat, session) pair has been shown.
 var _passthrough_exit_seen: Dictionary = {}
@@ -1570,8 +1570,40 @@ func _on_passthrough_chat_pressed() -> void:
 	if _passthrough_launch_dialog == null:
 		_passthrough_launch_dialog = PassthroughLaunchDialogScript.new()
 		_passthrough_launch_dialog.chat_starter = launch_passthrough_chat
+		_passthrough_launch_dialog.provider_registry = SingletonObject.plugin_chat_provider_registry
+		_passthrough_launch_dialog.tool_caller = _call_passthrough_launch_tool
+		_passthrough_launch_dialog.project_reader = func() -> String: return str(SingletonObject.current_project_path)
+		_passthrough_launch_dialog.chat_discarder = _discard_passthrough_launch
+		_passthrough_launch_dialog.chat_confirmer = _confirm_passthrough_launch
 		add_child(_passthrough_launch_dialog)
 	_passthrough_launch_dialog.popup_launch()
+
+
+func _call_passthrough_launch_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
+	var launch_tools: PluginToolRegistry = SingletonObject.plugin_tool_registry
+	if launch_tools == null:
+		return {"success": false, "error_code": "plugin_registry_unavailable",
+			"error_message": "Plugin tool registry unavailable"}
+	return await launch_tools.handle_tool_call(tool_name, arguments)
+
+
+## Failed preparation never becomes a saved/deleted chat the user can restore.
+func _discard_passthrough_launch(history: ChatHistory) -> void:
+	if history.VBox == null or not is_instance_valid(history.VBox):
+		return
+	var wrapper: Node = history.VBox.get_parent().get_parent()
+	remove_child(wrapper)  # Existing child-order owner rebuilds ChatList.
+	wrapper.queue_free()
+	prune_empty_groups()
+	_apply_tab_filters()
+	_emit_directory_change(history, ChatEventPayloads.CHANGE_CLOSED)
+	SingletonObject.save_state(false)
+
+
+func _confirm_passthrough_launch(history: ChatHistory, badge: String) -> void:
+	history.PassthroughName = badge
+	history.settings_binding_changed.emit()
+	_update_passthrough_chooser_lock(current_tab)
 
 
 # --- Summarize to note (chat-passthrough W6) --------------------------------
@@ -6402,6 +6434,7 @@ func sync_provider_picker_to_chat(tab_or_chat_id: Variant = -1) -> void:
 	if not is_instance_valid(active_provider):
 		return
 
+	_provider_option_button.clear_plugin_display_items()
 	var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
 	if item_index >= 0:
 		_provider_option_button.select(item_index)
