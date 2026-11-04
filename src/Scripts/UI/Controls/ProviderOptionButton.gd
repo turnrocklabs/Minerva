@@ -93,6 +93,7 @@ func _on_chat_providers_changed() -> void:
 ## as the contractual binding (use lock_to_entry when the entry key/name are
 ## known explicitly, e.g. on tab switch into a passthrough chat).
 func set_locked(locked: bool, reason_tooltip: String = "") -> void:
+	var previous_locked_key: String = _locked_entry_key
 	_locked = locked
 	disabled = locked
 	tooltip_text = reason_tooltip if locked else ""
@@ -107,7 +108,12 @@ func set_locked(locked: bool, reason_tooltip: String = "") -> void:
 	else:
 		_locked_entry_key = ""
 		_locked_display_name = ""
-		clear_plugin_display_items()
+		# A tab sync may already have installed an ordinary MCP chat's disabled
+		# binding for the same key. Remove only the old locked display.
+		for item_index: int in range(item_count - 1, -1, -1):
+			if not previous_locked_key.is_empty() and get_item_metadata(item_index) == previous_locked_key \
+					and not is_item_disabled(item_index):
+				remove_item(item_index)
 
 
 func is_locked() -> bool:
@@ -449,8 +455,11 @@ func _rebuild_dropdown():
 	if not current_spec.is_empty() and not select_provider_spec(current_spec):
 		if current_spec.get("kind") == "core_action":
 			_show_unavailable_core(current_spec, previous_label)
-		elif current_spec.get("kind") == "plugin_provider" and _locked:
-			_ensure_locked_entry_displayed()
+		elif current_spec.get("kind") == "plugin_provider":
+			if _locked:
+				_ensure_locked_entry_displayed()
+			else:
+				_show_plugin_selection(str(current_spec["entry_key"]), previous_label)
 
 
 func _show_plugin_selection(key: String, label: String) -> void:
@@ -462,8 +471,9 @@ func _show_plugin_selection(key: String, label: String) -> void:
 	add_item(label.trim_suffix(" (unavailable)") + (" (unavailable)" if unavailable else ""), id)
 	var index := item_count - 1
 	set_item_metadata(index, key)
-	set_item_disabled(index, unavailable)
-	set_item_tooltip(index, "Plugin chat entry is not registered: %s" % key if unavailable else key)
+	set_item_disabled(index, true)  # Current binding only, never a selectable model.
+	set_item_tooltip(index, "Plugin chat entry is not registered: %s" % key if unavailable
+		else "Current chat binding — choose a model to switch providers")
 	select(index)
 
 
@@ -677,6 +687,8 @@ func _on_provider_option_button_item_selected(index: int):
 
 	var provider := _get_provider_from_id(item_id)
 	if provider:
+		if not provider is PluginProvider:
+			clear_plugin_display_items()
 		provider_selected.emit(provider)
 
 #endregion

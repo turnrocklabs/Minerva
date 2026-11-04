@@ -67,7 +67,7 @@ func refresh() -> void:
 				var model_choice: Dictionary = raw_model
 				if model_choice.get("id") is String:
 					_choices.append(model_choice)
-					_models.add_item(str(model_choice.get("label", model_choice.id)))
+					_models.add_item(str(model_choice.get("label", model_choice["id"])))
 	var default_selection: Dictionary = {}
 	var raw_default: Variant = _options.get("default")
 	if raw_default is Dictionary:
@@ -75,7 +75,7 @@ func refresh() -> void:
 	var default_index: int = -1
 	if not default_selection.is_empty():
 		for choice_index: int in range(_choices.size()):
-			if _choices[choice_index].id == default_selection.get("model"):
+			if _choices[choice_index]["id"] == default_selection.get("model"):
 				default_index = choice_index
 	_models.select(default_index)
 	_on_model_selected(default_index)
@@ -111,7 +111,11 @@ func _project_error() -> String:
 
 
 func result_matches_project() -> bool:
-	return str(_options.get("workspace", "")).simplify_path() == _workspace.text.simplify_path()
+	var pinned_folder: String = str(_options.get("workspace", ""))
+	if not pinned_folder.is_absolute_path():
+		return false
+	var saved_folder: DirAccess = DirAccess.open(_workspace.text)
+	return saved_folder != null and saved_folder.is_equivalent(_workspace.text, pinned_folder)
 
 
 func validation_error() -> String:
@@ -155,7 +159,7 @@ func _on_model_selected(choice_index: int) -> void:
 
 
 func launch(chat_id: String) -> Dictionary:
-	var args: Dictionary = {"chat_id": chat_id, "model": _choices[_models.selected].id}
+	var args: Dictionary = {"chat_id": chat_id, "model": _choices[_models.selected]["id"]}
 	var effort: String = str(_efforts.get_item_metadata(_efforts.selected))
 	if not effort.is_empty():
 		args["effort"] = effort

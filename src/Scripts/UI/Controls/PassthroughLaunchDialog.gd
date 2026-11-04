@@ -22,9 +22,8 @@ extends Window
 ##       ChatPane wires this to launch_passthrough_chat. Tests inject a stub.
 
 ## Login-PATH resolution + PATH lookup for the startup command.
-const T3FormScene := preload("res://Scenes/T3SessionLaunchForm.tscn")
-
 const ShellEnvironment := preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
+const T3FormScene := preload("res://Scenes/T3SessionLaunchForm.tscn")
 
 ## v1 COUPLING (deliberate, documented): core knows the agent-relay plugin's
 ## tool name + entry-id scheme here. B7's TerminalProvider registers entry_id
@@ -54,6 +53,7 @@ var tool_caller: Callable
 var project_reader: Callable
 var chat_discarder: Callable
 var chat_confirmer: Callable
+var _kind_label: Label
 var _kind_dropdown: OptionButton
 var _terminal_fields: VBoxContainer
 var _t3_form: T3SessionLaunchForm
@@ -229,7 +229,8 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
-	vbox.add_child(_label("Launch kind:"))
+	_kind_label = _label("Launch kind:")
+	vbox.add_child(_kind_label)
 	_kind_dropdown = OptionButton.new()
 	_kind_dropdown.add_item("Terminal")
 	_kind_dropdown.item_selected.connect(_on_kind_selected)
@@ -324,17 +325,19 @@ func _build_ui() -> void:
 
 ## Open the dialog: refresh the existing-terminal list and center it.
 func popup_launch() -> void:
-	if _launching:
-		return
-	_completed = false
-	_start_button.disabled = false
-	_start_button.text = "Start"
-	_cancel_button.text = "Cancel"
-	_kind_dropdown.disabled = false
+	if _kind_dropdown.selected == 1:
+		if _launching:
+			return
+		_completed = false
+		_start_button.disabled = false
+		_start_button.text = "Start"
+		_cancel_button.text = "Cancel"
+		_kind_dropdown.disabled = false
 	_set_error("")
 	_refresh_existing_dropdown()
-	_refresh_launch_kinds()
+	_rebuild_launch_kinds()
 	popup_centered()
+	_on_kind_selected(_kind_dropdown.selected)
 	if _name_edit:
 		_name_edit.grab_focus()
 
@@ -345,15 +348,26 @@ func _close_unless_launching() -> void:
 
 
 func _refresh_launch_kinds() -> void:
-	if _launching or _completed:
+	if not visible or _launching or _completed:
 		return
+	var has_t3: bool = provider_registry != null and provider_registry.has_entry(T3SessionLaunchForm.ENTRY_KEY)
+	if (_kind_dropdown.item_count == 2) == has_t3:
+		return
+	var previous_kind: int = _kind_dropdown.selected
+	_rebuild_launch_kinds()
+	if previous_kind != _kind_dropdown.selected:
+		_on_kind_selected(_kind_dropdown.selected)
+
+
+func _rebuild_launch_kinds() -> void:
 	var was_t3: bool = _kind_dropdown.selected == 1
 	_kind_dropdown.clear()
 	_kind_dropdown.add_item("Terminal")
 	if provider_registry != null and provider_registry.has_entry(T3SessionLaunchForm.ENTRY_KEY):
 		_kind_dropdown.add_item("T3 Code")
 	_kind_dropdown.select(1 if was_t3 and _kind_dropdown.item_count > 1 else 0)
-	_on_kind_selected(_kind_dropdown.selected)
+	_kind_dropdown.visible = _kind_dropdown.item_count > 1
+	_kind_label.visible = _kind_dropdown.visible
 
 
 func _on_kind_selected(kind_index: int) -> void:

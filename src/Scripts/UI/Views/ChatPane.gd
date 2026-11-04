@@ -1571,12 +1571,20 @@ func _on_passthrough_chat_pressed() -> void:
 		_passthrough_launch_dialog = PassthroughLaunchDialogScript.new()
 		_passthrough_launch_dialog.chat_starter = launch_passthrough_chat
 		_passthrough_launch_dialog.provider_registry = SingletonObject.plugin_chat_provider_registry
-		_passthrough_launch_dialog.tool_caller = SingletonObject.plugin_tool_registry.handle_tool_call
+		_passthrough_launch_dialog.tool_caller = _call_passthrough_launch_tool
 		_passthrough_launch_dialog.project_reader = func() -> String: return str(SingletonObject.current_project_path)
 		_passthrough_launch_dialog.chat_discarder = _discard_passthrough_launch
 		_passthrough_launch_dialog.chat_confirmer = _confirm_passthrough_launch
 		add_child(_passthrough_launch_dialog)
 	_passthrough_launch_dialog.popup_launch()
+
+
+func _call_passthrough_launch_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
+	var launch_tools: PluginToolRegistry = SingletonObject.plugin_tool_registry
+	if launch_tools == null:
+		return {"success": false, "error_code": "plugin_registry_unavailable",
+			"error_message": "Plugin tool registry unavailable"}
+	return await launch_tools.handle_tool_call(tool_name, arguments)
 
 
 ## Failed preparation never becomes a saved/deleted chat the user can restore.
