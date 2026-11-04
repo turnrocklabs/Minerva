@@ -22,6 +22,8 @@ extends Window
 ##       ChatPane wires this to launch_passthrough_chat. Tests inject a stub.
 
 ## Login-PATH resolution + PATH lookup for the startup command.
+const T3FormScene := preload("res://Scenes/T3SessionLaunchForm.tscn")
+
 const ShellEnvironment := preload("res://Scripts/Services/Terminal/ShellEnvironment.gd")
 
 ## v1 COUPLING (deliberate, documented): core knows the agent-relay plugin's
@@ -45,6 +47,17 @@ var watch_starter: Callable = Callable()
 ## Injectable chat-creation seam — see header. Empty Callable → error (the
 ## owning ChatPane must wire it).
 var chat_starter: Callable = Callable()
+
+## T3 dependencies are wired by ChatPane; terminal launch keeps its existing path.
+var provider_registry: PluginChatProviderRegistry
+var tool_caller: Callable
+var project_reader: Callable
+var chat_discarder: Callable
+var chat_confirmer: Callable
+var _kind_dropdown: OptionButton
+var _terminal_fields: VBoxContainer
+var _t3_form: T3SessionLaunchForm
+var _completed: bool = false
 
 # --- form controls (code-built) ---
 var _name_edit: LineEdit
@@ -75,7 +88,7 @@ func _init() -> void:
 	transient = true
 	exclusive = false
 	wrap_controls = true
-	close_requested.connect(hide)
+	close_requested.connect(_close_unless_launching)
 
 
 func _ready() -> void:
@@ -216,6 +229,12 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
+	vbox.add_child(_label("Launch kind:"))
+	_kind_dropdown = OptionButton.new()
+	_kind_dropdown.add_item("Terminal")
+	_kind_dropdown.item_selected.connect(_on_kind_selected)
+	vbox.add_child(_kind_dropdown)
+
 	# Session name (required — chat title + terminal session name)
 	vbox.add_child(_label("Session name:"))
 	_name_edit = LineEdit.new()
@@ -223,21 +242,24 @@ func _build_ui() -> void:
 	_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_child(_name_edit)
 
+	_terminal_fields = VBoxContainer.new()
+	_terminal_fields.add_theme_constant_override("separation", 6)
+	vbox.add_child(_terminal_fields)
 	# Startup command (empty = bare shell)
-	vbox.add_child(_label("Startup command (empty = bare shell):"))
+	_terminal_fields.add_child(_label("Startup command (empty = bare shell):"))
 	_command_edit = LineEdit.new()
 	_command_edit.placeholder_text = "e.g. claude --dangerously-skip-permissions"
 	_command_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_command_edit.text_changed.connect(_on_command_changed)
-	vbox.add_child(_command_edit)
+	_terminal_fields.add_child(_command_edit)
 
 	# Working directory (optional). Typed OR picked: the Browse… button opens a
 	# directory chooser that only FILLS the LineEdit — the text stays the single
 	# source of truth, so both entry styles go through the same validation.
-	vbox.add_child(_label("Working directory (optional):"))
+	_terminal_fields.add_child(_label("Working directory (optional):"))
 	var cwd_row := HBoxContainer.new()
 	cwd_row.add_theme_constant_override("separation", 6)
-	vbox.add_child(cwd_row)
+	_terminal_fields.add_child(cwd_row)
 	_cwd_edit = LineEdit.new()
 	_cwd_edit.placeholder_text = "e.g. /home/me/project"
 	_cwd_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -248,22 +270,29 @@ func _build_ui() -> void:
 	cwd_row.add_child(_cwd_browse_button)
 
 	# Profile (auto-inferred from command; manual pick sticks)
-	vbox.add_child(_label("Agent profile:"))
+	_terminal_fields.add_child(_label("Agent profile:"))
 	_profile_dropdown = OptionButton.new()
 	_profile_dropdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for p in PROFILES:
 		_profile_dropdown.add_item(p)
 	_profile_dropdown.select(0)
 	_profile_dropdown.item_selected.connect(func(_idx: int): _profile_overridden = true)
-	vbox.add_child(_profile_dropdown)
+	_terminal_fields.add_child(_profile_dropdown)
 
 	# Alternate path: bind to an existing terminal session
-	vbox.add_child(_label("Terminal:"))
+	_terminal_fields.add_child(_label("Terminal:"))
 	_existing_dropdown = OptionButton.new()
 	_existing_dropdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_existing_dropdown.item_selected.connect(_on_existing_selected)
-	vbox.add_child(_existing_dropdown)
+	_terminal_fields.add_child(_existing_dropdown)
 	_refresh_existing_dropdown()
+
+	_t3_form = T3FormScene.instantiate() as T3SessionLaunchForm
+	_t3_form.configure(tool_caller, project_reader)
+	_t3_form.hide()
+	vbox.add_child(_t3_form)
+	if provider_registry != null:
+		provider_registry.chat_providers_changed.connect(_refresh_launch_kinds)
 
 	# Inline error (dialog stays open on validation/launch failure)
 	_error_label = Label.new()
@@ -284,7 +313,7 @@ func _build_ui() -> void:
 
 	_cancel_button = Button.new()
 	_cancel_button.text = "Cancel"
-	_cancel_button.pressed.connect(hide)
+	_cancel_button.pressed.connect(_close_unless_launching)
 	buttons.add_child(_cancel_button)
 
 	_start_button = Button.new()
@@ -295,11 +324,47 @@ func _build_ui() -> void:
 
 ## Open the dialog: refresh the existing-terminal list and center it.
 func popup_launch() -> void:
+	if _launching:
+		return
+	_completed = false
+	_start_button.disabled = false
+	_start_button.text = "Start"
+	_cancel_button.text = "Cancel"
+	_kind_dropdown.disabled = false
 	_set_error("")
 	_refresh_existing_dropdown()
+	_refresh_launch_kinds()
 	popup_centered()
 	if _name_edit:
 		_name_edit.grab_focus()
+
+
+func _close_unless_launching() -> void:
+	if not _launching or _kind_dropdown.selected == 0:
+		hide()
+
+
+func _refresh_launch_kinds() -> void:
+	if _launching or _completed:
+		return
+	var was_t3: bool = _kind_dropdown.selected == 1
+	_kind_dropdown.clear()
+	_kind_dropdown.add_item("Terminal")
+	if provider_registry != null and provider_registry.has_entry(T3SessionLaunchForm.ENTRY_KEY):
+		_kind_dropdown.add_item("T3 Code")
+	_kind_dropdown.select(1 if was_t3 and _kind_dropdown.item_count > 1 else 0)
+	_on_kind_selected(_kind_dropdown.selected)
+
+
+func _on_kind_selected(kind_index: int) -> void:
+	var is_t3: bool = kind_index == 1
+	_terminal_fields.visible = not is_t3
+	_t3_form.visible = is_t3
+	# Keep the new chat attended and unsendable until preparation finishes.
+	exclusive = is_t3
+	_set_error("")
+	if is_t3:
+		_t3_form.refresh()
 
 
 func _refresh_existing_dropdown() -> void:
@@ -379,11 +444,12 @@ func _set_error(msg: String) -> void:
 	if _error_label == null:
 		return
 	_error_label.text = msg
-	_error_label.visible = not msg.is_empty()
+	_error_label.visible = not msg.is_empty() and not _t3_form.visible
+	_t3_form.show_result(msg if _t3_form.visible else "")
 
 
 func current_error() -> String:
-	return _error_label.text if _error_label != null and _error_label.visible else ""
+	return _error_label.text if _error_label != null and (_error_label.visible or _t3_form.visible) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +516,7 @@ static func exit_note(session: TerminalSession) -> String:
 
 
 func _on_start_pressed() -> void:
-	if _launching:
+	if _launching or _completed:
 		return
 	_set_error("")
 
@@ -458,6 +524,10 @@ func _on_start_pressed() -> void:
 	var session_name: String = _name_edit.text.strip_edges()
 	if session_name.is_empty():
 		_set_error("Session name is required.")
+		return
+
+	if _kind_dropdown.selected == 1:
+		await _launch_t3(session_name)
 		return
 
 	var bind_existing: bool = _existing_dropdown.selected > 0
@@ -480,14 +550,61 @@ func _on_start_pressed() -> void:
 		return
 
 	_launching = true
+	_kind_dropdown.disabled = true
 	if _start_button:
 		_start_button.disabled = true
 		_start_button.text = "Starting…"
 	await _do_launch(session_name, bind_existing, command, cwd, registry)
 	_launching = false
+	_kind_dropdown.disabled = false
 	if _start_button:
 		_start_button.disabled = false
 		_start_button.text = "Start"
+
+
+func _launch_t3(session_name: String) -> void:
+	var failure: String = _t3_form.validation_error()
+	if not failure.is_empty():
+		_set_error(failure)
+		return
+	if provider_registry == null or not provider_registry.has_entry(T3SessionLaunchForm.ENTRY_KEY):
+		_set_error("T3 Code is no longer registered. Reopen this dialog.")
+		return
+	if not chat_starter.is_valid() or not chat_discarder.is_valid() or not chat_confirmer.is_valid():
+		_set_error("Internal error: T3 chat lifecycle is unavailable.")
+		return
+	_launching = true
+	_start_button.disabled = true
+	_kind_dropdown.disabled = true
+	_cancel_button.disabled = true
+	_start_button.text = "Starting…"
+	var history: ChatHistory = await chat_starter.call(T3SessionLaunchForm.ENTRY_KEY, session_name, "", "", "")
+	if history == null:
+		failure = "Could not create the T3 Code passthrough chat."
+	else:
+		failure = _t3_form.validation_error()
+		if failure.is_empty():
+			var result: Dictionary = await _t3_form.launch(history.HistoryId)
+			failure = T3SessionLaunchForm.tool_error(result)
+			if failure.is_empty() and result.get("success") != true:
+				failure = "T3 Code launch returned no confirmation: %s" % str(result)
+			if failure.is_empty():
+				chat_confirmer.call(history, str(result.get("display_name", "T3 Code")))
+				var registration: Dictionary = result.get("registration", {})
+				_error_label.text = ""
+				_t3_form.show_result("Session started.\n" + str(registration.get("output", ""))
+					if registration.get("performed") == true else "Session started.")
+				_completed = true
+		if not failure.is_empty():
+			chat_discarder.call(history)
+	if not failure.is_empty():
+		_set_error(failure)
+	_launching = false
+	_start_button.disabled = _completed
+	_start_button.text = "Started" if _completed else "Start"
+	_kind_dropdown.disabled = _completed
+	_cancel_button.disabled = false
+	_cancel_button.text = "Close" if _completed else "Cancel"
 
 
 func _do_launch(session_name: String, bind_existing: bool, command: String,

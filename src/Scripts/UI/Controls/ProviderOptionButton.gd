@@ -107,6 +107,7 @@ func set_locked(locked: bool, reason_tooltip: String = "") -> void:
 	else:
 		_locked_entry_key = ""
 		_locked_display_name = ""
+		clear_plugin_display_items()
 
 
 func is_locked() -> bool:
@@ -126,33 +127,29 @@ func lock_to_entry(entry_key: String, display_name: String, reason_tooltip: Stri
 	_ensure_locked_entry_displayed()
 
 
-## Pin the dropdown's visible selection to the locked entry. If the entry is no
-## longer in the dropdown (registry entry vanished), append a display-only
-## placeholder "<name> (offline)" and select it. select() does not emit
-## item_selected, so no provider change is propagated.
+## A bound chat gets one live binding display, or an offline placeholder when
+## its entry disappears. Neither is a switchable model. select() emits no gesture.
 func _ensure_locked_entry_displayed() -> void:
 	if not _locked:
 		return
-	if not _locked_entry_key.is_empty():
-		var idx := _find_item_index_by_key(_locked_entry_key)
-		if idx != -1:
-			select(idx)
-			return
-	# Entry gone (or key unknown) → offline placeholder, never a fallback.
-	var placeholder_text := _locked_display_name + OFFLINE_SUFFIX
-	var placeholder_idx := -1
-	for i in range(get_item_count()):
-		if get_item_text(i) == placeholder_text:
-			placeholder_idx = i
-			break
-	if placeholder_idx == -1:
-		var placeholder_id := SingletonObject.PLUGIN_PROVIDER_ID_BASE
-		while get_item_index(placeholder_id) != -1:
-			placeholder_id += 1
-		add_item(placeholder_text, placeholder_id)
-		placeholder_idx = get_item_count() - 1
-		set_item_metadata(placeholder_idx, _locked_entry_key)
-	select(placeholder_idx)
+	clear_plugin_display_items()
+	var entry: Dictionary = ModelResolver.plugin_entry(_locked_entry_key)
+	var display_text: String = _locked_display_name + (OFFLINE_SUFFIX if entry.is_empty() else "")
+	var display_id: int = SingletonObject.PLUGIN_PROVIDER_ID_BASE
+	while get_item_index(display_id) != -1:
+		display_id += 1
+	add_item(display_text, display_id)
+	var display_index: int = item_count - 1
+	set_item_metadata(display_index, _locked_entry_key)
+	select(display_index)
+
+
+## Transient binding displays never become options in the next chat's picker.
+func clear_plugin_display_items() -> void:
+	for item_index: int in range(item_count - 1, -1, -1):
+		if get_item_id(item_index) >= SingletonObject.PLUGIN_PROVIDER_ID_BASE \
+				and get_item_metadata(item_index) is String:
+			remove_item(item_index)
 
 #endregion
 
@@ -372,21 +369,8 @@ func _setup_default_provider_set():
 		# ProviderItem retains metadata, not this temporary metadata provider.
 		instance.free()
 
-	# Append plugin chat-provider entries (chat-passthrough W1). Each entry gets
-	# a stable-within-rebuild id of PLUGIN_PROVIDER_ID_BASE + ordinal; the entry
-	# key string is the metadata, used by _get_provider_from_id to build a
-	# PluginProvider from the registry.
-	var cpr = _get_chat_provider_registry()
-	if cpr != null and cpr.has_method("list_entries"):
-		var plugin_id_counter := SingletonObject.PLUGIN_PROVIDER_ID_BASE
-		for entry in cpr.list_entries():
-			var disp: String = str(entry.get("display_name", "Plugin"))
-			var key_str: String = str(entry.get("key", ""))
-			if key_str.is_empty():
-				continue
-			var pitem := ProviderItem.new(disp, plugin_id_counter, null, key_str, key_str)
-			items.append(pitem)
-			plugin_id_counter += 1
+	# W1 entries are session bindings, not switchable models. Bound chats
+	# add only their live display item through lock_to_entry().
 
 	for entry in CoreModelCatalog.list_models():
 		items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, "%s / %s" % [entry.model_spec.service_client_id, entry.model_spec.action_name]))
@@ -465,8 +449,8 @@ func _rebuild_dropdown():
 	if not current_spec.is_empty() and not select_provider_spec(current_spec):
 		if current_spec.get("kind") == "core_action":
 			_show_unavailable_core(current_spec, previous_label)
-		elif current_spec.get("kind") == "plugin_provider":
-			_show_plugin_selection(current_spec.entry_key, previous_label)
+		elif current_spec.get("kind") == "plugin_provider" and _locked:
+			_ensure_locked_entry_displayed()
 
 
 func _show_plugin_selection(key: String, label: String) -> void:
@@ -550,9 +534,7 @@ const _LEGACY_OR_IDS := {
 func _load_saved_provider():
 	var saved_spec: Variant = SingletonObject.get_config_file_value("Providers", "DefaultModelSpec")
 	if saved_spec is Dictionary and saved_spec.get("kind") == "plugin_provider":
-		if not select_provider_spec(saved_spec):
-			_show_plugin_selection(str(saved_spec.get("entry_key", "")), str(saved_spec.get("entry_key", "Plugin")))
-		return
+		return  # Session bindings are restored by their chat, never as a default model.
 	if saved_spec is Dictionary and saved_spec.get("kind") == "core_action":
 		if not select_provider_spec(saved_spec):
 			_show_unavailable_core(saved_spec, str(saved_spec.get("action_name", "TurnRock")))
@@ -576,20 +558,9 @@ func _load_saved_provider():
 			provider_id = config["id"]
 			SingletonObject.save_to_config_file("Providers", "DefaultProviderId", provider_id)
 
-	# Plugin chat-provider selections persist a stable KEY string alongside the
-	# ordinal int, because the ordinal (PLUGIN_PROVIDER_ID_BASE + registration
-	# order) is unstable across boots and can silently restore the WRONG entry.
-	# When a key is present, resolve it to the CURRENT ordinal; absent key →
-	# fall through to the int path (old configs / non-plugin selections).
+	# Legacy plugin defaults are session bindings too; only a bound chat restores them.
 	if int(provider_id) >= SingletonObject.PLUGIN_PROVIDER_ID_BASE:
-		var saved_key = SingletonObject.get_config_file_value("Providers", "DefaultProviderKey")
-		if saved_key != null and str(saved_key) != "":
-			var key_index := _find_item_index_by_key(str(saved_key))
-			if key_index != -1:
-				select(key_index)
-				return
-			_show_plugin_selection(str(saved_key), str(saved_key))
-			return
+		return
 
 	var index := _find_item_index_by_id(provider_id)
 	if index != -1:
