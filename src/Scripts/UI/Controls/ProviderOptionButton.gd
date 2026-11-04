@@ -111,7 +111,8 @@ func set_locked(locked: bool, reason_tooltip: String = "") -> void:
 		# A tab sync may already have installed an ordinary MCP chat's disabled
 		# binding for the same key. Remove only the old locked display.
 		for item_index: int in range(item_count - 1, -1, -1):
-			if not previous_locked_key.is_empty() and get_item_metadata(item_index) == previous_locked_key \
+			var meta: Variant = get_item_metadata(item_index)
+			if not previous_locked_key.is_empty() and meta is String and meta == previous_locked_key \
 					and not is_item_disabled(item_index):
 				remove_item(item_index)
 
