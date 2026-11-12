@@ -354,7 +354,7 @@ jobs:
   functional-tests:
     timeout-minutes: 60
     needs: [build-linux, build-mcp-schema-helpers, build-godot-cef]
-    if: github.event_name == 'workflow_dispatch' && always() && needs.build-linux.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && needs.build-godot-cef.result == 'success' && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
+    if: github.event_name == 'workflow_dispatch' && always() && needs.build-linux.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || !inputs.rebuild_cef) && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -1716,7 +1716,7 @@ jobs:
   # is not available to a reusable-workflow call; keep equal to GODOT_VERSION.)
   platform-gate-windows:
     needs: [build-windows, build-godot-cef, build-mcp-schema-helpers]
-    if: github.event_name == 'workflow_dispatch' && always() && needs.build-windows.result == 'success' && needs.build-godot-cef.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all')
+    if: github.event_name == 'workflow_dispatch' && always() && needs.build-windows.result == 'success' && (needs.build-godot-cef.result == 'success' || !inputs.rebuild_cef) && needs.build-mcp-schema-helpers.result == 'success' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all')
     uses: ./.github/workflows/platform-gate-windows.yml
     with:
       godot_version: "4.6.2"
