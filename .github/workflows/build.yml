@@ -22,6 +22,11 @@ on:
         required: false
         default: false
         type: boolean
+      rebuild_cef:
+        description: 'Rebuild godot-cef instead of using the pinned CEF_PRODUCER_RUN artifacts'
+        required: false
+        default: false
+        type: boolean
   push:
     # development is the active integration branch; every push builds.
     # No `paths:` filter — workflow edits, build scripts, and the docket all
@@ -57,7 +62,7 @@ jobs:
         run: scripts/ci/scan-secrets.sh
 
   build-godot-cef:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.rebuild_cef
     uses: ./.github/workflows/godot-cef.yml
     with:
       skip_macos: true
@@ -1278,7 +1283,7 @@ jobs:
       actions: read
     timeout-minutes: 8
     needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-linux-push, build-mcp-schema-helpers, build-godot-cef]
-    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push')
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push' || !inputs.rebuild_cef)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1358,7 +1363,7 @@ jobs:
       # The same workflow run builds these source artifacts before packaging.
       # macOS builds directly in export-macos to preserve framework symlinks.
       - name: Verify pinned CEF build inputs
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || !inputs.rebuild_cef
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/verify-cef-inputs.sh
@@ -1369,7 +1374,7 @@ jobs:
         timeout-minutes: 1
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
+          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-linux-x86_64
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
       - name: Retry Download godot-cef Linux artifact
@@ -1378,7 +1383,7 @@ jobs:
         timeout-minutes: 1
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
+          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-linux-x86_64
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
       - name: Download godot-cef Windows artifact
@@ -1388,7 +1393,7 @@ jobs:
         timeout-minutes: 1
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
+          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
       - name: Retry Download godot-cef Windows artifact
@@ -1397,7 +1402,7 @@ jobs:
         timeout-minutes: 1
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event_name == 'push' && env.CEF_PRODUCER_RUN || github.run_id }}
+          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 
