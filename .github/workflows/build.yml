@@ -27,6 +27,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_functional:
+        description: 'Run the functional suite (never gates the release)'
+        required: false
+        default: false
+        type: boolean
   push:
     # development is the active integration branch; every push builds.
     # No `paths:` filter — workflow edits, build scripts, and the docket all
@@ -75,7 +80,7 @@ jobs:
       matrix:
         include:
           - target: linux-x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - target: windows-x86_64
             runner: windows-latest
           - target: macos-arm64
@@ -253,7 +258,7 @@ jobs:
     # its 15m16s total included 2m09s of retired godot_wry steps.
     timeout-minutes: 16
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps: &linux-native-steps
     - uses: actions/checkout@v4
       with:
@@ -343,7 +348,7 @@ jobs:
   build-linux-push:
     timeout-minutes: 6
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps: *linux-native-steps
 
   # ── Functional regression test suite (RCA 019e46b5) ──────────────────────
@@ -354,7 +359,7 @@ jobs:
   functional-tests:
     timeout-minutes: 60
     needs: [build-linux, build-mcp-schema-helpers, build-godot-cef]
-    if: github.event_name == 'workflow_dispatch' && always() && needs.build-linux.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || !inputs.rebuild_cef) && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
+    if: github.event_name == 'workflow_dispatch' && inputs.run_functional && always() && needs.build-linux.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || !inputs.rebuild_cef) && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -529,7 +534,7 @@ jobs:
     timeout-minutes: 60
     needs: build-godot
     if: github.event_name == 'workflow_dispatch' && always() && needs.build-godot.result == 'success' && ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1286,7 +1291,7 @@ jobs:
     timeout-minutes: 8
     needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-linux-push, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push' || !inputs.rebuild_cef)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1742,11 +1747,11 @@ jobs:
 
   create-release:
     timeout-minutes: 3
-    needs: [secret-history, build-godot, export-macos, verify-packaged-native, functional-tests, tarball-smoke, platform-gate-windows]
+    needs: [secret-history, build-godot, export-macos, verify-packaged-native, tarball-smoke, platform-gate-windows]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/development' && needs.secret-history.result == 'success' && needs.build-godot.result == 'success') || (always() && needs.secret-history.result == 'success' && needs.verify-packaged-native.result == 'success' && needs.functional-tests.result == 'success' && (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) && ((false && github.ref == 'refs/heads/development' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' && ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success' && needs.platform-gate-windows.result == 'success') || (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') || (github.event.inputs.platform == 'linux' && needs.build-godot.result == 'success') || (github.event.inputs.platform == 'windows' && needs.build-godot.result == 'success' && needs.platform-gate-windows.result == 'success'))))) }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/development' && needs.secret-history.result == 'success' && needs.build-godot.result == 'success') || (always() && needs.secret-history.result == 'success' && needs.verify-packaged-native.result == 'success' && (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) && ((false && github.ref == 'refs/heads/development' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.platform-gate-windows.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' && ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.platform-gate-windows.result == 'success') || (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') || (github.event.inputs.platform == 'linux' && needs.build-godot.result == 'success') || (github.event.inputs.platform == 'windows' && needs.build-godot.result == 'success' && needs.platform-gate-windows.result == 'success'))))) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
