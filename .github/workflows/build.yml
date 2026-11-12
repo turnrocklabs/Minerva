@@ -415,6 +415,8 @@ jobs:
     - name: Download godot-cef artifacts (Linux)
       uses: actions/download-artifact@v4
       with:
+        github-token: ${{ github.token }}
+        run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
         name: godot-cef-linux-x86_64
         path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
 
