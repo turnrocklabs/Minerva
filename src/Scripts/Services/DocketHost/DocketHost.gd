@@ -337,18 +337,25 @@ func stopped_result() -> Dictionary:
 		"error": message, "message": message, "retryable": false}
 
 
+func connection_problem() -> Dictionary:
+	if _plugin_manager == null:
+		return {"error": "Docket is not running"}
+	if _plugin_manager.has_method("docket_connection_problem"):
+		return _plugin_manager.docket_connection_problem()
+	return {}
+
+
 ## The master's policies, read from the plugin afresh: {items} (its items
-## of type policy whose status is proposed or active, in full), or {error}
-## when Docket is unavailable, the master is not open, its policy type is not
-## as Minerva declares it, the read fails, or the master or the plugin's
-## process changed while it was read. An agent's or a panel's change to
+## of type policy whose status is proposed or active, in full), or {error}.
+## Only a failed connection adds unreachable=true. An agent's or a panel's change to
 ## Docket that completed while it was read makes it {error, changed: true}:
 ## read again. The master is checked against a fresh list before the read,
 ## so nothing is awaited after it. Policies are the master's only; the
 ## session's projects never count. No items is a successful read.
 func policy_items() -> Dictionary:
-	if stopped_by_user():
-		return stopped_result()
+	var problem := connection_problem()
+	if problem.has("error"):
+		return {"error": problem.error, "unreachable": true}
 	if not state in ["ready", "degraded"] and pickup_pending():
 		return {"error": "Docket is being installed/started — retry shortly"}
 	if not state in ["ready", "degraded"]:
@@ -358,9 +365,9 @@ func policy_items() -> Dictionary:
 	for gap in master_report.get("capability_gaps", []):
 		if gap is Dictionary and (gap.has("error") or str(gap.get("slug", "")) == "policy"):
 			return {"error": "the master's policy type is not as Minerva declares it: %s" % str(gap)}
-	var listed := await _refresh(connection, generation)
-	if not listed.is_empty():
-		return {"error": listed}
+	var listed := await _refresh_project_list(connection, generation)
+	if listed.has("error"):
+		return await _policy_read_failure(connection, generation, listed, str(listed.error))
 	var master := master_project()
 	if master.is_empty():
 		return {"error": "the master project is not open"}
@@ -370,12 +377,30 @@ func policy_items() -> Dictionary:
 			{"field": "type", "op": "eq", "value": "policy"},
 			{"conj": "and", "field": "status", "op": "in", "value": ["proposed", "active"]}]}})
 	if _stale(connection, generation):
-		return {"error": "the Docket plugin's process changed while the policies were read"}
+		return await _policy_read_failure(connection, generation, {}, "the Docket plugin's process changed while the policies were read")
 	if read.has("error") or not read.value.get("items") is Array:
-		return {"error": "the master's policies could not be read: %s" % read.get("error", "no items")}
+		return await _policy_read_failure(connection, generation, read,
+			"the master's policies could not be read: %s" % read.get("error", "no items"))
 	if _changes != changes or _layer_openings([master_project()]) != _layer_openings([master]):
 		return {"error": "Docket changed while the master's policies were read", "changed": true}
 	return {"items": read.value.items}
+
+
+func _policy_read_failure(connection: Object, generation: int, read: Dictionary, why: String) -> Dictionary:
+	var problem := connection_problem()
+	if problem.has("error"):
+		return {"error": problem.error, "unreachable": true}
+	if _stale(connection, generation):
+		return {"error": why, "changed": true}
+	# A request failure can occur between health ticks. Probe the endpoint
+	# when the transport failed, since a failed policy query alone is ambiguous.
+	if read.get("transport_error", false):
+		var answered: bool = await connection.call("check_http_liveness")
+		if _stale(connection, generation):
+			return {"error": why, "changed": true}
+		if not answered:
+			return {"error": "Docket did not answer a health ping after a failed policy read", "unreachable": true}
+	return {"error": why}
 
 
 ## The knowledge items policy rules name by id (`refs`), read afresh from
@@ -1086,6 +1111,7 @@ func _call(connection: Object, tool: String, arguments: Dictionary) -> Dictionar
 		# not a timeout or lost connection, not a reply that failed validation,
 		# not Docket's own error text (success false). All are `unconfirmed`.
 		return {"error": str(answered.get("error", answered.get("text", answered.get("error_message", answered.get("message", "%s failed" % tool))))),
+			"transport_error": answered.get("error_code", "") in ["connection_error", "deadline_exceeded", "cancelled"],
 			"unconfirmed": true}
 	return {"value": answered}
 
@@ -1323,11 +1349,17 @@ func _open(connection: Object, generation: int, path: String) -> Dictionary:
 
 # Reads the open projects again into `projects`: "" or why it could not.
 func _refresh(connection: Object, generation: int) -> String:
+	var listed := await _refresh_project_list(connection, generation)
+	return str(listed.get("error", ""))
+
+
+func _refresh_project_list(connection: Object, generation: int) -> Dictionary:
 	var listed := await _call(connection, "docket_project_list", {})
 	if _stale(connection, generation):
-		return "the Docket plugin's process changed"
+		return {"error": "the Docket plugin's process changed"}
 	if listed.has("error") or not listed.value.get("projects") is Array:
-		return "the open projects could not be listed: %s" % listed.get("error", "no list")
+		return {"error": "the open projects could not be listed: %s" % listed.get("error", "no list"),
+			"transport_error": listed.get("transport_error", false)}
 	projects = []
 	_seed_paths.clear()
 	var opened: Array = listed.value.projects
@@ -1337,7 +1369,7 @@ func _refresh(connection: Object, generation: int) -> String:
 		else:
 			projects.append(project)
 	_vault_session.observe(self)
-	return ""
+	return {}
 
 
 # Waits for the current process to be set up, then allows `tool` (with

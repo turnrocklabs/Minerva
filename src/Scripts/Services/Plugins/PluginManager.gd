@@ -1978,6 +1978,25 @@ func stopped_by_person(id: String) -> bool:
 		and _runtime.get(id, {}).get("stopped_by_person", false)
 
 
+## An MCP connection can be usable even when Docket's master or rules cannot be read.
+func docket_connection_problem() -> Dictionary:
+	var definition: PluginDefinition = _db.get_by_id("docket")
+	if definition == null:
+		return {"error": "Docket is not installed"}
+	if definition.state in [S_INSTALLED, S_STOPPED]:
+		return {"error": "Docket is stopped. Open Tools > Docket to start it", "stopped": true}
+	if definition.state == S_STARTING:
+		return {"error": "Docket is starting"}
+	if definition.state != S_RUNNING:
+		return {"error": "Docket is not running"}
+	var connection := get_connection("docket")
+	if connection == null or not connection.server_connected:
+		return {"error": "Docket's connection is down"}
+	if _runtime.get("docket", {}).get("docket_ping_failed", false):
+		return {"error": "Docket did not answer its health ping"}
+	return {}
+
+
 func _pending_content_status(id: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for entry: Dictionary in load("res://Scripts/Services/Plugins/PluginInstallTransaction.gd").content_pending(ProjectSettings.globalize_path(MarketplaceClient.STAGING_DIR)):

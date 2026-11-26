@@ -610,6 +610,8 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 	var dispatched_definition = _mcp_manager.tool_registry.get(canonical_name) \
 		if _mcp_manager != null else null
 	if dispatched_definition == null:
+		if _reply_unavailable_docket_tool(conn, request_id, tool_name, canonical_name, modern):
+			return
 		_send_jsonrpc_error(conn, request_id, -32602, "Unknown tool: %s" % tool_name)
 		return
 	if str(dispatched_definition.server_name) != "minerva":
@@ -630,9 +632,12 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 			"Tool arguments do not match inputSchema", {
 				"validation": input_validation.get("error", {}).get("code", "invalid")})
 		return
-	if not _is_running or not _connections.has(conn) or not conn.is_peer_connected() \
-			or _mcp_manager.tool_registry.get(canonical_name) != dispatched_definition:
+	if not _is_running or not _connections.has(conn) or not conn.is_peer_connected():
 		lease.release()
+		return
+	if _mcp_manager.tool_registry.get(canonical_name) != dispatched_definition:
+		lease.release()
+		_reply_unavailable_docket_tool(conn, request_id, tool_name, canonical_name, modern)
 		return
 
 	# Execute the tool
@@ -670,6 +675,20 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 
 	_send_jsonrpc_result(conn, request_id,
 		_public_result_from_outcome(tool_outcome, modern))
+
+
+func _reply_unavailable_docket_tool(conn: MinervaMCPHttpConnection, request_id: Variant,
+		tool_name: String, canonical_name: String, modern: bool) -> bool:
+	if _mcp_manager == null or _mcp_manager.minerva_server == null:
+		return false
+	var unavailable: Dictionary = _mcp_manager.minerva_server.docket_tool_unavailable_result(canonical_name, "http")
+	if unavailable.is_empty():
+		return false
+	var outcome: MCPToolCallOutcome = MCPToolCallOutcome.from_error(unavailable)
+	if canonical_name != tool_name:
+		outcome.alias_of = canonical_name
+	_send_jsonrpc_result(conn, request_id, _public_result_from_outcome(outcome, modern))
+	return true
 
 
 func _public_result_from_outcome(outcome: MCPToolCallOutcome, modern: bool) -> Dictionary:

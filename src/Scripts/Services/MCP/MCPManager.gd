@@ -596,6 +596,10 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 	SingletonObject.verbose_log("[MCP] execute_tool called: %s" % tool_name)
 
 	if not tool_registry.has(tool_name):
+		if minerva_server != null:
+			var unavailable := minerva_server.docket_tool_unavailable_result(tool_name, context.origin)
+			if not unavailable.is_empty():
+				return unavailable
 		SingletonObject.verbose_log("[MCP] Tool not found! Available tools: %s" % str(tool_registry.keys()))
 		return {"error": "Tool not found: %s" % tool_name, "success": false}
 
@@ -608,7 +612,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 		var skill_policy: Dictionary = {}
 		var skill_knowledge: Array = []
 		if minerva_server and minerva_server.policy_engine:
-			skill_policy = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
+			skill_policy = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id, context.origin)
 			if context.is_stopped():
 				return context.stopped_result()
 			if not skill_policy["allowed"]:
@@ -697,7 +701,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 	var ext_policy: Dictionary = {}
 	var ext_knowledge: Array = []
 	if minerva_server and minerva_server.policy_engine:
-		ext_policy = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id)
+		ext_policy = await minerva_server.policy_engine.admit(tool_name, arguments, caller_chat_id, context.origin)
 		if context.is_stopped():
 			return context.stopped_result()
 		if not ext_policy["allowed"]:

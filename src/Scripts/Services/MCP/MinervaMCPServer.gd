@@ -389,6 +389,24 @@ func tool_alias_names() -> Array[String]:
 	return names
 
 
+## A stop unregisters the backend tools. An existing caller can still get a
+## retryable result through the Docket plugin's reserved namespace.
+func docket_tool_unavailable_result(tool_name: String, origin: String) -> Dictionary:
+	if not tool_name.begins_with("minerva_docket_"):
+		return {}
+	var host = SingletonObject.get("docket_host") if SingletonObject else null
+	if host == null:
+		return {}
+	var problem: Dictionary = host.connection_problem()
+	if problem.is_empty():
+		return {}
+	if origin == "internal":
+		return PolicyEngine.docket_unreachable_result(str(problem.error))
+	if problem.get("stopped", false):
+		return {"success": false, "error": str(problem.error), "error_code": "docket_stopped", "retryable": true}
+	return {}
+
+
 ## Internal tool execution — routes to modules, plugins, or tool search
 func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: ExecutionContext = null,
 		outcome_holder: Dictionary = {}, coerce_arguments := true, write_binding: Dictionary = {}) -> Dictionary:
@@ -434,7 +452,7 @@ func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: 
 	var policy_result: Dictionary = {}
 	var injected_knowledge: Array = []
 	if policy_engine:
-		policy_result = await policy_engine.admit(tool_name, arguments, context.caller_chat_id)
+		policy_result = await policy_engine.admit(tool_name, arguments, context.caller_chat_id, context.origin)
 		if context.is_stopped():
 			return context.stopped_result()
 		if not policy_result["allowed"]:
@@ -454,6 +472,10 @@ func _execute_canonical_tool(tool_name: String, arguments: Dictionary, context: 
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, knowledge, context.agent_id)
 			return knowledge
 		injected_knowledge = knowledge.knowledge
+
+	var unavailable := docket_tool_unavailable_result(tool_name, context.origin)
+	if not unavailable.is_empty():
+		return unavailable
 
 	# Track tool usage for LRU (blocked calls don't count)
 	var budget: ToolBudgetManager = get_context_tool_budget(context)
