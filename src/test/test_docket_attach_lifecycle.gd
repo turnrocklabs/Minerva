@@ -179,21 +179,6 @@ func _run() -> void:
 	await manager._run_health_checks()
 	check("attached endpoint stays running across two health ticks", def.state == manager.S_RUNNING
 		and stops.is_empty() and manager.stdio_starts == 0)
-	manager.http_alive = false
-	await manager._run_health_checks()
-	check("endpoint loss stops with notification and no spawn", def.state == manager.S_STOPPED
-		and stops == ["docket"] and manager.stdio_starts == 0
-		and "Docket stopped" in manager.get_plugin_status("docket").get("notice", ""))
-	check("loss does not restart automatically", manager.get_connection("docket") == null)
-	await _check_stopped_refusal(host, "backend loss")
-	record.pid = 99
-	_write(discovery.profile_directory, record)
-	await manager.start_plugin("docket")
-	check("Start after external process exits uses pinned spawn", manager.stdio_starts == 1)
-	record.pid = 42
-	_write(discovery.profile_directory, record)
-	manager.http_alive = true
-	await manager.start_plugin("docket")
 	var conn = manager.get_connection("docket")
 	conn.server_connected = false
 	def.state = manager.S_STARTING
@@ -206,11 +191,10 @@ func _run() -> void:
 	var person_stops_before: int = manager.person_stops("docket")
 	manager.stop_plugin("docket", true)
 	check("explicit Stop records this person stop", manager.person_stops("docket") == person_stops_before + 1)
-	await _check_stopped_refusal(host, "explicit Stop")
 	await manager.start_plugin("docket")
 	manager.shutdown_all()
 	check("shutdown disconnects and leaves external PID alone", manager.get_connection("docket") == null
-		and discovery.discover().get("attached", false) and manager.stdio_starts == 1)
+		and discovery.discover().get("attached", false) and manager.stdio_starts == 0)
 	singleton.plugin_manager = previous[0]
 	singleton.docket_host = previous[1]
 	singleton.plugin_tool_registry = previous[2]
@@ -222,13 +206,3 @@ func _write(directory: String, record: Dictionary) -> void:
 	var file := FileAccess.open(directory.path_join("instance.json"), FileAccess.WRITE)
 	file.store_string(JSON.stringify(record))
 	file.close()
-
-func _check_stopped_refusal(host: Node, label: String) -> void:
-	var policy = load("res://Scripts/Services/MCP/PolicyEngine.gd").new()
-	var refused: Dictionary = await policy.admit("minerva_docket_query", {})
-	check(label + " machine refusal is clear and non-retryable",
-		refused.get("error_code") == "docket_stopped_by_user" and refused.get("retryable") == false
-		and refused.get("error") == "Docket was closed; reopen it from Tools > Docket"
-		and not host.pickup_pending())
-	var read: Dictionary = await host.open_projects()
-	check(label + " direct read preserves stopped refusal", read.get("code") == "docket_stopped_by_user")

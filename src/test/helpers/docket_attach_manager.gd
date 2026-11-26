@@ -16,6 +16,28 @@ var capability_tools := false
 var replacement_mode: bool = false
 var prepare_error_tool := ""
 
+func configure_registered_docket(profile: String) -> Error:
+	if not profile.is_absolute_path() or not OS.get_user_data_dir().begins_with(profile + "/"):
+		return ERR_UNAUTHORIZED
+	_db = PluginDB.new()
+	var definition := PluginDefinition.new()
+	definition.host_api_version = "2"
+	definition.id = "docket"
+	definition.entrypoint = "unused-fixture"
+	_db._plugins.docket = definition
+	var directory := profile.path_join("Docket-fixture")
+	endpoint_discovery.profile_directory = directory
+	endpoint_discovery.pid_alive = func(pid: int) -> bool: return pid == 42
+	var created := DirAccess.make_dir_recursive_absolute(directory)
+	if created != OK:
+		return created
+	var record := FileAccess.open(directory.path_join("instance.json"), FileAccess.WRITE)
+	if record == null:
+		return FileAccess.get_open_error()
+	record.store_string(JSON.stringify({"pid": 42, "version": "fixture", "protocol_version": "2025-03-26",
+		"endpoint": {"host": "127.0.0.1", "port": 12345}, "profile": directory, "started_at": "fixture"}))
+	return record.get_error()
+
 func _run_docket_launcher(_command: String, _args: PackedStringArray, _generation: int) -> Dictionary:
 	stdio_starts += 1
 	if real_launcher:

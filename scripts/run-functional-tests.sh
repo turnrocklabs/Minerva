@@ -129,6 +129,8 @@ HERMETIC_TESTS=(
 	test/test_docket_wakeups.gd
 	test/test_docket_attach.gd
 	test/test_docket_attach_lifecycle.gd
+	test/test_docket_attach_health_recovery.gd
+	test/test_docket_policy_unreachable.gd
 	test/test_session_handover.gd
 	test/test_terminal_session.gd
 	test/test_agent_container_foreground.gd

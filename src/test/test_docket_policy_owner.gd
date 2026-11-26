@@ -426,11 +426,6 @@ func _test_policy_owner() -> void:
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
 	check("a stopped plugin remains non-retryable", not status.get("retryable", true) and status.get("error_code") == "policy_unavailable", str(status))
 	check("an unavailable plugin does not block ordinary calls", _ran(await _governed_call()))
-	manager.user_stopped = true
-	var stopped: Dictionary = await _governed_call()
-	check("explicitly stopping Docket still refuses ordinary calls", not _ran(stopped)
-		and stopped.get("error_code") == "docket_stopped_by_user", str(stopped))
-	manager.user_stopped = false
 	manager.running = true
 	host.state = "failed"
 	status = await server.call_tool("minerva_policy_reload", {}, load(CONTEXT_PATH).create("test"))
