@@ -790,14 +790,18 @@ static func _tool_description_summary(description: String) -> String:
 func _tool_search(arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	var manager: MCPManager = mcp_manager
 	var history: ServiceHistory = MCPToolUtils.find_chat_by_id(context.caller_chat_id) if context != null and context.origin != "http" else null
-	var effective_sets: Array[String] = manager._effective_tool_sets_for_history(history) if manager != null else []
+	var effective_sets: Array[String] = []
+	if manager != null:
+		effective_sets = manager._effective_tool_sets_for_history(history)
 	var query: String = str(arguments.get("query", "")).strip_edges()
 	var category: String = str(arguments.get("category", ""))
 	var requested_activation: bool = arguments.get("activate", true)
 	var activate: bool = requested_activation and not query.is_empty() and query != "*" \
 		and (context == null or context.origin != "http")
 	var limit: int = clampi(int(arguments.get("limit", 5 if activate else 500)), 1, 500)
-	var plugins: Array[Dictionary] = plugin_tool_registry.discovery_plugins() if plugin_tool_registry != null else []
+	var plugins: Array[Dictionary] = []
+	if plugin_tool_registry != null:
+		plugins = plugin_tool_registry.discovery_plugins()
 	var stopped_index: ToolSearchIndex = plugin_tool_registry.stopped_tool_index() if plugin_tool_registry != null else ToolSearchIndex.new()
 	var categories: Dictionary = tool_search_index.categories()
 	var stopped_categories: Dictionary = stopped_index.categories()
