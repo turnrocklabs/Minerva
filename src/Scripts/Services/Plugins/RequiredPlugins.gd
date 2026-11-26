@@ -373,6 +373,7 @@ static func _start_if_wanted(manager, id: String, stops: int) -> void:
 	var def: PluginDefinition = manager.get_db().get_by_id(id)
 	if def != null and def.install_lane == PluginDefinition.LANE_MARKETPLACE and def.autostart \
 			and manager.person_stops(id) == stops \
+			and (id != "docket" or not manager.docket_reattach_pending()) \
 			and not def.state in [PluginDefinition.State.RUNNING, PluginDefinition.State.STARTING]:
 		var started: Dictionary = await manager.start_plugin(id)
 		if started.has("error") and not started.get("disabled", false):

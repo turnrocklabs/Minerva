@@ -217,6 +217,7 @@ var setup_pipeline_factory: Callable = Callable()
 
 ## Discovery owns registration validation; tests use a disposable profile.
 var endpoint_discovery := PluginEndpointDiscovery.new()
+var _docket_reattach_reason := ""
 
 ## Production seam (R3-UI, G4.1): SetupPipeline.approver — Callable(step:
 ## Dictionary, step_index: int) -> bool — applied to EVERY setup pipeline this
@@ -861,14 +862,40 @@ func set_attached_host_status(notice: String, choices: Array = []) -> void:
 	plugin_status_changed.emit("docket")
 
 
-func _attached_stopped(id: String) -> void:
+func _attached_stopped(id: String, reason: String) -> void:
 	var runtime: Dictionary = _ensure_runtime(id)
 	runtime["attached"] = false
 	runtime["attach_refused"] = false
 	runtime["registration"] = {}
 	runtime["attach_choices"] = []
 	runtime["notice"] = "Docket stopped; press Start to reconnect"
-	stop_plugin(id, true)
+	_log_docket_health("lost attachment: " + reason)
+	var stops := person_stops(id)
+	var stopped := stop_plugin(id)
+	if stopped.get("ok", false) and person_stops(id) == stops:
+		_docket_reattach_reason = reason
+
+
+## Once an attachment is lost, background recovery can only attach to an
+## already-running Docket. Boot-time startup must yield to that recovery.
+func docket_reattach_pending() -> bool:
+	return not _docket_reattach_reason.is_empty()
+
+
+func _retry_docket_attach() -> void:
+	if not docket_reattach_pending() or _shutting_down:
+		return
+	var definition: PluginDefinition = _db.get_by_id("docket")
+	if definition == null or definition.state not in [S_STOPPED, S_ERROR] \
+			or _ensure_runtime("docket").get("start_pending", false):
+		return
+	var found := endpoint_discovery.discover()
+	if found.get("attached", false):
+		await _start_attached_docket(found)
+
+
+func _log_docket_health(message: String) -> void:
+	print("[PluginManager] %sZ Docket %s" % [Time.get_datetime_string_from_system(true), message])
 
 
 func _create_connection(id: String, url: String, transport: int) -> MCPServerConnection:
@@ -934,6 +961,9 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 		return _provider_tools_pending("docket", discovery_issue)
 	rt.erase("tools_notice")
 	rt["ready"] = true
+	if docket_reattach_pending():
+		_log_docket_health("reattached after " + _docket_reattach_reason)
+		_docket_reattach_reason = ""
 	plugin_ready.emit("docket")
 	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
 
@@ -1354,15 +1384,19 @@ func stop_plugin(id: String, by_person: bool = false) -> Dictionary:
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
+	var rt := _ensure_runtime(id)
+	if id == "docket":
+		_docket_reattach_reason = ""
 	if by_person:
 		_person_stops[id] = person_stops(id) + 1
+		rt["stopped_by_person"] = true
 
 	if def.state == S_STOPPED and not plugin_retirement_status(id).has("error"):
 		return {"ok": true}  # Already stopped, idempotent.
 
-	var rt := _ensure_runtime(id)
 	if rt.get("stopping", false):
 		return {"error_code": "plugin_stop_in_progress", "error": "Plugin stop is already in progress"}
+	rt["stopped_by_person"] = by_person
 	rt["stopping"] = true
 
 	# Cancel any pending hot-reload debounce to prevent stale restart
@@ -1808,6 +1842,7 @@ func get_plugin_status(id: String) -> Dictionary:
 	if dependency_error.is_empty():
 		dependency_error = dependency_contract_issue(id)
 	var tools_notice: String = rt.get("tools_notice", "")
+	var missed_ping: bool = rt.get("docket_ping_failed", false)
 
 	return {
 		"id": id,
@@ -1817,7 +1852,8 @@ func get_plugin_status(id: String) -> Dictionary:
 		"attach_refused": rt.get("attach_refused", false),
 		"registered_version": registration.get("version", ""),
 		"attached_version": registration.get("version", "") if is_attached(id) else "",
-		"notice": tools_notice if not tools_notice.is_empty() else dependency_error if not dependency_error.is_empty() else rt.get("notice", ""),
+		"notice": "Docket did not answer its health ping; retrying" if missed_ping else (
+			tools_notice if not tools_notice.is_empty() else dependency_error if not dependency_error.is_empty() else rt.get("notice", "")),
 		"degraded": rt.get("degraded", false),
 		"capability_reason": rt.get("capability_reason", ""),
 		"attach_choices": rt.get("attach_choices", []),
@@ -1831,7 +1867,7 @@ func get_plugin_status(id: String) -> Dictionary:
 		"uptime_sec": uptime,
 		"crash_count": rt.get("crash_count", 0),
 		"running": def.state == S_RUNNING,
-		"ready": rt.get("ready", false),
+		"ready": rt.get("ready", false) and not missed_ping,
 		"restart_required": not get_restart_required_reason(id).is_empty(),
 		"restart_required_reason": get_restart_required_reason(id),
 		"live_reload": _scene_reload.call("status", id) if _scene_reload != null else {},
@@ -1934,6 +1970,12 @@ func is_shutting_down() -> bool:
 ## decided on earlier (RequiredPlugins) is dropped if this has changed since.
 func person_stops(id: String) -> int:
 	return _person_stops.get(id, 0)
+
+
+func stopped_by_person(id: String) -> bool:
+	var definition: PluginDefinition = _db.get_by_id(id)
+	return definition != null and definition.state == S_STOPPED \
+		and _runtime.get(id, {}).get("stopped_by_person", false)
 
 
 func _pending_content_status(id: String) -> Array[Dictionary]:
@@ -2039,7 +2081,8 @@ func _start_autostart_ids(ids: Array[String], stops: Dictionary) -> void:
 			return
 		var definition: PluginDefinition = database.call("get_by_id", id)
 		var stop_baseline: int = stops.get(id, 0)
-		if definition == null or not definition.autostart or person_stops(id) != stop_baseline:
+		if definition == null or not definition.autostart or person_stops(id) != stop_baseline \
+				or (id == "docket" and docket_reattach_pending()):
 			continue
 		if definition.state in [S_RUNNING, S_STARTING]:
 			continue
@@ -2094,6 +2137,7 @@ func _record_crash(id: String) -> bool:
 # ---------------------------------------------------------------------------
 
 func _run_health_checks() -> void:
+	await _retry_docket_attach()
 	var db: Object = _db
 	for def: PluginDefinition in _db.get_by_status(S_RUNNING):
 		# A preceding attached ping awaited: this entry may have been stopped or replaced.
@@ -2107,14 +2151,23 @@ func _run_health_checks() -> void:
 		if is_attached(def.id):
 			if rt.get("health_pending", false): continue
 			var registration: Dictionary = rt.get("registration", {})
-			if conn == null or not conn.server_connected or not endpoint_discovery.pid_alive.call(PluginEndpointDiscovery._integer_value(registration.get("pid", 0))):
-				_attached_stopped(def.id)
+			if conn == null or not conn.server_connected:
+				_attached_stopped(def.id, "connection missing" if conn == null else "connection down")
+				continue
+			if not endpoint_discovery.pid_alive.call(PluginEndpointDiscovery._integer_value(registration.get("pid", 0))):
+				_attached_stopped(def.id, "registered PID probe failed")
 				continue
 			rt["health_pending"] = true
 			var attached_alive: bool = await conn.check_http_liveness()
-			rt["health_pending"] = false
-			if _owns_runtime_connection(def.id, conn) and not attached_alive:
-				_attached_stopped(def.id)
+			if _owns_runtime_connection(def.id, conn):
+				rt["health_pending"] = false
+				var missed_ping := not attached_alive
+				if not conn.server_connected:
+					_attached_stopped(def.id, "connection down after health ping")
+				elif rt.get("docket_ping_failed", false) != missed_ping:
+					rt["docket_ping_failed"] = missed_ping
+					_log_docket_health("answered health ping again" if attached_alive else "health ping failed; keeping attachment")
+					plugin_status_changed.emit(def.id)
 			continue
 
 		# If the connection object is gone or the subprocess is not running,
@@ -2504,7 +2557,7 @@ func _on_plugin_disconnected(id: String) -> void:
 		return
 
 	if is_attached(id):
-		_attached_stopped(id)
+		_attached_stopped(id, "disconnect signal")
 		return
 	push_warning("[PluginManager] Plugin '%s' disconnected unexpectedly" % id)
 	_handle_unexpected_exit(id)
@@ -2573,6 +2626,8 @@ func _cleanup_connection(id: String, cancel_launcher: bool = true, retry_retaine
 	var rt: Dictionary = _runtime.get(id, {})
 	rt["ready"] = false
 	rt.erase("tools_notice")
+	rt.erase("health_pending")
+	rt.erase("docket_ping_failed")
 	if id == "docket" and cancel_launcher:
 		var previous_generation: int = rt.get("start_generation", 0)
 		rt["start_generation"] = previous_generation + 1

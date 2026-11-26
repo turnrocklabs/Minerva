@@ -327,9 +327,8 @@ func pickup_pending() -> bool:
 
 
 func stopped_by_user() -> bool:
-	return _plugin_manager != null and _plugin_manager.has_method("person_stops") \
-		and _plugin_manager.get_plugin_status(PLUGIN_ID).get("state_name", "") == "STOPPED" \
-		and _plugin_manager.person_stops(PLUGIN_ID) > 0
+	return _plugin_manager != null and _plugin_manager.has_method("stopped_by_person") \
+		and _plugin_manager.stopped_by_person(PLUGIN_ID)
 
 
 func stopped_result() -> Dictionary:
