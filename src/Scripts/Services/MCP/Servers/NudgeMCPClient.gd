@@ -42,7 +42,8 @@ func _call_nudge(tool_name: String, params: Dictionary) -> Dictionary:
 	if not manager.is_server_connected("nudge"):
 		return {"error": "Nudge server not connected", "success": false}
 
-	return await manager.execute_tool(tool_name, params)
+	var context := MCPExecutionContext.create("nudge_gui")
+	return await manager.execute_tool(tool_name, params, "", context)
 
 
 ## Set a hint in the Nudge store
