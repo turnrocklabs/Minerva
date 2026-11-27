@@ -167,8 +167,11 @@ packaged probes, and macOS export. Development push auto-build releases retain
 Linux and Windows artifacts; macOS artifacts come from the on-demand lane.
 The push export consumes the successful CEF producer named by `CEF_PRODUCER_RUN`
 in `build.yml`. Input Git objects and the producer recipe are checked before
-reuse. Artifacts expire on 2027-01-10: changed inputs or expiry require a new
-`godot-cef.yml` dispatch and an updated pinned producer in the CI recipe.
+reuse. Its Linux and Windows builds are stored unchanged on the `native-deps`
+release and fetched by `scripts/ci/fetch-cef.sh`, which checks a pinned
+SHA-256, so they do not expire with the producer's artifacts. Changed inputs
+require a new `godot-cef.yml` dispatch and a repin; the script's header lists
+the steps.
 No CEF binary or engine is committed to Git.
 
 Tag-only release wrappers do not use the branch timing target and call the

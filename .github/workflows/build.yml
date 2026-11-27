@@ -23,7 +23,7 @@ on:
         default: false
         type: boolean
       rebuild_cef:
-        description: 'Rebuild godot-cef instead of using the pinned CEF_PRODUCER_RUN artifacts'
+        description: 'Rebuild godot-cef instead of using the pinned CEF_PRODUCER_RUN builds from native-deps'
         required: false
         default: false
         type: boolean
