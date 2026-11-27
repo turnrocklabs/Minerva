@@ -890,7 +890,11 @@ func _retry_docket_attach() -> void:
 		return
 	var found := endpoint_discovery.discover()
 	if found.get("attached", false):
-		await _start_attached_docket(found)
+		var attempt := await _start_attached_docket(found)
+		if attempt.get("attached_refused", false):
+			var current := endpoint_discovery.discover()
+			if not current.get("attached", false) and not current.has("error"):
+				_attached_stopped("docket", "no live registration after reattach refusal")
 
 
 func _log_docket_health(message: String) -> void:
@@ -951,6 +955,7 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 	if not capability_reason.is_empty():
 		rt["notice"] = capability_reason
 	rt["start_time"] = Time.get_unix_time_from_system()
+	rt["docket_ready_recovery_reason"] = _docket_reattach_reason
 	_transition_state("docket", S_RUNNING)
 	plugin_started.emit("docket")
 	var discovery_issue := await _discover_backend_tools("docket", conn)
@@ -958,10 +963,24 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 		return {"error": "Docket attach was cancelled"}
 	if not discovery_issue.is_empty():
 		return _provider_tools_pending("docket", discovery_issue)
+	_mark_attached_docket_ready(rt)
+	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
+
+
+func _mark_attached_docket_ready(rt: Dictionary) -> void:
 	rt.erase("tools_notice")
 	rt["ready"] = true
+	_log_attached_docket_recovery(rt)
 	plugin_ready.emit("docket")
-	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
+
+
+func _log_attached_docket_recovery(rt: Dictionary) -> void:
+	if not rt.get("ready", false) or rt.get("docket_ping_failed", false):
+		return
+	var recovery_reason: String = rt.get("docket_ready_recovery_reason", "")
+	rt.erase("docket_ready_recovery_reason")
+	if not recovery_reason.is_empty():
+		_log_docket_health("reattached after " + recovery_reason)
 
 
 func _start_plugin_now(id: String, docket_start: int = 0) -> Dictionary:
@@ -1331,7 +1350,8 @@ func _discover_backend_tools(plugin_id: String, conn) -> String:
 
 func _provider_tools_pending(id: String, reason: String) -> Dictionary:
 	var rt := _ensure_runtime(id)
-	var notice := "provider tools unavailable: " + reason + ". Restart the plugin to retry."
+	var retry := "Retrying on the next health check." if is_attached(id) else "Restart the plugin to retry."
+	var notice := "provider tools unavailable: " + reason + ". " + retry
 	rt["ready"] = false
 	rt["tools_notice"] = notice
 	push_warning("[PluginManager] %s: %s" % [id, notice])
@@ -2174,15 +2194,25 @@ func _run_health_checks() -> void:
 				continue
 			rt["health_pending"] = true
 			var attached_alive: bool = await conn.check_http_liveness()
+			if not _owns_runtime_connection(def.id, conn):
+				continue
+			if not conn.server_connected:
+				_attached_stopped(def.id, "connection down after health ping")
+				continue
+			var missed_ping := not attached_alive
+			if rt.get("docket_ping_failed", false) != missed_ping:
+				rt["docket_ping_failed"] = missed_ping
+				_log_docket_health("answered health ping again" if attached_alive else "health ping failed; keeping attachment")
+				_log_attached_docket_recovery(rt)
+				plugin_status_changed.emit(def.id)
+			var catalog_recovered := false
+			if attached_alive and rt.has("tools_notice") and _owns_runtime_connection(def.id, conn):
+				var discovery_issue := await _discover_backend_tools(def.id, conn)
+				catalog_recovered = discovery_issue.is_empty()
 			if _owns_runtime_connection(def.id, conn):
 				rt["health_pending"] = false
-				var missed_ping := not attached_alive
-				if not conn.server_connected:
-					_attached_stopped(def.id, "connection down after health ping")
-				elif rt.get("docket_ping_failed", false) != missed_ping:
-					rt["docket_ping_failed"] = missed_ping
-					_log_docket_health("answered health ping again" if attached_alive else "health ping failed; keeping attachment")
-					plugin_status_changed.emit(def.id)
+				if catalog_recovered:
+					_mark_attached_docket_ready(rt)
 			continue
 
 		# If the connection object is gone or the subprocess is not running,
@@ -2628,9 +2658,7 @@ func _transition_state(id: String, new_state: int) -> void:
 	if old_state == new_state:
 		return
 	_db.update_state(id, new_state)
-	if id == "docket" and new_state == S_RUNNING and docket_reattach_pending():
-		var recovery := "reattached" if is_attached(id) else "running again"
-		_log_docket_health(recovery + " after " + _docket_reattach_reason)
+	if id == "docket" and new_state == S_RUNNING:
 		_docket_reattach_reason = ""
 	plugin_state_changed.emit(id, old_state, new_state)
 
@@ -2647,6 +2675,7 @@ func _cleanup_connection(id: String, cancel_launcher: bool = true, retry_retaine
 	rt.erase("tools_notice")
 	rt.erase("health_pending")
 	rt.erase("docket_ping_failed")
+	rt.erase("docket_ready_recovery_reason")
 	if id == "docket" and cancel_launcher:
 		var previous_generation: int = rt.get("start_generation", 0)
 		rt["start_generation"] = previous_generation + 1
