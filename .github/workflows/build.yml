@@ -165,7 +165,8 @@ jobs:
   build-windows:
     # A cold native build needs more than the push job's six-minute cap.
     # A dispatch on development can seed the cache for that toolchain.
-    timeout-minutes: 20
+    # Cold builds have taken up to 17m08s here.
+    timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all')
     runs-on: windows-latest
     outputs:
@@ -267,9 +268,8 @@ jobs:
     steps: *windows-native-steps
 
   build-linux:
-    # Cache-creation run 26488257269 took 11m36s in Build Extension;
-    # its 15m16s total included 2m09s of retired godot_wry steps.
-    timeout-minutes: 16
+    # Cold builds have taken up to 15m14s here.
+    timeout-minutes: 25
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event.inputs.create_release == 'true')
     runs-on: ubuntu-24.04
     steps: &linux-native-steps
@@ -612,9 +612,9 @@ jobs:
           if-no-files-found: warn
 
   build-macos:
-    # Cache-creation run 26488257269 took 15m42s in Build Extension;
-    # its 20m09s total included 2m48s of retired godot_wry steps.
-    timeout-minutes: 20
+    # A cold build took 20m03s in run 45961833209 and was cancelled at the
+    # old 20-minute limit after every step had passed.
+    timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all')
     # Pinned to macos-15: macos-latest moved to macos-26 (Xcode 26 SDK), which
     # Zig 0.15.2 cannot link against — the ghostty-vt shim fails with undefined
@@ -737,7 +737,9 @@ jobs:
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
-    timeout-minutes: 90
+    # Run 45961833209 took 84m49s with both FFmpeg (42m37s) and godot-cef
+    # (29m53s) built from source because neither was on native-deps yet.
+    timeout-minutes: 120
     needs: [check-gdextension, build-macos, build-mcp-schema-helpers]
     if: github.event_name == 'workflow_dispatch' && always() && needs.check-gdextension.result == 'success' && needs.build-macos.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all')
     continue-on-error: true
