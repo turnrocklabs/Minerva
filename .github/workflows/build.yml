@@ -49,7 +49,7 @@ env:
 
 jobs:
   secret-history:
-    timeout-minutes: 2
+    timeout-minutes: 4
     name: Secret history
     runs-on: ubuntu-latest
     steps:
@@ -163,9 +163,8 @@ jobs:
           fi
 
   build-windows:
-    # The cache-seeding Build Extension took 14m51s (run 26488257269).
-    # A dispatch on development seeds its cache; a cold push fails fast and
-    # needs one dispatch. Keep the push job's three-minute cap below.
+    # A cold native build needs more than the push job's six-minute cap.
+    # A dispatch on development can seed the cache for that toolchain.
     timeout-minutes: 20
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all')
     runs-on: windows-latest
@@ -185,16 +184,27 @@ jobs:
         python-version: '3.14'
     - run: pip install scons==4.11.1
 
-    - name: Identify native runner image
-      id: native-image
+    - name: Identify native toolchain
+      id: native-toolchain
       shell: pwsh
       run: |
-        if (-not $env:ImageVersion) { throw 'Runner ImageVersion is unavailable' }
-        "version=$env:ImageVersion" >> $env:GITHUB_OUTPUT
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath = & $vswhere -latest -products '*' -property installationPath
+        if (-not $vsPath) { throw 'Visual Studio installation path is unavailable' }
+        $msvc = (Get-Content -Raw -LiteralPath (Join-Path $vsPath 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt')).Trim()
+        if (-not $msvc) { throw 'Default MSVC tools version is unavailable' }
+        $sdk = Get-ChildItem -Directory -LiteralPath "${env:ProgramFiles(x86)}\Windows Kits\10\Include" |
+          Sort-Object { [version]$_.Name } -Descending |
+          Select-Object -First 1 -ExpandProperty Name
+        if (-not $sdk) { throw 'Windows SDK include version is unavailable' }
+        $identity = "MSVC=$msvc WindowsSDK=$sdk"
+        Write-Host $identity
+        $bytes = [Text.Encoding]::UTF8.GetBytes($identity)
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+        "version=$($hash.Substring(0, 16))" >> $env:GITHUB_OUTPUT
 
     # Keep the signatures, generated objects and libraries from one build.
-    # Old source-only exact hits survived toolchain upgrades and could never
-    # be replaced; the separate godot-cpp cache also overwrote generated objects.
+    # Key them by MSVC and SDK versions so toolchain upgrades rebuild them.
     - name: Cache Windows native build
       uses: actions/cache@v4
       with:
@@ -204,9 +214,9 @@ jobs:
           src/**/*.obj
           src/godot-cpp/bin/**
           src/godot-cpp/gen/**
-        key: Windows-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json', 'scripts/ci/windows/build-terminal.ps1') }}
+        key: Windows-native-v2-${{ steps.native-toolchain.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json', 'scripts/ci/windows/build-terminal.ps1') }}
         restore-keys: |
-          Windows-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
+          Windows-native-v2-${{ steps.native-toolchain.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
 
     # ── ghostty-vt shim (Windows) — DE-RISK STEP ──────────────────────────
     # The Windows terminal historically shipped without ghostty-vt entirely
@@ -224,8 +234,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: src/gdextension/terminal/ghostty-shim/.zig-cache
-        key: zig-windows-x86_64-0.15.2-${{ steps.native-image.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
-        restore-keys: zig-windows-x86_64-0.15.2-${{ steps.native-image.outputs.version }}-
+        key: zig-windows-x86_64-0.15.2-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-windows-x86_64-0.15.2-${{ steps.native-toolchain.outputs.version }}-
 
     - name: Build ghostty-vt shim (Windows)
       shell: pwsh
@@ -275,11 +285,16 @@ jobs:
         python-version: '3.14'
     - run: pip install scons==4.11.1
 
-    - name: Identify native runner image
-      id: native-image
+    - name: Identify native toolchain
+      id: native-toolchain
       run: |
-        : "${ImageVersion:?Runner ImageVersion is unavailable}"
-        echo "version=$ImageVersion" >> "$GITHUB_OUTPUT"
+        compiler=$(g++ --version)
+        compiler=${compiler%%$'\n'*}
+        libc=$(dpkg-query -W -f='${Version}' libc6-dev)
+        identity="${compiler:?g++ version is unavailable} libc6-dev=${libc:?libc6-dev version is unavailable}"
+        echo "$identity"
+        version=$(printf '%s' "$identity" | sha256sum | cut -c1-16)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Cache Linux native build
       uses: actions/cache@v4
@@ -290,9 +305,9 @@ jobs:
           src/**/*.obj
           src/godot-cpp/bin/**
           src/godot-cpp/gen/**
-        key: Linux-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json') }}
+        key: Linux-native-v2-${{ steps.native-toolchain.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json') }}
         restore-keys: |
-          Linux-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
+          Linux-native-v2-${{ steps.native-toolchain.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
 
     - name: Setup Zig
       run: |
@@ -315,8 +330,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: src/gdextension/terminal/ghostty-shim/.zig-cache
-        key: zig-linux-x86_64-0.15.2-${{ steps.native-image.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
-        restore-keys: zig-linux-x86_64-0.15.2-${{ steps.native-image.outputs.version }}-
+        key: zig-linux-x86_64-0.15.2-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-linux-x86_64-0.15.2-${{ steps.native-toolchain.outputs.version }}-
 
     - name: Install Linux Dependencies
       run: |
@@ -420,11 +435,14 @@ jobs:
         cp -r "$FFMPEG_SRC/linux64/"* src/addons/ffmpeg/linux64/
         ls src/addons/ffmpeg/linux64/ | head -20
 
-    - name: Download godot-cef artifacts (Linux)
+    - name: Fetch pinned godot-cef (Linux)
+      if: ${{ !inputs.rebuild_cef }}
+      run: scripts/ci/fetch-cef.sh linux src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
+
+    - name: Download rebuilt godot-cef artifact (Linux)
+      if: inputs.rebuild_cef
       uses: actions/download-artifact@v4
       with:
-        github-token: ${{ github.token }}
-        run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
         name: godot-cef-linux-x86_64
         path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
 
@@ -616,11 +634,17 @@ jobs:
         python-version: '3.14'
     - run: pip install scons==4.11.1
 
-    - name: Identify native runner image
-      id: native-image
+    - name: Identify native toolchain
+      id: native-toolchain
       run: |
-        : "${ImageVersion:?Runner ImageVersion is unavailable}"
-        echo "version=$ImageVersion" >> "$GITHUB_OUTPUT"
+        compiler=$(clang++ --version)
+        compiler=${compiler%%$'\n'*}
+        arch=$(uname -m)
+        sdk=$(xcrun --show-sdk-version)
+        identity="${compiler:?clang++ version is unavailable} arch=${arch:?Runner architecture is unavailable} SDK=${sdk:?macOS SDK version is unavailable}"
+        echo "$identity"
+        version=$(printf '%s' "$identity" | shasum -a 256 | cut -c1-16)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Cache macOS native build
       uses: actions/cache@v4
@@ -631,9 +655,9 @@ jobs:
           src/**/*.obj
           src/godot-cpp/bin/**
           src/godot-cpp/gen/**
-        key: macOS-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json') }}
+        key: macOS-native-v2-${{ steps.native-toolchain.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-${{ hashFiles('src/**/*.cpp', 'src/**/*.h', 'src/SConstruct', 'src/godot-cpp/SConstruct', 'src/godot-cpp/tools/**', 'src/godot-cpp/binding_generator.py', 'src/godot-cpp/gdextension/extension_api.json') }}
         restore-keys: |
-          macOS-native-v2-${{ steps.native-image.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
+          macOS-native-v2-${{ steps.native-toolchain.outputs.version }}-py${{ steps.native-python.outputs.python-version }}-scons4.11.1-
 
     - name: Setup Zig
       run: |
@@ -654,8 +678,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: src/gdextension/terminal/ghostty-shim/.zig-cache
-        key: zig-macos-0.15.2-${{ steps.native-image.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
-        restore-keys: zig-macos-0.15.2-${{ steps.native-image.outputs.version }}-
+        key: zig-macos-0.15.2-${{ steps.native-toolchain.outputs.version }}-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-macos-0.15.2-${{ steps.native-toolchain.outputs.version }}-
 
     - name: Build ghostty-vt shim (universal)
       working-directory: src/gdextension/terminal/ghostty-shim
@@ -713,7 +737,7 @@ jobs:
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
-    timeout-minutes: 60
+    timeout-minutes: 90
     needs: [check-gdextension, build-macos, build-mcp-schema-helpers]
     if: github.event_name == 'workflow_dispatch' && always() && needs.check-gdextension.result == 'success' && needs.build-macos.result == 'success' && needs.build-mcp-schema-helpers.result == 'success' && (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all')
     continue-on-error: true
@@ -723,6 +747,9 @@ jobs:
     env:
       BLUETOOTH_USAGE: Minerva uses Bluetooth to pair your Smart Remote.
       LOCAL_NETWORK_USAGE: Minerva plugins connect to devices on your local network, such as printers and instruments.
+      # Keep this aligned with .github/workflows/godot-cef.yml and the
+      # default in scripts/build-godot-cef.sh.
+      RUST_TOOLCHAIN: nightly-2026-06-21
     steps:
       - uses: actions/checkout@v4
         with:
@@ -824,24 +851,17 @@ jobs:
         run: |
           git submodule update --init --recursive vendor/EIRTeam.FFmpeg
 
-      - name: Compute EIRTeam.FFmpeg submodule SHA
-        # Use the submodule SHA as the cache key so a submodule bump
-        # invalidates the cache and triggers a rebuild automatically.
-        id: ffmpeg-sha
+      - name: Restore EIRTeam.FFmpeg built addon (macOS)
+        id: ffmpeg-dep
         run: |
-          SHA=$(git ls-tree HEAD vendor/EIRTeam.FFmpeg | awk '{print $3}')
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "EIRTeam.FFmpeg submodule SHA: $SHA"
-
-      - name: Cache EIRTeam.FFmpeg built addon (macOS)
-        id: ffmpeg-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: src/addons/ffmpeg/macos
-          key: ffmpeg-macos-universal-${{ steps.ffmpeg-sha.outputs.sha }}
+          submodule=$(git rev-parse HEAD:vendor/EIRTeam.FFmpeg)
+          recipe=$(git rev-parse HEAD:scripts/build-ffmpeg.sh)
+          asset="ffmpeg-macos-universal-$submodule-$recipe"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+          scripts/ci/native-dep.sh restore "$asset" src/addons/ffmpeg/macos
 
       - name: Build EIRTeam.FFmpeg from source (macOS)
-        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        if: steps.ffmpeg-dep.outputs.restored != 'true'
         # Cold build path: ffmpeg-kit + GDExtension wrapper, 30-60min.
         # The script handles brew deps, CMake 4.x patches for x265,
         # ad-hoc codesigns the output dylibs/frameworks. Idempotent —
@@ -878,12 +898,18 @@ jobs:
             lipo "$binary" -verify_arch arm64 x86_64
           done
 
-      - name: Save verified EIRTeam.FFmpeg addon cache
-        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+      - name: Pack verified EIRTeam.FFmpeg addon
+        if: steps.ffmpeg-dep.outputs.restored != 'true'
+        run: scripts/ci/native-dep.sh pack "${{ steps.ffmpeg-dep.outputs.asset }}" src/addons/ffmpeg/macos "$RUNNER_TEMP/native-deps"
+
+      - name: Upload verified EIRTeam.FFmpeg addon
+        if: steps.ffmpeg-dep.outputs.restored != 'true'
+        uses: actions/upload-artifact@v4
         with:
-          path: src/addons/ffmpeg/macos
-          key: ffmpeg-macos-universal-${{ steps.ffmpeg-sha.outputs.sha }}
+          name: native-dep-ffmpeg
+          path: ${{ runner.temp }}/native-deps/${{ steps.ffmpeg-dep.outputs.asset }}.tar.gz
+          compression-level: 0
+          retention-days: 1
 
       - name: Download godot-sqlite addon
         run: |
@@ -896,23 +922,21 @@ jobs:
           echo "godot-sqlite ${SQLITE_VERSION} installed"
           ls src/addons/godot-sqlite/bin/ | head -20
 
+      - name: Restore godot-cef built addon (macOS)
+        # The godot-cef.yml artifact route strips framework versioning
+        # symlinks. The tarball preserves the links dyld needs to load CEF.
+        id: cef-dep
+        run: |
+          cef_inputs=$(git rev-parse HEAD:vendor/godot_cef HEAD:patches/godot_cef HEAD:scripts/build-godot-cef.sh)
+          key=$(printf '%s\n' "$cef_inputs" "$RUST_TOOLCHAIN" | shasum -a 256 | cut -c1-16)
+          asset="godot-cef-macos-universal-$key"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+          scripts/ci/native-dep.sh restore "$asset" src/addons/godot_cef/bin/universal-apple-darwin
+
       - name: Build godot-cef from source (macOS)
-        # The godot-cef.yml CI workflow uploads its macOS framework via
-        # actions/upload-artifact, which strips macOS framework versioning
-        # symlinks (Foo.framework/Foo -> Versions/Current/Foo). The
-        # downloaded artifact lands without its binary, so dyld can't
-        # dlopen it ("not a file" — the path is a directory missing its
-        # Mach-O contents). Bypass the broken artifact pipeline entirely:
-        # run scripts/build-godot-cef.sh on macos-latest, which is the
-        # same script local devs run and produces a fully-formed framework.
-        # The script installs Rust nightly + export-cef-dir + the CEF SDK
-        # bundle if missing (~10-20min cold). Caching is a follow-up
-        # optimization once we know this path produces a working bundle.
+        if: steps.cef-dep.outputs.restored != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Keep this aligned with .github/workflows/godot-cef.yml and the
-          # default in scripts/build-godot-cef.sh.
-          RUST_TOOLCHAIN: nightly-2026-06-21
         run: |
           # The script auto-installs the pinned nightly via rustup, but make sure
           # rustup itself is present (it should be on macos-latest).
@@ -1230,10 +1254,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/verify-packaged-mcp-app.py" --with-required-releases \
             Minerva.app/Contents/MacOS/Minerva --headless --quit-after 2100 \
               > minerva-launch.log 2>&1 || true
-          # Check for the specific failure modes we're guarding against.
-          # As of iter 13, FFmpeg is built from source on macOS, so any
-          # ffmpeg load failure is now a real regression (no longer the
-          # expected "no upstream macOS framework" benign error).
+          # Treat a load failure in any bundled extension as a regression.
           grep -E "Can't open dynamic library|GDExtension dynamic library not found|Error loading extension|Could not find type" minerva-launch.log \
               > /tmp/smoke-errors.txt || true
           if [ -s /tmp/smoke-errors.txt ]; then
@@ -1245,6 +1266,19 @@ jobs:
             exit 1
           fi
           echo "Smoke launch: no extension load errors"
+
+      - name: Pack verified godot-cef addon
+        if: steps.cef-dep.outputs.restored != 'true'
+        run: scripts/ci/native-dep.sh pack "${{ steps.cef-dep.outputs.asset }}" src/addons/godot_cef/bin/universal-apple-darwin "$RUNNER_TEMP/native-deps"
+
+      - name: Upload verified godot-cef addon
+        if: steps.cef-dep.outputs.restored != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-dep-cef
+          path: ${{ runner.temp }}/native-deps/${{ steps.cef-dep.outputs.asset }}.tar.gz
+          compression-level: 0
+          retention-days: 1
 
       - name: Upload macOS Build
         if: |
@@ -1287,11 +1321,42 @@ jobs:
             echo "::warning::macOS export advisory result: $ADVISORY_RESULT; triage before milestone or owner HITL (01a118e9d823)."
           fi
 
+  store-native-deps:
+    needs: [export-macos]
+    if: github.event_name == 'workflow_dispatch' && always() && needs.export-macos.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified native dependencies
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-dep-*
+          path: native-deps
+
+      - name: Store native dependencies in release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          status=0
+          for archive in native-deps/*/*.tar.gz; do
+            if ! output=$(gh release upload native-deps "$archive" --repo "$GITHUB_REPOSITORY" 2>&1); then
+              printf '%s\n' "$output" >&2
+              case "$output" in
+                *'asset under the same name already exists:'*|*'already_exists'*) ;;
+                *) status=1 ;;
+              esac
+            fi
+          done
+          exit "$status"
+
   build-godot:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 8
+    timeout-minutes: 10
     needs: [check-gdextension, build-windows, build-windows-push, build-linux, build-linux-push, build-mcp-schema-helpers, build-godot-cef]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.build-mcp-schema-helpers.result == 'success' && (needs.build-godot-cef.result == 'success' || github.event_name == 'push' || !inputs.rebuild_cef)
     runs-on: ubuntu-24.04
@@ -1370,49 +1435,30 @@ jobs:
           echo "godot-sqlite ${SQLITE_VERSION} installed"
           ls src/addons/godot-sqlite/bin/ | head -20
 
-      # The same workflow run builds these source artifacts before packaging.
-      # macOS builds directly in export-macos to preserve framework symlinks.
+      # Pinned CEF comes from native-deps. A rebuild uses this run's artifacts.
       - name: Verify pinned CEF build inputs
         if: github.event_name == 'push' || !inputs.rebuild_cef
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/verify-cef-inputs.sh
-      - name: Download godot-cef Linux artifact
-        id: download_cef_linux
-        continue-on-error: true
+      - name: Fetch pinned godot-cef (Linux)
+        if: github.event_name == 'push' || !inputs.rebuild_cef
+        run: scripts/ci/fetch-cef.sh linux src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
+      - name: Download rebuilt godot-cef artifact (Linux)
+        if: github.event_name == 'workflow_dispatch' && inputs.rebuild_cef
         uses: actions/download-artifact@v4
         timeout-minutes: 1
         with:
-          github-token: ${{ github.token }}
-          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-linux-x86_64
           path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
-      - name: Retry Download godot-cef Linux artifact
-        if: steps.download_cef_linux.outcome != 'success'
+      - name: Fetch pinned godot-cef (Windows)
+        if: github.event_name == 'push' || !inputs.rebuild_cef
+        run: scripts/ci/fetch-cef.sh windows src/addons/godot_cef/bin/x86_64-pc-windows-msvc
+      - name: Download rebuilt godot-cef artifact (Windows)
+        if: github.event_name == 'workflow_dispatch' && inputs.rebuild_cef
         uses: actions/download-artifact@v4
         timeout-minutes: 1
         with:
-          github-token: ${{ github.token }}
-          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
-          name: godot-cef-linux-x86_64
-          path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
-      - name: Download godot-cef Windows artifact
-        id: download_cef_windows
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        timeout-minutes: 1
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
-          name: godot-cef-windows-x86_64
-          path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
-      - name: Retry Download godot-cef Windows artifact
-        if: steps.download_cef_windows.outcome != 'success'
-        uses: actions/download-artifact@v4
-        timeout-minutes: 1
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ (github.event_name == 'push' || !inputs.rebuild_cef) && env.CEF_PRODUCER_RUN || github.run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 

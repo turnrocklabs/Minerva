@@ -41,11 +41,16 @@ jobs:
           name: terminal-windows
           path: src/bin/
 
-      - name: Download godot-cef
+      - name: Fetch pinned godot-cef
+        if: inputs.cef_run_id != github.run_id
+        env:
+          CEF_PRODUCER_RUN: ${{ inputs.cef_run_id }}
+        run: scripts/ci/fetch-cef.sh windows src/addons/godot_cef/bin/x86_64-pc-windows-msvc
+
+      - name: Download rebuilt godot-cef artifact
+        if: inputs.cef_run_id == github.run_id
         uses: actions/download-artifact@v4
         with:
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.cef_run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 

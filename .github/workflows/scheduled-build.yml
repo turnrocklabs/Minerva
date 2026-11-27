@@ -1,0 +1,21 @@
+# Keep the native caches inside GitHub's 7-day eviction window.
+# Exercise the release-only jobs between releases.
+name: Scheduled Build
+
+on:
+  schedule:
+    - cron: '17 9 * * 1,4'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch development build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref development -f platform=all -f create_release=false -f rebuild_cef=false -f run_functional=false
