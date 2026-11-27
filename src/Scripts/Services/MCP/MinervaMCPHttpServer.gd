@@ -632,12 +632,9 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 			"Tool arguments do not match inputSchema", {
 				"validation": input_validation.get("error", {}).get("code", "invalid")})
 		return
-	if not _is_running or not _connections.has(conn) or not conn.is_peer_connected():
+	if not _is_running or not _connections.has(conn) or not conn.is_peer_connected() \
+			or _mcp_manager.tool_registry.get(canonical_name) != dispatched_definition:
 		lease.release()
-		return
-	if _mcp_manager.tool_registry.get(canonical_name) != dispatched_definition:
-		lease.release()
-		_reply_unavailable_docket_tool(conn, request_id, tool_name, canonical_name, modern)
 		return
 
 	# Execute the tool

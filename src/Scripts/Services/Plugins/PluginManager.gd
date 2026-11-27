@@ -870,9 +870,8 @@ func _attached_stopped(id: String, reason: String) -> void:
 	runtime["attach_choices"] = []
 	runtime["notice"] = "Docket stopped; press Start to reconnect"
 	_log_docket_health("lost attachment: " + reason)
-	var stops := person_stops(id)
 	var stopped := stop_plugin(id)
-	if stopped.get("ok", false) and person_stops(id) == stops:
+	if stopped.get("ok", false):
 		_docket_reattach_reason = reason
 
 
@@ -961,9 +960,6 @@ func _start_attached_docket(found: Dictionary, docket_start: int = 0) -> Diction
 		return _provider_tools_pending("docket", discovery_issue)
 	rt.erase("tools_notice")
 	rt["ready"] = true
-	if docket_reattach_pending():
-		_log_docket_health("reattached after " + _docket_reattach_reason)
-		_docket_reattach_reason = ""
 	plugin_ready.emit("docket")
 	return {"ok": true, "attached": true, "degraded": not capability_reason.is_empty(), "reason": capability_reason}
 
@@ -2632,6 +2628,10 @@ func _transition_state(id: String, new_state: int) -> void:
 	if old_state == new_state:
 		return
 	_db.update_state(id, new_state)
+	if id == "docket" and new_state == S_RUNNING and docket_reattach_pending():
+		var recovery := "reattached" if is_attached(id) else "running again"
+		_log_docket_health(recovery + " after " + _docket_reattach_reason)
+		_docket_reattach_reason = ""
 	plugin_state_changed.emit(id, old_state, new_state)
 
 
