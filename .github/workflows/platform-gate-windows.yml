@@ -3,18 +3,23 @@ name: Platform Gate (Windows)
 # The release gate's Windows half: the marketplace install suites and native
 # SubProcess launching (scripts/run-functional-tests.sh --platform-gate), run
 # headless against this run's own Windows builds of the terminal extension
-# (ProcessFileLock, SubProcess), godot-cef and the MCP schema helper, with the
-# project imported as build-godot packages it. build.yml calls this and
-# create-release requires it; the macOS half runs inside export-macos.
+# (ProcessFileLock, SubProcess) and the MCP schema helper, plus godot-cef from
+# the selected producer run. The project is imported as in build-godot.
+# build.yml calls this and create-release requires it. The macOS half runs
+# inside export-macos.
 
 on:
   workflow_call:
     inputs:
+      cef_run_id:
+        required: true
+        type: string
       godot_version:
         required: true
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -39,6 +44,8 @@ jobs:
       - name: Download godot-cef
         uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.cef_run_id }}
           name: godot-cef-windows-x86_64
           path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 
